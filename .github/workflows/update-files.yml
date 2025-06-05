@@ -1,0 +1,57 @@
+name: Update Files
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'trading-system/src/utils/async_utils.py'
+      - 'trading-system/src/config/config.yaml'
+      - 'trading-system/src/config/config.development.yaml'
+      - 'trading-system/src/config/config.test.yaml'
+      - 'trading-system/src/config/config_manager.py'
+      - 'trading-system/src/config/loader.py'
+      - 'trading-system/src/config/services.py'
+      - 'trading-system/src/core/orchestrator.py'
+      - 'trading-system/src/main.py'
+      - 'mock_trading/tests/test_order_manager.py'
+
+jobs:
+  update-files:
+    name: Update Files
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        
+    - name: Configure Git
+      run: |
+        git config --global user.name 'GitHub Actions'
+        git config --global user.email 'github-actions@github.com'
+        
+    - name: Check for changes
+      id: changes
+      run: |
+        git add trading-system/src/utils/async_utils.py
+        git add trading-system/src/config/config.yaml
+        git add trading-system/src/config/config.development.yaml
+        git add trading-system/src/config/config.test.yaml
+        git add trading-system/src/config/config_manager.py
+        git add trading-system/src/config/loader.py
+        git add trading-system/src/config/services.py
+        git add trading-system/src/core/orchestrator.py
+        git add trading-system/src/main.py
+        git add mock_trading/tests/test_order_manager.py
+        
+        if git diff --staged --quiet; then
+          echo "changes=false" >> $GITHUB_OUTPUT
+        else
+          echo "changes=true" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Commit and push if changes exist
+      if: steps.changes.outputs.changes == 'true'
+      run: |
+        git commit -m "Update configuration and core files [skip ci]"
+        git push 

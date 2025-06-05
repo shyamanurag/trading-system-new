@@ -1,0 +1,17 @@
+# deployment/aws_setup.yaml
+instance:
+  type: t3.medium  # Start small
+  region: ap-south-1  # Mumbai for low latency
+  elastic_ip: true  # Static IP for NSE
+  
+services:
+  redis: ElastiCache (t3.micro)
+  postgres: RDS (db.t3.micro)
+  monitoring: CloudWatch + Grafana
+  
+security:
+  vpc: isolated
+  security_groups:
+    - broker_api_access
+    - data_feed_access
+  ssl_certificates: required
