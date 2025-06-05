@@ -1,0 +1,41 @@
+name: trading-system-fullstack
+
+services:
+  # Backend API Service (Docker)
+  - name: api
+    environment_slug: python
+    github:
+      repo: shyamanurag/trading-system-new
+      branch: main
+    http_port: 8000
+    envs:
+    - key: PORT
+      value: "8000"
+    - key: ENVIRONMENT
+      value: production
+
+  # Frontend Service (Static Site)
+  - name: frontend
+    environment_slug: node-js
+    github:
+      repo: shyamanurag/trading-system-new
+      branch: main
+    build_command: npm install && npm run build
+    output_dir: dist/frontend
+    envs:
+    - key: VITE_API_URL
+      value: ${api.PUBLIC_URL}
+
+# Routing Configuration
+ingress:
+  rules:
+  - component:
+      name: frontend
+    match:
+      path:
+        prefix: /
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /api 
