@@ -6,7 +6,7 @@ import logging
 from ..models.schema import RiskMetrics, RiskLimits
 from ..core.risk_manager import RiskManager
 from ..core.capital_manager import CapitalManager
-from ..auth import get_current_user
+from ..auth import get_current_user, require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -71,12 +71,12 @@ async def get_risk_metrics(
 async def get_user_risk_profile(
     user_id: str,
     risk_manager: RiskManager = Depends(),
-    current_user = Depends(get_current_user)
+    current_user = Depends(require_admin)
 ):
     """Get detailed risk profile for a user (admin only)"""
     try:
-        # TODO: Add admin check
         profile = await risk_manager.get_user_risk_profile(user_id)
+        logger.info(f"Admin {current_user.user_id} accessed risk profile for user {user_id}")
         return profile
 
     except Exception as e:

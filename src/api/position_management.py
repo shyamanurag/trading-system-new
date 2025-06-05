@@ -6,7 +6,7 @@ import logging
 from ..models.schema import Position
 from ..core.position_manager import PositionManager
 from ..core.risk_manager import RiskManager
-from ..auth import get_current_user
+from ..auth import get_current_user, require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -15,12 +15,12 @@ router = APIRouter()
 @router.get("/positions", response_model=List[Position])
 async def get_all_positions(
     position_manager: PositionManager = Depends(),
-    current_user = Depends(get_current_user)
+    current_user = Depends(require_admin)  # Require admin role
 ):
     """Get all positions (admin only)"""
     try:
-        # TODO: Add admin check
         positions = await position_manager.get_all_positions()
+        logger.info(f"Admin {current_user.user_id} retrieved {len(positions)} positions")
         return positions
 
     except Exception as e:

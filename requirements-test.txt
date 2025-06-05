@@ -1,0 +1,47 @@
+# Testing Dependencies for Trading System CI/CD
+
+# Testing Framework
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-mock==3.12.0
+pytest-cov==4.1.0
+pytest-xdist==3.5.0
+
+# HTTP Testing
+httpx==0.25.2
+requests-mock==1.11.0
+
+# Database Testing
+pytest-postgresql==5.0.0
+pytest-redis==3.0.2
+
+# Code Quality
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+isort==5.12.0
+
+# Security Testing
+bandit==1.7.5
+safety==2.3.5
+
+# Performance Testing
+locust==2.17.0
+memory-profiler==0.61.0
+
+# Test Data
+factory-boy==3.3.0
+faker==20.1.0
+
+# Documentation Testing
+doctest==1.0
+sphinx==7.2.6
+
+# Coverage
+coverage==7.3.2
+codecov==2.1.13
+
+# Utilities
+freezegun==1.2.2
+responses==0.24.1
+testcontainers==3.7.1 

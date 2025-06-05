@@ -20,10 +20,14 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure this appropriately for production
+    allow_origins=[
+        "http://localhost:3000",  # React development server
+        "http://localhost:8080",  # Alternative development port
+        "https://yourdomain.com", # Production domain - replace with actual domain
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Store orchestrator instance

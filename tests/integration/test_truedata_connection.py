@@ -4,6 +4,7 @@ Test script for TrueData connection and functionality
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timedelta
 import pandas as pd
 from truedata_provider import TrueDataProvider
@@ -102,21 +103,25 @@ async def test_real_time_data(provider: TrueDataProvider, symbol: str) -> bool:
 
 async def run_tests():
     """Run all tests"""
-    # Configuration
+    # Configuration - using environment variables for security
     config = {
-        'username': 'Trial106',
-        'password': 'shyam106',
-        'live_port': 8086,
+        'username': os.getenv('TRUEDATA_USERNAME', 'test_user'),
+        'password': os.getenv('TRUEDATA_PASSWORD', 'test_password'),
+        'live_port': int(os.getenv('TRUEDATA_PORT', '8086')),
         'log_level': logging.INFO,
-        'url': 'push.truedata.in',
-        'is_sandbox': True,
-        'sandbox_max_symbols': 5,
+        'url': os.getenv('TRUEDATA_URL', 'push.truedata.in'),
+        'is_sandbox': os.getenv('TRUEDATA_SANDBOX', 'true').lower() == 'true',
+        'sandbox_max_symbols': int(os.getenv('TRUEDATA_MAX_SYMBOLS', '5')),
         'sandbox_allowed_symbols': ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS', 'INFY'],
         'max_connection_attempts': 3,
         'reconnect_delay': 5,
         'heartbeat_interval': 30,
         'connection_timeout': 60
     }
+    
+    # Validate required environment variables
+    if config['username'] == 'test_user' or config['password'] == 'test_password':
+        logger.warning("⚠️ Using default test credentials. Set TRUEDATA_USERNAME and TRUEDATA_PASSWORD environment variables for actual testing.")
     
     # Initialize provider
     provider = TrueDataProvider(config)
