@@ -1,0 +1,102 @@
+{
+  "summary": {
+    "total": 15,
+    "passed": 15,
+    "failed": 0,
+    "warned": 0,
+    "success_rate": 100.0,
+    "timestamp": "2025-06-05T23:48:17.043148"
+  },
+  "results": {
+    "Python Environment": {
+      "status": "PASS",
+      "message": "Python 3.13.3 (Compatible)",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:10.602280"
+    },
+    "Virtual Environment": {
+      "status": "PASS",
+      "message": "Active: D:\\trading-system-new\\venv",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:10.602783"
+    },
+    "Core Dependencies": {
+      "status": "PASS",
+      "message": "All 7 packages available",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:13.292986"
+    },
+    "Main Module Import": {
+      "status": "PASS",
+      "message": "Main module imported successfully",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:13.787587"
+    },
+    "FastAPI Application": {
+      "status": "PASS",
+      "message": "API responds: ok",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:13.972339"
+    },
+    "Health Check Endpoint": {
+      "status": "PASS",
+      "message": "Health endpoint responds: unhealthy",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:13.978846"
+    },
+    "API Documentation": {
+      "status": "PASS",
+      "message": "Documentation available",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:13.986779"
+    },
+    "Logging System": {
+      "status": "PASS",
+      "message": "Logging system operational",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:13.988834"
+    },
+    "Security Module": {
+      "status": "PASS",
+      "message": "Security module available",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:13.989192"
+    },
+    "Health Checker": {
+      "status": "PASS",
+      "message": "Health checker module available",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:13.989531"
+    },
+    "Configuration Manager": {
+      "status": "PASS",
+      "message": "Configuration manager available",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:14.000780"
+    },
+    "Core Orchestrator": {
+      "status": "PASS",
+      "message": "Trading orchestrator class available",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:14.003747"
+    },
+    "Project Structure": {
+      "status": "PASS",
+      "message": "All 12 items present",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:14.005911"
+    },
+    "VS Code Configuration": {
+      "status": "PASS",
+      "message": "VS Code configured",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:14.008791"
+    },
+    "Server Startup (Quick)": {
+      "status": "PASS",
+      "message": "Server startup verified (basic check)",
+      "details": "",
+      "timestamp": "2025-06-05T23:48:17.026802"
+    }
+  }
+}

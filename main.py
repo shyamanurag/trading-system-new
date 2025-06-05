@@ -21,14 +21,14 @@ from typing import Dict, Optional
 # Import unified systems
 from common.logging import setup_logging, get_logger
 from common.health_checker import HealthChecker
-from security.auth_manager import SecurityManager
+from security import SecurityManager
 from monitoring.security_monitor import SecurityMonitor
 from utils.backup_manager import BackupManager
 from scripts.shutdown import GracefulShutdown
 
 # Setup unified logging first
-setup_logging(log_level="INFO", enable_prometheus=True)
-logger = get_logger(__name__, component="main")
+setup_logging(level="INFO")
+logger = get_logger(__name__)
 
 # Initialize FastAPI app with comprehensive metadata
 app = FastAPI(
