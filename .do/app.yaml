@@ -1,5 +1,21 @@
 name: trading-system-fullstack
 
+# Database Services
+databases:
+  # Redis for caching and real-time data
+  - name: redis-cache
+    engine: REDIS
+    version: "7"
+    size: basic-s
+    num_nodes: 1
+    
+  # PostgreSQL for persistent data
+  - name: trading-db
+    engine: PG
+    version: "15"
+    size: basic-s
+    num_nodes: 1
+
 services:
   # Backend API Service (Docker)
   - name: api
@@ -13,6 +29,26 @@ services:
       value: "8000"
     - key: ENVIRONMENT
       value: production
+    - key: REDIS_URL
+      value: ${redis-cache.PRIVATE_URL}
+    - key: DATABASE_URL
+      value: ${trading-db.DATABASE_URL}
+    - key: REDIS_HOST
+      value: ${redis-cache.HOSTNAME}
+    - key: REDIS_PORT
+      value: ${redis-cache.PORT}
+    - key: REDIS_PASSWORD
+      value: ${redis-cache.PASSWORD}
+    - key: DB_HOST
+      value: ${trading-db.HOSTNAME}
+    - key: DB_PORT
+      value: ${trading-db.PORT}
+    - key: DB_NAME
+      value: ${trading-db.DATABASE}
+    - key: DB_USER
+      value: ${trading-db.USERNAME}
+    - key: DB_PASSWORD
+      value: ${trading-db.PASSWORD}
 
   # Frontend Service (Static Site)
   - name: frontend
