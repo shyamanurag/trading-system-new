@@ -1,0 +1,42 @@
+# Local Development Requirements - Simplified for Windows
+# Excluding PostgreSQL and problematic dependencies
+
+# Core API Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.6
+passlib[bcrypt]==1.7.4
+PyJWT==2.8.0
+
+# Database & Caching (SQLite instead of PostgreSQL)
+redis==5.0.1
+sqlalchemy==2.0.23
+alembic==1.13.1
+
+# HTTP & WebSocket
+httpx==0.25.2
+aiohttp==3.9.1
+websockets==12.0
+aiofiles==23.2.1
+
+# Data Processing (simplified)
+pandas==2.1.4
+numpy==1.25.2
+
+# Background Tasks
+asyncio-mqtt==0.16.1
+
+# Development & Monitoring
+python-dotenv==1.0.0
+pyyaml==6.0.1
+rich==13.7.0
+
+# Authentication & Security
+bcrypt==4.1.2
+cryptography==41.0.7
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1 
