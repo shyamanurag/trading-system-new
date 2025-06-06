@@ -1,4 +1,16 @@
 # Multi-stage build for Trading System
+FROM node:18-slim as frontend-builder
+
+# Copy frontend files
+WORKDIR /app
+COPY package*.json ./
+COPY vite.config.js ./
+COPY src/frontend ./src/frontend
+
+# Install and build frontend
+RUN npm install
+RUN npm run build
+
 FROM python:3.11-slim as builder
 
 # Build arguments for cache busting - REDIS DEBUG BUILD
@@ -44,6 +56,9 @@ WORKDIR /app
 
 # Copy application code
 COPY . /app/
+
+# Copy built frontend from frontend-builder stage
+COPY --from=frontend-builder /app/dist/frontend /app/dist/frontend
 
 # Create timestamp file for cache busting - REDIS DEBUG BUILD
 RUN echo "Build timestamp: ${BUILD_DATE} - Redis Debug Build - Environment Variable Priority Fix" > .build-timestamp
