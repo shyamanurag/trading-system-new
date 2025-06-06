@@ -1,5 +1,5 @@
-﻿# Trading System Docker Requirements - Updated 2025-06-06 05:02 UTC
-# Force rebuild with JWT dependencies fix
+﻿# Trading System Docker Requirements - Updated 2025-06-06 05:30 UTC
+# Force rebuild with cryptography version fix
 
 # Core API Framework
 fastapi==0.104.1
@@ -44,7 +44,7 @@ pyyaml==6.0.1
 
 # Authentication & Security
 bcrypt==4.1.2
-cryptography==41.0.8
+cryptography==41.0.7
 
 # Testing
 pytest==7.4.3
