@@ -176,7 +176,7 @@ const ComprehensiveTradingDashboard = () => {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box>
                         <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
-                            Elite Trading System
+                            🚀 TEST: NEW VERSION DEPLOYED! 🚀 Elite Trading System
                         </Typography>
                         <Typography variant="h6" sx={{ opacity: 0.9 }}>
                             Professional Trading Platform with AI-Powered Analytics
