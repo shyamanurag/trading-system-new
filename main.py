@@ -1,6 +1,7 @@
 # main.py
 """
 Main Application Entry Point with OpenAPI Documentation
+Updated: 2025-06-06 - FORCE DEPLOYMENT WITH FRONTEND FIX
 """
 
 import asyncio
