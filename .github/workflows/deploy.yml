@@ -110,7 +110,7 @@ jobs:
         fail_ci_if_error: true
         
     - name: Upload security reports
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: security-reports
         path: |
@@ -298,7 +298,7 @@ jobs:
         docker pull ${{ needs.build.outputs.image-tag }} || echo "Image not available for security scan"
         
     - name: Upload security scan results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: security-scans
         path: |
@@ -329,7 +329,7 @@ jobs:
         K6_API_TOKEN: ${{ secrets.STAGING_API_TOKEN }}
         
     - name: Upload performance results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: performance-results
         path: performance-report.json
