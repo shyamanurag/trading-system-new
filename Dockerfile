@@ -2,8 +2,8 @@
 FROM python:3.11-slim as builder
 
 # Build arguments for cache busting
-ARG BUILD_DATE=2025-06-06-06-05
-ARG FORCE_REBUILD=true
+ARG BUILD_DATE=2025-06-06-06-21
+ARG FORCE_REBUILD=FORCE_NEW_BUILD
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
