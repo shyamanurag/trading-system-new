@@ -1,9 +1,9 @@
 # Multi-stage build for Trading System
 FROM python:3.11-slim as builder
 
-# Build arguments for cache busting
-ARG BUILD_DATE=2025-06-06-06-21
-ARG FORCE_REBUILD=FORCE_NEW_BUILD
+# Build arguments for cache busting - UPDATED FOR REDIS FIX
+ARG BUILD_DATE=2025-06-06-06-45
+ARG FORCE_REBUILD=REDIS_ENV_VAR_FIX_V2
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     libpq-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -35,6 +36,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y \
     libpq5 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
@@ -43,8 +45,8 @@ WORKDIR /app
 # Copy application code
 COPY . /app/
 
-# Create timestamp file for cache busting
-RUN echo "Build timestamp: ${BUILD_DATE}" > .build-timestamp
+# Create timestamp file for cache busting - REDIS ENV VAR FIX
+RUN echo "Build timestamp: ${BUILD_DATE} - Redis Environment Variable Fix Applied" > .build-timestamp
 
 # Set environment variables
 ENV PYTHONPATH=/app \
