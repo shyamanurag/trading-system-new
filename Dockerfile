@@ -1,6 +1,10 @@
 # Use multi-stage build for smaller final image
 FROM python:3.11-slim as builder
 
+# Build timestamp for cache busting - Updated 2025-06-06 04:35
+ARG BUILD_DATE=2025-06-06-04-35
+ENV BUILD_DATE=${BUILD_DATE}
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

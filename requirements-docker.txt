@@ -1,4 +1,7 @@
-﻿# Core API Framework
+﻿# Trading System Docker Requirements - Updated 2025-06-06 04:35 UTC
+# Force rebuild with missing dependencies fix
+
+# Core API Framework
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
