@@ -277,6 +277,11 @@ async def init_redis():
 async def init_security():
     """Initialize security components"""
     try:
+        # Only initialize if Redis is available
+        if not redis_client:
+            logger.warning("Redis not available, skipping security components")
+            return None, None
+            
         # Initialize security manager
         security_manager = SecurityManager(config, redis_client)
         # Note: AuthManager doesn't have a start() method, so we skip this for now
