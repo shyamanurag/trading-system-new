@@ -52,6 +52,7 @@ jobs:
     - name: Run complete system test
       run: python complete_system_test.py
       
+    # Upload test results with latest artifact action
     - name: Upload test results
       if: always()
       uses: actions/upload-artifact@v4
