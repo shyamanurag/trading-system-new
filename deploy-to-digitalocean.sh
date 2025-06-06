@@ -120,6 +120,9 @@ run_remote "cd /opt/${PROJECT_NAME} && npm install"
 echo -e "${GREEN}Step 8: Build Frontend for Production${NC}"
 run_remote "cd /opt/${PROJECT_NAME} && npm run build"
 
+echo -e "${GREEN}Step 8.1: Verify Frontend Build${NC}"
+run_remote "cd /opt/${PROJECT_NAME} && ls -la dist/frontend/ || echo 'Frontend build directory not found'"
+
 echo -e "${GREEN}Step 9: Setup Nginx Configuration${NC}"
 cat > temp_nginx.conf << EOF
 server {
@@ -128,7 +131,7 @@ server {
 
     # Frontend (React build)
     location / {
-        root /opt/${PROJECT_NAME}/build;
+        root /opt/${PROJECT_NAME}/dist/frontend;
         index index.html index.htm;
         try_files \$uri \$uri/ /index.html;
     }

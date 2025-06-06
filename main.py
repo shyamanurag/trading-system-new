@@ -7,9 +7,10 @@ import asyncio
 import logging
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 import yaml
 from pathlib import Path
@@ -139,6 +140,11 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+# Mount static files for frontend
+static_dir = Path("dist/frontend")
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Custom OpenAPI schema
 def custom_openapi():
@@ -593,3 +599,25 @@ if __name__ == "__main__":
         log_level="info",
         access_log=True,
     )
+
+# Catch-all route for SPA (must be last)
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    """Serve React SPA for all non-API routes"""
+    # Exclude API routes and docs
+    if full_path.startswith(("api/", "docs", "health", "webhook", "control", "static/")):
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    # Check if it's a static file request
+    static_dir = Path("dist/frontend")
+    if static_dir.exists():
+        file_path = static_dir / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        
+        # Fallback to index.html for SPA routing
+        index_file = static_dir / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file)
+    
+    raise HTTPException(status_code=404, detail="Frontend not found")
