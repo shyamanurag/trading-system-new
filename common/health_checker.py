@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import redis.asyncio as redis
 from prometheus_client import Gauge, Counter
+import os
 
 # Prometheus metrics
 health_status_gauge = Gauge(
@@ -106,7 +107,8 @@ class HealthChecker:
         try:
             # Initialize Redis connection if configured
             if 'redis' in self.config:
-                redis_url = self.config['redis'].get('url', 'redis://localhost:6379')
+                # Prioritize environment variables for DigitalOcean deployment
+                redis_url = os.getenv('REDIS_URL') or self.config['redis'].get('url', 'redis://localhost:6379')
                 self.redis_client = redis.from_url(redis_url, decode_responses=True)
                 
             # Register default health checks

@@ -17,6 +17,7 @@ import redis.asyncio as redis
 from datetime import datetime
 import json
 from typing import Dict, Optional
+import os
 
 # Import unified systems
 from common.logging import setup_logging, get_logger
@@ -242,10 +243,14 @@ async def load_config():
 async def init_redis():
     """Initialize Redis connection"""
     try:
-        redis_url = config.get('redis', {}).get('url', 'redis://localhost:6379')
+        # Prioritize environment variables for DigitalOcean deployment
+        redis_url = os.getenv('REDIS_URL') or config.get('redis', {}).get('url', 'redis://localhost:6379')
+        logger.info(f"Attempting to connect to Redis: {redis_url[:20]}...")  # Log first 20 chars for debugging
+        
         client = redis.from_url(redis_url, decode_responses=True)
         # Test connection
         await client.ping()
+        logger.info("Redis connection successful")
         return client
     except Exception as e:
         logger.error(f"Error connecting to Redis: {e}")
