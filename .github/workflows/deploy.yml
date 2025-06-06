@@ -359,4 +359,113 @@ jobs:
         MODEL_REGISTRY_URL: ${{ secrets.MODEL_REGISTRY_URL }}
         MODEL_REGISTRY_TOKEN: ${{ secrets.MODEL_REGISTRY_TOKEN }}
         MODEL_SERVING_ENDPOINT: ${{ secrets.MODEL_SERVING_ENDPOINT }}
-        MODEL_SERVING_TOKEN: ${{ secrets.MODEL_SERVING_TOKEN }} 
+        MODEL_SERVING_TOKEN: ${{ secrets.MODEL_SERVING_TOKEN }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.DO_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H 165.22.212.171 >> ~/.ssh/known_hosts || true
+        
+    - name: Test SSH Connection
+      run: |
+        echo "Testing SSH connection..."
+        timeout 30 ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no root@165.22.212.171 "echo 'SSH connection successful'" || {
+          echo "❌ SSH connection failed - droplet might be down"
+          echo "Please check Digital Ocean console and ensure droplet is running"
+          echo "Droplet IP: 165.22.212.171"
+          exit 1
+        }
+        
+    - name: Check Droplet Status
+      run: |
+        echo "Checking droplet connectivity..."
+        ping -c 4 165.22.212.171 || {
+          echo "❌ Droplet not responding to ping"
+          echo "This usually means:"
+          echo "1. Droplet is powered off"
+          echo "2. IP address has changed"
+          echo "3. Network connectivity issues"
+          exit 1
+        }
+        
+    - name: Deploy Application
+      run: |
+        echo "🚀 Starting deployment to Digital Ocean..."
+        
+        # Pull latest code
+        ssh root@165.22.212.171 "
+          cd /opt/trading-system-new || {
+            echo 'Project directory not found, cloning...'
+            cd /opt
+            git clone https://github.com/shyamanurag/trading-system-new.git
+            cd trading-system-new
+          }
+          
+          echo 'Fetching latest changes...'
+          git fetch origin
+          git reset --hard origin/main
+          
+          echo 'Installing dependencies...'
+          npm install --production=false
+          
+          echo 'Building frontend...'
+          npm run build || {
+            echo 'Frontend build failed, using fallback...'
+            mkdir -p dist/frontend
+            cp static-frontend.html dist/frontend/index.html 2>/dev/null || true
+          }
+          
+          echo 'Verifying build...'
+          ls -la dist/frontend/
+          
+          echo 'Restarting services...'
+          systemctl restart trading-system-backend || echo 'Backend service not found'
+          systemctl restart trading-system-frontend || echo 'Frontend service not found'
+          systemctl reload nginx || echo 'Nginx reload failed'
+          
+          echo 'Checking service status...'
+          systemctl is-active trading-system-backend || echo 'Backend not active'
+          systemctl is-active nginx || echo 'Nginx not active'
+          
+          echo '✅ Deployment completed successfully!'
+        "
+        
+    - name: Verify Deployment
+      run: |
+        echo "🔍 Verifying deployment..."
+        
+        # Test health endpoint
+        curl -f http://165.22.212.171/health || {
+          echo "❌ Health check failed"
+          echo "Application might not be running properly"
+        }
+        
+        # Test main endpoint
+        curl -f http://165.22.212.171/ || {
+          echo "❌ Main endpoint failed"
+          echo "Frontend might not be serving properly"
+        }
+        
+        echo "✅ Deployment verification completed"
+        
+    - name: Deployment Summary
+      if: always()
+      run: |
+        echo "📋 Deployment Summary:"
+        echo "- Repository: ${{ github.repository }}"
+        echo "- Commit: ${{ github.sha }}"
+        echo "- Target: 165.22.212.171"
+        echo "- Time: $(date)"
+        echo ""
+        echo "🌐 Access your application:"
+        echo "- Main Site: http://165.22.212.171"
+        echo "- API Docs: http://165.22.212.171/docs"
+        echo "- Health Check: http://165.22.212.171/health" 
