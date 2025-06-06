@@ -2,7 +2,7 @@
 FROM python:3.11-slim as builder
 
 # Build arguments for cache busting
-ARG BUILD_DATE=2025-06-06-05-30
+ARG BUILD_DATE=2025-06-06-06-05
 ARG FORCE_REBUILD=true
 
 # Set environment variables
