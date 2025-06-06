@@ -145,6 +145,8 @@ app.add_middleware(
 static_dir = Path("dist/frontend")
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    # Also mount the dist/frontend directory directly for asset files
+    app.mount("/assets", StaticFiles(directory=static_dir), name="frontend_assets")
 
 # Custom OpenAPI schema
 def custom_openapi():
@@ -605,19 +607,26 @@ if __name__ == "__main__":
 async def serve_spa(full_path: str):
     """Serve React SPA for all non-API routes"""
     # Exclude API routes and docs
-    if full_path.startswith(("api/", "docs", "health", "webhook", "control", "static/")):
+    if full_path.startswith(("api/", "docs", "health", "webhook", "control", "static/", "assets/")):
         raise HTTPException(status_code=404, detail="Not found")
     
     # Check if it's a static file request
     static_dir = Path("dist/frontend")
     if static_dir.exists():
+        # If it's an empty path or root, serve index.html
+        if not full_path or full_path == "/":
+            index_file = static_dir / "index.html"
+            if index_file.exists():
+                return FileResponse(index_file, media_type="text/html")
+        
+        # Try to serve the requested file
         file_path = static_dir / full_path
         if file_path.exists() and file_path.is_file():
             return FileResponse(file_path)
         
-        # Fallback to index.html for SPA routing
+        # For all other routes (SPA routing), fallback to index.html
         index_file = static_dir / "index.html"
         if index_file.exists():
-            return FileResponse(index_file)
+            return FileResponse(index_file, media_type="text/html")
     
     raise HTTPException(status_code=404, detail="Frontend not found")

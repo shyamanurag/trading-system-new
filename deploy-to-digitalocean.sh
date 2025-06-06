@@ -122,6 +122,10 @@ run_remote "cd /opt/${PROJECT_NAME} && npm run build"
 
 echo -e "${GREEN}Step 8.1: Verify Frontend Build${NC}"
 run_remote "cd /opt/${PROJECT_NAME} && ls -la dist/frontend/ || echo 'Frontend build directory not found'"
+run_remote "cd /opt/${PROJECT_NAME} && test -f dist/frontend/index.html && echo 'index.html found' || echo 'ERROR: index.html not found in build'"
+
+echo -e "${GREEN}Step 8.2: Create fallback if build failed${NC}"
+run_remote "cd /opt/${PROJECT_NAME} && if [ ! -f dist/frontend/index.html ]; then mkdir -p dist/frontend && cp src/frontend/index.html dist/frontend/ && echo 'Created fallback index.html'; fi"
 
 echo -e "${GREEN}Step 9: Setup Nginx Configuration${NC}"
 cat > temp_nginx.conf << EOF
