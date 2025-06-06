@@ -1,9 +1,9 @@
 # Multi-stage build for Trading System
 FROM python:3.11-slim as builder
 
-# Build arguments for cache busting - UPDATED FOR REDIS FIX
-ARG BUILD_DATE=2025-06-06-06-45
-ARG FORCE_REBUILD=REDIS_ENV_VAR_FIX_V2
+# Build arguments for cache busting - REDIS DEBUG BUILD
+ARG BUILD_DATE=2025-06-06-06-50
+ARG FORCE_REBUILD=REDIS_DEBUG_BUILD_V3
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -45,8 +45,8 @@ WORKDIR /app
 # Copy application code
 COPY . /app/
 
-# Create timestamp file for cache busting - REDIS ENV VAR FIX
-RUN echo "Build timestamp: ${BUILD_DATE} - Redis Environment Variable Fix Applied" > .build-timestamp
+# Create timestamp file for cache busting - REDIS DEBUG BUILD
+RUN echo "Build timestamp: ${BUILD_DATE} - Redis Debug Build - Environment Variable Priority Fix" > .build-timestamp
 
 # Set environment variables
 ENV PYTHONPATH=/app \

@@ -243,17 +243,25 @@ async def load_config():
 async def init_redis():
     """Initialize Redis connection"""
     try:
-        # Prioritize environment variables for DigitalOcean deployment
-        redis_url = os.getenv('REDIS_URL') or config.get('redis', {}).get('url', 'redis://localhost:6379')
-        logger.info(f"Attempting to connect to Redis: {redis_url[:20]}...")  # Log first 20 chars for debugging
+        # FORCE REBUILD - Prioritize environment variables for DigitalOcean deployment
+        redis_url = os.getenv('REDIS_URL')
+        config_redis_url = config.get('redis', {}).get('url', 'redis://localhost:6379')
         
-        client = redis.from_url(redis_url, decode_responses=True)
+        # Debug logging for troubleshooting
+        logger.info(f"REDIS_URL environment variable: {redis_url[:30] + '...' if redis_url else 'NOT SET'}")
+        logger.info(f"Config Redis URL: {config_redis_url[:30]}...")
+        
+        # Use environment variable if available, otherwise fall back to config
+        final_redis_url = redis_url or config_redis_url
+        logger.info(f"Final Redis URL being used: {final_redis_url[:30]}...")
+        
+        client = redis.from_url(final_redis_url, decode_responses=True)
         # Test connection
         await client.ping()
-        logger.info("Redis connection successful")
+        logger.info("✅ Redis connection successful!")
         return client
     except Exception as e:
-        logger.error(f"Error connecting to Redis: {e}")
+        logger.error(f"❌ Error connecting to Redis: {e}")
         # Return None for non-critical Redis failures
         return None
 
