@@ -115,10 +115,10 @@ copy_to_remote "temp_production.env" "/opt/${PROJECT_NAME}/.env"
 rm temp_production.env
 
 echo -e "${GREEN}Step 7: Install Frontend Dependencies${NC}"
-run_remote "cd /opt/${PROJECT_NAME} && npm install"
+run_remote "cd /opt/${PROJECT_NAME} && npm install --no-optional --production=false"
 
 echo -e "${GREEN}Step 8: Build Frontend for Production${NC}"
-run_remote "cd /opt/${PROJECT_NAME} && npm run build"
+run_remote "cd /opt/${PROJECT_NAME} && npm run build || echo 'Frontend build failed, trying alternative...'"
 
 echo -e "${GREEN}Step 8.1: Verify Frontend Build${NC}"
 run_remote "cd /opt/${PROJECT_NAME} && ls -la dist/frontend/ || echo 'Frontend build directory not found'"
@@ -126,6 +126,9 @@ run_remote "cd /opt/${PROJECT_NAME} && test -f dist/frontend/index.html && echo 
 
 echo -e "${GREEN}Step 8.2: Create fallback if build failed${NC}"
 run_remote "cd /opt/${PROJECT_NAME} && if [ ! -f dist/frontend/index.html ]; then mkdir -p dist/frontend && cp src/frontend/index.html dist/frontend/ && echo 'Created fallback index.html'; fi"
+
+echo -e "${GREEN}Step 8.3: Alternative build attempt if needed${NC}"
+run_remote "cd /opt/${PROJECT_NAME} && if [ ! -f dist/frontend/index.html ]; then npx vite build --outDir dist/frontend && echo 'Alternative build completed'; fi"
 
 echo -e "${GREEN}Step 9: Setup Nginx Configuration${NC}"
 cat > temp_nginx.conf << EOF

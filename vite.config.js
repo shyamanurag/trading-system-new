@@ -7,6 +7,8 @@ export default defineConfig({
     build: {
         outDir: '../../dist/frontend',
         emptyOutDir: true,
+        sourcemap: false,
+        minify: 'esbuild',
         rollupOptions: {
             output: {
                 manualChunks: undefined,
