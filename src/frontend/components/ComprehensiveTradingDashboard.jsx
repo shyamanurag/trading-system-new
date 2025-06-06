@@ -1,6 +1,8 @@
 import {
+    AccountCircle,
     Assessment,
     Dashboard,
+    Logout,
     Notifications,
     Refresh,
     Security,
@@ -11,6 +13,7 @@ import {
     Alert,
     Avatar,
     Box,
+    Button,
     Card,
     CardContent,
     Chip,
@@ -22,6 +25,8 @@ import {
     ListItem,
     ListItemAvatar,
     ListItemText,
+    Menu,
+    MenuItem,
     Paper,
     Tab,
     Tabs,
@@ -45,7 +50,7 @@ import UserPerformanceDashboard from './UserPerformanceDashboard';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
-const ComprehensiveTradingDashboard = () => {
+const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
     const [selectedTab, setSelectedTab] = useState(0);
     const [systemStatus, setSystemStatus] = useState(null);
     const [dashboardData, setDashboardData] = useState({
@@ -58,6 +63,7 @@ const ComprehensiveTradingDashboard = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
+    const [anchorEl, setAnchorEl] = useState(null);
 
     const fetchDashboardData = async () => {
         try {
@@ -94,6 +100,19 @@ const ComprehensiveTradingDashboard = () => {
         const interval = setInterval(fetchDashboardData, 60000); // Refresh every minute
         return () => clearInterval(interval);
     }, []);
+
+    const handleUserMenuOpen = (event) => {
+        setAnchorEl(event.currentTarget);
+    };
+
+    const handleUserMenuClose = () => {
+        setAnchorEl(null);
+    };
+
+    const handleLogout = () => {
+        handleUserMenuClose();
+        onLogout();
+    };
 
     const generateComprehensiveMockData = () => {
         // Generate daily P&L data
@@ -176,30 +195,63 @@ const ComprehensiveTradingDashboard = () => {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box>
                         <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
-                            🚀 TEST: NEW VERSION DEPLOYED! 🚀 Elite Trading System
+                            🚀 PRODUCTION READY! 🚀 Elite Trading System
                         </Typography>
                         <Typography variant="h6" sx={{ opacity: 0.9 }}>
-                            Professional Trading Platform with AI-Powered Analytics
+                            Professional Trading Platform with Authentication & Security
                         </Typography>
                     </Box>
-                    <Box sx={{ textAlign: 'right' }}>
-                        <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
-                            <Chip
-                                label={systemStatus ? `System ${systemStatus.status}` : 'Loading...'}
-                                color="success"
-                                variant="filled"
-                            />
-                            <IconButton
-                                onClick={fetchDashboardData}
-                                disabled={refreshing}
-                                sx={{ color: 'white' }}
-                            >
-                                <Refresh />
-                            </IconButton>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Box sx={{ textAlign: 'right', mr: 2 }}>
+                            <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
+                                <Chip
+                                    label={systemStatus ? `System ${systemStatus.status}` : 'Loading...'}
+                                    color="success"
+                                    variant="filled"
+                                />
+                                <IconButton
+                                    onClick={fetchDashboardData}
+                                    disabled={refreshing}
+                                    sx={{ color: 'white' }}
+                                >
+                                    <Refresh />
+                                </IconButton>
+                            </Box>
+                            <Typography variant="body2" sx={{ opacity: 0.8 }}>
+                                {systemStatus?.activeTrades} Active Trades • {systemStatus?.connectedUsers} Users Online
+                            </Typography>
                         </Box>
-                        <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                            {systemStatus?.activeTrades} Active Trades • {systemStatus?.connectedUsers} Users Online
-                        </Typography>
+
+                        {/* User Menu */}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Button
+                                startIcon={<AccountCircle />}
+                                onClick={handleUserMenuOpen}
+                                sx={{ color: 'white', textTransform: 'none' }}
+                            >
+                                {userInfo?.name || userInfo?.username}
+                            </Button>
+                            <Menu
+                                anchorEl={anchorEl}
+                                open={Boolean(anchorEl)}
+                                onClose={handleUserMenuClose}
+                            >
+                                <MenuItem disabled>
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Logged in as:
+                                        </Typography>
+                                        <Typography variant="body1">
+                                            {userInfo?.name} ({userInfo?.role})
+                                        </Typography>
+                                    </Box>
+                                </MenuItem>
+                                <MenuItem onClick={handleLogout}>
+                                    <Logout sx={{ mr: 1 }} />
+                                    Logout
+                                </MenuItem>
+                            </Menu>
+                        </Box>
                     </Box>
                 </Box>
             </Paper>

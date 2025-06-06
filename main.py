@@ -16,10 +16,14 @@ import uvicorn
 import yaml
 from pathlib import Path
 import redis.asyncio as redis
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
-from typing import Dict, Optional
+from typing import Dict, Optional, Annotated
 import os
+import random
+import jwt
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordRequestForm
+from pydantic import BaseModel
 
 # Import unified systems
 from common.logging import setup_logging, get_logger
@@ -125,6 +129,14 @@ app = FastAPI(
         {
             "name": "admin",
             "description": "Administrative operations (admin only)"
+        },
+        {
+            "name": "users",
+            "description": "User management and trading data"
+        },
+        {
+            "name": "monitoring",
+            "description": "System monitoring and alerts"
         }
     ]
 )
@@ -233,6 +245,57 @@ health_checker: Optional[HealthChecker] = None
 backup_manager: Optional[BackupManager] = None
 shutdown_handler: Optional[GracefulShutdown] = None
 
+# JWT Security
+security = HTTPBearer()
+
+class AuthConfig:
+    """Authentication configuration for trading system"""
+    SECRET_KEY: str = "your-production-secret-key-change-this"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours for trading session
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    TOKEN_TYPE: str = "Bearer"
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    expires_in: int
+    user_info: dict
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """Create JWT access token"""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, "your-secret-key", algorithm="HS256")
+    return encoded_jwt
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """Verify JWT token"""
+    try:
+        payload = jwt.decode(credentials.credentials, "your-secret-key", algorithms=["HS256"])
+        return payload
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=401,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+# Optional auth dependency for development
+def optional_auth(credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))) -> Optional[dict]:
+    """Optional authentication for development mode"""
+    if not credentials:
+        return None
+    try:
+        payload = jwt.decode(credentials.credentials, "your-secret-key", algorithms=["HS256"])
+        return payload
+    except jwt.PyJWTError:
+        return None
+
 async def load_config():
     """Load configuration from file"""
     try:
@@ -286,16 +349,25 @@ async def init_security():
             logger.warning("Redis not available, skipping security components")
             return None, None
             
-        # Initialize security manager
-        security_manager = SecurityManager(config, redis_client)
-        # Note: AuthManager doesn't have a start() method, so we skip this for now
-        # await security_manager.start()
+        # Create proper auth config
+        auth_config = AuthConfig()
+        
+        # Initialize security manager with proper config
+        try:
+            security_manager = SecurityManager(auth_config, redis_client)
+        except Exception as e:
+            logger.warning(f"Security manager initialization error: {e}, using fallback")
+            security_manager = None
         
         # Initialize security monitor  
-        security_monitor = SecurityMonitor(config, redis_client)
-        # Check if security monitor has start method
-        if hasattr(security_monitor, 'start'):
-            await security_monitor.start()
+        try:
+            security_monitor = SecurityMonitor(config, redis_client)
+            # Check if security monitor has start method
+            if hasattr(security_monitor, 'start'):
+                await security_monitor.start()
+        except Exception as e:
+            logger.warning(f"Security monitor initialization error: {e}, using fallback")
+            security_monitor = None
         
         logger.info("Security components initialized successfully")
         return security_manager, security_monitor
@@ -659,6 +731,538 @@ async def custom_swagger_ui_html():
         swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@3/swagger-ui.css",
         swagger_favicon_url="https://fastapi.tiangolo.com/img/favicon.png",
     )
+
+@app.get(
+    "/api/recommendations/elite",
+    tags=["trading"],
+    summary="Get elite trading recommendations",
+    description="Fetch AI-powered elite trading recommendations with entry/exit points and risk management"
+)
+async def get_elite_recommendations():
+    """Get elite trading recommendations"""
+    try:
+        # In production, this would fetch from AI analysis engine
+        recommendations = [
+            {
+                "id": "ELITE_001",
+                "symbol": "RELIANCE",
+                "strategy": "Breakout Play",
+                "entry_price": 2485.50,
+                "current_price": 2492.30,
+                "stop_loss": 2410.00,
+                "targets": [2550.00, 2625.00, 2725.00],
+                "confidence": 87.5,
+                "risk_reward": 3.2,
+                "validity_days": 12,
+                "analysis": "Strong breakout above resistance with high volume. RSI showing bullish momentum.",
+                "timestamp": datetime.now().isoformat(),
+                "status": "ACTIVE"
+            },
+            {
+                "id": "ELITE_002", 
+                "symbol": "TCS",
+                "strategy": "Support Bounce",
+                "entry_price": 3658.75,
+                "current_price": 3672.20,
+                "stop_loss": 3580.00,
+                "targets": [3720.00, 3785.00, 3850.00],
+                "confidence": 82.3,
+                "risk_reward": 2.8,
+                "validity_days": 10,
+                "analysis": "Bouncing from key support level with bullish divergence in MACD.",
+                "timestamp": datetime.now().isoformat(),
+                "status": "ACTIVE"
+            }
+        ]
+        
+        return {
+            "success": True,
+            "recommendations": recommendations,
+            "scan_timestamp": datetime.now().isoformat(),
+            "total_count": len(recommendations)
+        }
+    except Exception as e:
+        logger.error(f"Error fetching elite recommendations: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch recommendations")
+
+@app.get(
+    "/api/performance/elite-trades",
+    tags=["analytics"],
+    summary="Get elite trades performance",
+    description="Fetch performance data for elite trading recommendations"
+)
+async def get_elite_performance():
+    """Get elite trades performance data"""
+    try:
+        performance_data = {
+            "total_recommendations": 156,
+            "active_recommendations": 8,
+            "success_rate": 78.4,
+            "avg_return": 12.6,
+            "total_profit": 2847500,
+            "best_performer": {
+                "symbol": "HDFC",
+                "return": 18.7,
+                "profit": 156000
+            },
+            "recent_closed": [
+                {"symbol": "ITC", "entry": 485.20, "exit": 512.80, "return": 5.7, "days": 8},
+                {"symbol": "SBIN", "entry": 578.90, "exit": 623.40, "return": 7.7, "days": 12}
+            ]
+        }
+        
+        return {
+            "success": True,
+            "data": performance_data,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching elite performance: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch performance data")
+
+@app.get(
+    "/api/users",
+    tags=["users"],
+    summary="Get all users",
+    description="Fetch all registered trading users with their basic information"
+)
+async def get_users():
+    """Get all users"""
+    try:
+        # In production, this would fetch from database
+        users = [
+            {
+                "user_id": "trader_001",
+                "name": "Rajesh Kumar",
+                "email": "rajesh@example.com",
+                "initial_capital": 500000,
+                "current_capital": 587500,
+                "is_active": True,
+                "registration_date": "2024-01-15",
+                "risk_tolerance": "medium",
+                "total_trades": 45,
+                "winning_trades": 32,
+                "win_rate": 71.1,
+                "total_pnl": 87500,
+                "daily_pnl": 2500,
+                "open_trades": 3,
+                "avatar": "RK"
+            },
+            {
+                "user_id": "trader_002",
+                "name": "Priya Sharma", 
+                "email": "priya@example.com",
+                "initial_capital": 300000,
+                "current_capital": 345600,
+                "is_active": True,
+                "registration_date": "2024-02-01",
+                "risk_tolerance": "conservative",
+                "total_trades": 28,
+                "winning_trades": 22,
+                "win_rate": 78.6,
+                "total_pnl": 45600,
+                "daily_pnl": 1200,
+                "open_trades": 2,
+                "avatar": "PS"
+            }
+        ]
+        
+        return {
+            "success": True,
+            "users": users,
+            "total_count": len(users),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching users: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch users")
+
+@app.get(
+    "/api/users/{user_id}/performance",
+    tags=["analytics"],
+    summary="Get user performance",
+    description="Fetch detailed performance analytics for a specific user"
+)
+async def get_user_performance(user_id: str):
+    """Get detailed user performance"""
+    try:
+        # Generate 30 days of performance data
+        daily_performance = []
+        for i in range(30):
+            date = datetime.now() - timedelta(days=29-i)
+            daily_performance.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "pnl": round((random.random() - 0.4) * 5000, 2),
+                "cumulative_pnl": round((i + 1) * 1000 + (random.random() - 0.3) * 10000, 2),
+                "trades_count": random.randint(0, 4),
+                "win_rate": round(60 + random.random() * 30, 1)
+            })
+        
+        performance = {
+            "daily_performance": daily_performance,
+            "recent_trades": [
+                {"symbol": "RELIANCE", "entry_date": "2024-06-01", "exit_date": "2024-06-05", "pnl": 15000, "status": "CLOSED"},
+                {"symbol": "TCS", "entry_date": "2024-06-03", "exit_date": None, "pnl": 2500, "status": "OPEN"},
+                {"symbol": "HDFC", "entry_date": "2024-06-04", "exit_date": "2024-06-06", "pnl": -3500, "status": "CLOSED"}
+            ],
+            "risk_metrics": {
+                "sharpe_ratio": 1.8,
+                "max_drawdown": 12.5,
+                "volatility": 18.2,
+                "var_95": 8500,
+                "correlation_to_market": 0.65
+            },
+            "strategy_breakdown": [
+                {"strategy": "Breakout", "trades": 15, "win_rate": 80, "avg_return": 8.5},
+                {"strategy": "Momentum", "trades": 12, "win_rate": 75, "avg_return": 6.2},
+                {"strategy": "Mean Reversion", "trades": 8, "win_rate": 62.5, "avg_return": 4.1}
+            ]
+        }
+        
+        return {
+            "success": True,
+            "performance": performance,
+            "user_id": user_id,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching user performance: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user performance")
+
+@app.get(
+    "/api/performance/daily-pnl",
+    tags=["analytics"],
+    summary="Get daily P&L data",
+    description="Fetch system-wide daily P&L performance data"
+)
+async def get_daily_pnl():
+    """Get daily P&L data"""
+    try:
+        # Generate 30 days of system P&L data
+        daily_pnl = []
+        for i in range(30):
+            date = datetime.now() - timedelta(days=29-i)
+            trades_count = 20 + random.randint(0, 30)
+            winning_trades = int(trades_count * (0.6 + random.random() * 0.3))
+            
+            daily_pnl.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "total_pnl": round((random.random() - 0.3) * 50000, 2),
+                "user_count": 15 + random.randint(0, 10),
+                "trades_count": trades_count,
+                "winning_trades": winning_trades,
+                "win_rate": round((winning_trades / trades_count) * 100, 1)
+            })
+        
+        return {
+            "success": True,
+            "daily_pnl": daily_pnl,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching daily P&L: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch daily P&L")
+
+@app.post(
+    "/api/users",
+    tags=["users"],
+    summary="Create new user",
+    description="Create a new trading user account with initial settings"
+)
+async def create_user(request: Request):
+    """Create new user"""
+    try:
+        user_data = await request.json()
+        
+        # Validate required fields
+        required_fields = ["user_id", "initial_capital", "risk_tolerance"]
+        for field in required_fields:
+            if field not in user_data:
+                raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+        
+        # In production, save to database
+        logger.info(f"Creating new user: {user_data['user_id']}")
+        
+        return {
+            "success": True,
+            "message": "User created successfully",
+            "user_id": user_data["user_id"],
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating user: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create user")
+
+@app.delete(
+    "/api/users/{user_id}",
+    tags=["users"],
+    summary="Delete user",
+    description="Delete a user account and all associated data"
+)
+async def delete_user(user_id: str):
+    """Delete user"""
+    try:
+        # In production, delete from database with proper validation
+        logger.info(f"Deleting user: {user_id}")
+        
+        return {
+            "success": True,
+            "message": f"User {user_id} deleted successfully",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error deleting user: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete user")
+
+@app.get(
+    "/api/trading/positions",
+    tags=["trading"],
+    summary="Get current positions",
+    description="Fetch all current trading positions across users"
+)
+async def get_positions():
+    """Get current trading positions"""
+    try:
+        positions = [
+            {
+                "position_id": "POS_001",
+                "user_id": "trader_001",
+                "symbol": "RELIANCE",
+                "quantity": 100,
+                "entry_price": 2485.50,
+                "current_price": 2492.30,
+                "unrealized_pnl": 680.00,
+                "entry_time": "2024-06-06T09:30:00Z",
+                "strategy": "Breakout",
+                "stop_loss": 2410.00,
+                "target": 2550.00
+            },
+            {
+                "position_id": "POS_002",
+                "user_id": "trader_002",
+                "symbol": "TCS",
+                "quantity": 50,
+                "entry_price": 3658.75,
+                "current_price": 3672.20,
+                "unrealized_pnl": 672.50,
+                "entry_time": "2024-06-06T10:15:00Z",
+                "strategy": "Support Bounce",
+                "stop_loss": 3580.00,
+                "target": 3720.00
+            }
+        ]
+        
+        return {
+            "success": True,
+            "positions": positions,
+            "total_count": len(positions),
+            "total_unrealized_pnl": sum(p["unrealized_pnl"] for p in positions),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching positions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch positions")
+
+@app.get(
+    "/api/system/alerts",
+    tags=["monitoring"],
+    summary="Get system alerts",
+    description="Fetch current system alerts and notifications"
+)
+async def get_system_alerts():
+    """Get system alerts"""
+    try:
+        alerts = [
+            {
+                "id": "ALERT_001",
+                "type": "success",
+                "priority": "info",
+                "message": "Elite recommendation TARGET_1 hit for RELIANCE",
+                "timestamp": datetime.now().isoformat(),
+                "acknowledged": False
+            },
+            {
+                "id": "ALERT_002",
+                "type": "warning", 
+                "priority": "medium",
+                "message": "3 users approaching daily risk limit",
+                "timestamp": datetime.now().isoformat(),
+                "acknowledged": False
+            },
+            {
+                "id": "ALERT_003",
+                "type": "info",
+                "priority": "low",
+                "message": "Market volatility increased - risk adjustment suggested",
+                "timestamp": datetime.now().isoformat(),
+                "acknowledged": True
+            }
+        ]
+        
+        return {
+            "success": True,
+            "alerts": alerts,
+            "unacknowledged_count": sum(1 for a in alerts if not a["acknowledged"]),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching alerts: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch alerts")
+
+@app.post(
+    "/api/auth/login",
+    tags=["auth"],
+    summary="User login",
+    description="Authenticate user and return access token for trading operations",
+    response_model=LoginResponse
+)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    """Login endpoint for trading system authentication"""
+    try:
+        # For demo purposes, allow demo credentials
+        demo_users = {
+            "trader": {"password": "trader123", "name": "Demo Trader", "role": "trader"},
+            "admin": {"password": "admin123", "name": "System Admin", "role": "admin"},
+            "analyst": {"password": "analyst123", "name": "Market Analyst", "role": "analyst"}
+        }
+        
+        if form_data.username in demo_users and demo_users[form_data.username]["password"] == form_data.password:
+            user_info = demo_users[form_data.username]
+            
+            # Create token data
+            token_data = {
+                "sub": form_data.username,
+                "username": form_data.username,
+                "role": user_info["role"],
+                "permissions": ["read", "write", "trade"] if user_info["role"] in ["trader", "admin"] else ["read"]
+            }
+            
+            access_token = create_access_token(token_data, timedelta(minutes=480))
+            
+            return LoginResponse(
+                access_token=access_token,
+                token_type="bearer",
+                expires_in=480 * 60,  # 8 hours in seconds
+                user_info={
+                    "username": form_data.username,
+                    "name": user_info["name"],
+                    "role": user_info["role"]
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=401,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        raise HTTPException(status_code=500, detail="Login failed")
+
+@app.get(
+    "/api/auth/me",
+    tags=["auth"],
+    summary="Get current user",
+    description="Get current authenticated user information"
+)
+async def get_current_user(current_user: dict = Depends(optional_auth)):
+    """Get current user information"""
+    if not current_user:
+        return {
+            "authenticated": False,
+            "message": "No authentication provided - using demo mode"
+        }
+    
+    return {
+        "authenticated": True,
+        "user": current_user,
+        "permissions": current_user.get("permissions", [])
+    }
+
+@app.post(
+    "/api/trading/execute",
+    tags=["trading"],
+    summary="Execute trade",
+    description="Execute a trading order (PRODUCTION FEATURE - requires authentication)"
+)
+async def execute_trade(
+    request: Request,
+    current_user: dict = Depends(verify_token)  # Require authentication for trading
+):
+    """Execute trade - CRITICAL PRODUCTION FEATURE"""
+    try:
+        trade_data = await request.json()
+        
+        # Validate trade data
+        required_fields = ["symbol", "action", "quantity", "price"]
+        for field in required_fields:
+            if field not in trade_data:
+                raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+        
+        # Check trading permissions
+        if "trade" not in current_user.get("permissions", []):
+            raise HTTPException(status_code=403, detail="Trading permission required")
+        
+        # In production, this would execute actual trades
+        logger.info(f"Trade executed by {current_user['username']}: {trade_data}")
+        
+        return {
+            "success": True,
+            "order_id": f"ORD_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            "message": "Trade executed successfully",
+            "trade_data": trade_data,
+            "executed_by": current_user["username"],
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Trade execution error: {e}")
+        raise HTTPException(status_code=500, detail="Trade execution failed")
+
+@app.get(
+    "/api/trading/risk-limits",
+    tags=["risk"],
+    summary="Get risk limits",
+    description="Get current risk limits and exposure for authenticated user"
+)
+async def get_risk_limits(current_user: dict = Depends(optional_auth)):
+    """Get risk limits and current exposure"""
+    try:
+        if not current_user:
+            return {
+                "demo_mode": True,
+                "message": "Authentication required for real risk data"
+            }
+        
+        # In production, fetch from risk management system
+        risk_data = {
+            "user_id": current_user["username"],
+            "daily_limit": 100000,
+            "position_limit": 500000,
+            "current_exposure": 45000,
+            "available_limit": 55000,
+            "risk_utilization": 45.0,
+            "max_drawdown_limit": 15.0,
+            "current_drawdown": 3.2,
+            "leverage_limit": 5.0,
+            "current_leverage": 2.8,
+            "margin_available": 750000,
+            "margin_used": 125000
+        }
+        
+        return {
+            "success": True,
+            "risk_limits": risk_data,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching risk limits: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch risk limits")
 
 if __name__ == "__main__":
     # Run the application

@@ -2,10 +2,11 @@ import {
     CssBaseline
 } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
-// Import the comprehensive dashboard
+// Import components
 import ComprehensiveTradingDashboard from './components/ComprehensiveTradingDashboard';
+import LoginForm from './components/LoginForm';
 
 const theme = createTheme({
     palette: {
@@ -68,10 +69,60 @@ const theme = createTheme({
 });
 
 function App() {
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [userInfo, setUserInfo] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        // Check for existing authentication
+        const token = localStorage.getItem('access_token');
+        const storedUserInfo = localStorage.getItem('user_info');
+
+        if (token && storedUserInfo) {
+            try {
+                setUserInfo(JSON.parse(storedUserInfo));
+                setIsAuthenticated(true);
+            } catch (e) {
+                console.error('Error parsing user info:', e);
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('user_info');
+            }
+        }
+        setLoading(false);
+    }, []);
+
+    const handleLogin = (loginData) => {
+        setUserInfo(loginData.user_info);
+        setIsAuthenticated(true);
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('user_info');
+        setUserInfo(null);
+        setIsAuthenticated(false);
+    };
+
+    if (loading) {
+        return (
+            <ThemeProvider theme={theme}>
+                <CssBaseline />
+                <div>Loading...</div>
+            </ThemeProvider>
+        );
+    }
+
     return (
         <ThemeProvider theme={theme}>
             <CssBaseline />
-            <ComprehensiveTradingDashboard />
+            {isAuthenticated ? (
+                <ComprehensiveTradingDashboard
+                    userInfo={userInfo}
+                    onLogout={handleLogout}
+                />
+            ) : (
+                <LoginForm onLogin={handleLogin} />
+            )}
         </ThemeProvider>
     );
 }
