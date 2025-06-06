@@ -1,15 +1,23 @@
 # Multi-stage build for Trading System
 FROM node:18-slim as frontend-builder
 
-# Copy frontend files
+# Copy package files first
 WORKDIR /app
 COPY package*.json ./
 COPY vite.config.js ./
+
+# Copy the entire src directory
 COPY src/ ./src/
 
-# Build frontend from correct directory
-RUN npm install
-RUN npm run build
+# Change to frontend directory for Vite build (since vite.config.js has root: 'src/frontend')
+WORKDIR /app/src/frontend
+
+# Install dependencies and build from the frontend directory
+RUN cd /app && npm install
+RUN cd /app && npm run build
+
+# Switch back to /app for copying built files
+WORKDIR /app
 
 FROM python:3.11-slim as builder
 
