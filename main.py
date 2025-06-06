@@ -145,9 +145,13 @@ app.add_middleware(
 # Mount static files for frontend
 static_dir = Path("dist/frontend")
 if static_dir.exists():
+    # Mount the assets directory for JS/CSS files
+    assets_dir = static_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend_assets")
+    
+    # Mount the entire frontend directory for other static files
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
-    # Also mount the dist/frontend directory directly for asset files
-    app.mount("/assets", StaticFiles(directory=static_dir), name="frontend_assets")
 
 # Custom OpenAPI schema
 def custom_openapi():
