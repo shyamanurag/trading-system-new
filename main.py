@@ -384,15 +384,71 @@ async def shutdown_event():
     except Exception as e:
         logger.error(f"Error during shutdown: {e}")
 
-# API endpoints with comprehensive documentation
+# Catch-all route for SPA (must be defined before other routes)
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str, request: Request):
+    """Serve React SPA for all non-API routes"""
+    # Check if this is an API request (based on Accept header or explicit API routes)
+    accept_header = request.headers.get("accept", "")
+    is_api_request = "application/json" in accept_header or full_path.startswith(("api/", "docs", "health", "webhook", "control", "openapi.json"))
+    
+    # Handle API requests with JSON response for root
+    if full_path == "" and is_api_request:
+        return {
+            "status": "ok",
+            "timestamp": datetime.now().isoformat(),
+            "version": "2.0.0",
+            "service": "Trading System API"
+        }
+    
+    # Exclude API routes and docs from SPA serving
+    if full_path.startswith(("api/", "docs", "health", "webhook", "control", "static/", "assets/", "openapi.json")):
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    # Check if it's a static file request
+    static_dir = Path("dist/frontend")
+    if static_dir.exists():
+        # If it's an empty path or root, serve index.html
+        if not full_path or full_path == "":
+            index_file = static_dir / "index.html"
+            if index_file.exists():
+                return FileResponse(index_file, media_type="text/html")
+        
+        # Try to serve the requested file
+        file_path = static_dir / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        
+        # For all other routes (SPA routing), fallback to index.html
+        index_file = static_dir / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file, media_type="text/html")
+    
+    # Ultimate fallback - serve static HTML file directly
+    static_frontend = Path("static-frontend.html")
+    if static_frontend.exists():
+        return FileResponse(static_frontend, media_type="text/html")
+    
+    # If no frontend found, return JSON for root or 404 for others
+    if not full_path or full_path == "":
+        return {
+            "status": "ok",
+            "timestamp": datetime.now().isoformat(),
+            "version": "2.0.0",
+            "service": "Trading System API",
+            "message": "Frontend not built - API only mode"
+        }
+    
+    raise HTTPException(status_code=404, detail="Frontend not found")
+
 @app.get(
     "/",
     tags=["health"],
-    summary="Root endpoint",
-    description="Basic health check endpoint that returns system status",
+    summary="Root endpoint", 
+    description="Basic health check endpoint that returns system status or serves frontend",
     responses={
         200: {
-            "description": "System is operational",
+            "description": "System is operational or frontend served",
             "content": {
                 "application/json": {
                     "example": {
@@ -405,12 +461,14 @@ async def shutdown_event():
         }
     }
 )
-async def root():
-    """Root endpoint with basic system information"""
+async def root(request: Request):
+    """Root endpoint - serves frontend or JSON based on request"""
+    # This route will be handled by the catch-all route above
+    # But we keep it for OpenAPI documentation
     return {
         "status": "ok", 
         "timestamp": datetime.now().isoformat(),
-        "version": app.version,
+        "version": "2.0.0",
         "service": "Trading System API"
     }
 
@@ -583,8 +641,9 @@ async def control_system(request: Request):
 # Custom docs endpoint
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger_ui_html():
+    openapi_url = app.openapi_url or "/openapi.json"
     return get_swagger_ui_html(
-        openapi_url=app.openapi_url,
+        openapi_url=openapi_url,
         title=f"{app.title} - Interactive API Documentation",
         swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@3/swagger-ui-bundle.js",
         swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@3/swagger-ui.css",
@@ -601,37 +660,3 @@ if __name__ == "__main__":
         log_level="info",
         access_log=True,
     )
-
-# Catch-all route for SPA (must be last)
-@app.get("/{full_path:path}")
-async def serve_spa(full_path: str):
-    """Serve React SPA for all non-API routes"""
-    # Exclude API routes and docs
-    if full_path.startswith(("api/", "docs", "health", "webhook", "control", "static/", "assets/")):
-        raise HTTPException(status_code=404, detail="Not found")
-    
-    # Check if it's a static file request
-    static_dir = Path("dist/frontend")
-    if static_dir.exists():
-        # If it's an empty path or root, serve index.html
-        if not full_path or full_path == "/":
-            index_file = static_dir / "index.html"
-            if index_file.exists():
-                return FileResponse(index_file, media_type="text/html")
-        
-        # Try to serve the requested file
-        file_path = static_dir / full_path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
-        
-        # For all other routes (SPA routing), fallback to index.html
-        index_file = static_dir / "index.html"
-        if index_file.exists():
-            return FileResponse(index_file, media_type="text/html")
-    
-    # Ultimate fallback - serve static HTML file directly
-    static_frontend = Path("static-frontend.html")
-    if static_frontend.exists():
-        return FileResponse(static_frontend, media_type="text/html")
-    
-    raise HTTPException(status_code=404, detail="Frontend not found")
