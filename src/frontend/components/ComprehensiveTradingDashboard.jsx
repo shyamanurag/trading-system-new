@@ -6,6 +6,7 @@ import {
     Notifications,
     Refresh,
     Security,
+    SmartToy,
     Star,
     Timeline
 } from '@mui/icons-material';
@@ -44,6 +45,7 @@ import {
 } from 'recharts';
 
 // Import existing components
+import AutonomousTradingDashboard from './AutonomousTradingDashboard';
 import EliteRecommendationsDashboard from './EliteRecommendationsDashboard';
 import UserPerformanceDashboard from './UserPerformanceDashboard';
 
@@ -289,6 +291,11 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                         label="Risk Management"
                         sx={{ minHeight: 72, textTransform: 'none' }}
                     />
+                    <Tab
+                        icon={<SmartToy />}
+                        label="Autonomous Trading"
+                        sx={{ minHeight: 72, textTransform: 'none' }}
+                    />
                 </Tabs>
             </Paper>
 
@@ -514,6 +521,10 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                         </Card>
                     </Grid>
                 </Grid>
+            </TabPanel>
+
+            <TabPanel value={selectedTab} index={5}>
+                <AutonomousTradingDashboard userInfo={userInfo} />
             </TabPanel>
         </Container>
     );

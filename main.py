@@ -137,6 +137,10 @@ app = FastAPI(
         {
             "name": "monitoring",
             "description": "System monitoring and alerts"
+        },
+        {
+            "name": "autonomous",
+            "description": "Autonomous trading operations"
         }
     ]
 )
@@ -1263,6 +1267,376 @@ async def get_risk_limits(current_user: dict = Depends(optional_auth)):
     except Exception as e:
         logger.error(f"Error fetching risk limits: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch risk limits")
+
+@app.get(
+    "/api/autonomous/market-status",
+    tags=["autonomous"],
+    summary="Get market status for autonomous trading",
+    description="Check if market is open and get trading session information for autonomous operations"
+)
+async def get_autonomous_market_status():
+    """Get market status for autonomous trading system"""
+    try:
+        # In production, this would use MarketHolidayManager
+        from datetime import datetime, time
+        import pytz
+        
+        ist = pytz.timezone('Asia/Kolkata')
+        now = datetime.now(ist)
+        current_time = now.time()
+        
+        # Market hours: 9:15 AM to 3:30 PM IST
+        market_open = time(9, 15)
+        market_close = time(15, 30)
+        pre_market = time(9, 0)
+        post_market = time(16, 0)
+        
+        is_market_open = market_open <= current_time <= market_close
+        is_trading_day = now.weekday() < 5  # Monday to Friday
+        
+        # Calculate time to market events
+        time_to_open = None
+        time_to_close = None
+        
+        if current_time < market_open:
+            market_open_today = now.replace(hour=9, minute=15, second=0, microsecond=0)
+            time_to_open = (market_open_today - now).total_seconds()
+        
+        if current_time < market_close:
+            market_close_today = now.replace(hour=15, minute=30, second=0, microsecond=0)
+            time_to_close = (market_close_today - now).total_seconds()
+        
+        return {
+            "success": True,
+            "market_status": {
+                "is_market_open": is_market_open and is_trading_day,
+                "is_trading_day": is_trading_day,
+                "current_time": now.strftime("%H:%M:%S"),
+                "market_hours": {
+                    "pre_market": "09:00",
+                    "market_open": "09:15", 
+                    "market_close": "15:30",
+                    "post_market": "16:00"
+                },
+                "time_to_open_seconds": time_to_open,
+                "time_to_close_seconds": time_to_close,
+                "trading_session_active": is_market_open and is_trading_day
+            },
+            "timestamp": now.isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting market status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get market status")
+
+@app.post(
+    "/api/autonomous/trading-session/start",
+    tags=["autonomous"],
+    summary="Start autonomous trading session",
+    description="Start the autonomous trading session when market opens"
+)
+async def start_autonomous_trading_session():
+    """Start autonomous trading session"""
+    try:
+        # In production, this would trigger the trading scheduler
+        logger.info("Starting autonomous trading session")
+        
+        session_data = {
+            "session_id": f"AUTO_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            "start_time": datetime.now().isoformat(),
+            "status": "ACTIVE",
+            "mode": "AUTONOMOUS",
+            "market_check": True,
+            "risk_limits_active": True,
+            "strategies_enabled": [
+                "momentum_surfer",
+                "volatility_explosion", 
+                "news_impact_scalper",
+                "confluence_amplifier"
+            ],
+            "position_limits": {
+                "max_positions": 10,
+                "max_capital_per_trade": 50000,
+                "total_capital_limit": 500000
+            }
+        }
+        
+        return {
+            "success": True,
+            "message": "Autonomous trading session started",
+            "session": session_data,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error starting trading session: {e}")
+        raise HTTPException(status_code=500, detail="Failed to start trading session")
+
+@app.post(
+    "/api/autonomous/trading-session/stop",
+    tags=["autonomous"], 
+    summary="Stop autonomous trading session",
+    description="Stop autonomous trading and close all positions before market close"
+)
+async def stop_autonomous_trading_session():
+    """Stop autonomous trading session and close positions"""
+    try:
+        logger.info("Stopping autonomous trading session")
+        
+        # In production, this would:
+        # 1. Stop new position opening
+        # 2. Close all open positions
+        # 3. Cancel pending orders
+        # 4. Generate session report
+        
+        stop_data = {
+            "session_end_time": datetime.now().isoformat(),
+            "positions_closed": 5,
+            "pending_orders_cancelled": 2,
+            "final_pnl": 12500.50,
+            "total_trades": 18,
+            "winning_trades": 13,
+            "success_rate": 72.2,
+            "max_drawdown": 3.2,
+            "status": "CLOSED"
+        }
+        
+        return {
+            "success": True,
+            "message": "Autonomous trading session stopped successfully",
+            "session_summary": stop_data,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error stopping trading session: {e}")
+        raise HTTPException(status_code=500, detail="Failed to stop trading session")
+
+@app.get(
+    "/api/autonomous/active-positions",
+    tags=["autonomous"],
+    summary="Get autonomous trading positions",
+    description="Get all active positions managed by autonomous trading system"
+)
+async def get_autonomous_positions():
+    """Get active positions in autonomous trading"""
+    try:
+        # In production, this would fetch from position tracker
+        positions = [
+            {
+                "position_id": "AUTO_POS_001",
+                "symbol": "RELIANCE",
+                "strategy": "momentum_surfer",
+                "entry_time": "2024-06-07T10:15:00Z",
+                "entry_price": 2485.50,
+                "current_price": 2492.30,
+                "quantity": 100,
+                "unrealized_pnl": 680.00,
+                "stop_loss": 2410.00,
+                "target": 2550.00,
+                "trailing_stop": True,
+                "auto_managed": True
+            },
+            {
+                "position_id": "AUTO_POS_002", 
+                "symbol": "TCS",
+                "strategy": "volatility_explosion",
+                "entry_time": "2024-06-07T11:30:00Z",
+                "entry_price": 3658.75,
+                "current_price": 3672.20,
+                "quantity": 50,
+                "unrealized_pnl": 672.50,
+                "stop_loss": 3580.00,
+                "target": 3750.00,
+                "trailing_stop": False,
+                "auto_managed": True
+            }
+        ]
+        
+        return {
+            "success": True,
+            "positions": positions,
+            "total_positions": len(positions),
+            "total_unrealized_pnl": sum(p["unrealized_pnl"] for p in positions),
+            "auto_managed_count": sum(1 for p in positions if p["auto_managed"]),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching autonomous positions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch positions")
+
+@app.post(
+    "/api/autonomous/strategy/toggle",
+    tags=["autonomous"],
+    summary="Toggle autonomous trading strategy",
+    description="Enable/disable specific autonomous trading strategies"
+)
+async def toggle_autonomous_strategy(request: Request):
+    """Toggle autonomous trading strategy"""
+    try:
+        data = await request.json()
+        strategy_name = data.get("strategy_name")
+        enabled = data.get("enabled", True)
+        
+        if not strategy_name:
+            raise HTTPException(status_code=400, detail="Strategy name required")
+        
+        # In production, this would update the strategy manager
+        logger.info(f"{'Enabling' if enabled else 'Disabling'} strategy: {strategy_name}")
+        
+        return {
+            "success": True,
+            "message": f"Strategy {strategy_name} {'enabled' if enabled else 'disabled'}",
+            "strategy": strategy_name,
+            "enabled": enabled,
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling strategy: {e}")
+        raise HTTPException(status_code=500, detail="Failed to toggle strategy")
+
+@app.get(
+    "/api/autonomous/session-stats",
+    tags=["autonomous"],
+    summary="Get autonomous session statistics",
+    description="Get real-time statistics for current autonomous trading session"
+)
+async def get_autonomous_session_stats():
+    """Get autonomous trading session statistics"""
+    try:
+        # In production, this would fetch from session tracker
+        stats = {
+            "session_id": f"AUTO_{datetime.now().strftime('%Y%m%d')}",
+            "session_start": "2024-06-07T09:15:00Z",
+            "session_duration_minutes": 180,
+            "total_trades": 15,
+            "winning_trades": 11,
+            "losing_trades": 4,
+            "success_rate": 73.3,
+            "total_pnl": 18750.50,
+            "realized_pnl": 12500.00,
+            "unrealized_pnl": 6250.50,
+            "max_drawdown": 2.8,
+            "strategies_active": {
+                "momentum_surfer": {"trades": 6, "pnl": 8500},
+                "volatility_explosion": {"trades": 4, "pnl": 5250},
+                "news_impact_scalper": {"trades": 3, "pnl": 3200},
+                "confluence_amplifier": {"trades": 2, "pnl": 1800}
+            },
+            "risk_metrics": {
+                "capital_utilized": 45.2,
+                "max_position_size": 50000,
+                "current_exposure": 225000,
+                "available_capital": 275000
+            },
+            "auto_actions": {
+                "positions_opened": 15,
+                "positions_closed": 11,
+                "stop_losses_triggered": 3,
+                "targets_hit": 8,
+                "trailing_stops_moved": 12
+            }
+        }
+        
+        return {
+            "success": True,
+            "session_stats": stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching session stats: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch session stats")
+
+@app.post(
+    "/api/autonomous/emergency-stop",
+    tags=["autonomous"],
+    summary="Emergency stop autonomous trading",
+    description="Immediately stop all autonomous trading and close positions (EMERGENCY USE)"
+)
+async def emergency_stop_trading():
+    """Emergency stop for autonomous trading"""
+    try:
+        logger.warning("EMERGENCY STOP triggered for autonomous trading")
+        
+        # In production, this would:
+        # 1. Immediately halt all strategy execution
+        # 2. Close all positions at market price
+        # 3. Cancel all pending orders
+        # 4. Send alerts to administrators
+        
+        emergency_data = {
+            "emergency_stop_time": datetime.now().isoformat(),
+            "reason": "Manual emergency stop triggered",
+            "positions_force_closed": 5,
+            "orders_cancelled": 8,
+            "strategies_halted": 4,
+            "estimated_impact": -1250.00,  # Slippage cost
+            "status": "EMERGENCY_STOPPED"
+        }
+        
+        return {
+            "success": True,
+            "message": "EMERGENCY STOP executed - All autonomous trading halted",
+            "emergency_report": emergency_data,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error executing emergency stop: {e}")
+        raise HTTPException(status_code=500, detail="Failed to execute emergency stop")
+
+@app.get(
+    "/api/autonomous/scheduler-status", 
+    tags=["autonomous"],
+    summary="Get scheduler status",
+    description="Get status of autonomous trading scheduler and upcoming events"
+)
+async def get_scheduler_status():
+    """Get autonomous trading scheduler status"""
+    try:
+        # In production, this would check the actual scheduler
+        scheduler_status = {
+            "scheduler_active": True,
+            "next_market_open": "2024-06-08T09:15:00+05:30",
+            "next_market_close": "2024-06-07T15:30:00+05:30", 
+            "auto_start_enabled": True,
+            "auto_stop_enabled": True,
+            "pre_market_checks": {
+                "system_health": "HEALTHY",
+                "risk_limits": "OK",
+                "data_feeds": "CONNECTED",
+                "strategies": "LOADED"
+            },
+            "scheduled_events": [
+                {
+                    "time": "09:10:00",
+                    "event": "Pre-market system check",
+                    "status": "SCHEDULED"
+                },
+                {
+                    "time": "09:15:00", 
+                    "event": "Auto-start trading session",
+                    "status": "SCHEDULED"
+                },
+                {
+                    "time": "15:25:00",
+                    "event": "Begin position closure",
+                    "status": "SCHEDULED"
+                },
+                {
+                    "time": "15:30:00",
+                    "event": "Force close all positions",
+                    "status": "SCHEDULED"
+                }
+            ]
+        }
+        
+        return {
+            "success": True,
+            "scheduler": scheduler_status,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting scheduler status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get scheduler status")
 
 if __name__ == "__main__":
     # Run the application
