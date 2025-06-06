@@ -6,10 +6,16 @@ export default defineConfig({
     root: 'src/frontend',
     build: {
         outDir: '../../dist/frontend',
-        emptyOutDir: true
+        emptyOutDir: true,
+        rollupOptions: {
+            output: {
+                manualChunks: undefined,
+            },
+        },
     },
     server: {
         port: 3000,
+        host: true,
         proxy: {
             '/api': {
                 target: 'http://localhost:8000',
@@ -22,6 +28,10 @@ export default defineConfig({
                 changeOrigin: true
             }
         }
+    },
+    preview: {
+        port: 3000,
+        host: true
     },
     define: {
         'process.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'http://localhost:8000')

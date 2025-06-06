@@ -50,15 +50,21 @@ services:
     - key: DB_PASSWORD
       value: ${trading-db.PASSWORD}
 
-  # Frontend Service (Static Site)
+static_sites:
+  # Frontend Static Site
   - name: frontend
-    environment_slug: node-js
     github:
       repo: shyamanurag/trading-system-new
       branch: main
-    build_command: npm install && npm run build
+    source_dir: /
+    build_command: npm run build:digitalocean
     output_dir: dist/frontend
+    index_document: index.html
+    error_document: index.html
+    environment_slug: node-js
     envs:
+    - key: NODE_VERSION
+      value: "18"
     - key: VITE_API_URL
       value: ${api.PUBLIC_URL}
 
