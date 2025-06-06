@@ -5,9 +5,9 @@ FROM node:18-slim as frontend-builder
 WORKDIR /app
 COPY package*.json ./
 COPY vite.config.js ./
-COPY src/frontend ./src/frontend
+COPY src/ ./src/
 
-# Install and build frontend
+# Build frontend from correct directory
 RUN npm install
 RUN npm run build
 
