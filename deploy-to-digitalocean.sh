@@ -130,6 +130,9 @@ run_remote "cd /opt/${PROJECT_NAME} && if [ ! -f dist/frontend/index.html ]; the
 echo -e "${GREEN}Step 8.3: Alternative build attempt if needed${NC}"
 run_remote "cd /opt/${PROJECT_NAME} && if [ ! -f dist/frontend/index.html ]; then npx vite build --outDir dist/frontend && echo 'Alternative build completed'; fi"
 
+echo -e "${GREEN}Step 8.4: Bulletproof fallback - copy static frontend${NC}"
+run_remote "cd /opt/${PROJECT_NAME} && if [ ! -f dist/frontend/index.html ]; then mkdir -p dist/frontend && cp static-frontend.html dist/frontend/index.html && echo 'Used static frontend fallback'; fi"
+
 echo -e "${GREEN}Step 9: Setup Nginx Configuration${NC}"
 cat > temp_nginx.conf << EOF
 server {

@@ -629,4 +629,9 @@ async def serve_spa(full_path: str):
         if index_file.exists():
             return FileResponse(index_file, media_type="text/html")
     
+    # Ultimate fallback - serve static HTML file directly
+    static_frontend = Path("static-frontend.html")
+    if static_frontend.exists():
+        return FileResponse(static_frontend, media_type="text/html")
+    
     raise HTTPException(status_code=404, detail="Frontend not found")
