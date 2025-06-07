@@ -719,6 +719,32 @@ async def get_health_status():
         )
 
 @app.get(
+    "/health/alive",
+    tags=["health"],
+    summary="Basic liveness check",
+    description="Minimal liveness check that responds immediately without any dependency checks.",
+    responses={
+        200: {
+            "description": "Application is alive",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "alive",
+                        "timestamp": "2024-01-15T10:30:00Z"
+                    }
+                }
+            }
+        }
+    }
+)
+async def liveness_check():
+    """Minimal liveness check - responds immediately"""
+    return {
+        "status": "alive",
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get(
     "/health/ready",
     tags=["health"],
     summary="Simple readiness check for deployments",

@@ -26,16 +26,16 @@ services:
   instance_count: 1
   instance_size_slug: apps-d-1vcpu-4gb
   
-  # Simple health check
   health_check:
-    http_path: /health/ready
-    initial_delay_seconds: 60
+    http_path: /health/alive
+    initial_delay_seconds: 120
     period_seconds: 30
     timeout_seconds: 10
     success_threshold: 1
     failure_threshold: 3
   
   envs:
+  # Application Configuration
   - key: NODE_ENV
     scope: RUN_AND_BUILD_TIME
     value: production
@@ -48,6 +48,8 @@ services:
   - key: APP_PORT
     scope: RUN_AND_BUILD_TIME
     value: "8000"
+  
+  # Database Configuration
   - key: DATABASE_HOST
     scope: RUN_AND_BUILD_TIME
     value: app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com
@@ -69,6 +71,8 @@ services:
   - key: DATABASE_URL
     scope: RUN_AND_BUILD_TIME
     value: postgresql://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb?sslmode=require
+  
+  # Redis Configuration
   - key: REDIS_HOST
     scope: RUN_AND_BUILD_TIME
     value: redis-cache-do-user-23093341-0.k.db.ondigitalocean.com
@@ -87,12 +91,16 @@ services:
   - key: REDIS_URL
     scope: RUN_AND_BUILD_TIME
     value: "rediss://default:AVNS_TSCy17L6f9z0CdWgcvW@redis-cache-do-user-23093341-0.k.db.ondigitalocean.com:25061"
+  
+  # Security Configuration
   - key: JWT_SECRET
     scope: RUN_AND_BUILD_TIME
     value: K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A
   - key: ENCRYPTION_KEY
     scope: RUN_AND_BUILD_TIME
     value: lulCrXu3nDX6I18WYuPpWcIrgf2IUGAGLS93ZDwczpQ
+  
+  # Trading API Credentials
   - key: ZERODHA_CLIENT_ID
     scope: RUN_AND_BUILD_TIME
     value: QSW899
