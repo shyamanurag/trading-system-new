@@ -3,10 +3,9 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
     plugins: [react()],
-    root: 'src/frontend',
     base: '/',
     build: {
-        outDir: '../../dist/frontend',
+        outDir: 'dist/frontend',
         emptyOutDir: true,
         sourcemap: false,
         minify: 'esbuild',

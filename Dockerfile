@@ -31,56 +31,52 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    ENVIRONMENT=production \
-    PORT=8000 \
-    APP_PORT=8000
+    DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
-    libpq-dev \
-    libpq5 \
     curl \
-    wget \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    && rm -rf /var/lib/apt/lists/*
 
-# Create app directory
+# Create app user and directory
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
+
 WORKDIR /app
 
-# Copy and install Python dependencies using ONLY requirements.txt
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy requirements and install Python dependencies
+COPY docker-requirements.txt requirements.txt
+RUN pip install --upgrade pip==24.0
+RUN pip install -r requirements.txt
+
+# Copy frontend build from previous stage
+COPY --from=frontend-builder /app/dist /app/static
 
 # Copy application code
-COPY . .
+COPY . /app/
 
-# Copy built frontend from frontend builder
-COPY --from=frontend-builder /app/dist/ ./dist/
+# Create necessary directories
+RUN mkdir -p /app/backups /app/logs /app/data /app/static
 
-# Create build timestamp
-RUN echo "Build: ${BUILD_DATE} | Version: ${VERSION} | Single Requirements File: requirements.txt" > .build-timestamp
+# Set file permissions
+RUN chown -R appuser:appuser /app && \
+    chmod +x /app/main.py
 
-# Create logs directory and necessary directories
-RUN mkdir -p /app/logs /app/backups /app/static
+# Switch to non-root user
+USER appuser
 
-# Verify critical files exist
-RUN ls -la health_check.py || echo "Warning: health_check.py not found"
-RUN ls -la start_production.py || echo "Error: start_production.py missing"
-RUN ls -la main.py || echo "Error: main.py missing"
-
-# Create non-root user for security
-RUN useradd --create-home --shell /bin/bash app \
-    && chown -R app:app /app
-USER app
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health/alive || exit 1
 
 # Expose port
 EXPOSE 8000
 
-# Health check with fallback options
-HEALTHCHECK --interval=30s --timeout=15s --start-period=120s --retries=3 \
-    CMD python health_check.py 2>/dev/null || curl -f http://localhost:8000/health 2>/dev/null || wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1
+# Set default environment
+ENV ENVIRONMENT=production
+ENV PORT=8000
 
-# Start application with proper production settings
-CMD ["python", "start_production.py"] 
+# Start command
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--access-log", "--log-level", "info"] 
