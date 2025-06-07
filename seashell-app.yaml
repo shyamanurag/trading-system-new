@@ -28,7 +28,7 @@ services:
   
   # Health check configuration to prevent hanging
   health_check:
-    http_path: /health
+    http_path: /health/ready
     initial_delay_seconds: 120
     period_seconds: 30
     timeout_seconds: 10

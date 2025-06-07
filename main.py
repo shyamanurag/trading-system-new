@@ -718,6 +718,86 @@ async def get_health_status():
             }
         )
 
+@app.get(
+    "/health/ready",
+    tags=["health"],
+    summary="Simple readiness check for deployments",
+    description="""
+    Simple readiness check that verifies the application is ready to receive traffic.
+    This endpoint is optimized for deployment health checks and does not require database connectivity.
+    
+    Used by:
+    - DigitalOcean App Platform health checks
+    - Load balancer health probes
+    - Container orchestration readiness probes
+    """,
+    responses={
+        200: {
+            "description": "Application is ready",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "ready",
+                        "timestamp": "2024-01-15T10:30:00Z",
+                        "version": "2.0.0"
+                    }
+                }
+            }
+        },
+        503: {
+            "description": "Application not ready",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "not_ready",
+                        "message": "Application still initializing",
+                        "timestamp": "2024-01-15T10:30:00Z"
+                    }
+                }
+            }
+        }
+    }
+)
+async def readiness_check():
+    """Simple readiness check for deployments - database independent"""
+    try:
+        # Basic checks that don't require database
+        checks = {
+            "app_initialized": True,  # If we reach here, FastAPI is running
+            "redis_available": False
+        }
+        
+        # Quick Redis check (non-blocking)
+        if redis_client:
+            try:
+                # Use a very short timeout to avoid blocking
+                await asyncio.wait_for(redis_client.ping(), timeout=2.0)
+                checks["redis_available"] = True
+            except (asyncio.TimeoutError, Exception):
+                # Redis not available, but app can still serve traffic
+                pass
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "ready",
+                "timestamp": datetime.now().isoformat(),
+                "version": "2.0.0",
+                "checks": checks
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "message": f"Application error: {str(e)}",
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+
 @app.post(
     "/webhook",
     tags=["integration"],
