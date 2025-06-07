@@ -1,7 +1,8 @@
 # main.py
 """
 Main Application Entry Point with OpenAPI Documentation
-Updated: 2025-06-06 - FORCE DEPLOYMENT WITH FRONTEND FIX
+Updated: 2025-06-07 - FORCE DEPLOYMENT WITH ALL TRADING FEATURES
+INCLUDES: Authentication, Trading APIs, Autonomous Trading, Risk Management
 """
 
 import asyncio
