@@ -419,6 +419,7 @@ async def load_config():
             redis_port = os.getenv('REDIS_PORT', '6379')
             db_port = os.getenv('DATABASE_PORT', '5432')
             
+            # Use DigitalOcean's correct defaults
             basic_config = {
                 'redis': {
                     'host': os.getenv('REDIS_HOST', 'localhost'),
@@ -429,8 +430,8 @@ async def load_config():
                 'database': {
                     'host': os.getenv('DATABASE_HOST', 'localhost'),
                     'port': int(db_port) if db_port else 5432,
-                    'name': os.getenv('DATABASE_NAME', 'trading_system'),
-                    'user': os.getenv('DATABASE_USER', 'trading_user'),
+                    'name': os.getenv('DATABASE_NAME', 'db'),  # DigitalOcean default
+                    'user': os.getenv('DATABASE_USER', 'db'),  # DigitalOcean default
                     'password': os.getenv('DATABASE_PASSWORD')
                 },
                 'security': {'jwt_secret': os.getenv('JWT_SECRET', 'development-secret-key')},
@@ -450,6 +451,11 @@ async def load_config():
             config.setdefault('redis', {})['port'] = int(redis_port_env)
         if os.getenv('DATABASE_HOST'):
             config.setdefault('database', {})['host'] = os.getenv('DATABASE_HOST')
+        # Use DigitalOcean defaults for database
+        if os.getenv('DATABASE_NAME'):
+            config.setdefault('database', {})['name'] = os.getenv('DATABASE_NAME')
+        if os.getenv('DATABASE_USER'):
+            config.setdefault('database', {})['user'] = os.getenv('DATABASE_USER')
             
         return config
     except Exception as e:
