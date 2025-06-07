@@ -7,7 +7,7 @@ INCLUDES: Authentication, Trading APIs, Autonomous Trading, Risk Management
 
 import asyncio
 import logging
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -25,6 +25,7 @@ import random
 import jwt
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordRequestForm
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 
 # Import unified systems
 from common.logging import setup_logging, get_logger
@@ -34,11 +35,109 @@ from monitoring.security_monitor import SecurityMonitor
 from utils.backup_manager import BackupManager
 from scripts.shutdown import GracefulShutdown
 
+# Import WebSocket manager
+from websocket_manager import init_websocket_manager, get_websocket_manager, WebSocketManager
+
+# Import database operations at the top with other imports
+from database_manager import get_database_operations, get_database_manager
+
 # Setup unified logging first
 setup_logging(level="INFO")
 logger = get_logger(__name__)
 
-# Initialize FastAPI app with comprehensive metadata
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager"""
+    global config, redis_client, security_manager, security_monitor, health_checker, backup_manager, shutdown_handler, websocket_manager
+    
+    # Startup
+    try:
+        logger.info("Starting trading system application...")
+        
+        # Load configuration
+        config = await load_config()
+        
+        # Initialize Redis
+        redis_client = await init_redis()
+        
+        # Initialize database manager
+        try:
+            from database_manager import get_database_manager, init_database_manager
+            db_manager = await init_database_manager()
+            if db_manager:
+                logger.info("✅ Database manager initialized successfully")
+            else:
+                logger.warning("❌ Database manager initialization failed")
+        except Exception as e:
+            logger.error(f"❌ Database manager error: {e}")
+        
+        # Initialize health checker
+        health_checker = await init_health_checker()
+        
+        # Initialize security (if Redis is available)
+        if redis_client:
+            security_manager, security_monitor = await init_security()
+        else:
+            logger.warning("Redis unavailable, skipping security components")
+        
+        # Initialize backup
+        backup_manager = await init_backup()
+        
+        # Initialize shutdown handler
+        shutdown_handler = await init_shutdown()
+        
+        # Initialize websocket manager
+        if redis_client:
+            websocket_manager = init_websocket_manager(redis_client)
+            await websocket_manager.start()
+        else:
+            logger.warning("Redis unavailable, skipping WebSocket manager")
+        
+        # Register components for shutdown
+        components_to_register = [comp for comp in [
+            security_manager, security_monitor, health_checker, backup_manager
+        ] if comp is not None]
+        
+        for component in components_to_register:
+            await shutdown_handler.register_component(component)
+        
+        logger.info("Application started successfully")
+        
+        yield  # Application runs here
+        
+    except Exception as e:
+        logger.error(f"Error during startup: {e}")
+        raise
+    
+    # Shutdown
+    try:
+        logger.info("Shutting down application...")
+        if shutdown_handler:
+            await shutdown_handler.shutdown()
+        
+        # Close WebSocket manager
+        if websocket_manager:
+            await websocket_manager.stop()
+        
+        # Close database connections
+        try:
+            from database_manager import get_database_manager
+            db_manager = get_database_manager()
+            if db_manager:
+                await db_manager.close()
+                logger.info("✅ Database connections closed")
+        except Exception as e:
+            logger.error(f"Error closing database: {e}")
+        
+        # Close Redis connection
+        if redis_client:
+            await redis_client.close()
+            
+        logger.info("Application shutdown completed")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
+
+# Initialize FastAPI app with lifespan
 app = FastAPI(
     title="Trading System API",
     description="""
@@ -90,10 +189,11 @@ app = FastAPI(
             "description": "Staging server"
         },
         {
-            "url": "http://localhost:8000",
+            "url": "http://localhost:8001",
             "description": "Development server"
         }
     ],
+    lifespan=lifespan,  # Use lifespan instead of on_event
     openapi_tags=[
         {
             "name": "health",
@@ -152,11 +252,14 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",  # React development server
         "http://localhost:8080",  # Alternative development port
+        "http://localhost:8001",  # Current backend server
         "https://yourdomain.com", # Production domain - replace with actual domain
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+    expose_headers=["X-Total-Count", "X-Page-Count"],
+    max_age=3600,
 )
 
 # Mount static files for frontend
@@ -249,17 +352,10 @@ security_monitor: Optional[SecurityMonitor] = None
 health_checker: Optional[HealthChecker] = None
 backup_manager: Optional[BackupManager] = None
 shutdown_handler: Optional[GracefulShutdown] = None
+websocket_manager: Optional[WebSocketManager] = None
 
 # JWT Security
 security = HTTPBearer()
-
-class AuthConfig:
-    """Authentication configuration for trading system"""
-    SECRET_KEY: str = "your-production-secret-key-change-this"
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours for trading session
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
-    TOKEN_TYPE: str = "Bearer"
 
 class LoginResponse(BaseModel):
     access_token: str
@@ -302,58 +398,165 @@ def optional_auth(credentials: Optional[HTTPAuthorizationCredentials] = Depends(
         return None
 
 async def load_config():
-    """Load configuration from file"""
+    """Load configuration from file and environment variables"""
     try:
+        # Load environment variables from production.env first
+        env_file_path = Path('config/production.env')
+        if env_file_path.exists():
+            logger.info("Loading environment variables from production.env")
+            with open(env_file_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        os.environ[key] = value
+            logger.info("✅ Environment variables loaded from production.env")
+        
         config_path = Path('config/config.yaml')
         if not config_path.exists():
             # Create a basic config if none exists
+            redis_port = os.getenv('REDIS_PORT', '6379')
+            db_port = os.getenv('DATABASE_PORT', '5432')
+            
             basic_config = {
-                'redis': {'url': 'redis://localhost:6379'},
-                'security': {'jwt_secret': 'development-secret-key'},
+                'redis': {
+                    'host': os.getenv('REDIS_HOST', 'localhost'),
+                    'port': int(redis_port) if redis_port else 6379,
+                    'password': os.getenv('REDIS_PASSWORD'),
+                    'ssl': os.getenv('REDIS_SSL', 'false').lower() == 'true'
+                },
+                'database': {
+                    'host': os.getenv('DATABASE_HOST', 'localhost'),
+                    'port': int(db_port) if db_port else 5432,
+                    'name': os.getenv('DATABASE_NAME', 'trading_system'),
+                    'user': os.getenv('DATABASE_USER', 'trading_user'),
+                    'password': os.getenv('DATABASE_PASSWORD')
+                },
+                'security': {'jwt_secret': os.getenv('JWT_SECRET', 'development-secret-key')},
                 'monitoring': {'enabled': True}
             }
-            logger.warning("Configuration file not found, using basic config")
+            logger.warning("Configuration file not found, using environment-based config")
             return basic_config
             
         with open(config_path, 'r') as f:
-            return yaml.safe_load(f)
+            config = yaml.safe_load(f)
+            
+        # Override with environment variables if present
+        if os.getenv('REDIS_HOST'):
+            config.setdefault('redis', {})['host'] = os.getenv('REDIS_HOST')
+        redis_port_env = os.getenv('REDIS_PORT')
+        if redis_port_env:
+            config.setdefault('redis', {})['port'] = int(redis_port_env)
+        if os.getenv('DATABASE_HOST'):
+            config.setdefault('database', {})['host'] = os.getenv('DATABASE_HOST')
+            
+        return config
     except Exception as e:
         logger.error(f"Error loading configuration: {e}")
         raise
 
 async def init_redis():
-    """Initialize Redis connection"""
+    """Initialize Redis connection with dedicated server and SSL support"""
     try:
-        # FORCE REBUILD - Prioritize environment variables for DigitalOcean deployment
+        import ssl
+        
+        # Load environment variables for production
         redis_url = os.getenv('REDIS_URL')
-        config_redis_url = config.get('redis', {}).get('url', 'redis://localhost:6379')
+        redis_host = os.getenv('REDIS_HOST')
+        redis_port = os.getenv('REDIS_PORT', '6379')
+        redis_password = os.getenv('REDIS_PASSWORD')
+        redis_ssl = os.getenv('REDIS_SSL', 'false').lower() == 'true'
         
-        # Debug logging for troubleshooting
-        logger.info(f"REDIS_URL environment variable: {redis_url[:30] + '...' if redis_url else 'NOT SET'}")
-        logger.info(f"Config Redis URL: {config_redis_url[:30]}...")
+        # Build Redis connection
+        if redis_url:
+            # Use Redis URL (handles SSL automatically if rediss://)
+            if redis_ssl and redis_url.startswith('redis://'):
+                # Convert to SSL URL
+                redis_url = redis_url.replace('redis://', 'rediss://')
+            final_redis_url = redis_url
+            logger.info(f"Using REDIS_URL from environment: {redis_url[:50]}...")
+            
+            # For SSL URLs, create client with SSL configuration
+            if redis_ssl or redis_url.startswith('rediss://'):
+                client = redis.from_url(
+                    final_redis_url, 
+                    decode_responses=True,
+                    ssl_cert_reqs=None,
+                    ssl_check_hostname=False,
+                    ssl_ca_certs=None
+                )
+            else:
+                client = redis.from_url(final_redis_url, decode_responses=True)
+                
+        elif redis_host:
+            # Build connection from individual components
+            logger.info(f"Building Redis connection to: {redis_host}:{redis_port} (SSL: {redis_ssl})")
+            
+            if redis_ssl:
+                # DigitalOcean managed Redis with SSL
+                client = redis.Redis(
+                    host=redis_host,
+                    port=int(redis_port),
+                    password=redis_password,
+                    decode_responses=True,
+                    ssl=True,
+                    ssl_cert_reqs=None,
+                    ssl_ca_certs=None,
+                    ssl_check_hostname=False
+                )
+            else:
+                # Regular Redis connection
+                client = redis.Redis(
+                    host=redis_host,
+                    port=int(redis_port),
+                    password=redis_password,
+                    decode_responses=True
+                )
+        else:
+            # Fallback to config
+            config_redis = config.get('redis', {})
+            config_host = config_redis.get('host', 'localhost')
+            config_port = config_redis.get('port', 6379)
+            config_password = config_redis.get('password')
+            
+            client = redis.Redis(
+                host=config_host,
+                port=config_port,
+                password=config_password,
+                decode_responses=True
+            )
+            logger.info(f"Using Redis from config: {config_host}:{config_port}")
         
-        # Use environment variable if available, otherwise fall back to config
-        final_redis_url = redis_url or config_redis_url
-        logger.info(f"Final Redis URL being used: {final_redis_url[:30]}...")
-        
-        client = redis.from_url(final_redis_url, decode_responses=True)
-        # Test connection
-        await client.ping()
+        # Test connection with timeout for SSL handshake
+        await asyncio.wait_for(client.ping(), timeout=10.0)
         logger.info("✅ Redis connection successful!")
+        
+        # Test basic operations
+        await client.set("health_check", "ok", ex=60)
+        health_check = await client.get("health_check")
+        if health_check == "ok":
+            logger.info("✅ Redis read/write operations successful!")
+        
         return client
+        
+    except asyncio.TimeoutError:
+        logger.error(f"❌ Redis connection timeout - SSL handshake may have failed")
+        logger.error("💡 Check: 1) SSL configuration, 2) Network connectivity, 3) Firewall rules")
+        return None
+    except redis.ConnectionError as e:
+        logger.error(f"❌ Redis connection error: {e}")
+        logger.error("📋 Check: 1) Redis server IP/hostname, 2) SSL requirements, 3) Password authentication")
+        return None
     except Exception as e:
-        logger.error(f"❌ Error connecting to Redis: {e}")
-        # Return None for non-critical Redis failures
+        logger.error(f"❌ Unexpected Redis error: {e}")
         return None
 
 async def init_security():
     """Initialize security components"""
     try:
-        # Only initialize if Redis is available
-        if not redis_client:
-            logger.warning("Redis not available, skipping security components")
-            return None, None
-            
+        from security.auth_manager import AuthConfig, SecurityManager
+        from monitoring.security_monitor import SecurityMonitor
+        
         # Create proper auth config
         auth_config = AuthConfig()
         
@@ -412,122 +615,6 @@ async def init_shutdown():
         logger.error(f"Error initializing shutdown handler: {e}")
         raise
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize application on startup"""
-    global config, redis_client, security_manager, security_monitor, health_checker, backup_manager, shutdown_handler
-    
-    try:
-        logger.info("Starting trading system application...")
-        
-        # Load configuration
-        config = await load_config()
-        
-        # Initialize Redis
-        redis_client = await init_redis()
-        
-        # Initialize health checker
-        health_checker = await init_health_checker()
-        
-        # Initialize security (if Redis is available)
-        if redis_client:
-            security_manager, security_monitor = await init_security()
-        else:
-            logger.warning("Redis unavailable, skipping security components")
-        
-        # Initialize backup
-        backup_manager = await init_backup()
-        
-        # Initialize shutdown handler
-        shutdown_handler = await init_shutdown()
-        
-        # Register components for shutdown
-        components_to_register = [comp for comp in [
-            security_manager, security_monitor, health_checker, backup_manager
-        ] if comp is not None]
-        
-        for component in components_to_register:
-            await shutdown_handler.register_component(component)
-        
-        logger.info("Application started successfully")
-        
-    except Exception as e:
-        logger.error(f"Error during startup: {e}")
-        raise
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
-    try:
-        logger.info("Shutting down application...")
-        if shutdown_handler:
-            await shutdown_handler.shutdown()
-        
-        # Close Redis connection
-        if redis_client:
-            await redis_client.close()
-            
-        logger.info("Application shutdown completed")
-    except Exception as e:
-        logger.error(f"Error during shutdown: {e}")
-
-# Catch-all route for SPA (must be defined before other routes)
-@app.get("/{full_path:path}")
-async def serve_spa(full_path: str, request: Request):
-    """Serve React SPA for all non-API routes"""
-    # Check if this is an API request (based on Accept header or explicit API routes)
-    accept_header = request.headers.get("accept", "")
-    is_api_request = "application/json" in accept_header or full_path.startswith(("api/", "docs", "health", "webhook", "control", "openapi.json"))
-    
-    # Handle API requests with JSON response for root
-    if full_path == "" and is_api_request:
-        return {
-            "status": "ok",
-            "timestamp": datetime.now().isoformat(),
-            "version": "2.0.0",
-            "service": "Trading System API"
-        }
-    
-    # Exclude API routes and docs from SPA serving
-    if full_path.startswith(("api/", "docs", "health", "webhook", "control", "static/", "assets/", "openapi.json")):
-        raise HTTPException(status_code=404, detail="Not found")
-    
-    # Check if it's a static file request
-    static_dir = Path("dist/frontend")
-    if static_dir.exists():
-        # If it's an empty path or root, serve index.html
-        if not full_path or full_path == "":
-            index_file = static_dir / "index.html"
-            if index_file.exists():
-                return FileResponse(index_file, media_type="text/html")
-        
-        # Try to serve the requested file
-        file_path = static_dir / full_path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
-        
-        # For all other routes (SPA routing), fallback to index.html
-        index_file = static_dir / "index.html"
-        if index_file.exists():
-            return FileResponse(index_file, media_type="text/html")
-    
-    # Ultimate fallback - serve static HTML file directly
-    static_frontend = Path("static-frontend.html")
-    if static_frontend.exists():
-        return FileResponse(static_frontend, media_type="text/html")
-    
-    # If no frontend found, return JSON for root or 404 for others
-    if not full_path or full_path == "":
-        return {
-            "status": "ok",
-            "timestamp": datetime.now().isoformat(),
-            "version": "2.0.0",
-            "service": "Trading System API",
-            "message": "Frontend not built - API only mode"
-        }
-    
-    raise HTTPException(status_code=404, detail="Frontend not found")
-
 @app.get(
     "/",
     tags=["health"],
@@ -550,8 +637,6 @@ async def serve_spa(full_path: str, request: Request):
 )
 async def root(request: Request):
     """Root endpoint - serves frontend or JSON based on request"""
-    # This route will be handled by the catch-all route above
-    # But we keep it for OpenAPI documentation
     return {
         "status": "ok", 
         "timestamp": datetime.now().isoformat(),
@@ -746,39 +831,20 @@ async def custom_swagger_ui_html():
 async def get_elite_recommendations():
     """Get elite trading recommendations"""
     try:
-        # In production, this would fetch from AI analysis engine
-        recommendations = [
-            {
-                "id": "ELITE_001",
-                "symbol": "RELIANCE",
-                "strategy": "Breakout Play",
-                "entry_price": 2485.50,
-                "current_price": 2492.30,
-                "stop_loss": 2410.00,
-                "targets": [2550.00, 2625.00, 2725.00],
-                "confidence": 87.5,
-                "risk_reward": 3.2,
-                "validity_days": 12,
-                "analysis": "Strong breakout above resistance with high volume. RSI showing bullish momentum.",
-                "timestamp": datetime.now().isoformat(),
-                "status": "ACTIVE"
-            },
-            {
-                "id": "ELITE_002", 
-                "symbol": "TCS",
-                "strategy": "Support Bounce",
-                "entry_price": 3658.75,
-                "current_price": 3672.20,
-                "stop_loss": 3580.00,
-                "targets": [3720.00, 3785.00, 3850.00],
-                "confidence": 82.3,
-                "risk_reward": 2.8,
-                "validity_days": 10,
-                "analysis": "Bouncing from key support level with bullish divergence in MACD.",
-                "timestamp": datetime.now().isoformat(),
-                "status": "ACTIVE"
-            }
-        ]
+        # Get database operations
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Query active recommendations from database
+        recommendations = await db_ops.db.execute_query("""
+            SELECT r.*, u.username as created_by
+            FROM recommendations r
+            LEFT JOIN users u ON r.created_by = u.user_id
+            WHERE r.status = 'ACTIVE' AND r.validity_end > NOW()
+            ORDER BY r.confidence DESC, r.created_at DESC
+            LIMIT 20
+        """)
         
         return {
             "success": True,
@@ -786,9 +852,18 @@ async def get_elite_recommendations():
             "scan_timestamp": datetime.now().isoformat(),
             "total_count": len(recommendations)
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching elite recommendations: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch recommendations")
+        # Return empty state instead of mock data
+        return {
+            "success": True,
+            "recommendations": [],
+            "scan_timestamp": datetime.now().isoformat(),
+            "total_count": 0,
+            "message": "No active recommendations available"
+        }
 
 @app.get(
     "/api/performance/elite-trades",
@@ -799,21 +874,69 @@ async def get_elite_recommendations():
 async def get_elite_performance():
     """Get elite trades performance data"""
     try:
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get performance metrics from database
+        total_recommendations = await db_ops.db.execute_scalar(
+            "SELECT COUNT(*) FROM recommendations WHERE created_at >= NOW() - INTERVAL '1 year'"
+        )
+        
+        active_recommendations = await db_ops.db.execute_scalar(
+            "SELECT COUNT(*) FROM recommendations WHERE status = 'ACTIVE'"
+        )
+        
+        # Calculate success rate from closed positions
+        success_stats = await db_ops.db.execute_one("""
+            SELECT 
+                COUNT(*) as total_closed,
+                COUNT(CASE WHEN realized_pnl > 0 THEN 1 END) as profitable,
+                AVG(CASE WHEN realized_pnl > 0 THEN (realized_pnl / (entry_price * quantity)) * 100 END) as avg_return,
+                SUM(realized_pnl) as total_profit
+            FROM positions 
+            WHERE status = 'closed' AND created_at >= NOW() - INTERVAL '1 year'
+        """)
+        
+        success_rate = 0.0
+        avg_return = 0.0
+        total_profit = 0.0
+        
+        if success_stats and success_stats['total_closed'] > 0:
+            success_rate = (success_stats['profitable'] / success_stats['total_closed']) * 100
+            avg_return = success_stats['avg_return'] or 0.0
+            total_profit = success_stats['total_profit'] or 0.0
+        
+        # Get best performer
+        best_performer = await db_ops.db.execute_one("""
+            SELECT symbol, realized_pnl as profit,
+                   (realized_pnl / (entry_price * quantity)) * 100 as return_pct
+            FROM positions 
+            WHERE status = 'closed' AND realized_pnl > 0
+            ORDER BY realized_pnl DESC
+            LIMIT 1
+        """)
+        
+        # Get recent closed trades
+        recent_closed = await db_ops.db.execute_query("""
+            SELECT symbol, entry_price as entry, 
+                   (entry_price + (realized_pnl / quantity)) as exit,
+                   (realized_pnl / (entry_price * quantity)) * 100 as return,
+                   EXTRACT(DAYS FROM (exit_time - entry_time)) as days
+            FROM positions 
+            WHERE status = 'closed' AND exit_time IS NOT NULL
+            ORDER BY exit_time DESC
+            LIMIT 5
+        """)
+        
         performance_data = {
-            "total_recommendations": 156,
-            "active_recommendations": 8,
-            "success_rate": 78.4,
-            "avg_return": 12.6,
-            "total_profit": 2847500,
-            "best_performer": {
-                "symbol": "HDFC",
-                "return": 18.7,
-                "profit": 156000
-            },
-            "recent_closed": [
-                {"symbol": "ITC", "entry": 485.20, "exit": 512.80, "return": 5.7, "days": 8},
-                {"symbol": "SBIN", "entry": 578.90, "exit": 623.40, "return": 7.7, "days": 12}
-            ]
+            "total_recommendations": total_recommendations or 0,
+            "active_recommendations": active_recommendations or 0,
+            "success_rate": round(success_rate, 1),
+            "avg_return": round(avg_return, 1),
+            "total_profit": round(total_profit, 2),
+            "best_performer": best_performer,
+            "recent_closed": recent_closed or []
         }
         
         return {
@@ -821,9 +944,24 @@ async def get_elite_performance():
             "data": performance_data,
             "timestamp": datetime.now().isoformat()
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching elite performance: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch performance data")
+        return {
+            "success": True,
+            "data": {
+                "total_recommendations": 0,
+                "active_recommendations": 0,
+                "success_rate": 0.0,
+                "avg_return": 0.0,
+                "total_profit": 0.0,
+                "best_performer": None,
+                "recent_closed": []
+            },
+            "timestamp": datetime.now().isoformat(),
+            "message": "Performance data unavailable"
+        }
 
 @app.get(
     "/api/users",
@@ -834,53 +972,55 @@ async def get_elite_performance():
 async def get_users():
     """Get all users"""
     try:
-        # In production, this would fetch from database
-        users = [
-            {
-                "user_id": "trader_001",
-                "name": "Rajesh Kumar",
-                "email": "rajesh@example.com",
-                "initial_capital": 500000,
-                "current_capital": 587500,
-                "is_active": True,
-                "registration_date": "2024-01-15",
-                "risk_tolerance": "medium",
-                "total_trades": 45,
-                "winning_trades": 32,
-                "win_rate": 71.1,
-                "total_pnl": 87500,
-                "daily_pnl": 2500,
-                "open_trades": 3,
-                "avatar": "RK"
-            },
-            {
-                "user_id": "trader_002",
-                "name": "Priya Sharma", 
-                "email": "priya@example.com",
-                "initial_capital": 300000,
-                "current_capital": 345600,
-                "is_active": True,
-                "registration_date": "2024-02-01",
-                "risk_tolerance": "conservative",
-                "total_trades": 28,
-                "winning_trades": 22,
-                "win_rate": 78.6,
-                "total_pnl": 45600,
-                "daily_pnl": 1200,
-                "open_trades": 2,
-                "avatar": "PS"
-            }
-        ]
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Query users with their performance metrics
+        users = await db_ops.db.execute_query("""
+            SELECT 
+                u.*,
+                COALESCE(stats.total_trades, 0) as total_trades,
+                COALESCE(stats.winning_trades, 0) as winning_trades,
+                COALESCE(stats.total_pnl, 0) as total_pnl,
+                COALESCE(stats.open_trades, 0) as open_trades,
+                CASE 
+                    WHEN stats.total_trades > 0 THEN (stats.winning_trades::float / stats.total_trades * 100)
+                    ELSE 0 
+                END as win_rate,
+                UPPER(LEFT(u.full_name, 1)) || UPPER(LEFT(SPLIT_PART(u.full_name, ' ', 2), 1)) as avatar
+            FROM users u
+            LEFT JOIN (
+                SELECT 
+                    user_id,
+                    COUNT(*) as total_trades,
+                    COUNT(CASE WHEN realized_pnl > 0 THEN 1 END) as winning_trades,
+                    SUM(COALESCE(realized_pnl, 0) + COALESCE(unrealized_pnl, 0)) as total_pnl,
+                    COUNT(CASE WHEN status = 'open' THEN 1 END) as open_trades
+                FROM positions 
+                GROUP BY user_id
+            ) stats ON u.user_id = stats.user_id
+            WHERE u.is_active = true
+            ORDER BY u.created_at DESC
+        """)
         
         return {
             "success": True,
-            "users": users,
-            "total_count": len(users),
+            "users": users or [],
+            "total_count": len(users or []),
             "timestamp": datetime.now().isoformat()
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching users: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch users")
+        return {
+            "success": True,
+            "users": [],
+            "total_count": 0,
+            "timestamp": datetime.now().isoformat(),
+            "message": "Unable to fetch users"
+        }
 
 @app.get(
     "/api/users/{user_id}/performance",
@@ -891,37 +1031,64 @@ async def get_users():
 async def get_user_performance(user_id: str):
     """Get detailed user performance"""
     try:
-        # Generate 30 days of performance data
-        daily_performance = []
-        for i in range(30):
-            date = datetime.now() - timedelta(days=29-i)
-            daily_performance.append({
-                "date": date.strftime("%Y-%m-%d"),
-                "pnl": round((random.random() - 0.4) * 5000, 2),
-                "cumulative_pnl": round((i + 1) * 1000 + (random.random() - 0.3) * 10000, 2),
-                "trades_count": random.randint(0, 4),
-                "win_rate": round(60 + random.random() * 30, 1)
-            })
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
         
-        performance = {
-            "daily_performance": daily_performance,
-            "recent_trades": [
-                {"symbol": "RELIANCE", "entry_date": "2024-06-01", "exit_date": "2024-06-05", "pnl": 15000, "status": "CLOSED"},
-                {"symbol": "TCS", "entry_date": "2024-06-03", "exit_date": None, "pnl": 2500, "status": "OPEN"},
-                {"symbol": "HDFC", "entry_date": "2024-06-04", "exit_date": "2024-06-06", "pnl": -3500, "status": "CLOSED"}
-            ],
-            "risk_metrics": {
-                "sharpe_ratio": 1.8,
-                "max_drawdown": 12.5,
-                "volatility": 18.2,
-                "var_95": 8500,
-                "correlation_to_market": 0.65
-            },
-            "strategy_breakdown": [
-                {"strategy": "Breakout", "trades": 15, "win_rate": 80, "avg_return": 8.5},
-                {"strategy": "Momentum", "trades": 12, "win_rate": 75, "avg_return": 6.2},
-                {"strategy": "Mean Reversion", "trades": 8, "win_rate": 62.5, "avg_return": 4.1}
-            ]
+        # Use the database operations method
+        performance = await db_ops.get_user_analytics(user_id, days=30)
+        
+        if not performance:
+            return {
+                "success": True,
+                "performance": {
+                    "daily_performance": [],
+                    "recent_trades": [],
+                    "risk_metrics": {
+                        "sharpe_ratio": 0.0,
+                        "max_drawdown": 0.0,
+                        "volatility": 0.0,
+                        "var_95": 0.0,
+                        "correlation_to_market": 0.0
+                    },
+                    "strategy_breakdown": []
+                },
+                "user_id": user_id,
+                "timestamp": datetime.now().isoformat(),
+                "message": "No performance data available"
+            }
+        
+        # Get additional data for complete performance view
+        recent_trades = await db_ops.db.execute_query("""
+            SELECT symbol, entry_time as entry_date, exit_time as exit_date,
+                   realized_pnl as pnl, status
+            FROM positions 
+            WHERE user_id = $1 
+            ORDER BY COALESCE(exit_time, entry_time) DESC
+            LIMIT 10
+        """, user_id)
+        
+        # Get strategy breakdown
+        strategy_breakdown = await db_ops.db.execute_query("""
+            SELECT 
+                strategy,
+                COUNT(*) as trades,
+                COUNT(CASE WHEN realized_pnl > 0 THEN 1 END) * 100.0 / COUNT(*) as win_rate,
+                AVG(CASE WHEN realized_pnl IS NOT NULL THEN (realized_pnl / (entry_price * quantity)) * 100 END) as avg_return
+            FROM positions 
+            WHERE user_id = $1 AND strategy IS NOT NULL
+            GROUP BY strategy
+            ORDER BY trades DESC
+        """, user_id)
+        
+        performance["recent_trades"] = recent_trades or []
+        performance["strategy_breakdown"] = strategy_breakdown or []
+        performance["risk_metrics"] = {
+            "sharpe_ratio": 0.0,
+            "max_drawdown": 0.0,
+            "volatility": 0.0,
+            "var_95": 0.0,
+            "correlation_to_market": 0.0
         }
         
         return {
@@ -930,6 +1097,8 @@ async def get_user_performance(user_id: str):
             "user_id": user_id,
             "timestamp": datetime.now().isoformat()
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching user performance: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user performance")
@@ -943,834 +1112,891 @@ async def get_user_performance(user_id: str):
 async def get_daily_pnl():
     """Get daily P&L data"""
     try:
-        # Generate 30 days of system P&L data
-        daily_pnl = []
-        for i in range(30):
-            date = datetime.now() - timedelta(days=29-i)
-            trades_count = 20 + random.randint(0, 30)
-            winning_trades = int(trades_count * (0.6 + random.random() * 0.3))
-            
-            daily_pnl.append({
-                "date": date.strftime("%Y-%m-%d"),
-                "total_pnl": round((random.random() - 0.3) * 50000, 2),
-                "user_count": 15 + random.randint(0, 10),
-                "trades_count": trades_count,
-                "winning_trades": winning_trades,
-                "win_rate": round((winning_trades / trades_count) * 100, 1)
-            })
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get actual daily P&L from database
+        daily_pnl = await db_ops.db.execute_query("""
+            WITH daily_stats AS (
+                SELECT 
+                    DATE(COALESCE(exit_time, entry_time)) as date,
+                    SUM(COALESCE(realized_pnl, 0)) as total_pnl,
+                    COUNT(DISTINCT user_id) as user_count,
+                    COUNT(*) as trades_count,
+                    COUNT(CASE WHEN realized_pnl > 0 THEN 1 END) as winning_trades
+                FROM positions 
+                WHERE COALESCE(exit_time, entry_time) >= NOW() - INTERVAL '30 days'
+                GROUP BY DATE(COALESCE(exit_time, entry_time))
+            )
+            SELECT *,
+                   CASE 
+                       WHEN trades_count > 0 THEN (winning_trades::float / trades_count * 100)
+                       ELSE 0 
+                   END as win_rate
+            FROM daily_stats
+            ORDER BY date
+        """)
         
         return {
             "success": True,
-            "daily_pnl": daily_pnl,
+            "daily_pnl": daily_pnl or [],
             "timestamp": datetime.now().isoformat()
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching daily P&L: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch daily P&L")
+        return {
+            "success": True,
+            "daily_pnl": [],
+            "timestamp": datetime.now().isoformat(),
+            "message": "Daily P&L data unavailable"
+        }
 
 @app.post(
     "/api/users",
     tags=["users"],
-    summary="Create new user",
-    description="Create a new trading user account with initial settings"
+    summary="Add new user",
+    description="Onboard a new user to the trading system"
 )
-async def create_user(request: Request):
-    """Create new user"""
+async def add_user(user_data: dict):
+    """Add a new user to the trading system"""
     try:
-        user_data = await request.json()
+        # Get database operations
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
         
         # Validate required fields
-        required_fields = ["user_id", "initial_capital", "risk_tolerance"]
+        required_fields = ['username', 'email', 'password', 'full_name']
         for field in required_fields:
-            if field not in user_data:
+            if field not in user_data or not user_data[field]:
                 raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
         
-        # In production, save to database
-        logger.info(f"Creating new user: {user_data['user_id']}")
+        # Generate user ID
+        user_id = f"user_{user_data['username']}_{datetime.now().strftime('%Y%m%d')}"
+        
+        # Hash password
+        import hashlib
+        password_hash = hashlib.sha256(user_data['password'].encode()).hexdigest()
+        
+        # Prepare user data for database
+        user_record = {
+            'user_id': user_id,
+            'username': user_data['username'],
+            'email': user_data['email'],
+            'password_hash': password_hash,
+            'full_name': user_data['full_name'],
+            'initial_capital': user_data.get('initial_capital', 50000),
+            'risk_tolerance': user_data.get('risk_tolerance', 'medium'),
+            'zerodha_client_id': user_data.get('zerodha_client_id')
+        }
+        
+        # Create user in database
+        success = await db_ops.create_user(user_record)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to create user")
         
         return {
             "success": True,
-            "message": "User created successfully",
-            "user_id": user_data["user_id"],
-            "timestamp": datetime.now().isoformat()
+            "message": f"User {user_data['username']} created successfully",
+            "user_id": user_id,
+            "user": {
+                "user_id": user_id,
+                "username": user_data['username'],
+                "email": user_data['email'],
+                "full_name": user_data['full_name'],
+                "initial_capital": user_record['initial_capital'],
+                "risk_tolerance": user_record['risk_tolerance']
+            }
         }
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create user")
+        logger.error(f"Error adding user: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.delete(
     "/api/users/{user_id}",
     tags=["users"],
-    summary="Delete user",
-    description="Delete a user account and all associated data"
+    summary="Remove user",
+    description="Remove a user from the trading system"
 )
-async def delete_user(user_id: str):
-    """Delete user"""
+async def remove_user(user_id: str):
+    """Remove a user from the trading system"""
     try:
-        # In production, delete from database with proper validation
-        logger.info(f"Deleting user: {user_id}")
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Check if user exists
+        user = await db_ops.get_user(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Close all open positions
+        await db_ops.db.execute_command("""
+            UPDATE positions 
+            SET status = 'closed', exit_time = NOW(), 
+                realized_pnl = COALESCE(unrealized_pnl, 0)
+            WHERE user_id = $1 AND status = 'open'
+        """, user_id)
+        
+        # Deactivate user instead of deleting (for audit trail)
+        await db_ops.db.execute_command("""
+            UPDATE users 
+            SET is_active = false, updated_at = NOW()
+            WHERE user_id = $1
+        """, user_id)
+        
+        logger.info(f"User deactivated: {user_id}")
         
         return {
             "success": True,
-            "message": f"User {user_id} deleted successfully",
-            "timestamp": datetime.now().isoformat()
+            "message": "User removed successfully"
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error deleting user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete user")
+        logger.error(f"Error removing user: {e}")
+        raise HTTPException(status_code=500, detail="Failed to remove user")
 
 @app.get(
-    "/api/trading/positions",
-    tags=["trading"],
-    summary="Get current positions",
-    description="Fetch all current trading positions across users"
+    "/api/users/{user_id}/positions",
+    tags=["users"],
+    summary="Get user positions",
+    description="Get real-time positions for a specific user"
 )
-async def get_positions():
-    """Get current trading positions"""
+async def get_user_positions(user_id: str):
+    """Get real-time positions for a specific user"""
     try:
-        positions = [
-            {
-                "position_id": "POS_001",
-                "user_id": "trader_001",
-                "symbol": "RELIANCE",
-                "quantity": 100,
-                "entry_price": 2485.50,
-                "current_price": 2492.30,
-                "unrealized_pnl": 680.00,
-                "entry_time": "2024-06-06T09:30:00Z",
-                "strategy": "Breakout",
-                "stop_loss": 2410.00,
-                "target": 2550.00
-            },
-            {
-                "position_id": "POS_002",
-                "user_id": "trader_002",
-                "symbol": "TCS",
-                "quantity": 50,
-                "entry_price": 3658.75,
-                "current_price": 3672.20,
-                "unrealized_pnl": 672.50,
-                "entry_time": "2024-06-06T10:15:00Z",
-                "strategy": "Support Bounce",
-                "stop_loss": 3580.00,
-                "target": 3720.00
-            }
-        ]
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get user positions from database
+        positions = await db_ops.get_user_positions(user_id)
+        
+        total_unrealized_pnl = sum(p.get("unrealized_pnl", 0) for p in positions)
         
         return {
             "success": True,
+            "user_id": user_id,
             "positions": positions,
-            "total_count": len(positions),
-            "total_unrealized_pnl": sum(p["unrealized_pnl"] for p in positions),
+            "total_unrealized_pnl": total_unrealized_pnl,
             "timestamp": datetime.now().isoformat()
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching positions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch positions")
+        logger.error(f"Error fetching user positions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user positions")
 
 @app.get(
-    "/api/system/alerts",
-    tags=["monitoring"],
-    summary="Get system alerts",
-    description="Fetch current system alerts and notifications"
+    "/api/users/{user_id}/trades",
+    tags=["users"],
+    summary="Get user trades",
+    description="Get recent trades for a specific user"
 )
-async def get_system_alerts():
-    """Get system alerts"""
+async def get_user_trades(user_id: str, limit: int = 10):
+    """Get recent trades for a specific user"""
     try:
-        alerts = [
-            {
-                "id": "ALERT_001",
-                "type": "success",
-                "priority": "info",
-                "message": "Elite recommendation TARGET_1 hit for RELIANCE",
-                "timestamp": datetime.now().isoformat(),
-                "acknowledged": False
-            },
-            {
-                "id": "ALERT_002",
-                "type": "warning", 
-                "priority": "medium",
-                "message": "3 users approaching daily risk limit",
-                "timestamp": datetime.now().isoformat(),
-                "acknowledged": False
-            },
-            {
-                "id": "ALERT_003",
-                "type": "info",
-                "priority": "low",
-                "message": "Market volatility increased - risk adjustment suggested",
-                "timestamp": datetime.now().isoformat(),
-                "acknowledged": True
-            }
-        ]
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get recent trades from database
+        trades = await db_ops.db.execute_query("""
+            SELECT 
+                position_id as trade_id,
+                symbol,
+                quantity,
+                entry_price,
+                current_price,
+                realized_pnl as pnl,
+                strategy,
+                entry_time,
+                exit_time,
+                status
+            FROM positions 
+            WHERE user_id = $1 
+            ORDER BY COALESCE(exit_time, entry_time) DESC
+            LIMIT $2
+        """, user_id, limit)
         
         return {
             "success": True,
-            "alerts": alerts,
-            "unacknowledged_count": sum(1 for a in alerts if not a["acknowledged"]),
+            "user_id": user_id,
+            "trades": trades or [],
+            "total_trades": len(trades or []),
             "timestamp": datetime.now().isoformat()
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching alerts: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch alerts")
+        logger.error(f"Error fetching user trades: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user trades")
 
-@app.post(
-    "/api/auth/login",
-    tags=["auth"],
-    summary="User login",
-    description="Authenticate user and return access token for trading operations",
-    response_model=LoginResponse
+@app.get(
+    "/api/users/{user_id}/analytics",
+    tags=["users"],
+    summary="Get user analytics",
+    description="Get comprehensive analytics for a specific user"
 )
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    """Login endpoint for trading system authentication"""
+async def get_user_analytics(user_id: str):
+    """Get comprehensive analytics for a specific user"""
     try:
-        # For demo purposes, allow demo credentials
-        demo_users = {
-            "trader": {"password": "trader123", "name": "Demo Trader", "role": "trader"},
-            "admin": {"password": "admin123", "name": "System Admin", "role": "admin"},
-            "analyst": {"password": "analyst123", "name": "Market Analyst", "role": "analyst"}
-        }
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
         
-        if form_data.username in demo_users and demo_users[form_data.username]["password"] == form_data.password:
-            user_info = demo_users[form_data.username]
-            
-            # Create token data
-            token_data = {
-                "sub": form_data.username,
-                "username": form_data.username,
-                "role": user_info["role"],
-                "permissions": ["read", "write", "trade"] if user_info["role"] in ["trader", "admin"] else ["read"]
-            }
-            
-            access_token = create_access_token(token_data, timedelta(minutes=480))
-            
-            return LoginResponse(
-                access_token=access_token,
-                token_type="bearer",
-                expires_in=480 * 60,  # 8 hours in seconds
-                user_info={
-                    "username": form_data.username,
-                    "name": user_info["name"],
-                    "role": user_info["role"]
+        # Get comprehensive analytics from database
+        analytics = await db_ops.get_user_analytics(user_id, days=180)  # 6 months
+        
+        if not analytics:
+            analytics = {
+                "monthly_pnl": [],
+                "strategy_breakdown": [],
+                "performance_metrics": {
+                    "total_pnl": 0,
+                    "win_rate": 0,
+                    "avg_trade_pnl": 0,
+                    "max_drawdown": 0,
+                    "sharpe_ratio": 0,
+                    "total_trades": 0,
+                    "winning_trades": 0,
+                    "losing_trades": 0
                 }
-            )
-        else:
-            raise HTTPException(
-                status_code=401,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Login error: {e}")
-        raise HTTPException(status_code=500, detail="Login failed")
-
-@app.get(
-    "/api/auth/me",
-    tags=["auth"],
-    summary="Get current user",
-    description="Get current authenticated user information"
-)
-async def get_current_user(current_user: dict = Depends(optional_auth)):
-    """Get current user information"""
-    if not current_user:
-        return {
-            "authenticated": False,
-            "message": "No authentication provided - using demo mode"
-        }
-    
-    return {
-        "authenticated": True,
-        "user": current_user,
-        "permissions": current_user.get("permissions", [])
-    }
-
-# Add system authentication for autonomous trading
-AUTONOMOUS_SYSTEM_KEY = "AUTONOMOUS_TRADING_SYSTEM_2024"  # In production, use environment variable
-
-def verify_system_or_user_auth(request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))) -> dict:
-    """Verify either system authentication (for autonomous trading) or user authentication"""
-    
-    # Check for system authentication header (for autonomous trading)
-    system_key = request.headers.get("X-System-Key")
-    if system_key == AUTONOMOUS_SYSTEM_KEY:
-        return {
-            "username": "AUTONOMOUS_SYSTEM",
-            "role": "system",
-            "permissions": ["trade", "read", "write"],
-            "mode": "autonomous"
-        }
-    
-    # Check for user JWT authentication (for human users)
-    if credentials:
-        try:
-            payload = jwt.decode(credentials.credentials, "your-secret-key", algorithms=["HS256"])
-            payload["mode"] = "human"
-            return payload
-        except jwt.PyJWTError:
-            pass
-    
-    # No valid authentication found
-    raise HTTPException(
-        status_code=401,
-        detail="Authentication required: Provide either X-System-Key for autonomous trading or Bearer token for human access",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-@app.post(
-    "/api/trading/execute",
-    tags=["trading"],
-    summary="Execute trade",
-    description="Execute a trading order - Supports both AUTONOMOUS SYSTEM and HUMAN authentication"
-)
-async def execute_trade(
-    request: Request,
-    current_user: dict = Depends(verify_system_or_user_auth)  # Support both autonomous and human auth
-):
-    """Execute trade - SUPPORTS AUTONOMOUS TRADING (No Human Interference)"""
-    try:
-        trade_data = await request.json()
+            }
         
-        # Validate trade data
-        required_fields = ["symbol", "action", "quantity", "price"]
-        for field in required_fields:
-            if field not in trade_data:
-                raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+        # Calculate additional metrics
+        total_trades = analytics["performance_metrics"].get("total_trades", 0)
+        winning_trades = len([p for p in analytics.get("daily_pnl", []) if p.get("pnl", 0) > 0])
+        losing_trades = total_trades - winning_trades
         
-        # Check trading permissions
-        if "trade" not in current_user.get("permissions", []):
-            raise HTTPException(status_code=403, detail="Trading permission required")
-        
-        # Log the trade execution with appropriate context
-        if current_user.get("mode") == "autonomous":
-            logger.info(f"🤖 AUTONOMOUS TRADE: {trade_data}")
-        else:
-            logger.info(f"👤 HUMAN TRADE by {current_user['username']}: {trade_data}")
+        analytics["performance_metrics"].update({
+            "winning_trades": winning_trades,
+            "losing_trades": losing_trades,
+            "max_drawdown": 0.0,  # Calculate from daily P&L if needed
+            "sharpe_ratio": 0.0   # Calculate from returns if needed
+        })
         
         return {
             "success": True,
-            "order_id": f"ORD_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-            "message": "Trade executed successfully",
-            "trade_data": trade_data,
-            "executed_by": current_user["username"],
-            "execution_mode": current_user.get("mode", "unknown"),
+            "user_id": user_id,
+            "analytics": analytics,
             "timestamp": datetime.now().isoformat()
         }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Trade execution error: {e}")
-        raise HTTPException(status_code=500, detail="Trade execution failed")
+        logger.error(f"Error fetching user analytics: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user analytics")
 
-@app.get(
-    "/api/trading/risk-limits",
-    tags=["risk"],
-    summary="Get risk limits",
-    description="Get current risk limits and exposure for authenticated user"
+@app.put(
+    "/api/users/{user_id}/status",
+    tags=["users"],
+    summary="Update user status",
+    description="Activate or deactivate a user"
 )
-async def get_risk_limits(current_user: dict = Depends(optional_auth)):
-    """Get risk limits and current exposure"""
+async def update_user_status(user_id: str, status_data: dict):
+    """Update user status (active/inactive)"""
     try:
-        if not current_user:
-            return {
-                "demo_mode": True,
-                "message": "Authentication required for real risk data"
-            }
+        new_status = status_data.get("status")
         
-        # In production, fetch from risk management system
-        risk_data = {
-            "user_id": current_user["username"],
-            "daily_limit": 100000,
-            "position_limit": 500000,
-            "current_exposure": 45000,
-            "available_limit": 55000,
-            "risk_utilization": 45.0,
-            "max_drawdown_limit": 15.0,
-            "current_drawdown": 3.2,
-            "leverage_limit": 5.0,
-            "current_leverage": 2.8,
-            "margin_available": 750000,
-            "margin_used": 125000
-        }
+        # Mock implementation - replace with real status update logic
+        # Here you would:
+        # 1. Update user status in database
+        # 2. If deactivating: close positions, cancel orders
+        # 3. Update Redis cache
+        # 4. Log status change
+        
+        logger.info(f"User {user_id} status changed to: {new_status}")
         
         return {
             "success": True,
-            "risk_limits": risk_data,
-            "timestamp": datetime.now().isoformat()
+            "message": f"User status updated to {new_status}",
+            "user_id": user_id,
+            "new_status": new_status
         }
     except Exception as e:
-        logger.error(f"Error fetching risk limits: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch risk limits")
+        logger.error(f"Error updating user status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update user status")
 
-@app.get(
-    "/api/autonomous/market-status",
-    tags=["autonomous"],
-    summary="Get market status for autonomous trading",
-    description="Check if market is open and get trading session information for autonomous operations"
-)
-async def get_autonomous_market_status():
-    """Get market status for autonomous trading system"""
+# WebSocket endpoints for real-time data
+@app.websocket("/ws/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: str):
+    """WebSocket endpoint for real-time trading data"""
+    global websocket_manager
+    
+    if not websocket_manager:
+        await websocket.close(code=1011, reason="WebSocket service unavailable")
+        return
+    
+    connection_id = None
     try:
-        # In production, this would use MarketHolidayManager
-        from datetime import datetime, time
-        import pytz
+        # Connect user
+        connection_id = await websocket_manager.connection_manager.connect(websocket, user_id)
         
-        ist = pytz.timezone('Asia/Kolkata')
-        now = datetime.now(ist)
-        current_time = now.time()
-        
-        # Market hours: 9:15 AM to 3:30 PM IST
-        market_open = time(9, 15)
-        market_close = time(15, 30)
-        pre_market = time(9, 0)
-        post_market = time(16, 0)
-        
-        is_market_open = market_open <= current_time <= market_close
-        is_trading_day = now.weekday() < 5  # Monday to Friday
-        
-        # Calculate time to market events
-        time_to_open = None
-        time_to_close = None
-        
-        if current_time < market_open:
-            market_open_today = now.replace(hour=9, minute=15, second=0, microsecond=0)
-            time_to_open = (market_open_today - now).total_seconds()
-        
-        if current_time < market_close:
-            market_close_today = now.replace(hour=15, minute=30, second=0, microsecond=0)
-            time_to_close = (market_close_today - now).total_seconds()
-        
-        return {
-            "success": True,
-            "market_status": {
-                "is_market_open": is_market_open and is_trading_day,
-                "is_trading_day": is_trading_day,
-                "current_time": now.strftime("%H:%M:%S"),
-                "market_hours": {
-                    "pre_market": "09:00",
-                    "market_open": "09:15", 
-                    "market_close": "15:30",
-                    "post_market": "16:00"
-                },
-                "time_to_open_seconds": time_to_open,
-                "time_to_close_seconds": time_to_close,
-                "trading_session_active": is_market_open and is_trading_day
-            },
-            "timestamp": now.isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error getting market status: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get market status")
-
-@app.post(
-    "/api/autonomous/trading-session/start",
-    tags=["autonomous"],
-    summary="Start autonomous trading session",
-    description="Start the autonomous trading session when market opens"
-)
-async def start_autonomous_trading_session():
-    """Start autonomous trading session"""
-    try:
-        # In production, this would trigger the trading scheduler
-        logger.info("Starting autonomous trading session")
-        
-        session_data = {
-            "session_id": f"AUTO_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-            "start_time": datetime.now().isoformat(),
-            "status": "ACTIVE",
-            "mode": "AUTONOMOUS",
-            "market_check": True,
-            "risk_limits_active": True,
-            "strategies_enabled": [
-                "momentum_surfer",
-                "volatility_explosion", 
-                "news_impact_scalper",
-                "confluence_amplifier"
-            ],
-            "position_limits": {
-                "max_positions": 10,
-                "max_capital_per_trade": 50000,
-                "total_capital_limit": 500000
-            }
-        }
-        
-        return {
-            "success": True,
-            "message": "Autonomous trading session started",
-            "session": session_data,
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error starting trading session: {e}")
-        raise HTTPException(status_code=500, detail="Failed to start trading session")
-
-@app.post(
-    "/api/autonomous/trading-session/stop",
-    tags=["autonomous"], 
-    summary="Stop autonomous trading session",
-    description="Stop autonomous trading and close all positions before market close"
-)
-async def stop_autonomous_trading_session():
-    """Stop autonomous trading session and close positions"""
-    try:
-        logger.info("Stopping autonomous trading session")
-        
-        # In production, this would:
-        # 1. Stop new position opening
-        # 2. Close all open positions
-        # 3. Cancel pending orders
-        # 4. Generate session report
-        
-        stop_data = {
-            "session_end_time": datetime.now().isoformat(),
-            "positions_closed": 5,
-            "pending_orders_cancelled": 2,
-            "final_pnl": 12500.50,
-            "total_trades": 18,
-            "winning_trades": 13,
-            "success_rate": 72.2,
-            "max_drawdown": 3.2,
-            "status": "CLOSED"
-        }
-        
-        return {
-            "success": True,
-            "message": "Autonomous trading session stopped successfully",
-            "session_summary": stop_data,
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error stopping trading session: {e}")
-        raise HTTPException(status_code=500, detail="Failed to stop trading session")
-
-@app.get(
-    "/api/autonomous/active-positions",
-    tags=["autonomous"],
-    summary="Get autonomous trading positions",
-    description="Get all active positions managed by autonomous trading system"
-)
-async def get_autonomous_positions():
-    """Get active positions in autonomous trading"""
-    try:
-        # In production, this would fetch from position tracker
-        positions = [
-            {
-                "position_id": "AUTO_POS_001",
-                "symbol": "RELIANCE",
-                "strategy": "momentum_surfer",
-                "entry_time": "2024-06-07T10:15:00Z",
-                "entry_price": 2485.50,
-                "current_price": 2492.30,
-                "quantity": 100,
-                "unrealized_pnl": 680.00,
-                "stop_loss": 2410.00,
-                "target": 2550.00,
-                "trailing_stop": True,
-                "auto_managed": True
-            },
-            {
-                "position_id": "AUTO_POS_002", 
-                "symbol": "TCS",
-                "strategy": "volatility_explosion",
-                "entry_time": "2024-06-07T11:30:00Z",
-                "entry_price": 3658.75,
-                "current_price": 3672.20,
-                "quantity": 50,
-                "unrealized_pnl": 672.50,
-                "stop_loss": 3580.00,
-                "target": 3750.00,
-                "trailing_stop": False,
-                "auto_managed": True
-            }
-        ]
-        
-        return {
-            "success": True,
-            "positions": positions,
-            "total_positions": len(positions),
-            "total_unrealized_pnl": sum(p["unrealized_pnl"] for p in positions),
-            "auto_managed_count": sum(1 for p in positions if p["auto_managed"]),
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error fetching autonomous positions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch positions")
-
-@app.post(
-    "/api/autonomous/strategy/toggle",
-    tags=["autonomous"],
-    summary="Toggle autonomous trading strategy",
-    description="Enable/disable specific autonomous trading strategies"
-)
-async def toggle_autonomous_strategy(request: Request):
-    """Toggle autonomous trading strategy"""
-    try:
-        data = await request.json()
-        strategy_name = data.get("strategy_name")
-        enabled = data.get("enabled", True)
-        
-        if not strategy_name:
-            raise HTTPException(status_code=400, detail="Strategy name required")
-        
-        # In production, this would update the strategy manager
-        logger.info(f"{'Enabling' if enabled else 'Disabling'} strategy: {strategy_name}")
-        
-        return {
-            "success": True,
-            "message": f"Strategy {strategy_name} {'enabled' if enabled else 'disabled'}",
-            "strategy": strategy_name,
-            "enabled": enabled,
-            "timestamp": datetime.now().isoformat()
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error toggling strategy: {e}")
-        raise HTTPException(status_code=500, detail="Failed to toggle strategy")
-
-@app.get(
-    "/api/autonomous/session-stats",
-    tags=["autonomous"],
-    summary="Get autonomous session statistics",
-    description="Get real-time statistics for current autonomous trading session"
-)
-async def get_autonomous_session_stats():
-    """Get autonomous trading session statistics"""
-    try:
-        # In production, this would fetch from session tracker
-        stats = {
-            "session_id": f"AUTO_{datetime.now().strftime('%Y%m%d')}",
-            "session_start": "2024-06-07T09:15:00Z",
-            "session_duration_minutes": 180,
-            "total_trades": 15,
-            "winning_trades": 11,
-            "losing_trades": 4,
-            "success_rate": 73.3,
-            "total_pnl": 18750.50,
-            "realized_pnl": 12500.00,
-            "unrealized_pnl": 6250.50,
-            "max_drawdown": 2.8,
-            "strategies_active": {
-                "momentum_surfer": {"trades": 6, "pnl": 8500},
-                "volatility_explosion": {"trades": 4, "pnl": 5250},
-                "news_impact_scalper": {"trades": 3, "pnl": 3200},
-                "confluence_amplifier": {"trades": 2, "pnl": 1800}
-            },
-            "risk_metrics": {
-                "capital_utilized": 45.2,
-                "max_position_size": 50000,
-                "current_exposure": 225000,
-                "available_capital": 275000
-            },
-            "auto_actions": {
-                "positions_opened": 15,
-                "positions_closed": 11,
-                "stop_losses_triggered": 3,
-                "targets_hit": 8,
-                "trailing_stops_moved": 12
-            }
-        }
-        
-        return {
-            "success": True,
-            "session_stats": stats,
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error fetching session stats: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch session stats")
-
-@app.post(
-    "/api/autonomous/emergency-stop",
-    tags=["autonomous"],
-    summary="Emergency stop autonomous trading",
-    description="Immediately stop all autonomous trading and close positions (EMERGENCY USE)"
-)
-async def emergency_stop_trading():
-    """Emergency stop for autonomous trading"""
-    try:
-        logger.warning("EMERGENCY STOP triggered for autonomous trading")
-        
-        # In production, this would:
-        # 1. Immediately halt all strategy execution
-        # 2. Close all positions at market price
-        # 3. Cancel all pending orders
-        # 4. Send alerts to administrators
-        
-        emergency_data = {
-            "emergency_stop_time": datetime.now().isoformat(),
-            "reason": "Manual emergency stop triggered",
-            "positions_force_closed": 5,
-            "orders_cancelled": 8,
-            "strategies_halted": 4,
-            "estimated_impact": -1250.00,  # Slippage cost
-            "status": "EMERGENCY_STOPPED"
-        }
-        
-        return {
-            "success": True,
-            "message": "EMERGENCY STOP executed - All autonomous trading halted",
-            "emergency_report": emergency_data,
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error executing emergency stop: {e}")
-        raise HTTPException(status_code=500, detail="Failed to execute emergency stop")
-
-@app.get(
-    "/api/autonomous/scheduler-status", 
-    tags=["autonomous"],
-    summary="Get scheduler status",
-    description="Get status of autonomous trading scheduler and upcoming events"
-)
-async def get_scheduler_status():
-    """Get autonomous trading scheduler status"""
-    try:
-        # In production, this would check the actual scheduler
-        scheduler_status = {
-            "scheduler_active": True,
-            "next_market_open": "2024-06-08T09:15:00+05:30",
-            "next_market_close": "2024-06-07T15:30:00+05:30", 
-            "auto_start_enabled": True,
-            "auto_stop_enabled": True,
-            "pre_market_checks": {
-                "system_health": "HEALTHY",
-                "risk_limits": "OK",
-                "data_feeds": "CONNECTED",
-                "strategies": "LOADED"
-            },
-            "scheduled_events": [
-                {
-                    "time": "09:10:00",
-                    "event": "Pre-market system check",
-                    "status": "SCHEDULED"
-                },
-                {
-                    "time": "09:15:00", 
-                    "event": "Auto-start trading session",
-                    "status": "SCHEDULED"
-                },
-                {
-                    "time": "15:25:00",
-                    "event": "Begin position closure",
-                    "status": "SCHEDULED"
-                },
-                {
-                    "time": "15:30:00",
-                    "event": "Force close all positions",
-                    "status": "SCHEDULED"
-                }
+        # Send welcome message
+        await websocket.send_json({
+            'type': 'welcome',
+            'connection_id': connection_id,
+            'user_id': user_id,
+            'timestamp': datetime.now().isoformat(),
+            'available_rooms': [
+                'market_data_all',
+                'market_data_RELIANCE',
+                'market_data_TCS',
+                'market_data_HDFC',
+                'market_data_INFY',
+                'user_positions',
+                'system_alerts'
             ]
-        }
+        })
         
+        # Auto-subscribe to general rooms
+        await websocket_manager.connection_manager.subscribe_to_room(connection_id, 'market_data_all')
+        await websocket_manager.connection_manager.subscribe_to_room(connection_id, 'system_alerts')
+        
+        # Handle incoming messages
+        while True:
+            try:
+                # Receive message from client
+                data = await websocket.receive_json()
+                
+                # Process message
+                response = await websocket_manager.handle_client_message(connection_id, data)
+                
+                # Send response if any
+                if response:
+                    await websocket.send_json(response)
+                    
+            except WebSocketDisconnect:
+                break
+            except Exception as e:
+                logger.error(f"Error in WebSocket message handling: {e}")
+                await websocket.send_json({
+                    'type': 'error',
+                    'message': 'Message processing error'
+                })
+                
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for user: {user_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error for user {user_id}: {e}")
+    finally:
+        # Clean up connection
+        if connection_id and websocket_manager:
+            await websocket_manager.connection_manager.disconnect(connection_id)
+
+@app.get(
+    "/api/websocket/stats",
+    tags=["monitoring"],
+    summary="Get WebSocket connection statistics",
+    description="Get real-time statistics about WebSocket connections and subscriptions"
+)
+async def get_websocket_stats():
+    """Get WebSocket connection statistics"""
+    global websocket_manager
+    
+    if not websocket_manager:
+        raise HTTPException(status_code=503, detail="WebSocket service unavailable")
+    
+    try:
+        stats = websocket_manager.connection_manager.get_connection_stats()
         return {
-            "success": True,
-            "scheduler": scheduler_status,
-            "timestamp": datetime.now().isoformat()
+            'success': True,
+            'stats': stats,
+            'timestamp': datetime.now().isoformat()
         }
     except Exception as e:
-        logger.error(f"Error getting scheduler status: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get scheduler status")
+        logger.error(f"Error getting WebSocket stats: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get WebSocket statistics")
 
 @app.post(
-    "/api/autonomous/system/execute-trade",
-    tags=["autonomous"],
-    summary="Autonomous system trade execution",
-    description="Execute trade via autonomous system (NO HUMAN INTERFERENCE)"
+    "/api/websocket/broadcast",
+    tags=["admin"],
+    summary="Broadcast message to all WebSocket connections",
+    description="Send a message to all connected WebSocket clients (admin only)"
 )
-async def autonomous_execute_trade(
-    request: Request,
-    current_user: dict = Depends(verify_system_or_user_auth)
-):
-    """Execute trade via autonomous system - Zero human interference"""
+async def broadcast_message(message_data: dict):
+    """Broadcast message to all WebSocket connections"""
+    global websocket_manager
+    
+    if not websocket_manager:
+        raise HTTPException(status_code=503, detail="WebSocket service unavailable")
+    
     try:
-        # Ensure this is system-level authentication
-        if current_user.get("mode") != "autonomous":
-            raise HTTPException(status_code=403, detail="This endpoint requires autonomous system authentication")
+        message = {
+            'type': 'admin_broadcast',
+            'data': message_data,
+            'timestamp': datetime.now().isoformat()
+        }
         
-        trade_data = await request.json()
+        sent_count = await websocket_manager.connection_manager.broadcast(message)
         
-        # Enhanced validation for autonomous trading
-        required_fields = ["symbol", "action", "quantity", "price", "strategy", "confidence"]
-        for field in required_fields:
-            if field not in trade_data:
-                raise HTTPException(status_code=400, detail=f"Missing required field for autonomous trading: {field}")
+        return {
+            'success': True,
+            'message': 'Broadcast sent successfully',
+            'recipients': sent_count,
+            'timestamp': datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error broadcasting message: {e}")
+        raise HTTPException(status_code=500, detail="Failed to broadcast message")
+
+@app.post(
+    "/api/websocket/alert/{user_id}",
+    tags=["trading"],
+    summary="Send alert to specific user",
+    description="Send a trading alert to a specific user via WebSocket"
+)
+async def send_user_alert(user_id: str, alert_data: dict):
+    """Send alert to specific user"""
+    global websocket_manager
+    
+    if not websocket_manager:
+        raise HTTPException(status_code=503, detail="WebSocket service unavailable")
+    
+    try:
+        message = {
+            'type': 'user_alert',
+            'data': alert_data,
+            'timestamp': datetime.now().isoformat()
+        }
         
-        # Autonomous-specific validations
-        if trade_data["confidence"] < 0.7:  # Minimum confidence threshold
-            raise HTTPException(status_code=400, detail="Confidence level too low for autonomous execution")
+        sent_count = await websocket_manager.connection_manager.send_to_user(user_id, message)
         
-        logger.info(f"🤖 AUTONOMOUS EXECUTION: {trade_data['symbol']} {trade_data['action']} {trade_data['quantity']} @ {trade_data['price']} (Strategy: {trade_data['strategy']}, Confidence: {trade_data['confidence']})")
+        return {
+            'success': True,
+            'message': f'Alert sent to user {user_id}',
+            'connections_reached': sent_count,
+            'timestamp': datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error sending user alert: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send user alert")
+
+# Catch-all route for SPA (MUST be defined LAST - after all API routes)
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str, request: Request):
+    """Serve React SPA for all non-API routes"""
+    # Check if this is an API request (based on Accept header or explicit API routes)
+    accept_header = request.headers.get("accept", "")
+    is_api_request = "application/json" in accept_header or full_path.startswith(("api/", "docs", "health", "webhook", "control", "openapi.json"))
+    
+    # Handle API requests with JSON response for root
+    if full_path == "" and is_api_request:
+        return {
+            "status": "ok",
+            "timestamp": datetime.now().isoformat(),
+            "version": "2.0.0",
+            "service": "Trading System API"
+        }
+    
+    # Exclude API routes and docs from SPA serving
+    if full_path.startswith(("api/", "docs", "health", "webhook", "control", "static/", "assets/", "openapi.json")):
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    # Check if it's a static file request
+    static_dir = Path("dist/frontend")
+    if static_dir.exists():
+        # If it's an empty path or root, serve index.html
+        if not full_path or full_path == "":
+            index_file = static_dir / "index.html"
+            if index_file.exists():
+                return FileResponse(index_file, media_type="text/html")
+        
+        # Try to serve the requested file
+        file_path = static_dir / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        
+        # For all other routes (SPA routing), fallback to index.html
+        index_file = static_dir / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file, media_type="text/html")
+    
+    # Ultimate fallback - serve static HTML file directly
+    static_frontend = Path("static-frontend.html")
+    if static_frontend.exists():
+        return FileResponse(static_frontend, media_type="text/html")
+    
+    # If no frontend found, return JSON for root or 404 for others
+    if not full_path or full_path == "":
+        return {
+            "status": "ok",
+            "timestamp": datetime.now().isoformat(),
+            "version": "2.0.0",
+            "service": "Trading System API",
+            "message": "Frontend not built - API only mode"
+        }
+    
+    raise HTTPException(status_code=404, detail="Frontend not found")
+
+@app.post(
+    "/api/security/mfa/setup-totp",
+    tags=["security"],
+    summary="Setup TOTP (Time-based One-Time Password)",
+    description="Initialize TOTP-based multi-factor authentication for a user"
+)
+async def setup_totp_mfa(user_data: dict):
+    """Setup TOTP MFA for user"""
+    try:
+        from security.mfa_manager import get_mfa_manager
+        
+        mfa_manager = get_mfa_manager()
+        if not mfa_manager:
+            raise HTTPException(status_code=503, detail="MFA service unavailable")
+        
+        user_id = user_data.get("user_id")
+        user_email = user_data.get("email")
+        
+        if not user_id or not user_email:
+            raise HTTPException(status_code=400, detail="Missing user_id or email")
+        
+        # Setup TOTP
+        totp_data = await mfa_manager.setup_totp(user_id, user_email)
         
         return {
             "success": True,
-            "order_id": f"AUTO_{datetime.now().strftime('%Y%m%d_%H%M%S%f')[:-3]}",
-            "message": "Autonomous trade executed successfully",
-            "trade_data": trade_data,
-            "executed_by": "AUTONOMOUS_SYSTEM",
-            "execution_mode": "autonomous",
-            "strategy": trade_data["strategy"],
-            "confidence": trade_data["confidence"],
-            "timestamp": datetime.now().isoformat()
+            "message": "TOTP setup initiated",
+            "qr_code": totp_data["qr_code"],
+            "backup_codes": totp_data["backup_codes"],
+            "secret": totp_data["secret"]  # Remove in production
         }
+        
+    except Exception as e:
+        logger.error(f"Error setting up TOTP: {e}")
+        raise HTTPException(status_code=500, detail="Failed to setup TOTP")
+
+@app.post(
+    "/api/security/mfa/verify-totp",
+    tags=["security"],
+    summary="Verify TOTP setup",
+    description="Verify TOTP setup with user-provided token"
+)
+async def verify_totp_setup(verification_data: dict):
+    """Verify TOTP setup"""
+    try:
+        from security.mfa_manager import get_mfa_manager
+        
+        mfa_manager = get_mfa_manager()
+        if not mfa_manager:
+            raise HTTPException(status_code=503, detail="MFA service unavailable")
+        
+        user_id = verification_data.get("user_id")
+        token = verification_data.get("token")
+        
+        if not user_id or not token:
+            raise HTTPException(status_code=400, detail="Missing user_id or token")
+        
+        # Verify TOTP
+        is_valid = await mfa_manager.verify_totp_setup(user_id, token)
+        
+        if is_valid:
+            return {
+                "success": True,
+                "message": "TOTP verified and activated successfully"
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Invalid TOTP token")
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"🤖 Autonomous trade execution error: {e}")
-        raise HTTPException(status_code=500, detail="Autonomous trade execution failed")
+        logger.error(f"Error verifying TOTP: {e}")
+        raise HTTPException(status_code=500, detail="Failed to verify TOTP")
+
+@app.post(
+    "/api/security/mfa/verify",
+    tags=["security"],
+    summary="Verify MFA token",
+    description="Verify multi-factor authentication token for login"
+)
+async def verify_mfa_token(verification_data: dict):
+    """Verify MFA token"""
+    try:
+        from security.mfa_manager import get_mfa_manager
+        
+        mfa_manager = get_mfa_manager()
+        if not mfa_manager:
+            raise HTTPException(status_code=503, detail="MFA service unavailable")
+        
+        user_id = verification_data.get("user_id")
+        token = verification_data.get("token")
+        method = verification_data.get("method", "auto")
+        
+        if not user_id or not token:
+            raise HTTPException(status_code=400, detail="Missing user_id or token")
+        
+        # Verify MFA
+        is_valid = await mfa_manager.verify_mfa(user_id, token, method)
+        
+        if is_valid:
+            return {
+                "success": True,
+                "message": "MFA verification successful"
+            }
+        else:
+            raise HTTPException(status_code=401, detail="Invalid MFA token")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error verifying MFA: {e}")
+        raise HTTPException(status_code=500, detail="MFA verification failed")
 
 @app.get(
-    "/api/autonomous/system/health",
-    tags=["autonomous"], 
-    summary="Autonomous system health check",
-    description="Health check for autonomous trading system components"
+    "/api/security/mfa/status/{user_id}",
+    tags=["security"],
+    summary="Get MFA status",
+    description="Get user's multi-factor authentication status"
 )
-async def autonomous_system_health(
-    request: Request,
-    current_user: dict = Depends(verify_system_or_user_auth)
-):
-    """Health check for autonomous system components"""
+async def get_mfa_status(user_id: str):
+    """Get user's MFA status"""
     try:
-        # System health data for autonomous operations
-        health_data = {
-            "system_status": "OPERATIONAL",
-            "trading_enabled": True,
-            "market_connection": "CONNECTED",
-            "strategies_active": 4,
-            "last_health_check": datetime.now().isoformat(),
-            "components": {
-                "data_feeds": "HEALTHY",
-                "risk_manager": "HEALTHY", 
-                "order_manager": "HEALTHY",
-                "position_tracker": "HEALTHY",
-                "strategy_engine": "HEALTHY"
-            },
-            "performance": {
-                "avg_response_time": 45,
-                "memory_usage": 68.5,
-                "cpu_usage": 23.2
-            },
-            "auth_mode": current_user.get("mode", "unknown")
-        }
+        from security.mfa_manager import get_mfa_manager
+        
+        mfa_manager = get_mfa_manager()
+        if not mfa_manager:
+            raise HTTPException(status_code=503, detail="MFA service unavailable")
+        
+        # Get MFA status
+        mfa_status = await mfa_manager.get_user_mfa_status(user_id)
         
         return {
             "success": True,
-            "health": health_data,
-            "timestamp": datetime.now().isoformat()
+            "user_id": user_id,
+            "mfa_status": mfa_status
         }
+        
     except Exception as e:
-        logger.error(f"Autonomous system health check error: {e}")
-        raise HTTPException(status_code=500, detail="Health check failed")
+        logger.error(f"Error getting MFA status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get MFA status")
+
+@app.get(
+    "/api/security/encryption/status",
+    tags=["security"],
+    summary="Get encryption status",
+    description="Get system encryption status and key information"
+)
+async def get_encryption_status():
+    """Get encryption system status"""
+    try:
+        from security.encryption_manager import get_encryption_manager
+        
+        encryption_manager = get_encryption_manager()
+        if not encryption_manager:
+            return {
+                "success": True,
+                "encryption_enabled": False,
+                "message": "Encryption service not available"
+            }
+        
+        # Get encryption status
+        encryption_status = await encryption_manager.get_encryption_status()
+        
+        return {
+            "success": True,
+            "encryption_status": encryption_status
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting encryption status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get encryption status")
+
+@app.post(
+    "/api/security/encryption/rotate-keys",
+    tags=["security"],
+    summary="Rotate encryption keys",
+    description="Manually trigger encryption key rotation (admin only)"
+)
+async def rotate_encryption_keys():
+    """Rotate encryption keys"""
+    try:
+        from security.encryption_manager import get_encryption_manager
+        
+        encryption_manager = get_encryption_manager()
+        if not encryption_manager:
+            raise HTTPException(status_code=503, detail="Encryption service unavailable")
+        
+        # Rotate keys
+        success = await encryption_manager.rotate_keys()
+        
+        if success:
+            return {
+                "success": True,
+                "message": "Encryption keys rotated successfully"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Key rotation failed")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error rotating keys: {e}")
+        raise HTTPException(status_code=500, detail="Failed to rotate encryption keys")
+
+@app.get(
+    "/api/security/audit/events",
+    tags=["security"],
+    summary="Get security audit events",
+    description="Get recent security events and audit logs"
+)
+async def get_security_events(limit: int = 100):
+    """Get security audit events"""
+    try:
+        # Get security events from Redis or database
+        if redis_client:
+            # Get recent security events
+            events = await redis_client.lrange("security_events", 0, limit - 1)
+            
+            security_events = []
+            for event in events:
+                try:
+                    event_data = json.loads(event.decode())
+                    security_events.append(event_data)
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+            
+            return {
+                "success": True,
+                "events": security_events,
+                "total_events": len(security_events)
+            }
+        else:
+            return {
+                "success": True,
+                "events": [],
+                "message": "Security monitoring not available"
+            }
+        
+    except Exception as e:
+        logger.error(f"Error getting security events: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get security events")
+
+@app.get(
+    "/api/security/system/status",
+    tags=["security"],
+    summary="Get comprehensive security status",
+    description="Get overall security system status including all components"
+)
+async def get_security_system_status():
+    """Get comprehensive security system status"""
+    try:
+        security_status = {
+            "timestamp": datetime.now().isoformat(),
+            "overall_status": "healthy",
+            "components": {}
+        }
+        
+        # Check MFA status
+        try:
+            from security.mfa_manager import get_mfa_manager
+            mfa_manager = get_mfa_manager()
+            security_status["components"]["mfa"] = {
+                "enabled": mfa_manager is not None,
+                "status": "healthy" if mfa_manager else "disabled"
+            }
+        except Exception as e:
+            security_status["components"]["mfa"] = {
+                "enabled": False,
+                "status": "error",
+                "error": str(e)
+            }
+        
+        # Check encryption status
+        try:
+            from security.encryption_manager import get_encryption_manager
+            encryption_manager = get_encryption_manager()
+            if encryption_manager:
+                enc_status = await encryption_manager.get_encryption_status()
+                security_status["components"]["encryption"] = {
+                    "enabled": enc_status.get("encryption_enabled", False),
+                    "status": "healthy",
+                    "details": enc_status
+                }
+            else:
+                security_status["components"]["encryption"] = {
+                    "enabled": False,
+                    "status": "disabled"
+                }
+        except Exception as e:
+            security_status["components"]["encryption"] = {
+                "enabled": False,
+                "status": "error",
+                "error": str(e)
+            }
+        
+        # Check security monitoring
+        security_status["components"]["monitoring"] = {
+            "enabled": security_monitor is not None,
+            "status": "healthy" if security_monitor else "disabled"
+        }
+        
+        # Check Redis security
+        security_status["components"]["redis_security"] = {
+            "enabled": redis_client is not None,
+            "status": "healthy" if redis_client else "disabled"
+        }
+        
+        # Determine overall status
+        component_statuses = [comp["status"] for comp in security_status["components"].values()]
+        if "error" in component_statuses:
+            security_status["overall_status"] = "degraded"
+        elif all(status in ["healthy", "disabled"] for status in component_statuses):
+            security_status["overall_status"] = "healthy"
+        else:
+            security_status["overall_status"] = "unknown"
+        
+        return {
+            "success": True,
+            "security_status": security_status
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting security system status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get security system status")
 
 if __name__ == "__main__":
+    # Get port from environment or use default
+    port = int(os.getenv('APP_PORT', '8001'))
+    
+    # Check if port is available
+    import socket
+    def check_port_available(port):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            result = sock.bind(('0.0.0.0', port))
+            sock.close()
+            return True
+        except OSError:
+            sock.close()
+            return False
+    
+    # Find available port if default is in use
+    if not check_port_available(port):
+        logger.warning(f"Port {port} is in use, trying alternative ports...")
+        for alt_port in [8001, 8002, 8003, 8004, 8005]:
+            if check_port_available(alt_port):
+                port = alt_port
+                logger.info(f"Using alternative port: {port}")
+                break
+        else:
+            logger.error("No available ports found in range 8001-8005")
+            exit(1)
+    
+    logger.info(f"Starting server on http://0.0.0.0:{port}")
+    
     # Run the application
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
+        port=port,
         reload=False,
         log_level="info",
         access_log=True,

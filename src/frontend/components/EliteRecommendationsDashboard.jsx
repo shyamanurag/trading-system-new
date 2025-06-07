@@ -39,125 +39,65 @@ const EliteRecommendationsDashboard = () => {
     const [selectedTrade, setSelectedTrade] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
     const [performanceData, setPerformanceData] = useState(null);
+    const [lastScanTime, setLastScanTime] = useState(null);
 
     const fetchRecommendations = async () => {
         try {
-            setRefreshing(true);
-
-            // Fetch elite recommendations
+            setLoading(true);
             const response = await fetch(`${API_BASE_URL}/api/recommendations/elite`);
-            const data = await response.json();
-
-            if (data.success) {
-                setRecommendations(data.recommendations || generateMockRecommendations());
+            if (response.ok) {
+                const data = await response.json();
+                setRecommendations(data.recommendations || []);
+                setLastScanTime(data.scan_timestamp || new Date().toISOString());
             } else {
-                setRecommendations(generateMockRecommendations());
+                throw new Error('Failed to fetch recommendations');
             }
-
-            // Fetch performance data
-            const perfResponse = await fetch(`${API_BASE_URL}/api/performance/elite-trades`);
-            const perfData = await perfResponse.json();
-
-            if (perfData.success) {
-                setPerformanceData(perfData.data);
-            } else {
-                setPerformanceData(generateMockPerformanceData());
-            }
-
-            setError(null);
-        } catch (err) {
-            console.error('Error fetching recommendations:', err);
-            setRecommendations(generateMockRecommendations());
-            setPerformanceData(generateMockPerformanceData());
-            setError('Using demo data - API not available');
+        } catch (error) {
+            console.error('Error fetching recommendations:', error);
+            setRecommendations([]); // Set empty array instead of mock data
+            setError('Unable to fetch elite recommendations');
         } finally {
             setLoading(false);
-            setRefreshing(false);
+        }
+    };
+
+    const fetchPerformanceData = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/performance/elite-trades`);
+            if (response.ok) {
+                const data = await response.json();
+                setPerformanceData(data.data || {
+                    total_recommendations: 0,
+                    active_recommendations: 0,
+                    success_rate: 0,
+                    avg_return: 0,
+                    total_profit: 0,
+                    best_performer: null,
+                    recent_closed: []
+                });
+            } else {
+                throw new Error('Failed to fetch performance data');
+            }
+        } catch (error) {
+            console.error('Error fetching performance data:', error);
+            setPerformanceData({
+                total_recommendations: 0,
+                active_recommendations: 0,
+                success_rate: 0,
+                avg_return: 0,
+                total_profit: 0,
+                best_performer: null,
+                recent_closed: []
+            });
         }
     };
 
     useEffect(() => {
         fetchRecommendations();
+        fetchPerformanceData();
         const interval = setInterval(fetchRecommendations, 300000); // Refresh every 5 minutes
         return () => clearInterval(interval);
     }, []);
-
-    const generateMockRecommendations = () => {
-        const symbols = ['RELIANCE', 'TCS', 'HDFC', 'INFY', 'ITC', 'SBIN', 'BAJAJFINSV', 'LT'];
-        const strategies = ['Breakout Play', 'Support Bounce', 'Momentum Surge', 'Mean Reversion', 'Trend Following'];
-
-        return Array.from({ length: 6 }, (_, i) => {
-            const symbol = symbols[i % symbols.length];
-            const strategy = strategies[i % strategies.length];
-            const entryPrice = 1000 + Math.random() * 2000;
-            const stopLoss = entryPrice * (0.92 + Math.random() * 0.05);
-            const target1 = entryPrice * (1.08 + Math.random() * 0.07);
-            const target2 = entryPrice * (1.15 + Math.random() * 0.10);
-            const target3 = entryPrice * (1.25 + Math.random() * 0.15);
-            const validDays = 10 + Math.floor(Math.random() * 6); // 10-15 days
-
-            return {
-                recommendation_id: `ELITE_${Date.now()}_${i}`,
-                symbol,
-                strategy,
-                direction: Math.random() > 0.3 ? 'LONG' : 'SHORT',
-                entry_price: entryPrice,
-                stop_loss: stopLoss,
-                primary_target: target1,
-                secondary_target: target2,
-                tertiary_target: target3,
-                confidence_score: 10.0,
-                timeframe: `${validDays} Days`,
-                timestamp: new Date(Date.now() - i * 3600000),
-                valid_until: new Date(Date.now() + validDays * 24 * 3600000),
-                risk_reward_ratio: (target1 - entryPrice) / (entryPrice - stopLoss),
-                confluence_factors: [
-                    'Perfect Support/Resistance levels',
-                    'Volume surge with smart money flow',
-                    'Technical pattern completion',
-                    'Sector momentum alignment',
-                    'Market regime confirmation'
-                ],
-                entry_conditions: [
-                    'Break above previous high with volume',
-                    'RSI above 60 with momentum',
-                    'Price above 20 EMA'
-                ],
-                risk_metrics: {
-                    risk_percent: Math.abs(entryPrice - stopLoss) / entryPrice * 100,
-                    reward_percent: Math.abs(target1 - entryPrice) / entryPrice * 100,
-                    position_size: 2 + Math.random() * 3
-                },
-                status: ['ACTIVE', 'TRIGGERED', 'TARGET_1_HIT'][Math.floor(Math.random() * 3)],
-                current_price: entryPrice + (Math.random() - 0.5) * entryPrice * 0.1
-            };
-        });
-    };
-
-    const generateMockPerformanceData = () => {
-        const last30Days = Array.from({ length: 30 }, (_, i) => {
-            const date = new Date();
-            date.setDate(date.getDate() - 29 + i);
-            return {
-                date: date.toISOString().split('T')[0],
-                elite_trades: Math.floor(Math.random() * 3),
-                success_rate: 85 + Math.random() * 10,
-                avg_return: 8 + Math.random() * 7,
-                total_return: (Math.random() - 0.1) * 20
-            };
-        });
-
-        return {
-            summary: {
-                total_trades: 89,
-                success_rate: 91.2,
-                avg_return_per_trade: 12.8,
-                total_return_30d: 15.7,
-                active_trades: 4
-            },
-            daily_performance: last30Days
-        };
-    };
 
     const getStatusColor = (status) => {
         switch (status) {
@@ -227,7 +167,7 @@ const EliteRecommendationsDashboard = () => {
                                     Total Trades
                                 </Typography>
                                 <Typography variant="h4">
-                                    {performanceData.summary.total_trades}
+                                    {performanceData.total_recommendations}
                                 </Typography>
                             </CardContent>
                         </Card>
@@ -239,7 +179,7 @@ const EliteRecommendationsDashboard = () => {
                                     Success Rate
                                 </Typography>
                                 <Typography variant="h4" color="success.main">
-                                    {formatPercent(performanceData.summary.success_rate)}
+                                    {formatPercent(performanceData.success_rate)}
                                 </Typography>
                             </CardContent>
                         </Card>
@@ -251,19 +191,7 @@ const EliteRecommendationsDashboard = () => {
                                     Avg Return/Trade
                                 </Typography>
                                 <Typography variant="h4" color="primary.main">
-                                    {formatPercent(performanceData.summary.avg_return_per_trade)}
-                                </Typography>
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                    <Grid item xs={12} md={2.4}>
-                        <Card>
-                            <CardContent sx={{ textAlign: 'center' }}>
-                                <Typography color="text.secondary" gutterBottom>
-                                    30D Return
-                                </Typography>
-                                <Typography variant="h4" color={performanceData.summary.total_return_30d > 0 ? 'success.main' : 'error.main'}>
-                                    {formatPercent(performanceData.summary.total_return_30d)}
+                                    {formatPercent(performanceData.avg_return)}
                                 </Typography>
                             </CardContent>
                         </Card>
@@ -275,7 +203,7 @@ const EliteRecommendationsDashboard = () => {
                                     Active Trades
                                 </Typography>
                                 <Typography variant="h4" color="warning.main">
-                                    {performanceData.summary.active_trades}
+                                    {performanceData.active_recommendations}
                                 </Typography>
                             </CardContent>
                         </Card>

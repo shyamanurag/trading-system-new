@@ -91,44 +91,48 @@ const UserPerformanceDashboard = () => {
     const fetchUsers = async () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/users`);
-            const data = await response.json();
-
-            if (data.success) {
-                setUsers(data.users || generateMockUsers());
+            if (response.ok) {
+                const data = await response.json();
+                setUsers(data.users || []);
+                if (data.users && data.users.length > 0) {
+                    setSelectedUser(data.users[0]);
+                }
             } else {
-                setUsers(generateMockUsers());
+                throw new Error('Failed to fetch users');
             }
-
-            // Set first user as selected by default
-            if (data.users && data.users.length > 0) {
-                setSelectedUser(data.users[0]);
-            } else {
-                const mockUsers = generateMockUsers();
-                setUsers(mockUsers);
-                setSelectedUser(mockUsers[0]);
-            }
-        } catch (err) {
-            console.error('Error fetching users:', err);
-            const mockUsers = generateMockUsers();
-            setUsers(mockUsers);
-            setSelectedUser(mockUsers[0]);
-            setError('Using demo data - API not available');
+        } catch (error) {
+            console.error('Error fetching users:', error);
+            setUsers([]); // Set empty array instead of mock data
         }
     };
 
     const fetchUserPerformance = async (userId) => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/users/${userId}/performance`);
-            const data = await response.json();
+        if (!userId) return;
 
-            if (data.success) {
-                setUserPerformance(data.performance || generateMockUserPerformance(userId));
+        try {
+            setLoading(true);
+            const response = await fetch(`${API_BASE_URL}/api/users/${userId}/performance`);
+            if (response.ok) {
+                const data = await response.json();
+                setUserPerformance(data.performance || {
+                    daily_performance: [],
+                    recent_trades: [],
+                    risk_metrics: {},
+                    strategy_breakdown: []
+                });
             } else {
-                setUserPerformance(generateMockUserPerformance(userId));
+                throw new Error('Failed to fetch performance data');
             }
-        } catch (err) {
-            console.error('Error fetching user performance:', err);
-            setUserPerformance(generateMockUserPerformance(userId));
+        } catch (error) {
+            console.error('Error fetching performance:', error);
+            setUserPerformance({
+                daily_performance: [],
+                recent_trades: [],
+                risk_metrics: {},
+                strategy_breakdown: []
+            });
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -139,124 +143,16 @@ const UserPerformanceDashboard = () => {
             const data = await response.json();
 
             if (data.success) {
-                setDailyPnL(data.daily_pnl || generateMockDailyPnL());
+                setDailyPnL(data.daily_pnl || []);
             } else {
-                setDailyPnL(generateMockDailyPnL());
+                setDailyPnL([]);
             }
         } catch (err) {
             console.error('Error fetching daily P&L:', err);
-            setDailyPnL(generateMockDailyPnL());
+            setDailyPnL([]);
         } finally {
             setLoading(false);
         }
-    };
-
-    const generateMockUsers = () => {
-        return [
-            {
-                user_id: 'trader_001',
-                name: 'Rajesh Kumar',
-                email: 'rajesh@example.com',
-                initial_capital: 500000,
-                current_capital: 587500,
-                is_active: true,
-                registration_date: '2024-01-15',
-                risk_tolerance: 'medium',
-                total_trades: 45,
-                winning_trades: 32,
-                win_rate: 71.1,
-                total_pnl: 87500,
-                daily_pnl: 2500,
-                open_trades: 3,
-                avatar: 'RK'
-            },
-            {
-                user_id: 'trader_002',
-                name: 'Priya Sharma',
-                email: 'priya@example.com',
-                initial_capital: 300000,
-                current_capital: 345600,
-                is_active: true,
-                registration_date: '2024-02-01',
-                risk_tolerance: 'conservative',
-                total_trades: 28,
-                winning_trades: 22,
-                win_rate: 78.6,
-                total_pnl: 45600,
-                daily_pnl: 1200,
-                open_trades: 2,
-                avatar: 'PS'
-            },
-            {
-                user_id: 'trader_003',
-                name: 'Amit Patel',
-                email: 'amit@example.com',
-                initial_capital: 1000000,
-                current_capital: 925000,
-                is_active: false,
-                registration_date: '2024-01-01',
-                risk_tolerance: 'aggressive',
-                total_trades: 67,
-                winning_trades: 38,
-                win_rate: 56.7,
-                total_pnl: -75000,
-                daily_pnl: -3500,
-                open_trades: 0,
-                avatar: 'AP'
-            }
-        ];
-    };
-
-    const generateMockUserPerformance = (userId) => {
-        const last30Days = Array.from({ length: 30 }, (_, i) => {
-            const date = new Date();
-            date.setDate(date.getDate() - 29 + i);
-            return {
-                date: date.toISOString().split('T')[0],
-                pnl: (Math.random() - 0.4) * 5000,
-                cumulative_pnl: (i + 1) * 1000 + (Math.random() - 0.3) * 10000,
-                trades_count: Math.floor(Math.random() * 4),
-                win_rate: 60 + Math.random() * 30
-            };
-        });
-
-        const trades = [
-            { symbol: 'RELIANCE', entry_date: '2024-06-01', exit_date: '2024-06-05', pnl: 15000, status: 'CLOSED' },
-            { symbol: 'TCS', entry_date: '2024-06-03', exit_date: null, pnl: 2500, status: 'OPEN' },
-            { symbol: 'HDFC', entry_date: '2024-06-04', exit_date: '2024-06-06', pnl: -3500, status: 'CLOSED' },
-            { symbol: 'INFY', entry_date: '2024-06-05', exit_date: null, pnl: 1200, status: 'OPEN' }
-        ];
-
-        return {
-            daily_performance: last30Days,
-            recent_trades: trades,
-            risk_metrics: {
-                sharpe_ratio: 1.8,
-                max_drawdown: 12.5,
-                volatility: 18.2,
-                var_95: 8500,
-                correlation_to_market: 0.65
-            },
-            strategy_breakdown: [
-                { strategy: 'Breakout', trades: 15, win_rate: 80, avg_return: 8.5 },
-                { strategy: 'Momentum', trades: 12, win_rate: 75, avg_return: 6.2 },
-                { strategy: 'Mean Reversion', trades: 8, win_rate: 62.5, avg_return: 4.1 }
-            ]
-        };
-    };
-
-    const generateMockDailyPnL = () => {
-        return Array.from({ length: 30 }, (_, i) => {
-            const date = new Date();
-            date.setDate(date.getDate() - 29 + i);
-            return {
-                date: date.toISOString().split('T')[0],
-                total_pnl: (Math.random() - 0.3) * 50000,
-                user_count: 15 + Math.floor(Math.random() * 10),
-                trades_count: 20 + Math.floor(Math.random() * 30),
-                winning_trades: Math.floor((20 + Math.random() * 30) * (0.6 + Math.random() * 0.3))
-            };
-        });
     };
 
     const handleCreateUser = async () => {

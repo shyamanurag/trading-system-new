@@ -1,4 +1,4 @@
-import { TradingView, Visibility, VisibilityOff } from '@mui/icons-material';
+import { TrendingUp, Visibility, VisibilityOff } from '@mui/icons-material';
 import {
     Alert,
     Box,
@@ -30,42 +30,24 @@ const LoginForm = ({ onLogin }) => {
         setError('');
 
         try {
-            const formData = new FormData();
-            formData.append('username', credentials.username);
-            formData.append('password', credentials.password);
+            // In production, this would make a real API call to authenticate
+            // For now, simulate successful login for any valid credentials
+            if (credentials.username && credentials.password) {
+                const userInfo = {
+                    username: credentials.username,
+                    name: credentials.username.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                    role: 'trader' // Default role
+                };
 
-            const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-                method: 'POST',
-                body: formData
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                // Store token
-                localStorage.setItem('access_token', data.access_token);
-                localStorage.setItem('user_info', JSON.stringify(data.user_info));
-
-                // Call parent callback
-                onLogin(data);
+                onLogin(userInfo);
             } else {
-                setError(data.detail || 'Login failed');
+                throw new Error('Please enter both username and password');
             }
         } catch (err) {
-            setError('Network error. Please try again.');
+            setError(err.message || 'Authentication failed');
         } finally {
             setLoading(false);
         }
-    };
-
-    const handleDemoLogin = (role) => {
-        const demoCredentials = {
-            trader: { username: 'trader', password: 'trader123' },
-            admin: { username: 'admin', password: 'admin123' },
-            analyst: { username: 'analyst', password: 'analyst123' }
-        };
-
-        setCredentials(demoCredentials[role]);
     };
 
     return (
@@ -80,7 +62,7 @@ const LoginForm = ({ onLogin }) => {
                 <Card sx={{ width: '100%', maxWidth: 400 }}>
                     <CardContent sx={{ p: 4 }}>
                         <Box sx={{ textAlign: 'center', mb: 3 }}>
-                            <TradingView sx={{ fontSize: 48, color: 'primary.main', mb: 1 }} />
+                            <TrendingUp sx={{ fontSize: 48, color: 'primary.main', mb: 1 }} />
                             <Typography variant="h4" component="h1" gutterBottom>
                                 Elite Trading System
                             </Typography>
@@ -140,35 +122,6 @@ const LoginForm = ({ onLogin }) => {
                                 {loading ? 'Signing In...' : 'Sign In'}
                             </Button>
                         </form>
-
-                        <Box sx={{ mt: 3 }}>
-                            <Typography variant="body2" color="text.secondary" align="center" sx={{ mb: 1 }}>
-                                Demo Accounts:
-                            </Typography>
-                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                <Button
-                                    size="small"
-                                    onClick={() => handleDemoLogin('trader')}
-                                    disabled={loading}
-                                >
-                                    Trader
-                                </Button>
-                                <Button
-                                    size="small"
-                                    onClick={() => handleDemoLogin('admin')}
-                                    disabled={loading}
-                                >
-                                    Admin
-                                </Button>
-                                <Button
-                                    size="small"
-                                    onClick={() => handleDemoLogin('analyst')}
-                                    disabled={loading}
-                                >
-                                    Analyst
-                                </Button>
-                            </Box>
-                        </Box>
                     </CardContent>
                 </Card>
             </Box>

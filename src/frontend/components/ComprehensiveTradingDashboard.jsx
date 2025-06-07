@@ -4,6 +4,7 @@ import {
     Dashboard,
     Logout,
     Notifications,
+    People,
     Refresh,
     Security,
     SmartToy,
@@ -47,6 +48,7 @@ import {
 // Import existing components
 import AutonomousTradingDashboard from './AutonomousTradingDashboard';
 import EliteRecommendationsDashboard from './EliteRecommendationsDashboard';
+import UserManagementDashboard from './UserManagementDashboard';
 import UserPerformanceDashboard from './UserPerformanceDashboard';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -71,26 +73,124 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
         try {
             setRefreshing(true);
 
-            // Generate comprehensive mock data for all features
-            const mockData = generateComprehensiveMockData();
-            setDashboardData(mockData);
+            // Fetch real data from APIs
+            const [usersResponse, pnlResponse, recommendationsResponse] = await Promise.allSettled([
+                fetch(`${API_BASE_URL}/api/users`),
+                fetch(`${API_BASE_URL}/api/performance/daily-pnl`),
+                fetch(`${API_BASE_URL}/api/recommendations/elite`)
+            ]);
+
+            let dashboardData = {
+                dailyPnL: [],
+                systemMetrics: {
+                    totalPnL: 0,
+                    totalTrades: 0,
+                    successRate: 0,
+                    activeUsers: 0,
+                    aum: 0,
+                    dailyVolume: 0
+                },
+                recentTrades: [],
+                topPerformers: [],
+                alerts: []
+            };
+
+            // Process users data
+            if (usersResponse.status === 'fulfilled' && usersResponse.value.ok) {
+                const usersData = await usersResponse.value.json();
+                if (usersData.success) {
+                    const users = usersData.users || [];
+                    dashboardData.systemMetrics.activeUsers = users.length;
+
+                    // Calculate system metrics from users
+                    const totalPnL = users.reduce((sum, user) => sum + (user.total_pnl || 0), 0);
+                    const totalTrades = users.reduce((sum, user) => sum + (user.total_trades || 0), 0);
+                    const totalCapital = users.reduce((sum, user) => sum + (user.current_capital || user.current_balance || 0), 0);
+
+                    dashboardData.systemMetrics.totalPnL = totalPnL;
+                    dashboardData.systemMetrics.totalTrades = totalTrades;
+                    dashboardData.systemMetrics.aum = totalCapital;
+
+                    // Top performers from users
+                    dashboardData.topPerformers = users
+                        .filter(user => user.total_pnl > 0)
+                        .sort((a, b) => (b.total_pnl || 0) - (a.total_pnl || 0))
+                        .slice(0, 4)
+                        .map(user => ({
+                            user: user.full_name || user.name || user.username,
+                            pnl: user.total_pnl || 0,
+                            trades: user.total_trades || 0,
+                            winRate: user.win_rate || 0
+                        }));
+                }
+            }
+
+            // Process daily P&L data
+            if (pnlResponse.status === 'fulfilled' && pnlResponse.value.ok) {
+                const pnlData = await pnlResponse.value.json();
+                if (pnlData.success) {
+                    dashboardData.dailyPnL = pnlData.daily_pnl || [];
+
+                    // Calculate success rate from daily data
+                    const totalWinningTrades = dashboardData.dailyPnL.reduce((sum, day) => sum + (day.winning_trades || 0), 0);
+                    const totalDayTrades = dashboardData.dailyPnL.reduce((sum, day) => sum + (day.trades_count || 0), 0);
+                    if (totalDayTrades > 0) {
+                        dashboardData.systemMetrics.successRate = (totalWinningTrades / totalDayTrades) * 100;
+                    }
+                }
+            }
+
+            // Process recommendations for alerts
+            if (recommendationsResponse.status === 'fulfilled' && recommendationsResponse.value.ok) {
+                const recsData = await recommendationsResponse.value.json();
+                if (recsData.success && recsData.recommendations) {
+                    // Convert recommendations to alerts
+                    dashboardData.alerts = recsData.recommendations.slice(0, 3).map(rec => ({
+                        type: rec.confidence > 80 ? 'success' : 'info',
+                        message: `${rec.strategy} signal for ${rec.symbol} - Confidence: ${rec.confidence}%`,
+                        time: new Date(rec.timestamp).toLocaleTimeString()
+                    }));
+                }
+            }
+
+            setDashboardData(dashboardData);
 
             setSystemStatus({
                 status: 'healthy',
                 uptime: '99.9%',
                 apiLatency: '45ms',
-                activeTrades: 23,
-                connectedUsers: 18
+                activeTrades: dashboardData.systemMetrics.totalTrades,
+                connectedUsers: dashboardData.systemMetrics.activeUsers
             });
 
             setError(null);
         } catch (err) {
             console.error('Dashboard data fetch error:', err);
-            setError('Using demo data - all features available for testing');
+            setError('Unable to fetch dashboard data - check API connectivity');
 
-            // Still show demo data
-            const mockData = generateComprehensiveMockData();
-            setDashboardData(mockData);
+            // Set empty state instead of mock data
+            setDashboardData({
+                dailyPnL: [],
+                systemMetrics: {
+                    totalPnL: 0,
+                    totalTrades: 0,
+                    successRate: 0,
+                    activeUsers: 0,
+                    aum: 0,
+                    dailyVolume: 0
+                },
+                recentTrades: [],
+                topPerformers: [],
+                alerts: []
+            });
+
+            setSystemStatus({
+                status: 'degraded',
+                uptime: 'N/A',
+                apiLatency: 'N/A',
+                activeTrades: 0,
+                connectedUsers: 0
+            });
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -114,56 +214,6 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
     const handleLogout = () => {
         handleUserMenuClose();
         onLogout();
-    };
-
-    const generateComprehensiveMockData = () => {
-        // Generate daily P&L data
-        const dailyPnL = Array.from({ length: 30 }, (_, i) => {
-            const date = new Date();
-            date.setDate(date.getDate() - 29 + i);
-            return {
-                date: date.toISOString().split('T')[0],
-                pnl: Math.round((Math.random() - 0.3) * 25000),
-                trades: Math.floor(Math.random() * 50) + 20,
-                winRate: Math.round(60 + Math.random() * 30)
-            };
-        });
-
-        // System metrics
-        const systemMetrics = {
-            totalPnL: 1247500,
-            totalTrades: 2847,
-            successRate: 91.2,
-            activeUsers: 25,
-            aum: 12500000,
-            dailyVolume: 8750000
-        };
-
-        // Recent trades
-        const recentTrades = [
-            { symbol: 'RELIANCE', entry: 2450, current: 2485, pnl: 15750, status: 'OPEN' },
-            { symbol: 'TCS', entry: 3650, current: 3698, pnl: 12400, status: 'OPEN' },
-            { symbol: 'HDFC', entry: 1580, current: 1545, pnl: -8750, status: 'CLOSED' },
-            { symbol: 'INFY', entry: 1420, current: 1456, pnl: 9800, status: 'OPEN' },
-            { symbol: 'ITC', entry: 485, current: 492, pnl: 5250, status: 'OPEN' }
-        ];
-
-        // Top performers
-        const topPerformers = [
-            { user: 'Rajesh Kumar', pnl: 125000, trades: 45, winRate: 88.9 },
-            { user: 'Priya Sharma', pnl: 98500, trades: 32, winRate: 84.4 },
-            { user: 'Amit Patel', pnl: 87300, trades: 51, winRate: 78.4 },
-            { user: 'Sunita Gupta', pnl: 76200, trades: 28, winRate: 92.9 }
-        ];
-
-        // System alerts
-        const alerts = [
-            { type: 'success', message: 'Elite recommendation TARGET_1 hit for RELIANCE', time: '10:45 AM' },
-            { type: 'warning', message: '3 users approaching daily risk limit', time: '11:20 AM' },
-            { type: 'info', message: 'Market volatility increased - risk adjustment suggested', time: '11:35 AM' }
-        ];
-
-        return { dailyPnL, systemMetrics, recentTrades, topPerformers, alerts };
     };
 
     const formatCurrency = (value) => `₹${value.toLocaleString()}`;
@@ -200,7 +250,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                             🚀 PRODUCTION READY! 🚀 Elite Trading System
                         </Typography>
                         <Typography variant="h6" sx={{ opacity: 0.9 }}>
-                            Professional Trading Platform with Authentication & Security
+                            Production-Grade Trading Platform • Redis Connected • Real Infrastructure
                         </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -294,6 +344,11 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                     <Tab
                         icon={<SmartToy />}
                         label="Autonomous Trading"
+                        sx={{ minHeight: 72, textTransform: 'none' }}
+                    />
+                    <Tab
+                        icon={<People />}
+                        label="User Management"
                         sx={{ minHeight: 72, textTransform: 'none' }}
                     />
                 </Tabs>
@@ -525,6 +580,10 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
 
             <TabPanel value={selectedTab} index={5}>
                 <AutonomousTradingDashboard userInfo={userInfo} />
+            </TabPanel>
+
+            <TabPanel value={selectedTab} index={6}>
+                <UserManagementDashboard />
             </TabPanel>
         </Container>
     );
