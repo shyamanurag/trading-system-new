@@ -116,6 +116,29 @@ services:
   - key: TRUEDATA_PASSWORD
     scope: RUN_AND_BUILD_TIME
     value: shyam106
+  
+  # Performance & Connection Tuning
+  - key: DB_MIN_CONNECTIONS
+    scope: RUN_AND_BUILD_TIME
+    value: "2"
+  - key: DB_MAX_CONNECTIONS
+    scope: RUN_AND_BUILD_TIME
+    value: "10"
+  - key: DB_COMMAND_TIMEOUT
+    scope: RUN_AND_BUILD_TIME
+    value: "15"
+  - key: DB_CONNECT_TIMEOUT
+    scope: RUN_AND_BUILD_TIME
+    value: "10"
+  - key: WORKERS
+    scope: RUN_AND_BUILD_TIME
+    value: "1"
+  - key: LOG_LEVEL
+    scope: RUN_AND_BUILD_TIME
+    value: "INFO"
+  - key: DEBUG
+    scope: RUN_AND_BUILD_TIME
+    value: "false"
 
 features:
 - buildpack-stack=ubuntu-22
