@@ -13,17 +13,17 @@ services:
   instance_count: 1
   instance_size_slug: apps-d-1vcpu-4gb
   
-  # Environment variables - CORRECTED WITH PRODUCTION VALUES
+  # Environment variables - CONFIGURE ACTUAL VALUES IN DIGITALOCEAN DASHBOARD
   envs:
   - key: DATABASE_URL
     scope: RUN_TIME
-    value: postgresql://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb?sslmode=require
+    value: "SET_IN_DIGITALOCEAN_DASHBOARD"
   - key: REDIS_URL
     scope: RUN_AND_BUILD_TIME
-    value: rediss://default:AVNS_TSCy17L6f9z0CdWgcvW@redis-cache-do-user-23093341-0.k.db.ondigitalocean.com:25061
+    value: "SET_IN_DIGITALOCEAN_DASHBOARD"
   - key: DATABASE_HOST
     scope: RUN_TIME
-    value: app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com
+    value: "SET_IN_DIGITALOCEAN_DASHBOARD"
   - key: DATABASE_PORT
     scope: RUN_TIME
     value: "25060"
@@ -35,7 +35,7 @@ services:
     value: doadmin
   - key: DATABASE_PASSWORD
     scope: RUN_TIME
-    value: AVNS_LpaPpsdL4CtOii03MnN
+    value: "SET_IN_DIGITALOCEAN_DASHBOARD"
   - key: DATABASE_SSL
     scope: RUN_TIME
     value: require
@@ -127,16 +127,16 @@ services:
   - key: DATABASE_POOL_RECYCLE
     scope: RUN_TIME
     value: "3600"
-  # Redis configuration details
+  # Redis configuration details - SET IN DIGITALOCEAN DASHBOARD
   - key: REDIS_HOST
     scope: RUN_TIME
-    value: redis-cache-do-user-23093341-0.k.db.ondigitalocean.com
+    value: "SET_IN_DIGITALOCEAN_DASHBOARD"
   - key: REDIS_PORT
     scope: RUN_TIME
     value: "25061"
   - key: REDIS_PASSWORD
     scope: RUN_TIME
-    value: AVNS_TSCy17L6f9z0CdWgcvW
+    value: "SET_IN_DIGITALOCEAN_DASHBOARD"
   - key: REDIS_USERNAME
     scope: RUN_TIME
     value: default

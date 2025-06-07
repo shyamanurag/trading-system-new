@@ -221,4 +221,7 @@ The system should deploy successfully with the updated configuration. Database c
 5. ⏳ Configure real webhook URLs (after deployment success)
 
 ## Build Trigger:
-This file change will force DigitalOcean to perform a new build instead of skipping. 
+This file change will force DigitalOcean to perform a new build instead of skipping.
+
+## Environment Variables:
+All sensitive environment variables have been configured directly in DigitalOcean App Platform dashboard to avoid exposing credentials in the repository. 
