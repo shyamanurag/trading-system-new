@@ -1979,40 +1979,46 @@ async def get_security_system_status():
 
 if __name__ == "__main__":
     # Get port from environment or use default
-    port = int(os.getenv('APP_PORT', '8001'))
+    port = int(os.getenv('APP_PORT', os.getenv('PORT', '8000')))
     
-    # Check if port is available
-    import socket
-    def check_port_available(port):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            result = sock.bind(('0.0.0.0', port))
-            sock.close()
-            return True
-        except OSError:
-            sock.close()
-            return False
+    # For production, don't check port availability as DigitalOcean manages this
+    is_production = os.getenv('ENVIRONMENT') == 'production' or os.getenv('NODE_ENV') == 'production'
     
-    # Find available port if default is in use
-    if not check_port_available(port):
-        logger.warning(f"Port {port} is in use, trying alternative ports...")
-        for alt_port in [8001, 8002, 8003, 8004, 8005]:
-            if check_port_available(alt_port):
-                port = alt_port
-                logger.info(f"Using alternative port: {port}")
-                break
-        else:
-            logger.error("No available ports found in range 8001-8005")
-            exit(1)
+    if not is_production:
+        # Check if port is available (only in development)
+        import socket
+        def check_port_available(port):
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                result = sock.bind(('0.0.0.0', port))
+                sock.close()
+                return True
+            except OSError:
+                sock.close()
+                return False
+        
+        # Find available port if default is in use
+        if not check_port_available(port):
+            logger.warning(f"Port {port} is in use, trying alternative ports...")
+            for alt_port in [8001, 8002, 8003, 8004, 8005]:
+                if check_port_available(alt_port):
+                    port = alt_port
+                    logger.info(f"Using alternative port: {port}")
+                    break
+            else:
+                logger.error("No available ports found in range 8001-8005")
+                exit(1)
     
     logger.info(f"Starting server on http://0.0.0.0:{port}")
+    logger.info(f"Environment: {os.getenv('ENVIRONMENT', 'development')}")
+    logger.info(f"Production mode: {is_production}")
     
     # Run the application
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=port,
-        reload=False,
+        reload=False,  # Never reload in production
         log_level="info",
         access_log=True,
     )

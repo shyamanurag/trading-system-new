@@ -1,0 +1,73 @@
+name: seashell-app
+region: blr
+
+services:
+- name: trading-system-new
+  dockerfile_path: Dockerfile
+  source_dir: /
+  github:
+    repo: shyamanurag/trading-system-new
+    branch: main
+    deploy_on_push: true
+  http_port: 8000
+  instance_count: 2
+  instance_size_slug: apps-d-1vcpu-4gb
+  
+  # Environment variables
+  envs:
+  - key: DATABASE_URL
+    scope: RUN_TIME
+    value: ${db.DATABASE_URL}
+  - key: REDIS_URL
+    scope: RUN_AND_BUILD_TIME
+    value: rediss://default:YOUR_REDIS_PASSWORD@redis-cache-host.db.ondigitalocean.com:25061
+  - key: JWT_SECRET
+    scope: RUN_TIME
+    value: prod-jwt-secret-2025-trading-system-secure-key
+  - key: APP_PORT
+    scope: RUN_TIME
+    value: "8000"
+  - key: NODE_ENV
+    scope: RUN_TIME
+    value: production
+  - key: ENVIRONMENT
+    scope: RUN_TIME
+    value: production
+  - key: LOG_LEVEL
+    scope: RUN_TIME
+    value: INFO
+  - key: ENABLE_CORS
+    scope: RUN_TIME
+    value: "true"
+  - key: ALLOWED_ORIGINS
+    scope: RUN_TIME
+    value: https://seashell-app.ondigitalocean.app,https://www.seashell-app.ondigitalocean.app
+  - key: PAPER_TRADING
+    scope: RUN_TIME
+    value: "false"
+  - key: BACKUP_ENABLED
+    scope: RUN_TIME
+    value: "true"
+  - key: ENABLE_METRICS
+    scope: RUN_TIME
+    value: "true"
+
+databases:
+- name: db
+  engine: PG
+  version: "14"
+  production: true
+  cluster_name: app-81cd3b75-f46c-49f9-8f76-09040fd8fc68
+  db_name: db
+  db_user: db
+
+features:
+- buildpack-stack=ubuntu-22
+
+ingress:
+  rules:
+  - component:
+      name: trading-system-new
+    match:
+      path:
+        prefix: / 

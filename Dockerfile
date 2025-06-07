@@ -28,7 +28,8 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     ENVIRONMENT=production \
-    PORT=8000
+    PORT=8000 \
+    APP_PORT=8000
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -56,6 +57,9 @@ COPY --from=frontend-builder /app/dist/frontend ./dist/frontend
 # Create build timestamp
 RUN echo "Build: ${BUILD_DATE} | Version: ${VERSION} | Single Requirements File: requirements.txt" > .build-timestamp
 
+# Create logs directory
+RUN mkdir -p /app/logs
+
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash app \
     && chown -R app:app /app
@@ -64,9 +68,9 @@ USER app
 # Expose port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+# Health check with proper timeout
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python health_check.py || curl -f http://localhost:8000/health || exit 1
 
-# Start application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"] 
+# Start application with proper production settings
+CMD ["python", "start_production.py"] 
