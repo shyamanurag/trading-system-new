@@ -9,7 +9,7 @@ import signal
 import sys
 from typing import List, Optional
 import aiohttp
-import json
+import yaml
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class GracefulShutdown:
         """Load shutdown configuration"""
         try:
             with open(self.config_path, 'r') as f:
-                return json.load(f)
+                return yaml.safe_load(f) or {}
         except Exception as e:
             logger.error(f"Error loading config: {e}")
             return {}

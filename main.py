@@ -555,7 +555,7 @@ async def init_redis():
 async def init_security():
     """Initialize security components"""
     try:
-        from security.auth_manager import AuthConfig, SecurityManager
+        from security.auth_manager import AuthConfig, AuthManager as SecurityManager
         from monitoring.security_monitor import SecurityMonitor
         
         # Create proper auth config
@@ -563,17 +563,25 @@ async def init_security():
         
         # Initialize security manager with proper config
         try:
-            security_manager = SecurityManager(auth_config, redis_client)
+            if redis_client:
+                security_manager = SecurityManager(auth_config, redis_client)
+            else:
+                logger.warning("Redis client not available, skipping security manager")
+                security_manager = None
         except Exception as e:
             logger.warning(f"Security manager initialization error: {e}, using fallback")
             security_manager = None
         
         # Initialize security monitor  
         try:
-            security_monitor = SecurityMonitor(config, redis_client)
-            # Check if security monitor has start method
-            if hasattr(security_monitor, 'start'):
-                await security_monitor.start()
+            if redis_client:
+                security_monitor = SecurityMonitor(config, redis_client)
+                # Check if security monitor has start method
+                if hasattr(security_monitor, 'start'):
+                    await security_monitor.start()
+            else:
+                logger.warning("Redis client not available, skipping security monitor")
+                security_monitor = None
         except Exception as e:
             logger.warning(f"Security monitor initialization error: {e}, using fallback")
             security_monitor = None
