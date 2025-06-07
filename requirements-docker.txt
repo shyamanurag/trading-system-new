@@ -64,7 +64,7 @@ aiosmtplib==3.0.1
 twilio==8.11.0
 
 # Trading and financial
-zerodha-api==1.0.0
+kiteconnect==4.2.0
 
 # Additional utilities
 python-slugify==8.0.1
