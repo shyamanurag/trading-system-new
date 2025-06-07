@@ -25,24 +25,26 @@ class DatabaseConfig:
     username: str
     password: str
     
-    # Connection pool settings
-    min_connections: int = 5
-    max_connections: int = 20
-    max_inactive_connection_lifetime: float = 300.0  # 5 minutes
-    max_queries: int = 50000
-    max_cached_statement_lifetime: int = 300
+    # Connection pool settings - OPTIMIZED FOR DIGITALOCEAN
+    min_connections: int = 2  # Reduced for better resource usage
+    max_connections: int = 10  # Reduced for cloud deployment
+    max_inactive_connection_lifetime: float = 120.0  # 2 minutes
+    max_queries: int = 10000
+    max_cached_statement_lifetime: int = 120
     
-    # Performance settings
-    command_timeout: int = 30
-    server_settings: Dict[str, str] = None
+    # Performance settings - CLOUD OPTIMIZED
+    command_timeout: int = 15  # Reduced from 30 to 15 seconds
+    connect_timeout: int = 10  # Add connection timeout
+    server_settings: Optional[Dict[str, str]] = None
     
     def __post_init__(self):
         if self.server_settings is None:
             self.server_settings = {
                 'jit': 'off',  # Disable JIT for faster query planning
                 'log_statement': 'none',
-                'log_min_duration_statement': '1000',  # Log slow queries
-                'shared_preload_libraries': 'pg_stat_statements'
+                'log_min_duration_statement': '5000',  # Log queries > 5s
+                'statement_timeout': '15000',  # 15 second timeout
+                'idle_in_transaction_session_timeout': '30000'  # 30 second idle timeout
             }
 
 @dataclass
@@ -96,6 +98,7 @@ class DatabaseManager:
                 max_inactive_connection_lifetime=self.config.max_inactive_connection_lifetime,
                 max_queries=self.config.max_queries,
                 command_timeout=self.config.command_timeout,
+                connect_timeout=self.config.connect_timeout,
                 server_settings=self.config.server_settings,
                 init=self._init_connection
             )
@@ -539,9 +542,10 @@ def get_database_config_from_env() -> DatabaseConfig:
         database=os.getenv('DATABASE_NAME', 'trading_system'),
         username=os.getenv('DATABASE_USER', 'trading_user'),
         password=os.getenv('DATABASE_PASSWORD', ''),
-        min_connections=int(os.getenv('DB_MIN_CONNECTIONS', '5')),
-        max_connections=int(os.getenv('DB_MAX_CONNECTIONS', '20')),
-        command_timeout=int(os.getenv('DB_COMMAND_TIMEOUT', '30'))
+        min_connections=int(os.getenv('DB_MIN_CONNECTIONS', '2')),
+        max_connections=int(os.getenv('DB_MAX_CONNECTIONS', '10')),
+        command_timeout=int(os.getenv('DB_COMMAND_TIMEOUT', '15')),
+        connect_timeout=int(os.getenv('DB_CONNECT_TIMEOUT', '10'))
     )
 
 # Global database manager instance
