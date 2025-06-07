@@ -61,15 +61,16 @@ async def lifespan(app: FastAPI):
         redis_client = await init_redis()
         
         # Initialize database manager
+        database_manager = None
         try:
             from database_manager import get_database_manager, init_database_manager
-            db_manager = await init_database_manager()
-            if db_manager:
+            database_manager = await init_database_manager()
+            if database_manager:
                 logger.info("✅ Database manager initialized successfully")
             else:
-                logger.warning("❌ Database manager initialization failed")
+                logger.warning("❌ Database manager initialization failed - continuing without database")
         except Exception as e:
-            logger.error(f"❌ Database manager error: {e}")
+            logger.warning(f"❌ Database unavailable, continuing in API-only mode: {e}")
         
         # Initialize health checker
         health_checker = await init_health_checker()
