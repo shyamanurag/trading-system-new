@@ -22,8 +22,8 @@ WORKDIR /app
 FROM python:3.11-slim as builder
 
 # Build arguments for cache busting - REDIS DEBUG BUILD
-ARG BUILD_DATE=2025-06-06-06-50
-ARG FORCE_REBUILD=REDIS_DEBUG_BUILD_V3
+ARG BUILD_DATE=2025-06-07-16-00
+ARG FORCE_REBUILD=KITECONNECT_FIX_V1
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -40,11 +40,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
-COPY requirements-docker.txt /app/requirements-docker.txt
+COPY requirements.txt /app/requirements.txt
 
 # Install Python dependencies
 WORKDIR /app
-RUN pip install --no-cache-dir -r requirements-docker.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Production stage
 FROM python:3.11-slim
@@ -68,8 +68,8 @@ COPY . /app/
 # Copy built frontend from frontend-builder stage
 COPY --from=frontend-builder /app/dist/frontend /app/dist/frontend
 
-# Create timestamp file for cache busting - REDIS DEBUG BUILD
-RUN echo "Build timestamp: ${BUILD_DATE} - Redis Debug Build - Environment Variable Priority Fix" > .build-timestamp
+# Create timestamp file for cache busting - KITECONNECT FIX
+RUN echo "Build timestamp: ${BUILD_DATE} - KiteConnect Fix - Single Requirements File" > .build-timestamp
 
 # Set environment variables
 ENV PYTHONPATH=/app \
