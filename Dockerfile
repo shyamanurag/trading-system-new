@@ -4,12 +4,12 @@ FROM node:18-slim as frontend-builder
 # Set working directory
 WORKDIR /app
 
-# Copy package files for dependency installation
-COPY package*.json ./
-COPY vite.config.js ./
+# Copy frontend package files and vite config
+COPY src/frontend/package.json ./
+COPY src/frontend/vite.config.js ./
 
-# Copy frontend source code - FIXED PATH
-COPY src/frontend/ ./src/frontend/
+# Copy frontend source code
+COPY src/frontend/ ./
 
 # Install dependencies and build frontend
 RUN npm install --production=false
@@ -56,7 +56,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Copy built frontend from frontend builder - FIXED PATH
+# Copy built frontend from frontend builder
 COPY --from=frontend-builder /app/dist/ ./dist/
 
 # Create build timestamp
@@ -78,7 +78,7 @@ USER app
 # Expose port
 EXPOSE 8000
 
-# Health check with fallback options - FIXED HEALTH CHECK
+# Health check with fallback options
 HEALTHCHECK --interval=30s --timeout=15s --start-period=120s --retries=3 \
     CMD python health_check.py 2>/dev/null || curl -f http://localhost:8000/health 2>/dev/null || wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1
 
