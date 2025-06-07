@@ -98,7 +98,7 @@ class DatabaseManager:
                 max_inactive_connection_lifetime=self.config.max_inactive_connection_lifetime,
                 max_queries=self.config.max_queries,
                 command_timeout=self.config.command_timeout,
-                connect_timeout=self.config.connect_timeout,
+                connection_timeout=self.config.connect_timeout,
                 server_settings=self.config.server_settings,
                 init=self._init_connection
             )

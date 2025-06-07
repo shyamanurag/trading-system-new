@@ -51,14 +51,14 @@ COPY docker-requirements.txt requirements.txt
 RUN pip install --upgrade pip==24.0
 RUN pip install -r requirements.txt
 
-# Copy frontend build from previous stage
-COPY --from=frontend-builder /app/dist /app/static
-
 # Copy application code
 COPY . /app/
 
+# Copy frontend build from previous stage to the correct location
+COPY --from=frontend-builder /app/dist/frontend /app/dist/frontend
+
 # Create necessary directories
-RUN mkdir -p /app/backups /app/logs /app/data /app/static
+RUN mkdir -p /app/backups /app/logs /app/data /app/dist
 
 # Set file permissions
 RUN chown -R appuser:appuser /app && \
