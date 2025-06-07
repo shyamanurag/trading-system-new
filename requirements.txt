@@ -47,7 +47,7 @@ pydantic-settings==2.1.0
 
 # Authentication & Security
 bcrypt==4.1.2
-cryptography==41.0.8
+cryptography==42.0.8
 pyotp==2.9.0
 qrcode[pil]==7.4.2
 
