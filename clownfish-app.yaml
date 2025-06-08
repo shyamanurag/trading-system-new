@@ -47,7 +47,7 @@ static_sites:
     repo: shyamanurag/trading-system-new
     branch: main
   source_dir: /src/frontend
-  build_command: npm install && npm run build
+  build_command: npm ci && npm run build
   output_dir: dist/frontend
   index_document: index.html
   error_document: index.html
@@ -56,4 +56,6 @@ static_sites:
   - key: NODE_VERSION
     value: "18"
   - key: VITE_API_URL
-    value: https://clownfish-app-trading-system-new-apmkg.ondigitalocean.app 
+    value: https://clownfish-app-trading-system-new-apmkg.ondigitalocean.app
+  - key: NODE_ENV
+    value: production 
