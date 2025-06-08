@@ -4,15 +4,17 @@ FROM node:18-slim as frontend-builder
 # Set working directory
 WORKDIR /app
 
-# Copy frontend package files and vite config
+# Copy frontend package files
 COPY src/frontend/package.json ./
+COPY src/frontend/package-lock.json ./
 COPY src/frontend/vite.config.js ./
 
 # Copy frontend source code
 COPY src/frontend/ ./
 
-# Install dependencies and build frontend
-RUN npm install --production=false
+# Install dependencies with npm ci (clean install)
+# Handle optional dependency issues
+RUN npm ci || (rm -rf node_modules package-lock.json && npm install)
 RUN npm run build
 
 # Verify build output
