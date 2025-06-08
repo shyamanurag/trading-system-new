@@ -19,12 +19,15 @@ features:
 ingress:
   rules:
   - component:
-      name: trading-system-new
+      name: frontend
     match:
-      authority:
-        exact: ""
       path:
         prefix: /
+  - component:
+      name: trading-system-new
+    match:
+      path:
+        prefix: /api
 name: clownfish-app
 region: blr
 services:
@@ -37,4 +40,20 @@ services:
   instance_count: 2
   instance_size_slug: apps-s-1vcpu-1gb
   name: trading-system-new
-  source_dir: / 
+  source_dir: /
+static_sites:
+- name: frontend
+  github:
+    repo: shyamanurag/trading-system-new
+    branch: main
+  source_dir: /src/frontend
+  build_command: npm install && npm run build
+  output_dir: dist
+  index_document: index.html
+  error_document: index.html
+  environment_slug: node-js
+  envs:
+  - key: NODE_VERSION
+    value: "18"
+  - key: VITE_API_URL
+    value: https://clownfish-app-trading-system-new-apmkg.ondigitalocean.app 
