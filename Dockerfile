@@ -6,15 +6,14 @@ WORKDIR /app
 
 # Copy frontend package files
 COPY src/frontend/package.json ./
-COPY src/frontend/package-lock.json ./
 COPY src/frontend/vite.config.js ./
 
 # Copy frontend source code
 COPY src/frontend/ ./
 
-# Install dependencies with npm ci (clean install)
-# Handle optional dependency issues
-RUN npm ci || (rm -rf node_modules package-lock.json && npm install)
+# Install dependencies with clean approach to handle optional dependency issues
+# This approach always works for the rollup linux dependencies
+RUN rm -rf node_modules package-lock.json && npm install
 RUN npm run build
 
 # Verify build output
