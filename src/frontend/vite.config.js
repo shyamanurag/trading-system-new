@@ -9,9 +9,21 @@ export default defineConfig({
         emptyOutDir: true,
         sourcemap: false,
         minify: 'esbuild',
+        chunkSizeWarningLimit: 1000,
         rollupOptions: {
             output: {
-                manualChunks: undefined,
+                manualChunks: {
+                    vendor: ['react', 'react-dom'],
+                    mui: ['@mui/material', '@mui/icons-material'],
+                    charts: ['recharts']
+                },
+            },
+        },
+        // Optimize for DigitalOcean deployment
+        terserOptions: {
+            compress: {
+                drop_console: true,
+                drop_debugger: true,
             },
         },
     },
@@ -36,6 +48,7 @@ export default defineConfig({
         host: true
     },
     define: {
-        'process.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'http://localhost:8000')
+        'process.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'http://localhost:8000'),
+        'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
     }
 }) 
