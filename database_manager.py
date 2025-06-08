@@ -90,7 +90,7 @@ class DatabaseManager:
             # Build connection string
             dsn = f"postgresql://{self.config.username}:{self.config.password}@{self.config.host}:{self.config.port}/{self.config.database}"
             
-            # Create connection pool
+            # Create connection pool with optimized settings
             self.pool = await asyncpg.create_pool(
                 dsn,
                 min_size=self.config.min_connections,
@@ -98,7 +98,7 @@ class DatabaseManager:
                 max_inactive_connection_lifetime=self.config.max_inactive_connection_lifetime,
                 max_queries=self.config.max_queries,
                 command_timeout=self.config.command_timeout,
-                connection_timeout=self.config.connect_timeout,
+                timeout=self.config.connect_timeout,
                 server_settings=self.config.server_settings,
                 init=self._init_connection
             )

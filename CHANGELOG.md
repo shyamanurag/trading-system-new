@@ -1,9 +1,65 @@
-# Trading System Changelog
+# 📋 CHANGELOG - Trading System
 
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [2.0.3] - 2025-06-08
+
+### 🔄 **DigitalOcean App Configuration Update**
+
+#### **App Name Change**
+- **Change**: Renamed from `seashell-app` to `clownfish-app`
+- **Files Updated**: 
+  - Renamed `seashell-app.yaml` → `clownfish-app.yaml`
+  - Updated app configuration to match current DigitalOcean setup
+- **Configuration Updates**:
+  - Added production alerts (DEPLOYMENT_FAILED, DOMAIN_FAILED)
+  - Updated with actual database connection strings
+  - Configured for Bangalore (blr) region
+  - Set instance count to 2 with apps-s-1vcpu-1gb size
+  - Added comprehensive environment variables with RUN_AND_BUILD_TIME scope
+
+#### **Environment Variables**
+- **Database**: Direct PostgreSQL connection string (not managed service references)
+- **Redis**: Direct Redis connection string (not managed service references)  
+- **Region**: Set to `blr` (Bangalore)
+- **Scaling**: Increased to 2 instances for better availability
+
+### 📊 **Current System Status**
+- ✅ Database parameter fixed  
+- ✅ DigitalOcean configuration updated to clownfish-app
+- ✅ Local development: API-only mode functional
+- ⚠️ Windows: Database semaphore timeout issues persist (platform-specific)
+- ⚠️ Redis: Periodic connection drops in WebSocket manager
+
+## [2.0.2] - 2025-06-08
+
+### 🔧 **Critical Infrastructure Fixes**
+
+#### **Database Connection Parameter Fix**
+- **Issue**: Database failing with `connect() got an unexpected keyword argument 'connection_timeout'`
+- **Root Cause**: asyncpg uses `timeout` parameter, not `connection_timeout`
+- **Solution**: Changed `connection_timeout=self.config.connect_timeout` to `timeout=self.config.connect_timeout` in database_manager.py
+- **Impact**: Database connections now work correctly in production
+
+#### **DigitalOcean Configuration Recovery**  
+- **Issue**: Missing `seashell-app.yaml` file (accidentally deleted during cleanup)
+- **Root Cause**: Critical DigitalOcean App Platform configuration file was removed
+- **Solution**: Recreated `seashell-app.yaml` with:
+  - Complete database service definitions (PostgreSQL + Redis)
+  - Proper environment variables mapping
+  - Frontend static site configuration  
+  - Ingress routing rules for API and frontend
+- **Impact**: DigitalOcean deployment should now work correctly
+
+### 📊 **System Status**
+- ✅ Database parameter fixed  
+- ✅ DigitalOcean configuration restored
+- ✅ Local development: API-only mode functional
+- ⚠️ Windows: Semaphore timeout issues persist (platform-specific)
+- ⚠️ Redis: Periodic connection drops (network-related)
 
 ## [2.0.1] - 2025-06-07
 
