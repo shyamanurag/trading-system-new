@@ -30,21 +30,48 @@ const LoginForm = ({ onLogin }) => {
         setError('');
 
         try {
-            // In production, this would make a real API call to authenticate
-            // For now, simulate successful login for any valid credentials
-            if (credentials.username && credentials.password) {
-                const userInfo = {
+            // Make real API call to authenticate user
+            const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
                     username: credentials.username,
-                    name: credentials.username.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
-                    role: 'trader' // Default role
+                    password: credentials.password
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Authentication failed');
+            }
+
+            const data = await response.json();
+
+            if (data.success && data.user && data.access_token) {
+                // Store authentication token
+                localStorage.setItem('auth_token', data.access_token);
+                localStorage.setItem('user_info', JSON.stringify(data.user));
+
+                // Create user info object with proper structure
+                const userInfo = {
+                    username: data.user.username,
+                    name: data.user.username.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                    role: data.user.role || 'trader',
+                    email: data.user.email,
+                    capital: data.user.capital,
+                    permissions: data.user.permissions || [],
+                    token: data.access_token
                 };
 
                 onLogin(userInfo);
             } else {
-                throw new Error('Please enter both username and password');
+                throw new Error('Invalid response from server');
             }
         } catch (err) {
-            setError(err.message || 'Authentication failed');
+            console.error('Authentication error:', err);
+            setError(err.message || 'Authentication failed. Please check your credentials.');
         } finally {
             setLoading(false);
         }

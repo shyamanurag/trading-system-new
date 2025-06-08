@@ -44,82 +44,136 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
     }, []);
 
     const fetchAutonomousData = async () => {
+        setLoading(true);
         try {
-            // Generate comprehensive autonomous trading data
-            const mockMarketStatus = {
-                is_market_open: true,
-                is_trading_day: true,
-                current_time: new Date().toLocaleTimeString('en-IN'),
-                time_to_close_seconds: 3600 * 3.5, // 3.5 hours
-                trading_session_active: true
+            // Get authentication token
+            const token = localStorage.getItem('auth_token');
+            const headers = {
+                'Content-Type': 'application/json',
+                ...(token && { 'Authorization': `Bearer ${token}` })
             };
 
-            const mockSessionStats = {
-                session_id: `AUTO_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
-                total_trades: 15,
-                winning_trades: 11,
-                success_rate: 73.3,
-                total_pnl: 18750.50,
-                realized_pnl: 12500.00,
-                unrealized_pnl: 6250.50,
-                max_drawdown: 2.8,
-                strategies_active: {
-                    momentum_surfer: { trades: 6, pnl: 8500 },
-                    volatility_explosion: { trades: 4, pnl: 5250 },
-                    news_impact_scalper: { trades: 3, pnl: 3200 },
-                    confluence_amplifier: { trades: 2, pnl: 1800 }
-                },
-                auto_actions: {
-                    positions_opened: 15,
-                    positions_closed: 11,
-                    stop_losses_triggered: 3,
-                    targets_hit: 8,
-                    trailing_stops_moved: 12
+            // Fetch real autonomous trading data from API
+            const [marketResponse, sessionResponse, positionsResponse, schedulerResponse] = await Promise.allSettled([
+                fetch(`${API_BASE_URL}/api/v1/autonomous/market-status`, { headers }),
+                fetch(`${API_BASE_URL}/api/v1/autonomous/session-stats`, { headers }),
+                fetch(`${API_BASE_URL}/api/v1/autonomous/positions`, { headers }),
+                fetch(`${API_BASE_URL}/api/v1/autonomous/scheduler`, { headers })
+            ]);
+
+            // Process market status
+            if (marketResponse.status === 'fulfilled' && marketResponse.value.ok) {
+                const marketData = await marketResponse.value.json();
+                if (marketData.success) {
+                    setMarketStatus(marketData.data);
+                } else {
+                    throw new Error('Failed to fetch market status');
                 }
-            };
+            } else {
+                // Fallback market status
+                setMarketStatus({
+                    is_market_open: false,
+                    time_to_close_seconds: 0,
+                    session_type: 'CLOSED'
+                });
+            }
 
-            const mockPositions = [
-                {
-                    position_id: "AUTO_POS_001",
-                    symbol: "RELIANCE",
-                    strategy: "momentum_surfer",
-                    entry_price: 2485.50,
-                    current_price: 2492.30,
-                    unrealized_pnl: 680.00,
-                    auto_managed: true,
-                    trailing_stop: true
-                },
-                {
-                    position_id: "AUTO_POS_002",
-                    symbol: "TCS",
-                    strategy: "volatility_explosion",
-                    entry_price: 3658.75,
-                    current_price: 3672.20,
-                    unrealized_pnl: 672.50,
-                    auto_managed: true,
-                    trailing_stop: false
+            // Process session stats
+            if (sessionResponse.status === 'fulfilled' && sessionResponse.value.ok) {
+                const sessionData = await sessionResponse.value.json();
+                if (sessionData.success) {
+                    setSessionStats(sessionData.data);
+                } else {
+                    throw new Error('Failed to fetch session stats');
                 }
-            ];
+            } else {
+                // Fallback session stats
+                setSessionStats({
+                    session_id: `AUTO_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
+                    total_trades: 0,
+                    winning_trades: 0,
+                    success_rate: 0,
+                    total_pnl: 0,
+                    realized_pnl: 0,
+                    unrealized_pnl: 0,
+                    max_drawdown: 0,
+                    strategies_active: {},
+                    auto_actions: {
+                        positions_opened: 0,
+                        positions_closed: 0,
+                        stop_losses_triggered: 0,
+                        targets_hit: 0,
+                        trailing_stops_moved: 0
+                    }
+                });
+            }
 
-            const mockScheduler = {
-                scheduler_active: true,
-                auto_start_enabled: true,
-                auto_stop_enabled: true,
-                scheduled_events: [
-                    { time: "09:10:00", event: "Pre-market system check", status: "COMPLETED" },
-                    { time: "09:15:00", event: "Auto-start trading session", status: "COMPLETED" },
-                    { time: "15:25:00", event: "Begin position closure", status: "SCHEDULED" },
-                    { time: "15:30:00", event: "Force close all positions", status: "SCHEDULED" }
-                ]
-            };
+            // Process active positions
+            if (positionsResponse.status === 'fulfilled' && positionsResponse.value.ok) {
+                const positionsData = await positionsResponse.value.json();
+                if (positionsData.success) {
+                    setActivePositions(positionsData.data || []);
+                } else {
+                    throw new Error('Failed to fetch positions');
+                }
+            } else {
+                setActivePositions([]);
+            }
 
-            setMarketStatus(mockMarketStatus);
-            setSessionStats(mockSessionStats);
-            setActivePositions(mockPositions);
-            setSchedulerStatus(mockScheduler);
+            // Process scheduler status
+            if (schedulerResponse.status === 'fulfilled' && schedulerResponse.value.ok) {
+                const schedulerData = await schedulerResponse.value.json();
+                if (schedulerData.success) {
+                    setSchedulerStatus(schedulerData.data);
+                } else {
+                    throw new Error('Failed to fetch scheduler status');
+                }
+            } else {
+                // Fallback scheduler status
+                setSchedulerStatus({
+                    scheduler_active: false,
+                    auto_start_enabled: false,
+                    auto_stop_enabled: false,
+                    scheduled_events: []
+                });
+            }
+
             setError(null);
         } catch (err) {
-            setError('Using demo data for autonomous trading features');
+            console.error('Error fetching autonomous trading data:', err);
+            setError('Failed to load autonomous trading data. Please check your connection.');
+
+            // Set fallback data in case of complete failure
+            setMarketStatus({
+                is_market_open: false,
+                time_to_close_seconds: 0,
+                session_type: 'CLOSED'
+            });
+            setSessionStats({
+                session_id: `AUTO_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
+                total_trades: 0,
+                winning_trades: 0,
+                success_rate: 0,
+                total_pnl: 0,
+                realized_pnl: 0,
+                unrealized_pnl: 0,
+                max_drawdown: 0,
+                strategies_active: {},
+                auto_actions: {
+                    positions_opened: 0,
+                    positions_closed: 0,
+                    stop_losses_triggered: 0,
+                    targets_hit: 0,
+                    trailing_stops_moved: 0
+                }
+            });
+            setActivePositions([]);
+            setSchedulerStatus({
+                scheduler_active: false,
+                auto_start_enabled: false,
+                auto_stop_enabled: false,
+                scheduled_events: []
+            });
         } finally {
             setLoading(false);
         }
@@ -127,10 +181,34 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
 
     const handleEmergencyStop = async () => {
         try {
-            // In production, this would call the emergency stop API
-            alert('Emergency stop would be triggered - All autonomous trading halted');
+            const token = localStorage.getItem('auth_token');
+            const headers = {
+                'Content-Type': 'application/json',
+                ...(token && { 'Authorization': `Bearer ${token}` })
+            };
+
+            const response = await fetch(`${API_BASE_URL}/api/v1/autonomous/emergency-stop`, {
+                method: 'POST',
+                headers
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Emergency stop failed');
+            }
+
+            const data = await response.json();
+
+            if (data.success) {
+                alert('Emergency stop activated successfully - All autonomous trading has been halted');
+                // Refresh the data to show updated status
+                fetchAutonomousData();
+            } else {
+                throw new Error(data.message || 'Emergency stop failed');
+            }
         } catch (err) {
             console.error('Emergency stop failed:', err);
+            alert(`Emergency stop failed: ${err.message}`);
         }
     };
 

@@ -66,6 +66,19 @@ const UserPerformanceDashboard = () => {
     const [error, setError] = useState(null);
     const [tabValue, setTabValue] = useState(0);
     const [openUserDialog, setOpenUserDialog] = useState(false);
+
+    // Summary metrics state
+    const [summaryMetrics, setSummaryMetrics] = useState({
+        todayPnL: 0,
+        todayPnLPercent: 0,
+        activeUsers: 0,
+        newUsersThisWeek: 0,
+        totalTrades: 0,
+        winRate: 0,
+        totalAUM: 0,
+        aumGrowth: 0
+    });
+
     const [newUser, setNewUser] = useState({
         user_id: '',
         initial_capital: 100000,
@@ -80,6 +93,7 @@ const UserPerformanceDashboard = () => {
     useEffect(() => {
         fetchUsers();
         fetchDailyPnL();
+        fetchSummaryMetrics();
     }, []);
 
     useEffect(() => {
@@ -155,6 +169,28 @@ const UserPerformanceDashboard = () => {
         }
     };
 
+    const fetchSummaryMetrics = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/performance/summary`);
+            if (response.ok) {
+                const data = await response.json();
+                setSummaryMetrics(data.metrics || {
+                    todayPnL: 0,
+                    todayPnLPercent: 0,
+                    activeUsers: 0,
+                    newUsersThisWeek: 0,
+                    totalTrades: 0,
+                    winRate: 0,
+                    totalAUM: 0,
+                    aumGrowth: 0
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching summary metrics:', error);
+            // Keep default values on error
+        }
+    };
+
     const handleCreateUser = async () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/users`, {
@@ -202,7 +238,10 @@ const UserPerformanceDashboard = () => {
     };
 
     const formatCurrency = (value) => `₹${value.toLocaleString()}`;
-    const formatPercent = (value) => `${value.toFixed(1)}%`;
+    const formatPercent = (value) => {
+        const sign = value > 0 ? '+' : '';
+        return `${sign}${value.toFixed(1)}%`;
+    };
 
     const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
@@ -263,11 +302,14 @@ const UserPerformanceDashboard = () => {
                                 <Typography color="text.secondary" gutterBottom>
                                     Today's P&L
                                 </Typography>
-                                <Typography variant="h4" color="success.main">
-                                    ₹25,750
+                                <Typography
+                                    variant="h4"
+                                    color={summaryMetrics.todayPnL >= 0 ? "success.main" : "error.main"}
+                                >
+                                    {formatCurrency(summaryMetrics.todayPnL)}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    +12.3% from yesterday
+                                    {formatPercent(summaryMetrics.todayPnLPercent)} from yesterday
                                 </Typography>
                             </CardContent>
                         </Card>
@@ -279,10 +321,10 @@ const UserPerformanceDashboard = () => {
                                     Active Users
                                 </Typography>
                                 <Typography variant="h4">
-                                    23
+                                    {summaryMetrics.activeUsers}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    2 new this week
+                                    {summaryMetrics.newUsersThisWeek} new this week
                                 </Typography>
                             </CardContent>
                         </Card>
@@ -294,10 +336,10 @@ const UserPerformanceDashboard = () => {
                                     Total Trades
                                 </Typography>
                                 <Typography variant="h4">
-                                    157
+                                    {summaryMetrics.totalTrades}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    Win Rate: 68.2%
+                                    Win Rate: {formatPercent(summaryMetrics.winRate)}
                                 </Typography>
                             </CardContent>
                         </Card>
@@ -309,10 +351,10 @@ const UserPerformanceDashboard = () => {
                                     AUM
                                 </Typography>
                                 <Typography variant="h4">
-                                    ₹1.2Cr
+                                    {formatCurrency(summaryMetrics.totalAUM)}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    +8.5% this month
+                                    {formatPercent(summaryMetrics.aumGrowth)} this month
                                 </Typography>
                             </CardContent>
                         </Card>
