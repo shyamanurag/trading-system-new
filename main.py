@@ -287,7 +287,7 @@ app.include_router(monitoring_router, prefix="/api/monitoring", tags=["monitorin
 app.include_router(monitoring_router, prefix="/api/performance", tags=["performance"])
 app.include_router(autonomous_router, prefix="/api/autonomous", tags=["autonomous"])
 app.include_router(autonomous_router, prefix="/api/trading", tags=["trading"])
-app.include_router(auth_router, prefix="/api/auth", tags=["authentication"])
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["authentication"])
 
 
 # Mount static files for frontend
