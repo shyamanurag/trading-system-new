@@ -8,12 +8,13 @@ from datetime import datetime, timedelta
 import jwt
 import hashlib
 from typing import Optional
+import os
 
 router = APIRouter()
 security = HTTPBearer()
 
 # Configuration
-SECRET_KEY = "your-secret-key-here"  # In production, use environment variable
+SECRET_KEY = os.getenv("JWT_SECRET", "your-secret-key-here")  # Use env variable
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -56,10 +57,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 @router.post("/login")
 async def login(login_data: LoginRequest):
     """Login endpoint"""
+    print(f"Login attempt for user: {login_data.username}")
+    
     # Check if user exists
     user = DEFAULT_USERS.get(login_data.username)
     
     if not user:
+        print(f"User not found: {login_data.username}")
         raise HTTPException(
             status_code=401,
             detail="Invalid username or password"
@@ -67,6 +71,7 @@ async def login(login_data: LoginRequest):
     
     # Verify password
     if not verify_password(login_data.password, user["password_hash"]):
+        print(f"Invalid password for user: {login_data.username}")
         raise HTTPException(
             status_code=401,
             detail="Invalid username or password"
@@ -74,10 +79,13 @@ async def login(login_data: LoginRequest):
     
     # Check if user is active
     if not user.get("is_active", True):
+        print(f"User is inactive: {login_data.username}")
         raise HTTPException(
             status_code=403,
             detail="User account is disabled"
         )
+    
+    print(f"Login successful for user: {login_data.username}")
     
     # Create access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
