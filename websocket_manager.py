@@ -76,7 +76,7 @@ class ConnectionManager:
         self.subscription_rooms: Dict[str, Set[str]] = {}
         self.total_connections = 0
         
-    async def connect(self, websocket: WebSocket, user_id: str, connection_id: str = None) -> str:
+    async def connect(self, websocket: WebSocket, user_id: str, connection_id: Optional[str] = None) -> str:
         """Connect a new WebSocket with user authentication"""
         if connection_id is None:
             connection_id = str(uuid.uuid4())
@@ -204,7 +204,7 @@ class ConnectionManager:
         
         return sent_count
     
-    async def broadcast(self, message: dict, exclude_user: str = None):
+    async def broadcast(self, message: dict, exclude_user: Optional[str] = None):
         """Broadcast message to all connected users"""
         sent_count = 0
         
@@ -364,6 +364,10 @@ class WebSocketManager:
         event_type = data.get('type')
         user_id = data.get('user_id')
         
+        if not user_id:
+            logger.warning(f"Trading event without user_id: {data}")
+            return
+        
         if event_type == 'trade_executed':
             await self.connection_manager.send_to_user(user_id, {
                 'type': 'trade_alert',
@@ -467,7 +471,7 @@ class WebSocketManager:
 # Global WebSocket manager instance
 websocket_manager: Optional[WebSocketManager] = None
 
-def get_websocket_manager() -> WebSocketManager:
+def get_websocket_manager() -> Optional[WebSocketManager]:
     """Get the global WebSocket manager instance"""
     return websocket_manager
 

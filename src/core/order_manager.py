@@ -15,10 +15,10 @@ from .user_tracker import UserTracker
 from .risk_manager import RiskManager
 from .notification_manager import NotificationManager
 from .trade_allocator import TradeAllocator
-from .exceptions import OrderError
+from core.exceptions import OrderError
 from .system_evolution import SystemEvolution
 from .capital_manager import CapitalManager
-from .trade_model import Trade
+from ..models.schema import Trade
 
 logger = logging.getLogger(__name__)
 
@@ -88,13 +88,13 @@ class OrderManager:
                     # Send notification
                     await self._send_order_notification(user_id, strategy_name, placed_order)
 
-                    except Exception as e:
+                except Exception as e:
                     logger.error(f"Error placing order for user {user_id}: {str(e)}")
                     continue
             
             return placed_orders
 
-                        except Exception as e:
+        except Exception as e:
             logger.error(f"Error placing strategy order: {str(e)}")
             raise OrderError(f"Failed to place strategy order: {str(e)}")
 
@@ -157,7 +157,7 @@ class OrderManager:
             
             return order.order_id
 
-                        except Exception as e:
+        except Exception as e:
             logger.error(f"Error placing order for user {user_id}: {str(e)}")
             raise OrderError(f"Failed to place order: {str(e)}")
 
@@ -180,7 +180,7 @@ class OrderManager:
             
             return multi_leg_order.order_id
 
-                                                        except Exception as e:
+        except Exception as e:
             logger.error(f"Error placing multi-leg order for user {user_id}: {str(e)}")
             raise OrderError(f"Failed to place multi-leg order: {str(e)}")
 
@@ -209,7 +209,7 @@ class OrderManager:
             
             return bracket_order.order_id
 
-                                                                                                                                except Exception as e:
+        except Exception as e:
             logger.error(f"Error placing bracket order for user {user_id}: {str(e)}")
             raise OrderError(f"Failed to place bracket order: {str(e)}")
 
@@ -233,8 +233,8 @@ class OrderManager:
             await self._store_conditional_order(conditional_order)
             
             return conditional_order.order_id
-            
-                                                                                                                                                            except Exception as e:
+
+        except Exception as e:
             logger.error(f"Error placing conditional order for user {user_id}: {str(e)}")
             raise OrderError(f"Failed to place conditional order: {str(e)}")
 
@@ -259,8 +259,8 @@ class OrderManager:
                     adjusted_signal['price'] = signal['price'] * (1 - avg_return/100)
             
             return adjusted_signal
-            
-                                                                                                                                                                            except Exception as e:
+
+        except Exception as e:
             logger.error(f"Error adjusting signal with metrics: {str(e)}")
             return signal
 
@@ -286,26 +286,26 @@ class OrderManager:
             
             return adjusted_order
 
-                                                                                                                                                                                                            except Exception as e:
+        except Exception as e:
             logger.error(f"Error adjusting order with metrics: {str(e)}")
             return order
 
     async def _validate_user_order(self, user_id: str, order: Order) -> bool:
         """Validate order against user-specific risk limits"""
-                                                                                                                                                                                                            try:
+        try:
             # Check risk limits
             if not await self.risk_manager.check_order_risk(user_id, order):
-                                                                                                                                                                                                                return False
+                return False
 
             # Check user's active orders limit
             if len(self.active_orders[user_id]) >= self.config['user_management']['limits']['max_active_orders']:
-                                                                                                                                                                                                                return False
+                return False
 
-                                                                                                                                                                                                            return True
+            return True
 
-                                                                                                                                                                                                            except Exception as e:
+        except Exception as e:
             logger.error(f"Error validating order for user {user_id}: {str(e)}")
-                                                                                                                                                                                                            return False
+            return False
 
     async def _store_bracket_order(self, bracket_order: BracketOrder):
         """Store bracket order for monitoring"""
@@ -364,7 +364,7 @@ class OrderManager:
                 
                 await asyncio.sleep(1)
                 
-                                                                                                                                                                                                                        except Exception as e:
+            except Exception as e:
                 logger.error(f"Error monitoring conditional orders: {str(e)}")
                 await asyncio.sleep(5)
 
@@ -375,7 +375,7 @@ class OrderManager:
             # This should be customized based on the specific condition types
             return False
 
-                                                                                                                                                                                                                                                except Exception as e:
+        except Exception as e:
             logger.error(f"Error checking condition: {str(e)}")
             return False
 

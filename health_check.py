@@ -13,7 +13,7 @@ async def check_health():
     """Check if the application is healthy"""
     port = os.getenv('APP_PORT', '8000')
     # Use the new database-independent endpoint for deployment checks
-    health_url = f"http://localhost:{port}/health/ready"
+    health_url = f"http://0.0.0.0:{port}/health/ready"
     
     try:
         timeout = aiohttp.ClientTimeout(total=10)
