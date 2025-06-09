@@ -49,6 +49,8 @@ from src.api.monitoring import router as monitoring_router
 from src.api.autonomous_trading import router as autonomous_router
 from src.api.error_monitoring import router as error_monitoring_router
 from src.api.database_health import router as database_health_router
+from src.api.market_indices import router as market_indices_router
+from src.api.dashboard_api import router as dashboard_router
 
 # Import error handler
 from src.core.error_handler import error_handler, ErrorRecoveryMiddleware
@@ -305,6 +307,8 @@ app.include_router(autonomous_router, prefix="/trading", tags=["trading"])
 app.include_router(auth_router, prefix="/v1/auth", tags=["authentication"])
 app.include_router(error_monitoring_router, prefix="/errors", tags=["error-monitoring"])
 app.include_router(database_health_router, prefix="/database", tags=["database"])
+app.include_router(market_indices_router, prefix="/market", tags=["market-data"])
+app.include_router(dashboard_router, prefix="/api", tags=["dashboard"])
 
 
 # Mount static files for frontend

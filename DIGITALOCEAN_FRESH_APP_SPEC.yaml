@@ -36,7 +36,7 @@ static_sites:
     deploy_on_push: true
     repo: shyamanurag/trading-system-new
   source_dir: /src/frontend
-  build_command: npm install --include=dev && npm run build
+  build_command: rm -rf node_modules package-lock.json && npm install --no-optional && npm install @rollup/rollup-linux-x64-gnu && npm run build
   output_dir: dist/frontend
   index_document: index.html
   catchall_document: index.html
@@ -53,6 +53,11 @@ static_sites:
 
 ingress:
   rules:
+  - component:
+      name: frontend
+    match:
+      path:
+        prefix: /
   - component:
       name: api
     match:
@@ -82,9 +87,4 @@ ingress:
       name: api
     match:
       path:
-        prefix: /ws
-  - component:
-      name: frontend
-    match:
-      path:
-        prefix: / 
+        prefix: /ws 
