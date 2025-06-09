@@ -4,8 +4,8 @@ Test authentication endpoint
 import requests
 import json
 
-# Test locally first
-base_url = "http://localhost:8001"  # Change to your deployed URL
+# Test against deployed app
+base_url = "https://algoauto-ua2iq.ondigitalocean.app"
 auth_endpoint = f"{base_url}/api/v1/auth/login"
 
 # Test credentials
