@@ -53,7 +53,7 @@ static_sites:
     repo: shyamanurag/trading-system-new
     branch: main
   source_dir: /src/frontend
-  build_command: rm -rf node_modules package-lock.json && npm install && npx vite build
+  build_command: NODE_ENV=development npm ci && npm run build
   output_dir: dist/frontend
   index_document: index.html
   environment_slug: node-js
@@ -61,7 +61,7 @@ static_sites:
   envs:
   - key: NODE_VERSION
     scope: BUILD_TIME
-    value: "18.x"
+    value: "18"
   - key: NODE_ENV
     scope: BUILD_TIME
     value: development
