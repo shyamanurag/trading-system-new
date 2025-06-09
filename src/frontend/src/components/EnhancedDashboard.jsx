@@ -8,6 +8,7 @@ import {
     Warning
 } from '@mui/icons-material';
 import {
+    Alert,
     alpha,
     Box,
     Card,
@@ -49,68 +50,84 @@ const EnhancedDashboard = () => {
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [wsConnected, setWsConnected] = useState(false);
+    const [apiError, setApiError] = useState(null);
 
     // Fetch data functions
     const fetchMarketIndices = async () => {
         try {
+            console.log('Fetching market indices from:', `${API_BASE_URL}/market/indices`);
             const response = await axios.get(`${API_BASE_URL}/market/indices`);
             setMarketIndices(response.data.data || {});
+            setApiError(null); // Clear error on success
         } catch (error) {
-            console.error('Error fetching market indices:', error);
+            console.error('Error fetching market indices:', error.response?.data || error.message);
+            if (error.response?.status === 404) {
+                console.error('Market indices endpoint not found. Check if the API routes are correctly configured.');
+            }
+            setApiError(`API Connection Error: ${error.message}`);
         }
     };
 
     const fetchSystemHealth = async () => {
         try {
+            console.log('Fetching system health from:', `${API_BASE_URL}/api/health/detailed`);
             const response = await axios.get(`${API_BASE_URL}/api/health/detailed`);
             setSystemHealth(response.data.data || {});
         } catch (error) {
-            console.error('Error fetching system health:', error);
+            console.error('Error fetching system health:', error.response?.data || error.message);
+            if (error.response?.status === 404) {
+                console.error('System health endpoint not found. Check if the API routes are correctly configured.');
+            }
         }
     };
 
     const fetchTradingMetrics = async () => {
         try {
+            console.log('Fetching trading metrics from:', `${API_BASE_URL}/api/trading/metrics`);
             const response = await axios.get(`${API_BASE_URL}/api/trading/metrics`);
             setTradingMetrics(response.data.data || {});
         } catch (error) {
-            console.error('Error fetching trading metrics:', error);
+            console.error('Error fetching trading metrics:', error.response?.data || error.message);
         }
     };
 
     const fetchTopMovers = async () => {
         try {
+            console.log('Fetching top movers from:', `${API_BASE_URL}/market/movers`);
             const response = await axios.get(`${API_BASE_URL}/market/movers`);
             setTopMovers(response.data.data || { gainers: [], losers: [] });
         } catch (error) {
-            console.error('Error fetching top movers:', error);
+            console.error('Error fetching top movers:', error.response?.data || error.message);
         }
     };
 
     const fetchSectorData = async () => {
         try {
+            console.log('Fetching sector data from:', `${API_BASE_URL}/market/sectors`);
             const response = await axios.get(`${API_BASE_URL}/market/sectors`);
             setSectorData(response.data.data || []);
         } catch (error) {
-            console.error('Error fetching sector data:', error);
+            console.error('Error fetching sector data:', error.response?.data || error.message);
         }
     };
 
     const fetchMarketActivity = async () => {
         try {
+            console.log('Fetching market activity from:', `${API_BASE_URL}/market/activity`);
             const response = await axios.get(`${API_BASE_URL}/market/activity`);
             setMarketActivity(response.data.data || []);
         } catch (error) {
-            console.error('Error fetching market activity:', error);
+            console.error('Error fetching market activity:', error.response?.data || error.message);
         }
     };
 
     const fetchNotifications = async () => {
         try {
+            console.log('Fetching notifications from:', `${API_BASE_URL}/api/notifications`);
             const response = await axios.get(`${API_BASE_URL}/api/notifications`);
             setNotifications(response.data.data || []);
         } catch (error) {
-            console.error('Error fetching notifications:', error);
+            console.error('Error fetching notifications:', error.response?.data || error.message);
         }
     };
 
@@ -144,7 +161,12 @@ const EnhancedDashboard = () => {
 
     // WebSocket connection
     useEffect(() => {
-        const ws = new WebSocket(`ws://localhost:8001/ws/dashboard`);
+        // Extract hostname from API_BASE_URL for WebSocket
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const apiUrl = new URL(API_BASE_URL);
+        const wsUrl = `${wsProtocol}//${apiUrl.host}/ws/dashboard`;
+
+        const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
             console.log('WebSocket connected');
@@ -161,6 +183,11 @@ const EnhancedDashboard = () => {
 
         ws.onclose = () => {
             console.log('WebSocket disconnected');
+            setWsConnected(false);
+        };
+
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
             setWsConnected(false);
         };
 
@@ -503,6 +530,20 @@ const EnhancedDashboard = () => {
                     </IconButton>
                 </Box>
             </Box>
+
+            {/* API Connection Info */}
+            <Box mb={2}>
+                <Typography variant="caption" color="text.secondary">
+                    API URL: {API_BASE_URL}
+                </Typography>
+            </Box>
+
+            {/* Error Display */}
+            {apiError && (
+                <Alert severity="error" sx={{ mb: 3 }}>
+                    {apiError}
+                </Alert>
+            )}
 
             <Tabs value={tabValue} onChange={handleTabChange} sx={{ mb: 4 }}>
                 <Tab label="Market Overview" />
