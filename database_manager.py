@@ -13,6 +13,7 @@ import asyncpg
 from asyncpg import Pool, Connection
 from dataclasses import dataclass
 import json
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -536,17 +537,38 @@ class DatabaseOperations:
 
 def get_database_config_from_env() -> DatabaseConfig:
     """Load database configuration from environment variables"""
-    return DatabaseConfig(
-        host=os.getenv('DATABASE_HOST', 'localhost'),
-        port=int(os.getenv('DATABASE_PORT', '5432')),
-        database=os.getenv('DATABASE_NAME', 'trading_system'),
-        username=os.getenv('DATABASE_USER', 'trading_user'),
-        password=os.getenv('DATABASE_PASSWORD', ''),
-        min_connections=int(os.getenv('DB_MIN_CONNECTIONS', '2')),
-        max_connections=int(os.getenv('DB_MAX_CONNECTIONS', '10')),
-        command_timeout=int(os.getenv('DB_COMMAND_TIMEOUT', '15')),
-        connect_timeout=int(os.getenv('DB_CONNECT_TIMEOUT', '10'))
-    )
+    # First check if DATABASE_URL is provided (DigitalOcean style)
+    database_url = os.getenv('DATABASE_URL')
+    
+    if database_url:
+        # Parse DATABASE_URL
+        # Format: postgresql://username:password@host:port/database
+        parsed = urlparse(database_url)
+        
+        return DatabaseConfig(
+            host=parsed.hostname or 'localhost',
+            port=parsed.port or 5432,
+            database=parsed.path[1:] if parsed.path else 'trading_system',  # Remove leading /
+            username=parsed.username or 'trading_user',
+            password=parsed.password or '',
+            min_connections=int(os.getenv('DB_MIN_CONNECTIONS', '2')),
+            max_connections=int(os.getenv('DB_MAX_CONNECTIONS', '10')),
+            command_timeout=int(os.getenv('DB_COMMAND_TIMEOUT', '15')),
+            connect_timeout=int(os.getenv('DB_CONNECT_TIMEOUT', '10'))
+        )
+    else:
+        # Fall back to individual environment variables
+        return DatabaseConfig(
+            host=os.getenv('DATABASE_HOST', 'localhost'),
+            port=int(os.getenv('DATABASE_PORT', '5432')),
+            database=os.getenv('DATABASE_NAME', 'trading_system'),
+            username=os.getenv('DATABASE_USER', 'trading_user'),
+            password=os.getenv('DATABASE_PASSWORD', ''),
+            min_connections=int(os.getenv('DB_MIN_CONNECTIONS', '2')),
+            max_connections=int(os.getenv('DB_MAX_CONNECTIONS', '10')),
+            command_timeout=int(os.getenv('DB_COMMAND_TIMEOUT', '15')),
+            connect_timeout=int(os.getenv('DB_CONNECT_TIMEOUT', '10'))
+        )
 
 # Global database manager instance
 database_manager: Optional[DatabaseManager] = None
