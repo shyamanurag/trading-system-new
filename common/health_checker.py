@@ -106,10 +106,27 @@ class HealthChecker:
         """Start the health checker"""
         try:
             # Initialize Redis connection if configured
-            if 'redis' in self.config:
+            if 'redis' in self.config or os.getenv('REDIS_URL'):
                 # Prioritize environment variables for DigitalOcean deployment
-                redis_url = os.getenv('REDIS_URL') or self.config['redis'].get('url', 'redis://localhost:6379')
-                self.redis_client = redis.from_url(redis_url, decode_responses=True)
+                redis_url = os.getenv('REDIS_URL')
+                if redis_url:
+                    # Handle SSL Redis URLs (rediss://)
+                    if redis_url.startswith('rediss://'):
+                        self.redis_client = redis.from_url(
+                            redis_url, 
+                            decode_responses=True,
+                            ssl_cert_reqs=None,
+                            ssl_check_hostname=False
+                        )
+                    else:
+                        self.redis_client = redis.from_url(redis_url, decode_responses=True)
+                    self.logger.info(f"Redis client initialized with URL: {redis_url[:30]}...")
+                else:
+                    # Fallback to config
+                    redis_config = self.config.get('redis', {})
+                    redis_url = redis_config.get('url', 'redis://localhost:6379')
+                    self.redis_client = redis.from_url(redis_url, decode_responses=True)
+                    self.logger.info(f"Redis client initialized from config: {redis_url}")
                 
             # Register default health checks
             await self._register_default_checks()
