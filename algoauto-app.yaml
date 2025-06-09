@@ -1,8 +1,6 @@
 alerts:
 - rule: DEPLOYMENT_FAILED
 - rule: DOMAIN_FAILED
-- rule: HIGH_CPU
-- rule: HIGH_MEMORY
 
 name: algoauto
 region: blr
@@ -55,16 +53,17 @@ static_sites:
     repo: shyamanurag/trading-system-new
     branch: main
   source_dir: /src/frontend
-  build_command: npm install && npm run build
+  build_command: rm -rf node_modules package-lock.json && npm install && npm run build
   output_dir: dist/frontend
   index_document: index.html
-  error_document: index.html
   environment_slug: node-js
   catchall_document: index.html
   envs:
   - key: NODE_VERSION
-    value: "18"
+    scope: BUILD_TIME
+    value: "18.x"
   - key: VITE_API_URL
+    scope: BUILD_TIME
     value: ${APP_URL}
 
 ingress:
