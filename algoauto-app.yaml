@@ -72,12 +72,37 @@ static_sites:
 ingress:
   rules:
   - component:
-      name: frontend
+      name: api
     match:
       path:
-        prefix: /
+        prefix: /api
   - component:
       name: api
     match:
       path:
-        prefix: /api 
+        prefix: /docs
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /health
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /webhook
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /control
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /ws
+  - component:
+      name: frontend
+    match:
+      path:
+        prefix: / 
