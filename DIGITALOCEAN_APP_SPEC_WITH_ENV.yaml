@@ -1,0 +1,193 @@
+alerts:
+- rule: DEPLOYMENT_FAILED
+- rule: DOMAIN_FAILED
+
+name: algoauto
+region: blr
+
+features:
+- buildpack-stack=ubuntu-22
+
+services:
+- name: api
+  environment_slug: python
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: shyamanurag/trading-system-new
+  http_port: 8080
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-1gb
+  source_dir: /
+  run_command: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+  health_check:
+    http_path: /health/ready
+    initial_delay_seconds: 40
+    period_seconds: 10
+    timeout_seconds: 5
+    failure_threshold: 3
+    success_threshold: 2
+  envs:
+  # Redis Configuration
+  - key: REDIS_HOST
+    scope: RUN_TIME
+    value: "redis-cache-do-user-23093341-0.k.db.ondigitalocean.com"
+  - key: REDIS_PORT
+    scope: RUN_TIME
+    value: "25061"
+  - key: REDIS_PASSWORD
+    scope: RUN_TIME
+    type: SECRET
+    value: "YOUR_REDIS_PASSWORD_HERE"
+  - key: REDIS_SSL
+    scope: RUN_TIME
+    value: "true"
+  
+  # Database Configuration
+  - key: DATABASE_HOST
+    scope: RUN_TIME
+    value: "YOUR_POSTGRES_HOST_HERE.db.ondigitalocean.com"
+  - key: DATABASE_PORT
+    scope: RUN_TIME
+    value: "25060"
+  - key: DATABASE_NAME
+    scope: RUN_TIME
+    value: "db"
+  - key: DATABASE_USER
+    scope: RUN_TIME
+    value: "db"
+  - key: DATABASE_PASSWORD
+    scope: RUN_TIME
+    type: SECRET
+    value: "YOUR_DATABASE_PASSWORD_HERE"
+  
+  # Application Configuration
+  - key: ENVIRONMENT
+    scope: RUN_TIME
+    value: "production"
+  - key: JWT_SECRET
+    scope: RUN_TIME
+    type: SECRET
+    value: "YOUR_JWT_SECRET_HERE"
+  - key: AUTONOMOUS_TRADING_ENABLED
+    scope: RUN_TIME
+    value: "true"
+  - key: PAPER_TRADING_ENABLED
+    scope: RUN_TIME
+    value: "true"
+
+static_sites:
+- name: frontend
+  environment_slug: node-js
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: shyamanurag/trading-system-new
+  source_dir: /src/frontend
+  build_command: rm -rf node_modules package-lock.json && npm install --no-optional && npm install @rollup/rollup-linux-x64-gnu && npm run build
+  output_dir: dist/frontend
+  index_document: index.html
+  catchall_document: index.html
+  envs:
+  - key: NODE_VERSION
+    scope: BUILD_TIME
+    value: "18"
+  - key: NODE_ENV
+    scope: BUILD_TIME
+    value: development
+  - key: VITE_API_URL
+    scope: BUILD_TIME
+    value: https://algoauto-ua2iq.ondigitalocean.app
+
+ingress:
+  rules:
+  - component:
+      name: frontend
+    match:
+      path:
+        prefix: /
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /api
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /docs
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /health
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /webhook
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /control
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /ws
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /market
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /v1
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /recommendations
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /scan
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /backtest
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /monitoring
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /performance
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /autonomous
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /trading
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /errors
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /database 
