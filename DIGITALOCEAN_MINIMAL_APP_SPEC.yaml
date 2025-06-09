@@ -19,59 +19,26 @@ services:
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-1gb
   source_dir: /
-  run_command: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
+  run_command: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
   health_check:
-    http_path: /health/alive
+    http_path: /health/ready
     initial_delay_seconds: 40
     period_seconds: 10
     timeout_seconds: 5
     failure_threshold: 3
     success_threshold: 2
-  envs:
-  - key: PYTHON_VERSION
-    scope: RUN_AND_BUILD_TIME
-    value: "3.10"
-  - key: PORT
-    scope: RUN_AND_BUILD_TIME
-    value: "8080"
-  - key: ENVIRONMENT
-    scope: RUN_AND_BUILD_TIME
-    value: production
-  - key: PYTHONPATH
-    scope: RUN_AND_BUILD_TIME
-    value: /app
-  - key: PYTHONDONTWRITEBYTECODE
-    scope: RUN_AND_BUILD_TIME
-    value: "1"
-  - key: PYTHONUNBUFFERED
-    scope: RUN_AND_BUILD_TIME
-    value: "1"
-  - key: REDIS_URL
-    scope: RUN_TIME
-    value: ${redis-cache.DATABASE_URL}
-  - key: REDIS_HOST
-    scope: RUN_TIME
-    value: ${redis-cache.HOSTNAME}
-  - key: REDIS_PORT
-    scope: RUN_TIME
-    value: ${redis-cache.PORT}
-  - key: REDIS_PASSWORD
-    scope: RUN_TIME
-    value: ${redis-cache.PASSWORD}
-  - key: REDIS_SSL
-    scope: RUN_TIME
-    value: "true"
 
 static_sites:
 - name: frontend
+  environment_slug: node-js
   github:
-    repo: shyamanurag/trading-system-new
     branch: main
+    deploy_on_push: true
+    repo: shyamanurag/trading-system-new
   source_dir: /src/frontend
   build_command: rm -rf node_modules package-lock.json && npm install && npx vite build
   output_dir: dist/frontend
   index_document: index.html
-  environment_slug: node-js
   catchall_document: index.html
   envs:
   - key: NODE_VERSION
@@ -79,10 +46,10 @@ static_sites:
     value: "18"
   - key: NODE_ENV
     scope: BUILD_TIME
-    value: development
+    value: production
   - key: VITE_API_URL
     scope: BUILD_TIME
-    value: ${APP_URL}
+    value: https://algoauto-ua2iq.ondigitalocean.app
 
 ingress:
   rules:
@@ -91,7 +58,6 @@ ingress:
     match:
       path:
         prefix: /api
-    preserve_path_prefix: true
   - component:
       name: api
     match:

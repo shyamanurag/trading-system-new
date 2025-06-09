@@ -294,17 +294,17 @@ app.add_middleware(
 )
 
 # Include new API routers
-app.include_router(market_data_router, prefix="/api/market-data", tags=["market-data"])
-app.include_router(recommendations_router, prefix="/api/recommendations", tags=["recommendations"])
-app.include_router(recommendations_router, prefix="/api/scan", tags=["scanning"])
-app.include_router(recommendations_router, prefix="/api/backtest", tags=["backtesting"])
-app.include_router(monitoring_router, prefix="/api/monitoring", tags=["monitoring"])
-app.include_router(monitoring_router, prefix="/api/performance", tags=["performance"])
-app.include_router(autonomous_router, prefix="/api/autonomous", tags=["autonomous"])
-app.include_router(autonomous_router, prefix="/api/trading", tags=["trading"])
-app.include_router(auth_router, prefix="/api/v1/auth", tags=["authentication"])
-app.include_router(error_monitoring_router, prefix="/api/errors", tags=["error-monitoring"])
-app.include_router(database_health_router, prefix="/api/database", tags=["database"])
+app.include_router(market_data_router, prefix="/market-data", tags=["market-data"])
+app.include_router(recommendations_router, prefix="/recommendations", tags=["recommendations"])
+app.include_router(recommendations_router, prefix="/scan", tags=["scanning"])
+app.include_router(recommendations_router, prefix="/backtest", tags=["backtesting"])
+app.include_router(monitoring_router, prefix="/monitoring", tags=["monitoring"])
+app.include_router(monitoring_router, prefix="/performance", tags=["performance"])
+app.include_router(autonomous_router, prefix="/autonomous", tags=["autonomous"])
+app.include_router(autonomous_router, prefix="/trading", tags=["trading"])
+app.include_router(auth_router, prefix="/v1/auth", tags=["authentication"])
+app.include_router(error_monitoring_router, prefix="/errors", tags=["error-monitoring"])
+app.include_router(database_health_router, prefix="/database", tags=["database"])
 
 
 # Mount static files for frontend

@@ -1,7 +1,7 @@
 name: algoauto
 region: blr
 
-# Database Services - UPDATED 2025-06-06-06-55 - Redis Environment Variables Fix
+# Database Services - Reference existing databases
 databases:
   # Redis for caching and real-time data
   - name: redis-cache
@@ -18,7 +18,7 @@ databases:
     num_nodes: 1
 
 services:
-  # Backend API Service (Docker)
+  # Backend API Service
   - name: api
     environment_slug: python
     github:
@@ -37,33 +37,36 @@ services:
       timeout_seconds: 5
       failure_threshold: 3
       success_threshold: 1
-    build_command: pip install -r requirements.txt
     envs:
     - key: PYTHON_VERSION
       value: "3.10"
     - key: PORT
-      value: "8000"
+      value: "8080"
     - key: ENVIRONMENT
       value: production
+    # Redis configuration
     - key: REDIS_URL
       value: ${redis-cache.DATABASE_URL}
-    - key: DATABASE_URL
-      value: ${trading-db.DATABASE_URL}
     - key: REDIS_HOST
       value: ${redis-cache.HOSTNAME}
     - key: REDIS_PORT
       value: ${redis-cache.PORT}
     - key: REDIS_PASSWORD
       value: ${redis-cache.PASSWORD}
-    - key: DB_HOST
+    - key: REDIS_SSL
+      value: "true"
+    # PostgreSQL configuration
+    - key: DATABASE_URL
+      value: ${trading-db.DATABASE_URL}
+    - key: DATABASE_HOST
       value: ${trading-db.HOSTNAME}
-    - key: DB_PORT
+    - key: DATABASE_PORT
       value: ${trading-db.PORT}
-    - key: DB_NAME
+    - key: DATABASE_NAME
       value: ${trading-db.DATABASE}
-    - key: DB_USER
+    - key: DATABASE_USER
       value: ${trading-db.USERNAME}
-    - key: DB_PASSWORD
+    - key: DATABASE_PASSWORD
       value: ${trading-db.PASSWORD}
 
 static_sites:
@@ -72,28 +75,56 @@ static_sites:
     github:
       repo: shyamanurag/trading-system-new
       branch: main
-    source_dir: /
-    build_command: npm run build:digitalocean
+    source_dir: /src/frontend
+    build_command: rm -rf node_modules package-lock.json && npm install && npx vite build
     output_dir: dist/frontend
     index_document: index.html
-    error_document: index.html
+    catchall_document: index.html
     environment_slug: node-js
     envs:
     - key: NODE_VERSION
       value: "18"
     - key: VITE_API_URL
-      value: https://seashell-app-api-2wcqo.ondigitalocean.app
+      value: https://algoauto-ua2iq.ondigitalocean.app
 
-# Routing Configuration
+# Routing Configuration - Order matters!
 ingress:
   rules:
-  - component:
-      name: frontend
-    match:
-      path:
-        prefix: /
+  # API routes first (more specific)
   - component:
       name: api
     match:
       path:
-        prefix: /api 
+        prefix: /api
+    preserve_path_prefix: true
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /docs
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /health
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /webhook
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /control
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /ws
+  # Frontend catch-all route last
+  - component:
+      name: frontend
+    match:
+      path:
+        prefix: / 
