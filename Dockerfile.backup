@@ -1,4 +1,5 @@
 # Production-Ready Trading System Docker Image
+# This file is kept as backup - DigitalOcean uses buildpacks
 FROM node:18-slim as frontend-builder
 
 # Set working directory
