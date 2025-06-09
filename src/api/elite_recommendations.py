@@ -102,7 +102,34 @@ autonomous_scanner = AutonomousEliteScanner()
 
 @router.get("/")
 async def get_elite_recommendations():
-    """Get current elite trading recommendations (8.5+ confluence only)\"\"\"\n    try:\n        # Use autonomous scanner to generate recommendations\n        scanner = AutonomousEliteScanner()\n        recommendations = await scanner.scan_for_elite_setups()\n        \n        return {\n            \"success\": True,\n            \"recommendations\": recommendations,\n            \"total_count\": len(recommendations),\n            \"status\": \"AUTONOMOUS_SCANNING_ACTIVE\",\n            \"message\": f\"Found {len(recommendations)} elite setups with 8.5+ confluence score\",\n            \"data_source\": \"Real-time market analysis\",\n            \"timestamp\": datetime.now().isoformat()\n        }\n        \n    except Exception as e:\n        logger.error(f\"Error fetching elite recommendations: {e}\")\n        # Return empty recommendations instead of error for paper trading\n        return {\n            \"success\": True,\n            \"recommendations\": [],\n            \"total_count\": 0,\n            \"status\": \"SCANNING_IN_PROGRESS\",\n            \"message\": \"Autonomous scanner analyzing market conditions. Recommendations will appear when elite setups are detected.\",\n            \"data_source\": \"Market analysis engine\",\n            \"timestamp\": datetime.now().isoformat()\n        }
+    """Get current elite trading recommendations (8.5+ confluence only)"""
+    try:
+        # Use autonomous scanner to generate recommendations
+        scanner = AutonomousEliteScanner()
+        recommendations = await scanner.scan_for_elite_setups()
+        
+        return {
+            "success": True,
+            "recommendations": recommendations,
+            "total_count": len(recommendations),
+            "status": "AUTONOMOUS_SCANNING_ACTIVE",
+            "message": f"Found {len(recommendations)} elite setups with 8.5+ confluence score",
+            "data_source": "Real-time market analysis",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching elite recommendations: {e}")
+        # Return empty recommendations instead of error for paper trading
+        return {
+            "success": True,
+            "recommendations": [],
+            "total_count": 0,
+            "status": "SCANNING_IN_PROGRESS",
+            "message": "Autonomous scanner analyzing market conditions. Recommendations will appear when elite setups are detected.",
+            "data_source": "Market analysis engine",
+            "timestamp": datetime.now().isoformat()
+        }
 
 @router.post("/force-scan")
 async def force_autonomous_scan():
