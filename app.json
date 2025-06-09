@@ -1,0 +1,11 @@
+{
+    "name": "Trading System",
+    "description": "Professional Trading System with Real-Time Market Data",
+    "runtime": "python-3.10",
+    "env": {
+        "PYTHON_VERSION": {
+            "description": "Python version to use",
+            "value": "3.10.13"
+        }
+    }
+}
