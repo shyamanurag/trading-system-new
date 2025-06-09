@@ -34,7 +34,7 @@ ingress:
     match:
       path:
         prefix: /api
-name: clownfish-app
+name: algoauto
 region: blr
 services:
 - dockerfile_path: /Dockerfile

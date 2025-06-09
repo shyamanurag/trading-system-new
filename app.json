@@ -1,6 +1,6 @@
 {
-    "name": "Trading System",
-    "description": "Professional Trading System with Real-Time Market Data",
+    "name": "AlgoAuto",
+    "description": "Professional Algorithmic Trading System with Real-Time Market Data",
     "runtime": "python-3.10",
     "env": {
         "PYTHON_VERSION": {
