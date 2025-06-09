@@ -53,7 +53,7 @@ static_sites:
     repo: shyamanurag/trading-system-new
     branch: main
   source_dir: /src/frontend
-  build_command: NODE_ENV=development npm ci && npm run build
+  build_command: rm -rf node_modules package-lock.json && npm install && npx vite build
   output_dir: dist/frontend
   index_document: index.html
   environment_slug: node-js

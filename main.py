@@ -41,6 +41,13 @@ from websocket_manager import init_websocket_manager, get_websocket_manager, Web
 # Import database operations at the top with other imports
 from database_manager import get_database_operations, get_database_manager
 
+# Import new API routers
+from src.api.market_data import router as market_data_router
+from src.api.elite_recommendations import router as recommendations_router
+from src.api.auth import router as auth_router
+from src.api.monitoring import router as monitoring_router
+from src.api.autonomous_trading import router as autonomous_router
+
 # Setup unified logging first
 setup_logging(level="INFO")
 logger = get_logger(__name__)
@@ -142,7 +149,8 @@ async def lifespan(app: FastAPI):
 
 # Import new API routers
 from src.api.market_data import router as market_data_router
-from src.api.elite_recommendations import router as recommendations_router  
+from src.api.elite_recommendations import router as recommendations_router
+from src.api.auth import router as auth_router
 from src.api.monitoring import router as monitoring_router
 from src.api.autonomous_trading import router as autonomous_router
 
@@ -279,6 +287,7 @@ app.include_router(monitoring_router, prefix="/api/monitoring", tags=["monitorin
 app.include_router(monitoring_router, prefix="/api/performance", tags=["performance"])
 app.include_router(autonomous_router, prefix="/api/autonomous", tags=["autonomous"])
 app.include_router(autonomous_router, prefix="/api/trading", tags=["trading"])
+app.include_router(auth_router, prefix="/api/auth", tags=["authentication"])
 
 
 # Mount static files for frontend
