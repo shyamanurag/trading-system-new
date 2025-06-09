@@ -270,6 +270,8 @@ app.add_middleware(
         "http://localhost:8080",  # Alternative development port
         "http://localhost:8001",  # Current backend server
         "https://yourdomain.com", # Production domain - replace with actual domain
+        "https://algoauto-ua2iq.ondigitalocean.app",  # Production domain
+        "*"  # Allow all origins temporarily for debugging
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],

@@ -137,10 +137,15 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         }
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
-    except jwt.JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 @router.post("/logout")
 async def logout():
     """Logout endpoint (client should remove token)"""
-    return {"message": "Logged out successfully"} 
+    return {"message": "Logged out successfully"}
+
+@router.get("/test")
+async def test_auth():
+    """Test endpoint to verify auth router is working"""
+    return {"message": "Auth router is working!", "endpoint": "/api/v1/auth/test"} 
