@@ -53,7 +53,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify password against hash"""
     return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
 
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login")
 async def login(login_data: LoginRequest):
     """Login endpoint"""
     # Check if user exists
@@ -87,16 +87,24 @@ async def login(login_data: LoginRequest):
     )
     
     # Return token and user info
-    return LoginResponse(
-        access_token=access_token,
-        token_type="bearer",
-        user_info={
+    return {
+        "success": True,
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "username": user["username"],
+            "email": user["email"],
+            "role": "admin" if user.get("is_admin", False) else "trader",
+            "capital": 100000,  # Default capital
+            "permissions": ["trade", "view_analytics"] if user.get("is_admin", False) else ["trade"]
+        },
+        "user_info": {
             "username": user["username"],
             "full_name": user["full_name"],
             "email": user["email"],
             "is_admin": user.get("is_admin", False)
         }
-    )
+    }
 
 @router.get("/me")
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
