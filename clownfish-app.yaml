@@ -4,6 +4,9 @@ alerts:
 - rule: HIGH_CPU
 - rule: HIGH_MEMORY
 envs:
+- key: PYTHON_VERSION
+  scope: RUN_AND_BUILD_TIME
+  value: "3.10"
 - key: DATABASE_URL
   scope: RUN_AND_BUILD_TIME
   value: ${db.DATABASE_URL}
@@ -40,6 +43,7 @@ name: clownfish-app
 region: blr
 services:
 - dockerfile_path: /Dockerfile
+  environment_slug: python
   github:
     branch: main
     deploy_on_push: true
