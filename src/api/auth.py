@@ -1,7 +1,7 @@
 """
 Authentication API endpoints
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from datetime import datetime, timedelta
@@ -9,6 +9,10 @@ import jwt
 import hashlib
 from typing import Optional
 import os
+import logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 security = HTTPBearer()
@@ -55,15 +59,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
 
 @router.post("/login")
-async def login(login_data: LoginRequest):
+async def login(request: Request, login_data: LoginRequest):
     """Login endpoint"""
-    print(f"Login attempt for user: {login_data.username}")
+    logger.info(f"Login attempt for user: {login_data.username}")
+    logger.info(f"Request headers: {dict(request.headers)}")
+    logger.info(f"Request origin: {request.headers.get('origin', 'unknown')}")
     
     # Check if user exists
     user = DEFAULT_USERS.get(login_data.username)
     
     if not user:
-        print(f"User not found: {login_data.username}")
+        logger.warning(f"User not found: {login_data.username}")
         raise HTTPException(
             status_code=401,
             detail="Invalid username or password"
@@ -71,7 +77,7 @@ async def login(login_data: LoginRequest):
     
     # Verify password
     if not verify_password(login_data.password, user["password_hash"]):
-        print(f"Invalid password for user: {login_data.username}")
+        logger.warning(f"Invalid password for user: {login_data.username}")
         raise HTTPException(
             status_code=401,
             detail="Invalid username or password"
@@ -79,13 +85,13 @@ async def login(login_data: LoginRequest):
     
     # Check if user is active
     if not user.get("is_active", True):
-        print(f"User is inactive: {login_data.username}")
+        logger.warning(f"User is inactive: {login_data.username}")
         raise HTTPException(
             status_code=403,
             detail="User account is disabled"
         )
     
-    print(f"Login successful for user: {login_data.username}")
+    logger.info(f"Login successful for user: {login_data.username}")
     
     # Create access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -95,7 +101,7 @@ async def login(login_data: LoginRequest):
     )
     
     # Return token and user info
-    return {
+    response = {
         "success": True,
         "access_token": access_token,
         "token_type": "bearer",
@@ -113,6 +119,9 @@ async def login(login_data: LoginRequest):
             "is_admin": user.get("is_admin", False)
         }
     }
+    
+    logger.info(f"Returning login response for user: {login_data.username}")
+    return response
 
 @router.get("/me")
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -148,4 +157,25 @@ async def logout():
 @router.get("/test")
 async def test_auth():
     """Test endpoint to verify auth router is working"""
-    return {"message": "Auth router is working!", "endpoint": "/api/v1/auth/test"} 
+    return {
+        "message": "Auth router is working!", 
+        "endpoint": "/api/v1/auth/test",
+        "default_users": list(DEFAULT_USERS.keys()),
+        "admin_password_hint": "admin123"
+    }
+
+@router.get("/debug")
+async def debug_auth():
+    """Debug endpoint to check auth configuration"""
+    admin_user = DEFAULT_USERS.get("admin", {})
+    expected_hash = hashlib.sha256("admin123".encode()).hexdigest()
+    
+    return {
+        "auth_configured": True,
+        "admin_user_exists": "admin" in DEFAULT_USERS,
+        "admin_password_hash_matches": admin_user.get("password_hash") == expected_hash,
+        "expected_hash": expected_hash,
+        "actual_hash": admin_user.get("password_hash", "NOT_SET"),
+        "jwt_secret_configured": bool(SECRET_KEY),
+        "cors_note": "Make sure CORS is properly configured in main.py"
+    } 
