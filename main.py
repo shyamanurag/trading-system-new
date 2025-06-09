@@ -47,6 +47,11 @@ from src.api.elite_recommendations import router as recommendations_router
 from src.api.auth import router as auth_router
 from src.api.monitoring import router as monitoring_router
 from src.api.autonomous_trading import router as autonomous_router
+from src.api.error_monitoring import router as error_monitoring_router
+from src.api.database_health import router as database_health_router
+
+# Import error handler
+from src.core.error_handler import error_handler, ErrorRecoveryMiddleware
 
 # Setup unified logging first
 setup_logging(level="INFO")
@@ -262,6 +267,14 @@ app = FastAPI(
     ]
 )
 
+# Setup global error handlers
+environment = os.getenv("ENVIRONMENT", "production")
+error_handler.environment = environment
+error_handler.setup_exception_handlers(app)
+
+# Add error recovery middleware
+app.add_middleware(ErrorRecoveryMiddleware, error_threshold=10, recovery_time=60)
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -290,6 +303,8 @@ app.include_router(monitoring_router, prefix="/api/performance", tags=["performa
 app.include_router(autonomous_router, prefix="/api/autonomous", tags=["autonomous"])
 app.include_router(autonomous_router, prefix="/api/trading", tags=["trading"])
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["authentication"])
+app.include_router(error_monitoring_router, prefix="/api/errors", tags=["error-monitoring"])
+app.include_router(database_health_router, prefix="/api/database", tags=["database"])
 
 
 # Mount static files for frontend
