@@ -139,6 +139,13 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error during shutdown: {e}")
 
 # Initialize FastAPI app with lifespan
+
+# Import new API routers
+from src.api.market_data import router as market_data_router
+from src.api.elite_recommendations import router as recommendations_router  
+from src.api.monitoring import router as monitoring_router
+from src.api.autonomous_trading import router as autonomous_router
+
 app = FastAPI(
     title="Trading System API",
     description="""
@@ -262,6 +269,17 @@ app.add_middleware(
     expose_headers=["X-Total-Count", "X-Page-Count"],
     max_age=3600,
 )
+
+# Include new API routers
+app.include_router(market_data_router, prefix="/api/market-data", tags=["market-data"])
+app.include_router(recommendations_router, prefix="/api/recommendations", tags=["recommendations"])
+app.include_router(recommendations_router, prefix="/api/scan", tags=["scanning"])
+app.include_router(recommendations_router, prefix="/api/backtest", tags=["backtesting"])
+app.include_router(monitoring_router, prefix="/api/monitoring", tags=["monitoring"])
+app.include_router(monitoring_router, prefix="/api/performance", tags=["performance"])
+app.include_router(autonomous_router, prefix="/api/autonomous", tags=["autonomous"])
+app.include_router(autonomous_router, prefix="/api/trading", tags=["trading"])
+
 
 # Mount static files for frontend
 static_dir = Path("dist/frontend")

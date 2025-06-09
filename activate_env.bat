@@ -15,4 +15,3 @@ echo.
 echo 🔄 To deactivate: type 'deactivate'
 echo.
 
-cmd /k 

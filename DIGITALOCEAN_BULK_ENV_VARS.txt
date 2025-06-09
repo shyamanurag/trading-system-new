@@ -60,18 +60,6 @@ DATA_PROVIDER_WEBHOOK_URL=https://clownfish-app-7rqhp.ondigitalocean.app/webhook
 DATA_PROVIDER_AUTH_TOKEN=truedata_webhook_auth_K5ewmaPLwWLzqcFa2ne6dLpk_Trial106_secure_2024
 DATA_PROVIDER_ENABLED=true
 
-# Monitoring & Alerts (Optional)
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
-TELEGRAM_CHAT_ID=your_telegram_chat_id_here
-EMAIL_SMTP_HOST=smtp.gmail.com
-EMAIL_SMTP_PORT=587
-EMAIL_USERNAME=your_email@gmail.com
-EMAIL_PASSWORD=your_email_app_password_here
-MONITORING_ENABLED=true
-
-# Emergency Contacts
-EMERGENCY_PHONE_NUMBER=+91-your-emergency-number
-SUPPORT_EMAIL=support@trading-system.com
 
 # Database Connection Optimization
 DATABASE_POOL_SIZE=3

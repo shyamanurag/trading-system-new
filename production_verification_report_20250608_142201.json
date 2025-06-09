@@ -1,0 +1,33 @@
+{
+  "timestamp": "2025-06-08T14:21:42.304491",
+  "overall_status": "NOT_READY",
+  "checks": {
+    "truedata": {
+      "connection_status": "UNKNOWN",
+      "data_flow": false,
+      "historical_data": false,
+      "status": "FAIL"
+    },
+    "mock_data": {
+      "files_with_mock_data": [],
+      "status": "PASS"
+    },
+    "health_monitoring": {
+      "overall_status": "UNKNOWN",
+      "components_monitored": 3,
+      "monitoring_endpoints_active": 0,
+      "status": "FAIL"
+    },
+    "elite_recommendations": {
+      "status": "FAIL",
+      "error": "API returned 503"
+    },
+    "autonomous_system": {
+      "status": "FAIL",
+      "error": "API returned 404"
+    }
+  },
+  "recommendations": [
+    "Check TrueData credentials and network connectivity"
+  ]
+}

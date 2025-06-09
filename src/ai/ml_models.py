@@ -16,20 +16,30 @@ from abc import ABC, abstractmethod
 import warnings
 warnings.filterwarnings('ignore')
 
-# ML Libraries
-import sklearn
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingClassifier
-from sklearn.model_selection import train_test_split, GridSearchCV, TimeSeriesSplit
-from sklearn.preprocessing import StandardScaler, RobustScaler
-from sklearn.metrics import mean_squared_error, accuracy_score, precision_recall_fscore_support
-from sklearn.feature_selection import SelectKBest, f_regression
+# ML Libraries - with graceful fallback
+try:
+    import sklearn
+    from sklearn.ensemble import RandomForestRegressor, GradientBoostingClassifier
+    from sklearn.model_selection import train_test_split, GridSearchCV, TimeSeriesSplit
+    from sklearn.preprocessing import StandardScaler, RobustScaler
+    from sklearn.metrics import mean_squared_error, accuracy_score, precision_recall_fscore_support
+    from sklearn.feature_selection import SelectKBest, f_regression
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    logger = logging.getLogger(__name__)
+    logger.warning("scikit-learn not available. ML features will be limited.")
+    SKLEARN_AVAILABLE = False
 
-# Deep Learning
-import tensorflow as tf
-from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization, Attention
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+# Deep Learning - optional
+try:
+    import tensorflow as tf
+    from tensorflow.keras.models import Sequential, Model
+    from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization, Attention
+    from tensorflow.keras.optimizers import Adam
+    from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+    TF_AVAILABLE = True
+except ImportError:
+    TF_AVAILABLE = False
 
 # Technical Analysis
 import talib

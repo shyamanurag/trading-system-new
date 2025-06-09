@@ -27,6 +27,8 @@ import {
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
 
+import SystemHealthMonitor from './SystemHealthMonitor';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const AutonomousTradingDashboard = ({ userInfo }) => {
@@ -233,7 +235,12 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
             {error && (
                 <Grid item xs={12}>
                     <Alert severity="info">{error}</Alert>
-                </Grid>
+                
+                    {/* System Health Monitor */}
+                    <Grid item xs={12} md={6}>
+                        <SystemHealthMonitor />
+                    </Grid>
+</Grid>
             )}
 
             {/* Header Status */}

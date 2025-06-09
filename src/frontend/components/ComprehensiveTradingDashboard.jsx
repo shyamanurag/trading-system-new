@@ -51,6 +51,8 @@ import EliteRecommendationsDashboard from './EliteRecommendationsDashboard';
 import UserManagementDashboard from './UserManagementDashboard';
 import UserPerformanceDashboard from './UserPerformanceDashboard';
 
+import SystemHealthMonitor from './SystemHealthMonitor';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
@@ -368,7 +370,12 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 </Typography>
                             </CardContent>
                         </Card>
+                    
+                    {/* System Health Monitor */}
+                    <Grid item xs={12} md={6}>
+                        <SystemHealthMonitor />
                     </Grid>
+</Grid>
                     <Grid item xs={12} md={2}>
                         <Card>
                             <CardContent sx={{ textAlign: 'center' }}>

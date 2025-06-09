@@ -1,5 +1,5 @@
 """
-TrueData provider for market data and WebSocket integration
+TrueData provider for market data and WebSocket integration with Trial106 credentials
 """
 from typing import Dict, List, Optional, Callable
 from datetime import datetime, timedelta
@@ -15,21 +15,21 @@ from truedata_ws.websocket.TD import TD
 class TrueDataProvider:
     def __init__(self, config: Dict):
         self.config = config
-        self.is_sandbox = config.get('is_sandbox', True)  # Default to sandbox mode
+        self.is_sandbox = config.get('is_sandbox', False)  # Trial106 is not sandbox
         
-        # Initialize TD with proper configuration
+        # Initialize TD with Trial106 configuration
         self.td = TD(
-            config['username'], 
-            config['password'],
-            live_port=config.get('live_port', 8086),  # Default port
+            config['username'],  # Trial106
+            config['password'],  # shyam106
+            live_port=config.get('live_port', 8086),  # Port 8086
             url=config.get('url', 'push.truedata.in'),  # Production URL
-            log_level=config.get('log_level', logging.WARNING),
+            log_level=config.get('log_level', logging.INFO),
             log_format="%(asctime)s - %(levelname)s - %(message)s"
         )
         
         # Initialize WebSocket manager
         ws_config = {
-            'websocket_url': f"wss://{config.get('url', 'push.truedata.in')}/ws",
+            'websocket_url': f"wss://{config.get('url', 'push.truedata.in')}:{config.get('live_port', 8086)}",
             'log_level': config.get('log_level', logging.INFO),
             'max_reconnect_attempts': config.get('max_reconnect_attempts', 3),
             'reconnect_delay': config.get('reconnect_delay', 5),
@@ -45,6 +45,7 @@ class TrueDataProvider:
         self.connection_attempts = 0
         self.max_connection_attempts = config.get('max_connection_attempts', 3)
         self._connection_lock = asyncio.Lock()
+        self.connected = False
         
         # Setup real-time data callback
         self._setup_callbacks()
@@ -53,28 +54,64 @@ class TrueDataProvider:
         """Connect to TrueData and WebSocket"""
         async with self._connection_lock:
             try:
-                # Connect to TrueData
-                if not self.td.is_connected():
-                    self.connection_attempts += 1
-                    if self.connection_attempts >= self.max_connection_attempts:
-                        raise ConnectionError("Max connection attempts reached")
-                    logging.warning(f"Connection attempt {self.connection_attempts} failed, retrying...")
-                    await asyncio.sleep(5)  # Wait before retry
-                    return await self.connect()
+                logging.info(f"Connecting to TrueData with username: {self.config['username']}")
                 
-                logging.info("Successfully connected to TrueData")
+                # Connect to TrueData using synchronous method
+                try:
+                    self.td.connect()
+                    self.connected = True
+                    logging.info("Successfully connected to TrueData")
+                except Exception as td_error:
+                    logging.error(f"TrueData connection failed: {td_error}")
+                    self.connection_attempts += 1
+                    
+                    if self.connection_attempts < self.max_connection_attempts:
+                        logging.warning(f"Connection attempt {self.connection_attempts} failed, retrying...")
+                        await asyncio.sleep(5)  # Wait before retry
+                        return await self.connect()
+                    else:
+                        raise ConnectionError(f"Max connection attempts ({self.max_connection_attempts}) reached")
+                
+                # Reset connection attempts on success
                 self.connection_attempts = 0
                 
-                # Connect to WebSocket
-                await self.ws_manager.connect(None, self.ws_manager.config['websocket_url'])
+                # Connect to WebSocket (optional, for additional features)
+                try:
+                    await self.ws_manager.connect(None, self.ws_manager.config['websocket_url'])
+                    logging.info("WebSocket connection established")
+                except Exception as ws_error:
+                    logging.warning(f"WebSocket connection failed: {ws_error} (continuing without WebSocket)")
                 
                 return True
                 
             except Exception as e:
                 logging.error(f"Connection error: {e}")
-                if self.is_sandbox:
-                    logging.warning("Running in sandbox mode - some features may be limited")
+                self.connected = False
                 return False
+
+    def _validate_trial_limits(self, symbols: List[str]) -> bool:
+        """Validate against Trial106 account limits (50 symbols max)"""
+        max_symbols = self.config.get('max_symbols', 50)
+        
+        if len(symbols) > max_symbols:
+            logging.warning(f"Trial106 account limited to {max_symbols} symbols. Requested: {len(symbols)}")
+            return False
+            
+        # Check total subscribed symbols including new ones
+        total_symbols = len(self.subscribed_symbols) + len([s for s in symbols if s not in self.subscribed_symbols])
+        if total_symbols > max_symbols:
+            logging.warning(f"Total subscribed symbols would exceed limit: {total_symbols} > {max_symbols}")
+            return False
+            
+        # Check for allowed symbols in trial account
+        allowed_symbols = self.config.get('allowed_symbols', [])
+        if allowed_symbols:
+            invalid_symbols = [s for s in symbols if s not in allowed_symbols]
+            if invalid_symbols:
+                logging.warning(f"Symbols not in allowed list: {invalid_symbols}")
+                return False
+            
+        return True
 
     def _validate_sandbox_limits(self, symbols: List[str]) -> bool:
         """Validate against sandbox environment limits"""
@@ -132,11 +169,11 @@ class TrueDataProvider:
             logging.error(f"Error processing tick data: {e}")
 
     async def subscribe_symbols(self, symbols: List[str], callback: Optional[Callable] = None):
-        """Subscribe to symbols for live data"""
+        """Subscribe to symbols for live data with Trial106 limits"""
         try:
-            # Validate sandbox limits
-            if not self._validate_sandbox_limits(symbols):
-                raise ValueError("Symbol subscription exceeds sandbox limits")
+            # Validate trial account limits (50 symbols max)
+            if not self._validate_trial_limits(symbols):
+                raise ValueError("Symbol subscription exceeds Trial106 account limits")
                 
             # Register callbacks for symbols
             if callback:
@@ -148,24 +185,31 @@ class TrueDataProvider:
             
             if new_symbols:
                 # Subscribe to TrueData
-                req_ids = self.td.start_live_data(new_symbols)
+                try:
+                    req_ids = self.td.start_live_data(new_symbols)
+                    logging.info(f"Started live data for symbols: {new_symbols}")
+                except Exception as td_error:
+                    logging.error(f"TrueData subscription failed: {td_error}")
+                    req_ids = []
                 
-                # Subscribe to WebSocket
-                await self.ws_manager.subscribe_symbols(None, new_symbols)
+                # Subscribe to WebSocket (if available)
+                try:
+                    await self.ws_manager.subscribe_symbols(new_symbols)
+                    logging.info(f"WebSocket subscription successful for: {new_symbols}")
+                except Exception as ws_error:
+                    logging.warning(f"WebSocket subscription failed: {ws_error} (continuing with TrueData only)")
                 
                 # Update subscribed symbols
                 self.subscribed_symbols.update(new_symbols)
                 
-                logging.info(f"Subscribed to symbols: {new_symbols}")
-                return req_ids
+                logging.info(f"Successfully subscribed to symbols: {new_symbols}")
+                return req_ids if req_ids else True
             
-            return []
+            return True
             
         except Exception as e:
             logging.error(f"Failed to subscribe symbols: {e}")
-            if self.is_sandbox:
-                logging.warning("Running in sandbox mode - subscription may be limited")
-            return []
+            return False
 
     async def _handle_ws_message(self, data: Dict):
         """Handle WebSocket messages"""

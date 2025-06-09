@@ -4,10 +4,16 @@ alerts:
 envs:
 - key: DATABASE_URL
   scope: RUN_AND_BUILD_TIME
-  value: postgresql://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb?sslmode=require
+  value: ${db.DATABASE_URL}
 - key: REDIS_URL
   scope: RUN_AND_BUILD_TIME
-  value: rediss://default:AVNS_TSCy17L6f9z0CdWgcvW@redis-cache-do-user-23093341-0.k.db.ondigitalocean.com:25061
+  value: ${redis.REDIS_URL}
+- key: FRONTEND_URL
+  scope: RUN_AND_BUILD_TIME
+  value: ${APP_URL}
+- key: BACKEND_URL
+  scope: RUN_AND_BUILD_TIME
+  value: ${APP_URL}
 - key: JWT_SECRET
   scope: RUN_AND_BUILD_TIME
   value: K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A
@@ -65,7 +71,7 @@ static_sites:
     value: "18"
   - key: VITE_API_URL
     scope: BUILD_TIME
-    value: https://clownfish-app-trading-system-new-apmkg.ondigitalocean.app
+    value: ${APP_URL}
   - key: NODE_ENV
     scope: BUILD_TIME
     value: production 
