@@ -22,10 +22,32 @@ services:
   instance_size_slug: apps-s-1vcpu-1gb
   source_dir: /
   run_command: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
+  health_check:
+    http_path: /health/alive
+    initial_delay_seconds: 40
+    period_seconds: 10
+    timeout_seconds: 5
+    failure_threshold: 3
+    success_threshold: 2
   envs:
   - key: PYTHON_VERSION
     scope: RUN_AND_BUILD_TIME
     value: "3.10"
+  - key: PORT
+    scope: RUN_AND_BUILD_TIME
+    value: "8080"
+  - key: ENVIRONMENT
+    scope: RUN_AND_BUILD_TIME
+    value: production
+  - key: PYTHONPATH
+    scope: RUN_AND_BUILD_TIME
+    value: /app
+  - key: PYTHONDONTWRITEBYTECODE
+    scope: RUN_AND_BUILD_TIME
+    value: "1"
+  - key: PYTHONUNBUFFERED
+    scope: RUN_AND_BUILD_TIME
+    value: "1"
 
 static_sites:
 - name: frontend
