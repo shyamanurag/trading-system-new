@@ -36,7 +36,7 @@ import {
     Treemap
 } from 'recharts';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const EnhancedDashboard = () => {
     const theme = useTheme();
@@ -164,25 +164,41 @@ const EnhancedDashboard = () => {
         // Extract hostname from API_BASE_URL for WebSocket
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const apiUrl = new URL(API_BASE_URL);
-        const wsUrl = `${wsProtocol}//${apiUrl.host}/ws/dashboard`;
+        // Use a default user_id for dashboard connection (you can replace with actual user_id if available)
+        const userId = 'dashboard'; // or get from auth context/props
+        const wsUrl = `${wsProtocol}//${apiUrl.host}/ws/${userId}`;
 
+        console.log('Attempting WebSocket connection to:', wsUrl);
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
-            console.log('WebSocket connected');
+            console.log('WebSocket connected successfully');
             setWsConnected(true);
+            // Subscribe to market data updates
+            ws.send(JSON.stringify({
+                type: 'subscribe',
+                room: 'market_data'
+            }));
         };
 
         ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            // Handle real-time updates
-            if (data.type === 'market_data') {
-                setMarketIndices(prev => ({ ...prev, [data.symbol]: data.data }));
+            try {
+                const data = JSON.parse(event.data);
+                console.log('WebSocket message received:', data);
+                // Handle real-time updates
+                if (data.type === 'market_data') {
+                    setMarketIndices(prev => ({ ...prev, [data.symbol]: data.data }));
+                } else if (data.type === 'system_alert') {
+                    // Handle system alerts
+                    setNotifications(prev => [...prev, data.data]);
+                }
+            } catch (error) {
+                console.error('Error parsing WebSocket message:', error);
             }
         };
 
-        ws.onclose = () => {
-            console.log('WebSocket disconnected');
+        ws.onclose = (event) => {
+            console.log('WebSocket disconnected:', event.code, event.reason);
             setWsConnected(false);
         };
 
@@ -191,7 +207,11 @@ const EnhancedDashboard = () => {
             setWsConnected(false);
         };
 
-        return () => ws.close();
+        return () => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.close();
+            }
+        };
     }, []);
 
     const handleTabChange = (event, newValue) => {
