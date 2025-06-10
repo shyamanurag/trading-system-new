@@ -12,71 +12,70 @@ export const useWebSocket = (userId = 'default_user') => {
     });
 
     const ws = useRef(null);
-    const reconnectTimeout = useRef(null);
-    const reconnectAttempts = useRef(0);
+    const reconnectTimeoutRef = useRef(null);
+    const reconnectAttemptsRef = useRef(0);
     const maxReconnectAttempts = 5;
-    const reconnectDelay = 3000; // 3 seconds
+    const reconnectDelay = 5000; // 5 seconds
+    const mountedRef = useRef(true);
+
+    const sendMessage = useCallback((message) => {
+        if (ws.current?.readyState === WebSocket.OPEN) {
+            ws.current.send(JSON.stringify(message));
+            console.log('Message sent:', message);
+        } else {
+            console.error('WebSocket is not connected');
+        }
+    }, []);
 
     const connect = useCallback(() => {
-        try {
-            // Close existing connection if any
-            if (ws.current?.readyState === WebSocket.OPEN) {
-                ws.current.close();
-            }
+        // Don't connect if already connected or connecting
+        if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
+            console.log('WebSocket already connected or connecting');
+            return;
+        }
 
-            // Create new WebSocket connection
+        // Don't connect if component is unmounted
+        if (!mountedRef.current) {
+            return;
+        }
+
+        try {
             const wsUrl = `${WS_BASE_URL}/ws/${userId}`;
             console.log('Connecting to WebSocket:', wsUrl);
 
-            ws.current = new WebSocket(wsUrl);
+            const newWs = new WebSocket(wsUrl);
 
-            ws.current.onopen = () => {
+            newWs.onopen = () => {
                 console.log('WebSocket connected');
+                ws.current = newWs;
                 setIsConnected(true);
-                reconnectAttempts.current = 0;
-                setConnectionStats(prev => ({
-                    ...prev,
+                reconnectAttemptsRef.current = 0;
+                setConnectionStats({
                     connected: true,
                     reconnectAttempts: 0,
                     lastError: null
-                }));
-
-                // Subscribe to market data
-                sendMessage({
-                    type: 'subscribe',
-                    room: 'market_data_NIFTY'
                 });
+
+                // Subscribe to market data after connection
+                setTimeout(() => {
+                    sendMessage({
+                        type: 'subscribe',
+                        room: 'market_data_NIFTY'
+                    });
+                }, 100);
             };
 
-            ws.current.onmessage = (event) => {
+            newWs.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
                     console.log('WebSocket message received:', data);
                     setLastMessage(data);
-
-                    // Handle different message types
-                    switch (data.type) {
-                        case 'CONNECTION_ESTABLISHED':
-                            console.log('Connection established:', data.message);
-                            break;
-                        case 'MARKET_DATA':
-                            // Handle market data updates
-                            break;
-                        case 'TRADE_ALERT':
-                            // Handle trade alerts
-                            break;
-                        case 'SYSTEM_ALERT':
-                            // Handle system alerts
-                            break;
-                        default:
-                            console.log('Unknown message type:', data.type);
-                    }
                 } catch (error) {
                     console.error('Error parsing WebSocket message:', error);
                 }
             };
 
-            ws.current.onerror = (error) => {
+            newWs.onerror = (error) => {
                 console.error('WebSocket error:', error);
                 setConnectionStats(prev => ({
                     ...prev,
@@ -84,23 +83,31 @@ export const useWebSocket = (userId = 'default_user') => {
                 }));
             };
 
-            ws.current.onclose = (event) => {
+            newWs.onclose = (event) => {
                 console.log('WebSocket disconnected:', event.code, event.reason);
+                ws.current = null;
                 setIsConnected(false);
                 setConnectionStats(prev => ({
                     ...prev,
                     connected: false
                 }));
 
-                // Attempt to reconnect
-                if (reconnectAttempts.current < maxReconnectAttempts) {
-                    reconnectAttempts.current++;
-                    console.log(`Reconnecting... Attempt ${reconnectAttempts.current}/${maxReconnectAttempts}`);
+                // Only reconnect if component is still mounted and we haven't exceeded attempts
+                if (mountedRef.current && reconnectAttemptsRef.current < maxReconnectAttempts) {
+                    reconnectAttemptsRef.current++;
+                    console.log(`Will reconnect in ${reconnectDelay / 1000}s... Attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts}`);
 
-                    reconnectTimeout.current = setTimeout(() => {
-                        connect();
+                    // Clear any existing timeout
+                    if (reconnectTimeoutRef.current) {
+                        clearTimeout(reconnectTimeoutRef.current);
+                    }
+
+                    reconnectTimeoutRef.current = setTimeout(() => {
+                        if (mountedRef.current) {
+                            connect();
+                        }
                     }, reconnectDelay);
-                } else {
+                } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
                     console.error('Max reconnection attempts reached');
                     setConnectionStats(prev => ({
                         ...prev,
@@ -116,29 +123,25 @@ export const useWebSocket = (userId = 'default_user') => {
                 lastError: error.message
             }));
         }
-    }, [userId]);
+    }, [userId, sendMessage]);
 
     const disconnect = useCallback(() => {
-        if (reconnectTimeout.current) {
-            clearTimeout(reconnectTimeout.current);
+        console.log('Disconnecting WebSocket');
+
+        // Clear reconnect timeout
+        if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
         }
 
+        // Close WebSocket connection
         if (ws.current) {
             ws.current.close();
             ws.current = null;
         }
 
         setIsConnected(false);
-        reconnectAttempts.current = 0;
-    }, []);
-
-    const sendMessage = useCallback((message) => {
-        if (ws.current?.readyState === WebSocket.OPEN) {
-            ws.current.send(JSON.stringify(message));
-            console.log('Message sent:', message);
-        } else {
-            console.error('WebSocket is not connected');
-        }
+        reconnectAttemptsRef.current = 0;
     }, []);
 
     const subscribe = useCallback((symbol, provider = 'ALL') => {
@@ -155,19 +158,22 @@ export const useWebSocket = (userId = 'default_user') => {
         });
     }, [sendMessage]);
 
+    // Connect on mount
     useEffect(() => {
+        mountedRef.current = true;
         connect();
 
         // Cleanup on unmount
         return () => {
+            mountedRef.current = false;
             disconnect();
         };
-    }, [connect, disconnect]);
+    }, []); // Empty deps - only run on mount/unmount
 
-    // Send heartbeat every 30 seconds
+    // Heartbeat
     useEffect(() => {
         const heartbeatInterval = setInterval(() => {
-            if (isConnected) {
+            if (isConnected && ws.current?.readyState === WebSocket.OPEN) {
                 sendMessage({ type: 'heartbeat' });
             }
         }, 30000);
