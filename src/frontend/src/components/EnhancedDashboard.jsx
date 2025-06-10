@@ -36,7 +36,9 @@ import {
     Treemap
 } from 'recharts';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Dynamic API URL - use same origin in production
+const API_BASE_URL = import.meta.env.VITE_API_URL ||
+    (window.location.hostname === 'localhost' ? 'http://localhost:8000' : window.location.origin);
 
 const EnhancedDashboard = () => {
     const theme = useTheme();
