@@ -29,7 +29,7 @@ from integrations.n8n_integration import N8NIntegration
 from src.auth import get_current_user_ws
 
 # Setup unified logging for WebSocket server
-setup_logging(log_level="INFO", enable_prometheus=True)
+setup_logging()
 logger = get_trading_logger("websocket_server")
 
 # Initialize FastAPI app for WebSocket server

@@ -371,13 +371,186 @@ class OrderManager:
     async def _check_condition(self, conditional_order: ConditionalOrder) -> bool:
         """Check if condition is met for conditional order"""
         try:
-            # Implement condition checking logic
-            # This should be customized based on the specific condition types
+            # Get current market data for the symbol
+            symbol = conditional_order.trigger_order.symbol
+            current_price = await self._get_current_price(symbol)
+            
+            if not current_price:
+                return False
+            
+            # Check different condition types
+            condition_type = conditional_order.condition.get('type')
+            condition_value = conditional_order.condition.get('value')
+            
+            if condition_type == 'price_above':
+                return current_price > condition_value
+            elif condition_type == 'price_below':
+                return current_price < condition_value
+            elif condition_type == 'price_crosses':
+                # Check if price crossed the threshold
+                last_price = await self._get_last_price(symbol)
+                if last_price:
+                    return (last_price < condition_value and current_price >= condition_value) or \
+                           (last_price > condition_value and current_price <= condition_value)
+            elif condition_type == 'volume_above':
+                current_volume = await self._get_current_volume(symbol)
+                return current_volume and current_volume > condition_value
+            elif condition_type == 'time_based':
+                # Check if current time matches the condition
+                current_time = datetime.now()
+                trigger_time = datetime.fromisoformat(condition_value)
+                return current_time >= trigger_time
+            elif condition_type == 'order_filled':
+                # Check if the trigger order is filled
+                return conditional_order.trigger_order.status == OrderStatus.FILLED
+            
+            # Default case - condition not recognized
+            logger.warning(f"Unknown condition type: {condition_type}")
             return False
 
         except Exception as e:
             logger.error(f"Error checking condition: {str(e)}")
             return False
+    
+    async def _get_current_price(self, symbol: str) -> Optional[float]:
+        """Get current price for a symbol"""
+        try:
+            # Try to get from Redis cache first
+            price_key = f"price:{symbol}"
+            price_data = await self.redis.get(price_key)
+            if price_data:
+                return float(price_data)
+            
+            # If not in cache, return None (would need market data provider in production)
+            return None
+        except Exception as e:
+            logger.error(f"Error getting current price for {symbol}: {str(e)}")
+            return None
+    
+    async def _get_last_price(self, symbol: str) -> Optional[float]:
+        """Get last recorded price for a symbol"""
+        try:
+            # Get from price history
+            history_key = f"price_history:{symbol}"
+            history = await self.redis.lrange(history_key, -2, -2)
+            if history:
+                return float(history[0])
+            return None
+        except Exception as e:
+            logger.error(f"Error getting last price for {symbol}: {str(e)}")
+            return None
+    
+    async def _get_current_volume(self, symbol: str) -> Optional[int]:
+        """Get current volume for a symbol"""
+        try:
+            # Try to get from Redis cache
+            volume_key = f"volume:{symbol}"
+            volume_data = await self.redis.get(volume_key)
+            if volume_data:
+                return int(volume_data)
+            return None
+        except Exception as e:
+            logger.error(f"Error getting current volume for {symbol}: {str(e)}")
+            return None
+
+    async def execute_order(self, order: Order) -> Dict[str, Any]:
+        """Execute an order based on its execution strategy"""
+        try:
+            # Get the execution strategy handler
+            strategy_handler = self.execution_strategies.get(
+                order.execution_strategy, 
+                self._execute_market_order  # Default to market order
+            )
+            
+            # Execute the order using the appropriate strategy
+            result = await strategy_handler(order)
+            
+            # Update order status
+            order.status = OrderStatus(result['status'])
+            
+            # Store order in history
+            if order.user_id in self.order_history:
+                self.order_history[order.user_id].append(order)
+            
+            # Remove from active orders if completed
+            if order.status in [OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED]:
+                if order.user_id in self.active_orders:
+                    self.active_orders[order.user_id].discard(order.order_id)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error executing order {order.order_id}: {str(e)}")
+            return {
+                'status': 'REJECTED',
+                'reason': str(e),
+                'order_id': order.order_id
+            }
+    
+    async def _execute_market_order(self, order: Order) -> Dict[str, Any]:
+        """Execute a market order"""
+        # In production, this would connect to the broker API
+        # For now, simulate execution
+        return {
+            'status': 'FILLED',
+            'average_price': order.price,
+            'filled_quantity': order.quantity,
+            'timestamp': datetime.now().isoformat()
+        }
+    
+    async def _execute_limit_order(self, order: Order) -> Dict[str, Any]:
+        """Execute a limit order"""
+        # In production, this would place a limit order with the broker
+        return {
+            'status': 'PENDING',
+            'order_id': order.order_id,
+            'timestamp': datetime.now().isoformat()
+        }
+    
+    async def _execute_smart_order(self, order: Order) -> Dict[str, Any]:
+        """Execute a smart order with intelligent routing"""
+        # Smart order routing logic would go here
+        return await self._execute_market_order(order)
+    
+    async def _execute_twap_order(self, order: Order) -> Dict[str, Any]:
+        """Execute a TWAP (Time Weighted Average Price) order"""
+        # TWAP execution logic would go here
+        return await self._execute_market_order(order)
+    
+    async def _execute_vwap_order(self, order: Order) -> Dict[str, Any]:
+        """Execute a VWAP (Volume Weighted Average Price) order"""
+        # VWAP execution logic would go here
+        return await self._execute_market_order(order)
+    
+    async def _execute_iceberg_order(self, order: Order) -> Dict[str, Any]:
+        """Execute an iceberg order"""
+        # Iceberg order logic would go here
+        return await self._execute_market_order(order)
+    
+    async def _send_order_notification(self, user_id: str, *args):
+        """Send order notification to user"""
+        try:
+            if len(args) == 2:
+                # Called with order and result
+                order, result = args
+                message = f"Order {order.order_id} for {order.symbol} - Status: {result['status']}"
+            else:
+                # Called with strategy_name and order
+                strategy_name, order = args
+                message = f"Strategy {strategy_name} placed order for {order.symbol}"
+            
+            await self.notification_manager.send_notification(
+                user_id=user_id,
+                notification_type='order_update',
+                message=message,
+                data={
+                    'order_id': order.order_id if hasattr(order, 'order_id') else None,
+                    'symbol': order.symbol if hasattr(order, 'symbol') else None,
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error sending order notification: {str(e)}")
 
     def _start_background_tasks(self):
         """Start background monitoring tasks"""
