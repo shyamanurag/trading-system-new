@@ -8,6 +8,7 @@ import {
     VisibilityOff
 } from '@mui/icons-material';
 import {
+    Alert,
     Avatar,
     Box,
     Button,
@@ -308,6 +309,13 @@ const UserManagementDashboard = () => {
                 👥 User Management & Analytics
             </Typography>
 
+            {/* Error Display */}
+            {error && (
+                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+                    {error}
+                </Alert>
+            )}
+
             {/* Navigation Tabs */}
             <Paper sx={{ mb: 3 }}>
                 <Tabs
@@ -603,83 +611,88 @@ const UserManagementDashboard = () => {
 
             {/* Add User Dialog */}
             <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>Add New User</DialogTitle>
-                <DialogContent>
-                    <TextField
-                        fullWidth
-                        label="Username"
-                        value={newUserData.username}
-                        onChange={(e) => setNewUserData(prev => ({ ...prev, username: e.target.value }))}
-                        margin="normal"
-                        required
-                    />
-                    <TextField
-                        fullWidth
-                        label="Email"
-                        type="email"
-                        value={newUserData.email}
-                        onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
-                        margin="normal"
-                        required
-                    />
-                    <TextField
-                        fullWidth
-                        label="Password"
-                        type="password"
-                        value={newUserData.password}
-                        onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
-                        margin="normal"
-                        required
-                    />
-                    <TextField
-                        fullWidth
-                        label="Zerodha Client ID"
-                        value={newUserData.zerodhaClientId}
-                        onChange={(e) => setNewUserData(prev => ({ ...prev, zerodhaClientId: e.target.value }))}
-                        margin="normal"
-                        required
-                    />
-                    <TextField
-                        fullWidth
-                        label="Zerodha Password"
-                        type="password"
-                        value={newUserData.zerodhaPassword}
-                        onChange={(e) => setNewUserData(prev => ({ ...prev, zerodhaPassword: e.target.value }))}
-                        margin="normal"
-                        required
-                        helperText="Required for authentication with our master API key"
-                    />
-                    <TextField
-                        fullWidth
-                        label="Initial Capital"
-                        type="number"
-                        value={newUserData.initialCapital}
-                        onChange={(e) => setNewUserData(prev => ({ ...prev, initialCapital: parseInt(e.target.value) }))}
-                        margin="normal"
-                        required
-                    />
-                    <FormControl fullWidth margin="normal">
-                        <InputLabel>Risk Level</InputLabel>
-                        <Select
-                            value={newUserData.riskLevel}
-                            onChange={(e) => setNewUserData(prev => ({ ...prev, riskLevel: e.target.value }))}
+                <form onSubmit={(e) => {
+                    e.preventDefault();
+                    handleAddUser();
+                }}>
+                    <DialogTitle>Add New User</DialogTitle>
+                    <DialogContent>
+                        <TextField
+                            fullWidth
+                            label="Username"
+                            value={newUserData.username}
+                            onChange={(e) => setNewUserData(prev => ({ ...prev, username: e.target.value }))}
+                            margin="normal"
+                            required
+                        />
+                        <TextField
+                            fullWidth
+                            label="Email"
+                            type="email"
+                            value={newUserData.email}
+                            onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
+                            margin="normal"
+                            required
+                        />
+                        <TextField
+                            fullWidth
+                            label="Password"
+                            type="password"
+                            value={newUserData.password}
+                            onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
+                            margin="normal"
+                            required
+                        />
+                        <TextField
+                            fullWidth
+                            label="Zerodha Client ID"
+                            value={newUserData.zerodhaClientId}
+                            onChange={(e) => setNewUserData(prev => ({ ...prev, zerodhaClientId: e.target.value }))}
+                            margin="normal"
+                            required
+                        />
+                        <TextField
+                            fullWidth
+                            label="Zerodha Password"
+                            type="password"
+                            value={newUserData.zerodhaPassword}
+                            onChange={(e) => setNewUserData(prev => ({ ...prev, zerodhaPassword: e.target.value }))}
+                            margin="normal"
+                            required
+                            helperText="Required for authentication with our master API key"
+                        />
+                        <TextField
+                            fullWidth
+                            label="Initial Capital"
+                            type="number"
+                            value={newUserData.initialCapital}
+                            onChange={(e) => setNewUserData(prev => ({ ...prev, initialCapital: parseInt(e.target.value) }))}
+                            margin="normal"
+                            required
+                        />
+                        <FormControl fullWidth margin="normal">
+                            <InputLabel>Risk Level</InputLabel>
+                            <Select
+                                value={newUserData.riskLevel}
+                                onChange={(e) => setNewUserData(prev => ({ ...prev, riskLevel: e.target.value }))}
+                            >
+                                <MenuItem value="low">Low Risk</MenuItem>
+                                <MenuItem value="medium">Medium Risk</MenuItem>
+                                <MenuItem value="high">High Risk</MenuItem>
+                            </Select>
+                        </FormControl>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
+                        <Button
+                            type="submit"
+                            variant="contained"
+                            disabled={!newUserData.username || !newUserData.email || !newUserData.zerodhaClientId || addUserLoading}
                         >
-                            <MenuItem value="low">Low Risk</MenuItem>
-                            <MenuItem value="medium">Medium Risk</MenuItem>
-                            <MenuItem value="high">High Risk</MenuItem>
-                        </Select>
-                    </FormControl>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
-                    <Button
-                        onClick={handleAddUser}
-                        variant="contained"
-                        disabled={!newUserData.username || !newUserData.email || !newUserData.zerodhaClientId}
-                    >
-                        Add User
-                    </Button>
-                </DialogActions>
+                            {addUserLoading ? 'Adding...' : 'Add User'}
+                        </Button>
+                    </DialogActions>
+                </form>
             </Dialog>
         </Box>
     );
