@@ -57,22 +57,7 @@ const MarketIndicesWidget = () => {
         } catch (error) {
             console.error('Error fetching market data:', error);
             setError('Failed to connect to market data service');
-            // Set some default data to show the UI
-            if (indices.length === 0) {
-                setIndices([
-                    {
-                        symbol: "NIFTY",
-                        name: "Nifty 50",
-                        last_price: 21453.50,
-                        change: 0,
-                        change_percent: 0,
-                        open: 21453.50,
-                        high: 21453.50,
-                        low: 21453.50,
-                        volume: 0
-                    }
-                ]);
-            }
+            // Don't set any mock data - keep indices empty
         } finally {
             setLoading(false);
         }

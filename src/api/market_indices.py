@@ -18,49 +18,21 @@ market_data_cache = {}
 async def get_market_indices():
     """Get live market indices data"""
     try:
-        # For now, return mock data to show the system is working
-        # In production, this would connect to TrueData
+        # Check if TrueData is configured
+        truedata_configured = bool(os.getenv('TRUEDATA_USERNAME'))
+        
+        # Return empty data if not configured or no real data available
         indices_data = {
             "success": True,
             "timestamp": datetime.now().isoformat(),
             "market_status": "OPEN" if datetime.now().hour >= 9 and datetime.now().hour < 16 else "CLOSED",
-            "indices": [
-                {
-                    "symbol": "NIFTY",
-                    "name": "Nifty 50",
-                    "last_price": 21453.50,
-                    "change": 125.30,
-                    "change_percent": 0.59,
-                    "open": 21328.20,
-                    "high": 21485.60,
-                    "low": 21315.40,
-                    "volume": 245678900
-                },
-                {
-                    "symbol": "BANKNIFTY", 
-                    "name": "Bank Nifty",
-                    "last_price": 47856.75,
-                    "change": -234.50,
-                    "change_percent": -0.49,
-                    "open": 48091.25,
-                    "high": 48125.30,
-                    "low": 47750.60,
-                    "volume": 89456700
-                },
-                {
-                    "symbol": "FINNIFTY",
-                    "name": "Fin Nifty",
-                    "last_price": 21234.80,
-                    "change": 89.45,
-                    "change_percent": 0.42,
-                    "open": 21145.35,
-                    "high": 21267.90,
-                    "low": 21125.50,
-                    "volume": 34567800
-                }
-            ],
-            "message": "Live market data from TrueData"
+            "indices": [],  # Empty array - no mock data
+            "message": "Waiting for live market data..." if truedata_configured else "TrueData not configured"
         }
+        
+        # TODO: When TrueData is connected, fetch real data here
+        # if truedata_provider and truedata_provider.is_connected():
+        #     indices_data["indices"] = await truedata_provider.get_indices_data()
         
         return indices_data
         
@@ -74,47 +46,22 @@ async def get_index_details(symbol: str):
     try:
         symbol = symbol.upper()
         
-        # Mock detailed data
+        # Return empty data structure - no mock data
         index_details = {
             "success": True,
             "symbol": symbol,
             "timestamp": datetime.now().isoformat(),
-            "data": {
-                "last_price": 21453.50,
-                "change": 125.30,
-                "change_percent": 0.59,
-                "open": 21328.20,
-                "high": 21485.60,
-                "low": 21315.40,
-                "close": 21328.20,
-                "prev_close": 21328.20,
-                "volume": 245678900,
-                "turnover": 1234567890000,
-                "bid": 21453.25,
-                "ask": 21453.75,
-                "bid_qty": 150,
-                "ask_qty": 200,
-                "oi": 0,
-                "oi_change": 0,
-                "52w_high": 22526.60,
-                "52w_low": 16828.35,
-                "advances": 38,
-                "declines": 12,
-                "unchanged": 0
-            },
+            "data": None,  # No mock data
             "constituents": {
-                "top_gainers": [
-                    {"symbol": "RELIANCE", "change_percent": 2.35},
-                    {"symbol": "TCS", "change_percent": 1.89},
-                    {"symbol": "INFY", "change_percent": 1.56}
-                ],
-                "top_losers": [
-                    {"symbol": "HDFC", "change_percent": -1.23},
-                    {"symbol": "ICICIBANK", "change_percent": -0.98},
-                    {"symbol": "SBIN", "change_percent": -0.76}
-                ]
-            }
+                "top_gainers": [],
+                "top_losers": []
+            },
+            "message": "Waiting for live market data..."
         }
+        
+        # TODO: Fetch real data when available
+        # if truedata_provider and truedata_provider.is_connected():
+        #     index_details["data"] = await truedata_provider.get_index_details(symbol)
         
         return index_details
         
