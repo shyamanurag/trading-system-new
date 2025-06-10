@@ -51,6 +51,7 @@ import EliteRecommendationsDashboard from './EliteRecommendationsDashboard';
 import UserManagementDashboard from './UserManagementDashboard';
 import UserPerformanceDashboard from './UserPerformanceDashboard';
 
+import MarketIndicesWidget from './MarketIndicesWidget';
 import SystemHealthMonitor from './SystemHealthMonitor';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -360,150 +361,215 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
             <TabPanel value={selectedTab} index={0}>
                 {/* System Overview Dashboard */}
                 <Grid container spacing={3}>
-                    {/* Key Metrics Cards */}
-                    <Grid item xs={12} md={2}>
-                        <Card>
-                            <CardContent sx={{ textAlign: 'center' }}>
-                                <Typography color="text.secondary" gutterBottom>Total P&L</Typography>
-                                <Typography variant="h4" color="success.main">
-                                    {formatCurrency(dashboardData.systemMetrics.totalPnL)}
-                                </Typography>
-                            </CardContent>
-                        </Card>
+                    {/* Market Indices - Top Left */}
+                    <Grid item xs={12} md={4}>
+                        <MarketIndicesWidget />
+                    </Grid>
 
-                        {/* System Health Monitor */}
-                        <Grid item xs={12} md={6}>
-                            <SystemHealthMonitor />
+                    {/* Key Metrics Cards - Top Right */}
+                    <Grid item xs={12} md={8}>
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} sm={6} md={4}>
+                                <Card sx={{
+                                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                    color: 'white'
+                                }}>
+                                    <CardContent sx={{ textAlign: 'center' }}>
+                                        <Typography variant="body2" sx={{ opacity: 0.9 }}>Total P&L</Typography>
+                                        <Typography variant="h4" sx={{ fontWeight: 600, my: 1 }}>
+                                            {formatCurrency(dashboardData.systemMetrics.totalPnL)}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                                            All time performance
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                            <Grid item xs={12} sm={6} md={4}>
+                                <Card sx={{
+                                    background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                                    color: 'white'
+                                }}>
+                                    <CardContent sx={{ textAlign: 'center' }}>
+                                        <Typography variant="body2" sx={{ opacity: 0.9 }}>Success Rate</Typography>
+                                        <Typography variant="h4" sx={{ fontWeight: 600, my: 1 }}>
+                                            {formatPercent(dashboardData.systemMetrics.successRate)}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                                            Win/Loss ratio
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                            <Grid item xs={12} sm={6} md={4}>
+                                <Card sx={{
+                                    background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+                                    color: 'white'
+                                }}>
+                                    <CardContent sx={{ textAlign: 'center' }}>
+                                        <Typography variant="body2" sx={{ opacity: 0.9 }}>Total Trades</Typography>
+                                        <Typography variant="h4" sx={{ fontWeight: 600, my: 1 }}>
+                                            {dashboardData.systemMetrics.totalTrades.toLocaleString()}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                                            Executed today
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                            <Grid item xs={12} sm={6} md={4}>
+                                <Card sx={{
+                                    background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+                                    color: 'white'
+                                }}>
+                                    <CardContent sx={{ textAlign: 'center' }}>
+                                        <Typography variant="body2" sx={{ opacity: 0.9 }}>Active Users</Typography>
+                                        <Typography variant="h4" sx={{ fontWeight: 600, my: 1 }}>
+                                            {dashboardData.systemMetrics.activeUsers}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                                            Currently trading
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                            <Grid item xs={12} sm={6} md={4}>
+                                <Card sx={{
+                                    background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)'
+                                }}>
+                                    <CardContent sx={{ textAlign: 'center' }}>
+                                        <Typography variant="body2" color="text.secondary">AUM</Typography>
+                                        <Typography variant="h4" sx={{ fontWeight: 600, my: 1 }}>
+                                            {formatCurrency(dashboardData.systemMetrics.aum)}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            Assets managed
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                            <Grid item xs={12} sm={6} md={4}>
+                                <Card sx={{
+                                    background: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)'
+                                }}>
+                                    <CardContent sx={{ textAlign: 'center' }}>
+                                        <Typography variant="body2" color="text.secondary">Daily Volume</Typography>
+                                        <Typography variant="h4" sx={{ fontWeight: 600, my: 1 }}>
+                                            {formatCurrency(dashboardData.systemMetrics.dailyVolume)}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            Traded today
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
                         </Grid>
-                    </Grid>
-                    <Grid item xs={12} md={2}>
-                        <Card>
-                            <CardContent sx={{ textAlign: 'center' }}>
-                                <Typography color="text.secondary" gutterBottom>Success Rate</Typography>
-                                <Typography variant="h4" color="primary.main">
-                                    {formatPercent(dashboardData.systemMetrics.successRate)}
-                                </Typography>
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                    <Grid item xs={12} md={2}>
-                        <Card>
-                            <CardContent sx={{ textAlign: 'center' }}>
-                                <Typography color="text.secondary" gutterBottom>Total Trades</Typography>
-                                <Typography variant="h4">
-                                    {dashboardData.systemMetrics.totalTrades.toLocaleString()}
-                                </Typography>
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                    <Grid item xs={12} md={2}>
-                        <Card>
-                            <CardContent sx={{ textAlign: 'center' }}>
-                                <Typography color="text.secondary" gutterBottom>Active Users</Typography>
-                                <Typography variant="h4" color="warning.main">
-                                    {dashboardData.systemMetrics.activeUsers}
-                                </Typography>
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                    <Grid item xs={12} md={2}>
-                        <Card>
-                            <CardContent sx={{ textAlign: 'center' }}>
-                                <Typography color="text.secondary" gutterBottom>AUM</Typography>
-                                <Typography variant="h4" color="secondary.main">
-                                    {formatCurrency(dashboardData.systemMetrics.aum)}
-                                </Typography>
-                            </CardContent>
-                        </Card>
-                    </Grid>
-                    <Grid item xs={12} md={2}>
-                        <Card>
-                            <CardContent sx={{ textAlign: 'center' }}>
-                                <Typography color="text.secondary" gutterBottom>Daily Volume</Typography>
-                                <Typography variant="h4">
-                                    {formatCurrency(dashboardData.systemMetrics.dailyVolume)}
-                                </Typography>
-                            </CardContent>
-                        </Card>
                     </Grid>
 
                     {/* Daily P&L Chart */}
                     <Grid item xs={12} lg={8}>
                         <Card>
                             <CardContent>
-                                <Typography variant="h6" gutterBottom>Daily P&L Trend (30 Days)</Typography>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                                        Daily P&L Trend
+                                    </Typography>
+                                    <Chip
+                                        label="Last 30 Days"
+                                        size="small"
+                                        color="primary"
+                                        variant="outlined"
+                                    />
+                                </Box>
                                 <ResponsiveContainer width="100%" height={300}>
                                     <AreaChart data={dashboardData.dailyPnL}>
-                                        <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis dataKey="date" />
-                                        <YAxis />
-                                        <Tooltip formatter={(value) => [formatCurrency(value), 'P&L']} />
-                                        <Area type="monotone" dataKey="pnl" stroke="#2196f3" fill="#2196f3" fillOpacity={0.3} />
+                                        <defs>
+                                            <linearGradient id="colorPnL" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#2196f3" stopOpacity={0.8} />
+                                                <stop offset="95%" stopColor="#2196f3" stopOpacity={0.1} />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                                        <XAxis
+                                            dataKey="date"
+                                            tick={{ fontSize: 12 }}
+                                            tickLine={false}
+                                        />
+                                        <YAxis
+                                            tick={{ fontSize: 12 }}
+                                            tickLine={false}
+                                            axisLine={false}
+                                        />
+                                        <Tooltip
+                                            formatter={(value) => [formatCurrency(value), 'P&L']}
+                                            contentStyle={{
+                                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                                border: '1px solid #e0e0e0',
+                                                borderRadius: 8
+                                            }}
+                                        />
+                                        <Area
+                                            type="monotone"
+                                            dataKey="pnl"
+                                            stroke="#2196f3"
+                                            strokeWidth={2}
+                                            fillOpacity={1}
+                                            fill="url(#colorPnL)"
+                                        />
                                     </AreaChart>
                                 </ResponsiveContainer>
                             </CardContent>
                         </Card>
                     </Grid>
 
-                    {/* Recent Trades */}
+                    {/* System Health Monitor */}
                     <Grid item xs={12} lg={4}>
-                        <Card>
-                            <CardContent>
-                                <Typography variant="h6" gutterBottom>Recent Trades</Typography>
-                                <List dense>
-                                    {dashboardData.recentTrades.map((trade, index) => (
-                                        <ListItem key={index}>
-                                            <ListItemAvatar>
-                                                <Avatar sx={{ bgcolor: trade.pnl > 0 ? 'success.main' : 'error.main' }}>
-                                                    {trade.symbol[0]}
-                                                </Avatar>
-                                            </ListItemAvatar>
-                                            <ListItemText
-                                                primary={trade.symbol}
-                                                secondary={
-                                                    <Box>
-                                                        <Typography variant="body2">
-                                                            Entry: {formatCurrency(trade.entry)} → Current: {formatCurrency(trade.current)}
-                                                        </Typography>
-                                                        <Typography
-                                                            variant="body2"
-                                                            color={trade.pnl > 0 ? 'success.main' : 'error.main'}
-                                                        >
-                                                            P&L: {formatCurrency(trade.pnl)} • {trade.status}
-                                                        </Typography>
-                                                    </Box>
-                                                }
-                                            />
-                                        </ListItem>
-                                    ))}
-                                </List>
-                            </CardContent>
-                        </Card>
+                        <SystemHealthMonitor />
                     </Grid>
 
                     {/* Top Performers */}
                     <Grid item xs={12} md={6}>
                         <Card>
                             <CardContent>
-                                <Typography variant="h6" gutterBottom>Top Performers</Typography>
+                                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+                                    🏆 Top Performers
+                                </Typography>
                                 <List>
                                     {dashboardData.topPerformers.map((performer, index) => (
-                                        <ListItem key={index}>
+                                        <ListItem key={index} sx={{ px: 0 }}>
                                             <ListItemAvatar>
-                                                <Avatar sx={{ bgcolor: 'primary.main' }}>
+                                                <Avatar sx={{
+                                                    bgcolor: ['#FFD700', '#C0C0C0', '#CD7F32', 'primary.main'][index],
+                                                    fontWeight: 600
+                                                }}>
                                                     {index + 1}
                                                 </Avatar>
                                             </ListItemAvatar>
                                             <ListItemText
-                                                primary={performer.user}
+                                                primary={
+                                                    <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
+                                                        {performer.user}
+                                                    </Typography>
+                                                }
                                                 secondary={
-                                                    <Box>
-                                                        <Typography variant="body2">
-                                                            P&L: {formatCurrency(performer.pnl)} • Trades: {performer.trades}
-                                                        </Typography>
-                                                        <Typography variant="body2" color="success.main">
-                                                            Win Rate: {formatPercent(performer.winRate)}
-                                                        </Typography>
+                                                    <Box sx={{ display: 'flex', gap: 2, mt: 0.5 }}>
+                                                        <Chip
+                                                            label={`P&L: ${formatCurrency(performer.pnl)}`}
+                                                            size="small"
+                                                            color="success"
+                                                            variant="outlined"
+                                                        />
+                                                        <Chip
+                                                            label={`${performer.trades} trades`}
+                                                            size="small"
+                                                            variant="outlined"
+                                                        />
+                                                        <Chip
+                                                            label={`Win: ${formatPercent(performer.winRate)}`}
+                                                            size="small"
+                                                            color="primary"
+                                                            variant="outlined"
+                                                        />
                                                     </Box>
                                                 }
                                             />
@@ -518,24 +584,37 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                     <Grid item xs={12} md={6}>
                         <Card>
                             <CardContent>
-                                <Typography variant="h6" gutterBottom>System Alerts</Typography>
+                                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+                                    🔔 System Alerts
+                                </Typography>
                                 <List>
-                                    {dashboardData.alerts.map((alert, index) => (
-                                        <ListItem key={index}>
-                                            <ListItemAvatar>
-                                                <Avatar sx={{
-                                                    bgcolor: alert.type === 'success' ? 'success.main' :
-                                                        alert.type === 'warning' ? 'warning.main' : 'info.main'
-                                                }}>
-                                                    <Notifications />
-                                                </Avatar>
-                                            </ListItemAvatar>
+                                    {dashboardData.alerts.length === 0 ? (
+                                        <ListItem>
                                             <ListItemText
-                                                primary={alert.message}
-                                                secondary={alert.time}
+                                                primary="No active alerts"
+                                                secondary="All systems operating normally"
                                             />
                                         </ListItem>
-                                    ))}
+                                    ) : (
+                                        dashboardData.alerts.map((alert, index) => (
+                                            <ListItem key={index} sx={{ px: 0 }}>
+                                                <ListItemAvatar>
+                                                    <Avatar sx={{
+                                                        bgcolor: alert.type === 'success' ? 'success.light' :
+                                                            alert.type === 'warning' ? 'warning.light' : 'info.light',
+                                                        color: alert.type === 'success' ? 'success.dark' :
+                                                            alert.type === 'warning' ? 'warning.dark' : 'info.dark'
+                                                    }}>
+                                                        <Notifications />
+                                                    </Avatar>
+                                                </ListItemAvatar>
+                                                <ListItemText
+                                                    primary={alert.message}
+                                                    secondary={alert.time}
+                                                />
+                                            </ListItem>
+                                        ))
+                                    )}
                                 </List>
                             </CardContent>
                         </Card>
