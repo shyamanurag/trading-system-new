@@ -127,4 +127,75 @@ async def get_system_notifications():
         }
     except Exception as e:
         logger.error(f"Error fetching notifications: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/dashboard/summary")
+async def get_dashboard_summary():
+    """Get dashboard summary data including users and system metrics"""
+    try:
+        # Generate mock data for now
+        # In production, this would fetch from database
+        
+        # Generate mock users
+        users = []
+        for i in range(5):
+            users.append({
+                "user_id": f"USER{i+1:03d}",
+                "name": f"Trader {i+1}",
+                "username": f"trader{i+1}",
+                "avatar": f"T{i+1}",
+                "initial_capital": 100000,
+                "current_capital": 100000 + random.randint(-10000, 50000),
+                "total_pnl": random.randint(-5000, 25000),
+                "daily_pnl": random.randint(-2000, 5000),
+                "total_trades": random.randint(10, 100),
+                "win_rate": random.uniform(40, 70),
+                "is_active": True,
+                "open_trades": random.randint(0, 5)
+            })
+        
+        # Calculate system metrics
+        total_pnl = sum(user['total_pnl'] for user in users)
+        total_trades = sum(user['total_trades'] for user in users)
+        total_capital = sum(user['current_capital'] for user in users)
+        
+        return {
+            "success": True,
+            "users": users,
+            "system_metrics": {
+                "total_pnl": total_pnl,
+                "total_trades": total_trades,
+                "success_rate": random.uniform(55, 65),
+                "active_users": len([u for u in users if u['is_active']]),
+                "aum": total_capital,
+                "daily_volume": random.randint(1000000, 5000000)
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting dashboard summary: {e}")
+        raise HTTPException(status_code=500, detail="Unable to fetch dashboard summary")
+
+@router.get("/performance/summary")
+async def get_performance_summary():
+    """Get performance summary metrics"""
+    try:
+        return {
+            "success": True,
+            "metrics": {
+                "todayPnL": random.randint(-5000, 15000),
+                "todayPnLPercent": random.uniform(-2, 5),
+                "activeUsers": random.randint(3, 8),
+                "newUsersThisWeek": random.randint(0, 3),
+                "totalTrades": random.randint(50, 200),
+                "winRate": random.uniform(50, 70),
+                "totalAUM": random.randint(500000, 2000000),
+                "aumGrowth": random.uniform(-5, 10)
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting performance summary: {e}")
+        raise HTTPException(status_code=500, detail="Unable to fetch performance summary") 

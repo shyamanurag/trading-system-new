@@ -6,6 +6,7 @@ import {
 } from '@mui/icons-material';
 import {
     Box,
+    Button,
     Card,
     CardContent,
     Chip,
@@ -24,10 +25,15 @@ const MarketIndicesWidget = () => {
     const [marketStatus, setMarketStatus] = useState(null);
     const [loading, setLoading] = useState(true);
     const [lastUpdate, setLastUpdate] = useState(null);
+    const [error, setError] = useState(null);
 
     const fetchMarketData = async () => {
         try {
-            setLoading(true);
+            setError(null);
+            // Don't set loading to true on refresh to avoid flicker
+            if (indices.length === 0) {
+                setLoading(true);
+            }
 
             // Fetch indices data
             const indicesResponse = await fetch(`${API_BASE_URL}/market/indices`);
@@ -39,6 +45,8 @@ const MarketIndicesWidget = () => {
 
             if (indicesData.success) {
                 setIndices(indicesData.indices || []);
+            } else {
+                setError('Unable to fetch market data');
             }
 
             if (statusData.success) {
@@ -48,6 +56,23 @@ const MarketIndicesWidget = () => {
             setLastUpdate(new Date());
         } catch (error) {
             console.error('Error fetching market data:', error);
+            setError('Failed to connect to market data service');
+            // Set some default data to show the UI
+            if (indices.length === 0) {
+                setIndices([
+                    {
+                        symbol: "NIFTY",
+                        name: "Nifty 50",
+                        last_price: 21453.50,
+                        change: 0,
+                        change_percent: 0,
+                        open: 21453.50,
+                        high: 21453.50,
+                        low: 21453.50,
+                        volume: 0
+                    }
+                ]);
+            }
         } finally {
             setLoading(false);
         }
@@ -119,6 +144,18 @@ const MarketIndicesWidget = () => {
                         <Typography variant="body2" color="text.secondary" align="center" sx={{ mt: 2 }}>
                             Loading market data...
                         </Typography>
+                    </Box>
+                )}
+
+                {/* Error State */}
+                {error && !loading && (
+                    <Box sx={{ py: 2, textAlign: 'center' }}>
+                        <Typography variant="body2" color="error" sx={{ mb: 1 }}>
+                            {error}
+                        </Typography>
+                        <Button size="small" onClick={fetchMarketData} startIcon={<Refresh />}>
+                            Retry
+                        </Button>
                     </Box>
                 )}
 
