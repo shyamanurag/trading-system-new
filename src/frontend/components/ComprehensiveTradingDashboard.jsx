@@ -78,7 +78,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
 
             // Fetch real data from APIs using Promise.allSettled to handle failures gracefully
             const [dashboardRes, performanceRes, recommendationsRes] = await Promise.allSettled([
-                fetch(`${API_BASE_URL}/api/dashboard/summary`),
+                fetch(`${API_BASE_URL}/dashboard/summary`),
                 fetch(`${API_BASE_URL}/performance/daily-pnl`),
                 fetch(`${API_BASE_URL}/recommendations/elite`)
             ]);

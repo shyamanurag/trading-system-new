@@ -200,7 +200,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
 
     const fetchTradingStatus = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/trading/status`);
+            const response = await fetch(`${API_BASE_URL}/trading/status`);
             const data = await response.json();
             if (data.success) {
                 setTradingStatus(data);
@@ -212,7 +212,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
 
     const fetchBrokerUsers = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/users/broker`);
+            const response = await fetch(`${API_BASE_URL}/users/broker`);
             const data = await response.json();
             if (data.success) {
                 setBrokerUsers(data.users || []);
@@ -225,7 +225,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
     const handleTradingControl = async (action) => {
         setControlLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/trading/control`, {
+            const response = await fetch(`${API_BASE_URL}/trading/control`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

@@ -60,7 +60,7 @@ const BrokerUserSetup = ({ open, onClose, onUserAdded }) => {
         setError(null);
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/users/broker`, {
+            const response = await fetch(`${API_BASE_URL}/users/broker`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

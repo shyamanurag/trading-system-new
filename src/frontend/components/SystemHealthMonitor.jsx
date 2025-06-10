@@ -1,22 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import {
-    Card,
-    CardContent,
-    Typography,
-    Grid,
-    Chip,
-    Box,
-    LinearProgress,
-    Alert
-} from '@mui/material';
 import {
     CheckCircle,
     Error,
-    Warning,
     Memory,
+    NetworkCheck,
     Storage,
-    NetworkCheck
+    Warning
 } from '@mui/icons-material';
+import {
+    Alert,
+    Box,
+    Card,
+    CardContent,
+    Chip,
+    Grid,
+    LinearProgress,
+    Typography
+} from '@mui/material';
+import React, { useEffect, useState } from 'react';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -28,8 +28,8 @@ const SystemHealthMonitor = () => {
     const fetchHealthData = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/health`);
-            
+            const response = await fetch(`${API_BASE_URL}/health/ready`);
+
             if (response.ok) {
                 const data = await response.json();
                 setHealthData(data);
