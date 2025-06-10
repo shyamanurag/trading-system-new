@@ -5,8 +5,8 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import React, { useEffect, useState } from 'react';
 
 // Import components
+import ComprehensiveTradingDashboard from './components/ComprehensiveTradingDashboard';
 import LoginForm from './components/LoginForm';
-import EnhancedDashboard from './src/components/EnhancedDashboard';
 
 const theme = createTheme({
     palette: {
@@ -116,7 +116,7 @@ function App() {
         <ThemeProvider theme={theme}>
             <CssBaseline />
             {isAuthenticated ? (
-                <EnhancedDashboard
+                <ComprehensiveTradingDashboard
                     userInfo={userInfo}
                     onLogout={handleLogout}
                 />
