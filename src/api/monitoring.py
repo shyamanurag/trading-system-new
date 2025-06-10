@@ -6,7 +6,8 @@ from typing import Dict, Any
 from datetime import datetime
 import psutil
 import random
-from core.logging_config import get_logger
+from common.logging import get_logger
+from database_manager import get_database_operations
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -146,3 +147,49 @@ async def get_performance_summary():
     except Exception as e:
         logger.error(f"Error fetching performance summary: {e}")
         raise HTTPException(status_code=500, detail="Unable to fetch performance summary")
+
+@router.get("/daily-pnl")
+async def get_daily_pnl():
+    """Get daily P&L data"""
+    try:
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get actual daily P&L from database
+        daily_pnl = await db_ops.db.execute_query("""
+            WITH daily_stats AS (
+                SELECT 
+                    DATE(COALESCE(exit_time, entry_time)) as date,
+                    SUM(COALESCE(realized_pnl, 0)) as total_pnl,
+                    COUNT(DISTINCT user_id) as user_count,
+                    COUNT(*) as trades_count,
+                    COUNT(CASE WHEN realized_pnl > 0 THEN 1 END) as winning_trades
+                FROM positions 
+                WHERE COALESCE(exit_time, entry_time) >= NOW() - INTERVAL '30 days'
+                GROUP BY DATE(COALESCE(exit_time, entry_time))
+            )
+            SELECT *,
+                   CASE 
+                       WHEN trades_count > 0 THEN (winning_trades::float / trades_count * 100)
+                       ELSE 0 
+                   END as win_rate
+            FROM daily_stats
+            ORDER BY date
+        """)
+        
+        return {
+            "success": True,
+            "daily_pnl": daily_pnl or [],
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching daily P&L: {e}")
+        return {
+            "success": True,
+            "daily_pnl": [],
+            "timestamp": datetime.now().isoformat(),
+            "message": "Daily P&L data unavailable"
+        }

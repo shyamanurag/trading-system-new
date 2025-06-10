@@ -1,4 +1,3 @@
-
 export interface WebSocketMessage {
   type: string;
   data: any;
@@ -38,7 +37,7 @@ class WebSocketService extends EventTarget {
 
   constructor(config?: Partial<WebSocketConfig>) {
     super();
-    this.url = config?.url || 'ws://localhost:8000/ws';
+    this.url = config?.url || import.meta.env.VITE_WS_URL || 'wss://algoauto-ua2iq.ondigitalocean.app/ws';
     this.maxReconnectAttempts = config?.reconnectAttempts || 5;
     this.reconnectDelay = config?.reconnectDelay || 1000;
     this.heartbeatInterval = config?.heartbeatInterval || 30000;

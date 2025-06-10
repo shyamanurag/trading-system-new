@@ -282,12 +282,8 @@ app.add_middleware(ErrorRecoveryMiddleware, error_threshold=10, recovery_time=60
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",  # React development server
-        "http://localhost:8080",  # Alternative development port
-        "http://localhost:8001",  # Current backend server
-        "https://yourdomain.com", # Production domain - replace with actual domain
         "https://algoauto-ua2iq.ondigitalocean.app",  # Production domain
-        "*"  # Allow all origins temporarily for debugging
+        os.getenv("FRONTEND_URL", "https://algoauto-ua2iq.ondigitalocean.app"),  # Dynamic frontend URL
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],

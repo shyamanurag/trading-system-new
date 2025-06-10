@@ -45,9 +45,8 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",  # React development server
-        "http://localhost:8080",  # Alternative development port
-        "https://yourdomain.com", # Production domain
+        "https://algoauto-ua2iq.ondigitalocean.app",  # Production domain
+        os.getenv("FRONTEND_URL", "https://algoauto-ua2iq.ondigitalocean.app"),  # Dynamic frontend URL
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST"],

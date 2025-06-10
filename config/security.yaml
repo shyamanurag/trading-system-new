@@ -16,8 +16,8 @@ api:
     burst_limit: 100
   cors:
     allowed_origins:
-      - https://yourdomain.com
-      - http://localhost:3000
+      - https://algoauto-ua2iq.ondigitalocean.app
+      - ${FRONTEND_URL}
     allowed_methods:
       - GET
       - POST
