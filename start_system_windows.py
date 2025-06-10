@@ -1,150 +1,166 @@
 #!/usr/bin/env python3
 """
-Windows-Compatible Trading System Startup Script
-This script properly starts the trading system on Windows without Redis/TrueData dependencies
+Windows-compatible startup script for the trading system
+Runs in development mode without external dependencies
 """
 
 import os
 import sys
 import subprocess
 import time
-import socket
-from pathlib import Path
 import logging
+from pathlib import Path
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-def check_port(port):
-    """Check if a port is available"""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        sock.bind(('', port))
-        sock.close()
-        return True
-    except:
-        return False
-
-def set_environment():
-    """Set up environment variables for local development"""
+def set_environment_variables():
+    """Set environment variables for development mode"""
     env_vars = {
         'ENVIRONMENT': 'development',
-        'REDIS_URL': 'redis://localhost:6379',  # Will work even if Redis isn't running
+        'NODE_ENV': 'development',
+        'DEBUG': 'true',
+        'PORT': '8000',
+        'APP_PORT': '8000',
         'DATABASE_URL': 'postgresql://postgres:password@localhost:5432/trading_system_dev',
+        'REDIS_URL': 'redis://localhost:6379',
         'JWT_SECRET': 'development-secret-key',
-        'FRONTEND_URL': 'http://localhost:3000',
-        'ALLOWED_ORIGINS': 'http://localhost:3000,http://localhost:3001,http://localhost:8000',
-        # Disable external dependencies for development
-        'DISABLE_REDIS': 'true',
-        'DISABLE_TRUEDATA': 'true',
-        'DISABLE_ZERODHA': 'true'
+        'DISABLE_REDIS': 'true',  # Run without Redis
+        'DISABLE_TRUEDATA': 'true',  # Run without TrueData
+        'DISABLE_ZERODHA': 'true',  # Run without Zerodha
+        'PAPER_TRADING': 'true',
+        'ENABLE_CORS': 'true',
+        'ALLOWED_ORIGINS': 'http://localhost:3000,http://localhost:3001,http://localhost:5173',
+        'LOG_LEVEL': 'INFO',
+        'PYTHONPATH': str(Path.cwd()),
     }
     
     for key, value in env_vars.items():
         os.environ[key] = value
-    
-    logger.info("✅ Environment variables set for development")
+        logger.info(f"Set {key}={value}")
 
-def start_api_server():
-    """Start the FastAPI server using uvicorn directly"""
-    logger.info("Starting API Server...")
+def check_port(port):
+    """Check if a port is available"""
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    result = sock.connect_ex(('localhost', port))
+    sock.close()
+    return result != 0
+
+def start_backend():
+    """Start the FastAPI backend"""
+    logger.info("Starting backend server...")
     
-    # Check if port 8000 is available
     if not check_port(8000):
-        logger.warning("Port 8000 is already in use")
+        logger.warning("Port 8000 is already in use. Backend might be running.")
         return None
     
-    # Start uvicorn directly (works on Windows)
-    cmd = [sys.executable, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
-    
-    try:
-        process = subprocess.Popen(cmd)
-        logger.info("✅ API Server started on http://localhost:8000")
-        logger.info("📚 API Documentation: http://localhost:8000/docs")
-        return process
-    except Exception as e:
-        logger.error(f"❌ Failed to start API server: {e}")
-        return None
-
-def start_frontend():
-    """Start the frontend development server"""
-    logger.info("Starting Frontend...")
-    
-    frontend_path = Path("src/frontend")
-    if not frontend_path.exists():
-        logger.error("❌ Frontend directory not found")
-        return None
-    
-    # Check for available port
-    port = 3000
-    if not check_port(port):
-        port = 3001
-        if not check_port(port):
-            logger.error("❌ No available ports for frontend")
-            return None
-    
-    # Use PowerShell to run npm in the frontend directory
-    cmd = f'cd "{frontend_path}" ; npm run dev'
+    # Use uvicorn directly (works on Windows)
+    cmd = [sys.executable, "-m", "uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
     
     try:
         process = subprocess.Popen(
-            ["powershell", "-Command", cmd],
-            shell=False
+            cmd,
+            cwd=Path.cwd(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1
         )
-        logger.info(f"✅ Frontend started on http://localhost:{port}")
+        logger.info("Backend server started successfully")
         return process
     except Exception as e:
-        logger.error(f"❌ Failed to start frontend: {e}")
+        logger.error(f"Failed to start backend: {e}")
+        return None
+
+def start_frontend():
+    """Start the React frontend"""
+    logger.info("Starting frontend server...")
+    
+    frontend_dir = Path("src/frontend")
+    if not frontend_dir.exists():
+        logger.error("Frontend directory not found")
+        return None
+    
+    # Check if node_modules exists
+    if not (frontend_dir / "node_modules").exists():
+        logger.info("Installing frontend dependencies...")
+        subprocess.run(["npm", "install"], cwd=frontend_dir, shell=True)
+    
+    # Use npm run dev
+    cmd = ["npm", "run", "dev"]
+    
+    try:
+        process = subprocess.Popen(
+            cmd,
+            cwd=frontend_dir,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1
+        )
+        logger.info("Frontend server started successfully")
+        return process
+    except Exception as e:
+        logger.error(f"Failed to start frontend: {e}")
         return None
 
 def main():
-    """Main startup function"""
-    print("=" * 60)
-    print("🚀 TRADING SYSTEM STARTUP (Windows)")
-    print("=" * 60)
+    """Main entry point"""
+    logger.info("Starting Trading System (Windows Development Mode)")
+    logger.info("=" * 60)
     
     # Set environment variables
-    set_environment()
+    set_environment_variables()
     
     # Start services
-    processes = []
+    backend_process = start_backend()
+    time.sleep(5)  # Wait for backend to start
     
-    # Start API server
-    api_process = start_api_server()
-    if api_process:
-        processes.append(api_process)
-        time.sleep(3)  # Give API time to start
-    
-    # Start frontend
     frontend_process = start_frontend()
-    if frontend_process:
-        processes.append(frontend_process)
     
-    if not processes:
-        logger.error("❌ No services could be started")
-        return
+    if not backend_process and not frontend_process:
+        logger.error("Failed to start any services")
+        sys.exit(1)
     
-    print("\n" + "=" * 60)
-    print("✅ SYSTEM STARTED SUCCESSFULLY!")
-    print("=" * 60)
-    print("\n📍 Access Points:")
-    print("   - Frontend: http://localhost:3000 (or 3001)")
-    print("   - API: http://localhost:8000")
-    print("   - API Docs: http://localhost:8000/docs")
-    print("\n⚠️  Note: Running without Redis/TrueData - using mock data")
-    print("\n🛑 Press Ctrl+C to stop all services")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("Trading System is running!")
+    logger.info("Backend: http://localhost:8000")
+    logger.info("Frontend: http://localhost:3000 or http://localhost:3001")
+    logger.info("API Docs: http://localhost:8000/docs")
+    logger.info("Press Ctrl+C to stop all services")
+    logger.info("=" * 60)
     
     try:
-        # Keep running until interrupted
+        # Keep the script running
         while True:
             time.sleep(1)
+            
+            # Check if processes are still running
+            if backend_process and backend_process.poll() is not None:
+                logger.error("Backend process died")
+                break
+            if frontend_process and frontend_process.poll() is not None:
+                logger.error("Frontend process died")
+                break
+                
     except KeyboardInterrupt:
-        print("\n\n🛑 Shutting down services...")
-        for process in processes:
-            process.terminate()
-        print("✅ All services stopped")
+        logger.info("\nShutting down services...")
+        
+        # Terminate processes
+        if backend_process:
+            backend_process.terminate()
+            backend_process.wait()
+        if frontend_process:
+            frontend_process.terminate()
+            frontend_process.wait()
+            
+        logger.info("All services stopped")
 
 if __name__ == "__main__":
     main() 
