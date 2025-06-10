@@ -153,7 +153,7 @@ const UserPerformanceDashboard = () => {
     const fetchDailyPnL = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/performance/daily-pnl`);
+            const response = await fetch(`${API_BASE_URL}/performance/daily-pnl`);
             const data = await response.json();
 
             if (data.success) {

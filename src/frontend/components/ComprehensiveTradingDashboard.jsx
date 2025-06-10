@@ -76,10 +76,10 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
             setRefreshing(true);
 
             // Fetch real data from APIs
-            const [usersResponse, pnlResponse, recommendationsResponse] = await Promise.allSettled([
-                fetch(`${API_BASE_URL}/api/users`),
-                fetch(`${API_BASE_URL}/api/performance/daily-pnl`),
-                fetch(`${API_BASE_URL}/api/recommendations/elite`)
+            const [dashboardRes, performanceRes, recommendationsRes] = await Promise.all([
+                fetch(`${API_BASE_URL}/api/dashboard/summary`),
+                fetch(`${API_BASE_URL}/performance/daily-pnl`),
+                fetch(`${API_BASE_URL}/recommendations/elite`)
             ]);
 
             let dashboardData = {
@@ -98,8 +98,8 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
             };
 
             // Process users data
-            if (usersResponse.status === 'fulfilled' && usersResponse.value.ok) {
-                const usersData = await usersResponse.value.json();
+            if (dashboardRes.status === 'fulfilled' && dashboardRes.value.ok) {
+                const usersData = await dashboardRes.value.json();
                 if (usersData.success) {
                     const users = usersData.users || [];
                     dashboardData.systemMetrics.activeUsers = users.length;
@@ -128,8 +128,8 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
             }
 
             // Process daily P&L data
-            if (pnlResponse.status === 'fulfilled' && pnlResponse.value.ok) {
-                const pnlData = await pnlResponse.value.json();
+            if (performanceRes.status === 'fulfilled' && performanceRes.value.ok) {
+                const pnlData = await performanceRes.value.json();
                 if (pnlData.success) {
                     dashboardData.dailyPnL = pnlData.daily_pnl || [];
 
@@ -143,8 +143,8 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
             }
 
             // Process recommendations for alerts
-            if (recommendationsResponse.status === 'fulfilled' && recommendationsResponse.value.ok) {
-                const recsData = await recommendationsResponse.value.json();
+            if (recommendationsRes.status === 'fulfilled' && recommendationsRes.value.ok) {
+                const recsData = await recommendationsRes.value.json();
                 if (recsData.success && recsData.recommendations) {
                     // Convert recommendations to alerts
                     dashboardData.alerts = recsData.recommendations.slice(0, 3).map(rec => ({
@@ -370,12 +370,12 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 </Typography>
                             </CardContent>
                         </Card>
-                    
-                    {/* System Health Monitor */}
-                    <Grid item xs={12} md={6}>
-                        <SystemHealthMonitor />
+
+                        {/* System Health Monitor */}
+                        <Grid item xs={12} md={6}>
+                            <SystemHealthMonitor />
+                        </Grid>
                     </Grid>
-</Grid>
                     <Grid item xs={12} md={2}>
                         <Card>
                             <CardContent sx={{ textAlign: 'center' }}>

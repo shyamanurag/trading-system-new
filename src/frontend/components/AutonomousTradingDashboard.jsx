@@ -56,16 +56,21 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
             };
 
             // Fetch real autonomous trading data from API
-            const [marketResponse, sessionResponse, positionsResponse, schedulerResponse] = await Promise.allSettled([
-                fetch(`${API_BASE_URL}/api/v1/autonomous/market-status`, { headers }),
-                fetch(`${API_BASE_URL}/api/v1/autonomous/session-stats`, { headers }),
-                fetch(`${API_BASE_URL}/api/v1/autonomous/positions`, { headers }),
-                fetch(`${API_BASE_URL}/api/v1/autonomous/scheduler`, { headers })
+            const [
+                marketStatusRes,
+                sessionStatsRes,
+                positionsRes,
+                schedulerRes
+            ] = await Promise.all([
+                fetch(`${API_BASE_URL}/autonomous/status`, { headers }),
+                fetch(`${API_BASE_URL}/autonomous/status`, { headers }),  // Using status endpoint for session stats
+                fetch(`${API_BASE_URL}/autonomous/status`, { headers }),  // Using status endpoint for positions
+                fetch(`${API_BASE_URL}/autonomous/status`, { headers })   // Using status endpoint for scheduler
             ]);
 
             // Process market status
-            if (marketResponse.status === 'fulfilled' && marketResponse.value.ok) {
-                const marketData = await marketResponse.value.json();
+            if (marketStatusRes.status === 'fulfilled' && marketStatusRes.value.ok) {
+                const marketData = await marketStatusRes.value.json();
                 if (marketData.success) {
                     setMarketStatus(marketData.data);
                 } else {
@@ -81,8 +86,8 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
             }
 
             // Process session stats
-            if (sessionResponse.status === 'fulfilled' && sessionResponse.value.ok) {
-                const sessionData = await sessionResponse.value.json();
+            if (sessionStatsRes.status === 'fulfilled' && sessionStatsRes.value.ok) {
+                const sessionData = await sessionStatsRes.value.json();
                 if (sessionData.success) {
                     setSessionStats(sessionData.data);
                 } else {
@@ -111,8 +116,8 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
             }
 
             // Process active positions
-            if (positionsResponse.status === 'fulfilled' && positionsResponse.value.ok) {
-                const positionsData = await positionsResponse.value.json();
+            if (positionsRes.status === 'fulfilled' && positionsRes.value.ok) {
+                const positionsData = await positionsRes.value.json();
                 if (positionsData.success) {
                     setActivePositions(positionsData.data || []);
                 } else {
@@ -123,8 +128,8 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
             }
 
             // Process scheduler status
-            if (schedulerResponse.status === 'fulfilled' && schedulerResponse.value.ok) {
-                const schedulerData = await schedulerResponse.value.json();
+            if (schedulerRes.status === 'fulfilled' && schedulerRes.value.ok) {
+                const schedulerData = await schedulerRes.value.json();
                 if (schedulerData.success) {
                     setSchedulerStatus(schedulerData.data);
                 } else {
@@ -189,7 +194,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
                 ...(token && { 'Authorization': `Bearer ${token}` })
             };
 
-            const response = await fetch(`${API_BASE_URL}/api/v1/autonomous/emergency-stop`, {
+            const response = await fetch(`${API_BASE_URL}/autonomous/stop`, {
                 method: 'POST',
                 headers
             });
@@ -235,12 +240,12 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
             {error && (
                 <Grid item xs={12}>
                     <Alert severity="info">{error}</Alert>
-                
+
                     {/* System Health Monitor */}
                     <Grid item xs={12} md={6}>
                         <SystemHealthMonitor />
                     </Grid>
-</Grid>
+                </Grid>
             )}
 
             {/* Header Status */}

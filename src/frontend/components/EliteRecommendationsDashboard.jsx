@@ -44,7 +44,7 @@ const EliteRecommendationsDashboard = () => {
     const fetchRecommendations = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/recommendations/elite`);
+            const response = await fetch(`${API_BASE_URL}/recommendations/elite`);
             if (response.ok) {
                 const data = await response.json();
                 setRecommendations(data.recommendations || []);
