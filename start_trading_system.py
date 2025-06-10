@@ -37,16 +37,37 @@ class TradingSystemManager:
             return False
     
     async def start_websocket_server(self):
-        """Start the WebSocket server with TrueData provider"""
+        """Start WebSocket server with TrueData provider"""
         logger.info("Starting WebSocket server with TrueData provider...")
-        try:
-            # Import and start WebSocket server
-            from websocket_main import main as websocket_main
-            
-            # Run in background task
-            asyncio.create_task(websocket_main())
-            logger.info("✅ WebSocket server started")
+        
+        # Check if WebSocket is disabled
+        if os.getenv('DISABLE_TRUEDATA', 'false').lower() == 'true':
+            logger.warning("TrueData WebSocket is disabled for development")
             return True
+            
+        try:
+            # Import from the correct location
+            from websocket_manager import WebSocketManager
+            from data.truedata_provider import TrueDataProvider
+            
+            config = {
+                'username': os.getenv('TRUEDATA_USERNAME', 'Trial106'),
+                'password': os.getenv('TRUEDATA_PASSWORD', 'shyam106'),
+                'url': os.getenv('TRUEDATA_URL', 'push.truedata.in'),
+                'live_port': int(os.getenv('TRUEDATA_PORT', 8086)),
+                'is_sandbox': os.getenv('TRUEDATA_SANDBOX', 'false').lower() == 'true'
+            }
+            
+            provider = TrueDataProvider(config)
+            await provider.connect()
+            
+            # Subscribe to key indices
+            indices = ['NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I']
+            await provider.subscribe_symbols(indices)
+            
+            logger.info("✅ Market data feeds initialized")
+            return True
+            
         except Exception as e:
             logger.error(f"Failed to start WebSocket server: {e}")
             return False

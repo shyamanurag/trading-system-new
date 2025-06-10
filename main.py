@@ -510,6 +510,11 @@ async def load_config():
 
 async def init_redis():
     """Initialize Redis connection with dedicated server and SSL support"""
+    # Check if Redis is disabled for development
+    if os.getenv('DISABLE_REDIS', 'false').lower() == 'true':
+        logger.warning("Redis is disabled for development mode")
+        return None
+        
     try:
         import ssl
         
