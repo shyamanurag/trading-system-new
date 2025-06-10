@@ -53,6 +53,7 @@ import UserPerformanceDashboard from './UserPerformanceDashboard';
 
 import MarketIndicesWidget from './MarketIndicesWidget';
 import SystemHealthMonitor from './SystemHealthMonitor';
+import WebSocketStatus from './WebSocketStatus';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
@@ -78,9 +79,9 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
 
             // Fetch real data from APIs using Promise.allSettled to handle failures gracefully
             const [dashboardRes, performanceRes, recommendationsRes] = await Promise.allSettled([
-                fetch(`${API_BASE_URL}/dashboard/summary`),
-                fetch(`${API_BASE_URL}/performance/daily-pnl`),
-                fetch(`${API_BASE_URL}/recommendations/elite`)
+                fetch(`${API_BASE_URL}/api/dashboard/summary`),
+                fetch(`${API_BASE_URL}/api/performance/daily-pnl`),
+                fetch(`${API_BASE_URL}/recommendations/`)
             ]);
 
             let dashboardData = {
@@ -274,6 +275,9 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 {systemStatus?.activeTrades} Active Trades • {systemStatus?.connectedUsers} Users Online
                             </Typography>
                         </Box>
+
+                        {/* WebSocket Status */}
+                        <WebSocketStatus userId={userInfo?.id || 'default_user'} />
 
                         {/* User Menu */}
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

@@ -104,7 +104,7 @@ const UserPerformanceDashboard = () => {
 
     const fetchUsers = async () => {
         try {
-            const usersResponse = await fetch(`${API_BASE_URL}/users`);
+            const usersResponse = await fetch(`${API_BASE_URL}/api/users`);
             const usersData = await usersResponse.json();
             setUsers(usersData.users || []);
             if (usersData.users && usersData.users.length > 0) {
@@ -121,7 +121,7 @@ const UserPerformanceDashboard = () => {
 
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/users/${userId}/performance`);
+            const response = await fetch(`${API_BASE_URL}/api/users/${userId}/performance`);
             if (response.ok) {
                 const data = await response.json();
                 setUserPerformance(data.performance || {
@@ -189,7 +189,7 @@ const UserPerformanceDashboard = () => {
 
     const handleCreateUser = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/users`, {
+            const response = await fetch(`${API_BASE_URL}/api/users`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newUser)
@@ -217,7 +217,7 @@ const UserPerformanceDashboard = () => {
     const handleDeleteUser = async (userId) => {
         if (window.confirm('Are you sure you want to delete this user?')) {
             try {
-                const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
+                const response = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
                     method: 'DELETE'
                 });
 
