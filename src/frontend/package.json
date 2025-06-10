@@ -51,5 +51,9 @@
     "engines": {
         "node": "18.19.0",
         "npm": ">=8.0.0"
-    }
+    },
+    "main": "vite.config.js",
+    "keywords": [],
+    "author": "",
+    "license": "ISC"
 }

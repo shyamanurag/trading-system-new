@@ -21,12 +21,11 @@ from common.logging import setup_logging, get_trading_logger
 from common.health_checker import HealthChecker
 
 # Import WebSocket and real-time components
-from src.core.websocket_manager import WebSocketManager
+from websocket_manager import WebSocketManager
 from src.api.websocket import router as websocket_router
 from data.truedata_provider import TrueDataProvider
 from src.core.zerodha import ZerodhaIntegration
 from integrations.n8n_integration import N8NIntegration
-from src.auth import get_current_user_ws
 
 # Setup unified logging for WebSocket server
 setup_logging()
@@ -54,11 +53,11 @@ app.add_middleware(
 )
 
 # Global WebSocket components
-ws_manager: WebSocketManager = None
-truedata_provider: TrueDataProvider = None
-zerodha_integration: ZerodhaIntegration = None
-n8n_integration: N8NIntegration = None
-health_checker: HealthChecker = None
+ws_manager: Optional[WebSocketManager] = None
+truedata_provider: Optional[TrueDataProvider] = None
+zerodha_integration: Optional[ZerodhaIntegration] = None
+n8n_integration: Optional[N8NIntegration] = None
+health_checker: Optional[HealthChecker] = None
 active_connections: Set[WebSocket] = set()
 subscription_map: Dict[str, Set[WebSocket]] = {}
 provider_status: Dict[str, bool] = {
@@ -74,16 +73,13 @@ async def init_websocket_server():
     try:
         logger.info("Initializing comprehensive WebSocket server...")
         
-        # Configuration for WebSocket manager
-        ws_config = {
-            'redis_url': 'redis://localhost:6379',
-            'max_connections': 1000,
-            'message_queue_size': 10000,
-            'heartbeat_interval': 30
-        }
+        # Initialize Redis client for WebSocket manager
+        import redis.asyncio as redis
+        redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+        redis_client = redis.from_url(redis_url, decode_responses=True)
         
-        # Initialize WebSocket manager
-        ws_manager = WebSocketManager(ws_config)
+        # Initialize WebSocket manager with Redis client
+        ws_manager = WebSocketManager(redis_client)
         
         # Initialize TrueData provider
         await init_truedata_provider()
@@ -344,7 +340,7 @@ async def truedata_health_check():
                 message="TrueData provider not initialized"
             )
         
-        is_connected = truedata_provider.is_connected
+        is_connected = truedata_provider.connected
         
         if is_connected:
             return HealthCheckResult(
@@ -627,7 +623,7 @@ async def websocket_stats():
         "providers": {
             "truedata": {
                 "status": provider_status['truedata'],
-                "connected": truedata_provider.is_connected if truedata_provider else False,
+                "connected": truedata_provider.connected if truedata_provider else False,
                 "subscribed_symbols": len(truedata_provider.subscribed_symbols) if truedata_provider else 0
             },
             "zerodha": {

@@ -1,3 +1,10 @@
+# Docker-specific Requirements
+# This file is used for Docker builds and excludes packages that may cause issues in containerized environments
+# Main differences from requirements.txt:
+# - Excludes gunicorn (handled by Docker CMD)
+# - Excludes ML/AI libraries that significantly increase image size
+# - Excludes optional/development packages
+
 # Trading System Requirements
 # Core API Framework
 fastapi==0.104.1
