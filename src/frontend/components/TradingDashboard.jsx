@@ -64,9 +64,7 @@ const TradingDashboard = () => {
         };
 
         fetchData();
-        const interval = setInterval(fetchData, 30000); // Refresh every 30 seconds
-
-        return () => clearInterval(interval);
+        // Remove automatic refresh - data will be fetched on demand
     }, []);
 
     if (loading) {

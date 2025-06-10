@@ -95,7 +95,7 @@ const EliteRecommendationsDashboard = () => {
     useEffect(() => {
         fetchRecommendations();
         fetchPerformanceData();
-        const interval = setInterval(fetchRecommendations, 300000); // Refresh every 5 minutes
+        const interval = setInterval(fetchRecommendations, 300000); // Keep 5-minute refresh for recommendations
         return () => clearInterval(interval);
     }, []);
 

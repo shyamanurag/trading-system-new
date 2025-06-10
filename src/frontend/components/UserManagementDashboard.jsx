@@ -77,20 +77,15 @@ const UserManagementDashboard = () => {
 
     useEffect(() => {
         fetchAllData();
-        // Set up real-time updates
-        const interval = setInterval(fetchAllData, 30000); // Update every 30 seconds
-        return () => clearInterval(interval);
+        // Remove the automatic refresh - data will be fetched on demand
     }, []);
 
     const fetchAllData = async () => {
         try {
             setLoading(true);
-            await Promise.all([
-                fetchUsers(),
-                fetchUserPositions(),
-                fetchUserTrades(),
-                fetchUserAnalytics()
-            ]);
+            // Only fetch users initially
+            await fetchUsers();
+            // Fetch other data only when users are selected or tabs are changed
         } catch (error) {
             console.error('Error fetching data:', error);
         } finally {
@@ -302,6 +297,21 @@ const UserManagementDashboard = () => {
             {value === index && <Box sx={{ pt: 3 }}>{children}</Box>}
         </div>
     );
+
+    // Fetch positions and trades only when switching to those tabs
+    useEffect(() => {
+        if (selectedTab === 1 && users.length > 0) {
+            // Real-time Positions tab - fetch positions for active users
+            users.filter(user => user.status === 'active').forEach(user => {
+                fetchUserPositions(user.id);
+            });
+        } else if (selectedTab === 2 && users.length > 0) {
+            // User Analytics tab - fetch analytics for all users
+            users.forEach(user => {
+                fetchUserAnalytics(user.id);
+            });
+        }
+    }, [selectedTab, users]);
 
     return (
         <Box>

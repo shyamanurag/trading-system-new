@@ -47,7 +47,7 @@ const SystemHealthMonitor = () => {
 
     useEffect(() => {
         fetchHealthData();
-        const interval = setInterval(fetchHealthData, 30000); // Update every 30 seconds
+        const interval = setInterval(fetchHealthData, 30000); // Keep 30-second updates for system monitoring
         return () => clearInterval(interval);
     }, []);
 

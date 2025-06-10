@@ -65,8 +65,8 @@ const MarketIndicesWidget = () => {
 
     useEffect(() => {
         fetchMarketData();
-        // Refresh every 30 seconds
-        const interval = setInterval(fetchMarketData, 30000);
+        // Market indices should update frequently during market hours
+        const interval = setInterval(fetchMarketData, 30000); // Keep 30-second updates for real-time market data
         return () => clearInterval(interval);
     }, []);
 

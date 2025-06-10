@@ -201,8 +201,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
 
     useEffect(() => {
         fetchDashboardData();
-        const interval = setInterval(fetchDashboardData, 60000); // Refresh every minute
-        return () => clearInterval(interval);
+        // Remove automatic refresh - user can manually refresh when needed
     }, []);
 
     const handleUserMenuOpen = (event) => {
