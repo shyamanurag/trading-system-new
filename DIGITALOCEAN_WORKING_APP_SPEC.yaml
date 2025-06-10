@@ -21,7 +21,7 @@ services:
   source_dir: /
   build_command: |
     pip install -r requirements.txt
-    cd src/frontend && npm install && npm run build && cd ../..
+    cd src/frontend && VITE_API_URL=https://algoauto-ua2iq.ondigitalocean.app npm install && VITE_API_URL=https://algoauto-ua2iq.ondigitalocean.app npm run build && cd ../..
     mkdir -p dist
     cp -r src/frontend/dist dist/frontend
   run_command: python main.py
