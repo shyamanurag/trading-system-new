@@ -51,6 +51,7 @@ from src.api.error_monitoring import router as error_monitoring_router
 from src.api.database_health import router as database_health_router
 from src.api.market_indices import router as market_indices_router
 from src.api.dashboard_api import router as dashboard_router
+from src.api.trading_control import router as trading_control_router
 
 # Import error handler
 from src.core.error_handler import error_handler, ErrorRecoveryMiddleware
@@ -309,6 +310,7 @@ app.include_router(error_monitoring_router, prefix="/errors", tags=["error-monit
 app.include_router(database_health_router, prefix="/database", tags=["database"])
 app.include_router(market_indices_router, prefix="/market", tags=["market-data"])
 app.include_router(dashboard_router, prefix="/api", tags=["dashboard"])
+app.include_router(trading_control_router, prefix="/api", tags=["trading-control"])
 
 
 # Mount static files for frontend
@@ -1138,57 +1140,40 @@ async def get_elite_performance():
     summary="Get all users",
     description="Fetch all registered trading users with their basic information"
 )
-async def get_users():
-    """Get all users"""
+def get_users():
+    """Get all trading users"""
     try:
-        db_ops = get_database_operations()
-        if not db_ops:
-            raise HTTPException(status_code=503, detail="Database service unavailable")
+        # Import the trading control module to access broker users
+        from src.api.trading_control import broker_users
         
-        # Query users with their performance metrics
-        users = await db_ops.db.execute_query("""
-            SELECT 
-                u.*,
-                COALESCE(stats.total_trades, 0) as total_trades,
-                COALESCE(stats.winning_trades, 0) as winning_trades,
-                COALESCE(stats.total_pnl, 0) as total_pnl,
-                COALESCE(stats.open_trades, 0) as open_trades,
-                CASE 
-                    WHEN stats.total_trades > 0 THEN (stats.winning_trades::float / stats.total_trades * 100)
-                    ELSE 0 
-                END as win_rate,
-                UPPER(LEFT(u.full_name, 1)) || UPPER(LEFT(SPLIT_PART(u.full_name, ' ', 2), 1)) as avatar
-            FROM users u
-            LEFT JOIN (
-                SELECT 
-                    user_id,
-                    COUNT(*) as total_trades,
-                    COUNT(CASE WHEN realized_pnl > 0 THEN 1 END) as winning_trades,
-                    SUM(COALESCE(realized_pnl, 0) + COALESCE(unrealized_pnl, 0)) as total_pnl,
-                    COUNT(CASE WHEN status = 'open' THEN 1 END) as open_trades
-                FROM positions 
-                GROUP BY user_id
-            ) stats ON u.user_id = stats.user_id
-            WHERE u.is_active = true
-            ORDER BY u.created_at DESC
-        """)
+        # Convert to list format expected by frontend
+        users_list = []
+        for user_id, user in broker_users.items():
+            users_list.append({
+                "user_id": user["user_id"],
+                "name": user["name"],
+                "username": user["user_id"],
+                "avatar": user["name"][0].upper() if user["name"] else "U",
+                "initial_capital": user["initial_capital"],
+                "current_capital": user["current_capital"],
+                "total_pnl": user["total_pnl"],
+                "daily_pnl": user["daily_pnl"],
+                "total_trades": user["total_trades"],
+                "win_rate": user["win_rate"],
+                "is_active": user["is_active"],
+                "open_trades": user["open_trades"]
+            })
         
         return {
             "success": True,
-            "users": users or [],
-            "total_count": len(users or []),
-            "timestamp": datetime.now().isoformat()
+            "users": users_list
         }
-    except HTTPException:
-        raise
+        
     except Exception as e:
         logger.error(f"Error fetching users: {e}")
         return {
             "success": True,
-            "users": [],
-            "total_count": 0,
-            "timestamp": datetime.now().isoformat(),
-            "message": "Unable to fetch users"
+            "users": []  # Return empty list on error
         }
 
 @app.get(

@@ -1,6 +1,7 @@
 import {
     CheckCircle,
     Pause,
+    PersonAdd,
     PlayArrow,
     Schedule,
     SmartToy,
@@ -27,7 +28,6 @@ import {
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
 
-import SystemHealthMonitor from './SystemHealthMonitor';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -38,10 +38,19 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
     const [schedulerStatus, setSchedulerStatus] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [tradingStatus, setTradingStatus] = useState(null);
+    const [brokerUsers, setBrokerUsers] = useState([]);
+    const [showBrokerSetup, setShowBrokerSetup] = useState(false);
+    const [controlLoading, setControlLoading] = useState(false);
 
     useEffect(() => {
         fetchAutonomousData();
-        const interval = setInterval(fetchAutonomousData, 30000); // Refresh every 30 seconds
+        fetchTradingStatus();
+        fetchBrokerUsers();
+        const interval = setInterval(() => {
+            fetchAutonomousData();
+            fetchTradingStatus();
+        }, 30000); // Refresh every 30 seconds
         return () => clearInterval(interval);
     }, []);
 
@@ -186,6 +195,70 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
         }
     };
 
+    const fetchTradingStatus = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/trading/status`);
+            const data = await response.json();
+            if (data.success) {
+                setTradingStatus(data);
+            }
+        } catch (err) {
+            console.error('Error fetching trading status:', err);
+        }
+    };
+
+    const fetchBrokerUsers = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/users/broker`);
+            const data = await response.json();
+            if (data.success) {
+                setBrokerUsers(data.users || []);
+            }
+        } catch (err) {
+            console.error('Error fetching broker users:', err);
+        }
+    };
+
+    const handleTradingControl = async (action) => {
+        setControlLoading(true);
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/trading/control`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: action,
+                    paper_trading: true
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                alert(`Trading ${action}ed successfully!`);
+                fetchTradingStatus();
+                fetchAutonomousData();
+            } else {
+                alert(data.message || `Failed to ${action} trading`);
+            }
+        } catch (err) {
+            console.error(`Error ${action}ing trading:`, err);
+            alert(`Failed to ${action} trading. Please try again.`);
+        } finally {
+            setControlLoading(false);
+        }
+    };
+
+    const handleUserAdded = (user) => {
+        fetchBrokerUsers();
+        fetchTradingStatus();
+        // Optionally start trading automatically after adding user
+        if (brokerUsers.length === 0) {
+            handleTradingControl('start');
+        }
+    };
+
     const handleEmergencyStop = async () => {
         try {
             const token = localStorage.getItem('auth_token');
@@ -240,13 +313,78 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
             {error && (
                 <Grid item xs={12}>
                     <Alert severity="info">{error}</Alert>
-
-                    {/* System Health Monitor */}
-                    <Grid item xs={12} md={6}>
-                        <SystemHealthMonitor />
-                    </Grid>
                 </Grid>
             )}
+
+            {/* Trading Control Section */}
+            <Grid item xs={12}>
+                <Card>
+                    <CardContent>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                            <Typography variant="h6">
+                                Trading Control Center
+                            </Typography>
+                            {brokerUsers.length === 0 && (
+                                <Button
+                                    variant="contained"
+                                    startIcon={<PersonAdd />}
+                                    onClick={() => setShowBrokerSetup(true)}
+                                    color="primary"
+                                >
+                                    Add Broker User
+                                </Button>
+                            )}
+                        </Box>
+
+                        {brokerUsers.length === 0 ? (
+                            <Alert severity="warning">
+                                No broker users configured. Please add your Zerodha credentials to start paper trading.
+                            </Alert>
+                        ) : (
+                            <Box>
+                                <Typography variant="body2" color="text.secondary" gutterBottom>
+                                    Active Broker Users: {brokerUsers.length}
+                                </Typography>
+                                <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+                                    {tradingStatus?.is_running ? (
+                                        <Button
+                                            variant="contained"
+                                            color="error"
+                                            startIcon={<Stop />}
+                                            onClick={() => handleTradingControl('stop')}
+                                            disabled={controlLoading}
+                                        >
+                                            Stop Trading
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            variant="contained"
+                                            color="success"
+                                            startIcon={<PlayArrow />}
+                                            onClick={() => handleTradingControl('start')}
+                                            disabled={controlLoading}
+                                        >
+                                            Start Trading
+                                        </Button>
+                                    )}
+                                    <Chip
+                                        label={tradingStatus?.is_running ? "Trading Active" : "Trading Stopped"}
+                                        color={tradingStatus?.is_running ? "success" : "default"}
+                                        variant="outlined"
+                                    />
+                                    {tradingStatus?.paper_trading && (
+                                        <Chip
+                                            label="Paper Trading Mode"
+                                            color="info"
+                                            variant="outlined"
+                                        />
+                                    )}
+                                </Box>
+                            </Box>
+                        )}
+                    </CardContent>
+                </Card>
+            </Grid>
 
             {/* Header Status */}
             <Grid item xs={12}>
@@ -269,8 +407,8 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
                                         variant="filled"
                                     />
                                     <Chip
-                                        label="Auto Trading ACTIVE"
-                                        color="primary"
+                                        label={tradingStatus?.is_running ? "Auto Trading ACTIVE" : "Auto Trading STOPPED"}
+                                        color={tradingStatus?.is_running ? "primary" : "default"}
                                         variant="filled"
                                     />
                                 </Box>
@@ -511,6 +649,13 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
                     </CardContent>
                 </Card>
             </Grid>
+
+            {/* Broker User Setup Dialog */}
+            <BrokerUserSetup
+                open={showBrokerSetup}
+                onClose={() => setShowBrokerSetup(false)}
+                onUserAdded={handleUserAdded}
+            />
         </Grid>
     );
 };

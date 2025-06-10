@@ -133,31 +133,51 @@ async def get_system_notifications():
 async def get_dashboard_summary():
     """Get dashboard summary data including users and system metrics"""
     try:
-        # Generate mock data for now
-        # In production, this would fetch from database
+        # Import broker users from trading control
+        from .trading_control import broker_users
         
-        # Generate mock users
+        # Convert broker users to dashboard format
         users = []
-        for i in range(5):
+        for user_id, user in broker_users.items():
             users.append({
-                "user_id": f"USER{i+1:03d}",
-                "name": f"Trader {i+1}",
-                "username": f"trader{i+1}",
-                "avatar": f"T{i+1}",
-                "initial_capital": 100000,
-                "current_capital": 100000 + random.randint(-10000, 50000),
-                "total_pnl": random.randint(-5000, 25000),
-                "daily_pnl": random.randint(-2000, 5000),
-                "total_trades": random.randint(10, 100),
-                "win_rate": random.uniform(40, 70),
-                "is_active": True,
-                "open_trades": random.randint(0, 5)
+                "user_id": user["user_id"],
+                "name": user["name"],
+                "username": user["user_id"],
+                "avatar": user["name"][0].upper() if user["name"] else "U",
+                "initial_capital": user["initial_capital"],
+                "current_capital": user["current_capital"],
+                "total_pnl": user["total_pnl"],
+                "daily_pnl": user["daily_pnl"],
+                "total_trades": user["total_trades"],
+                "win_rate": user["win_rate"],
+                "is_active": user["is_active"],
+                "open_trades": user["open_trades"]
             })
         
-        # Calculate system metrics
+        # If no users, return empty data
+        if not users:
+            return {
+                "success": True,
+                "users": [],
+                "system_metrics": {
+                    "total_pnl": 0,
+                    "total_trades": 0,
+                    "success_rate": 0,
+                    "active_users": 0,
+                    "aum": 0,
+                    "daily_volume": 0
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Calculate system metrics from actual users
         total_pnl = sum(user['total_pnl'] for user in users)
         total_trades = sum(user['total_trades'] for user in users)
         total_capital = sum(user['current_capital'] for user in users)
+        active_users = len([u for u in users if u['is_active']])
+        
+        # Calculate average win rate
+        avg_win_rate = sum(user['win_rate'] for user in users) / len(users) if users else 0
         
         return {
             "success": True,
@@ -165,10 +185,10 @@ async def get_dashboard_summary():
             "system_metrics": {
                 "total_pnl": total_pnl,
                 "total_trades": total_trades,
-                "success_rate": random.uniform(55, 65),
-                "active_users": len([u for u in users if u['is_active']]),
+                "success_rate": avg_win_rate,
+                "active_users": active_users,
                 "aum": total_capital,
-                "daily_volume": random.randint(1000000, 5000000)
+                "daily_volume": random.randint(1000000, 5000000)  # This would come from actual trading data
             },
             "timestamp": datetime.now().isoformat()
         }
