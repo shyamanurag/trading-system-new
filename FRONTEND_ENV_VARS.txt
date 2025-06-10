@@ -1,6 +1,0 @@
-VITE_API_URL=https://clownfish-app-7rqhp.ondigitalocean.app
-NODE_ENV=production
-NODE_OPTIONS=--max_old_space_size=4096
-GENERATE_SOURCEMAP=false
-DISABLE_ESLINT_PLUGIN=true
-FAST_REFRESH=false 
