@@ -276,7 +276,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                         </Box>
 
                         {/* WebSocket Status */}
-                        <WebSocketStatus userId={userInfo?.id || 'default_user'} />
+                        <WebSocketStatus userId={userInfo?.id || userInfo?.user_id || userInfo?.username} />
 
                         {/* User Menu */}
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
