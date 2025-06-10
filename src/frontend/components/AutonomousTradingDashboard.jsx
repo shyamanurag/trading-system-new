@@ -28,6 +28,7 @@ import {
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
 
+import BrokerUserSetup from './BrokerUserSetup';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -65,17 +66,19 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
             };
 
             // Fetch real autonomous trading data from API
-            const [
-                marketStatusRes,
-                sessionStatsRes,
-                positionsRes,
-                schedulerRes
-            ] = await Promise.all([
+            const results = await Promise.allSettled([
                 fetch(`${API_BASE_URL}/autonomous/status`, { headers }),
                 fetch(`${API_BASE_URL}/autonomous/status`, { headers }),  // Using status endpoint for session stats
                 fetch(`${API_BASE_URL}/autonomous/status`, { headers }),  // Using status endpoint for positions
                 fetch(`${API_BASE_URL}/autonomous/status`, { headers })   // Using status endpoint for scheduler
             ]);
+
+            const [
+                marketStatusRes,
+                sessionStatsRes,
+                positionsRes,
+                schedulerRes
+            ] = results;
 
             // Process market status
             if (marketStatusRes.status === 'fulfilled' && marketStatusRes.value.ok) {
