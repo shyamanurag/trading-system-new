@@ -330,34 +330,59 @@ class WebSocketManager:
                 await asyncio.sleep(10)
     
     async def _redis_subscriber(self):
-        """Subscribe to Redis pub/sub for external events"""
+        """Subscribe to Redis channels for real-time updates"""
         while self.is_running:
             try:
-                # Subscribe to trading events
+                # Create pubsub instance
                 pubsub = self.redis_client.pubsub()
-                await pubsub.subscribe('trading_events', 'system_alerts', 'market_events', 'position_updates')
                 
+                # Subscribe to channels
+                await pubsub.subscribe(
+                    'market_data',
+                    'trade_updates',
+                    'system_alerts',
+                    'user_notifications'
+                )
+                
+                logger.info("Redis subscriber started")
+                
+                # Listen for messages
                 async for message in pubsub.listen():
                     if message['type'] == 'message':
+                        channel = message['channel']
+                        data = message['data']
+                        
+                        # Parse and broadcast message
                         try:
-                            data = json.loads(message['data'])
-                            channel = message['channel']
+                            if isinstance(data, bytes):
+                                data = data.decode('utf-8')
                             
-                            if channel == 'trading_events':
-                                await self._handle_trading_event(data)
-                            elif channel == 'system_alerts':
-                                await self._handle_system_alert(data)
-                            elif channel == 'market_events':
-                                await self._handle_market_event(data)
-                            elif channel == 'position_updates':
-                                await self._handle_position_update(data)
-                                
+                            parsed_data = json.loads(data)
+                            
+                            # Broadcast to appropriate room
+                            room = f"{channel}_all"
+                            await self.connection_manager.send_to_room(room, {
+                                'type': channel,
+                                'data': parsed_data,
+                                'timestamp': datetime.now().isoformat()
+                            })
+                            
+                        except json.JSONDecodeError:
+                            logger.error(f"Invalid JSON in Redis message: {data}")
                         except Exception as e:
                             logger.error(f"Error processing Redis message: {e}")
-                
+                            
+            except asyncio.CancelledError:
+                logger.info("Redis subscriber cancelled")
+                break
             except Exception as e:
                 logger.error(f"Error in Redis subscriber: {e}")
+                # Wait before reconnecting
                 await asyncio.sleep(5)
+                logger.info("Attempting to reconnect to Redis...")
+                continue
+                
+        logger.info("Redis subscriber stopped")
     
     async def _handle_trading_event(self, data: dict):
         """Handle trading events from Redis"""
