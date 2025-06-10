@@ -65,8 +65,8 @@ const MarketIndicesWidget = () => {
 
     useEffect(() => {
         fetchMarketData();
-        // Market indices should update frequently during market hours
-        const interval = setInterval(fetchMarketData, 30000); // Keep 30-second updates for real-time market data
+        // Auto-refresh every 2 minutes to reduce strain and avoid interrupting user actions
+        const interval = setInterval(fetchMarketData, 120000); // 120 000 ms = 2 minutes
         return () => clearInterval(interval);
     }, []);
 

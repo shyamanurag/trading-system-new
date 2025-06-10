@@ -48,10 +48,11 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
         fetchAutonomousData();
         fetchTradingStatus();
         fetchBrokerUsers();
+        // Auto-refresh every 2 minutes so the UI does not interrupt user interactions
         const interval = setInterval(() => {
             fetchAutonomousData();
             fetchTradingStatus();
-        }, 30000); // Refresh every 30 seconds
+        }, 120000); // 120 000 ms = 2 minutes
         return () => clearInterval(interval);
     }, []);
 
