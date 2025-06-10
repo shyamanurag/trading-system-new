@@ -1753,21 +1753,20 @@ async def send_user_alert(user_id: str, alert_data: dict):
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str, request: Request):
     """Serve React SPA for all non-API routes"""
-    # Check if this is an API request (based on Accept header or explicit API routes)
+    # Check if this is an API request
     accept_header = request.headers.get("accept", "")
-    is_api_request = "application/json" in accept_header or full_path.startswith(("api/", "docs", "health", "webhook", "control", "openapi.json"))
+    is_api_request = "application/json" in accept_header or full_path.startswith(("api/", "docs", "health", "webhook", "control", "openapi.json", "market/", "ws/"))
     
-    # Handle API requests with JSON response for root
+    # For root path with API request, return API response
     if full_path == "" and is_api_request:
         return {
             "status": "ok",
             "timestamp": datetime.now().isoformat(),
-            "version": "2.0.0",
-            "service": "Trading System API"
+            "version": "2.0.0"
         }
     
-    # Exclude API routes and docs from SPA serving
-    if full_path.startswith(("api/", "docs", "health", "webhook", "control", "static/", "assets/", "openapi.json")):
+    # Skip static file serving for API routes
+    if full_path.startswith(("api/", "docs", "health", "webhook", "control", "static/", "assets/", "openapi.json", "market/", "ws/", "v1/", "errors/", "database/", "monitoring/", "performance/", "autonomous/", "trading/", "recommendations/", "scan/", "backtest/")):
         raise HTTPException(status_code=404, detail="Not found")
     
     # Check if it's a static file request
