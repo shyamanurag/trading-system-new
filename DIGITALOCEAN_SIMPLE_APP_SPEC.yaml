@@ -1,0 +1,36 @@
+alerts:
+- rule: DEPLOYMENT_FAILED
+- rule: DOMAIN_FAILED
+
+name: algoauto
+region: blr
+
+features:
+- buildpack-stack=ubuntu-22
+
+services:
+- name: web
+  environment_slug: python
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: shyamanurag/trading-system-new
+  http_port: 8000
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  source_dir: /
+  build_command: |
+    pip install -r requirements.txt
+    cd src/frontend && npm install && npm run build && cd ../..
+    mkdir -p dist
+    cp -r src/frontend/dist dist/frontend
+  run_command: python main.py
+  health_check:
+    http_path: /health/ready
+    initial_delay_seconds: 30
+    period_seconds: 30
+    timeout_seconds: 10
+    success_threshold: 1
+    failure_threshold: 3
+  routes:
+    - path: / 
