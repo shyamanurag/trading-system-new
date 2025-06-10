@@ -63,7 +63,7 @@ const EliteRecommendationsDashboard = () => {
 
     const fetchPerformanceData = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/performance/elite-trades`);
+            const response = await fetch(`${API_BASE_URL}/performance/elite-trades`);
             if (response.ok) {
                 const data = await response.json();
                 setPerformanceData(data.data || {

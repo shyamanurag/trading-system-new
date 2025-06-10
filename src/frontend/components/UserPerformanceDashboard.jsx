@@ -171,7 +171,7 @@ const UserPerformanceDashboard = () => {
 
     const fetchSummaryMetrics = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/performance/summary`);
+            const response = await fetch(`${API_BASE_URL}/performance/summary`);
             if (response.ok) {
                 const data = await response.json();
                 setSummaryMetrics(data.metrics || {
