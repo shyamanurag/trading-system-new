@@ -15,76 +15,71 @@ services:
     branch: main
     deploy_on_push: true
     repo: shyamanurag/trading-system-new
-  http_port: 8080
+  http_port: 8000
   instance_count: 1
-  instance_size_slug: apps-s-1vcpu-1gb
+  instance_size_slug: basic-xxs
   source_dir: /
-  run_command: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+  run_command: |
+    pip install -r requirements.txt
+    cd src/frontend && npm install && VITE_API_URL=https://algoauto-ua2iq.ondigitalocean.app npm run build && cd ../..
+    mkdir -p dist
+    cp -r src/frontend/dist dist/frontend
   health_check:
     http_path: /health/ready
-    initial_delay_seconds: 40
-    period_seconds: 10
-    timeout_seconds: 5
+    initial_delay_seconds: 30
+    period_seconds: 30
+    timeout_seconds: 10
+    success_threshold: 1
     failure_threshold: 3
-    success_threshold: 2
 
 static_sites:
 - name: frontend
-  environment_slug: node-js
+  environment_slug: html
   github:
     branch: main
     deploy_on_push: true
     repo: shyamanurag/trading-system-new
-  source_dir: /src/frontend
-  build_command: rm -rf node_modules package-lock.json && npm install --no-optional && npm install @rollup/rollup-linux-x64-gnu && npm run build
-  output_dir: dist/frontend
-  index_document: index.html
-  catchall_document: index.html
-  envs:
-  - key: NODE_VERSION
-    scope: BUILD_TIME
-    value: "18"
-  - key: NODE_ENV
-    scope: BUILD_TIME
-    value: development
-  - key: VITE_API_URL
-    scope: BUILD_TIME
-    value: https://algoauto-ua2iq.ondigitalocean.app
+  source_dir: src/frontend
+  build_command: npm install && VITE_API_URL=https://algoauto-ua2iq.ondigitalocean.app npm run build
+  output_dir: dist
+  routes:
+    - path: /dashboard
 
 ingress:
   rules:
-  - component:
-      name: frontend
-    match:
-      path:
-        prefix: /
-  - component:
-      name: api
-    match:
+  - match:
       path:
         prefix: /api
-  - component:
-      name: api
-    match:
+    services:
+      - name: api
+        port: 8000
+  - match:
       path:
-        prefix: /docs
-  - component:
-      name: api
-    match:
+        prefix: /ws
+    services:
+      - name: api
+        port: 8000
+  - match:
+      path:
+        prefix: /market
+    services:
+      - name: api
+        port: 8000
+  - match:
       path:
         prefix: /health
-  - component:
-      name: api
-    match:
+    services:
+      - name: api
+        port: 8000
+  - match:
       path:
-        prefix: /webhook
-  - component:
-      name: api
-    match:
+        prefix: /dashboard
+    services:
+      - name: frontend
+        port: 8080
+  - match:
       path:
-        prefix: /control
-  - component:
-      name: api
-    match:
-      path:
-        prefix: /ws 
+        prefix: /
+    services:
+      - name: api
+        port: 8000 
