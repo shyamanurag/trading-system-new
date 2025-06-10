@@ -34,6 +34,23 @@ VITE_API_URL=https://algoauto-ua2iq.ondigitalocean.app
 # Ensure these are correct
 APP_URL=https://algoauto-ua2iq.ondigitalocean.app
 FRONTEND_URL=https://algoauto-ua2iq.ondigitalocean.app
+
+# WebSocket Configuration
+WS_USE_SSL=true
+WS_SSL_CERT_PATH=/etc/ssl/certs/cert.pem
+WS_SSL_KEY_PATH=/etc/ssl/private/key.pem
+WS_MAX_CONNECTIONS_PER_USER=3
+WS_MAX_MESSAGE_SIZE=1048576  # 1MB
+WS_RATE_LIMIT_WINDOW=60
+WS_RATE_LIMIT_MAX=100
+WS_BATCH_INTERVAL=100
+WS_MAX_BATCH_SIZE=50
+WS_CIRCUIT_BREAKER_THRESHOLD=5
+WS_CIRCUIT_BREAKER_TIMEOUT=30
+WS_HEARTBEAT_INTERVAL=30
+WS_CONNECTION_TIMEOUT=60
+WS_ENABLE_METRICS=true
+WS_METRICS_INTERVAL=60
 ```
 
 ### For Local Development (.env or .env.local):
@@ -58,6 +75,21 @@ REDIS_URL=redis://localhost:6379
 
 # CORS for local development
 ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:8000
+
+# WebSocket Configuration (Development)
+WS_USE_SSL=false
+WS_MAX_CONNECTIONS_PER_USER=5
+WS_MAX_MESSAGE_SIZE=1048576  # 1MB
+WS_RATE_LIMIT_WINDOW=60
+WS_RATE_LIMIT_MAX=200
+WS_BATCH_INTERVAL=100
+WS_MAX_BATCH_SIZE=50
+WS_CIRCUIT_BREAKER_THRESHOLD=10
+WS_CIRCUIT_BREAKER_TIMEOUT=30
+WS_HEARTBEAT_INTERVAL=30
+WS_CONNECTION_TIMEOUT=60
+WS_ENABLE_METRICS=true
+WS_METRICS_INTERVAL=60
 ```
 
 ## Environment Separation Best Practices
@@ -76,10 +108,12 @@ ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:800
 - Create `src/frontend/.env.local` for local development:
   ```
   VITE_API_URL=http://localhost:8000
+  VITE_WS_URL=ws://localhost:8000/ws
   ```
 - Create `src/frontend/.env.production` for production:
   ```
   VITE_API_URL=https://algoauto-ua2iq.ondigitalocean.app
+  VITE_WS_URL=wss://algoauto-ua2iq.ondigitalocean.app/ws
   ```
 
 ### 4. **DigitalOcean App Platform Settings**
@@ -93,9 +127,12 @@ ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:800
 2. **Add VITE_API_URL** to DigitalOcean environment variables
 3. **Verify n8n webhook URL** - which one is correct?
 4. **Create local .env file** for development (not tracked in git)
+5. **Add WebSocket configuration** to both production and development environments
 
 ## Security Notes
 
 - The JWT_SECRET and ENCRYPTION_KEY should be different between environments
 - Database credentials are correctly different
-- Webhook secrets should be environment-specific 
+- Webhook secrets should be environment-specific
+- WebSocket SSL/TLS should be enabled in production
+- Rate limiting and circuit breaker settings should be stricter in production 

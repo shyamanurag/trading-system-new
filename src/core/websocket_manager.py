@@ -1,237 +1,342 @@
 """
-WebSocket manager for handling real-time connections and subscriptions
+Enhanced WebSocket manager with rate limiting, circuit breaker, and metrics
 """
-from fastapi import WebSocket
-from typing import Dict, Set, List, Optional
+from fastapi import WebSocket, WebSocketDisconnect, HTTPException
+from typing import Dict, List, Optional, Set, Any
 import json
 import logging
 import asyncio
 from datetime import datetime
+import uuid
+from .websocket_config import (
+    DEFAULT_CONFIG,
+    get_ssl_context,
+    MAX_CONNECTIONS_PER_USER,
+    MAX_MESSAGE_SIZE,
+    HEARTBEAT_INTERVAL,
+    CONNECTION_TIMEOUT,
+    RATE_LIMIT_WINDOW,
+    RATE_LIMIT_MAX,
+    CIRCUIT_BREAKER_THRESHOLD,
+    CIRCUIT_BREAKER_TIMEOUT,
+    BATCH_INTERVAL,
+    MAX_BATCH_SIZE
+)
+from .websocket_metrics import WebSocketMetrics
+from .websocket_limiter import RateLimiter, CircuitBreaker
 
 logger = logging.getLogger(__name__)
 
 class WebSocketManager:
-    def __init__(self, config: Optional[Dict] = None):
-        self.config = config or {}
-        # Thread-safe storage with locks
-        self._lock = asyncio.Lock()
-        self.active_connections: Dict[str, Set[WebSocket]] = {}
-        self.user_channels: Dict[str, Set[str]] = {}
-        self.user_symbols: Dict[str, Set[str]] = {}
-        self.user_trade_types: Dict[str, Set[str]] = {}
+    """Manages WebSocket connections with enhanced features"""
+    
+    def __init__(self):
+        self.active_connections: Dict[str, List[WebSocket]] = {}
+        self.user_connections: Dict[str, int] = {}
+        self.rate_limiter = RateLimiter(RATE_LIMIT_WINDOW, RATE_LIMIT_MAX)
+        self.circuit_breaker = CircuitBreaker(CIRCUIT_BREAKER_THRESHOLD, CIRCUIT_BREAKER_TIMEOUT)
+        self.ssl_context = get_ssl_context()
         
-    async def connect(self, websocket: WebSocket, user_id: str):
-        """Connect a new WebSocket client"""
-        await websocket.accept()
+        # Initialize components
+        self.metrics = WebSocketMetrics()
+        self.total_connections = 0
         
-        async with self._lock:
-            # Add to active connections
-            if user_id not in self.active_connections:
-                self.active_connections[user_id] = set()
-            self.active_connections[user_id].add(websocket)
-            
-            # Initialize user subscriptions
-            if user_id not in self.user_channels:
-                self.user_channels[user_id] = set()
-            if user_id not in self.user_symbols:
-                self.user_symbols[user_id] = set()
-            if user_id not in self.user_trade_types:
-                self.user_trade_types[user_id] = set()
+        # Message batching
+        self.message_batch: Dict[str, List[Dict]] = {}
+        self.batch_tasks: Dict[str, asyncio.Task] = {}
+        self.websocket_ids: Dict[WebSocket, str] = {}
+        
+        # Room subscriptions
+        self.connection_metadata: Dict[str, Dict[str, Any]] = {}
+        self.subscription_rooms: Dict[str, Set[str]] = {}
+        
+    async def validate_connection(self, websocket: WebSocket, user_id: str) -> bool:
+        """Validate new connection"""
+        try:
+            # Check connection count
+            if self.user_connections.get(user_id, 0) >= MAX_CONNECTIONS_PER_USER:
+                logger.warning(f"User {user_id} exceeded max connections")
+                return False
                 
-        logger.info(f"WebSocket client connected for user {user_id}")
-        
+            # Check circuit breaker
+            if not await self.circuit_breaker.is_allowed(f"connect_{user_id}"):
+                logger.warning("Circuit breaker is open")
+                return False
+                
+            # Check rate limit
+            if not await self.rate_limiter.is_allowed(f"connect_{user_id}"):
+                logger.warning(f"User {user_id} exceeded rate limit")
+                return False
+                
+            return True
+        except Exception as e:
+            logger.error(f"Connection validation error: {e}")
+            return False
+
+    async def connect(self, websocket: WebSocket, user_id: str):
+        """Connect with validation and SSL"""
+        try:
+            if not await self.validate_connection(websocket, user_id):
+                raise HTTPException(status_code=429, detail="Connection rejected")
+                
+            await websocket.accept()
+            
+            if user_id not in self.active_connections:
+                self.active_connections[user_id] = []
+            self.active_connections[user_id].append(websocket)
+            self.user_connections[user_id] = self.user_connections.get(user_id, 0) + 1
+            
+            # Generate unique ID for websocket
+            ws_id = str(uuid.uuid4())
+            self.websocket_ids[websocket] = ws_id
+            
+            # Initialize connection metadata
+            self.connection_metadata[ws_id] = {
+                'user_id': user_id,
+                'subscriptions': set(),
+                'last_heartbeat': datetime.now(),
+                'connected_at': datetime.now()
+            }
+            
+            # Start heartbeat
+            asyncio.create_task(self._heartbeat(websocket))
+            
+            logger.info(f"User {user_id} connected successfully")
+        except Exception as e:
+            logger.error(f"Connection error: {e}")
+            raise
+
     async def disconnect(self, websocket: WebSocket, user_id: str):
-        """Disconnect a WebSocket client"""
-        async with self._lock:
-            # Remove from active connections
+        """Disconnect with cleanup"""
+        try:
             if user_id in self.active_connections:
-                self.active_connections[user_id].discard(websocket)
+                self.active_connections[user_id].remove(websocket)
                 if not self.active_connections[user_id]:
                     del self.active_connections[user_id]
                     
-            # Clean up subscriptions
-            if user_id in self.user_channels:
-                del self.user_channels[user_id]
-            if user_id in self.user_symbols:
-                del self.user_symbols[user_id]
-            if user_id in self.user_trade_types:
-                del self.user_trade_types[user_id]
+            self.user_connections[user_id] = max(0, self.user_connections.get(user_id, 1) - 1)
+            if self.user_connections[user_id] == 0:
+                del self.user_connections[user_id]
                 
-        logger.info(f"WebSocket client disconnected for user {user_id}")
-        
-    async def subscribe(self, websocket: WebSocket, user_id: str, channels: List[str]):
-        """Subscribe to specific channels"""
-        async with self._lock:
-            if user_id not in self.user_channels:
-                self.user_channels[user_id] = set()
+            # Cleanup websocket ID and batching
+            if websocket in self.websocket_ids:
+                ws_id = self.websocket_ids[websocket]
+                if ws_id in self.batch_tasks:
+                    self.batch_tasks[ws_id].cancel()
+                    del self.batch_tasks[ws_id]
+                if ws_id in self.message_batch:
+                    del self.message_batch[ws_id]
+                if ws_id in self.connection_metadata:
+                    del self.connection_metadata[ws_id]
+                del self.websocket_ids[websocket]
                 
-            # Add channels to user's subscriptions
-            self.user_channels[user_id].update(channels)
-            
-        # Send confirmation
-        await websocket.send_json({
-            "type": "subscription",
-            "channels": channels,
-            "status": "subscribed"
-        })
-        
-        logger.info(f"User {user_id} subscribed to channels: {channels}")
-        
-    async def unsubscribe(self, websocket: WebSocket, user_id: str, channels: List[str]):
-        """Unsubscribe from specific channels"""
-        async with self._lock:
-            if user_id in self.user_channels:
-                # Remove channels from user's subscriptions
-                self.user_channels[user_id].difference_update(channels)
+            logger.info(f"User {user_id} disconnected")
+        except Exception as e:
+            logger.error(f"Disconnection error: {e}")
+
+    async def _heartbeat(self, websocket: WebSocket):
+        """Send periodic heartbeat"""
+        try:
+            while True:
+                await asyncio.sleep(HEARTBEAT_INTERVAL)
+                if websocket.client_state.CONNECTED:
+                    await websocket.send_json({
+                        "type": "heartbeat",
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+        except Exception as e:
+            logger.error(f"Heartbeat error: {e}")
+
+    async def broadcast(self, message: dict, exclude_user: Optional[str] = None):
+        """Broadcast with validation"""
+        try:
+            if len(json.dumps(message)) > MAX_MESSAGE_SIZE:
+                logger.warning("Message exceeds size limit")
+                return
                 
-        # Send confirmation
-        await websocket.send_json({
-            "type": "subscription",
-            "channels": channels,
-            "status": "unsubscribed"
-        })
-        
-        logger.info(f"User {user_id} unsubscribed from channels: {channels}")
-        
-    async def subscribe_symbols(self, websocket: WebSocket, user_id: str, symbols: List[str]):
-        """Subscribe to specific symbols"""
-        async with self._lock:
-            if user_id not in self.user_symbols:
-                self.user_symbols[user_id] = set()
+            for user_id, connections in self.active_connections.items():
+                if user_id != exclude_user:
+                    for connection in connections:
+                        try:
+                            await self.send_message(connection, message)
+                        except Exception as e:
+                            logger.error(f"Broadcast error to {user_id}: {e}")
+        except Exception as e:
+            logger.error(f"Broadcast error: {e}")
+
+    async def send_personal_message(self, message: dict, user_id: str):
+        """Send personal message with validation"""
+        try:
+            if len(json.dumps(message)) > MAX_MESSAGE_SIZE:
+                logger.warning("Message exceeds size limit")
+                return
                 
-            # Add symbols to user's subscriptions
-            self.user_symbols[user_id].update(symbols)
-            
-        # Send confirmation
-        await websocket.send_json({
-            "type": "symbol_subscription",
-            "symbols": symbols,
-            "status": "subscribed"
-        })
-        
-        logger.info(f"User {user_id} subscribed to symbols: {symbols}")
-        
-    async def unsubscribe_symbols(self, websocket: WebSocket, user_id: str, symbols: List[str]):
-        """Unsubscribe from specific symbols"""
-        async with self._lock:
-            if user_id in self.user_symbols:
-                # Remove symbols from user's subscriptions
-                self.user_symbols[user_id].difference_update(symbols)
-                
-        # Send confirmation
-        await websocket.send_json({
-            "type": "symbol_subscription",
-            "symbols": symbols,
-            "status": "unsubscribed"
-        })
-        
-        logger.info(f"User {user_id} unsubscribed from symbols: {symbols}")
-        
-    async def subscribe_trade_types(self, websocket: WebSocket, user_id: str, trade_types: List[str]):
-        """Subscribe to specific trade types"""
-        if user_id not in self.user_trade_types:
-            self.user_trade_types[user_id] = set()
-            
-        # Add trade types to user's subscriptions
-        self.user_trade_types[user_id].update(trade_types)
-        
-        # Send confirmation
-        await websocket.send_json({
-            "type": "trade_type_subscription",
-            "trade_types": trade_types,
-            "status": "subscribed"
-        })
-        
-        logger.info(f"User {user_id} subscribed to trade types: {trade_types}")
-        
-    async def unsubscribe_trade_types(self, websocket: WebSocket, user_id: str, trade_types: List[str]):
-        """Unsubscribe from specific trade types"""
-        if user_id in self.user_trade_types:
-            # Remove trade types from user's subscriptions
-            self.user_trade_types[user_id].difference_update(trade_types)
-            
-        # Send confirmation
-        await websocket.send_json({
-            "type": "trade_type_subscription",
-            "trade_types": trade_types,
-            "status": "unsubscribed"
-        })
-        
-        logger.info(f"User {user_id} unsubscribed from trade types: {trade_types}")
-        
-    async def broadcast_to_user(self, user_id: str, message: dict):
-        """Broadcast message to all connections of a specific user"""
-        async with self._lock:
             if user_id in self.active_connections:
-                # Add timestamp to message
-                message["timestamp"] = datetime.utcnow().isoformat()
-                
-                # Send to all user's connections
-                for websocket in self.active_connections[user_id]:
+                for connection in self.active_connections[user_id]:
                     try:
-                        await websocket.send_json(message)
+                        await self.send_message(connection, message)
                     except Exception as e:
-                        logger.error(f"Error broadcasting to user {user_id}: {str(e)}")
-                        
-    async def broadcast_to_channel(self, channel: str, message: dict):
-        """Broadcast message to all users subscribed to a specific channel"""
-        async with self._lock:
-            # Add timestamp to message
-            message["timestamp"] = datetime.utcnow().isoformat()
-            
-            # Find all users subscribed to the channel
-            for user_id, channels in self.user_channels.items():
-                if channel in channels:
-                    await self.broadcast_to_user(user_id, message)
-                    
-    async def broadcast_market_data(self, symbol: str, data: dict):
-        """Broadcast market data to users subscribed to the symbol"""
-        message = {
-            "type": "market_data",
-            "symbol": symbol,
-            "data": data
+                        logger.error(f"Personal message error to {user_id}: {e}")
+        except Exception as e:
+            logger.error(f"Personal message error: {e}")
+
+    def get_active_connections(self) -> Dict[str, int]:
+        """Get current connection stats"""
+        return {
+            user_id: len(connections)
+            for user_id, connections in self.active_connections.items()
         }
         
-        async with self._lock:
-            # Find all users subscribed to the symbol
-            for user_id, symbols in self.user_symbols.items():
-                if symbol in symbols:
-                    await self.broadcast_to_user(user_id, message)
+    async def send_message(self, websocket: WebSocket, message: Dict):
+        """Send a message with batching support"""
+        try:
+            if websocket not in self.websocket_ids:
+                return
+                
+            ws_id = self.websocket_ids[websocket]
+            
+            # Add to batch
+            if ws_id not in self.message_batch:
+                self.message_batch[ws_id] = []
+                # Start batch task if not exists
+                if ws_id not in self.batch_tasks:
+                    self.batch_tasks[ws_id] = asyncio.create_task(
+                        self._process_batch(ws_id)
+                    )
                     
-    async def broadcast_trade_update(self, user_id: str, trade_type: str, data: dict):
-        """Broadcast trade update to user if subscribed to the trade type"""
-        async with self._lock:
-            if user_id in self.user_trade_types and trade_type in self.user_trade_types[user_id]:
-                message = {
-                    "type": "trade_update",
-                    "trade_type": trade_type,
-                    "data": data
-                }
-                await self.broadcast_to_user(user_id, message)
-                
-    async def broadcast_system_message(self, message: str, level: str = "info"):
-        """Broadcast system message to all connected clients"""
-        async with self._lock:
-            system_message = {
-                "type": "system_message",
-                "message": message,
-                "level": level,
-                "timestamp": datetime.utcnow().isoformat()
-            }
+            self.message_batch[ws_id].append(message)
             
-            for user_id in self.active_connections:
-                await self.broadcast_to_user(user_id, system_message)
-                
-    async def get_active_connections_count(self) -> int:
-        """Get total number of active connections"""
-        async with self._lock:
-            return sum(len(connections) for connections in self.active_connections.values())
+            # Send immediately if batch is full
+            if len(self.message_batch[ws_id]) >= MAX_BATCH_SIZE:
+                await self._send_batch(ws_id)
+        except Exception as e:
+            logger.error(f"Error adding message to batch: {e}")
             
-    async def get_user_subscriptions(self, user_id: str) -> Dict[str, List[str]]:
-        """Get all subscriptions for a user"""
-        async with self._lock:
-            return {
-                "channels": list(self.user_channels.get(user_id, set())),
-                "symbols": list(self.user_symbols.get(user_id, set())),
-                "trade_types": list(self.user_trade_types.get(user_id, set()))
-            } 
+    async def _process_batch(self, ws_id: str):
+        """Process message batches"""
+        try:
+            while True:
+                await asyncio.sleep(BATCH_INTERVAL / 1000)
+                await self._send_batch(ws_id)
+        except asyncio.CancelledError:
+            # Send any remaining messages
+            await self._send_batch(ws_id)
+            
+    async def _send_batch(self, ws_id: str):
+        """Send a batch of messages"""
+        if ws_id not in self.message_batch or not self.message_batch[ws_id]:
+            return
+            
+        try:
+            # Find websocket by ID
+            websocket = None
+            for ws, id in self.websocket_ids.items():
+                if id == ws_id:
+                    websocket = ws
+                    break
+                    
+            if not websocket:
+                return
+                
+            messages = self.message_batch[ws_id]
+            self.message_batch[ws_id] = []
+            
+            # Send batch
+            await websocket.send_json({
+                'type': 'batch',
+                'messages': messages,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+            # Update metrics
+            await self.metrics.increment('messages_sent', len(messages))
+            await self.metrics.increment('message_types', 
+                labels={'type': 'batch', 'size': str(len(messages))})
+                
+        except Exception as e:
+            logger.error(f"Error sending batch: {e}")
+            await self.metrics.increment('errors')
+            
+    async def subscribe_to_room(self, websocket: WebSocket, room_name: str) -> bool:
+        """Subscribe connection to a room"""
+        if websocket not in self.websocket_ids:
+            return False
+            
+        ws_id = self.websocket_ids[websocket]
+        if ws_id not in self.connection_metadata:
+            return False
+            
+        # Add to subscription room
+        if room_name not in self.subscription_rooms:
+            self.subscription_rooms[room_name] = set()
+        self.subscription_rooms[room_name].add(ws_id)
+        
+        # Update connection metadata
+        self.connection_metadata[ws_id]['subscriptions'].add(room_name)
+        
+        # Update metrics
+        await self.metrics.increment('room_subscriptions', 
+            labels={'room': room_name})
+            
+        logger.info(f"Connection {ws_id} subscribed to room: {room_name}")
+        return True
+        
+    async def unsubscribe_from_room(self, websocket: WebSocket, room_name: str) -> bool:
+        """Unsubscribe connection from a room"""
+        if websocket not in self.websocket_ids:
+            return False
+            
+        ws_id = self.websocket_ids[websocket]
+        if ws_id not in self.connection_metadata:
+            return False
+            
+        # Remove from subscription room
+        if room_name in self.subscription_rooms:
+            self.subscription_rooms[room_name].discard(ws_id)
+            if not self.subscription_rooms[room_name]:
+                del self.subscription_rooms[room_name]
+        
+        # Update connection metadata
+        self.connection_metadata[ws_id]['subscriptions'].discard(room_name)
+        
+        logger.info(f"Connection {ws_id} unsubscribed from room: {room_name}")
+        return True
+        
+    async def broadcast_to_room(self, room_name: str, message: Dict):
+        """Broadcast message to all connections in a room"""
+        if room_name not in self.subscription_rooms:
+            return
+            
+        for ws_id in self.subscription_rooms[room_name]:
+            # Find websocket by ID
+            websocket = None
+            for ws, id in self.websocket_ids.items():
+                if id == ws_id:
+                    websocket = ws
+                    break
+                    
+            if websocket:
+                try:
+                    await self.send_message(websocket, message)
+                except Exception as e:
+                    logger.error(f"Error broadcasting to room {room_name}: {e}")
+                    
+    async def get_metrics(self) -> Dict[str, Any]:
+        """Get current metrics"""
+        return await self.metrics.get_metrics()
+        
+    async def check_alerts(self):
+        """Check for metric alerts"""
+        metrics = await self.metrics.get_metrics()
+        
+        # Check connection count
+        await self.metrics.alert('connections', 1000, 
+            "High number of concurrent connections")
+            
+        # Check error rate
+        if 'rates' in metrics and metrics['rates']['errors_per_second'] > 1:
+            logger.warning("High error rate detected")
+            
+        # Check latency
+        if 'latency_stats' in metrics and metrics['latency_stats']['p95'] > 1000:
+            logger.warning("High latency detected (p95 > 1000ms)") 
