@@ -40,10 +40,10 @@ class DatabaseConfig:
     
     def __post_init__(self):
         if self.server_settings is None:
+            # Minimal settings for DigitalOcean managed PostgreSQL
+            # Removed settings that require superuser privileges
             self.server_settings = {
                 'jit': 'off',  # Disable JIT for faster query planning
-                'log_statement': 'none',
-                'log_min_duration_statement': '5000',  # Log queries > 5s
                 'statement_timeout': '15000',  # 15 second timeout
                 'idle_in_transaction_session_timeout': '30000'  # 30 second idle timeout
             }

@@ -19,11 +19,12 @@ services:
   instance_count: 1
   instance_size_slug: basic-xxs
   source_dir: /
-  run_command: |
+  build_command: |
     pip install -r requirements.txt
     cd src/frontend && npm install && VITE_API_URL=https://algoauto-ua2iq.ondigitalocean.app npm run build && cd ../..
     mkdir -p dist
     cp -r src/frontend/dist dist/frontend
+  run_command: python main.py
   health_check:
     http_path: /health/ready
     initial_delay_seconds: 30
