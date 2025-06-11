@@ -47,7 +47,7 @@ export default defineConfig({
         host: true
     },
     define: {
-        'process.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'https://algoauto-jd32t.ondigitalocean.app/api'),
+        'process.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'https://algoauto-jd32t.ondigitalocean.app'),
         'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
     }
 }) 
