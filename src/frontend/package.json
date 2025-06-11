@@ -29,9 +29,7 @@
     },
     "scripts": {
         "dev": "vite",
-        "build": "vite build",
-        "build:production": "vite build --mode production",
-        "build:digitalocean": "rm -rf node_modules package-lock.json && npm install && npm run build:production",
+        "build": "vite build --mode production",
         "preview": "vite preview",
         "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
         "serve": "vite preview --port 3000 --host"
