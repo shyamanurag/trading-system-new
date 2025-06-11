@@ -5,17 +5,16 @@ export default defineConfig({
     plugins: [react()],
     base: '/',
     build: {
-        outDir: 'dist/frontend',
+        outDir: 'dist',
         emptyOutDir: true,
         sourcemap: false,
-        minify: 'esbuild',
+        minify: true,
         chunkSizeWarningLimit: 1000,
         rollupOptions: {
             output: {
                 manualChunks: {
-                    vendor: ['react', 'react-dom'],
+                    vendor: ['react', 'react-dom', 'react-router-dom'],
                     mui: ['@mui/material', '@mui/icons-material'],
-                    charts: ['recharts']
                 },
             },
         },

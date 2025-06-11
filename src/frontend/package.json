@@ -29,9 +29,9 @@
     },
     "scripts": {
         "dev": "vite",
-        "build": "vite build --mode production",
-        "build:digitalocean": "npm ci && npm run build",
-        "build:production": "NODE_ENV=production npm ci && NODE_ENV=production npm run build",
+        "build": "npm install && vite build",
+        "build:production": "npm install && vite build --mode production",
+        "build:digitalocean": "npm install && npm run build:production",
         "preview": "vite preview",
         "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
         "serve": "vite preview --port 3000 --host"
