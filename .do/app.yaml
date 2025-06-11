@@ -50,17 +50,7 @@ static_sites:
       deploy_on_push: true
       repo: shyamanurag/trading-system-new
     source_dir: /src/frontend
-    build_command: |
-      sudo apt-get update && 
-      sudo apt-get install -y curl gnupg && 
-      curl -fsSL https://deb.nodesource.com/setup_18.x | sudo bash - && 
-      sudo apt-get install -y nodejs && 
-      export PATH="/usr/local/bin:$PATH" && 
-      sudo npm install -g npm@latest && 
-      rm -rf node_modules package-lock.json && 
-      npm install --no-optional && 
-      npm install @vitejs/plugin-react @rollup/rollup-linux-x64-gnu && 
-      npm run build
+    build_command: npm run build
     output_dir: dist
     index_document: index.html
     catchall_document: index.html
