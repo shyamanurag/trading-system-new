@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Use production WebSocket URL from environment variable
-const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-ua2iq.ondigitalocean.app/ws';
+const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-ua2iq.ondigitalocean.app';
 
 export const useWebSocket = (userId = 'default_user') => {
     const [isConnected, setIsConnected] = useState(false);
@@ -41,7 +41,7 @@ export const useWebSocket = (userId = 'default_user') => {
         }
 
         try {
-            const wsUrl = `${WS_BASE_URL}/${userId}`;
+            const wsUrl = `${WS_BASE_URL}/ws/${userId}`;
             console.log('Connecting to WebSocket:', wsUrl);
 
             const newWs = new WebSocket(wsUrl);
