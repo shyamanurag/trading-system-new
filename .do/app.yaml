@@ -248,10 +248,16 @@ static_sites:
         value: production
       - key: VITE_API_URL
         scope: BUILD_TIME
-        value: https://algoauto-jd32t.ondigitalocean.app
+        value: https://algoauto-jd32t.ondigitalocean.app/api
       - key: VITE_WS_URL
         scope: BUILD_TIME
-        value: wss://algoauto-jd32t.ondigitalocean.app
+        value: wss://algoauto-jd32t.ondigitalocean.app/ws
+      - key: VITE_ZERODHA_API_KEY
+        scope: BUILD_TIME
+        value: sylcoq492qz6f7ej
+      - key: VITE_ZERODHA_API_SECRET
+        scope: BUILD_TIME
+        value: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
 
 ingress:
   rules:
