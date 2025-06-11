@@ -24,14 +24,14 @@ services:
     run_command: |
       export PYTHONPATH=/app && 
       pip install -r requirements.txt && 
-      gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+      python -m uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 120
     health_check:
       http_path: /health/ready
-      initial_delay_seconds: 60
-      period_seconds: 15
-      timeout_seconds: 10
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
       failure_threshold: 3
-      success_threshold: 2
+      success_threshold: 1
     envs:
       - key: PYTHON_VERSION
         scope: RUN_AND_BUILD_TIME
@@ -219,8 +219,12 @@ static_sites:
       repo: shyamanurag/trading-system-new
     source_dir: /src/frontend
     build_command: |
+      apt-get update && 
+      apt-get install -y curl && 
       curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && 
       apt-get install -y nodejs && 
+      node --version && 
+      npm --version && 
       npm install -g npm@latest && 
       rm -rf node_modules package-lock.json && 
       npm install --no-optional && 
