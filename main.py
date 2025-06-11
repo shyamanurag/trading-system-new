@@ -7,7 +7,7 @@ INCLUDES: Authentication, Trading APIs, Autonomous Trading, Risk Management
 
 import asyncio
 import logging
-from fastapi import FastAPI, HTTPException, Depends, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, Request, WebSocket, WebSocketDisconnect, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -295,22 +295,21 @@ app.add_middleware(
     max_age=3600,
 )
 
-# Include new API routers
-app.include_router(market_data_router, prefix="/market-data", tags=["market-data"])
-app.include_router(recommendations_router, prefix="/recommendations", tags=["recommendations"])
-app.include_router(recommendations_router, prefix="/scan", tags=["scanning"])
-app.include_router(recommendations_router, prefix="/backtest", tags=["backtesting"])
-app.include_router(monitoring_router, prefix="/monitoring", tags=["monitoring"])
-app.include_router(monitoring_router, prefix="/performance", tags=["performance"])
-app.include_router(autonomous_router, prefix="/autonomous", tags=["autonomous"])
-app.include_router(autonomous_router, prefix="/trading", tags=["trading"])
-app.include_router(auth_router, prefix="/v1/auth", tags=["authentication"])
-app.include_router(error_monitoring_router, prefix="/errors", tags=["error-monitoring"])
-app.include_router(database_health_router, prefix="/database", tags=["database"])
-app.include_router(market_indices_router, prefix="/market", tags=["market-data"])
-app.include_router(dashboard_router, prefix="/api", tags=["dashboard"])
-app.include_router(trading_control_router, prefix="/api", tags=["trading-control"])
+# Create v1 router
+api_v1 = APIRouter(prefix="/api/v1")
 
+# Include all existing routers under v1 prefix
+api_v1.include_router(recommendations_router, prefix="/recommendations", tags=["trading"])
+api_v1.include_router(monitoring_router, prefix="/monitoring", tags=["monitoring"])
+api_v1.include_router(autonomous_router, prefix="/autonomous", tags=["autonomous"])
+api_v1.include_router(auth_router, prefix="/auth", tags=["authentication"])
+api_v1.include_router(database_health_router, prefix="/database", tags=["database"])
+api_v1.include_router(market_indices_router, prefix="/market", tags=["market-data"])
+api_v1.include_router(dashboard_router, prefix="", tags=["dashboard"])
+api_v1.include_router(trading_control_router, prefix="", tags=["trading-control"])
+
+# Include the v1 router in the main app
+app.include_router(api_v1)
 
 # Mount static files for frontend
 static_dir = Path("dist/frontend")
@@ -943,23 +942,45 @@ async def webhook(request: Request):
     try:
         # Log the raw request body
         body = await request.body()
-        print(f"Raw webhook data: {body.decode()}")
+        logger.info(f"Raw webhook data: {body.decode()}")
         
         # Log headers
         headers = dict(request.headers)
-        print(f"Webhook headers: {headers}")
+        logger.info(f"Webhook headers: {headers}")
         
         # Try to parse JSON
         try:
             data = await request.json()
-            print(f"Parsed webhook data: {data}")
+            logger.info(f"Parsed webhook data: {data}")
         except Exception as json_error:
-            print(f"Could not parse JSON data: {str(json_error)}")
+            logger.error(f"Could not parse JSON data: {str(json_error)}")
+            raise HTTPException(status_code=400, detail="Invalid JSON data")
         
-        return {"status": "success", "message": "Webhook received and logged"}
+        # Process webhook based on type
+        webhook_type = data.get('type')
+        if not webhook_type:
+            raise HTTPException(status_code=400, detail="Missing webhook type")
+        
+        # Route to appropriate handler
+        if webhook_type == 'market_data':
+            # Handle market data updates
+            pass
+        elif webhook_type == 'order_update':
+            # Handle order status updates
+            pass
+        elif webhook_type == 'n8n_workflow':
+            # Handle n8n workflow events
+            pass
+        else:
+            logger.warning(f"Unknown webhook type: {webhook_type}")
+        
+        return {"status": "success", "message": "Webhook processed"}
+    
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Webhook error: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Error processing webhook: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post(
     "/control",
@@ -1020,7 +1041,7 @@ async def custom_swagger_ui_html():
     )
 
 @app.get(
-    "/api/recommendations/elite",
+    "/api/v1/recommendations/elite",
     tags=["trading"],
     summary="Get elite trading recommendations",
     description="Fetch AI-powered elite trading recommendations with entry/exit points and risk management"
@@ -1063,7 +1084,7 @@ async def get_elite_recommendations():
         }
 
 @app.get(
-    "/api/performance/elite-trades",
+    "/api/v1/performance/elite-trades",
     tags=["analytics"],
     summary="Get elite trades performance",
     description="Fetch performance data for elite trading recommendations"
@@ -1161,7 +1182,7 @@ async def get_elite_performance():
         }
 
 @app.get(
-    "/api/users",
+    "/api/v1/users",
     tags=["users"],
     summary="Get all users",
     description="Fetch all registered trading users with their basic information"
@@ -1203,7 +1224,7 @@ def get_users():
         }
 
 @app.get(
-    "/api/users/{user_id}/performance",
+    "/api/v1/users/{user_id}/performance",
     tags=["analytics"],
     summary="Get user performance",
     description="Fetch detailed performance analytics for a specific user"
@@ -1284,7 +1305,7 @@ async def get_user_performance(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to fetch user performance")
 
 @app.get(
-    "/api/performance/daily-pnl",
+    "/api/v1/performance/daily-pnl",
     tags=["analytics"],
     summary="Get daily P&L data",
     description="Fetch system-wide daily P&L performance data"
@@ -1335,7 +1356,7 @@ async def get_daily_pnl():
         }
 
 @app.post(
-    "/api/users",
+    "/api/v1/users",
     tags=["users"],
     summary="Add new user",
     description="Onboard a new user to the trading system"
@@ -1399,7 +1420,7 @@ async def add_user(user_data: dict):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.delete(
-    "/api/users/{user_id}",
+    "/api/v1/users/{user_id}",
     tags=["users"],
     summary="Remove user",
     description="Remove a user from the trading system"
@@ -1444,7 +1465,7 @@ async def remove_user(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to remove user")
 
 @app.get(
-    "/api/users/{user_id}/positions",
+    "/api/v1/users/{user_id}/positions",
     tags=["users"],
     summary="Get user positions",
     description="Get real-time positions for a specific user"
@@ -1475,7 +1496,7 @@ async def get_user_positions(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to fetch user positions")
 
 @app.get(
-    "/api/users/{user_id}/trades",
+    "/api/v1/users/{user_id}/trades",
     tags=["users"],
     summary="Get user trades",
     description="Get recent trades for a specific user"
@@ -1520,7 +1541,7 @@ async def get_user_trades(user_id: str, limit: int = 10):
         raise HTTPException(status_code=500, detail="Failed to fetch user trades")
 
 @app.get(
-    "/api/users/{user_id}/analytics",
+    "/api/v1/users/{user_id}/analytics",
     tags=["users"],
     summary="Get user analytics",
     description="Get comprehensive analytics for a specific user"
@@ -1576,7 +1597,7 @@ async def get_user_analytics(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to fetch user analytics")
 
 @app.put(
-    "/api/users/{user_id}/status",
+    "/api/v1/users/{user_id}/status",
     tags=["users"],
     summary="Update user status",
     description="Activate or deactivate a user"
@@ -2149,6 +2170,334 @@ async def get_security_system_status():
     except Exception as e:
         logger.error(f"Error getting security system status: {e}")
         raise HTTPException(status_code=500, detail="Failed to get security system status")
+
+@app.get(
+    "/api/v1/users/profile",
+    tags=["users"],
+    summary="Get user profile",
+    description="Get detailed profile information for the authenticated user"
+)
+async def get_user_profile():
+    try:
+        # Get user profile from database
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get user profile
+        profile = await db_ops.get_user_profile()
+        
+        return {
+            "success": True,
+            "profile": profile,
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching user profile: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user profile")
+
+@app.get(
+    "/api/v1/trades",
+    tags=["trading"],
+    summary="Get all trades",
+    description="Get all trades across all users"
+)
+async def get_all_trades(limit: int = 100):
+    try:
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get all trades
+        trades = await db_ops.db.execute_query("""
+            SELECT 
+                position_id as trade_id,
+                user_id,
+                symbol,
+                quantity,
+                entry_price,
+                current_price,
+                realized_pnl as pnl,
+                strategy,
+                entry_time,
+                exit_time,
+                status
+            FROM positions 
+            ORDER BY COALESCE(exit_time, entry_time) DESC
+            LIMIT $1
+        """, limit)
+        
+        return {
+            "success": True,
+            "trades": trades or [],
+            "total_trades": len(trades or []),
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching trades: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch trades")
+
+@app.get(
+    "/api/v1/positions",
+    tags=["trading"],
+    summary="Get all positions",
+    description="Get all open positions across all users"
+)
+async def get_all_positions():
+    try:
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get all positions
+        positions = await db_ops.db.execute_query("""
+            SELECT 
+                position_id,
+                user_id,
+                symbol,
+                quantity,
+                entry_price,
+                current_price,
+                unrealized_pnl,
+                strategy,
+                entry_time
+            FROM positions 
+            WHERE status = 'open'
+            ORDER BY entry_time DESC
+        """)
+        
+        return {
+            "success": True,
+            "positions": positions or [],
+            "total_positions": len(positions or []),
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching positions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch positions")
+
+@app.get(
+    "/api/v1/orders",
+    tags=["trading"],
+    summary="Get all orders",
+    description="Get all pending and executed orders"
+)
+async def get_all_orders(limit: int = 100):
+    try:
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get all orders
+        orders = await db_ops.db.execute_query("""
+            SELECT 
+                order_id,
+                user_id,
+                symbol,
+                quantity,
+                price,
+                order_type,
+                status,
+                created_at,
+                executed_at
+            FROM orders 
+            ORDER BY created_at DESC
+            LIMIT $1
+        """, limit)
+        
+        return {
+            "success": True,
+            "orders": orders or [],
+            "total_orders": len(orders or []),
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching orders: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch orders")
+
+@app.get(
+    "/api/v1/market-data",
+    tags=["market-data"],
+    summary="Get market data",
+    description="Get real-time market data for all symbols"
+)
+async def get_market_data():
+    try:
+        # Get market data from Redis or external provider
+        if redis_client:
+            market_data = await redis_client.hgetall("market_data")
+            return {
+                "success": True,
+                "market_data": market_data,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "success": True,
+                "market_data": {},
+                "message": "Market data service unavailable",
+                "timestamp": datetime.now().isoformat()
+            }
+    except Exception as e:
+        logger.error(f"Error fetching market data: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch market data")
+
+@app.get(
+    "/api/v1/symbols",
+    tags=["market-data"],
+    summary="Get available symbols",
+    description="Get list of all available trading symbols"
+)
+async def get_symbols():
+    try:
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get symbols from database
+        symbols = await db_ops.db.execute_query("""
+            SELECT DISTINCT symbol, name, exchange
+            FROM symbols
+            WHERE is_active = true
+            ORDER BY symbol
+        """)
+        
+        return {
+            "success": True,
+            "symbols": symbols or [],
+            "total_symbols": len(symbols or []),
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching symbols: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch symbols")
+
+@app.get(
+    "/api/v1/strategies",
+    tags=["trading"],
+    summary="Get available strategies",
+    description="Get list of all available trading strategies"
+)
+async def get_strategies():
+    try:
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get strategies from database
+        strategies = await db_ops.db.execute_query("""
+            SELECT 
+                strategy_id,
+                name,
+                description,
+                parameters,
+                is_active,
+                created_at
+            FROM strategies
+            WHERE is_active = true
+            ORDER BY name
+        """)
+        
+        return {
+            "success": True,
+            "strategies": strategies or [],
+            "total_strategies": len(strategies or []),
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching strategies: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch strategies")
+
+@app.get(
+    "/api/v1/strategies/performance",
+    tags=["analytics"],
+    summary="Get strategy performance",
+    description="Get performance metrics for all strategies"
+)
+async def get_strategy_performance():
+    try:
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get strategy performance from database
+        performance = await db_ops.db.execute_query("""
+            SELECT 
+                strategy,
+                COUNT(*) as total_trades,
+                COUNT(CASE WHEN realized_pnl > 0 THEN 1 END) as winning_trades,
+                AVG(CASE WHEN realized_pnl IS NOT NULL THEN realized_pnl END) as avg_pnl,
+                SUM(realized_pnl) as total_pnl
+            FROM positions 
+            WHERE strategy IS NOT NULL
+            GROUP BY strategy
+            ORDER BY total_pnl DESC
+        """)
+        
+        return {
+            "success": True,
+            "performance": performance or [],
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching strategy performance: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch strategy performance")
+
+@app.get(
+    "/api/v1/dashboard/summary",
+    tags=["dashboard"],
+    summary="Get dashboard summary",
+    description="Get summary metrics for the dashboard"
+)
+async def get_dashboard_summary():
+    try:
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get summary metrics
+        summary = await db_ops.db.execute_one("""
+            SELECT 
+                COUNT(DISTINCT user_id) as active_users,
+                COUNT(*) FILTER (WHERE status = 'open') as open_positions,
+                SUM(CASE WHEN status = 'open' THEN unrealized_pnl ELSE 0 END) as total_unrealized_pnl,
+                SUM(CASE WHEN status = 'closed' THEN realized_pnl ELSE 0 END) as total_realized_pnl,
+                COUNT(*) FILTER (WHERE status = 'closed') as total_trades,
+                COUNT(*) FILTER (WHERE status = 'closed' AND realized_pnl > 0) as winning_trades
+            FROM positions
+        """)
+        
+        return {
+            "success": True,
+            "summary": summary or {
+                "active_users": 0,
+                "open_positions": 0,
+                "total_unrealized_pnl": 0,
+                "total_realized_pnl": 0,
+                "total_trades": 0,
+                "winning_trades": 0
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching dashboard summary: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch dashboard summary")
 
 if __name__ == "__main__":
     # Get port from environment or use default
