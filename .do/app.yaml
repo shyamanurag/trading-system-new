@@ -1,246 +1,251 @@
 name: algoauto
 region: blr
 
-# Database Services - Reference existing databases
-databases:
-  # Redis for caching and real-time data
-  - name: redis-cache
-    engine: REDIS
-    version: "7"
-    size: basic-s
-    num_nodes: 1
-    
-  # PostgreSQL for persistent data
-  - name: trading-db
-    engine: PG
-    version: "15"
-    size: basic-s
-    num_nodes: 1
+alerts:
+- disabled: true
+  rule: DEPLOYMENT_FAILED
+- disabled: true
+  rule: DOMAIN_FAILED
+
+features:
+- buildpack-stack=ubuntu-22
 
 services:
-  # Backend API Service
   - name: api
     environment_slug: python
     github:
       branch: main
       deploy_on_push: true
       repo: shyamanurag/trading-system-new
-    http_port: 8080
+    http_port: 8000
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-1gb
     source_dir: /
     run_command: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
     health_check:
       http_path: /health/ready
-      initial_delay_seconds: 30
+      initial_delay_seconds: 40
       period_seconds: 10
       timeout_seconds: 5
       failure_threshold: 3
-      success_threshold: 1
+      success_threshold: 2
     envs:
-    - key: PYTHON_VERSION
-      value: "3.10"
-    - key: PORT
-      value: "8080"
-    - key: ENVIRONMENT
-      value: production
-    # Redis configuration
-    - key: REDIS_URL
-      value: ${redis-cache.DATABASE_URL}
-    - key: REDIS_HOST
-      value: ${redis-cache.HOSTNAME}
-    - key: REDIS_PORT
-      value: ${redis-cache.PORT}
-    - key: REDIS_PASSWORD
-      value: ${redis-cache.PASSWORD}
-    - key: REDIS_SSL
-      value: "true"
-    # PostgreSQL configuration
-    - key: DATABASE_URL
-      value: ${trading-db.DATABASE_URL}
-    - key: DATABASE_HOST
-      value: ${trading-db.HOSTNAME}
-    - key: DATABASE_PORT
-      value: ${trading-db.PORT}
-    - key: DATABASE_NAME
-      value: ${trading-db.DATABASE}
-    - key: DATABASE_USER
-      value: ${trading-db.USERNAME}
-    - key: DATABASE_PASSWORD
-      value: ${trading-db.PASSWORD}
-
-  - name: frontend
-    github:
-      branch: main
-      deploy_on_push: true
-      repo: shyamanurag/trading-system-new
-    build_command: cd src/frontend && npm ci && npm run build:production
-    run_command: cd src/frontend && npm run serve
-    http_port: 3000
-    instance_count: 1
-    instance_size_slug: basic-xxs
-    envs:
-      - key: VITE_API_URL
-        value: https://algoauto-ua2iq.ondigitalocean.app
-      - key: VITE_WS_URL
-        value: wss://algoauto-ua2iq.ondigitalocean.app
-      - key: VITE_ZERODHA_API_KEY
-        value: sylcoq492qz6f7ej
-      - key: VITE_ZERODHA_API_SECRET
-        value: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
-      - key: VITE_APP_NAME
-        value: AlgoAuto Trading
-      - key: VITE_APP_VERSION
-        value: 1.0.0
-      - key: VITE_APP_ENV
-        value: production
-
-  - name: backend
-    github:
-      branch: main
-      deploy_on_push: true
-      repo: shyamanurag/trading-system-new
-    build_command: pip install -r requirements.txt
-    run_command: python src/main.py
-    http_port: 8000
-    instance_count: 1
-    instance_size_slug: basic-xxs
-    envs:
+      - key: PYTHON_VERSION
+        scope: RUN_AND_BUILD_TIME
+        value: "3.11.2"
       - key: DATABASE_URL
+        scope: RUN_AND_BUILD_TIME
         value: postgresql://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb?sslmode=require
       - key: DATABASE_HOST
+        scope: RUN_AND_BUILD_TIME
         value: app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com
       - key: DATABASE_PORT
-        value: 25060
+        scope: RUN_AND_BUILD_TIME
+        value: "25060"
       - key: DATABASE_NAME
+        scope: RUN_AND_BUILD_TIME
         value: defaultdb
       - key: DATABASE_USER
+        scope: RUN_AND_BUILD_TIME
         value: doadmin
       - key: DATABASE_PASSWORD
+        scope: RUN_AND_BUILD_TIME
         value: AVNS_LpaPpsdL4CtOii03MnN
       - key: DATABASE_SSL
+        scope: RUN_AND_BUILD_TIME
         value: require
       - key: REDIS_URL
+        scope: RUN_AND_BUILD_TIME
         value: rediss://default:AVNS_TSCy17L6f9z0CdWgcvW@redis-cache-do-user-23093341-0.k.db.ondigitalocean.com:25061
       - key: REDIS_HOST
+        scope: RUN_AND_BUILD_TIME
         value: redis-cache-do-user-23093341-0.k.db.ondigitalocean.com
       - key: REDIS_PORT
-        value: 25061
+        scope: RUN_AND_BUILD_TIME
+        value: "25061"
       - key: REDIS_PASSWORD
+        scope: RUN_AND_BUILD_TIME
         value: AVNS_TSCy17L6f9z0CdWgcvW
       - key: REDIS_USERNAME
+        scope: RUN_AND_BUILD_TIME
         value: default
       - key: REDIS_SSL
-        value: true
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
       - key: PORT
-        value: 8000
+        scope: RUN_AND_BUILD_TIME
+        value: "8000"
       - key: APP_PORT
-        value: 8000
+        scope: RUN_AND_BUILD_TIME
+        value: "8000"
       - key: NODE_ENV
+        scope: RUN_AND_BUILD_TIME
         value: production
       - key: ENVIRONMENT
+        scope: RUN_AND_BUILD_TIME
         value: production
       - key: DEBUG
-        value: false
+        scope: RUN_AND_BUILD_TIME
+        value: "false"
       - key: PYTHONPATH
+        scope: RUN_AND_BUILD_TIME
         value: /app
       - key: PYTHONDONTWRITEBYTECODE
-        value: 1
+        scope: RUN_AND_BUILD_TIME
+        value: "1"
       - key: PYTHONUNBUFFERED
-        value: 1
+        scope: RUN_AND_BUILD_TIME
+        value: "1"
       - key: APP_URL
+        scope: RUN_AND_BUILD_TIME
         value: https://algoauto-ua2iq.ondigitalocean.app
       - key: FRONTEND_URL
+        scope: RUN_AND_BUILD_TIME
         value: https://algoauto-ua2iq.ondigitalocean.app
       - key: ZERODHA_CLIENT_ID
+        scope: RUN_AND_BUILD_TIME
         value: QSW899
       - key: ZERODHA_API_KEY
+        scope: RUN_AND_BUILD_TIME
         value: sylcoq492qz6f7ej
       - key: ZERODHA_API_SECRET
+        scope: RUN_AND_BUILD_TIME
         value: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
       - key: ZERODHA_ACCOUNT_NAME
+        scope: RUN_AND_BUILD_TIME
         value: Shyam anurag
       - key: TRUEDATA_USERNAME
+        scope: RUN_AND_BUILD_TIME
         value: Trial106
       - key: TRUEDATA_PASSWORD
+        scope: RUN_AND_BUILD_TIME
         value: shyam106
       - key: TRUEDATA_PORT
-        value: 8086
+        scope: RUN_AND_BUILD_TIME
+        value: "8086"
       - key: TRUEDATA_URL
+        scope: RUN_AND_BUILD_TIME
         value: push.truedata.in
       - key: TRUEDATA_SANDBOX
-        value: false
+        scope: RUN_AND_BUILD_TIME
+        value: "false"
       - key: JWT_SECRET
+        scope: RUN_AND_BUILD_TIME
         value: K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A
       - key: WEBHOOK_SECRET
+        scope: RUN_AND_BUILD_TIME
         value: wh_sec_K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A_live
       - key: ENCRYPTION_KEY
+        scope: RUN_AND_BUILD_TIME
         value: lulCrXu3nDX6I18WYuPpWcIrgf2IUGAGLS93ZDwczpQ
       - key: PAPER_TRADING
-        value: true
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
       - key: PAPER_TRADING_ENABLED
-        value: true
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
       - key: AUTONOMOUS_TRADING_ENABLED
-        value: true
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
       - key: ENABLE_CORS
-        value: true
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
       - key: ALLOWED_ORIGINS
-        value: https://algoauto-ua2iq.ondigitalocean.app
+        scope: RUN_AND_BUILD_TIME
+        value: https://algoauto-ua2iq.ondigitalocean.app,https://*.ondigitalocean.app
       - key: LOG_LEVEL
+        scope: RUN_AND_BUILD_TIME
         value: INFO
       - key: LOG_FORMAT
+        scope: RUN_AND_BUILD_TIME
         value: json
       - key: ENABLE_METRICS
-        value: true
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
       - key: BACKUP_ENABLED
-        value: true
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
       - key: MAX_CONNECTIONS
-        value: 20
+        scope: RUN_AND_BUILD_TIME
+        value: "20"
       - key: POOL_SIZE
-        value: 10
+        scope: RUN_AND_BUILD_TIME
+        value: "10"
       - key: CACHE_TTL
-        value: 300
+        scope: RUN_AND_BUILD_TIME
+        value: "300"
       - key: N8N_WEBHOOK_URL
+        scope: RUN_AND_BUILD_TIME
         value: https://shyamanurag.app.n8n.cloud/webhook/78893dc5-746b-439d-aad4-fbc6396c3164
       - key: N8N_ENABLED
-        value: true
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
       - key: N8N_API_KEY
+        scope: RUN_AND_BUILD_TIME
         value: n8n_production_key_secure_78893dc5_746b_439d_aad4_fbc6396c3164
       - key: DATA_PROVIDER_WEBHOOK_URL
+        scope: RUN_AND_BUILD_TIME
         value: https://algoauto-ua2iq.ondigitalocean.app/webhook/data
       - key: DATA_PROVIDER_AUTH_TOKEN
+        scope: RUN_AND_BUILD_TIME
         value: truedata_webhook_auth_K5ewmaPLwWLzqcFa2ne6dLpk_Trial106_secure_2024
       - key: DATA_PROVIDER_ENABLED
-        value: true
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
 
 static_sites:
-  # Frontend Static Site
   - name: frontend
     github:
-      repo: shyamanurag/trading-system-new
       branch: main
+      deploy_on_push: true
+      repo: shyamanurag/trading-system-new
     source_dir: /src/frontend
-    build_command: rm -rf node_modules package-lock.json && npm install && npx vite build
+    build_command: |
+      rm -rf node_modules package-lock.json && 
+      npm install --no-optional && 
+      npm install @vitejs/plugin-react @rollup/rollup-linux-x64-gnu && 
+      npm run build && 
+      mkdir -p dist/frontend && 
+      mv dist/* dist/frontend/ 2>/dev/null || true
     output_dir: dist/frontend
     index_document: index.html
     catchall_document: index.html
     environment_slug: node-js
     envs:
-    - key: NODE_VERSION
-      value: "18"
-    - key: VITE_API_URL
-      value: https://algoauto-ua2iq.ondigitalocean.app
+      - key: VITE_API_URL
+        scope: BUILD_TIME
+        value: https://algoauto-ua2iq.ondigitalocean.app/api
+      - key: VITE_WS_URL
+        scope: BUILD_TIME
+        value: wss://algoauto-ua2iq.ondigitalocean.app/ws
+      - key: VITE_ZERODHA_API_KEY
+        scope: BUILD_TIME
+        value: sylcoq492qz6f7ej
+      - key: VITE_ZERODHA_API_SECRET
+        scope: BUILD_TIME
+        value: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
+      - key: VITE_APP_NAME
+        scope: BUILD_TIME
+        value: AlgoAuto Trading
+      - key: VITE_APP_VERSION
+        scope: BUILD_TIME
+        value: 1.0.0
+      - key: VITE_APP_ENV
+        scope: BUILD_TIME
+        value: production
 
-# Routing Configuration - Order matters!
 ingress:
   rules:
-  # API routes first (more specific)
+  - component:
+      name: frontend
+    match:
+      path:
+        prefix: /
   - component:
       name: api
     match:
       path:
         prefix: /api
-    preserve_path_prefix: true
   - component:
       name: api
     match:
@@ -265,10 +270,4 @@ ingress:
       name: api
     match:
       path:
-        prefix: /ws
-  # Frontend catch-all route last
-  - component:
-      name: frontend
-    match:
-      path:
-        prefix: / 
+        prefix: /ws 

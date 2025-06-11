@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-ua2iq.ondigitalocean.app';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-ua2iq.ondigitalocean.app/api';
 
 export const API_ENDPOINTS = {
     // Auth endpoints
