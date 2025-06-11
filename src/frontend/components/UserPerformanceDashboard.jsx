@@ -80,11 +80,11 @@ const UserPerformanceDashboard = () => {
 
     const [newUser, setNewUser] = useState({
         user_id: '',
-        initial_capital: 100000,
+        initial_capital: 0,
         risk_tolerance: 'medium',
         trading_preferences: {
-            max_position_size: 5,
-            preferred_strategies: ['breakout', 'momentum'],
+            max_position_size: 0,
+            preferred_strategies: [],
             auto_trade: false
         }
     });
@@ -199,11 +199,11 @@ const UserPerformanceDashboard = () => {
                 fetchUsers();
                 setNewUser({
                     user_id: '',
-                    initial_capital: 100000,
+                    initial_capital: 0,
                     risk_tolerance: 'medium',
                     trading_preferences: {
-                        max_position_size: 5,
-                        preferred_strategies: ['breakout', 'momentum'],
+                        max_position_size: 0,
+                        preferred_strategies: [],
                         auto_trade: false
                     }
                 });
@@ -724,7 +724,6 @@ const UserPerformanceDashboard = () => {
                                 label="Enable Auto Trading"
                             />
                         </Grid>
-                    </Grid>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setOpenUserDialog(false)}>Cancel</Button>

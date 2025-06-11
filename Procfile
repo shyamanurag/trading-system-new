@@ -1,1 +1,1 @@
-web: cd src/frontend && npm ci && npm audit fix --force && npm run build:production && cd ../.. && python src/main.py 
+web: cd src/frontend && rm -rf node_modules package-lock.json && npm install && npm run build:production && cd ../.. && python src/main.py 
