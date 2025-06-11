@@ -69,6 +69,150 @@ services:
     - key: DATABASE_PASSWORD
       value: ${trading-db.PASSWORD}
 
+  - name: frontend
+    github:
+      branch: main
+      deploy_on_push: true
+      repo: shyamanurag/trading-system-new
+    build_command: cd src/frontend && npm ci && npm run build:production
+    run_command: cd src/frontend && npm run serve
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    envs:
+      - key: VITE_API_URL
+        value: https://algoauto-ua2iq.ondigitalocean.app
+      - key: VITE_WS_URL
+        value: wss://algoauto-ua2iq.ondigitalocean.app
+      - key: VITE_ZERODHA_API_KEY
+        value: sylcoq492qz6f7ej
+      - key: VITE_ZERODHA_API_SECRET
+        value: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
+      - key: VITE_APP_NAME
+        value: AlgoAuto Trading
+      - key: VITE_APP_VERSION
+        value: 1.0.0
+      - key: VITE_APP_ENV
+        value: production
+
+  - name: backend
+    github:
+      branch: main
+      deploy_on_push: true
+      repo: shyamanurag/trading-system-new
+    build_command: pip install -r requirements.txt
+    run_command: python src/main.py
+    http_port: 8000
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    envs:
+      - key: DATABASE_URL
+        value: postgresql://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb?sslmode=require
+      - key: DATABASE_HOST
+        value: app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com
+      - key: DATABASE_PORT
+        value: 25060
+      - key: DATABASE_NAME
+        value: defaultdb
+      - key: DATABASE_USER
+        value: doadmin
+      - key: DATABASE_PASSWORD
+        value: AVNS_LpaPpsdL4CtOii03MnN
+      - key: DATABASE_SSL
+        value: require
+      - key: REDIS_URL
+        value: rediss://default:AVNS_TSCy17L6f9z0CdWgcvW@redis-cache-do-user-23093341-0.k.db.ondigitalocean.com:25061
+      - key: REDIS_HOST
+        value: redis-cache-do-user-23093341-0.k.db.ondigitalocean.com
+      - key: REDIS_PORT
+        value: 25061
+      - key: REDIS_PASSWORD
+        value: AVNS_TSCy17L6f9z0CdWgcvW
+      - key: REDIS_USERNAME
+        value: default
+      - key: REDIS_SSL
+        value: true
+      - key: PORT
+        value: 8000
+      - key: APP_PORT
+        value: 8000
+      - key: NODE_ENV
+        value: production
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: PYTHONPATH
+        value: /app
+      - key: PYTHONDONTWRITEBYTECODE
+        value: 1
+      - key: PYTHONUNBUFFERED
+        value: 1
+      - key: APP_URL
+        value: https://algoauto-ua2iq.ondigitalocean.app
+      - key: FRONTEND_URL
+        value: https://algoauto-ua2iq.ondigitalocean.app
+      - key: ZERODHA_CLIENT_ID
+        value: QSW899
+      - key: ZERODHA_API_KEY
+        value: sylcoq492qz6f7ej
+      - key: ZERODHA_API_SECRET
+        value: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
+      - key: ZERODHA_ACCOUNT_NAME
+        value: Shyam anurag
+      - key: TRUEDATA_USERNAME
+        value: Trial106
+      - key: TRUEDATA_PASSWORD
+        value: shyam106
+      - key: TRUEDATA_PORT
+        value: 8086
+      - key: TRUEDATA_URL
+        value: push.truedata.in
+      - key: TRUEDATA_SANDBOX
+        value: false
+      - key: JWT_SECRET
+        value: K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A
+      - key: WEBHOOK_SECRET
+        value: wh_sec_K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A_live
+      - key: ENCRYPTION_KEY
+        value: lulCrXu3nDX6I18WYuPpWcIrgf2IUGAGLS93ZDwczpQ
+      - key: PAPER_TRADING
+        value: true
+      - key: PAPER_TRADING_ENABLED
+        value: true
+      - key: AUTONOMOUS_TRADING_ENABLED
+        value: true
+      - key: ENABLE_CORS
+        value: true
+      - key: ALLOWED_ORIGINS
+        value: https://algoauto-ua2iq.ondigitalocean.app
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      - key: ENABLE_METRICS
+        value: true
+      - key: BACKUP_ENABLED
+        value: true
+      - key: MAX_CONNECTIONS
+        value: 20
+      - key: POOL_SIZE
+        value: 10
+      - key: CACHE_TTL
+        value: 300
+      - key: N8N_WEBHOOK_URL
+        value: https://shyamanurag.app.n8n.cloud/webhook/78893dc5-746b-439d-aad4-fbc6396c3164
+      - key: N8N_ENABLED
+        value: true
+      - key: N8N_API_KEY
+        value: n8n_production_key_secure_78893dc5_746b_439d_aad4_fbc6396c3164
+      - key: DATA_PROVIDER_WEBHOOK_URL
+        value: https://algoauto-ua2iq.ondigitalocean.app/webhook/data
+      - key: DATA_PROVIDER_AUTH_TOKEN
+        value: truedata_webhook_auth_K5ewmaPLwWLzqcFa2ne6dLpk_Trial106_secure_2024
+      - key: DATA_PROVIDER_ENABLED
+        value: true
+
 static_sites:
   # Frontend Static Site
   - name: frontend
