@@ -21,10 +21,11 @@ services:
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-1gb
     source_dir: /
+    process_type: web
     run_command: |
       export PYTHONPATH=/app && 
       pip install -r requirements.txt && 
-      python -m uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 120
+      python -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 --timeout-keep-alive 120
     health_check:
       http_path: /health/ready
       initial_delay_seconds: 30
@@ -219,10 +220,12 @@ static_sites:
       repo: shyamanurag/trading-system-new
     source_dir: /src/frontend
     build_command: |
+      export DEBIAN_FRONTEND=noninteractive && 
       apt-get update && 
-      apt-get install -y curl && 
+      apt-get install -y curl gnupg && 
       curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && 
       apt-get install -y nodejs && 
+      export PATH="/usr/local/bin:$PATH" && 
       node --version && 
       npm --version && 
       npm install -g npm@latest && 
@@ -236,6 +239,7 @@ static_sites:
     index_document: index.html
     catchall_document: index.html
     environment_slug: node-js
+    process_type: web
     envs:
       - key: VITE_API_URL
         scope: BUILD_TIME
