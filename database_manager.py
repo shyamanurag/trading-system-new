@@ -542,20 +542,37 @@ def get_database_config_from_env() -> DatabaseConfig:
     
     if database_url:
         # Parse DATABASE_URL
-        # Format: postgresql://username:password@host:port/database
+        # DigitalOcean format: postgresql://doadmin:password@host:25060/defaultdb?sslmode=require
+        from urllib.parse import urlparse, parse_qs
         parsed = urlparse(database_url)
         
-        return DatabaseConfig(
+        # Extract SSL mode from query parameters
+        query_params = parse_qs(parsed.query)
+        ssl_mode = query_params.get('sslmode', ['prefer'])[0]
+        
+        config = DatabaseConfig(
             host=parsed.hostname or 'localhost',
-            port=parsed.port or 5432,
-            database=parsed.path[1:] if parsed.path else 'trading_system',  # Remove leading /
-            username=parsed.username or 'trading_user',
+            port=parsed.port or 25060,  # DigitalOcean default port
+            database=parsed.path[1:] if parsed.path else 'defaultdb',  # Remove leading /
+            username=parsed.username or 'doadmin',
             password=parsed.password or '',
-            min_connections=int(os.getenv('DB_MIN_CONNECTIONS', '2')),
-            max_connections=int(os.getenv('DB_MAX_CONNECTIONS', '10')),
+            min_connections=int(os.getenv('DATABASE_POOL_SIZE', '3')),
+            max_connections=int(os.getenv('DATABASE_MAX_OVERFLOW', '5')) + int(os.getenv('DATABASE_POOL_SIZE', '3')),
             command_timeout=int(os.getenv('DB_COMMAND_TIMEOUT', '15')),
             connect_timeout=int(os.getenv('DB_CONNECT_TIMEOUT', '10'))
         )
+        
+        # Add SSL configuration for DigitalOcean
+        if ssl_mode in ['require', 'prefer']:
+            config.server_settings = config.server_settings or {}
+            config.server_settings.update({
+                'sslmode': ssl_mode,
+                'jit': 'off',
+                'statement_timeout': '15000',
+                'idle_in_transaction_session_timeout': '30000'
+            })
+        
+        return config
     else:
         # Fall back to individual environment variables
         return DatabaseConfig(

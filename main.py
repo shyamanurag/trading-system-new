@@ -284,6 +284,9 @@ app.add_middleware(
     allow_origins=[
         "https://algoauto-ua2iq.ondigitalocean.app",  # Production domain
         os.getenv("FRONTEND_URL", "https://algoauto-ua2iq.ondigitalocean.app"),  # Dynamic frontend URL
+        os.getenv("APP_URL", "https://algoauto-ua2iq.ondigitalocean.app"),      # App URL
+        "http://localhost:3000",  # Development frontend
+        "http://0.0.0.0:3000",    # Replit development
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -461,29 +464,30 @@ async def load_config():
         
         config_path = Path('config/config.yaml')
         if not config_path.exists():
-            # Create a basic config if none exists
-            redis_port = os.getenv('REDIS_PORT', '6379')
-            db_port = os.getenv('DATABASE_PORT', '5432')
+            # Create a basic config using DigitalOcean environment variables
+            redis_port = os.getenv('REDIS_PORT', '25061')  # DigitalOcean Redis port
+            db_port = os.getenv('DATABASE_PORT', '25060')   # DigitalOcean DB port
             
-            # Use DigitalOcean's correct defaults
+            # Use DigitalOcean's actual values
             basic_config = {
                 'redis': {
-                    'host': os.getenv('REDIS_HOST', 'localhost'),
-                    'port': int(redis_port) if redis_port else 6379,
-                    'password': os.getenv('REDIS_PASSWORD'),
-                    'ssl': os.getenv('REDIS_SSL', 'false').lower() == 'true'
+                    'host': os.getenv('REDIS_HOST', 'redis-cache-do-user-23093341-0.k.db.ondigitalocean.com'),
+                    'port': int(redis_port),
+                    'password': os.getenv('REDIS_PASSWORD', 'AVNS_TSCy17L6f9z0CdWgcvW'),
+                    'username': os.getenv('REDIS_USERNAME', 'default'),
+                    'ssl': os.getenv('REDIS_SSL', 'true').lower() == 'true'
                 },
                 'database': {
-                    'host': os.getenv('DATABASE_HOST', 'localhost'),
-                    'port': int(db_port) if db_port else 5432,
-                    'name': os.getenv('DATABASE_NAME', 'db'),  # DigitalOcean default
-                    'user': os.getenv('DATABASE_USER', 'db'),  # DigitalOcean default
-                    'password': os.getenv('DATABASE_PASSWORD')
+                    'host': os.getenv('DATABASE_HOST', 'app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com'),
+                    'port': int(db_port),
+                    'name': os.getenv('DATABASE_NAME', 'defaultdb'),  # DigitalOcean default
+                    'user': os.getenv('DATABASE_USER', 'doadmin'),   # DigitalOcean default
+                    'password': os.getenv('DATABASE_PASSWORD', 'AVNS_LpaPpsdL4CtOii03MnN')
                 },
-                'security': {'jwt_secret': os.getenv('JWT_SECRET', 'development-secret-key')},
+                'security': {'jwt_secret': os.getenv('JWT_SECRET', 'K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A')},
                 'monitoring': {'enabled': True}
             }
-            logger.warning("Configuration file not found, using environment-based config")
+            logger.info("✅ Using DigitalOcean environment configuration")
             return basic_config
             
         with open(config_path, 'r') as f:
@@ -518,33 +522,31 @@ async def init_redis():
     try:
         import ssl
         
-        # Load environment variables for production
+        # Load environment variables for production - prioritize REDIS_URL
         redis_url = os.getenv('REDIS_URL')
         redis_host = os.getenv('REDIS_HOST')
-        redis_port = os.getenv('REDIS_PORT', '6379')
+        redis_port = os.getenv('REDIS_PORT', '25061')  # DigitalOcean default Redis port
         redis_password = os.getenv('REDIS_PASSWORD')
-        redis_ssl = os.getenv('REDIS_SSL', 'false').lower() == 'true'
+        redis_username = os.getenv('REDIS_USERNAME', 'default')
+        redis_ssl = os.getenv('REDIS_SSL', 'true').lower() == 'true'  # DigitalOcean uses SSL by default
         
-        # Build Redis connection
+        # Build Redis connection - prioritize REDIS_URL for DigitalOcean
         if redis_url:
-            # Use Redis URL (handles SSL automatically if rediss://)
-            if redis_ssl and redis_url.startswith('redis://'):
-                # Convert to SSL URL
-                redis_url = redis_url.replace('redis://', 'rediss://')
-            final_redis_url = redis_url
-            logger.info(f"Using REDIS_URL from environment: {redis_url[:50]}...")
+            # Use Redis URL directly (DigitalOcean format: rediss://default:password@host:port)
+            logger.info(f"✅ Using REDIS_URL from DigitalOcean: {redis_url[:60]}...")
             
-            # For SSL URLs, create client with SSL configuration
-            if redis_ssl or redis_url.startswith('rediss://'):
-                client = redis.from_url(
-                    final_redis_url, 
-                    decode_responses=True,
-                    ssl_cert_reqs=None,
-                    ssl_check_hostname=False,
-                    ssl_ca_certs=None
-                )
-            else:
-                client = redis.from_url(final_redis_url, decode_responses=True)
+            # DigitalOcean provides rediss:// URL with SSL already configured
+            client = redis.from_url(
+                redis_url, 
+                decode_responses=True,
+                ssl_cert_reqs=None,
+                ssl_check_hostname=False,
+                ssl_ca_certs=None,
+                socket_timeout=10,
+                socket_connect_timeout=10,
+                socket_keepalive=True,
+                retry_on_timeout=True
+            )
                 
         elif redis_host:
             # Build connection from individual components
