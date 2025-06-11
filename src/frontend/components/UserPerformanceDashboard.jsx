@@ -19,12 +19,16 @@ import {
     DialogContent,
     DialogTitle,
     Divider,
+    FormControl,
     FormControlLabel,
     Grid,
     IconButton,
+    InputLabel,
     List,
     ListItem,
     ListItemText,
+    MenuItem,
+    Select,
     Switch,
     Tab,
     Table,
@@ -672,40 +676,76 @@ const UserPerformanceDashboard = () => {
             )}
 
             {/* Add User Dialog */}
-            <Dialog open={openUserDialog} onClose={() => setOpenUserDialog(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>Add New User</DialogTitle>
+            <Dialog open={openUserDialog} onClose={() => setOpenUserDialog(false)}>
+                <DialogTitle>Create New User</DialogTitle>
                 <DialogContent>
                     <Grid container spacing={2} sx={{ mt: 1 }}>
                         <Grid item xs={12}>
                             <TextField
-                                label="User ID"
                                 fullWidth
+                                label="User ID"
                                 value={newUser.user_id}
                                 onChange={(e) => setNewUser({ ...newUser, user_id: e.target.value })}
                             />
                         </Grid>
                         <Grid item xs={12}>
                             <TextField
+                                fullWidth
                                 label="Initial Capital"
                                 type="number"
-                                fullWidth
                                 value={newUser.initial_capital}
-                                onChange={(e) => setNewUser({ ...newUser, initial_capital: Number(e.target.value) })}
+                                onChange={(e) => setNewUser({ ...newUser, initial_capital: parseFloat(e.target.value) })}
                             />
                         </Grid>
                         <Grid item xs={12}>
+                            <FormControl fullWidth>
+                                <InputLabel>Risk Tolerance</InputLabel>
+                                <Select
+                                    value={newUser.risk_tolerance}
+                                    onChange={(e) => setNewUser({ ...newUser, risk_tolerance: e.target.value })}
+                                    label="Risk Tolerance"
+                                >
+                                    <MenuItem value="low">Low</MenuItem>
+                                    <MenuItem value="medium">Medium</MenuItem>
+                                    <MenuItem value="high">High</MenuItem>
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid item xs={12}>
                             <TextField
-                                label="Risk Tolerance"
-                                select
                                 fullWidth
-                                value={newUser.risk_tolerance}
-                                onChange={(e) => setNewUser({ ...newUser, risk_tolerance: e.target.value })}
-                                SelectProps={{ native: true }}
-                            >
-                                <option value="conservative">Conservative</option>
-                                <option value="medium">Medium</option>
-                                <option value="aggressive">Aggressive</option>
-                            </TextField>
+                                label="Max Position Size"
+                                type="number"
+                                value={newUser.trading_preferences.max_position_size}
+                                onChange={(e) => setNewUser({
+                                    ...newUser,
+                                    trading_preferences: {
+                                        ...newUser.trading_preferences,
+                                        max_position_size: parseFloat(e.target.value)
+                                    }
+                                })}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <FormControl fullWidth>
+                                <InputLabel>Preferred Strategies</InputLabel>
+                                <Select
+                                    multiple
+                                    value={newUser.trading_preferences.preferred_strategies}
+                                    onChange={(e) => setNewUser({
+                                        ...newUser,
+                                        trading_preferences: {
+                                            ...newUser.trading_preferences,
+                                            preferred_strategies: e.target.value
+                                        }
+                                    })}
+                                    label="Preferred Strategies"
+                                >
+                                    <MenuItem value="momentum">Momentum</MenuItem>
+                                    <MenuItem value="mean_reversion">Mean Reversion</MenuItem>
+                                    <MenuItem value="breakout">Breakout</MenuItem>
+                                </Select>
+                            </FormControl>
                         </Grid>
                         <Grid item xs={12}>
                             <FormControlLabel
@@ -724,6 +764,7 @@ const UserPerformanceDashboard = () => {
                                 label="Enable Auto Trading"
                             />
                         </Grid>
+                    </Grid>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setOpenUserDialog(false)}>Cancel</Button>
