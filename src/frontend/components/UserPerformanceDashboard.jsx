@@ -107,7 +107,10 @@ const UserPerformanceDashboard = () => {
 
     const fetchUsers = async () => {
         try {
-            const usersResponse = await fetch(`${API_ENDPOINTS.USER_LIST}`);
+            const usersResponse = await fetch(API_ENDPOINTS.USERS.url);
+            if (!usersResponse.ok) {
+                throw new Error('Failed to fetch users');
+            }
             const usersData = await usersResponse.json();
             setUsers(usersData.users || []);
             if (usersData.users && usersData.users.length > 0) {
@@ -115,7 +118,8 @@ const UserPerformanceDashboard = () => {
             }
         } catch (error) {
             console.error('Error fetching users:', error);
-            setUsers([]); // Set empty array instead of mock data
+            setUsers([]);
+            setError('Unable to fetch users. Please check if the backend server is running.');
         }
     };
 
@@ -124,18 +128,17 @@ const UserPerformanceDashboard = () => {
 
         try {
             setLoading(true);
-            const response = await fetch(`${API_ENDPOINTS.USER_PERFORMANCE}/${userId}`);
-            if (response.ok) {
-                const data = await response.json();
-                setUserPerformance(data.performance || {
-                    daily_performance: [],
-                    recent_trades: [],
-                    risk_metrics: {},
-                    strategy_breakdown: []
-                });
-            } else {
+            const response = await fetch(`${API_ENDPOINTS.USER_PERFORMANCE.url}/${userId}`);
+            if (!response.ok) {
                 throw new Error('Failed to fetch performance data');
             }
+            const data = await response.json();
+            setUserPerformance(data.performance || {
+                daily_performance: [],
+                recent_trades: [],
+                risk_metrics: {},
+                strategy_breakdown: []
+            });
         } catch (error) {
             console.error('Error fetching performance:', error);
             setUserPerformance({
@@ -144,6 +147,7 @@ const UserPerformanceDashboard = () => {
                 risk_metrics: {},
                 strategy_breakdown: []
             });
+            setError('Unable to fetch performance data. Please check if the backend server is running.');
         } finally {
             setLoading(false);
         }
@@ -152,17 +156,16 @@ const UserPerformanceDashboard = () => {
     const fetchDailyPnL = async () => {
         try {
             setLoading(true);
-            const response = await fetch(API_ENDPOINTS.DAILY_PNL);
-            const data = await response.json();
-
-            if (data.success) {
-                setDailyPnL(data.daily_pnl || []);
-            } else {
-                setDailyPnL([]);
+            const response = await fetch(API_ENDPOINTS.DAILY_PNL.url);
+            if (!response.ok) {
+                throw new Error('Failed to fetch daily P&L data');
             }
+            const data = await response.json();
+            setDailyPnL(data.daily_pnl || []);
         } catch (err) {
             console.error('Error fetching daily P&L:', err);
             setDailyPnL([]);
+            setError('Unable to fetch daily P&L data. Please check if the backend server is running.');
         } finally {
             setLoading(false);
         }
@@ -170,23 +173,24 @@ const UserPerformanceDashboard = () => {
 
     const fetchSummaryMetrics = async () => {
         try {
-            const response = await fetch(`${API_ENDPOINTS.SUMMARY_METRICS}`);
-            if (response.ok) {
-                const data = await response.json();
-                setSummaryMetrics(data.metrics || {
-                    todayPnL: 0,
-                    todayPnLPercent: 0,
-                    activeUsers: 0,
-                    newUsersThisWeek: 0,
-                    totalTrades: 0,
-                    winRate: 0,
-                    totalAUM: 0,
-                    aumGrowth: 0
-                });
+            const response = await fetch(API_ENDPOINTS.DASHBOARD_SUMMARY.url);
+            if (!response.ok) {
+                throw new Error('Failed to fetch summary metrics');
             }
+            const data = await response.json();
+            setSummaryMetrics(data.metrics || {
+                todayPnL: 0,
+                todayPnLPercent: 0,
+                activeUsers: 0,
+                newUsersThisWeek: 0,
+                totalTrades: 0,
+                winRate: 0,
+                totalAUM: 0,
+                aumGrowth: 0
+            });
         } catch (error) {
             console.error('Error fetching summary metrics:', error);
-            // Keep default values on error
+            setError('Unable to fetch summary metrics. Please check if the backend server is running.');
         }
     };
 
