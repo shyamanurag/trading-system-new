@@ -51,20 +51,17 @@ static_sites:
       repo: shyamanurag/trading-system-new
     source_dir: /src/frontend
     build_command: |
-      export DEBIAN_FRONTEND=noninteractive && 
-      apt-get update && 
-      apt-get install -y curl gnupg && 
-      curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && 
-      apt-get install -y nodejs && 
+      sudo apt-get update && 
+      sudo apt-get install -y curl gnupg && 
+      curl -fsSL https://deb.nodesource.com/setup_18.x | sudo bash - && 
+      sudo apt-get install -y nodejs && 
       export PATH="/usr/local/bin:$PATH" && 
-      npm install -g npm@latest && 
+      sudo npm install -g npm@latest && 
       rm -rf node_modules package-lock.json && 
       npm install --no-optional && 
       npm install @vitejs/plugin-react @rollup/rollup-linux-x64-gnu && 
-      npm run build && 
-      mkdir -p dist/frontend && 
-      mv dist/* dist/frontend/ 2>/dev/null || true
-    output_dir: dist/frontend
+      npm run build
+    output_dir: dist
     index_document: index.html
     catchall_document: index.html
     environment_slug: node-js
