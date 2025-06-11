@@ -54,8 +54,7 @@ import {
     XAxis,
     YAxis
 } from 'recharts';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import API_ENDPOINTS from '../api/config';
 
 const UserPerformanceDashboard = () => {
     const [users, setUsers] = useState([]);
@@ -104,7 +103,7 @@ const UserPerformanceDashboard = () => {
 
     const fetchUsers = async () => {
         try {
-            const usersResponse = await fetch(`${API_BASE_URL}/api/users`);
+            const usersResponse = await fetch(`${API_ENDPOINTS.USER_LIST}`);
             const usersData = await usersResponse.json();
             setUsers(usersData.users || []);
             if (usersData.users && usersData.users.length > 0) {
@@ -121,7 +120,7 @@ const UserPerformanceDashboard = () => {
 
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/users/${userId}/performance`);
+            const response = await fetch(`${API_ENDPOINTS.USER_PERFORMANCE}/${userId}`);
             if (response.ok) {
                 const data = await response.json();
                 setUserPerformance(data.performance || {
@@ -149,7 +148,7 @@ const UserPerformanceDashboard = () => {
     const fetchDailyPnL = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/performance/daily-pnl`);
+            const response = await fetch(API_ENDPOINTS.DAILY_PNL);
             const data = await response.json();
 
             if (data.success) {
@@ -167,7 +166,7 @@ const UserPerformanceDashboard = () => {
 
     const fetchSummaryMetrics = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/performance/summary`);
+            const response = await fetch(`${API_ENDPOINTS.SUMMARY_METRICS}`);
             if (response.ok) {
                 const data = await response.json();
                 setSummaryMetrics(data.metrics || {
@@ -189,7 +188,7 @@ const UserPerformanceDashboard = () => {
 
     const handleCreateUser = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/users`, {
+            const response = await fetch(`${API_ENDPOINTS.USER_LIST}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newUser)
@@ -217,7 +216,7 @@ const UserPerformanceDashboard = () => {
     const handleDeleteUser = async (userId) => {
         if (window.confirm('Are you sure you want to delete this user?')) {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
+                const response = await fetch(`${API_ENDPOINTS.USER_LIST}/${userId}`, {
                     method: 'DELETE'
                 });
 

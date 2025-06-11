@@ -28,6 +28,7 @@ import {
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
 
+import API_ENDPOINTS from '../api/config';
 import BrokerUserSetup from './BrokerUserSetup';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -69,8 +70,8 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
             // Fetch real autonomous trading data from API
             const results = await Promise.allSettled([
                 fetch(`${API_BASE_URL}/autonomous/status`, { headers }),
-                fetch(`${API_BASE_URL}/autonomous/status`, { headers }),  // Using status endpoint for session stats
-                fetch(`${API_BASE_URL}/autonomous/status`, { headers }),  // Using status endpoint for positions
+                fetch(API_ENDPOINTS.SESSION_STATS, { headers }),
+                fetch(API_ENDPOINTS.POSITIONS, { headers }),
                 fetch(`${API_BASE_URL}/autonomous/status`, { headers })   // Using status endpoint for scheduler
             ]);
 
@@ -108,24 +109,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
                 }
             } else {
                 // Fallback session stats
-                setSessionStats({
-                    session_id: `AUTO_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
-                    total_trades: 0,
-                    winning_trades: 0,
-                    success_rate: 0,
-                    total_pnl: 0,
-                    realized_pnl: 0,
-                    unrealized_pnl: 0,
-                    max_drawdown: 0,
-                    strategies_active: {},
-                    auto_actions: {
-                        positions_opened: 0,
-                        positions_closed: 0,
-                        stop_losses_triggered: 0,
-                        targets_hit: 0,
-                        trailing_stops_moved: 0
-                    }
-                });
+                setSessionStats(null);
             }
 
             // Process active positions
@@ -150,12 +134,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
                 }
             } else {
                 // Fallback scheduler status
-                setSchedulerStatus({
-                    scheduler_active: false,
-                    auto_start_enabled: false,
-                    auto_stop_enabled: false,
-                    scheduled_events: []
-                });
+                setSchedulerStatus(null);
             }
 
             setError(null);
@@ -163,37 +142,11 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
             console.error('Error fetching autonomous trading data:', err);
             setError('Failed to load autonomous trading data. Please check your connection.');
 
-            // Set fallback data in case of complete failure
-            setMarketStatus({
-                is_market_open: false,
-                time_to_close_seconds: 0,
-                session_type: 'CLOSED'
-            });
-            setSessionStats({
-                session_id: `AUTO_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
-                total_trades: 0,
-                winning_trades: 0,
-                success_rate: 0,
-                total_pnl: 0,
-                realized_pnl: 0,
-                unrealized_pnl: 0,
-                max_drawdown: 0,
-                strategies_active: {},
-                auto_actions: {
-                    positions_opened: 0,
-                    positions_closed: 0,
-                    stop_losses_triggered: 0,
-                    targets_hit: 0,
-                    trailing_stops_moved: 0
-                }
-            });
+            // Set empty states in case of complete failure
+            setMarketStatus(null);
+            setSessionStats(null);
             setActivePositions([]);
-            setSchedulerStatus({
-                scheduler_active: false,
-                auto_start_enabled: false,
-                auto_stop_enabled: false,
-                scheduled_events: []
-            });
+            setSchedulerStatus(null);
         } finally {
             setLoading(false);
         }

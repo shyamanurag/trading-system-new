@@ -51,6 +51,7 @@ import EliteRecommendationsDashboard from './EliteRecommendationsDashboard';
 import UserManagementDashboard from './UserManagementDashboard';
 import UserPerformanceDashboard from './UserPerformanceDashboard';
 
+import API_ENDPOINTS from '../api/config';
 import MarketIndicesWidget from './MarketIndicesWidget';
 import SystemHealthMonitor from './SystemHealthMonitor';
 import WebSocketStatus from './WebSocketStatus';
@@ -79,9 +80,9 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
 
             // Fetch real data from APIs using Promise.allSettled to handle failures gracefully
             const [dashboardRes, performanceRes, recommendationsRes] = await Promise.allSettled([
-                fetch(`${API_BASE_URL}/api/dashboard/summary`),
-                fetch(`${API_BASE_URL}/api/performance/daily-pnl`),
-                fetch(`${API_BASE_URL}/recommendations/`)
+                fetch(API_ENDPOINTS.DASHBOARD_SUMMARY),
+                fetch(API_ENDPOINTS.DAILY_PNL),
+                fetch(API_ENDPOINTS.RECOMMENDATIONS)
             ]);
 
             let dashboardData = {
@@ -125,20 +126,6 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                 const pnlData = await performanceRes.value.json();
                 if (pnlData.success) {
                     dashboardData.dailyPnL = pnlData.daily_pnl || [];
-                }
-            }
-
-            // If no daily P&L data, generate some sample data
-            if (dashboardData.dailyPnL.length === 0) {
-                const today = new Date();
-                for (let i = 29; i >= 0; i--) {
-                    const date = new Date(today);
-                    date.setDate(date.getDate() - i);
-                    dashboardData.dailyPnL.push({
-                        date: date.toISOString().split('T')[0],
-                        pnl: Math.random() * 10000 - 2000,
-                        total_pnl: Math.random() * 50000
-                    });
                 }
             }
 
