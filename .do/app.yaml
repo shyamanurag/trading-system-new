@@ -54,18 +54,9 @@ services:
       - key: DEBUG
         scope: RUN_AND_BUILD_TIME
         value: "false"
-      - key: APP_URL
-        scope: RUN_AND_BUILD_TIME
-        value: https://algoauto-ua2iq.ondigitalocean.app
-      - key: FRONTEND_URL
-        scope: RUN_AND_BUILD_TIME
-        value: https://algoauto-ua2iq.ondigitalocean.app
       - key: ENABLE_CORS
         scope: RUN_AND_BUILD_TIME
         value: "true"
-      - key: ALLOWED_ORIGINS
-        scope: RUN_AND_BUILD_TIME
-        value: https://algoauto-ua2iq.ondigitalocean.app,https://*.ondigitalocean.app
 
 static_sites:
   - name: frontend
@@ -97,12 +88,6 @@ static_sites:
       enabled: true
       metrics: [cpu, memory, disk, network]
     envs:
-      - key: VITE_API_URL
-        scope: BUILD_TIME
-        value: https://algoauto-ua2iq.ondigitalocean.app
-      - key: VITE_WS_URL
-        scope: BUILD_TIME
-        value: wss://algoauto-ua2iq.ondigitalocean.app/ws
       - key: VITE_APP_NAME
         scope: BUILD_TIME
         value: AlgoAuto Trading
