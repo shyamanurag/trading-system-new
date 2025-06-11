@@ -15,7 +15,10 @@ services:
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-1gb
     source_dir: /
-    run_command: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+    run_command: |
+      export PYTHONPATH=/app && 
+      pip install -r requirements.txt && 
+      gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120 --access-logfile - --error-logfile -
     health_check:
       http_path: /health/ready
       initial_delay_seconds: 40
@@ -180,6 +183,18 @@ services:
       - key: ALLOWED_ORIGINS
         scope: RUN_AND_BUILD_TIME
         value: "*"
+      - key: ALLOWED_METHODS
+        scope: RUN_AND_BUILD_TIME
+        value: "*"
+      - key: ALLOWED_HEADERS
+        scope: RUN_AND_BUILD_TIME
+        value: "*"
+      - key: EXPOSE_HEADERS
+        scope: RUN_AND_BUILD_TIME
+        value: "*"
+      - key: MAX_AGE
+        scope: RUN_AND_BUILD_TIME
+        value: "3600"
       - key: LOG_LEVEL
         scope: RUN_AND_BUILD_TIME
         value: INFO
