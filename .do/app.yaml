@@ -23,9 +23,8 @@ services:
     source_dir: /
     run_command: |
       export PYTHONPATH=/app && 
-      export DATABASE_CONNECTION_RETRIES=3 && 
-      export DATABASE_CONNECTION_RETRY_DELAY=5 && 
-      gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120 --keep-alive 5 --max-requests 1000 --max-requests-jitter 50
+      pip install -r requirements.txt && 
+      gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
     health_check:
       http_path: /health/ready
       initial_delay_seconds: 60
@@ -220,6 +219,9 @@ static_sites:
       repo: shyamanurag/trading-system-new
     source_dir: /src/frontend
     build_command: |
+      curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && 
+      apt-get install -y nodejs && 
+      npm install -g npm@latest && 
       rm -rf node_modules package-lock.json && 
       npm install --no-optional && 
       npm install @vitejs/plugin-react @rollup/rollup-linux-x64-gnu && 
@@ -237,12 +239,6 @@ static_sites:
       - key: VITE_WS_URL
         scope: BUILD_TIME
         value: wss://algoauto-ua2iq.ondigitalocean.app/ws
-      - key: VITE_ZERODHA_API_KEY
-        scope: BUILD_TIME
-        value: sylcoq492qz6f7ej
-      - key: VITE_ZERODHA_API_SECRET
-        scope: BUILD_TIME
-        value: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
       - key: VITE_APP_NAME
         scope: BUILD_TIME
         value: AlgoAuto Trading
