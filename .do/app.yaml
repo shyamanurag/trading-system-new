@@ -35,9 +35,6 @@ services:
       timeout_seconds: 5
       failure_threshold: 3
       success_threshold: 1
-    monitoring:
-      enabled: true
-      metrics: [cpu, memory, disk, network]
     envs:
       - key: PYTHON_VERSION
         scope: RUN_AND_BUILD_TIME
@@ -81,9 +78,6 @@ static_sites:
     catchall_document: index.html
     environment_slug: node-js
     process_type: web
-    monitoring:
-      enabled: true
-      metrics: [cpu, memory, disk, network]
     envs:
       - key: VITE_APP_NAME
         scope: BUILD_TIME
