@@ -6,7 +6,6 @@ alerts:
   rule: DEPLOYMENT_FAILED
 - disabled: false
   rule: CPU_UTILIZATION
-  threshold: 80
 
 features:
 - buildpack-stack=ubuntu-22
