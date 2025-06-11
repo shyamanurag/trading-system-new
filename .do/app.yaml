@@ -48,6 +48,24 @@ services:
       - key: DATABASE_SSL
         scope: RUN_AND_BUILD_TIME
         value: require
+      - key: DATABASE_POOL_SIZE
+        scope: RUN_AND_BUILD_TIME
+        value: "3"
+      - key: DATABASE_MAX_OVERFLOW
+        scope: RUN_AND_BUILD_TIME
+        value: "5"
+      - key: DATABASE_POOL_TIMEOUT
+        scope: RUN_AND_BUILD_TIME
+        value: "60"
+      - key: DATABASE_POOL_RECYCLE
+        scope: RUN_AND_BUILD_TIME
+        value: "1800"
+      - key: DATABASE_POOL_PRE_PING
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
+      - key: DATABASE_ECHO
+        scope: RUN_AND_BUILD_TIME
+        value: "false"
       - key: REDIS_URL
         scope: RUN_AND_BUILD_TIME
         value: rediss://default:AVNS_TSCy17L6f9z0CdWgcvW@redis-cache-do-user-23093341-0.k.db.ondigitalocean.com:25061
@@ -66,6 +84,21 @@ services:
       - key: REDIS_SSL
         scope: RUN_AND_BUILD_TIME
         value: "true"
+      - key: REDIS_SOCKET_TIMEOUT
+        scope: RUN_AND_BUILD_TIME
+        value: "10"
+      - key: REDIS_SOCKET_CONNECT_TIMEOUT
+        scope: RUN_AND_BUILD_TIME
+        value: "10"
+      - key: REDIS_SOCKET_KEEPALIVE
+        scope: RUN_AND_BUILD_TIME
+        value: "true"
+      - key: REDIS_SOCKET_KEEPALIVE_OPTIONS
+        scope: RUN_AND_BUILD_TIME
+        value: "{}"
+      - key: REDIS_CONNECTION_POOL_KWARGS
+        scope: RUN_AND_BUILD_TIME
+        value: '{"max_connections": 10, "retry_on_timeout": true}'
       - key: PORT
         scope: RUN_AND_BUILD_TIME
         value: "8000"
@@ -90,6 +123,12 @@ services:
       - key: PYTHONUNBUFFERED
         scope: RUN_AND_BUILD_TIME
         value: "1"
+      - key: APP_URL
+        scope: RUN_AND_BUILD_TIME
+        value: https://algoauto-jd32t.ondigitalocean.app
+      - key: FRONTEND_URL
+        scope: RUN_AND_BUILD_TIME
+        value: https://algoauto-jd32t.ondigitalocean.app
       - key: ZERODHA_CLIENT_ID
         scope: RUN_AND_BUILD_TIME
         value: QSW899
@@ -138,6 +177,9 @@ services:
       - key: ENABLE_CORS
         scope: RUN_AND_BUILD_TIME
         value: "true"
+      - key: ALLOWED_ORIGINS
+        scope: RUN_AND_BUILD_TIME
+        value: "*"
       - key: LOG_LEVEL
         scope: RUN_AND_BUILD_TIME
         value: INFO
@@ -168,6 +210,12 @@ services:
       - key: N8N_API_KEY
         scope: RUN_AND_BUILD_TIME
         value: n8n_production_key_secure_78893dc5_746b_439d_aad4_fbc6396c3164
+      - key: DATA_PROVIDER_WEBHOOK_URL
+        scope: RUN_AND_BUILD_TIME
+        value: https://algoauto-jd32t.ondigitalocean.app/webhook/data
+      - key: DATA_PROVIDER_AUTH_TOKEN
+        scope: RUN_AND_BUILD_TIME
+        value: truedata_webhook_auth_K5ewmaPLwWLzqcFa2ne6dLpk_Trial106_secure_2024
       - key: DATA_PROVIDER_ENABLED
         scope: RUN_AND_BUILD_TIME
         value: "true"
@@ -198,6 +246,12 @@ static_sites:
       - key: VITE_APP_ENV
         scope: BUILD_TIME
         value: production
+      - key: VITE_API_URL
+        scope: BUILD_TIME
+        value: https://algoauto-jd32t.ondigitalocean.app
+      - key: VITE_WS_URL
+        scope: BUILD_TIME
+        value: wss://algoauto-jd32t.ondigitalocean.app
 
 ingress:
   rules:
