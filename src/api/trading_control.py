@@ -45,6 +45,20 @@ broker_users = {}
 async def add_broker_user(user: BrokerUser):
     """Add a broker user with credentials for paper trading"""
     try:
+        # Validate required fields
+        if not all([user.user_id, user.name, user.api_key, user.api_secret, user.client_id]):
+            raise HTTPException(
+                status_code=400,
+                detail="Missing required fields: user_id, name, api_key, api_secret, client_id"
+            )
+
+        # Check if user already exists
+        if user.user_id in broker_users:
+            raise HTTPException(
+                status_code=400,
+                detail=f"User {user.user_id} already exists"
+            )
+
         # Store user credentials
         broker_users[user.user_id] = {
             "user_id": user.user_id,
@@ -80,6 +94,9 @@ async def add_broker_user(user: BrokerUser):
             "user": broker_users[user.user_id]
         }
         
+    except HTTPException as he:
+        logger.error(f"Validation error adding broker user: {he.detail}")
+        raise
     except Exception as e:
         logger.error(f"Error adding broker user: {e}")
         raise HTTPException(status_code=500, detail=str(e))

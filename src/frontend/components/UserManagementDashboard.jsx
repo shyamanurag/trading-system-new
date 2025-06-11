@@ -211,16 +211,30 @@ const UserManagementDashboard = () => {
         try {
             setAddUserLoading(true);
 
-            const response = await fetch(`${API_BASE_URL}/api/users`, {
+            // Transform data to match backend expectations
+            const userData = {
+                user_id: newUserData.username,
+                name: newUserData.username,
+                broker: "zerodha",
+                api_key: import.meta.env.VITE_ZERODHA_API_KEY,
+                api_secret: import.meta.env.VITE_ZERODHA_API_SECRET,
+                client_id: newUserData.zerodhaClientId,
+                initial_capital: newUserData.initialCapital,
+                risk_tolerance: newUserData.riskLevel,
+                paper_trading: true
+            };
+
+            const response = await fetch(`${API_BASE_URL}/api/users/broker`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(newUserData)
+                body: JSON.stringify(userData)
             });
 
             if (!response.ok) {
-                throw new Error('Failed to add user');
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Failed to add user');
             }
 
             const data = await response.json();
