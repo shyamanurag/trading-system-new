@@ -69,10 +69,10 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
 
             // Fetch real autonomous trading data from API
             const results = await Promise.allSettled([
-                fetch(`${API_BASE_URL}/autonomous/status`, { headers }),
+                fetch(API_ENDPOINTS.SYSTEM_STATUS, { headers }),
                 fetch(API_ENDPOINTS.SESSION_STATS, { headers }),
                 fetch(API_ENDPOINTS.POSITIONS, { headers }),
-                fetch(`${API_BASE_URL}/autonomous/status`, { headers })   // Using status endpoint for scheduler
+                fetch(API_ENDPOINTS.SYSTEM_STATUS, { headers })   // Using status endpoint for scheduler
             ]);
 
             const [
@@ -154,7 +154,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
 
     const fetchTradingStatus = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/trading/status`);
+            const response = await fetch(API_ENDPOINTS.BROKER_STATUS);
             const data = await response.json();
             if (data.success) {
                 setTradingStatus(data);
@@ -166,7 +166,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
 
     const fetchBrokerUsers = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/users/broker`);
+            const response = await fetch(API_ENDPOINTS.USERS);
             const data = await response.json();
             if (data.success) {
                 setBrokerUsers(data.users || []);
@@ -179,7 +179,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
     const handleTradingControl = async (action) => {
         setControlLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/trading/control`, {
+            const response = await fetch(API_ENDPOINTS.BROKER_CONNECT, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -224,7 +224,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
                 ...(token && { 'Authorization': `Bearer ${token}` })
             };
 
-            const response = await fetch(`${API_BASE_URL}/autonomous/stop`, {
+            const response = await fetch(API_ENDPOINTS.BROKER_DISCONNECT, {
                 method: 'POST',
                 headers
             });
