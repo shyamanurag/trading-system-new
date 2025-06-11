@@ -31,14 +31,15 @@ export default defineConfig({
         host: true,
         proxy: {
             '/api': {
-                target: 'http://localhost:8000',
+                target: process.env.VITE_API_URL || 'https://algoauto-jd32t.ondigitalocean.app',
                 changeOrigin: true,
-                secure: false
+                secure: true
             },
             '/ws': {
-                target: 'ws://localhost:8000',
+                target: process.env.VITE_API_URL?.replace('https', 'wss') || 'wss://algoauto-jd32t.ondigitalocean.app',
                 ws: true,
-                changeOrigin: true
+                changeOrigin: true,
+                secure: true
             }
         }
     },
@@ -48,6 +49,6 @@ export default defineConfig({
     },
     define: {
         'process.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'https://algoauto-jd32t.ondigitalocean.app'),
-        'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
+        'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production')
     }
 }) 
