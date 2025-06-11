@@ -938,6 +938,29 @@ async def webhook(request: Request):
         logger.error(f"Error processing webhook: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+@app.post("/webhook")
+async def webhook(request: Request):
+    try:
+        # Log the raw request body
+        body = await request.body()
+        print(f"Raw webhook data: {body.decode()}")
+        
+        # Log headers
+        headers = dict(request.headers)
+        print(f"Webhook headers: {headers}")
+        
+        # Try to parse JSON
+        try:
+            data = await request.json()
+            print(f"Parsed webhook data: {data}")
+        except Exception as json_error:
+            print(f"Could not parse JSON data: {str(json_error)}")
+        
+        return {"status": "success", "message": "Webhook received and logged"}
+    except Exception as e:
+        print(f"Webhook error: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
 @app.post(
     "/control",
     tags=["admin"],
