@@ -9,6 +9,7 @@
         "@emotion/styled": "^11.11.0",
         "@mui/icons-material": "^5.14.19",
         "@mui/material": "^5.14.20",
+        "@vitejs/plugin-react": "^4.2.0",
         "axios": "^1.6.2",
         "date-fns": "^2.30.0",
         "react": "^18.2.0",
@@ -21,7 +22,6 @@
     "devDependencies": {
         "@types/react": "^18.2.0",
         "@types/react-dom": "^18.2.0",
-        "@vitejs/plugin-react": "^4.2.0",
         "eslint": "^8.55.0",
         "eslint-plugin-react": "^7.33.0",
         "eslint-plugin-react-hooks": "^4.6.0",
@@ -31,7 +31,7 @@
         "dev": "vite",
         "build": "vite build",
         "build:production": "vite build --mode production",
-        "build:digitalocean": "npm ci && vite build --mode production",
+        "build:digitalocean": "npm ci && npm audit fix --force && vite build --mode production",
         "preview": "vite preview",
         "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
         "serve": "vite preview --port 3000 --host"

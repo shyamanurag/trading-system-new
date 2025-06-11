@@ -1,1 +1,1 @@
-web: cd src/frontend && npm ci && npm run build:production && cd ../.. && python src/main.py 
+web: cd src/frontend && npm ci && npm audit fix --force && npm run build:production && cd ../.. && python src/main.py 
