@@ -5,7 +5,7 @@ alerts:
 - disabled: false
   rule: DEPLOYMENT_FAILED
 - disabled: false
-  rule: INSTANCE_DOWN
+  rule: INSTANCE_DOWN_ALERT
 - disabled: false
   rule: CPU_UTILIZATION
   threshold: 80
