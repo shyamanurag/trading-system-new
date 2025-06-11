@@ -219,6 +219,12 @@ services:
       - key: DATA_PROVIDER_ENABLED
         scope: RUN_AND_BUILD_TIME
         value: "true"
+      - key: ADMIN_USERNAME
+        scope: RUN_AND_BUILD_TIME
+        value: admin
+      - key: ADMIN_PASSWORD
+        scope: RUN_AND_BUILD_TIME
+        value: admin123
 
 static_sites:
   - name: frontend
