@@ -2,13 +2,18 @@ name: algoauto
 region: blr
 
 alerts:
-- disabled: true
+- disabled: false
   rule: DEPLOYMENT_FAILED
-- disabled: true
-  rule: DOMAIN_FAILED
+- disabled: false
+  rule: INSTANCE_DOWN
+- disabled: false
+  rule: CPU_UTILIZATION
+  threshold: 80
 
 features:
 - buildpack-stack=ubuntu-22
+- health-check
+- monitoring
 
 services:
   - name: api
@@ -33,184 +38,34 @@ services:
       timeout_seconds: 5
       failure_threshold: 3
       success_threshold: 1
+    monitoring:
+      enabled: true
+      metrics: [cpu, memory, disk, network]
     envs:
       - key: PYTHON_VERSION
         scope: RUN_AND_BUILD_TIME
         value: "3.11.2"
-      - key: DATABASE_URL
-        scope: RUN_AND_BUILD_TIME
-        value: postgresql://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb?sslmode=require&connect_timeout=10&pool_timeout=10&pool_size=20
-      - key: DATABASE_HOST
-        scope: RUN_AND_BUILD_TIME
-        value: app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com
-      - key: DATABASE_PORT
-        scope: RUN_AND_BUILD_TIME
-        value: "25060"
-      - key: DATABASE_NAME
-        scope: RUN_AND_BUILD_TIME
-        value: defaultdb
-      - key: DATABASE_USER
-        scope: RUN_AND_BUILD_TIME
-        value: doadmin
-      - key: DATABASE_PASSWORD
-        scope: RUN_AND_BUILD_TIME
-        value: AVNS_LpaPpsdL4CtOii03MnN
-      - key: DATABASE_SSL
-        scope: RUN_AND_BUILD_TIME
-        value: require
-      - key: DATABASE_POOL_SIZE
-        scope: RUN_AND_BUILD_TIME
-        value: "20"
-      - key: DATABASE_POOL_TIMEOUT
-        scope: RUN_AND_BUILD_TIME
-        value: "10"
-      - key: DATABASE_CONNECT_TIMEOUT
-        scope: RUN_AND_BUILD_TIME
-        value: "10"
-      - key: DATABASE_RETRY_ATTEMPTS
-        scope: RUN_AND_BUILD_TIME
-        value: "3"
-      - key: DATABASE_RETRY_DELAY
-        scope: RUN_AND_BUILD_TIME
-        value: "5"
-      - key: REDIS_URL
-        scope: RUN_AND_BUILD_TIME
-        value: rediss://default:AVNS_TSCy17L6f9z0CdWgcvW@redis-cache-do-user-23093341-0.k.db.ondigitalocean.com:25061
-      - key: REDIS_HOST
-        scope: RUN_AND_BUILD_TIME
-        value: redis-cache-do-user-23093341-0.k.db.ondigitalocean.com
-      - key: REDIS_PORT
-        scope: RUN_AND_BUILD_TIME
-        value: "25061"
-      - key: REDIS_PASSWORD
-        scope: RUN_AND_BUILD_TIME
-        value: AVNS_TSCy17L6f9z0CdWgcvW
-      - key: REDIS_USERNAME
-        scope: RUN_AND_BUILD_TIME
-        value: default
-      - key: REDIS_SSL
-        scope: RUN_AND_BUILD_TIME
-        value: "true"
       - key: PORT
         scope: RUN_AND_BUILD_TIME
         value: "8000"
-      - key: APP_PORT
-        scope: RUN_AND_BUILD_TIME
-        value: "8000"
-      - key: NODE_ENV
-        scope: RUN_AND_BUILD_TIME
-        value: production
       - key: ENVIRONMENT
         scope: RUN_AND_BUILD_TIME
         value: production
       - key: DEBUG
         scope: RUN_AND_BUILD_TIME
         value: "false"
-      - key: PYTHONPATH
-        scope: RUN_AND_BUILD_TIME
-        value: /app
-      - key: PYTHONDONTWRITEBYTECODE
-        scope: RUN_AND_BUILD_TIME
-        value: "1"
-      - key: PYTHONUNBUFFERED
-        scope: RUN_AND_BUILD_TIME
-        value: "1"
       - key: APP_URL
         scope: RUN_AND_BUILD_TIME
         value: https://algoauto-ua2iq.ondigitalocean.app
       - key: FRONTEND_URL
         scope: RUN_AND_BUILD_TIME
         value: https://algoauto-ua2iq.ondigitalocean.app
-      - key: ZERODHA_CLIENT_ID
-        scope: RUN_AND_BUILD_TIME
-        value: QSW899
-      - key: ZERODHA_API_KEY
-        scope: RUN_AND_BUILD_TIME
-        value: sylcoq492qz6f7ej
-      - key: ZERODHA_API_SECRET
-        scope: RUN_AND_BUILD_TIME
-        value: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
-      - key: ZERODHA_ACCOUNT_NAME
-        scope: RUN_AND_BUILD_TIME
-        value: Shyam anurag
-      - key: TRUEDATA_USERNAME
-        scope: RUN_AND_BUILD_TIME
-        value: Trial106
-      - key: TRUEDATA_PASSWORD
-        scope: RUN_AND_BUILD_TIME
-        value: shyam106
-      - key: TRUEDATA_PORT
-        scope: RUN_AND_BUILD_TIME
-        value: "8086"
-      - key: TRUEDATA_URL
-        scope: RUN_AND_BUILD_TIME
-        value: push.truedata.in
-      - key: TRUEDATA_SANDBOX
-        scope: RUN_AND_BUILD_TIME
-        value: "false"
-      - key: JWT_SECRET
-        scope: RUN_AND_BUILD_TIME
-        value: K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A
-      - key: WEBHOOK_SECRET
-        scope: RUN_AND_BUILD_TIME
-        value: wh_sec_K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A_live
-      - key: ENCRYPTION_KEY
-        scope: RUN_AND_BUILD_TIME
-        value: lulCrXu3nDX6I18WYuPpWcIrgf2IUGAGLS93ZDwczpQ
-      - key: PAPER_TRADING
-        scope: RUN_AND_BUILD_TIME
-        value: "true"
-      - key: PAPER_TRADING_ENABLED
-        scope: RUN_AND_BUILD_TIME
-        value: "true"
-      - key: AUTONOMOUS_TRADING_ENABLED
-        scope: RUN_AND_BUILD_TIME
-        value: "true"
       - key: ENABLE_CORS
         scope: RUN_AND_BUILD_TIME
         value: "true"
       - key: ALLOWED_ORIGINS
         scope: RUN_AND_BUILD_TIME
         value: https://algoauto-ua2iq.ondigitalocean.app,https://*.ondigitalocean.app
-      - key: LOG_LEVEL
-        scope: RUN_AND_BUILD_TIME
-        value: INFO
-      - key: LOG_FORMAT
-        scope: RUN_AND_BUILD_TIME
-        value: json
-      - key: ENABLE_METRICS
-        scope: RUN_AND_BUILD_TIME
-        value: "true"
-      - key: BACKUP_ENABLED
-        scope: RUN_AND_BUILD_TIME
-        value: "true"
-      - key: MAX_CONNECTIONS
-        scope: RUN_AND_BUILD_TIME
-        value: "20"
-      - key: POOL_SIZE
-        scope: RUN_AND_BUILD_TIME
-        value: "10"
-      - key: CACHE_TTL
-        scope: RUN_AND_BUILD_TIME
-        value: "300"
-      - key: N8N_WEBHOOK_URL
-        scope: RUN_AND_BUILD_TIME
-        value: https://shyamanurag.app.n8n.cloud/webhook/78893dc5-746b-439d-aad4-fbc6396c3164
-      - key: N8N_ENABLED
-        scope: RUN_AND_BUILD_TIME
-        value: "true"
-      - key: N8N_API_KEY
-        scope: RUN_AND_BUILD_TIME
-        value: n8n_production_key_secure_78893dc5_746b_439d_aad4_fbc6396c3164
-      - key: DATA_PROVIDER_WEBHOOK_URL
-        scope: RUN_AND_BUILD_TIME
-        value: https://algoauto-ua2iq.ondigitalocean.app/webhook/data
-      - key: DATA_PROVIDER_AUTH_TOKEN
-        scope: RUN_AND_BUILD_TIME
-        value: truedata_webhook_auth_K5ewmaPLwWLzqcFa2ne6dLpk_Trial106_secure_2024
-      - key: DATA_PROVIDER_ENABLED
-        scope: RUN_AND_BUILD_TIME
-        value: "true"
 
 static_sites:
   - name: frontend
@@ -226,8 +81,6 @@ static_sites:
       curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && 
       apt-get install -y nodejs && 
       export PATH="/usr/local/bin:$PATH" && 
-      node --version && 
-      npm --version && 
       npm install -g npm@latest && 
       rm -rf node_modules package-lock.json && 
       npm install --no-optional && 
@@ -240,6 +93,9 @@ static_sites:
     catchall_document: index.html
     environment_slug: node-js
     process_type: web
+    monitoring:
+      enabled: true
+      metrics: [cpu, memory, disk, network]
     envs:
       - key: VITE_API_URL
         scope: BUILD_TIME
@@ -250,9 +106,6 @@ static_sites:
       - key: VITE_APP_NAME
         scope: BUILD_TIME
         value: AlgoAuto Trading
-      - key: VITE_APP_VERSION
-        scope: BUILD_TIME
-        value: 1.0.0
       - key: VITE_APP_ENV
         scope: BUILD_TIME
         value: production
@@ -269,26 +122,6 @@ ingress:
     match:
       path:
         prefix: /api
-  - component:
-      name: api
-    match:
-      path:
-        prefix: /docs
-  - component:
-      name: api
-    match:
-      path:
-        prefix: /health
-  - component:
-      name: api
-    match:
-      path:
-        prefix: /webhook
-  - component:
-      name: api
-    match:
-      path:
-        prefix: /control
   - component:
       name: api
     match:
