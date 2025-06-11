@@ -32,7 +32,7 @@ services:
         value: "3.11.2"
       - key: DATABASE_URL
         scope: RUN_AND_BUILD_TIME
-        value: postgresql://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb?sslmode=require
+        value: postgresql://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb
       - key: DATABASE_HOST
         scope: RUN_AND_BUILD_TIME
         value: app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com
@@ -50,7 +50,7 @@ services:
         value: AVNS_LpaPpsdL4CtOii03MnN
       - key: DATABASE_SSL
         scope: RUN_AND_BUILD_TIME
-        value: require
+        value: "true"
       - key: DATABASE_POOL_SIZE
         scope: RUN_AND_BUILD_TIME
         value: "3"
