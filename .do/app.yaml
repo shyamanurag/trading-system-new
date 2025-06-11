@@ -21,12 +21,16 @@ services:
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-1gb
     source_dir: /
-    run_command: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+    run_command: |
+      export PYTHONPATH=/app && 
+      export DATABASE_CONNECTION_RETRIES=3 && 
+      export DATABASE_CONNECTION_RETRY_DELAY=5 && 
+      gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120 --keep-alive 5 --max-requests 1000 --max-requests-jitter 50
     health_check:
       http_path: /health/ready
-      initial_delay_seconds: 40
-      period_seconds: 10
-      timeout_seconds: 5
+      initial_delay_seconds: 60
+      period_seconds: 15
+      timeout_seconds: 10
       failure_threshold: 3
       success_threshold: 2
     envs:
@@ -35,7 +39,7 @@ services:
         value: "3.11.2"
       - key: DATABASE_URL
         scope: RUN_AND_BUILD_TIME
-        value: postgresql://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb?sslmode=require
+        value: postgresql://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb?sslmode=require&connect_timeout=10&pool_timeout=10&pool_size=20
       - key: DATABASE_HOST
         scope: RUN_AND_BUILD_TIME
         value: app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com
@@ -54,6 +58,21 @@ services:
       - key: DATABASE_SSL
         scope: RUN_AND_BUILD_TIME
         value: require
+      - key: DATABASE_POOL_SIZE
+        scope: RUN_AND_BUILD_TIME
+        value: "20"
+      - key: DATABASE_POOL_TIMEOUT
+        scope: RUN_AND_BUILD_TIME
+        value: "10"
+      - key: DATABASE_CONNECT_TIMEOUT
+        scope: RUN_AND_BUILD_TIME
+        value: "10"
+      - key: DATABASE_RETRY_ATTEMPTS
+        scope: RUN_AND_BUILD_TIME
+        value: "3"
+      - key: DATABASE_RETRY_DELAY
+        scope: RUN_AND_BUILD_TIME
+        value: "5"
       - key: REDIS_URL
         scope: RUN_AND_BUILD_TIME
         value: rediss://default:AVNS_TSCy17L6f9z0CdWgcvW@redis-cache-do-user-23093341-0.k.db.ondigitalocean.com:25061
