@@ -214,7 +214,7 @@ static_sites:
     envs:
       - key: VITE_API_URL
         scope: BUILD_TIME
-        value: https://algoauto-ua2iq.ondigitalocean.app/api
+        value: https://algoauto-ua2iq.ondigitalocean.app
       - key: VITE_WS_URL
         scope: BUILD_TIME
         value: wss://algoauto-ua2iq.ondigitalocean.app/ws
