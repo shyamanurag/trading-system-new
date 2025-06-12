@@ -433,13 +433,17 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, "your-secret-key", algorithm="HS256")
+    # Use JWT_SECRET from environment variable
+    jwt_secret = os.getenv("JWT_SECRET", "your-secret-key-here")
+    encoded_jwt = jwt.encode(to_encode, jwt_secret, algorithm="HS256")
     return encoded_jwt
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     """Verify JWT token"""
     try:
-        payload = jwt.decode(credentials.credentials, "your-secret-key", algorithms=["HS256"])
+        # Use JWT_SECRET from environment variable
+        jwt_secret = os.getenv("JWT_SECRET", "your-secret-key-here")
+        payload = jwt.decode(credentials.credentials, jwt_secret, algorithms=["HS256"])
         return payload
     except jwt.PyJWTError:
         raise HTTPException(
@@ -454,7 +458,9 @@ def optional_auth(credentials: Optional[HTTPAuthorizationCredentials] = Depends(
     if not credentials:
         return None
     try:
-        payload = jwt.decode(credentials.credentials, "your-secret-key", algorithms=["HS256"])
+        # Use JWT_SECRET from environment variable
+        jwt_secret = os.getenv("JWT_SECRET", "your-secret-key-here")
+        payload = jwt.decode(credentials.credentials, jwt_secret, algorithms=["HS256"])
         return payload
     except jwt.PyJWTError:
         return None

@@ -78,6 +78,9 @@ services:
   - key: LOG_FORMAT
     scope: RUN_AND_BUILD_TIME
     value: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  - key: JWT_SECRET
+    scope: RUN_AND_BUILD_TIME
+    value: "K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A"
   - key: PYTHONPATH
     scope: RUN_AND_BUILD_TIME
     value: /workspace
