@@ -45,9 +45,6 @@ services:
   - key: REDIS_SSL
     scope: RUN_AND_BUILD_TIME
     value: "true"
-  - key: PORT
-    scope: RUN_AND_BUILD_TIME
-    value: "8000"
   - key: ENVIRONMENT
     scope: RUN_AND_BUILD_TIME
     value: production
