@@ -69,12 +69,18 @@ services:
   - key: TRUEDATA_PASSWORD
     scope: RUN_AND_BUILD_TIME
     value: shyam106
-  - key: CORS_ORIGINS
+  - key: APP_URL
     scope: RUN_AND_BUILD_TIME
-    value: '["https://algoauto-jd32t.ondigitalocean.app", "http://localhost:3000"]'
+    value: https://algoauto-jd32t.ondigitalocean.app
   - key: FRONTEND_URL
     scope: RUN_AND_BUILD_TIME
     value: https://algoauto-jd32t.ondigitalocean.app
+  - key: VITE_API_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://algoauto-jd32t.ondigitalocean.app
+  - key: CORS_ORIGINS
+    scope: RUN_AND_BUILD_TIME
+    value: '["https://algoauto-jd32t.ondigitalocean.app", "http://localhost:3000"]'
   - key: LOG_LEVEL
     scope: RUN_AND_BUILD_TIME
     value: INFO

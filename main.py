@@ -294,9 +294,9 @@ error_handler.environment = environment
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://algoauto-ua2iq.ondigitalocean.app",  # Production domain
-        os.getenv("FRONTEND_URL", "https://algoauto-ua2iq.ondigitalocean.app"),  # Dynamic frontend URL
-        os.getenv("APP_URL", "https://algoauto-ua2iq.ondigitalocean.app"),      # App URL
+        "https://algoauto-jd32t.ondigitalocean.app",  # Production domain (updated)
+        os.getenv("FRONTEND_URL", "https://algoauto-jd32t.ondigitalocean.app"),  # Dynamic frontend URL
+        os.getenv("APP_URL", "https://algoauto-jd32t.ondigitalocean.app"),      # App URL
         "http://localhost:3000",  # Development frontend
         "http://0.0.0.0:3000",    # Replit development
     ],

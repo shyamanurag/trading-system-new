@@ -82,7 +82,7 @@ static_sites:
     value: development
   - key: VITE_API_URL
     scope: BUILD_TIME
-    value: https://algoauto-ua2iq.ondigitalocean.app
+    value: https://algoauto-jd32t.ondigitalocean.app
 
 ingress:
   rules:
