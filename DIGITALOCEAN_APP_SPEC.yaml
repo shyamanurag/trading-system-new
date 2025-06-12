@@ -72,6 +72,9 @@ services:
   - key: CORS_ORIGINS
     scope: RUN_AND_BUILD_TIME
     value: '["https://algoauto-jd32t.ondigitalocean.app", "http://localhost:3000"]'
+  - key: FRONTEND_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://algoauto-jd32t.ondigitalocean.app
   - key: LOG_LEVEL
     scope: RUN_AND_BUILD_TIME
     value: INFO
