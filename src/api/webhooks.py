@@ -2,13 +2,16 @@
 Webhook handler and routes for processing incoming webhook requests
 """
 from fastapi import APIRouter, HTTPException, Request, Depends
-from typing import Dict, Optional, Set, List
+from typing import Dict, Optional, Set, List, Any
 import logging
 import hmac
 import hashlib
 import time
 from datetime import datetime, timedelta
 from collections import defaultdict
+from pydantic import BaseModel
+import json
+import os
 
 from ..core.orchestrator import Orchestrator
 from ..core.order_manager import OrderManager
@@ -23,6 +26,9 @@ from ..core.user_session_manager import UserSessionManager
 from ..core.trade_execution_queue import TradeExecutionQueue
 from ..auth import verify_webhook_signature
 from ..core.notification_manager import NotificationManager
+from ..models.n8n import N8nSignalIn, N8nSignalOut, SignalAction
+from ..core.trade_executor import TradeExecutor
+from ..core.position_manager import PositionManager
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +160,14 @@ class WebhookHandler:
                 callback(data)
             except Exception as e:
                 self.logger.error(f"Error notifying subscriber: {e}")
+
+class N8nWebhookPayload(BaseModel):
+    workflow_id: str
+    execution_id: str
+    status: str
+    data: Dict[str, Any]
+    timestamp: datetime
+    source: str = "n8n"
 
 # Initialize router and webhook handler
 router = APIRouter()
@@ -801,4 +815,147 @@ async def receive_compliance_update(
         
     except Exception as e:
         logger.error(f"Error processing compliance update: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/n8n")
+async def n8n_webhook(request: Request):
+    try:
+        # Log the raw request
+        body = await request.body()
+        logger.info(f"Received n8n webhook: {body.decode()}")
+        
+        # Parse the JSON payload
+        data = await request.json()
+        
+        # Validate the payload
+        payload = N8nWebhookPayload(**data)
+        
+        # Process the webhook based on workflow_id
+        if payload.workflow_id == "trading-signals":
+            # Handle trading signals
+            await process_trading_signals(payload)
+        elif payload.workflow_id == "market-data":
+            # Handle market data updates
+            await process_market_data(payload)
+        elif payload.workflow_id == "risk-management":
+            # Handle risk management alerts
+            await process_risk_alerts(payload)
+        else:
+            logger.warning(f"Unknown workflow_id: {payload.workflow_id}")
+        
+        return {"status": "success", "message": "Webhook processed"}
+    
+    except Exception as e:
+        logger.error(f"Error processing n8n webhook: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def process_trading_signals(payload: N8nWebhookPayload):
+    """Process trading signals from n8n workflow"""
+    try:
+        # Add your trading signal processing logic here
+        logger.info(f"Processing trading signal: {payload.data}")
+        # TODO: Implement trading signal processing
+    except Exception as e:
+        logger.error(f"Error processing trading signal: {str(e)}")
+        raise
+
+async def process_market_data(payload: N8nWebhookPayload):
+    """Process market data updates from n8n workflow"""
+    try:
+        # Add your market data processing logic here
+        logger.info(f"Processing market data: {payload.data}")
+        # TODO: Implement market data processing
+    except Exception as e:
+        logger.error(f"Error processing market data: {str(e)}")
+        raise
+
+async def process_risk_alerts(payload: N8nWebhookPayload):
+    """Process risk management alerts from n8n workflow"""
+    try:
+        # Add your risk alert processing logic here
+        logger.info(f"Processing risk alert: {payload.data}")
+        # TODO: Implement risk alert processing
+    except Exception as e:
+        logger.error(f"Error processing risk alert: {str(e)}")
+        raise
+
+@router.post("/webhooks/n8n/signal", response_model=N8nSignalOut)
+async def receive_n8n_signal(
+    signal: N8nSignalIn,
+    request: Request,
+    trade_executor: TradeExecutor = Depends(),
+    position_manager: PositionManager = Depends(),
+    risk_manager: RiskManager = Depends(),
+    db_manager: DatabaseManager = Depends()
+):
+    """
+    Handle incoming trading signals from n8n workflows.
+    Validates the signal and executes trades if conditions are met.
+    """
+    try:
+        # Log the incoming signal
+        logger.info(f"Received n8n signal: {signal.dict()}")
+        
+        # Verify webhook signature if configured
+        if os.getenv('N8N_WEBHOOK_SECRET'):
+            await verify_webhook_signature(request)
+        
+        # Check risk limits before execution
+        risk_check = await risk_manager.check_trade_risk(signal.symbol, signal.quantity, signal.price)
+        if not risk_check['allowed']:
+            return N8nSignalOut(
+                signal_id=signal.signal_id,
+                status="rejected",
+                error=f"Risk check failed: {risk_check['reason']}"
+            )
+        
+        # Execute the trade based on signal action
+        if signal.action == SignalAction.BUY:
+            result = await trade_executor.execute_buy(
+                symbol=signal.symbol,
+                quantity=signal.quantity,
+                price=signal.price,
+                source="n8n",
+                source_id=signal.signal_id,
+                metadata=signal.metadata
+            )
+        elif signal.action == SignalAction.SELL:
+            result = await trade_executor.execute_sell(
+                symbol=signal.symbol,
+                quantity=signal.quantity,
+                price=signal.price,
+                source="n8n",
+                source_id=signal.signal_id,
+                metadata=signal.metadata
+            )
+        elif signal.action == SignalAction.EXIT:
+            result = await position_manager.close_position(
+                symbol=signal.symbol,
+                source="n8n",
+                source_id=signal.signal_id,
+                metadata=signal.metadata
+            )
+        else:  # HOLD
+            return N8nSignalOut(
+                signal_id=signal.signal_id,
+                status="processed",
+                execution_time=datetime.utcnow()
+            )
+        
+        # Return execution result
+        return N8nSignalOut(
+            signal_id=signal.signal_id,
+            status="executed" if result['success'] else "failed",
+            execution_time=result.get('execution_time'),
+            error=result.get('error'),
+            trade_id=result.get('trade_id'),
+            position_id=result.get('position_id')
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing n8n signal: {str(e)}")
+        return N8nSignalOut(
+            signal_id=signal.signal_id,
+            status="error",
+            error=str(e)
+        ) 

@@ -1,16 +1,110 @@
 """
 Monitoring and Performance API Endpoints
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any
 from datetime import datetime
+from ..models.responses import HealthResponse
+from ..core.health_checker import HealthChecker
+from ..core.orchestrator import TradingOrchestrator
+import logging
 import psutil
 import random
 from common.logging import get_logger
 from database_manager import get_database_operations
 
 router = APIRouter()
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
+@router.get("/health", response_model=HealthResponse)
+async def health_check(
+    health_checker: HealthChecker = Depends()
+):
+    """Get system health status"""
+    try:
+        health_status = await health_checker.check_health()
+        return HealthResponse(
+            success=True,
+            message="Health check completed",
+            version=health_status["version"],
+            components=health_status["components"],
+            uptime=health_status["uptime"],
+            memory_usage=psutil.Process().memory_percent(),
+            cpu_usage=psutil.Process().cpu_percent(),
+            active_connections=health_status["active_connections"],
+            last_backup=health_status.get("last_backup")
+        )
+    except Exception as e:
+        logger.error(f"Error checking health: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/liveness", response_model=Dict[str, Any])
+async def liveness_check(
+    health_checker: HealthChecker = Depends()
+):
+    """Check if the service is alive"""
+    try:
+        is_alive = await health_checker.check_liveness()
+        return {
+            "success": True,
+            "status": "alive" if is_alive else "dead",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error checking liveness: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/readiness", response_model=Dict[str, Any])
+async def readiness_check(
+    health_checker: HealthChecker = Depends(),
+    orchestrator: TradingOrchestrator = Depends()
+):
+    """Check if the service is ready to handle requests"""
+    try:
+        is_ready = await health_checker.check_readiness()
+        components_status = await orchestrator.get_components_status()
+        
+        return {
+            "success": True,
+            "status": "ready" if is_ready else "not_ready",
+            "components": components_status,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error checking readiness: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/metrics", response_model=Dict[str, Any])
+async def get_system_metrics(
+    health_checker: HealthChecker = Depends()
+):
+    """Get detailed system metrics"""
+    try:
+        metrics = await health_checker.get_system_metrics()
+        return {
+            "success": True,
+            "message": "System metrics retrieved successfully",
+            "data": metrics
+        }
+    except Exception as e:
+        logger.error(f"Error getting system metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/components", response_model=Dict[str, Any])
+async def get_components_status(
+    orchestrator: TradingOrchestrator = Depends()
+):
+    """Get status of all system components"""
+    try:
+        components = await orchestrator.get_components_status()
+        return {
+            "success": True,
+            "message": "Component status retrieved successfully",
+            "data": components
+        }
+    except Exception as e:
+        logger.error(f"Error getting component status: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/system-stats")
 async def get_system_stats():

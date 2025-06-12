@@ -26,39 +26,17 @@ import jwt
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 
-# Import unified systems
-from common.logging import setup_logging, get_logger
-from common.health_checker import HealthChecker
-from security import SecurityManager
-from monitoring.security_monitor import SecurityMonitor
-from utils.backup_manager import BackupManager
-from scripts.shutdown import GracefulShutdown
+# Load environment variables
+load_dotenv('config/production.env')
 
-# Import WebSocket manager
-from websocket_manager import init_websocket_manager, get_websocket_manager, WebSocketManager
-
-# Import database operations at the top with other imports
-from database_manager import get_database_operations, get_database_manager
-
-# Import new API routers
-from src.api.market_data import router as market_data_router
-from src.api.elite_recommendations import router as recommendations_router
-from src.api.auth import router as auth_router
-from src.api.monitoring import router as monitoring_router
-from src.api.autonomous_trading import router as autonomous_router
-from src.api.error_monitoring import router as error_monitoring_router
-from src.api.database_health import router as database_health_router
-from src.api.market_indices import router as market_indices_router
-from src.api.dashboard_api import router as dashboard_router
-from src.api.trading_control import router as trading_control_router
-
-# Import error handler
-from src.core.error_handler import error_handler, ErrorRecoveryMiddleware
-
-# Setup unified logging first
-setup_logging(level="INFO")
-logger = get_logger(__name__)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
