@@ -151,7 +151,7 @@ class EventTier(Enum):
 
                         logger.info(f"Enhanced NewsImpactScalper initialized with sophisticated analysis"
                         async def process_enhanced_news_event(
-                        self, event: EnhancedNewsEvent) -> List[Signal}:
+                        self, event: EnhancedNewsEvent) -> List[Signal]:
                         """Enhanced news event processing with Set 1 sophistication"""
                         try:
                             signals=[]
@@ -517,7 +517,7 @@ class EventTier(Enum):
 
                                 def _calculate_surprise_pct(:
                                 pass
-                                self, event: EnhancedNewsEvent) -> Optional[float}:
+                                self, event: EnhancedNewsEvent) -> Optional[float]:
                                 """Calculate surprise percentage for metadata"""
                                 if event.actual is None or event.consensus is None:
                                 return None

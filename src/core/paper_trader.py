@@ -19,7 +19,7 @@ from ..brokers.zerodha import ZerodhaIntegration
 from ..data.truedata_provider import TrueDataProvider
 from ..core.orchestrator import TradingOrchestrator
 
-logger = logging.getLogger(__name__
+logger = logging.getLogger(__name__)
 @ dataclass
 class PaperOrder:
     """Virtual order for paper trading"""

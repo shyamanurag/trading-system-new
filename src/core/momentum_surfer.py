@@ -182,7 +182,7 @@ class MomentumState:
                                     'daily_atr_proxy': daily_atr_proxy,
                                     'expected_move_met': expected_move_met,
                                     'market_regime': market_regime,
-                                    'current_price': df['close'}.iloc[-1],
+                                    'current_price': df['close'].iloc[-1],
                                     'high': df['high'].iloc[-1],
                                     'low': df['low'].iloc[-1]
 

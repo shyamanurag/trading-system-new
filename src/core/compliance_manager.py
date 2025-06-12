@@ -188,8 +188,8 @@ class ComplianceManager:
 
                                 """Get OPS history for specified minutes"""
                                 cutoff_time=datetime.now() - timedelta(minutes=minutes
-                            return [(ts, ops} for ts, ops in self.ops_history if ts > cutoff_time
-                            async def reset_daily_counters(self]:
+                            return [(ts, ops) for ts, ops in self.ops_history if ts > cutoff_time]
+                            async def reset_daily_counters(self):
                             """Reset daily counters at EOD"""
                             self.user_order_counts.clear(
                             self.strategy_order_counts.clear(

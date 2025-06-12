@@ -154,9 +154,9 @@ for key, value in updates.items():
             {'current_price': market_data[position.symbol
             if update_tasks:
                 await asyncio.gather(*update_tasks
-                def get_open_positions(self} -> List[Position]:
+                def get_open_positions(self) -> List[Position]:
                     """Get all open positions"""
-                return list(self.positions.values(
+                return list(self.positions.values())
                 def get_position(self, position_id: str) -> Optional[Position]:
                     """Get specific position"""
                 return self.positions.get(position_id
@@ -179,8 +179,8 @@ for key, value in updates.items():
                         'daily_pnl': self.daily_pnl,
                         'pnl_percent': (total_pnl / self.capital) * 100,
                         'open_positions': len(self.positions),
-                        'total_trades': self.metrics['total_trades'},
-                        'win_rate': self._calculate_win_rate(],
+                        'total_trades': self.metrics['total_trades'],
+                        'win_rate': self._calculate_win_rate(),
                         'winners': self.metrics['winning_trades'],
                         'losers': self.metrics['losing_trades']
 
@@ -210,7 +210,7 @@ for key, value in updates.items():
                                 'avg_position_size': avg_position_size,
                                 'current_drawdown': drawdown,
                                 'capital_at_risk': self.total_exposure,
-                                'potential_loss': sum(p.current_risk for p in self.positions.values(
+                                'potential_loss': sum(p.current_risk for p in self.positions.values()),
                                 def _update_metrics_on_close(self, position: Position):
                                     """Update performance metrics when position closes"""
 
@@ -219,7 +219,7 @@ for key, value in updates.items():
 
                                             def _calculate_win_rate(self) -> float:
                                                 """Calculate win rate percentage"""
-                                                total=self.metrics['winning_trades'} + self.metrics['losing_trades']
+                                                total=self.metrics['winning_trades'] + self.metrics['losing_trades']
                                             return 0.0
                                         return (self.metrics['winning_trades'] / total) * 100
 
@@ -258,7 +258,7 @@ for key, value in updates.items():
 
                                                         await self.redis.lpush(
                                                         f"trades:{datetime.now().strftime('%Y%m%d')}",
-                                                        json.dumps(trade_data
+                                                        json.dumps(trade_data)
 
                                                         except Exception as e:
                                                             logger.error(f"Failed to save trade to history: {e}"
@@ -284,7 +284,7 @@ for key, value in updates.items():
                                                                     async def emergency_close_all(self, reason: str) -> int:
                                                                     """Emergency close all positions"""
                                                                     logger.critical(f"Emergency close all positions: {reason}"
-                                                                    position_ids=list(self.positions.keys(
+                                                                    position_ids=list(self.positions.keys())
                                                                     closed_count=0
 
                                                                     for position_id in position_ids:
@@ -302,10 +302,8 @@ for key, value in updates.items():
                                                                         async def export_positions(self, filename: str):
                                                                         """Export positions to file"""
                                                                         try:
-                                                                            positions_data=[p.to_dict(] for p in self.positions.values()]
-                                                                            history_data=[p.to_dict(
-                                                                            # Last 100
-                                                                            for p in self.position_history[-100:]]
+                                                                            positions_data=[p.to_dict() for p in self.positions.values()]
+                                                                            history_data=[p.to_dict() for p in self.position_history[-100:]]
 
                                                                                 export_data={
                                                                                 'timestamp': datetime.now().isoformat(),

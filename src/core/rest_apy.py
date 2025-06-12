@@ -87,7 +87,8 @@ def async_route(f):
     return jsonify({
     'error': 'Bad Request',
     'message': error.description,
-    'timestamp': datetime.now().isoformat(}), 400
+    'timestamp': datetime.now().isoformat()
+    }), 400
 
     @ app.errorhandler(401
     def unauthorized(error):
