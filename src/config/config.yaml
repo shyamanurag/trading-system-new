@@ -2,134 +2,118 @@
 app:
   name: "Trading System"
   version: "1.0.0"
-  environment: "production"
-  debug: false
-  host: "0.0.0.0"
-  port: 8000
-  workers: 4
-  timeout: 60
+  environment: ${APP_ENV:-production}
+  debug: ${DEBUG:-false}
+  host: ${APP_HOST:-0.0.0.0}
+  port: ${APP_PORT:-8000}
+  workers: ${APP_WORKERS:-4}
+  timeout: ${APP_TIMEOUT:-60}
   cors:
-    origins: ["*"]
-    methods: ["*"]
-    headers: ["*"]
+    origins: ${CORS_ORIGINS:-["*"]}
+    methods: ${CORS_METHODS:-["*"]}
+    headers: ${CORS_HEADERS:-["*"]}
 
 # Database configuration
 database:
-  url: "postgresql://user:password@localhost:5432/trading"
-  pool_size: 20
-  max_overflow: 10
-  echo: false
-  pool_timeout: 30
-  pool_recycle: 1800
+  url: ${DATABASE_URL}
+  pool_size: ${DB_POOL_SIZE:-5}
+  max_overflow: ${DB_MAX_OVERFLOW:-10}
+  pool_timeout: ${DB_POOL_TIMEOUT:-30}
+  pool_recycle: ${DB_POOL_RECYCLE:-1800}
+  echo: ${DB_ECHO:-false}
 
 # Redis configuration
 redis:
-  url: "redis://localhost:6379/0"
-  pool_size: 10
-  socket_timeout: 5
-  socket_connect_timeout: 5
-  retry_on_timeout: true
+  url: ${REDIS_URL}
+  host: ${REDIS_HOST}
+  port: ${REDIS_PORT:-6379}
+  db: ${REDIS_DB:-0}
+  password: ${REDIS_PASSWORD}
+  ssl: ${REDIS_SSL:-false}
+  pool_size: ${REDIS_POOL_SIZE:-10}
+  socket_timeout: ${REDIS_SOCKET_TIMEOUT:-5}
+  socket_connect_timeout: ${REDIS_SOCKET_CONNECT_TIMEOUT:-5}
+  retry_on_timeout: ${REDIS_RETRY_ON_TIMEOUT:-true}
 
 # Logging configuration
 logging:
-  level: "INFO"
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  file: "logs/trading.log"
-  max_size: 10485760  # 10MB
-  backup_count: 5
+  level: ${LOG_LEVEL:-INFO}
+  format: ${LOG_FORMAT:-"%(asctime)s - %(name)s - %(levelname)s - %(message)s"}
+  file: ${LOG_FILE:-"logs/trading.log"}
+  max_size: ${LOG_MAX_SIZE:-10485760}  # 10MB
+  backup_count: ${LOG_BACKUP_COUNT:-5}
 
 # Trading system configuration
 trading:
   broker:
-    name: "alpaca"
-    api_key: "${ALPACA_API_KEY}"
-    api_secret: "${ALPACA_API_SECRET}"
-    base_url: "https://paper-api.alpaca.markets"
-    data_url: "https://data.alpaca.markets"
-    timeout: 30
-    retry_attempts: 3
+    name: ${BROKER_NAME:-zerodha}
+    api_key: ${BROKER_API_KEY}
+    api_secret: ${BROKER_API_SECRET}
+    base_url: ${BROKER_BASE_URL}
+    data_url: ${BROKER_DATA_URL}
+    timeout: ${BROKER_TIMEOUT:-30}
+    retry_attempts: ${BROKER_RETRY_ATTEMPTS:-3}
 
   strategies:
-    enabled:
-      - "momentum"
-      - "mean_reversion"
-      - "trend_following"
-    default_timeframe: "1h"
-    max_positions: 10
-    position_size: 0.1  # 10% of portfolio per position
+    enabled: ${ENABLED_STRATEGIES:-["momentum", "mean_reversion", "trend_following"]}
+    default_timeframe: ${DEFAULT_TIMEFRAME:-"1h"}
+    max_positions: ${MAX_POSITIONS:-10}
+    position_size: ${POSITION_SIZE:-0.1}  # 10% of portfolio per position
 
   risk:
-    max_drawdown: 0.1  # 10% maximum drawdown
-    stop_loss: 0.02    # 2% stop loss per position
-    take_profit: 0.04  # 4% take profit per position
-    max_leverage: 2.0
-    risk_free_rate: 0.02
+    max_drawdown: ${MAX_DRAWDOWN:-0.1}  # 10% maximum drawdown
+    stop_loss: ${STOP_LOSS:-0.02}    # 2% stop loss per position
+    take_profit: ${TAKE_PROFIT:-0.04}  # 4% take profit per position
+    max_leverage: ${MAX_LEVERAGE:-2.0}
+    risk_free_rate: ${RISK_FREE_RATE:-0.02}
 
   execution:
-    order_type: "market"
-    time_in_force: "day"
-    retry_attempts: 3
-    retry_delay: 1
-    slippage_tolerance: 0.001
+    order_type: ${ORDER_TYPE:-"market"}
+    time_in_force: ${TIME_IN_FORCE:-"day"}
+    retry_attempts: ${EXECUTION_RETRY_ATTEMPTS:-3}
+    retry_delay: ${EXECUTION_RETRY_DELAY:-1}
+    slippage_tolerance: ${SLIPPAGE_TOLERANCE:-0.001}
 
 # Security configuration
 security:
   auth:
-    secret_key: "${AUTH_SECRET_KEY}"
-    algorithm: "HS256"
-    access_token_expire_minutes: 30
-    refresh_token_expire_days: 7
-    password_min_length: 8
-    password_hash_rounds: 12
+    secret_key: ${AUTH_SECRET_KEY}
+    algorithm: ${AUTH_ALGORITHM:-"HS256"}
+    access_token_expire_minutes: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+    refresh_token_expire_days: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+    password_min_length: ${PASSWORD_MIN_LENGTH:-8}
+    password_hash_rounds: ${PASSWORD_HASH_ROUNDS:-12}
 
   encryption:
-    key: "${ENCRYPTION_KEY}"
-    algorithm: "AES-256-GCM"
-    salt_length: 16
-    iterations: 100000
+    key: ${ENCRYPTION_KEY}
+    algorithm: ${ENCRYPTION_ALGORITHM:-"AES-256-GCM"}
+    salt_length: ${ENCRYPTION_SALT_LENGTH:-16}
+    iterations: ${ENCRYPTION_ITERATIONS:-100000}
 
   rate_limiting:
-    enabled: true
-    requests_per_minute: 60
-    burst_size: 10
-    window_size: 60
+    enabled: ${RATE_LIMITING_ENABLED:-true}
+    requests_per_minute: ${RATE_LIMIT_REQUESTS:-60}
+    burst_size: ${RATE_LIMIT_BURST:-10}
+    window_size: ${RATE_LIMIT_WINDOW:-60}
 
 # Monitoring configuration
 monitoring:
-  prometheus:
-    enabled: true
-    port: 9090
-    path: "/metrics"
-    scrape_interval: 15
-
-  grafana:
-    enabled: true
-    port: 3000
-    admin_user: "admin"
-    admin_password: "${GRAFANA_PASSWORD}"
-
-  alerts:
-    enabled: true
-    slack_webhook: "${SLACK_WEBHOOK_URL}"
-    email:
-      smtp_server: "smtp.gmail.com"
-      smtp_port: 587
-      username: "${EMAIL_USERNAME}"
-      password: "${EMAIL_PASSWORD}"
-      from_address: "alerts@trading-system.com"
+  enabled: ${ENABLE_METRICS:-true}
+  prometheus_url: ${PROMETHEUS_URL}
+  grafana_url: ${GRAFANA_URL}
 
 # Service endpoints
-endpoints:
-  main_api: "http://localhost:8000"
-  security_api: "http://localhost:8001"
-  dash_app: "http://localhost:8050"
-  prometheus: "http://localhost:9090"
-  grafana: "http://localhost:3000"
+services:
+  main_api: ${MAIN_API_URL}
+  security_api: ${SECURITY_API_URL}
+  dash_app: ${DASH_APP_URL}
+  prometheus: ${PROMETHEUS_URL}
+  grafana: ${GRAFANA_URL}
 
 # Feature flags
 features:
-  enable_websockets: true
-  enable_backtesting: true
-  enable_optimization: true
-  enable_machine_learning: false
-  enable_social_trading: false 
+  enable_websockets: ${ENABLE_WEBSOCKETS:-true}
+  enable_backtesting: ${ENABLE_BACKTESTING:-true}
+  enable_optimization: ${ENABLE_OPTIMIZATION:-true}
+  enable_machine_learning: ${ENABLE_ML:-false}
+  enable_social_trading: ${ENABLE_SOCIAL_TRADING:-false} 

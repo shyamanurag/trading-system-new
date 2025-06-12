@@ -3,6 +3,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 // Use production WebSocket URL from environment variable
 const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-ua2iq.ondigitalocean.app';
 
+// Default symbols to subscribe on connection
+const DEFAULT_SYMBOLS = ['RELIANCE', 'TCS', 'NIFTY', 'BANKNIFTY', 'INFY', 'HDFCBANK'];
+
 export const useWebSocket = (userId = 'default_user') => {
     const [isConnected, setIsConnected] = useState(false);
     const [lastMessage, setLastMessage] = useState(null);
@@ -11,20 +14,21 @@ export const useWebSocket = (userId = 'default_user') => {
         reconnectAttempts: 0,
         lastError: null
     });
+    const [subscribedSymbols, setSubscribedSymbols] = useState(new Set());
 
     const ws = useRef(null);
     const reconnectTimeoutRef = useRef(null);
     const reconnectAttemptsRef = useRef(0);
     const maxReconnectAttempts = 5;
-    const reconnectDelay = 5000; // 5 seconds
+    const reconnectDelay = 3000;
     const mountedRef = useRef(true);
 
     const sendMessage = useCallback((message) => {
-        if (ws.current?.readyState === WebSocket.OPEN) {
+        if (ws.current && ws.current.readyState === WebSocket.OPEN) {
             ws.current.send(JSON.stringify(message));
-            console.log('Message sent:', message);
+            console.log('Sent message:', message);
         } else {
-            console.error('WebSocket is not connected');
+            console.warn('WebSocket not connected, cannot send message');
         }
     }, []);
 
@@ -57,12 +61,16 @@ export const useWebSocket = (userId = 'default_user') => {
                     lastError: null
                 });
 
-                // Subscribe to market data after connection
+                // Subscribe to default symbols after connection
                 setTimeout(() => {
-                    sendMessage({
-                        type: 'subscribe',
-                        room: 'market_data_NIFTY'
+                    DEFAULT_SYMBOLS.forEach(symbol => {
+                        sendMessage({
+                            type: 'subscribe',
+                            room: `market_data_${symbol}`
+                        });
+                        setSubscribedSymbols(prev => new Set([...prev, symbol]));
                     });
+                    console.log(`Subscribed to default symbols: ${DEFAULT_SYMBOLS.join(', ')}`);
                 }, 100);
             };
 
@@ -85,7 +93,7 @@ export const useWebSocket = (userId = 'default_user') => {
             };
 
             newWs.onclose = (event) => {
-                console.log('WebSocket disconnected:', event.code, event.reason);
+                console.log('WebSocket closed:', event.code, event.reason);
                 ws.current = null;
                 setIsConnected(false);
                 setConnectionStats(prev => ({
@@ -93,32 +101,29 @@ export const useWebSocket = (userId = 'default_user') => {
                     connected: false
                 }));
 
-                // Only reconnect if component is still mounted and we haven't exceeded attempts
+                // Clear subscribed symbols on disconnect
+                setSubscribedSymbols(new Set());
+
+                // Attempt to reconnect if component is still mounted
                 if (mountedRef.current && reconnectAttemptsRef.current < maxReconnectAttempts) {
                     reconnectAttemptsRef.current++;
-                    console.log(`Will reconnect in ${reconnectDelay / 1000}s... Attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts}`);
+                    console.log(`Reconnecting... Attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts}`);
 
-                    // Clear any existing timeout
-                    if (reconnectTimeoutRef.current) {
-                        clearTimeout(reconnectTimeoutRef.current);
-                    }
+                    setConnectionStats(prev => ({
+                        ...prev,
+                        reconnectAttempts: reconnectAttemptsRef.current
+                    }));
 
                     reconnectTimeoutRef.current = setTimeout(() => {
                         if (mountedRef.current) {
                             connect();
                         }
                     }, reconnectDelay);
-                } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-                    console.error('Max reconnection attempts reached');
-                    setConnectionStats(prev => ({
-                        ...prev,
-                        lastError: 'Max reconnection attempts reached'
-                    }));
                 }
             };
 
         } catch (error) {
-            console.error('Error creating WebSocket connection:', error);
+            console.error('Error creating WebSocket:', error);
             setConnectionStats(prev => ({
                 ...prev,
                 lastError: error.message
@@ -142,22 +147,45 @@ export const useWebSocket = (userId = 'default_user') => {
         }
 
         setIsConnected(false);
+        setSubscribedSymbols(new Set());
         reconnectAttemptsRef.current = 0;
     }, []);
 
     const subscribe = useCallback((symbol, provider = 'ALL') => {
-        sendMessage({
-            type: 'subscribe',
-            room: `market_data_${symbol}`
-        });
-    }, [sendMessage]);
+        if (!subscribedSymbols.has(symbol)) {
+            sendMessage({
+                type: 'subscribe',
+                room: `market_data_${symbol}`,
+                provider: provider
+            });
+            setSubscribedSymbols(prev => new Set([...prev, symbol]));
+            console.log(`Subscribed to ${symbol} (provider: ${provider})`);
+        }
+    }, [sendMessage, subscribedSymbols]);
 
     const unsubscribe = useCallback((symbol, provider = 'ALL') => {
-        sendMessage({
-            type: 'unsubscribe',
-            room: `market_data_${symbol}`
-        });
-    }, [sendMessage]);
+        if (subscribedSymbols.has(symbol)) {
+            sendMessage({
+                type: 'unsubscribe',
+                room: `market_data_${symbol}`,
+                provider: provider
+            });
+            setSubscribedSymbols(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(symbol);
+                return newSet;
+            });
+            console.log(`Unsubscribed from ${symbol} (provider: ${provider})`);
+        }
+    }, [sendMessage, subscribedSymbols]);
+
+    const subscribeMultiple = useCallback((symbols, provider = 'ALL') => {
+        symbols.forEach(symbol => subscribe(symbol, provider));
+    }, [subscribe]);
+
+    const unsubscribeAll = useCallback(() => {
+        subscribedSymbols.forEach(symbol => unsubscribe(symbol));
+    }, [subscribedSymbols, unsubscribe]);
 
     // Connect on mount
     useEffect(() => {
@@ -186,9 +214,12 @@ export const useWebSocket = (userId = 'default_user') => {
         isConnected,
         lastMessage,
         connectionStats,
+        subscribedSymbols: Array.from(subscribedSymbols),
         sendMessage,
         subscribe,
         unsubscribe,
+        subscribeMultiple,
+        unsubscribeAll,
         reconnect: connect,
         disconnect
     };

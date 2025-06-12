@@ -1,5 +1,6 @@
 // API Configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
 
 // Add error handling wrapper
 const createEndpoint = (path) => {
@@ -51,7 +52,20 @@ export const API_ENDPOINTS = {
     // System endpoints
     SYSTEM_STATUS: createEndpoint('/api/v1/system/status'),
     SYSTEM_LOGS: createEndpoint('/api/v1/system/logs'),
-    SYSTEM_METRICS: createEndpoint('/api/v1/system/metrics')
+    SYSTEM_METRICS: createEndpoint('/api/v1/system/metrics'),
+
+    // WebSocket endpoints
+    WS_MARKET_DATA: `${WS_BASE_URL}/ws/market-data`,
+    WS_ORDERS: `${WS_BASE_URL}/ws/orders`,
+    WS_POSITIONS: `${WS_BASE_URL}/ws/positions`,
+
+    // Additional endpoints
+    TICK_DATA: `${API_BASE_URL}/api/tick-data`,
+    ORDER_BOOK: `${API_BASE_URL}/api/order-book`,
+    ACCOUNT: `${API_BASE_URL}/api/account`,
+    HEALTH: `${API_BASE_URL}/health`,
+    METRICS: `${API_BASE_URL}/metrics`,
+    CONFIG: `${API_BASE_URL}/api/config`
 };
 
 export default API_ENDPOINTS; 

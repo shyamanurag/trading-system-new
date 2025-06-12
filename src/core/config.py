@@ -1,15 +1,18 @@
 """
 Configuration settings for the trading system
 """
-from pydantic import BaseSettings, Field
-from typing import Dict, List, Optional, Any
+from typing import List, Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 import os
 from pathlib import Path
 import re
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from functools import lru_cache
 
 class Settings(BaseSettings):
-    """Trading system settings"""
+    """Application settings"""
+    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', case_sensitive=True)
     
     # API Settings
     API_HOST: str = Field(default="0.0.0.0")
@@ -57,7 +60,7 @@ class Settings(BaseSettings):
         return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
     
     @property
-    def DATABASE_CONNECT_ARGS(self) -> Dict[str, Any]:
+    def DATABASE_CONNECT_ARGS(self) -> dict:
         """Get connection arguments for SQLAlchemy"""
         connect_args = {}
         
@@ -102,7 +105,6 @@ class Settings(BaseSettings):
     INITIAL_CAPITAL: float = Field(default=100000.0)
     
     # Monitoring Settings
-    LOG_LEVEL: str = Field(default="INFO")
     METRICS_INTERVAL: int = Field(default=60)  # seconds
     
     # File Paths
@@ -110,12 +112,50 @@ class Settings(BaseSettings):
     DATA_DIR: Path = Field(default=Path(__file__).parent.parent.parent / "data")
     LOGS_DIR: Path = Field(default=Path(__file__).parent.parent.parent / "logs")
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    # CORS
+    CORS_ORIGINS: List[str] = Field(
+        default=["http://localhost:3000", "http://localhost:8000"],
+        description="Allowed CORS origins"
+    )
+    
+    # Zerodha
+    ZERODHA_API_KEY: Optional[str] = Field(None, description="Zerodha API key")
+    ZERODHA_API_SECRET: Optional[str] = Field(None, description="Zerodha API secret")
+    ZERODHA_USER_ID: Optional[str] = Field(None, description="Zerodha user ID")
+    
+    # TrueData
+    TRUEDATA_USERNAME: Optional[str] = Field(None, description="TrueData username")
+    TRUEDATA_PASSWORD: Optional[str] = Field(None, description="TrueData password")
+    
+    # Orchestrator
+    ORCHESTRATOR_CONFIG: dict = Field(
+        default={
+            "max_positions": 5,
+            "max_risk_per_trade": 0.02,  # 2% per trade
+            "max_daily_loss": 0.05,      # 5% daily loss limit
+            "default_timeframe": "1m",
+            "default_provider": "zerodha"
+        },
+        description="Trading orchestrator configuration"
+    )
+    
+    # WebSocket
+    WS_PING_INTERVAL: int = Field(30, description="WebSocket ping interval in seconds")
+    WS_PING_TIMEOUT: int = Field(10, description="WebSocket ping timeout in seconds")
+    
+    # Logging
+    LOG_LEVEL: str = Field("INFO", description="Logging level")
+    LOG_FORMAT: str = Field(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        description="Log format string"
+    )
+
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()
 
 # Create settings instance
-settings = Settings()
+settings = get_settings()
 
 # Ensure directories exist
 settings.DATA_DIR.mkdir(exist_ok=True)

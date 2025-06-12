@@ -1,0 +1,161 @@
+name: algoauto
+region: blr
+services:
+- environment_slug: python
+  envs:
+  - key: PYTHON_VERSION
+    scope: RUN_AND_BUILD_TIME
+    value: 3.11.2
+  - key: PIP_REQUIREMENTS
+    scope: RUN_AND_BUILD_TIME
+    value: "fastapi>=0.68.0,<0.69.0\nuvicorn>=0.15.0,<0.16.0\npydantic>=2.0.0,<3.0.0\npydantic-settings>=2.0.0,<3.0.0\nsqlalchemy>=1.4.0,<2.0.0\nasyncpg>=0.27.0,<0.28.0\nredis>=4.5.0,<5.0.0\npython-dotenv>=0.19.0,<1.0.0\npsycopg2-binary==2.9.10 --only-binary :all:\ngunicorn>=20.1.0,<21.0.0\npython-jose>=3.3.0,<4.0.0\npython-multipart==0.0.6\nPyJWT>=2.3.0,<3.0.0\njinja2>=3.0.0,<4.0.0"
+  - key: DATABASE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: postgresql://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb
+  - key: DB_HOST
+    scope: RUN_AND_BUILD_TIME
+    value: app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com
+  - key: DB_PORT
+    scope: RUN_AND_BUILD_TIME
+    value: "25060"
+  - key: DB_NAME
+    scope: RUN_AND_BUILD_TIME
+    value: defaultdb
+  - key: DB_USER
+    scope: RUN_AND_BUILD_TIME
+    value: doadmin
+  - key: DB_PASSWORD
+    scope: RUN_AND_BUILD_TIME
+    value: AVNS_LpaPpsdL4CtOii03MnN
+  - key: DB_SSL_MODE
+    scope: RUN_AND_BUILD_TIME
+    value: require
+  - key: REDIS_URL
+    scope: RUN_AND_BUILD_TIME
+    value: rediss://default:AVNS_TSCy17L6f9z0CdWgcvW@redis-cache-do-user-23093341-0.k.db.ondigitalocean.com:25061
+  - key: REDIS_HOST
+    scope: RUN_AND_BUILD_TIME
+    value: redis-cache-do-user-23093341-0.k.db.ondigitalocean.com
+  - key: REDIS_PORT
+    scope: RUN_AND_BUILD_TIME
+    value: "25061"
+  - key: REDIS_PASSWORD
+    scope: RUN_AND_BUILD_TIME
+    value: AVNS_TSCy17L6f9z0CdWgcvW
+  - key: REDIS_SSL
+    scope: RUN_AND_BUILD_TIME
+    value: "true"
+  - key: PORT
+    scope: RUN_AND_BUILD_TIME
+    value: "8000"
+  - key: ENVIRONMENT
+    scope: RUN_AND_BUILD_TIME
+    value: production
+  - key: DEBUG
+    scope: RUN_AND_BUILD_TIME
+    value: "false"
+  - key: ZERODHA_API_KEY
+    scope: RUN_AND_BUILD_TIME
+    value: sylcoq492qz6f7ej
+  - key: ZERODHA_API_SECRET
+    scope: RUN_AND_BUILD_TIME
+    value: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
+  - key: ZERODHA_USER_ID
+    scope: RUN_AND_BUILD_TIME
+    value: QSW899
+  - key: TRUEDATA_USERNAME
+    scope: RUN_AND_BUILD_TIME
+    value: Trial106
+  - key: TRUEDATA_PASSWORD
+    scope: RUN_AND_BUILD_TIME
+    value: shyam106
+  - key: CORS_ORIGINS
+    scope: RUN_AND_BUILD_TIME
+    value: '["https://algoauto-jd32t.ondigitalocean.app", "http://localhost:3000"]'
+  - key: LOG_LEVEL
+    scope: RUN_AND_BUILD_TIME
+    value: INFO
+  - key: LOG_FORMAT
+    scope: RUN_AND_BUILD_TIME
+    value: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: shyamanurag/trading-system-new
+  health_check:
+    failure_threshold: 3
+    http_path: /health/ready
+    initial_delay_seconds: 40
+    period_seconds: 10
+    success_threshold: 2
+    timeout_seconds: 5
+  http_port: 8000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-1gb
+  name: api
+  run_command: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+  source_dir: /
+
+static_sites:
+- build_command: "rm -rf node_modules package-lock.json && \nnpm install --no-optional && \nnpm install @vitejs/plugin-react @rollup/rollup-linux-x64-gnu && \nnpm run build\n"
+  catchall_document: index.html
+  environment_slug: node-js
+  envs:
+  - key: VITE_APP_NAME
+    scope: BUILD_TIME
+    value: AlgoAuto Trading
+  - key: VITE_APP_VERSION
+    scope: BUILD_TIME
+    value: 1.0.0
+  - key: VITE_APP_ENV
+    scope: BUILD_TIME
+    value: production
+  - key: VITE_WS_URL
+    scope: BUILD_TIME
+    value: wss://algoauto-jd32t.ondigitalocean.app
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: shyamanurag/trading-system-new
+  index_document: index.html
+  name: frontend
+  output_dir: dist
+  source_dir: /src/frontend
+
+ingress:
+  rules:
+  - component:
+      name: frontend
+    match:
+      path:
+        prefix: /
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /api
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /docs
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /health
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /webhook
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /control
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /ws 
