@@ -193,6 +193,34 @@ class DatabaseManager:
                 )
             """)
             
+            # Orders table
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS orders (
+                    order_id VARCHAR(50) PRIMARY KEY,
+                    user_id VARCHAR(50) REFERENCES users(user_id),
+                    broker_order_id VARCHAR(100),
+                    parent_order_id VARCHAR(50),
+                    symbol VARCHAR(20) NOT NULL,
+                    order_type VARCHAR(20) NOT NULL,
+                    side VARCHAR(10) NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    price DECIMAL(10,2),
+                    stop_price DECIMAL(10,2),
+                    filled_quantity INTEGER DEFAULT 0,
+                    average_price DECIMAL(10,2),
+                    status VARCHAR(20) DEFAULT 'PENDING',
+                    execution_strategy VARCHAR(30),
+                    time_in_force VARCHAR(10) DEFAULT 'DAY',
+                    strategy_name VARCHAR(50),
+                    signal_id VARCHAR(50),
+                    fees DECIMAL(8,2) DEFAULT 0,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    placed_at TIMESTAMP WITH TIME ZONE,
+                    filled_at TIMESTAMP WITH TIME ZONE,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+            """)
+            
             # Market data table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS market_data (
@@ -481,6 +509,101 @@ class DatabaseOperations:
         except Exception as e:
             logger.error(f"Error recording trade: {e}")
             return False
+    
+    async def create_order(self, order_data: Dict[str, Any]) -> Optional[str]:
+        """Create a new order"""
+        try:
+            query = """
+                INSERT INTO orders (order_id, user_id, symbol, order_type, side,
+                                  quantity, price, stop_price, status, execution_strategy,
+                                  time_in_force, strategy_name, signal_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                RETURNING order_id
+            """
+            order_id = await self.db.execute_scalar(
+                query,
+                order_data['order_id'],
+                order_data['user_id'],
+                order_data['symbol'],
+                order_data['order_type'],
+                order_data['side'],
+                order_data['quantity'],
+                order_data.get('price'),
+                order_data.get('stop_price'),
+                order_data.get('status', 'PENDING'),
+                order_data.get('execution_strategy', 'MARKET'),
+                order_data.get('time_in_force', 'DAY'),
+                order_data.get('strategy_name'),
+                order_data.get('signal_id')
+            )
+            return order_id
+        except Exception as e:
+            logger.error(f"Error creating order: {e}")
+            return None
+    
+    async def update_order_status(self, order_id: str, status: str, filled_quantity: int = None, 
+                                 average_price: float = None, broker_order_id: str = None) -> bool:
+        """Update order status"""
+        try:
+            updates = ["status = $2", "updated_at = NOW()"]
+            params = [order_id, status]
+            param_count = 2
+            
+            if filled_quantity is not None:
+                param_count += 1
+                updates.append(f"filled_quantity = ${param_count}")
+                params.append(filled_quantity)
+            
+            if average_price is not None:
+                param_count += 1
+                updates.append(f"average_price = ${param_count}")
+                params.append(average_price)
+            
+            if broker_order_id is not None:
+                param_count += 1
+                updates.append(f"broker_order_id = ${param_count}")
+                params.append(broker_order_id)
+            
+            if status == 'FILLED':
+                updates.append("filled_at = NOW()")
+            elif status == 'PLACED':
+                updates.append("placed_at = NOW()")
+            
+            query = f"""
+                UPDATE orders 
+                SET {', '.join(updates)}
+                WHERE order_id = $1
+            """
+            
+            await self.db.execute_command(query, *params)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating order status: {e}")
+            return False
+    
+    async def get_order(self, order_id: str) -> Optional[Dict[str, Any]]:
+        """Get order by ID"""
+        query = "SELECT * FROM orders WHERE order_id = $1"
+        return await self.db.execute_one(query, order_id)
+    
+    async def get_user_orders(self, user_id: str, status: str = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get orders for a user"""
+        if status:
+            query = """
+                SELECT * FROM orders 
+                WHERE user_id = $1 AND status = $2
+                ORDER BY created_at DESC
+                LIMIT $3
+            """
+            return await self.db.execute_query(query, user_id, status, limit)
+        else:
+            query = """
+                SELECT * FROM orders 
+                WHERE user_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2
+            """
+            return await self.db.execute_query(query, user_id, limit)
     
     async def get_user_analytics(self, user_id: str, days: int = 30) -> Dict[str, Any]:
         """Get user analytics for specified period"""

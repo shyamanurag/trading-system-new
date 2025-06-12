@@ -27,6 +27,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2Pas
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+import uuid
 
 # Load environment variables
 load_dotenv('config/production.env')
@@ -1223,40 +1224,84 @@ async def get_elite_performance():
     summary="Get all users",
     description="Fetch all registered trading users with their basic information"
 )
-def get_users():
+async def get_users():
     """Get all trading users"""
     try:
-        # Import the trading control module to access broker users
-        from src.api.trading_control import broker_users
+        # Get database operations
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Get all users from database
+        users = await db_ops.db.execute_query("""
+            SELECT 
+                u.user_id,
+                u.username,
+                u.full_name,
+                u.email,
+                u.initial_capital,
+                u.current_balance,
+                u.is_active,
+                u.created_at,
+                COALESCE(SUM(p.realized_pnl), 0) as total_pnl,
+                COUNT(DISTINCT p.position_id) as total_trades,
+                COUNT(DISTINCT CASE WHEN p.status = 'open' THEN p.position_id END) as open_trades,
+                CASE 
+                    WHEN COUNT(DISTINCT p.position_id) > 0 
+                    THEN (COUNT(DISTINCT CASE WHEN p.realized_pnl > 0 THEN p.position_id END)::float / COUNT(DISTINCT p.position_id) * 100)
+                    ELSE 0 
+                END as win_rate
+            FROM users u
+            LEFT JOIN positions p ON u.user_id = p.user_id
+            GROUP BY u.user_id, u.username, u.full_name, u.email, u.initial_capital, u.current_balance, u.is_active, u.created_at
+            ORDER BY u.created_at DESC
+        """)
+        
+        # Calculate daily P&L for each user
+        daily_pnl_query = """
+            SELECT 
+                user_id,
+                SUM(CASE WHEN DATE(COALESCE(exit_time, entry_time)) = CURRENT_DATE THEN realized_pnl ELSE 0 END) as daily_pnl
+            FROM positions
+            GROUP BY user_id
+        """
+        daily_pnl_data = await db_ops.db.execute_query(daily_pnl_query)
+        daily_pnl_map = {row['user_id']: row['daily_pnl'] for row in daily_pnl_data}
         
         # Convert to list format expected by frontend
         users_list = []
-        for user_id, user in broker_users.items():
+        for user in users:
             users_list.append({
                 "user_id": user["user_id"],
-                "name": user["name"],
-                "username": user["user_id"],
-                "avatar": user["name"][0].upper() if user["name"] else "U",
-                "initial_capital": user["initial_capital"],
-                "current_capital": user["current_capital"],
-                "total_pnl": user["total_pnl"],
-                "daily_pnl": user["daily_pnl"],
-                "total_trades": user["total_trades"],
-                "win_rate": user["win_rate"],
+                "name": user["full_name"] or user["username"],
+                "username": user["username"],
+                "email": user["email"],
+                "avatar": (user["full_name"] or user["username"])[0].upper() if (user["full_name"] or user["username"]) else "U",
+                "initial_capital": float(user["initial_capital"] or 0),
+                "current_capital": float(user["current_balance"] or 0),
+                "total_pnl": float(user["total_pnl"] or 0),
+                "daily_pnl": float(daily_pnl_map.get(user["user_id"], 0)),
+                "total_trades": user["total_trades"] or 0,
+                "win_rate": float(user["win_rate"] or 0),
                 "is_active": user["is_active"],
-                "open_trades": user["open_trades"]
+                "open_trades": user["open_trades"] or 0
             })
         
         return {
             "success": True,
-            "users": users_list
+            "users": users_list,
+            "total_users": len(users_list),
+            "timestamp": datetime.now().isoformat()
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching users: {e}")
         return {
             "success": True,
-            "users": []  # Return empty list on error
+            "users": [],  # Return empty list on error
+            "message": "Unable to fetch users"
         }
 
 @app.get(
@@ -2534,6 +2579,130 @@ async def get_dashboard_summary():
     except Exception as e:
         logger.error(f"Error fetching dashboard summary: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch dashboard summary")
+
+@app.post(
+    "/api/v1/orders",
+    tags=["trading"],
+    summary="Create new order",
+    description="Create a new trading order"
+)
+async def create_order(order_data: dict):
+    """Create a new trading order"""
+    try:
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Validate required fields
+        required_fields = ['user_id', 'symbol', 'order_type', 'side', 'quantity']
+        for field in required_fields:
+            if field not in order_data or not order_data[field]:
+                raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+        
+        # Generate order ID
+        order_id = str(uuid.uuid4())
+        
+        # Prepare order data
+        order_record = {
+            'order_id': order_id,
+            'user_id': order_data['user_id'],
+            'symbol': order_data['symbol'],
+            'order_type': order_data['order_type'],
+            'side': order_data['side'],
+            'quantity': order_data['quantity'],
+            'price': order_data.get('price'),
+            'stop_price': order_data.get('stop_price'),
+            'status': 'PENDING',
+            'execution_strategy': order_data.get('execution_strategy', 'MARKET'),
+            'time_in_force': order_data.get('time_in_force', 'DAY'),
+            'strategy_name': order_data.get('strategy_name'),
+            'signal_id': order_data.get('signal_id')
+        }
+        
+        # Create order in database
+        created_order_id = await db_ops.create_order(order_record)
+        
+        if not created_order_id:
+            raise HTTPException(status_code=500, detail="Failed to create order")
+        
+        # Get the created order
+        created_order = await db_ops.get_order(order_id)
+        
+        # TODO: Send order to broker for execution
+        # This would integrate with Zerodha or other brokers
+        
+        return {
+            "success": True,
+            "message": "Order created successfully",
+            "order": created_order,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating order: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create order")
+
+@app.put(
+    "/api/v1/orders/{order_id}",
+    tags=["trading"],
+    summary="Update order status",
+    description="Update the status of an existing order"
+)
+async def update_order(order_id: str, update_data: dict):
+    """Update order status"""
+    try:
+        db_ops = get_database_operations()
+        if not db_ops:
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+        
+        # Check if order exists
+        order = await db_ops.get_order(order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+        # Update order status
+        success = await db_ops.update_order_status(
+            order_id=order_id,
+            status=update_data.get('status'),
+            filled_quantity=update_data.get('filled_quantity'),
+            average_price=update_data.get('average_price'),
+            broker_order_id=update_data.get('broker_order_id')
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update order")
+        
+        # Get updated order
+        updated_order = await db_ops.get_order(order_id)
+        
+        # If order is filled, create a trade record
+        if update_data.get('status') == 'FILLED' and updated_order:
+            trade_data = {
+                'user_id': updated_order['user_id'],
+                'symbol': updated_order['symbol'],
+                'trade_type': 'buy' if updated_order['side'] == 'BUY' else 'sell',
+                'quantity': updated_order['filled_quantity'],
+                'price': updated_order['average_price'],
+                'order_id': order_id,
+                'strategy': updated_order.get('strategy_name'),
+                'commission': update_data.get('commission', 0)
+            }
+            await db_ops.record_trade(trade_data)
+        
+        return {
+            "success": True,
+            "message": "Order updated successfully",
+            "order": updated_order,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating order: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update order")
 
 if __name__ == "__main__":
     # Get port from environment or use default

@@ -124,6 +124,26 @@ class OrderManager:
                 self.active_orders[user_id] = set()
                 self.order_history[user_id] = []
             
+            # Save order to database
+            from database_manager import get_database_operations
+            db_ops = get_database_operations()
+            if db_ops:
+                order_data = {
+                    'order_id': order.order_id,
+                    'user_id': user_id,
+                    'symbol': order.symbol,
+                    'order_type': order.order_type.value if hasattr(order.order_type, 'value') else str(order.order_type),
+                    'side': order.side.value if hasattr(order.side, 'value') else str(order.side),
+                    'quantity': order.quantity,
+                    'price': order.price,
+                    'stop_price': getattr(order, 'stop_price', None),
+                    'status': 'PENDING',
+                    'execution_strategy': order.execution_strategy.value if hasattr(order.execution_strategy, 'value') else str(order.execution_strategy),
+                    'strategy_name': getattr(order, 'strategy_name', None),
+                    'signal_id': getattr(order, 'signal_id', None)
+                }
+                await db_ops.create_order(order_data)
+            
             # Queue the order
             await self.order_queues[user_id].put(order)
             
@@ -148,6 +168,20 @@ class OrderManager:
                 )
                 
                 await self.capital_manager.update_capital_after_trade(user_id, trade)
+                
+                # Record trade in database
+                if db_ops:
+                    trade_data = {
+                        'user_id': user_id,
+                        'symbol': order.symbol,
+                        'trade_type': 'buy' if order.side == OrderSide.BUY else 'sell',
+                        'quantity': order.quantity,
+                        'price': result['average_price'],
+                        'order_id': order.order_id,
+                        'strategy': getattr(order, 'strategy_name', None),
+                        'commission': result.get('fees', 0)
+                    }
+                    await db_ops.record_trade(trade_data)
                 
                 # Update system evolution
                 await self.system_evolution.record_trade(trade)
@@ -467,6 +501,18 @@ class OrderManager:
             
             # Update order status
             order.status = OrderStatus(result['status'])
+            
+            # Update order in database
+            from database_manager import get_database_operations
+            db_ops = get_database_operations()
+            if db_ops:
+                await db_ops.update_order_status(
+                    order_id=order.order_id,
+                    status=result['status'],
+                    filled_quantity=result.get('filled_quantity'),
+                    average_price=result.get('average_price'),
+                    broker_order_id=result.get('broker_order_id')
+                )
             
             # Store order in history
             if order.user_id in self.order_history:
