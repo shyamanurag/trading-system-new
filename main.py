@@ -86,17 +86,29 @@ async def lifespan(app: FastAPI):
         # Initialize websocket manager
         if redis_client:
             websocket_manager = init_websocket_manager(redis_client)
-            await websocket_manager.start()
+            if websocket_manager:
+                try:
+                    await websocket_manager.start()
+                except Exception as e:
+                    logger.error(f"Error starting WebSocket manager: {e}")
+                    logger.warning("Continuing without WebSocket manager")
+                    websocket_manager = None
         else:
             logger.warning("Redis unavailable, skipping WebSocket manager")
         
         # Register components for shutdown
-        components_to_register = [comp for comp in [
-            security_manager, security_monitor, health_checker, backup_manager
-        ] if comp is not None]
-        
-        for component in components_to_register:
-            await shutdown_handler.register_component(component)
+        if shutdown_handler:
+            components_to_register = [comp for comp in [
+                security_manager, security_monitor, health_checker, backup_manager
+            ] if comp is not None]
+            
+            for component in components_to_register:
+                try:
+                    await shutdown_handler.register_component(component)
+                except Exception as e:
+                    logger.error(f"Error registering component for shutdown: {e}")
+        else:
+            logger.warning("Shutdown handler not available, skipping component registration")
         
         logger.info("Application started successfully")
         
@@ -655,32 +667,44 @@ async def init_security():
 async def init_health_checker():
     """Initialize unified health checker"""
     try:
+        if not HealthChecker:
+            logger.warning("HealthChecker class not available")
+            return None
         health_checker = HealthChecker(config)
         await health_checker.start()
         return health_checker
     except Exception as e:
         logger.error(f"Error initializing health checker: {e}")
-        raise
+        logger.warning("Continuing without health checker")
+        return None
 
 async def init_backup():
     """Initialize backup manager"""
     try:
+        if not BackupManager:
+            logger.warning("BackupManager class not available")
+            return None
         backup_manager = BackupManager(config)
         await backup_manager.start()
         return backup_manager
     except Exception as e:
         logger.error(f"Error initializing backup: {e}")
-        raise
+        logger.warning("Continuing without backup manager")
+        return None
 
 async def init_shutdown():
     """Initialize shutdown handler"""
     try:
+        if not GracefulShutdown:
+            logger.warning("GracefulShutdown class not available")
+            return None
         shutdown_handler = GracefulShutdown()
         await shutdown_handler.start()
         return shutdown_handler
     except Exception as e:
         logger.error(f"Error initializing shutdown handler: {e}")
-        raise
+        logger.warning("Continuing without shutdown handler")
+        return None
 
 def init_websocket_manager(redis_client):
     """Initialize WebSocket manager"""
