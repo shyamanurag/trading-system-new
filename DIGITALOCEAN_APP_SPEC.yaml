@@ -93,7 +93,7 @@ services:
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-1gb
   name: api
-  run_command: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+  run_command: PYTHONPATH=$PYTHONPATH:. gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
   source_dir: /
 
 static_sites:
