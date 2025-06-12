@@ -109,7 +109,7 @@ services:
   source_dir: /
 
 static_sites:
-- build_command: "rm -rf node_modules package-lock.json && \nnpm install --no-optional && \nnpm install @vitejs/plugin-react @rollup/rollup-linux-x64-gnu && \nnpm run build\n"
+- build_command: "npm ci --prefer-offline --no-audit --progress=false && \nnpm install --prefer-offline --no-audit --progress=false @vitejs/plugin-react @rollup/rollup-linux-x64-gnu && \nnpm run build\n"
   catchall_document: index.html
   environment_slug: node-js
   envs:
