@@ -141,7 +141,7 @@ class DatabaseManager:
             # Users table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS users (
-                    user_id VARCHAR(50) PRIMARY KEY,
+                    id SERIAL PRIMARY KEY,
                     username VARCHAR(100) UNIQUE NOT NULL,
                     email VARCHAR(150) UNIQUE NOT NULL,
                     password_hash VARCHAR(255) NOT NULL,
@@ -160,7 +160,7 @@ class DatabaseManager:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS positions (
                     position_id SERIAL PRIMARY KEY,
-                    user_id VARCHAR(50) REFERENCES users(user_id),
+                    user_id INTEGER REFERENCES users(id),
                     symbol VARCHAR(20) NOT NULL,
                     quantity INTEGER NOT NULL,
                     entry_price DECIMAL(10,2) NOT NULL,
@@ -180,7 +180,7 @@ class DatabaseManager:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS trades (
                     trade_id SERIAL PRIMARY KEY,
-                    user_id VARCHAR(50) REFERENCES users(user_id),
+                    user_id INTEGER REFERENCES users(id),
                     symbol VARCHAR(20) NOT NULL,
                     trade_type VARCHAR(10) NOT NULL, -- 'buy' or 'sell'
                     quantity INTEGER NOT NULL,
@@ -197,7 +197,7 @@ class DatabaseManager:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS orders (
                     order_id VARCHAR(50) PRIMARY KEY,
-                    user_id VARCHAR(50) REFERENCES users(user_id),
+                    user_id INTEGER REFERENCES users(id),
                     broker_order_id VARCHAR(100),
                     parent_order_id VARCHAR(50),
                     symbol VARCHAR(20) NOT NULL,

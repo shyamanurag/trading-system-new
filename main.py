@@ -259,21 +259,15 @@ error_handler.environment = environment
 # Add error recovery middleware
 # app.add_middleware(ErrorRecoveryMiddleware, error_threshold=10, recovery_time=60)  # Comment out as this doesn't exist
 
-# CORS middleware configuration
+# CORS configuration
 origins = os.getenv("CORS_ORIGINS", "[]")
 try:
     allowed_origins = eval(origins)
-    if not isinstance(allowed_origins, list):
-        allowed_origins = []
 except:
-    allowed_origins = []
-
-# Add default origins if none specified
-if not allowed_origins:
     allowed_origins = [
         "https://algoauto-jd32t.ondigitalocean.app",
         "http://localhost:3000",
-        "http://localhost:5173"  # Vite dev server
+        "http://localhost:5173"
     ]
 
 app.add_middleware(
@@ -282,23 +276,22 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"]
 )
 
-# Create v1 router
+# Create versioned router
 api_v1 = APIRouter(prefix="/api/v1")
 
-# Include all existing routers under v1 prefix
+# Include routers
 api_v1.include_router(recommendations_router, prefix="/recommendations", tags=["trading"])
 api_v1.include_router(monitoring_router, prefix="/monitoring", tags=["monitoring"])
-api_v1.include_router(autonomous_router, prefix="/autonomous", tags=["autonomous"])
-api_v1.include_router(auth_router_v1, tags=["authentication"])
+api_v1.include_router(autonomous_router, prefix="/autonomous", tags=["trading"])
+api_v1.include_router(auth_router_v1, prefix="/auth", tags=["authentication"])
 
-# Include the v1 router in the main app
+# Mount versioned router
 app.include_router(api_v1)
 
-# Also mount auth router directly for backward compatibility
-app.include_router(auth_router, tags=["authentication"])
+# Also include non-versioned auth router for backward compatibility
+app.include_router(auth_router, prefix="/api/auth", tags=["authentication"])
 
 # Mount static files for frontend
 static_dir = Path("dist/frontend")
