@@ -685,15 +685,14 @@ def get_database_config_from_env() -> DatabaseConfig:
             connect_timeout=int(os.getenv('DB_CONNECT_TIMEOUT', '10'))
         )
         
-        # Add SSL configuration for DigitalOcean
-        if ssl_mode in ['require', 'prefer']:
-            config.server_settings = config.server_settings or {}
-            config.server_settings.update({
-                'sslmode': ssl_mode,
-                'jit': 'off',
-                'statement_timeout': '15000',
-                'idle_in_transaction_session_timeout': '30000'
-            })
+        # SSL is enforced via the connection string; adding it to server_settings
+        # causes "unrecognized configuration parameter 'sslmode'" on managed
+        # PostgreSQL. Remove sslmode from server_settings and keep the rest.
+        config.server_settings.update({
+            'jit': 'off',
+            'statement_timeout': '15000',
+            'idle_in_transaction_session_timeout': '30000'
+        })
         
         return config
     else:

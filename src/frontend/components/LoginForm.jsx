@@ -12,8 +12,7 @@ import {
     Typography
 } from '@mui/material';
 import React, { useState } from 'react';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-jd32t.ondigitalocean.app';
+import { API_ENDPOINTS } from '../api/config';
 
 const LoginForm = ({ onLogin }) => {
     const [credentials, setCredentials] = useState({
@@ -30,12 +29,14 @@ const LoginForm = ({ onLogin }) => {
         setError('');
 
         try {
-            // Make real API call to authenticate user
-            const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
+            const response = await fetch(API_ENDPOINTS.LOGIN.url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'Origin': window.location.origin
                 },
+                credentials: 'include',
                 body: JSON.stringify({
                     username: credentials.username,
                     password: credentials.password
@@ -44,30 +45,28 @@ const LoginForm = ({ onLogin }) => {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || 'Authentication failed');
+                throw new Error(errorData.detail || `Authentication failed: ${response.status} ${response.statusText}`);
             }
 
             const data = await response.json();
 
-            if (data.success && data.user && data.access_token) {
+            if (data.access_token) {
                 // Store authentication token
                 localStorage.setItem('auth_token', data.access_token);
-                localStorage.setItem('user_info', JSON.stringify(data.user));
+                localStorage.setItem('user_info', JSON.stringify(data.user_info));
 
                 // Create user info object with proper structure
                 const userInfo = {
-                    username: data.user.username,
-                    name: data.user.username.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
-                    role: data.user.role || 'trader',
-                    email: data.user.email,
-                    capital: data.user.capital,
-                    permissions: data.user.permissions || [],
-                    token: data.access_token
+                    username: data.user_info.username,
+                    name: data.user_info.full_name,
+                    role: data.user_info.is_admin ? 'admin' : 'trader',
+                    email: data.user_info.email,
+                    permissions: data.user_info.is_admin ? ['trade', 'view_analytics'] : ['trade']
                 };
 
                 onLogin(userInfo);
             } else {
-                throw new Error('Invalid response from server');
+                throw new Error('Invalid response from server: Missing access token');
             }
         } catch (err) {
             console.error('Authentication error:', err);

@@ -152,7 +152,7 @@ async def lifespan(app: FastAPI):
 # Import new API routers
 from src.api.market_data import router as market_data_router
 from src.api.elite_recommendations import router as recommendations_router
-from src.api.auth import router as auth_router
+from src.api.auth import router as auth_router, router_v1 as auth_router_v1
 from src.api.monitoring import router as monitoring_router
 from src.api.autonomous_trading import router as autonomous_router
 
@@ -323,15 +323,13 @@ api_v1 = APIRouter(prefix="/api/v1")
 api_v1.include_router(recommendations_router, prefix="/recommendations", tags=["trading"])
 api_v1.include_router(monitoring_router, prefix="/monitoring", tags=["monitoring"])
 api_v1.include_router(autonomous_router, prefix="/autonomous", tags=["autonomous"])
-api_v1.include_router(auth_router, prefix="/auth", tags=["authentication"])
-# Comment out routers that don't exist yet
-# api_v1.include_router(database_health_router, prefix="/database", tags=["database"])
-# api_v1.include_router(market_indices_router, prefix="/market", tags=["market-data"])
-# api_v1.include_router(dashboard_router, prefix="", tags=["dashboard"])
-# api_v1.include_router(trading_control_router, prefix="", tags=["trading-control"])
+api_v1.include_router(auth_router_v1, tags=["authentication"])
 
 # Include the v1 router in the main app
 app.include_router(api_v1)
+
+# Also mount auth router directly for backward compatibility
+app.include_router(auth_router, tags=["authentication"])
 
 # Mount static files for frontend
 static_dir = Path("dist/frontend")
