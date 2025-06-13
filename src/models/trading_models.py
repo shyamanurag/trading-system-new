@@ -19,17 +19,24 @@ class User(Base):
     __tablename__ = "users"
     
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(50), unique=True, index=True, nullable=False)
-    email = Column(String(100), unique=True, index=True, nullable=False)
-    hashed_password = Column(String(128), nullable=False)
+    username = Column(String(100), unique=True, index=True, nullable=False)
+    email = Column(String(150), unique=True, index=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    full_name = Column(String(200))
+    initial_capital = Column(DECIMAL(15,2), default=50000)
+    current_balance = Column(DECIMAL(15,2), default=50000)
+    risk_tolerance = Column(String(20), default='medium')
     is_active = Column(Boolean, default=True)
-    is_verified = Column(Boolean, default=False)
+    zerodha_client_id = Column(String(50))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
-    portfolios = relationship("Portfolio", back_populates="user")
+    positions = relationship("Position", back_populates="user")
     trades = relationship("Trade", back_populates="user")
+    orders = relationship("Order", back_populates="user")
+    metrics = relationship("UserMetric", back_populates="user")
+    risk_metrics = relationship("RiskMetric", back_populates="user")
 
 class Portfolio(Base):
     """User portfolios and holdings"""
@@ -95,55 +102,116 @@ class MarketData(Base):
     )
 
 class Position(Base):
-    """Current portfolio positions"""
+    """Trading positions"""
     __tablename__ = "positions"
     
-    id = Column(Integer, primary_key=True, index=True)
-    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False)
-    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False)
+    position_id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    symbol = Column(String(20), nullable=False)
     quantity = Column(Integer, nullable=False)
-    avg_buy_price = Column(DECIMAL(10, 4), nullable=False)
-    current_price = Column(DECIMAL(10, 4))
-    market_value = Column(DECIMAL(15, 2))
-    unrealized_pnl = Column(DECIMAL(15, 2))
-    position_type = Column(String(10), default='LONG')  # LONG, SHORT
-    is_active = Column(Boolean, default=True)
+    entry_price = Column(DECIMAL(10,2), nullable=False)
+    current_price = Column(DECIMAL(10,2))
+    entry_time = Column(DateTime(timezone=True), server_default=func.now())
+    exit_time = Column(DateTime(timezone=True))
+    strategy = Column(String(50))
+    status = Column(String(20), default='open')
+    unrealized_pnl = Column(DECIMAL(12,2))
+    realized_pnl = Column(DECIMAL(12,2))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
-    portfolio = relationship("Portfolio", back_populates="positions")
-    stock = relationship("Stock", back_populates="positions")
+    user = relationship("User", back_populates="positions")
+    trades = relationship("Trade", back_populates="position")
 
 class Trade(Base):
-    """Trading transactions history"""
+    """Trading transactions"""
     __tablename__ = "trades"
     
-    id = Column(Integer, primary_key=True, index=True)
+    trade_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False)
-    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False)
-    trade_type = Column(String(10), nullable=False)  # BUY, SELL
+    position_id = Column(Integer, ForeignKey("positions.position_id"))
+    symbol = Column(String(20), nullable=False)
+    trade_type = Column(String(10), nullable=False)  # 'buy' or 'sell'
     quantity = Column(Integer, nullable=False)
-    price = Column(DECIMAL(10, 4), nullable=False)
-    total_amount = Column(DECIMAL(15, 2), nullable=False)
-    fees = Column(DECIMAL(10, 2), default=0)
-    status = Column(String(20), default='PENDING')  # PENDING, EXECUTED, CANCELLED
-    execution_time = Column(DateTime(timezone=True))
-    strategy = Column(String(50))  # Manual, Algorithm name
-    notes = Column(Text)
+    price = Column(DECIMAL(10,2), nullable=False)
+    order_id = Column(String(50))
+    strategy = Column(String(50))
+    commission = Column(DECIMAL(8,2), default=0)
+    executed_at = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
     user = relationship("User", back_populates="trades")
-    portfolio = relationship("Portfolio", back_populates="trades")
-    stock = relationship("Stock", back_populates="trades")
+    position = relationship("Position", back_populates="trades")
+
+class Order(Base):
+    """Trading orders"""
+    __tablename__ = "orders"
     
-    # Indexes
-    __table_args__ = (
-        Index('ix_trades_user_timestamp', 'user_id', 'created_at'),
-        Index('ix_trades_portfolio_timestamp', 'portfolio_id', 'created_at'),
-    )
+    order_id = Column(String(50), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    broker_order_id = Column(String(100))
+    parent_order_id = Column(String(50))
+    symbol = Column(String(20), nullable=False)
+    order_type = Column(String(20), nullable=False)
+    side = Column(String(10), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    price = Column(DECIMAL(10,2))
+    stop_price = Column(DECIMAL(10,2))
+    filled_quantity = Column(Integer, default=0)
+    average_price = Column(DECIMAL(10,2))
+    status = Column(String(20), default='PENDING')
+    execution_strategy = Column(String(30))
+    time_in_force = Column(String(10), default='DAY')
+    strategy_name = Column(String(50))
+    signal_id = Column(String(50))
+    fees = Column(DECIMAL(8,2), default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    placed_at = Column(DateTime(timezone=True))
+    filled_at = Column(DateTime(timezone=True))
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="orders")
+
+class UserMetric(Base):
+    """User performance metrics"""
+    __tablename__ = "user_metrics"
+    
+    metric_id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    date = Column(DateTime(timezone=True), nullable=False)
+    total_trades = Column(Integer, default=0)
+    winning_trades = Column(Integer, default=0)
+    losing_trades = Column(Integer, default=0)
+    total_pnl = Column(DECIMAL(12,2), default=0)
+    win_rate = Column(DECIMAL(5,2))
+    avg_win = Column(DECIMAL(10,2))
+    avg_loss = Column(DECIMAL(10,2))
+    sharpe_ratio = Column(DECIMAL(5,2))
+    max_drawdown = Column(DECIMAL(10,2))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="metrics")
+
+class RiskMetric(Base):
+    """Risk metrics"""
+    __tablename__ = "risk_metrics"
+    
+    metric_id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    portfolio_value = Column(DECIMAL(15,2))
+    var_95 = Column(DECIMAL(10,2))  # Value at Risk 95%
+    exposure = Column(DECIMAL(10,2))
+    leverage = Column(DECIMAL(5,2))
+    risk_level = Column(String(20))  # LOW, MEDIUM, HIGH, CRITICAL
+    alerts = Column(JSON)
+    
+    # Relationships
+    user = relationship("User", back_populates="risk_metrics")
 
 class Recommendation(Base):
     """AI-generated trading recommendations"""

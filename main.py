@@ -279,19 +279,19 @@ app.add_middleware(
 )
 
 # Create versioned router
-api_v1 = APIRouter(prefix="/api/v1")
+api_v1 = APIRouter(prefix="/v1")
 
-# Include routers
-api_v1.include_router(recommendations_router, prefix="/recommendations", tags=["trading"])
+# Include routers under v1 prefix
+api_v1.include_router(recommendations_router, prefix="/recommendations", tags=["recommendations"])
 api_v1.include_router(monitoring_router, prefix="/monitoring", tags=["monitoring"])
-api_v1.include_router(autonomous_router, prefix="/autonomous", tags=["trading"])
-api_v1.include_router(auth_router_v1, prefix="/auth", tags=["authentication"])
+api_v1.include_router(autonomous_router, prefix="/trading", tags=["trading"])
+api_v1.include_router(auth_router_v1, prefix="/auth", tags=["auth"])
 
 # Mount versioned router
 app.include_router(api_v1)
 
-# Also include non-versioned auth router for backward compatibility
-app.include_router(auth_router, prefix="/api/auth", tags=["authentication"])
+# Include non-versioned auth router for backward compatibility
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
 
 # Mount static files for frontend
 static_dir = Path("dist/frontend")

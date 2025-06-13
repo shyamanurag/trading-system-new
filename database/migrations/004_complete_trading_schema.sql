@@ -5,10 +5,26 @@
 
 BEGIN;
 
--- Orders table (MISSING - CRITICAL)
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    full_name VARCHAR(200),
+    initial_capital DECIMAL(15,2) DEFAULT 50000,
+    current_balance DECIMAL(15,2) DEFAULT 50000,
+    risk_tolerance VARCHAR(20) DEFAULT 'medium',
+    is_active BOOLEAN DEFAULT true,
+    zerodha_client_id VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Orders table
 CREATE TABLE IF NOT EXISTS orders (
     order_id VARCHAR(50) PRIMARY KEY,
-    user_id VARCHAR(50) REFERENCES users(user_id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     broker_order_id VARCHAR(100),
     parent_order_id VARCHAR(50),
     symbol VARCHAR(20) NOT NULL,
@@ -49,7 +65,7 @@ CREATE TABLE IF NOT EXISTS recommendations (
     status VARCHAR(20) DEFAULT 'ACTIVE', -- ACTIVE, EXECUTED, EXPIRED, CANCELLED
     validity_start TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     validity_end TIMESTAMP WITH TIME ZONE,
-    created_by VARCHAR(50),
+    created_by INTEGER REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -81,7 +97,7 @@ CREATE TABLE IF NOT EXISTS strategies (
 -- User metrics table (for performance tracking)
 CREATE TABLE IF NOT EXISTS user_metrics (
     metric_id SERIAL PRIMARY KEY,
-    user_id VARCHAR(50) REFERENCES users(user_id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     date DATE NOT NULL,
     total_trades INTEGER DEFAULT 0,
     winning_trades INTEGER DEFAULT 0,
@@ -99,7 +115,7 @@ CREATE TABLE IF NOT EXISTS user_metrics (
 -- Risk metrics table
 CREATE TABLE IF NOT EXISTS risk_metrics (
     metric_id SERIAL PRIMARY KEY,
-    user_id VARCHAR(50) REFERENCES users(user_id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     portfolio_value DECIMAL(15,2),
     var_95 DECIMAL(10,2), -- Value at Risk 95%
@@ -112,7 +128,7 @@ CREATE TABLE IF NOT EXISTS risk_metrics (
 -- Audit logs table
 CREATE TABLE IF NOT EXISTS audit_logs (
     log_id SERIAL PRIMARY KEY,
-    user_id VARCHAR(50),
+    user_id INTEGER REFERENCES users(id),
     action VARCHAR(50) NOT NULL,
     entity_type VARCHAR(50), -- ORDER, TRADE, POSITION
     entity_id VARCHAR(50),
@@ -155,7 +171,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
 -- Create views for common queries
 CREATE OR REPLACE VIEW user_performance AS
 SELECT 
-    u.user_id,
+    u.id as user_id,
     u.username,
     u.current_balance,
     COUNT(DISTINCT p.position_id) as open_positions,
@@ -163,9 +179,9 @@ SELECT
     COALESCE(SUM(p.unrealized_pnl), 0) as total_unrealized_pnl,
     COALESCE(SUM(p.realized_pnl), 0) as total_realized_pnl
 FROM users u
-LEFT JOIN positions p ON u.user_id = p.user_id AND p.status = 'open'
-LEFT JOIN trades t ON u.user_id = t.user_id
-GROUP BY u.user_id, u.username, u.current_balance;
+LEFT JOIN positions p ON u.id = p.user_id AND p.status = 'open'
+LEFT JOIN trades t ON u.id = t.user_id
+GROUP BY u.id, u.username, u.current_balance;
 
 CREATE OR REPLACE VIEW active_orders AS
 SELECT 
@@ -173,7 +189,7 @@ SELECT
     u.username,
     u.current_balance
 FROM orders o
-JOIN users u ON o.user_id = u.user_id
+JOIN users u ON o.user_id = u.id
 WHERE o.status IN ('PENDING', 'OPEN', 'PARTIAL');
 
 -- Create functions for data integrity
@@ -188,7 +204,7 @@ BEGIN
             ELSE -(NEW.quantity * NEW.price + NEW.commission)
         END,
         updated_at = NOW()
-    WHERE user_id = NEW.user_id;
+    WHERE id = NEW.user_id;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

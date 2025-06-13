@@ -16,43 +16,43 @@ const createEndpoint = (path) => {
 
 export const API_ENDPOINTS = {
     // Auth endpoints
-    LOGIN: createEndpoint('/api/v1/auth/login'),
-    REGISTER: createEndpoint('/api/v1/auth/register'),
-    LOGOUT: createEndpoint('/api/v1/auth/logout'),
-    REFRESH_TOKEN: createEndpoint('/api/v1/auth/refresh-token'),
+    LOGIN: createEndpoint('/v1/auth/login'),
+    REGISTER: createEndpoint('/v1/auth/register'),
+    LOGOUT: createEndpoint('/v1/auth/logout'),
+    REFRESH_TOKEN: createEndpoint('/v1/auth/refresh-token'),
 
     // User endpoints
-    USERS: createEndpoint('/api/v1/users'),
-    USER_PROFILE: createEndpoint('/api/v1/users/profile'),
-    USER_PERFORMANCE: createEndpoint('/api/v1/users/performance'),
+    USERS: createEndpoint('/v1/users'),
+    USER_PROFILE: createEndpoint('/v1/users/profile'),
+    USER_PERFORMANCE: createEndpoint('/v1/users/performance'),
 
     // Trading endpoints
-    TRADES: createEndpoint('/api/v1/trades'),
-    POSITIONS: createEndpoint('/api/v1/positions'),
-    ORDERS: createEndpoint('/api/v1/orders'),
+    TRADES: createEndpoint('/v1/trades'),
+    POSITIONS: createEndpoint('/v1/positions'),
+    ORDERS: createEndpoint('/v1/orders'),
 
     // Market data endpoints
-    MARKET_DATA: createEndpoint('/api/v1/market-data'),
-    SYMBOLS: createEndpoint('/api/v1/symbols'),
+    MARKET_DATA: createEndpoint('/v1/market-data'),
+    SYMBOLS: createEndpoint('/v1/symbols'),
 
     // Strategy endpoints
-    STRATEGIES: createEndpoint('/api/v1/strategies'),
-    STRATEGY_PERFORMANCE: createEndpoint('/api/v1/strategies/performance'),
+    STRATEGIES: createEndpoint('/v1/strategies'),
+    STRATEGY_PERFORMANCE: createEndpoint('/v1/strategies/performance'),
 
     // Dashboard endpoints
-    DASHBOARD_SUMMARY: createEndpoint('/api/v1/dashboard/summary'),
-    DAILY_PNL: createEndpoint('/api/v1/performance/daily-pnl'),
-    RECOMMENDATIONS: createEndpoint('/api/v1/recommendations'),
+    DASHBOARD_SUMMARY: createEndpoint('/v1/dashboard/summary'),
+    DAILY_PNL: createEndpoint('/v1/performance/daily-pnl'),
+    RECOMMENDATIONS: createEndpoint('/v1/recommendations'),
 
     // Broker endpoints
-    BROKER_CONNECT: createEndpoint('/api/v1/broker/connect'),
-    BROKER_DISCONNECT: createEndpoint('/api/v1/broker/disconnect'),
-    BROKER_STATUS: createEndpoint('/api/v1/broker/status'),
+    BROKER_CONNECT: createEndpoint('/v1/broker/connect'),
+    BROKER_DISCONNECT: createEndpoint('/v1/broker/disconnect'),
+    BROKER_STATUS: createEndpoint('/v1/broker/status'),
 
     // System endpoints
-    SYSTEM_STATUS: createEndpoint('/api/v1/system/status'),
-    SYSTEM_LOGS: createEndpoint('/api/v1/system/logs'),
-    SYSTEM_METRICS: createEndpoint('/api/v1/system/metrics'),
+    SYSTEM_STATUS: createEndpoint('/v1/system/status'),
+    SYSTEM_LOGS: createEndpoint('/v1/system/logs'),
+    SYSTEM_METRICS: createEndpoint('/v1/system/metrics'),
 
     // WebSocket endpoints
     WS_MARKET_DATA: `${WS_BASE_URL}/ws/market-data`,
@@ -60,12 +60,12 @@ export const API_ENDPOINTS = {
     WS_POSITIONS: `${WS_BASE_URL}/ws/positions`,
 
     // Additional endpoints
-    TICK_DATA: `${API_BASE_URL}/api/v1/tick-data`,
-    ORDER_BOOK: `${API_BASE_URL}/api/v1/order-book`,
-    ACCOUNT: `${API_BASE_URL}/api/v1/account`,
+    TICK_DATA: `${API_BASE_URL}/v1/tick-data`,
+    ORDER_BOOK: `${API_BASE_URL}/v1/order-book`,
+    ACCOUNT: `${API_BASE_URL}/v1/account`,
     HEALTH: `${API_BASE_URL}/health`,
     METRICS: `${API_BASE_URL}/metrics`,
-    CONFIG: `${API_BASE_URL}/api/config`
+    CONFIG: `${API_BASE_URL}/config`
 };
 
 export default API_ENDPOINTS; 
