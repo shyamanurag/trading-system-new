@@ -290,21 +290,30 @@ error_handler.environment = environment
 # Add error recovery middleware
 # app.add_middleware(ErrorRecoveryMiddleware, error_threshold=10, recovery_time=60)  # Comment out as this doesn't exist
 
-# Add CORS middleware
+# CORS middleware configuration
+origins = os.getenv("CORS_ORIGINS", "[]")
+try:
+    allowed_origins = eval(origins)
+    if not isinstance(allowed_origins, list):
+        allowed_origins = []
+except:
+    allowed_origins = []
+
+# Add default origins if none specified
+if not allowed_origins:
+    allowed_origins = [
+        "https://algoauto-jd32t.ondigitalocean.app",
+        "http://localhost:3000",
+        "http://localhost:5173"  # Vite dev server
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://algoauto-jd32t.ondigitalocean.app",  # Production domain (updated)
-        os.getenv("FRONTEND_URL", "https://algoauto-jd32t.ondigitalocean.app"),  # Dynamic frontend URL
-        os.getenv("APP_URL", "https://algoauto-jd32t.ondigitalocean.app"),      # App URL
-        "http://localhost:3000",  # Development frontend
-        "http://0.0.0.0:3000",    # Replit development
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
-    expose_headers=["X-Total-Count", "X-Page-Count"],
-    max_age=3600,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # Create v1 router
