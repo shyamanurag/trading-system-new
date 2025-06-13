@@ -8,6 +8,7 @@ import logging
 import asyncio
 from datetime import datetime
 import uuid
+import redis
 from .websocket_config import (
     DEFAULT_CONFIG,
     get_ssl_context,
@@ -30,12 +31,15 @@ logger = logging.getLogger(__name__)
 class WebSocketManager:
     """Manages WebSocket connections with enhanced features"""
     
-    def __init__(self):
+    def __init__(self, redis_client: redis.Redis):
+        self.redis_client = redis_client
         self.active_connections: Dict[str, List[WebSocket]] = {}
         self.user_connections: Dict[str, int] = {}
         self.rate_limiter = RateLimiter(RATE_LIMIT_WINDOW, RATE_LIMIT_MAX)
         self.circuit_breaker = CircuitBreaker(CIRCUIT_BREAKER_THRESHOLD, CIRCUIT_BREAKER_TIMEOUT)
         self.ssl_context = get_ssl_context()
+        self.is_running = False
+        self.background_tasks = []
         
         # Initialize components
         self.metrics = WebSocketMetrics()
@@ -49,259 +53,162 @@ class WebSocketManager:
         # Room subscriptions
         self.connection_metadata: Dict[str, Dict[str, Any]] = {}
         self.subscription_rooms: Dict[str, Set[str]] = {}
+    
+    async def start(self):
+        """Start the WebSocket manager and background tasks"""
+        if self.is_running:
+            return
+            
+        self.is_running = True
         
-    async def validate_connection(self, websocket: WebSocket, user_id: str) -> bool:
-        """Validate new connection"""
-        try:
-            # Check connection count
-            if self.user_connections.get(user_id, 0) >= MAX_CONNECTIONS_PER_USER:
-                logger.warning(f"User {user_id} exceeded max connections")
-                return False
-                
-            # Check circuit breaker
-            if not await self.circuit_breaker.is_allowed(f"connect_{user_id}"):
-                logger.warning("Circuit breaker is open")
-                return False
-                
-            # Check rate limit
-            if not await self.rate_limiter.is_allowed(f"connect_{user_id}"):
-                logger.warning(f"User {user_id} exceeded rate limit")
-                return False
-                
-            return True
-        except Exception as e:
-            logger.error(f"Connection validation error: {e}")
-            return False
-
+        # Start background tasks
+        self.background_tasks = [
+            asyncio.create_task(self._market_data_listener()),
+            asyncio.create_task(self._position_update_listener()),
+            asyncio.create_task(self._heartbeat_monitor()),
+            asyncio.create_task(self._redis_subscriber())
+        ]
+        
+        logger.info("WebSocket manager started with background tasks")
+    
+    async def stop(self):
+        """Stop the WebSocket manager and cleanup"""
+        if not self.is_running:
+            return
+            
+        self.is_running = False
+        
+        # Cancel background tasks
+        for task in self.background_tasks:
+            task.cancel()
+        
+        # Wait for tasks to complete
+        await asyncio.gather(*self.background_tasks, return_exceptions=True)
+        
+        # Close all connections
+        await self.close_all()
+        
+        logger.info("WebSocket manager stopped")
+    
+    async def close_all(self):
+        """Close all active WebSocket connections"""
+        for user_id, connections in self.active_connections.items():
+            for connection in connections:
+                try:
+                    await connection.close()
+                except Exception as e:
+                    logger.error(f"Error closing connection for user {user_id}: {e}")
+        
+        self.active_connections.clear()
+        self.user_connections.clear()
+        self.connection_metadata.clear()
+        self.subscription_rooms.clear()
+        self.websocket_ids.clear()
+        
+        logger.info("All WebSocket connections closed")
+    
     async def connect(self, websocket: WebSocket, user_id: str):
-        """Connect with validation and SSL"""
-        try:
-            if not await self.validate_connection(websocket, user_id):
-                raise HTTPException(status_code=429, detail="Connection rejected")
-                
-            await websocket.accept()
+        """Handle new WebSocket connection"""
+        # Check connection limits
+        if self.user_connections.get(user_id, 0) >= MAX_CONNECTIONS_PER_USER:
+            raise HTTPException(status_code=429, detail="Too many connections")
+        
+        # Check rate limits
+        if not self.rate_limiter.check(user_id):
+            raise HTTPException(status_code=429, detail="Rate limit exceeded")
+        
+        # Check circuit breaker
+        if self.circuit_breaker.is_open():
+            raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+        
+        await websocket.accept()
+        
+        # Generate unique connection ID
+        connection_id = str(uuid.uuid4())
+        self.websocket_ids[websocket] = connection_id
+        
+        # Update connection tracking
+        if user_id not in self.active_connections:
+            self.active_connections[user_id] = []
+        self.active_connections[user_id].append(websocket)
+        self.user_connections[user_id] = self.user_connections.get(user_id, 0) + 1
+        
+        # Initialize connection metadata
+        self.connection_metadata[connection_id] = {
+            'user_id': user_id,
+            'connected_at': datetime.now(),
+            'last_heartbeat': datetime.now(),
+            'message_count': 0
+        }
+        
+        self.total_connections += 1
+        await self.metrics.increment_connections()
+        
+        logger.info(f"New WebSocket connection: {connection_id} for user {user_id}")
+    
+    async def disconnect(self, websocket: WebSocket):
+        """Handle WebSocket disconnection"""
+        connection_id = self.websocket_ids.get(websocket)
+        if not connection_id:
+            return
+        
+        metadata = self.connection_metadata.get(connection_id)
+        if metadata:
+            user_id = metadata['user_id']
             
-            if user_id not in self.active_connections:
-                self.active_connections[user_id] = []
-            self.active_connections[user_id].append(websocket)
-            self.user_connections[user_id] = self.user_connections.get(user_id, 0) + 1
-            
-            # Generate unique ID for websocket
-            ws_id = str(uuid.uuid4())
-            self.websocket_ids[websocket] = ws_id
-            
-            # Initialize connection metadata
-            self.connection_metadata[ws_id] = {
-                'user_id': user_id,
-                'subscriptions': set(),
-                'last_heartbeat': datetime.now(),
-                'connected_at': datetime.now()
-            }
-            
-            # Start heartbeat
-            asyncio.create_task(self._heartbeat(websocket))
-            
-            logger.info(f"User {user_id} connected successfully")
-        except Exception as e:
-            logger.error(f"Connection error: {e}")
-            raise
-
-    async def disconnect(self, websocket: WebSocket, user_id: str):
-        """Disconnect with cleanup"""
-        try:
+            # Remove from active connections
             if user_id in self.active_connections:
                 self.active_connections[user_id].remove(websocket)
                 if not self.active_connections[user_id]:
                     del self.active_connections[user_id]
-                    
+            
+            # Update user connection count
             self.user_connections[user_id] = max(0, self.user_connections.get(user_id, 1) - 1)
-            if self.user_connections[user_id] == 0:
-                del self.user_connections[user_id]
-                
-            # Cleanup websocket ID and batching
-            if websocket in self.websocket_ids:
-                ws_id = self.websocket_ids[websocket]
-                if ws_id in self.batch_tasks:
-                    self.batch_tasks[ws_id].cancel()
-                    del self.batch_tasks[ws_id]
-                if ws_id in self.message_batch:
-                    del self.message_batch[ws_id]
-                if ws_id in self.connection_metadata:
-                    del self.connection_metadata[ws_id]
-                del self.websocket_ids[websocket]
-                
-            logger.info(f"User {user_id} disconnected")
-        except Exception as e:
-            logger.error(f"Disconnection error: {e}")
-
-    async def _heartbeat(self, websocket: WebSocket):
-        """Send periodic heartbeat"""
-        try:
-            while True:
-                await asyncio.sleep(HEARTBEAT_INTERVAL)
-                if websocket.client_state.CONNECTED:
-                    await websocket.send_json({
-                        "type": "heartbeat",
-                        "timestamp": datetime.utcnow().isoformat()
-                    })
-        except Exception as e:
-            logger.error(f"Heartbeat error: {e}")
-
-    async def broadcast(self, message: dict, exclude_user: Optional[str] = None):
-        """Broadcast with validation"""
-        try:
-            if len(json.dumps(message)) > MAX_MESSAGE_SIZE:
-                logger.warning("Message exceeds size limit")
-                return
-                
-            for user_id, connections in self.active_connections.items():
-                if user_id != exclude_user:
-                    for connection in connections:
-                        try:
-                            await self.send_message(connection, message)
-                        except Exception as e:
-                            logger.error(f"Broadcast error to {user_id}: {e}")
-        except Exception as e:
-            logger.error(f"Broadcast error: {e}")
-
-    async def send_personal_message(self, message: dict, user_id: str):
-        """Send personal message with validation"""
-        try:
-            if len(json.dumps(message)) > MAX_MESSAGE_SIZE:
-                logger.warning("Message exceeds size limit")
-                return
-                
-            if user_id in self.active_connections:
-                for connection in self.active_connections[user_id]:
-                    try:
-                        await self.send_message(connection, message)
-                    except Exception as e:
-                        logger.error(f"Personal message error to {user_id}: {e}")
-        except Exception as e:
-            logger.error(f"Personal message error: {e}")
-
-    def get_active_connections(self) -> Dict[str, int]:
-        """Get current connection stats"""
-        return {
-            user_id: len(connections)
-            for user_id, connections in self.active_connections.items()
-        }
-        
+            
+            # Clean up metadata
+            del self.connection_metadata[connection_id]
+            del self.websocket_ids[websocket]
+            
+            # Remove from rooms
+            for room in self.subscription_rooms.values():
+                if connection_id in room:
+                    room.remove(connection_id)
+            
+            self.total_connections -= 1
+            await self.metrics.decrement_connections()
+            
+            logger.info(f"WebSocket disconnected: {connection_id} for user {user_id}")
+    
     async def send_message(self, websocket: WebSocket, message: Dict):
-        """Send a message with batching support"""
+        """Send message to a specific WebSocket connection"""
         try:
-            if websocket not in self.websocket_ids:
-                return
-                
-            ws_id = self.websocket_ids[websocket]
-            
-            # Add to batch
-            if ws_id not in self.message_batch:
-                self.message_batch[ws_id] = []
-                # Start batch task if not exists
-                if ws_id not in self.batch_tasks:
-                    self.batch_tasks[ws_id] = asyncio.create_task(
-                        self._process_batch(ws_id)
-                    )
-                    
-            self.message_batch[ws_id].append(message)
-            
-            # Send immediately if batch is full
-            if len(self.message_batch[ws_id]) >= MAX_BATCH_SIZE:
-                await self._send_batch(ws_id)
+            await websocket.send_json(message)
+            connection_id = self.websocket_ids.get(websocket)
+            if connection_id:
+                self.connection_metadata[connection_id]['message_count'] += 1
+            await self.metrics.increment_messages()
         except Exception as e:
-            logger.error(f"Error adding message to batch: {e}")
-            
-    async def _process_batch(self, ws_id: str):
-        """Process message batches"""
-        try:
-            while True:
-                await asyncio.sleep(BATCH_INTERVAL / 1000)
-                await self._send_batch(ws_id)
-        except asyncio.CancelledError:
-            # Send any remaining messages
-            await self._send_batch(ws_id)
-            
-    async def _send_batch(self, ws_id: str):
-        """Send a batch of messages"""
-        if ws_id not in self.message_batch or not self.message_batch[ws_id]:
-            return
-            
-        try:
-            # Find websocket by ID
-            websocket = None
-            for ws, id in self.websocket_ids.items():
-                if id == ws_id:
-                    websocket = ws
-                    break
-                    
-            if not websocket:
-                return
-                
-            messages = self.message_batch[ws_id]
-            self.message_batch[ws_id] = []
-            
-            # Send batch
-            await websocket.send_json({
-                'type': 'batch',
-                'messages': messages,
-                'timestamp': datetime.now().isoformat()
-            })
-            
-            # Update metrics
-            await self.metrics.increment('messages_sent', len(messages))
-            await self.metrics.increment('message_types', 
-                labels={'type': 'batch', 'size': str(len(messages))})
-                
-        except Exception as e:
-            logger.error(f"Error sending batch: {e}")
-            await self.metrics.increment('errors')
-            
-    async def subscribe_to_room(self, websocket: WebSocket, room_name: str) -> bool:
-        """Subscribe connection to a room"""
-        if websocket not in self.websocket_ids:
-            return False
-            
-        ws_id = self.websocket_ids[websocket]
-        if ws_id not in self.connection_metadata:
-            return False
-            
-        # Add to subscription room
-        if room_name not in self.subscription_rooms:
-            self.subscription_rooms[room_name] = set()
-        self.subscription_rooms[room_name].add(ws_id)
-        
-        # Update connection metadata
-        self.connection_metadata[ws_id]['subscriptions'].add(room_name)
-        
-        # Update metrics
-        await self.metrics.increment('room_subscriptions', 
-            labels={'room': room_name})
-            
-        logger.info(f"Connection {ws_id} subscribed to room: {room_name}")
-        return True
-        
-    async def unsubscribe_from_room(self, websocket: WebSocket, room_name: str) -> bool:
-        """Unsubscribe connection from a room"""
-        if websocket not in self.websocket_ids:
-            return False
-            
-        ws_id = self.websocket_ids[websocket]
-        if ws_id not in self.connection_metadata:
-            return False
-            
-        # Remove from subscription room
-        if room_name in self.subscription_rooms:
-            self.subscription_rooms[room_name].discard(ws_id)
-            if not self.subscription_rooms[room_name]:
-                del self.subscription_rooms[room_name]
-        
-        # Update connection metadata
-        self.connection_metadata[ws_id]['subscriptions'].discard(room_name)
-        
-        logger.info(f"Connection {ws_id} unsubscribed from room: {room_name}")
-        return True
-        
+            logger.error(f"Error sending message: {e}")
+            await self.disconnect(websocket)
+    
+    async def broadcast(self, message: Dict):
+        """Broadcast message to all connected clients"""
+        for user_id, connections in self.active_connections.items():
+            for connection in connections:
+                try:
+                    await self.send_message(connection, message)
+                except Exception as e:
+                    logger.error(f"Error broadcasting to user {user_id}: {e}")
+    
+    async def broadcast_to_user(self, user_id: str, message: Dict):
+        """Broadcast message to all connections of a specific user"""
+        if user_id in self.active_connections:
+            for connection in self.active_connections[user_id]:
+                try:
+                    await self.send_message(connection, message)
+                except Exception as e:
+                    logger.error(f"Error broadcasting to user {user_id}: {e}")
+    
     async def broadcast_to_room(self, room_name: str, message: Dict):
         """Broadcast message to all connections in a room"""
         if room_name not in self.subscription_rooms:
@@ -320,23 +227,132 @@ class WebSocketManager:
                     await self.send_message(websocket, message)
                 except Exception as e:
                     logger.error(f"Error broadcasting to room {room_name}: {e}")
-                    
+    
+    async def subscribe_to_room(self, websocket: WebSocket, room_name: str):
+        """Subscribe a connection to a room"""
+        connection_id = self.websocket_ids.get(websocket)
+        if not connection_id:
+            return
+        
+        if room_name not in self.subscription_rooms:
+            self.subscription_rooms[room_name] = set()
+        
+        self.subscription_rooms[room_name].add(connection_id)
+        logger.info(f"Connection {connection_id} subscribed to room {room_name}")
+    
+    async def unsubscribe_from_room(self, websocket: WebSocket, room_name: str):
+        """Unsubscribe a connection from a room"""
+        connection_id = self.websocket_ids.get(websocket)
+        if not connection_id or room_name not in self.subscription_rooms:
+            return
+        
+        self.subscription_rooms[room_name].remove(connection_id)
+        if not self.subscription_rooms[room_name]:
+            del self.subscription_rooms[room_name]
+        
+        logger.info(f"Connection {connection_id} unsubscribed from room {room_name}")
+    
+    async def _market_data_listener(self):
+        """Listen for market data updates"""
+        while self.is_running:
+            try:
+                # Subscribe to market data channel
+                pubsub = self.redis_client.pubsub()
+                await pubsub.subscribe('market_data')
+                
+                async for message in pubsub.listen():
+                    if message['type'] == 'message':
+                        data = json.loads(message['data'])
+                        await self.broadcast_to_room('market_data', data)
+                
+            except Exception as e:
+                logger.error(f"Error in market data listener: {e}")
+                await asyncio.sleep(5)
+    
+    async def _position_update_listener(self):
+        """Listen for position updates"""
+        while self.is_running:
+            try:
+                # Subscribe to position updates channel
+                pubsub = self.redis_client.pubsub()
+                await pubsub.subscribe('position_updates')
+                
+                async for message in pubsub.listen():
+                    if message['type'] == 'message':
+                        data = json.loads(message['data'])
+                        user_id = data.get('user_id')
+                        if user_id:
+                            await self.broadcast_to_user(user_id, data)
+                
+            except Exception as e:
+                logger.error(f"Error in position update listener: {e}")
+                await asyncio.sleep(5)
+    
+    async def _heartbeat_monitor(self):
+        """Monitor connection health with heartbeat"""
+        while self.is_running:
+            try:
+                current_time = datetime.now()
+                dead_connections = []
+                
+                for connection_id, metadata in self.connection_metadata.items():
+                    # Check if connection is stale (no heartbeat for 60 seconds)
+                    if (current_time - metadata['last_heartbeat']).seconds > 60:
+                        dead_connections.append(connection_id)
+                
+                # Clean up dead connections
+                for connection_id in dead_connections:
+                    websocket = None
+                    for ws, id in self.websocket_ids.items():
+                        if id == connection_id:
+                            websocket = ws
+                            break
+                    if websocket:
+                        await self.disconnect(websocket)
+                
+                # Send heartbeat to all connections
+                await self.broadcast({
+                    'type': 'heartbeat',
+                    'timestamp': current_time.isoformat(),
+                    'stats': {
+                        'total_connections': self.total_connections,
+                        'active_users': len(self.active_connections),
+                        'rooms': len(self.subscription_rooms)
+                    }
+                })
+                
+                await asyncio.sleep(30)  # Heartbeat every 30 seconds
+                
+            except Exception as e:
+                logger.error(f"Error in heartbeat monitor: {e}")
+                await asyncio.sleep(10)
+    
+    async def _redis_subscriber(self):
+        """Subscribe to Redis channels for system-wide updates"""
+        while self.is_running:
+            try:
+                pubsub = self.redis_client.pubsub()
+                await pubsub.subscribe('system_updates')
+                
+                async for message in pubsub.listen():
+                    if message['type'] == 'message':
+                        data = json.loads(message['data'])
+                        await self.broadcast(data)
+                
+            except Exception as e:
+                logger.error(f"Error in Redis subscriber: {e}")
+                await asyncio.sleep(5)
+    
     async def get_metrics(self) -> Dict[str, Any]:
         """Get current metrics"""
         return await self.metrics.get_metrics()
-        
-    async def check_alerts(self):
-        """Check for metric alerts"""
-        metrics = await self.metrics.get_metrics()
-        
-        # Check connection count
-        await self.metrics.alert('connections', 1000, 
-            "High number of concurrent connections")
-            
-        # Check error rate
-        if 'rates' in metrics and metrics['rates']['errors_per_second'] > 1:
-            logger.warning("High error rate detected")
-            
-        # Check latency
-        if 'latency_stats' in metrics and metrics['latency_stats']['p95'] > 1000:
-            logger.warning("High latency detected (p95 > 1000ms)") 
+    
+    def get_connection_stats(self) -> Dict[str, Any]:
+        """Get current connection statistics"""
+        return {
+            'total_connections': self.total_connections,
+            'active_users': len(self.active_connections),
+            'rooms': len(self.subscription_rooms),
+            'user_connections': self.user_connections,
+            'subscription_rooms': {room: len(connections) for room, connections in self.subscription_rooms.items()}
+        } 

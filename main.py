@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    global config, redis_client, security_manager, security_monitor, health_checker, backup_manager, shutdown_handler, websocket_manager
+    global config, redis_client, security_manager, security_monitor, websocket_manager
     
     # Startup
     try:
@@ -69,20 +69,11 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"❌ Database unavailable, continuing in API-only mode: {e}")
         
-        # Initialize health checker
-        health_checker = await init_health_checker()
-        
         # Initialize security (if Redis is available)
         if redis_client:
             security_manager, security_monitor = await init_security()
         else:
             logger.warning("Redis unavailable, skipping security components")
-        
-        # Initialize backup
-        backup_manager = await init_backup()
-        
-        # Initialize shutdown handler
-        shutdown_handler = await init_shutdown()
         
         # Initialize websocket manager
         if redis_client:
@@ -97,20 +88,6 @@ async def lifespan(app: FastAPI):
         else:
             logger.warning("Redis unavailable, skipping WebSocket manager")
         
-        # Register components for shutdown
-        if shutdown_handler:
-            components_to_register = [comp for comp in [
-                security_manager, security_monitor, health_checker, backup_manager
-            ] if comp is not None]
-            
-            for component in components_to_register:
-                try:
-                    await shutdown_handler.register_component(component)
-                except Exception as e:
-                    logger.error(f"Error registering component for shutdown: {e}")
-        else:
-            logger.warning("Shutdown handler not available, skipping component registration")
-        
         logger.info("Application started successfully")
         
         yield  # Application runs here
@@ -122,8 +99,6 @@ async def lifespan(app: FastAPI):
     # Shutdown
     try:
         logger.info("Shutting down application...")
-        if shutdown_handler:
-            await shutdown_handler.shutdown()
         
         # Close WebSocket manager
         if websocket_manager:
@@ -156,21 +131,15 @@ from src.api.auth import router as auth_router, router_v1 as auth_router_v1
 from src.api.monitoring import router as monitoring_router
 from src.api.autonomous_trading import router as autonomous_router
 
-# Import missing components
+# Import core components
 from typing import Dict, Optional, Annotated
 try:
-    from src.core.health_checker import HealthChecker
     from src.core.websocket_manager import WebSocketManager
-    from monitoring.backup_manager import BackupManager
-    from monitoring.graceful_shutdown import GracefulShutdown
     from security.auth_manager import AuthConfig, AuthManager as SecurityManager
     from monitoring.security_monitor import SecurityMonitor
 except ImportError as e:
     logger.warning(f"Some imports failed: {e}")
-    HealthChecker = None
     WebSocketManager = None
-    BackupManager = None
-    GracefulShutdown = None
     SecurityManager = None
     SecurityMonitor = None
 
@@ -418,9 +387,6 @@ config: Dict = {}
 redis_client: Optional[redis.Redis] = None
 security_manager: Optional[SecurityManager] = None
 security_monitor: Optional[SecurityMonitor] = None
-health_checker: Optional[HealthChecker] = None
-backup_manager: Optional[BackupManager] = None
-shutdown_handler: Optional[GracefulShutdown] = None
 websocket_manager: Optional[WebSocketManager] = None
 
 # JWT Security
@@ -677,48 +643,6 @@ async def init_security():
         # Return None values to allow app to continue without security
         logger.warning("Continuing without security components")
         return None, None
-
-async def init_health_checker():
-    """Initialize unified health checker"""
-    try:
-        if not HealthChecker:
-            logger.warning("HealthChecker class not available")
-            return None
-        health_checker = HealthChecker(config)
-        await health_checker.start()
-        return health_checker
-    except Exception as e:
-        logger.error(f"Error initializing health checker: {e}")
-        logger.warning("Continuing without health checker")
-        return None
-
-async def init_backup():
-    """Initialize backup manager"""
-    try:
-        if not BackupManager:
-            logger.warning("BackupManager class not available")
-            return None
-        backup_manager = BackupManager(config)
-        await backup_manager.start()
-        return backup_manager
-    except Exception as e:
-        logger.error(f"Error initializing backup: {e}")
-        logger.warning("Continuing without backup manager")
-        return None
-
-async def init_shutdown():
-    """Initialize shutdown handler"""
-    try:
-        if not GracefulShutdown:
-            logger.warning("GracefulShutdown class not available")
-            return None
-        shutdown_handler = GracefulShutdown()
-        await shutdown_handler.start()
-        return shutdown_handler
-    except Exception as e:
-        logger.error(f"Error initializing shutdown handler: {e}")
-        logger.warning("Continuing without shutdown handler")
-        return None
 
 def init_websocket_manager(redis_client):
     """Initialize WebSocket manager"""
