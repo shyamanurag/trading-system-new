@@ -5,6 +5,15 @@ Updated: 2025-06-07 - FORCE DEPLOYMENT WITH ALL TRADING FEATURES
 INCLUDES: Authentication, Trading APIs, Autonomous Trading, Risk Management
 """
 
+import os
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = str(Path(__file__).parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import asyncio
 import logging
 from fastapi import FastAPI, HTTPException, Depends, Request, WebSocket, WebSocketDisconnect, APIRouter
@@ -15,7 +24,6 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 import yaml
-from pathlib import Path
 import redis.asyncio as redis
 from datetime import datetime, timedelta
 import json
