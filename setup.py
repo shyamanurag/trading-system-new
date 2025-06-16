@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name="trading-system",
     version="1.0.0",
-    packages=find_packages(),
+    packages=find_packages(include=['core', 'strategies', 'src', 'data', 'brokers', 'utils', 'monitoring', 'security', 'risk', 'compliance']),
     install_requires=[
         "fastapi>=0.68.0,<0.69.0",
         "uvicorn>=0.15.0,<0.16.0",
@@ -18,7 +18,9 @@ setup(
         "python-jose>=3.3.0,<4.0.0",
         "python-multipart==0.0.6",
         "PyJWT>=2.3.0,<3.0.0",
-        "jinja2>=3.0.0,<4.0.0"
+        "jinja2>=3.0.0,<4.0.0",
+        "pandas>=1.3.0,<2.0.0",
+        "numpy>=1.20.0,<2.0.0"
     ],
     python_requires=">=3.11",
     author="Your Name",
