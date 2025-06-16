@@ -499,9 +499,9 @@ class TrueDataProvider:
 # Example usage
 if __name__ == "__main__":
     config = {
-        'username': 'Trial106',
-        'password': 'shyam106',
-        'live_port': 8086,  # Updated port
+        'username': 'tdwsp697',
+        'password': 'shyam@697',
+        'live_port': 8084,  # Updated port
         'log_level': logging.INFO,
         'url': 'push.truedata.in',  # Production URL
         'data_timeout': 60,  # 60 seconds timeout for data freshness

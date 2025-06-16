@@ -14,10 +14,10 @@ logger = logging.getLogger(__name__)
 
 class TrueDataFeed:
     def __init__(self):
-        self.username = os.getenv('TRUEDATA_USERNAME')
-        self.password = os.getenv('TRUEDATA_PASSWORD')
+        self.username = os.getenv('TRUEDATA_USERNAME', 'tdwsp697')
+        self.password = os.getenv('TRUEDATA_PASSWORD', 'shyam@697')
         self.url = os.getenv('TRUEDATA_URL', 'push.truedata.in')
-        self.port = int(os.getenv('TRUEDATA_PORT', '8086'))
+        self.port = int(os.getenv('TRUEDATA_PORT', '8084'))
         self.ws_url = f"wss://{self.url}:{self.port}"
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self.connected = False

@@ -105,9 +105,9 @@ async def run_tests():
     """Run all tests"""
     # Configuration - using environment variables for security
     config = {
-        'username': os.getenv('TRUEDATA_USERNAME', 'test_user'),
-        'password': os.getenv('TRUEDATA_PASSWORD', 'test_password'),
-        'live_port': int(os.getenv('TRUEDATA_PORT', '8086')),
+        'username': os.getenv('TRUEDATA_USERNAME', 'tdwsp697'),
+        'password': os.getenv('TRUEDATA_PASSWORD', 'shyam@697'),
+        'live_port': int(os.getenv('TRUEDATA_PORT', '8084')),
         'log_level': logging.INFO,
         'url': os.getenv('TRUEDATA_URL', 'push.truedata.in'),
         'is_sandbox': os.getenv('TRUEDATA_SANDBOX', 'true').lower() == 'true',

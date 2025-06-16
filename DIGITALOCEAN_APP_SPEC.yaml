@@ -105,7 +105,7 @@ services:
     repo: shyamanurag/trading-system-new
   health_check:
     failure_threshold: 3
-    http_path: /api/health/ready
+    http_path: /health/ready
     initial_delay_seconds: 40
     period_seconds: 10
     success_threshold: 2

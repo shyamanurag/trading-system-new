@@ -9,9 +9,9 @@ class TrueDataConfig:
     """TrueData API configuration for Trial106 account"""
     
     # Trial106 Account Credentials
-    USERNAME = "Trial106"
-    PASSWORD = "shyam106"
-    REALTIME_PORT = 8086
+    USERNAME = "tdwsp697"
+    PASSWORD = "shyam@697"
+    REALTIME_PORT = 8084
     
     # Connection Settings
     STREAMING_TYPE = "Real-Time + History"
@@ -97,7 +97,7 @@ class TrueDataConfig:
             'password': cls.PASSWORD,
             'live_port': cls.REALTIME_PORT,
             'url': 'push.truedata.in',
-            'is_sandbox': False,  # Trial account is not sandbox
+            'is_sandbox': True,  # Using sandbox mode
             'log_level': 'INFO',
             'max_connection_attempts': 3,
             'connection_timeout': 30,
