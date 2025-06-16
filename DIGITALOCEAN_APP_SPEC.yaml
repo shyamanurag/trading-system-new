@@ -62,7 +62,7 @@ services:
     value: QSW899
   - key: TRUEDATA_USERNAME
     scope: RUN_AND_BUILD_TIME
-    value: tdwsp607
+    value: tdwsp697
   - key: TRUEDATA_PASSWORD
     scope: RUN_AND_BUILD_TIME
     value: "shyam@697"
@@ -83,7 +83,7 @@ services:
     value: https://algoauto-jd32t.ondigitalocean.app
   - key: VITE_API_URL
     scope: RUN_AND_BUILD_TIME
-    value: https://algoauto-jd32t.ondigitalocean.app
+    value: https://algoauto-jd32t.ondigitalocean.app/api
   - key: CORS_ORIGINS
     scope: RUN_AND_BUILD_TIME
     value: '["https://algoauto-jd32t.ondigitalocean.app", "http://localhost:3000", "http://localhost:5173"]'
@@ -105,7 +105,7 @@ services:
     repo: shyamanurag/trading-system-new
   health_check:
     failure_threshold: 3
-    http_path: /health/ready
+    http_path: /api/health/ready
     initial_delay_seconds: 40
     period_seconds: 10
     success_threshold: 2
@@ -114,7 +114,7 @@ services:
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-1gb
   name: api
-  run_command: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+  run_command: gunicorn --worker-class uvicorn.workers.UvicornWorker --workers 1 --bind 0.0.0.0:$PORT --timeout 120 main:app
   source_dir: /
 
 static_sites:
@@ -145,11 +145,6 @@ static_sites:
 
 ingress:
   rules:
-  - component:
-      name: frontend
-    match:
-      path:
-        prefix: /
   - component:
       name: api
     match:
@@ -184,4 +179,9 @@ ingress:
       name: api
     match:
       path:
-        prefix: /ws 
+        prefix: /ws
+  - component:
+      name: frontend
+    match:
+      path:
+        prefix: / 

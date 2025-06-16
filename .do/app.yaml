@@ -29,9 +29,9 @@ services:
       export PYTHONPATH=/app && \
       pip install -r requirements.txt && \
       pip install ta-lib==0.4.28 && \
-      gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120 --access-logfile - --error-logfile -
+      gunicorn --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120 --access-logfile - --error-logfile - main:app
     health_check:
-      http_path: /health/ready
+      http_path: /api/health/ready
       initial_delay_seconds: 40
       period_seconds: 10
       timeout_seconds: 5
@@ -157,19 +157,19 @@ services:
         value: Shyam anurag
       - key: TRUEDATA_USERNAME
         scope: RUN_AND_BUILD_TIME
-        value: Trial106
+        value: tdwsp697
       - key: TRUEDATA_PASSWORD
         scope: RUN_AND_BUILD_TIME
-        value: shyam106
+        value: shyam@697
       - key: TRUEDATA_PORT
         scope: RUN_AND_BUILD_TIME
-        value: "8086"
+        value: "8084"
       - key: TRUEDATA_URL
         scope: RUN_AND_BUILD_TIME
         value: push.truedata.in
       - key: TRUEDATA_SANDBOX
         scope: RUN_AND_BUILD_TIME
-        value: "false"
+        value: "true"
       - key: JWT_SECRET
         scope: RUN_AND_BUILD_TIME
         value: K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A
@@ -294,11 +294,6 @@ static_sites:
 ingress:
   rules:
   - component:
-      name: frontend
-    match:
-      path:
-        prefix: /
-  - component:
       name: api
     match:
       path:
@@ -327,4 +322,9 @@ ingress:
       name: api
     match:
       path:
-        prefix: /ws 
+        prefix: /ws
+  - component:
+      name: frontend
+    match:
+      path:
+        prefix: / 
