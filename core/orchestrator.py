@@ -18,32 +18,32 @@ import signal
 from asyncio import PriorityQueue, Semaphore
 
 # Enhanced strategy imports with Set 1 sophistication
-from ..strategies.momentum_surfer import EnhancedMomentumSurfer
-from ..strategies.volatility_explosion import EnhancedVolatilityExplosion
-from ..strategies.volume_profile_scalper import EnhancedVolumeProfileScalper
-from ..strategies.news_impact_scalper import EnhancedNewsImpactScalper
+from strategies.momentum_surfer import EnhancedMomentumSurfer
+from strategies.volatility_explosion import EnhancedVolatilityExplosion
+from strategies.volume_profile_scalper import EnhancedVolumeProfileScalper
+from strategies.news_impact_scalper import EnhancedNewsImpactScalper
 
 # Set 2 production infrastructure
-from ..strategies.regime_adaptive_controller import RegimeAdaptiveController
-from ..strategies.confluence_amplifier import ConfluenceAmplifier
-from ..brokers.zerodha import ZerodhaIntegration
-from ..data.truedata_provider import TrueDataProvider
-from ..monitoring.event_monitor import EventMonitor
-from .position_tracker import PositionTracker
-from .order_manager import OrderManager
-from .risk_manager import RiskManager
-from ..risk.compliance_manager import ComplianceManager
-from ..utils.notifications import NotificationService
-from ..utils.constants import TradingHours, SystemLimits
-from .events import EventBus, EventType, TradingEvent
+from strategies.regime_adaptive_controller import RegimeAdaptiveController
+from strategies.confluence_amplifier import ConfluenceAmplifier
+from brokers.zerodha import ZerodhaIntegration
+from data.truedata_provider import TrueDataProvider
+from monitoring.event_monitor import EventMonitor
+from core.position_tracker import PositionTracker
+from core.order_manager import OrderManager
+from core.risk_manager import RiskManager
+from risk.compliance_manager import ComplianceManager
+from utils.notifications import NotificationService
+from utils.constants import TradingHours, SystemLimits
+from core.events import EventBus, EventType, TradingEvent
 
 # New imports for enhanced security and resilience
-from ..security.auth_manager import SecurityManager
-from ..core.connection_manager import ResilientConnection
-from ..brokers.resilient_zerodha import ResilientZerodhaConnection
-from ..data.resilient_truedata import ResilientTrueDataConnection
-from ..monitoring.data_quality_monitor import DataQualityMonitor
-from ..compliance.enhanced_compliance_manager import (
+from security.auth_manager import SecurityManager
+from core.connection_manager import ResilientConnection
+from brokers.resilient_zerodha import ResilientZerodhaConnection
+from data.resilient_truedata import ResilientTrueDataConnection
+from monitoring.data_quality_monitor import DataQualityMonitor
+from compliance.enhanced_compliance_manager import (
     PostTradeSurveillance, 
     DataRetentionManager
 )

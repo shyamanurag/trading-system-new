@@ -114,7 +114,7 @@ services:
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-1gb
   name: api
-  run_command: gunicorn --worker-class uvicorn.workers.UvicornWorker --workers 1 --bind 0.0.0.0:$PORT --timeout 120 main:app
+  run_command: pip install -e . && gunicorn --worker-class uvicorn.workers.UvicornWorker --workers 1 --bind 0.0.0.0:$PORT --timeout 120 main:app
   source_dir: /
 
 static_sites:
