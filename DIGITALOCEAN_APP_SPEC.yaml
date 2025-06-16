@@ -8,7 +8,7 @@ services:
     value: 3.11.2
   - key: PIP_REQUIREMENTS
     scope: RUN_AND_BUILD_TIME
-    value: "fastapi>=0.68.0,<0.69.0\nuvicorn>=0.15.0,<0.16.0\npydantic>=2.0.0,<3.0.0\npydantic-settings>=2.0.0,<3.0.0\nsqlalchemy>=1.4.0,<2.0.0\nasyncpg>=0.27.0,<0.28.0\nredis>=4.5.0,<5.0.0\npython-dotenv>=0.19.0,<1.0.0\npsycopg2-binary==2.9.10 --only-binary :all:\ngunicorn>=20.1.0,<21.0.0\npython-jose>=3.3.0,<4.0.0\npython-multipart==0.0.6\nPyJWT>=2.3.0,<3.0.0\njinja2>=3.0.0,<4.0.0"
+    value: "fastapi>=0.68.0,<0.69.0\nuvicorn>=0.15.0,<0.16.0\npydantic>=2.0.0,<3.0.0\npydantic-settings>=2.0.0,<3.0.0\nsqlalchemy==1.4.50\nasyncpg>=0.27.0,<0.28.0\nredis>=4.5.0,<5.0.0\npython-dotenv>=0.19.0,<1.0.0\npsycopg2-binary==2.9.10 --only-binary :all:\ngunicorn>=20.1.0,<21.0.0\npython-jose>=3.3.0,<4.0.0\npython-multipart==0.0.6\nPyJWT>=2.3.0,<3.0.0\njinja2>=3.0.0,<4.0.0"
   - key: DATABASE_URL
     scope: RUN_AND_BUILD_TIME
     value: postgresql+asyncpg://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb?sslmode=require
