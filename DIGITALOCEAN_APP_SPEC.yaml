@@ -29,7 +29,7 @@ services:
     value: AVNS_LpaPpsdL4CtOii03MnN
   - key: DB_SSL_MODE
     scope: RUN_AND_BUILD_TIME
-    value: "require"
+    value: require
   - key: REDIS_URL
     scope: RUN_AND_BUILD_TIME
     value: rediss://default:AVNS_TSCy17L6f9z0CdWgcvW@redis-cache-do-user-23093341-0.k.db.ondigitalocean.com:25061
@@ -62,10 +62,19 @@ services:
     value: QSW899
   - key: TRUEDATA_USERNAME
     scope: RUN_AND_BUILD_TIME
-    value: Trial106
+    value: tdwsp607
   - key: TRUEDATA_PASSWORD
     scope: RUN_AND_BUILD_TIME
-    value: shyam106
+    value: "shyam@697"
+  - key: TRUEDATA_PORT
+    scope: RUN_AND_BUILD_TIME
+    value: "8084"
+  - key: TRUEDATA_URL
+    scope: RUN_AND_BUILD_TIME
+    value: push.truedata.in
+  - key: TRUEDATA_SANDBOX
+    scope: RUN_AND_BUILD_TIME
+    value: "true"
   - key: APP_URL
     scope: RUN_AND_BUILD_TIME
     value: https://algoauto-jd32t.ondigitalocean.app
@@ -145,7 +154,12 @@ ingress:
       name: api
     match:
       path:
-        prefix: /api
+        prefix: /v1
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /auth
   - component:
       name: api
     match:

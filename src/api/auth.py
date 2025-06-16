@@ -15,7 +15,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Create two routers - one for v1 and one for backward compatibility
-router_v1 = APIRouter(prefix="/v1/auth")
+router_v1 = APIRouter(prefix="/auth")
 router = APIRouter(prefix="/auth")
 security = HTTPBearer()
 

@@ -285,13 +285,13 @@ api_v1 = APIRouter(prefix="/v1")
 api_v1.include_router(recommendations_router, prefix="/recommendations", tags=["recommendations"])
 api_v1.include_router(monitoring_router, prefix="/monitoring", tags=["monitoring"])
 api_v1.include_router(autonomous_router, prefix="/trading", tags=["trading"])
-api_v1.include_router(auth_router_v1, prefix="/auth", tags=["auth"])
+api_v1.include_router(auth_router_v1, tags=["auth"])  # Remove prefix since it's already in the router
 
 # Mount versioned router
 app.include_router(api_v1)
 
 # Include non-versioned auth router for backward compatibility
-app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(auth_router, tags=["auth"])  # Remove prefix since it's already in the router
 
 # Mount static files for frontend
 static_dir = Path("dist/frontend")

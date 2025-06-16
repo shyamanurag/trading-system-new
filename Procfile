@@ -1,1 +1,1 @@
-web: cd src/frontend && rm -rf node_modules package-lock.json && npm install && npm run build:production && cd ../.. && python src/main.py 
+web: gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120 
