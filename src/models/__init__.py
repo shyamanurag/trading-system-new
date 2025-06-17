@@ -10,11 +10,24 @@ from .responses import (
     RiskMetricsResponse
 )
 
+from .trading_models import (
+    Position,
+    PositionStatus,
+    Signal,
+    SignalType,
+    SignalStrength
+)
+
 __all__ = [
     'BaseResponse',
     'TradingStatusResponse',
     'PositionResponse',
     'PerformanceMetricsResponse',
     'StrategyResponse',
-    'RiskMetricsResponse'
+    'RiskMetricsResponse',
+    'Position',
+    'PositionStatus',
+    'Signal',
+    'SignalType',
+    'SignalStrength'
 ] 

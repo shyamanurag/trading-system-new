@@ -3,7 +3,9 @@ SQLAlchemy models for trading system data storage.
 """
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Dict
+from enum import Enum
+import uuid
 
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Boolean, 
@@ -13,6 +15,68 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from src.config.database import Base
+from pydantic import BaseModel, Field
+
+class PositionStatus(str, Enum):
+    """Position status enum"""
+    PENDING = "pending"
+    FILLED = "filled"
+    PARTIALLY_FILLED = "partially_filled"
+    CANCELLED = "cancelled"
+    CLOSED = "closed"
+    REJECTED = "rejected"
+
+class Position(BaseModel):
+    """Position model for tracking trades"""
+    position_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    symbol: str
+    quantity: int
+    entry_price: float
+    exit_price: Optional[float] = None
+    current_price: Optional[float] = None
+    entry_time: datetime = Field(default_factory=datetime.now)
+    exit_time: Optional[datetime] = None
+    status: PositionStatus = PositionStatus.PENDING
+    strategy: str
+    realized_pnl: float = 0.0
+    unrealized_pnl: float = 0.0
+    pnl_percent: float = 0.0
+    current_risk: float = 0.0
+
+    def update_pnl(self, current_price: float):
+        """Update P&L based on current price"""
+        self.current_price = current_price
+        if self.status != PositionStatus.CLOSED:
+            self.unrealized_pnl = (current_price - self.entry_price) * self.quantity
+            self.pnl_percent = (self.unrealized_pnl / (self.entry_price * self.quantity)) * 100
+
+    def close(self, exit_price: float):
+        """Close the position"""
+        self.exit_price = exit_price
+        self.exit_time = datetime.now()
+        self.status = PositionStatus.CLOSED
+        self.realized_pnl = (exit_price - self.entry_price) * self.quantity
+        self.pnl_percent = (self.realized_pnl / (self.entry_price * self.quantity)) * 100
+        self.unrealized_pnl = 0.0
+
+    def to_dict(self) -> Dict:
+        """Convert position to dictionary"""
+        return {
+            'position_id': self.position_id,
+            'symbol': self.symbol,
+            'quantity': self.quantity,
+            'entry_price': self.entry_price,
+            'exit_price': self.exit_price,
+            'current_price': self.current_price,
+            'entry_time': self.entry_time.isoformat(),
+            'exit_time': self.exit_time.isoformat() if self.exit_time else None,
+            'status': self.status.value,
+            'strategy': self.strategy,
+            'realized_pnl': self.realized_pnl,
+            'unrealized_pnl': self.unrealized_pnl,
+            'pnl_percent': self.pnl_percent,
+            'current_risk': self.current_risk
+        }
 
 class User(Base):
     """User accounts and authentication"""
@@ -264,4 +328,47 @@ class TradingSession(Base):
     trades_count = Column(Integer, default=0)
     total_volume = Column(DECIMAL(15, 2), default=0)
     pnl = Column(DECIMAL(15, 2), default=0)
-    status = Column(String(20), default='ACTIVE')  # ACTIVE, CLOSED 
+    status = Column(String(20), default='ACTIVE')  # ACTIVE, CLOSED
+
+class SignalType(str, Enum):
+    """Signal type enum"""
+    BUY = "buy"
+    SELL = "sell"
+    HOLD = "hold"
+    EXIT = "exit"
+
+class SignalStrength(str, Enum):
+    """Signal strength enum"""
+    STRONG = "strong"
+    MODERATE = "moderate"
+    WEAK = "weak"
+
+class Signal(BaseModel):
+    """Trading signal model"""
+    signal_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    symbol: str
+    signal_type: SignalType
+    strength: SignalStrength
+    price: float
+    timestamp: datetime = Field(default_factory=datetime.now)
+    strategy: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    metadata: Dict = Field(default_factory=dict)
+
+    def to_dict(self) -> Dict:
+        """Convert signal to dictionary"""
+        return {
+            'signal_id': self.signal_id,
+            'symbol': self.symbol,
+            'signal_type': self.signal_type.value,
+            'strength': self.strength.value,
+            'price': self.price,
+            'timestamp': self.timestamp.isoformat(),
+            'strategy': self.strategy,
+            'confidence': self.confidence,
+            'stop_loss': self.stop_loss,
+            'take_profit': self.take_profit,
+            'metadata': self.metadata
+        } 
