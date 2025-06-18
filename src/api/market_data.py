@@ -9,7 +9,7 @@ import json
 import redis
 from common.logging import get_logger
 from data.truedata_provider import TrueDataProvider
-from config.truedata_config import TrueDataConfig
+from config.truedata_config import get_config, validate_config, DEFAULT_SYMBOLS
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -29,7 +29,9 @@ async def get_truedata_provider() -> TrueDataProvider:
     """Get or initialize TrueData provider"""
     global truedata_provider
     if truedata_provider is None:
-        config = TrueDataConfig.get_connection_config()
+        config = get_config()
+        if not validate_config(config):
+            raise HTTPException(status_code=500, detail="Invalid TrueData configuration")
         truedata_provider = TrueDataProvider(config)
         await truedata_provider.connect()
     return truedata_provider
@@ -110,11 +112,15 @@ async def subscribe_symbols(
 ):
     """Subscribe to market data for symbols"""
     try:
-        # Validate symbols against trial limits
-        if not TrueDataConfig.validate_symbol_limit(symbols):
+        # Get configuration for symbol limits
+        config = get_config()
+        symbol_limit = config.get('symbol_limit', 50)  # Default limit
+        
+        # Validate symbols against limits
+        if len(symbols) > symbol_limit:
             raise HTTPException(
                 status_code=400,
-                detail=f"Symbol count exceeds trial limit of {TrueDataConfig.SYMBOL_LIMIT}"
+                detail=f"Symbol count exceeds limit of {symbol_limit}"
             )
             
         # Subscribe to symbols
