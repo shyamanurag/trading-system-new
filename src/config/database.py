@@ -3,12 +3,12 @@ Database configuration and connection management for the trading system.
 """
 import os
 import logging
-from typing import Optional
+from typing import Optional, AsyncGenerator
 from urllib.parse import urlparse
 
 import redis.asyncio as redis
-from sqlalchemy import create_engine, MetaData
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy import create_engine, MetaData, text
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import StaticPool
 
@@ -86,7 +86,7 @@ class DatabaseConfig:
             if self.database_url.startswith('postgresql'):
                 async_url = self.database_url.replace('postgresql://', 'postgresql+asyncpg://')
                 async_engine = create_async_engine(async_url)
-                self.async_session_maker = sessionmaker(
+                self.async_session_maker = async_sessionmaker(
                     async_engine, 
                     class_=AsyncSession, 
                     expire_on_commit=False
@@ -151,7 +151,7 @@ def get_db():
     finally:
         db.close()
 
-async def get_async_db() -> Optional[AsyncSession]:
+async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency for getting async PostgreSQL session"""
     async_db = await db_config.get_async_postgres_session()
     if async_db is None:
@@ -182,7 +182,7 @@ async def check_database_health() -> dict:
     try:
         db = db_config.get_postgres_session()
         if db:
-            db.execute("SELECT 1")
+            db.execute(text("SELECT 1"))
             health['postgres']['status'] = 'healthy'
             db.close()
     except Exception as e:
