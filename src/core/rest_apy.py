@@ -415,7 +415,8 @@ def async_route(f):
                                                                                                                                                         if field not in data:
 
                                                                                                                                                             # Create manual signal
-                                                                                                                                                            from ..models import Signal, OptionType, OrderSide
+                                                                                                                                                            from ..models import Signal
+                                                                                                                                                            from .models import OptionType, OrderSide
 
                                                                                                                                                             signal=Signal(
                                                                                                                                                             strategy_name='manual',

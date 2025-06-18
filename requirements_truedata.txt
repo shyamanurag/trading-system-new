@@ -1,0 +1,16 @@
+# TrueData Dependencies
+truedata-ws>=1.0.0
+websocket-client>=1.8.0
+redis>=5.0.1
+pandas>=2.1.4
+numpy>=1.24.3
+
+# Additional dependencies for trading system
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+sqlalchemy>=2.0.23
+alembic>=1.13.1
+psycopg2-binary>=2.9.9
+python-dotenv>=1.0.0
+requests>=2.31.0
+pydantic>=2.11.7

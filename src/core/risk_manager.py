@@ -15,7 +15,8 @@ import asyncio
 import json
 import redis.asyncio as redis
 
-from ..models import Signal, Position, OptionType
+from ..models import Signal
+from .models import Position, OptionType
 from ..events import EventBus, EventType, TradingEvent
 from .position_tracker import PositionTracker
 from .greeks_risk_manager import GreeksRiskManager

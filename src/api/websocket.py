@@ -1,32 +1,34 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from typing import Optional
 import logging
-
-# Import from root directory
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from websocket_manager import get_websocket_manager
+import redis
+from src.core.websocket_manager import get_websocket_manager, initialize_websocket_manager
+from src.core.redis_client import get_redis_client
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+async def get_ws_manager():
+    """Dependency to get WebSocket manager instance"""
+    redis_client = get_redis_client()
+    ws_manager = get_websocket_manager()
+    if not ws_manager:
+        ws_manager = await initialize_websocket_manager(redis_client)
+    return ws_manager
+
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    ws_manager = Depends(get_ws_manager)
+):
     """WebSocket endpoint for real-time trade updates"""
     connection_id = None
     try:
-        # Get WebSocket manager instance
-        ws_manager = get_websocket_manager()
-        if not ws_manager:
-            await websocket.close(code=1011, reason="WebSocket service unavailable")
-            return
-        
         # For now, use a default user_id. In production, this would come from authentication
         user_id = "default_user"
         
         # Connect client with user_id
-        connection_id = await ws_manager.connection_manager.connect(websocket, user_id)
+        connection_id = await ws_manager.connect(websocket, user_id)
         
         try:
             # Keep connection alive and handle messages
@@ -46,7 +48,7 @@ async def websocket_endpoint(websocket: WebSocket):
         finally:
             # Cleanup on disconnect
             if connection_id:
-                await ws_manager.connection_manager.disconnect(connection_id)
+                await ws_manager.disconnect(websocket)
             
     except Exception as e:
         logger.error(f"Error in WebSocket connection: {e}")

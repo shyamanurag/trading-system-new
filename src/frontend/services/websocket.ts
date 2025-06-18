@@ -34,10 +34,19 @@ class WebSocketService extends EventTarget {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private url: string;
   private isConnecting = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(config?: Partial<WebSocketConfig>) {
     super();
-    this.url = config?.url || import.meta.env.VITE_WS_URL || 'wss://algoauto-ua2iq.ondigitalocean.app/ws';
+    // Use environment variable with fallback to relative path
+    const wsUrl = import.meta.env.VITE_WS_URL;
+    if (!wsUrl) {
+      console.warn('VITE_WS_URL not set, using relative WebSocket URL');
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      this.url = `${protocol}//${window.location.host}/ws`;
+    } else {
+      this.url = wsUrl;
+    }
     this.maxReconnectAttempts = config?.reconnectAttempts || 5;
     this.reconnectDelay = config?.reconnectDelay || 1000;
     this.heartbeatInterval = config?.heartbeatInterval || 30000;
@@ -62,14 +71,18 @@ class WebSocketService extends EventTarget {
         this.dispatchEvent(new Event('connect'));
       };
 
-      this.ws.onclose = () => {
-        console.log('WebSocket disconnected');
+      this.ws.onclose = (event) => {
+        console.log('WebSocket disconnected:', event.code, event.reason);
         this.isConnecting = false;
         this.stopHeartbeat();
         this.stopBatchTimer();
         callbacks?.onDisconnect?.();
         this.dispatchEvent(new Event('disconnect'));
-        this.handleReconnect();
+
+        // Only attempt reconnect if not closed cleanly
+        if (event.code !== 1000) {
+          this.handleReconnect();
+        }
       };
 
       this.ws.onerror = (error) => {
@@ -109,7 +122,18 @@ class WebSocketService extends EventTarget {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-      setTimeout(() => this.connect(), this.reconnectDelay * this.reconnectAttempts);
+
+      // Clear any existing reconnect timer
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+      }
+
+      // Calculate exponential backoff delay
+      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
+
+      this.reconnectTimer = setTimeout(() => {
+        this.connect();
+      }, delay);
     } else {
       console.error('Max reconnection attempts reached');
       this.dispatchEvent(new Event('reconnect_failed'));

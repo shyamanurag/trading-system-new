@@ -40,6 +40,21 @@ class WebSocketMetrics:
                     self.metrics[metric] += value
             self.metrics['last_updated'] = datetime.now()
             
+    async def increment_connections(self):
+        """Increment connection count"""
+        await self.increment('connections')
+        
+    async def decrement_connections(self):
+        """Decrement connection count"""
+        async with self._lock:
+            if self.metrics['connections'] > 0:
+                self.metrics['connections'] -= 1
+                self.metrics['last_updated'] = datetime.now()
+                
+    async def increment_messages(self):
+        """Increment message count"""
+        await self.increment('messages_sent')
+            
     async def record_latency(self, latency_ms: float):
         """Record a latency measurement"""
         async with self._lock:

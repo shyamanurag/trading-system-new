@@ -1,26 +1,20 @@
 """
-Test script for TrueData connection and functionality
+Integration tests for TrueData connection
 """
-
+import os
 import asyncio
 import logging
-import os
 from datetime import datetime, timedelta
-import pandas as pd
-from truedata_provider import TrueDataProvider
+from data.truedata_provider import TrueDataProvider
+from config.truedata_config import TrueDataConfig
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 async def test_connection(provider: TrueDataProvider) -> bool:
-    """Test basic connection"""
+    """Test TrueData connection"""
     try:
-        is_connected = await provider.connect()
-        if is_connected:
+        connected = await provider.connect()
+        if connected:
             logger.info("✅ Connection test passed")
             return True
         else:
@@ -33,8 +27,8 @@ async def test_connection(provider: TrueDataProvider) -> bool:
 async def test_symbol_subscription(provider: TrueDataProvider, symbols: list) -> bool:
     """Test symbol subscription"""
     try:
-        req_ids = await provider.subscribe_symbols(symbols)
-        if req_ids:
+        success = await provider.subscribe_market_data(symbols)
+        if success:
             logger.info(f"✅ Subscription test passed for symbols: {symbols}")
             return True
         else:
@@ -47,30 +41,33 @@ async def test_symbol_subscription(provider: TrueDataProvider, symbols: list) ->
 async def test_market_data(provider: TrueDataProvider, symbol: str) -> bool:
     """Test market data retrieval"""
     try:
-        data = await provider.get_market_data(symbol, '5min')
-        if data and 'spot' in data:
+        data = await provider.get_historical_data(
+            symbol=symbol,
+            start_time=datetime.now() - timedelta(days=1),
+            end_time=datetime.now(),
+            bar_size='1 day'
+        )
+        
+        if not data.empty:
             logger.info(f"✅ Market data test passed for {symbol}")
-            logger.info(f"Current price: {data['spot']}")
             return True
         else:
-            logger.error("❌ Market data test failed")
+            logger.error("❌ Market data test failed - no data received")
             return False
     except Exception as e:
         logger.error(f"❌ Market data test failed with error: {e}")
         return False
 
-async def test_option_chain(provider: TrueDataProvider, underlying: str) -> bool:
+async def test_option_chain(provider: TrueDataProvider, symbol: str) -> bool:
     """Test option chain retrieval"""
     try:
-        # Get next expiry date
-        next_expiry = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
-        chain = await provider.get_option_chain(underlying, next_expiry)
+        chain = await provider.get_option_chain(symbol)
+        
         if not chain.empty:
-            logger.info(f"✅ Option chain test passed for {underlying}")
-            logger.info(f"Chain shape: {chain.shape}")
+            logger.info(f"✅ Option chain test passed for {symbol}")
             return True
         else:
-            logger.error("❌ Option chain test failed")
+            logger.error("❌ Option chain test failed - no data received")
             return False
     except Exception as e:
         logger.error(f"❌ Option chain test failed with error: {e}")
@@ -86,7 +83,7 @@ async def test_real_time_data(provider: TrueDataProvider, symbol: str) -> bool:
             logger.info(f"Received real-time data for {symbol}: {data}")
             data_received = True
         
-        await provider.subscribe_symbols([symbol], callback)
+        await provider.subscribe_market_data([symbol])
         
         # Wait for data
         for _ in range(10):  # Try for 10 seconds
@@ -103,25 +100,8 @@ async def test_real_time_data(provider: TrueDataProvider, symbol: str) -> bool:
 
 async def run_tests():
     """Run all tests"""
-    # Configuration - using environment variables for security
-    config = {
-        'username': os.getenv('TRUEDATA_USERNAME', 'tdwsp697'),
-        'password': os.getenv('TRUEDATA_PASSWORD', 'shyam@697'),
-        'live_port': int(os.getenv('TRUEDATA_PORT', '8084')),
-        'log_level': logging.INFO,
-        'url': os.getenv('TRUEDATA_URL', 'push.truedata.in'),
-        'is_sandbox': os.getenv('TRUEDATA_SANDBOX', 'true').lower() == 'true',
-        'sandbox_max_symbols': int(os.getenv('TRUEDATA_MAX_SYMBOLS', '5')),
-        'sandbox_allowed_symbols': ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS', 'INFY'],
-        'max_connection_attempts': 3,
-        'reconnect_delay': 5,
-        'heartbeat_interval': 30,
-        'connection_timeout': 60
-    }
-    
-    # Validate required environment variables
-    if config['username'] == 'test_user' or config['password'] == 'test_password':
-        logger.warning("⚠️ Using default test credentials. Set TRUEDATA_USERNAME and TRUEDATA_PASSWORD environment variables for actual testing.")
+    # Get configuration
+    config = TrueDataConfig.get_connection_config()
     
     # Initialize provider
     provider = TrueDataProvider(config)

@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from collections import deque
 
 from .base import BaseStrategy
-from ..models import Signal, OptionType, OrderSide, MarketRegime
+from ..models import Signal
+from .models import OptionType, OrderSide, MarketRegime
 from ..utils.indicators import ADX, RSI, VWAP
 from ..utils.helpers import get_atm_strike, get_strike_with_offset, to_decimal, round_price_to_tick
 

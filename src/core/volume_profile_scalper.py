@@ -14,7 +14,8 @@ from collections import deque, defaultdict
 from enum import Enum
 from decimal import Decimal
 
-from ..models import Signal, OptionType, OrderSide, MarketRegime
+from ..models import Signal
+from .models import OptionType, OrderSide, MarketRegime
 from ..utils.helpers import get_atm_strike, calculate_value_area, to_decimal, round_price_to_tick
 from .base import BaseStrategy
 

@@ -28,6 +28,21 @@ from .websocket_limiter import RateLimiter, CircuitBreaker
 
 logger = logging.getLogger(__name__)
 
+# Singleton instance
+_websocket_manager: Optional['WebSocketManager'] = None
+
+def get_websocket_manager() -> Optional['WebSocketManager']:
+    """Get the singleton WebSocket manager instance"""
+    return _websocket_manager
+
+async def initialize_websocket_manager(redis_client: redis.Redis) -> 'WebSocketManager':
+    """Initialize the WebSocket manager singleton"""
+    global _websocket_manager
+    if _websocket_manager is None:
+        _websocket_manager = WebSocketManager(redis_client)
+        await _websocket_manager.start()
+    return _websocket_manager
+
 class WebSocketManager:
     """Manages WebSocket connections with enhanced features"""
     

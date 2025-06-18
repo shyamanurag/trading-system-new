@@ -2,9 +2,11 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any
 from datetime import datetime
 import json
+import redis.asyncio as redis
 from ..core.risk_manager import RiskManager
 from ..core.order_manager import OrderManager
-from ..models import Trade, User
+from ..models.schema import Trade
+from ..models.user import UserInDB as User
 from ..auth import get_current_user
 
 router = APIRouter()

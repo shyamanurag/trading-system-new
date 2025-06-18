@@ -15,7 +15,8 @@ from abc import ABC, abstractmethod
 
 from .base import BaseStrategy, StrategyMetrics
 from .risk_manager import RiskManager
-from ..models import Signal, Position, OrderSide, MarketData
+from ..models import Signal
+from .models import Position, OrderSide, MarketData
 from ..utils import calculate_technical_indicators
 
 logger = logging.getLogger(__name__)

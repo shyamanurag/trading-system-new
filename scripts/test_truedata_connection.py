@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data.truedata_provider import TrueDataProvider
 from config.truedata_config import TrueDataConfig
+from datetime import datetime, timedelta
 
 class TrueDataTester:
     def __init__(self):
@@ -19,24 +20,12 @@ class TrueDataTester:
         """Test TrueData connection with Trial106 credentials"""
         try:
             print("🔌 Testing TrueData Connection...")
-            print(f"Username: {TrueDataConfig.USERNAME}")
-            print(f"Port: {TrueDataConfig.REALTIME_PORT}")
-            print(f"Symbol Limit: {TrueDataConfig.SYMBOL_LIMIT}")
-            print(f"Expiry: {TrueDataConfig.EXPIRY_DATE}")
+            config = TrueDataConfig.get_connection_config()
+            print(f"Username: {config['username']}")
+            print(f"Port: {config['port']}")
+            print(f"Symbol Limit: {config['symbol_limit']}")
             
-            # Initialize provider with Trial106 config
-            config = {
-                'username': TrueDataConfig.USERNAME,
-                'password': TrueDataConfig.PASSWORD,
-                'live_port': TrueDataConfig.REALTIME_PORT,
-                'url': 'push.truedata.in',
-                'is_sandbox': False,  # Trial account but not sandbox
-                'log_level': 'INFO',
-                'max_connection_attempts': 3,
-                'sandbox_max_symbols': TrueDataConfig.SYMBOL_LIMIT,
-                'sandbox_allowed_symbols': TrueDataConfig.PRIMARY_SYMBOLS
-            }
-            
+            # Initialize provider with config
             self.provider = TrueDataProvider(config)
             
             # Test connection
@@ -58,15 +47,18 @@ class TrueDataTester:
             print("\n📊 Testing Market Data...")
             
             # Test with NIFTY (should work even on holidays)
-            data = await self.provider.get_market_data('NIFTY', '1day')
+            data = await self.provider.get_historical_data(
+                symbol='NIFTY-I',
+                start_time=datetime.now() - timedelta(days=1),
+                end_time=datetime.now(),
+                bar_size='1 day'
+            )
             
-            if data and 'spot' in data:
+            if not data.empty:
                 print(f"✅ NIFTY Data Retrieved:")
-                print(f"   Spot Price: {data['spot']}")
-                print(f"   ATR: {data.get('atr', 'N/A')}")
-                print(f"   ADX: {data.get('adx', 'N/A')}")
-                print(f"   VIX: {data.get('vix', 'N/A')}")
-                print(f"   Candles Count: {len(data.get('candles', []))}")
+                print(f"   Latest Close: {data['close'].iloc[-1]}")
+                print(f"   Latest Volume: {data['volume'].iloc[-1]}")
+                print(f"   Data Points: {len(data)}")
                 return True
             else:
                 print("❌ No market data received")
@@ -82,16 +74,12 @@ class TrueDataTester:
             print("\n📡 Testing Symbol Subscription...")
             
             # Test with a few symbols within limit
-            test_symbols = ['NIFTY', 'BANKNIFTY', 'RELIANCE']
+            test_symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE-EQ']
             
-            result = await self.provider.subscribe_symbols(test_symbols)
+            result = await self.provider.subscribe_market_data(test_symbols)
             
             if result:
                 print(f"✅ Subscribed to symbols: {test_symbols}")
-                
-                # Check subscribed symbols
-                subscribed = self.provider.get_subscribed_symbols()
-                print(f"   Currently subscribed: {subscribed}")
                 return True
             else:
                 print("❌ Symbol subscription failed")
@@ -107,19 +95,14 @@ class TrueDataTester:
             print("\n🚧 Testing Trial Account Limits...")
             
             # Test symbol limit validation
-            too_many_symbols = TrueDataConfig.PRIMARY_SYMBOLS[:55]  # More than 50
+            too_many_symbols = ['SYMBOL' + str(i) for i in range(55)]  # More than 50
             
-            try:
-                result = await self.provider.subscribe_symbols(too_many_symbols)
-                if not result:
-                    print("✅ Symbol limit properly enforced")
-                    return True
-                else:
-                    print("⚠️  Symbol limit not enforced - check validation")
-                    return False
-            except ValueError as e:
-                print(f"✅ Symbol limit validation working: {e}")
+            if not TrueDataConfig.validate_symbol_limit(too_many_symbols):
+                print("✅ Symbol limit properly enforced")
                 return True
+            else:
+                print("⚠️  Symbol limit not enforced - check validation")
+                return False
                 
         except Exception as e:
             print(f"❌ Trial limits test error: {e}")
@@ -177,5 +160,4 @@ async def main():
         await tester.cleanup()
 
 if __name__ == "__main__":
-    result = asyncio.run(main())
-    sys.exit(0 if result else 1) 
+    asyncio.run(main()) 

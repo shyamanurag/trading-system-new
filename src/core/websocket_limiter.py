@@ -32,6 +32,21 @@ class RateLimiter:
                 return True
             return False
             
+    def check(self, key: str) -> bool:
+        """Synchronous check for rate limiting (for use in FastAPI dependencies)"""
+        now = datetime.now()
+        window_start = now - timedelta(seconds=self.window_seconds)
+        
+        # Clean old requests
+        self.requests[key] = [req_time for req_time in self.requests[key] 
+                            if req_time > window_start]
+        
+        # Check if under limit
+        if len(self.requests[key]) < self.max_requests:
+            self.requests[key].append(now)
+            return True
+        return False
+            
     async def get_remaining(self, key: str) -> int:
         """Get remaining requests in current window"""
         async with self._lock:
@@ -83,6 +98,16 @@ class CircuitBreaker:
                     return True
                     
             return False
+            
+    def is_open(self) -> bool:
+        """Synchronous check if circuit breaker is open (for use in FastAPI dependencies)"""
+        for key in self.failures:
+            if self.failures[key] >= self.threshold:
+                if key in self.last_failure:
+                    time_since_last_failure = (datetime.now() - self.last_failure[key]).total_seconds()
+                    if time_since_last_failure < self.timeout_seconds:
+                        return True
+        return False
             
     async def get_status(self, key: str) -> Dict[str, Any]:
         """Get circuit breaker status for a key"""

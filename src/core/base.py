@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 from collections import deque
 import numpy as np
 
-from ..models import Signal, Position, OptionType, OrderSide
+from ..models import Signal
+from .models import Position, OptionType, OrderSide
 from ..utils import get_atm_strike, get_strike_with_offset
 
 logger = logging.getLogger(__name__)

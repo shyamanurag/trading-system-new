@@ -11,7 +11,8 @@ from collections import defaultdict
 import numpy as np
 import asyncio
 
-from ..models import Signal, OptionType, OrderSide
+from ..models import Signal
+from .models import OptionType, OrderSide
 from .base import BaseStrategy
 
 logger = logging.getLogger(__name__)
