@@ -11,7 +11,7 @@ from .responses import (
 )
 
 from .trading_models import (
-    Position,
+    PositionModel,
     PositionStatus,
     Signal,
     SignalType,
@@ -25,7 +25,7 @@ __all__ = [
     'PerformanceMetricsResponse',
     'StrategyResponse',
     'RiskMetricsResponse',
-    'Position',
+    'PositionModel',
     'PositionStatus',
     'Signal',
     'SignalType',

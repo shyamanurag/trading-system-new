@@ -26,7 +26,7 @@ class PositionStatus(str, Enum):
     CLOSED = "closed"
     REJECTED = "rejected"
 
-class Position(BaseModel):
+class PositionModel(BaseModel):
     """Position model for tracking trades"""
     position_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     symbol: str
@@ -42,23 +42,23 @@ class Position(BaseModel):
     unrealized_pnl: float = 0.0
     pnl_percent: float = 0.0
     current_risk: float = 0.0
-
+    
     def update_pnl(self, current_price: float):
-        """Update P&L based on current price"""
+        """Update PnL based on current price"""
         self.current_price = current_price
-        if self.status != PositionStatus.CLOSED:
+        if self.entry_price and self.quantity:
             self.unrealized_pnl = (current_price - self.entry_price) * self.quantity
-            self.pnl_percent = (self.unrealized_pnl / (self.entry_price * self.quantity)) * 100
-
+            self.pnl_percent = ((current_price - self.entry_price) / self.entry_price) * 100
+    
     def close(self, exit_price: float):
-        """Close the position"""
+        """Close position and calculate realized PnL"""
         self.exit_price = exit_price
         self.exit_time = datetime.now()
         self.status = PositionStatus.CLOSED
-        self.realized_pnl = (exit_price - self.entry_price) * self.quantity
-        self.pnl_percent = (self.realized_pnl / (self.entry_price * self.quantity)) * 100
-        self.unrealized_pnl = 0.0
-
+        if self.entry_price and self.quantity:
+            self.realized_pnl = (exit_price - self.entry_price) * self.quantity
+            self.unrealized_pnl = 0.0
+    
     def to_dict(self) -> Dict:
         """Convert position to dictionary"""
         return {
@@ -68,7 +68,7 @@ class Position(BaseModel):
             'entry_price': self.entry_price,
             'exit_price': self.exit_price,
             'current_price': self.current_price,
-            'entry_time': self.entry_time.isoformat(),
+            'entry_time': self.entry_time.isoformat() if self.entry_time else None,
             'exit_time': self.exit_time.isoformat() if self.exit_time else None,
             'status': self.status.value,
             'strategy': self.strategy,
@@ -304,7 +304,7 @@ class Recommendation(Base):
 
 class RiskMetrics(Base):
     """Portfolio risk analysis data"""
-    __tablename__ = "risk_metrics"
+    __tablename__ = "portfolio_risk_metrics"
     
     id = Column(Integer, primary_key=True, index=True)
     portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False)
