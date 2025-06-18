@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import redis.asyncio as redis
 from sqlalchemy import create_engine, MetaData, text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import StaticPool
 
@@ -82,15 +82,10 @@ class DatabaseConfig:
                 )
                 logger.info("PostgreSQL database configured")
                 
-            # Create async session maker
+            # Create async session maker for SQLAlchemy 1.4
             if self.database_url.startswith('postgresql'):
                 async_url = self.database_url.replace('postgresql://', 'postgresql+asyncpg://')
-                async_engine = create_async_engine(async_url)
-                self.async_session_maker = async_sessionmaker(
-                    async_engine, 
-                    class_=AsyncSession, 
-                    expire_on_commit=False
-                )
+                self.async_engine = create_async_engine(async_url)
                 
         except Exception as e:
             logger.error(f"Error setting up PostgreSQL: {e}")
@@ -130,9 +125,9 @@ class DatabaseConfig:
     
     async def get_async_postgres_session(self) -> Optional[AsyncSession]:
         """Get async PostgreSQL session"""
-        if self.async_session_maker is None:
+        if not hasattr(self, 'async_engine') or self.async_engine is None:
             return None
-        return self.async_session_maker()
+        return AsyncSession(self.async_engine)
 
 # Global database instance
 db_config = DatabaseConfig()
