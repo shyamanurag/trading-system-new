@@ -155,7 +155,7 @@ async def get_async_db() -> Optional[AsyncSession]:
     """Dependency for getting async PostgreSQL session"""
     async_db = await db_config.get_async_postgres_session()
     if async_db is None:
-        return None
+        raise RuntimeError("Database session not available")
     try:
         yield async_db
     finally:
