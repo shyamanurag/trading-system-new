@@ -1,0 +1,142 @@
+name: trading-system-python311
+services:
+- name: web
+  source_dir: /
+  github:
+    repo: shyamanurag/trading-system-new
+    branch: main
+  run_command: gunicorn main:app -w 1 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+  build_command: pip install -r requirements.txt
+  environment_slug: python
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  health_check:
+    http_path: /health/ready
+  envs:
+  # Python 3.11 Configuration
+  - key: PYTHON_VERSION
+    value: "3.11"
+  - key: PIP_REQUIREMENTS
+    value: "fastapi==0.104.1 uvicorn==0.24.0 gunicorn==21.2.0 pydantic==2.5.0 python-multipart==0.0.6 redis==5.0.1 sqlalchemy==2.0.23 alembic==1.12.1 pandas==2.2.0 numpy==1.26.4 python-dateutil==2.8.2 truedata-ws==1.0.0 websocket-client==1.6.4 requests==2.31.0 aiohttp==3.9.1 yfinance==0.2.28 pytest==7.4.3 black==23.11.0 flake8==6.1.0 python-dotenv==1.0.0 colorama==0.4.6"
+  
+  # TrueData Configuration
+  - key: TRUEDATA_USERNAME
+    value: "tdwsp697"
+  - key: TRUEDATA_PASSWORD
+    value: "shyam@697"
+  - key: TRUEDATA_IS_SANDBOX
+    value: "false"
+  - key: TRUEDATA_LIVE_PORT
+    value: "8084"
+  - key: TRUEDATA_URL
+    value: "push.truedata.in"
+  - key: TRUEDATA_LOG_LEVEL
+    value: "INFO"
+  
+  # Redis Configuration
+  - key: REDIS_HOST
+    value: "localhost"
+  - key: REDIS_PORT
+    value: "6379"
+  - key: REDIS_DB
+    value: "0"
+  
+  # Application Configuration
+  - key: APP_ENV
+    value: "production"
+  - key: DEBUG
+    value: "false"
+  - key: LOG_LEVEL
+    value: "INFO"
+  
+  # Database Configuration (if using external DB)
+  - key: DATABASE_URL
+    value: "sqlite:///./trading_system.db"
+  
+  # Security Configuration
+  - key: SECRET_KEY
+    value: "your-secret-key-here"
+  - key: ACCESS_TOKEN_EXPIRE_MINUTES
+    value: "30"
+  
+  # Trading Configuration
+  - key: TRADING_ENABLED
+    value: "false"
+  - key: MAX_POSITION_SIZE
+    value: "100000"
+  - key: RISK_PERCENTAGE
+    value: "2.0"
+  
+  # Monitoring Configuration
+  - key: ENABLE_METRICS
+    value: "true"
+  - key: METRICS_PORT
+    value: "9090"
+  
+  # WebSocket Configuration
+  - key: WS_HOST
+    value: "0.0.0.0"
+  - key: WS_PORT
+    value: "8001"
+  
+  # Notification Configuration
+  - key: ENABLE_NOTIFICATIONS
+    value: "true"
+  - key: NOTIFICATION_EMAIL
+    value: "your-email@example.com"
+  
+  # Backup Configuration
+  - key: ENABLE_BACKUP
+    value: "true"
+  - key: BACKUP_INTERVAL_HOURS
+    value: "24"
+  
+  # Performance Configuration
+  - key: WORKER_PROCESSES
+    value: "1"
+  - key: MAX_REQUESTS
+    value: "1000"
+  - key: TIMEOUT
+    value: "30"
+  
+  # CORS Configuration
+  - key: ALLOWED_ORIGINS
+    value: "*"
+  - key: ALLOWED_METHODS
+    value: "GET,POST,PUT,DELETE,OPTIONS"
+  - key: ALLOWED_HEADERS
+    value: "*"
+  
+  # Rate Limiting
+  - key: RATE_LIMIT_REQUESTS
+    value: "100"
+  - key: RATE_LIMIT_WINDOW
+    value: "60"
+  
+  # Logging Configuration
+  - key: LOG_FORMAT
+    value: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  - key: LOG_FILE
+    value: "/var/log/trading_system.log"
+  
+  # Health Check Configuration
+  - key: HEALTH_CHECK_INTERVAL
+    value: "30"
+  - key: HEALTH_CHECK_TIMEOUT
+    value: "10"
+  - key: HEALTH_CHECK_RETRIES
+    value: "3"
+  
+  # Error Handling
+  - key: ENABLE_ERROR_REPORTING
+    value: "true"
+  - key: ERROR_REPORTING_LEVEL
+    value: "ERROR"
+  
+  # Development/Testing
+  - key: MOCK_MODE
+    value: "true"
+  - key: ENABLE_DEBUG_ENDPOINTS
+    value: "false"
+  - key: ENABLE_TEST_ROUTES
+    value: "false" 
