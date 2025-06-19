@@ -24,7 +24,7 @@ aiohttp==3.9.1
 websockets==12.0
 aiofiles==23.2.1
 requests==2.31.0
-truedata_ws==1.0.0  # TrueData WebSocket package
+truedata>=7.0.0  # Updated to latest TrueData version
 
 # Data Processing & ML
 pandas==1.5.3

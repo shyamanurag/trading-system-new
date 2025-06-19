@@ -9,7 +9,7 @@ from typing import Dict, Optional, Any
 from datetime import datetime
 import time
 
-from ..core.connection_manager import ResilientConnection
+from core.connection_manager import ResilientConnection
 from .zerodha import ZerodhaIntegration
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class ResilientZerodhaConnection(ResilientConnection):
     """Resilient connection wrapper for Zerodha broker"""
     
     def __init__(self, broker: ZerodhaIntegration, config: Dict):
-        super().__init__(config)
+        super().__init__("zerodha", config)
         self.broker = broker
         self._last_order_time = None
         self._order_rate_limit = config.get('order_rate_limit', 1.0)  # orders per second
@@ -164,13 +164,38 @@ class ResilientZerodhaConnection(ResilientConnection):
     @property
     def connection_status(self) -> Dict:
         """Get detailed connection status"""
-        status = super().connection_status
-        status.update({
+        health = self.get_health()
+        status = {
+            'name': self.name,
+            'state': health.state.value,
+            'last_connected': health.last_connected.isoformat() if health.last_connected else None,
+            'last_error': health.last_error,
+            'reconnect_attempts': health.reconnect_attempts,
+            'latency_ms': health.latency_ms,
+            'uptime_seconds': health.uptime_seconds,
             'broker': 'zerodha',
             'order_rate_limit': self._order_rate_limit,
             'last_order_time': self._last_order_time,
-            'ws_connected': self.broker.ticker_connected,
+            'ws_connected': self.broker.ticker_connected if hasattr(self.broker, 'ticker_connected') else False,
             'ws_reconnect_attempts': self._ws_reconnect_attempts,
             'ws_last_reconnect': self._ws_last_reconnect
-        })
-        return status 
+        }
+        return status
+
+    async def execute(self, func, *args, **kwargs):
+        """Execute function with retry logic"""
+        await self.ensure_connected()
+        return await func(*args, **kwargs)
+
+    # Implement abstract methods from parent class
+    async def _do_connect(self):
+        """Actual connection logic"""
+        await self._connect_impl()
+    
+    async def _do_disconnect(self):
+        """Actual disconnection logic"""
+        await self._disconnect_impl()
+    
+    async def _check_connection_alive(self) -> bool:
+        """Check if connection is alive"""
+        return await self._health_check_impl() 
