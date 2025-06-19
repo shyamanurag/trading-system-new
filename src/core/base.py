@@ -7,7 +7,7 @@ Consolidates common functionality to eliminate duplication
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, time, timedelta
-from typing import Dict, List, Optional, Any, Callable
+from typing import Dict, List, Optional, Any, Callable, Tuple
 from dataclasses import dataclass, field
 from collections import deque
 import numpy as np
