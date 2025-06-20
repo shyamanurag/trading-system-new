@@ -81,6 +81,7 @@ class PositionModel(BaseModel):
 class User(Base):
     """User accounts and authentication"""
     __tablename__ = "users"
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(100), unique=True, index=True, nullable=False)
@@ -105,6 +106,7 @@ class User(Base):
 class Portfolio(Base):
     """User portfolios and holdings"""
     __tablename__ = "portfolios"
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -125,6 +127,7 @@ class Portfolio(Base):
 class Stock(Base):
     """Stock/Symbol master data"""
     __tablename__ = "stocks"
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     symbol = Column(String(20), unique=True, index=True, nullable=False)
@@ -145,6 +148,10 @@ class Stock(Base):
 class MarketData(Base):
     """Historical and real-time market data"""
     __tablename__ = "market_data"
+    __table_args__ = (
+        Index('ix_market_data_stock_timestamp', 'stock_id', 'timestamp'),
+        {'extend_existing': True}
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False)
@@ -159,15 +166,11 @@ class MarketData(Base):
     
     # Relationships
     stock = relationship("Stock", back_populates="market_data")
-    
-    # Indexes for performance
-    __table_args__ = (
-        Index('ix_market_data_stock_timestamp', 'stock_id', 'timestamp'),
-    )
 
 class Position(Base):
     """Trading positions"""
     __tablename__ = "positions"
+    __table_args__ = {'extend_existing': True}
     
     position_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -191,6 +194,7 @@ class Position(Base):
 class Trade(Base):
     """Trading transactions"""
     __tablename__ = "trades"
+    __table_args__ = {'extend_existing': True}
     
     trade_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -212,6 +216,7 @@ class Trade(Base):
 class Order(Base):
     """Trading orders"""
     __tablename__ = "orders"
+    __table_args__ = {'extend_existing': True}
     
     order_id = Column(String(50), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -242,6 +247,7 @@ class Order(Base):
 class UserMetric(Base):
     """User performance metrics"""
     __tablename__ = "user_metrics"
+    __table_args__ = {'extend_existing': True}
     
     metric_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -263,6 +269,7 @@ class UserMetric(Base):
 class RiskMetric(Base):
     """Risk metrics"""
     __tablename__ = "risk_metrics"
+    __table_args__ = {'extend_existing': True}
     
     metric_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -280,6 +287,10 @@ class RiskMetric(Base):
 class Recommendation(Base):
     """AI-generated trading recommendations"""
     __tablename__ = "recommendations"
+    __table_args__ = (
+        Index('ix_recommendations_stock_active', 'stock_id', 'is_active'),
+        {'extend_existing': True}
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False)
@@ -296,15 +307,11 @@ class Recommendation(Base):
     
     # Relationships
     stock = relationship("Stock", back_populates="recommendations")
-    
-    # Indexes
-    __table_args__ = (
-        Index('ix_recommendations_stock_active', 'stock_id', 'is_active'),
-    )
 
 class RiskMetrics(Base):
     """Portfolio risk analysis data"""
     __tablename__ = "portfolio_risk_metrics"
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False)
@@ -320,6 +327,7 @@ class RiskMetrics(Base):
 class TradingSession(Base):
     """Trading session tracking"""
     __tablename__ = "trading_sessions"
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
