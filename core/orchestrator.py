@@ -29,13 +29,13 @@ from strategies.confluence_amplifier import ConfluenceAmplifier
 from brokers.zerodha import ZerodhaIntegration
 from data.truedata_provider import TrueDataProvider
 from monitoring.event_monitor import EventMonitor
-from core.position_tracker import PositionTracker
-from core.order_manager import OrderManager
-from core.risk_manager import RiskManager
+from src.core.position_tracker import PositionTracker
+from src.core.order_manager import OrderManager
+from src.core.risk_manager import RiskManager
 from risk.compliance_manager import ComplianceManager
 from utils.notifications import NotificationService
 from utils.constants import TradingHours, SystemLimits
-from core.events import EventBus, EventType, TradingEvent
+from src.events import EventBus, EventType, TradingEvent
 
 # New imports for enhanced security and resilience
 from security.auth_manager import SecurityManager

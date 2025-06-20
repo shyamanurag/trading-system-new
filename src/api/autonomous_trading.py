@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any
 from datetime import datetime
 import logging
-from core.orchestrator import TradingOrchestrator
+from src.core.orchestrator import TradingOrchestrator
 from models.responses import (
     BaseResponse,
     TradingStatusResponse,

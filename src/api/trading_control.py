@@ -169,7 +169,7 @@ async def control_trading(command: TradingCommand):
             logger.info("Starting trading system...")
             
             # Import and initialize components
-            from core.orchestrator import TradingOrchestrator
+            from src.core.orchestrator import TradingOrchestrator
             from data.truedata_provider import TrueDataProvider
             
             # Create config
@@ -200,11 +200,11 @@ async def control_trading(command: TradingCommand):
                 'paper_trading': command.paper_trading
             }
             
-            # Initialize orchestrator
-            trading_state["orchestrator"] = TradingOrchestrator(config)
+            # Initialize orchestrator (singleton)
+            trading_state["orchestrator"] = TradingOrchestrator.get_instance()
             
-            # Start orchestrator in background
-            asyncio.create_task(trading_state["orchestrator"].start())
+            # Enable trading
+            await trading_state["orchestrator"].enable_trading()
             
             trading_state["is_running"] = True
             trading_state["start_time"] = datetime.now().isoformat()
@@ -231,7 +231,7 @@ async def control_trading(command: TradingCommand):
             logger.info("Stopping trading system...")
             
             if trading_state["orchestrator"]:
-                await trading_state["orchestrator"].stop()
+                await trading_state["orchestrator"].disable_trading()
                 trading_state["orchestrator"] = None
             
             trading_state["is_running"] = False

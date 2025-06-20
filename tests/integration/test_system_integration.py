@@ -5,9 +5,9 @@ from datetime import datetime, time
 from typing import Dict, Any
 
 from core.orchestrator import EnhancedTradingOrchestrator
-from core.position_tracker import PositionTracker
-from core.order_manager import OrderManager
-from core.risk_manager import RiskManager
+from src.core.position_tracker import PositionTracker
+from src.core.order_manager import OrderManager
+from src.core.risk_manager import RiskManager
 
 class TestSystemIntegration:
     @pytest.fixture

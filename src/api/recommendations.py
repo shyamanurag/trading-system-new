@@ -2,9 +2,9 @@ from fastapi import APIRouter, HTTPException
 from typing import List
 from datetime import datetime
 from pydantic import BaseModel
-from core.analysis import analyze_stock, calculate_trade_quality
-from core.market_data import get_market_data
-from core.risk_manager import calculate_risk_metrics
+from src.core.analysis import analyze_stock, calculate_trade_quality
+from src.core.market_data import get_market_data
+from src.core.risk_manager import calculate_risk_metrics
 
 router = APIRouter()
 
