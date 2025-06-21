@@ -40,8 +40,11 @@ import uuid
 # Load environment variables
 load_dotenv('config/production.env')
 
-# Import error handler
+# Import error handler and other components
 from src.middleware.error_handler import error_handler
+from database_manager import get_database_operations
+from src.core.health_checker import HealthChecker
+from src.core.config import get_settings
 
 # Configure logging
 logging.basicConfig(
@@ -53,7 +56,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    global config, redis_client, security_manager, security_monitor, websocket_manager
+    global config, redis_client, security_manager, security_monitor, websocket_manager, health_checker
     
     # Startup
     try:
@@ -61,7 +64,8 @@ async def lifespan(app: FastAPI):
         
         # Load configuration
         config = await load_config()
-        
+        settings = get_settings()
+
         # Initialize Redis
         redis_client = await init_redis()
         
@@ -76,6 +80,9 @@ async def lifespan(app: FastAPI):
                 logger.warning("❌ Database manager initialization failed - continuing without database")
         except Exception as e:
             logger.warning(f"❌ Database unavailable, continuing in API-only mode: {e}")
+        
+        # Initialize Health Checker
+        health_checker = HealthChecker(settings)
         
         # Initialize security (if Redis is available)
         if redis_client:
@@ -130,8 +137,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error during shutdown: {e}")
 
-# Initialize FastAPI app with lifespan
-
 # Import new API routers
 from src.api.market_data import router as market_data_router
 from src.api.elite_recommendations import router as recommendations_router
@@ -140,16 +145,9 @@ from src.api.monitoring import router as monitoring_router
 from src.api.autonomous_trading import router as autonomous_router
 
 # Import core components
-from typing import Dict, Optional, Annotated
-try:
-    from src.core.websocket_manager import WebSocketManager
-    from security.auth_manager import AuthConfig, AuthManager as SecurityManager
-    from monitoring.security_monitor import SecurityMonitor
-except ImportError as e:
-    logger.warning(f"Some imports failed: {e}")
-    WebSocketManager = None
-    SecurityManager = None
-    SecurityMonitor = None
+from src.core.websocket_manager import WebSocketManager
+from monitoring.security_monitor import SecurityMonitor
+from security.auth_manager import AuthConfig, AuthManager as SecurityManager
 
 app = FastAPI(
     # root_path=os.getenv("ROOT_PATH", "/api"),  # Temporarily remove root_path
@@ -261,12 +259,9 @@ app = FastAPI(
 )
 
 # Setup global error handlers
-environment = os.getenv("ENVIRONMENT", "production")
-error_handler.environment = environment
+# environment = os.getenv("ENVIRONMENT", "production")
+# error_handler.environment = environment # Attribute "environment" is unknown
 # error_handler.setup_exception_handlers(app)  # Comment out for now as this method doesn't exist
-
-# Add error recovery middleware
-# app.add_middleware(ErrorRecoveryMiddleware, error_threshold=10, recovery_time=60)  # Comment out as this doesn't exist
 
 # CORS configuration
 origins = os.getenv("CORS_ORIGINS", "[]")
@@ -304,16 +299,10 @@ app.include_router(api_v1)
 # Include non-versioned auth router for backward compatibility
 app.include_router(auth_router, tags=["auth"])  # Remove prefix since it's already in the router
 
-# Mount static files for frontend
+# Mount static files for frontend assets
 static_dir = Path("dist/frontend")
-if static_dir.exists():
-    # Mount the assets directory for JS/CSS files
-    assets_dir = static_dir / "assets"
-    if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend_assets")
-    
-    # Mount the entire frontend directory for other static files
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+if (static_dir / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=(static_dir / "assets")), name="assets")
 
 # Custom OpenAPI schema
 def custom_openapi():
@@ -392,6 +381,7 @@ redis_client: Optional[redis.Redis] = None
 security_manager: Optional[SecurityManager] = None
 security_monitor: Optional[SecurityMonitor] = None
 websocket_manager: Optional[WebSocketManager] = None
+health_checker: Optional[HealthChecker] = None
 
 # JWT Security
 security = HTTPBearer()
@@ -734,8 +724,8 @@ async def get_health_status():
         )
     
     try:
-        health_status = await health_checker.get_health_status()
-        status_code = 200 if health_status["overall_status"] == "healthy" else 503
+        health_status = await health_checker.check_health()
+        status_code = 200 if health_status["status"] == "healthy" else 503
         return JSONResponse(status_code=status_code, content=health_status)
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -878,45 +868,6 @@ async def webhook(request: Request):
     if not security_manager:
         raise HTTPException(status_code=503, detail="Security manager not initialized")
         
-    try:
-        # Get webhook data
-        data = await request.json()
-        
-        # Validate webhook data
-        if not data:
-            raise HTTPException(status_code=400, detail="Empty webhook data")
-        
-        # Log webhook received
-        logger.info("Webhook received", extra={"webhook_data": data})
-        
-        # Process webhook based on type
-        webhook_type = data.get('type')
-        if not webhook_type:
-            raise HTTPException(status_code=400, detail="Missing webhook type")
-        
-        # Route to appropriate handler
-        if webhook_type == 'market_data':
-            # Handle market data updates
-            pass
-        elif webhook_type == 'order_update':
-            # Handle order status updates
-            pass
-        elif webhook_type == 'n8n_workflow':
-            # Handle n8n workflow events
-            pass
-        else:
-            logger.warning(f"Unknown webhook type: {webhook_type}")
-        
-        return {"status": "success", "message": "Webhook processed"}
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error processing webhook: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@app.post("/webhook")
-async def webhook(request: Request):
     try:
         # Log the raw request body
         body = await request.body()
@@ -1658,11 +1609,11 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
         await websocket.close(code=1011, reason="WebSocket service unavailable")
         return
     
-    connection_id = None
     try:
         # Connect user
-        connection_id = await websocket_manager.connection_manager.connect(websocket, user_id)
-        
+        await websocket_manager.connect(websocket, user_id)
+        connection_id = websocket_manager.websocket_ids.get(websocket)
+
         # Send welcome message
         await websocket.send_json({
             'type': 'welcome',
@@ -1681,21 +1632,24 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
         })
         
         # Auto-subscribe to general rooms
-        await websocket_manager.connection_manager.subscribe_to_room(connection_id, 'market_data_all')
-        await websocket_manager.connection_manager.subscribe_to_room(connection_id, 'system_alerts')
+        await websocket_manager.subscribe_to_room(websocket, 'market_data_all')
+        await websocket_manager.subscribe_to_room(websocket, 'system_alerts')
         
-        # Handle incoming messages
+        # Handle incoming messages from the client
         while True:
             try:
-                # Receive message from client
                 data = await websocket.receive_json()
-                
-                # Process message
-                response = await websocket_manager.handle_client_message(connection_id, data)
-                
-                # Send response if any
-                if response:
-                    await websocket.send_json(response)
+                action = data.get('action')
+                room = data.get('room')
+
+                if action == 'subscribe' and room:
+                    await websocket_manager.subscribe_to_room(websocket, room)
+                    await websocket.send_json({'status': 'success', 'message': f'Subscribed to {room}'})
+                elif action == 'unsubscribe' and room:
+                    await websocket_manager.unsubscribe_from_room(websocket, room)
+                    await websocket.send_json({'status': 'success', 'message': f'Unsubscribed from {room}'})
+                else:
+                    await websocket.send_json({'type': 'error', 'message': 'Invalid action'})
                     
             except WebSocketDisconnect:
                 break
@@ -1711,9 +1665,8 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
     except Exception as e:
         logger.error(f"WebSocket error for user {user_id}: {e}")
     finally:
-        # Clean up connection
-        if connection_id and websocket_manager:
-            await websocket_manager.connection_manager.disconnect(connection_id)
+        if websocket and websocket_manager:
+            await websocket_manager.disconnect(websocket)
 
 @app.get(
     "/api/websocket/stats",
@@ -1729,7 +1682,7 @@ async def get_websocket_stats():
         raise HTTPException(status_code=503, detail="WebSocket service unavailable")
     
     try:
-        stats = websocket_manager.connection_manager.get_connection_stats()
+        stats = websocket_manager.get_connection_stats()
         return {
             'success': True,
             'stats': stats,
@@ -1759,12 +1712,12 @@ async def broadcast_message(message_data: dict):
             'timestamp': datetime.now().isoformat()
         }
         
-        sent_count = await websocket_manager.connection_manager.broadcast(message)
+        await websocket_manager.broadcast(message)
         
         return {
             'success': True,
             'message': 'Broadcast sent successfully',
-            'recipients': sent_count,
+            'recipients': 'all',
             'timestamp': datetime.now().isoformat()
         }
     except Exception as e:
@@ -1791,12 +1744,12 @@ async def send_user_alert(user_id: str, alert_data: dict):
             'timestamp': datetime.now().isoformat()
         }
         
-        sent_count = await websocket_manager.connection_manager.send_to_user(user_id, message)
+        await websocket_manager.broadcast_to_user(user_id, message)
         
         return {
             'success': True,
             'message': f'Alert sent to user {user_id}',
-            'connections_reached': sent_count,
+            'connections_reached': 'all_user_connections',
             'timestamp': datetime.now().isoformat()
         }
     except Exception as e:
@@ -1855,148 +1808,6 @@ async def direct_auth_test():
         "default_users": list(DEFAULT_USERS.keys()),
         "admin_password_hint": "admin123"
     }
-
-# Catch-all route for SPA (MUST be defined LAST - after all API routes)
-@app.options("/auth/login")
-async def handle_auth_options():
-    """Handle OPTIONS requests for auth endpoints"""
-    return {"message": "OK"}
-
-@app.options("/v1/auth/login")
-async def handle_v1_auth_options():
-    """Handle OPTIONS requests for v1 auth endpoints"""
-    return {"message": "OK"}
-
-@app.options("/api/v1/auth/login")
-async def handle_api_v1_auth_options():
-    """Handle OPTIONS requests for api/v1 auth endpoints (with root_path)"""
-    return {"message": "OK"}
-
-@app.options("/{full_path:path}")
-async def handle_options(full_path: str, request: Request):
-    """Handle OPTIONS requests for CORS preflight"""
-    # Return empty response with CORS headers
-    # The CORS middleware will add the appropriate headers
-    return {"message": "OK"}
-
-# SPA serving logic - MUST be at the very end after all API routes
-@app.get("/{full_path:path}")
-async def serve_spa(full_path: str, request: Request):
-    """Serve React SPA for all non-API routes"""
-    # List of API prefixes that should NOT be handled by the SPA
-    api_prefixes = (
-        "api/", "docs", "health", "webhook", "control", "openapi.json", 
-        "market/", "ws/", "v1/", "errors/", "database/", "monitoring/", 
-        "performance/", "autonomous/", "trading/", "recommendations/", 
-        "scan/", "backtest/", "static/", "assets/", "users/", "analytics/"
-    )
-    
-    # Check if this is an API request based on path and headers
-    accept_header = request.headers.get("accept", "")
-    content_type = request.headers.get("content-type", "")
-    user_agent = request.headers.get("user-agent", "")
-    
-    # More comprehensive API detection
-    is_api_request = (
-        "application/json" in accept_header or 
-        "application/json" in content_type or
-        full_path.startswith("api/") or
-        full_path.startswith("v1/") or
-        full_path.startswith("health") or
-        full_path.startswith("users/") or
-        full_path.startswith("market/") or
-        full_path.startswith("performance/") or
-        full_path.startswith("analytics/") or
-        full_path.startswith("recommendations/") or
-        full_path.startswith("trading/") or
-        full_path.startswith("autonomous/") or
-        full_path.startswith("monitoring/") or
-        full_path.startswith("websocket/") or
-        full_path.startswith("ws/") or
-        "curl" in user_agent.lower() or
-        "postman" in user_agent.lower() or
-        "insomnia" in user_agent.lower() or
-        "thunder" in user_agent.lower()
-    )
-    
-    # If this is an API route, return 404 JSON instead of serving HTML
-    for prefix in api_prefixes:
-        if full_path.startswith(prefix):
-            if is_api_request:
-                return JSONResponse(
-                    status_code=404,
-                    content={
-                        "error": "API endpoint not found",
-                        "path": f"/{full_path}",
-                        "message": "This endpoint is not available or requires authentication",
-                        "timestamp": datetime.now().isoformat()
-                    }
-                )
-            else:
-                # For non-API requests to API paths, return JSON error
-                return JSONResponse(
-                    status_code=404,
-                    content={
-                        "error": "API endpoint not found",
-                        "path": f"/{full_path}",
-                        "message": "This endpoint requires API authentication or is not available",
-                        "timestamp": datetime.now().isoformat()
-                    }
-                )
-    
-    # For root path with API request, return API response
-    if full_path == "" and is_api_request:
-        return {
-            "status": "ok",
-            "timestamp": datetime.now().isoformat(),
-            "version": "2.0.0",
-            "service": "Trading System API"
-        }
-    
-    # Check if it's a static file request
-    static_dir = Path("dist/frontend")
-    if static_dir.exists():
-        # If it's an empty path or root, serve index.html
-        if not full_path or full_path == "":
-            index_file = static_dir / "index.html"
-            if index_file.exists():
-                return FileResponse(index_file, media_type="text/html")
-        
-        # Try to serve the requested file
-        file_path = static_dir / full_path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
-        
-        # For all other routes (SPA routing), fallback to index.html
-        index_file = static_dir / "index.html"
-        if index_file.exists():
-            return FileResponse(index_file, media_type="text/html")
-    
-    # Ultimate fallback - serve static HTML file directly
-    static_frontend = Path("static-frontend.html")
-    if static_frontend.exists():
-        return FileResponse(static_frontend, media_type="text/html")
-    
-    # If no frontend found, return JSON for root or 404 for others
-    if not full_path or full_path == "":
-        return {
-            "status": "ok",
-            "timestamp": datetime.now().isoformat(),
-            "version": "2.0.0",
-            "service": "Trading System API",
-            "message": "Frontend not built - API only mode"
-        }
-    
-    # For any other path that's not an API request, return 404 JSON
-    return JSONResponse(
-        status_code=404,
-        content={
-            "error": "Not found",
-            "path": f"/{full_path}",
-            "message": "The requested resource was not found",
-            "timestamp": datetime.now().isoformat()
-        }
-    )
 
 # Add missing API endpoints that frontend expects
 @app.get("/api/v1/dashboard/data")
@@ -2092,6 +1903,34 @@ async def get_current_user():
     except Exception as e:
         logger.error(f"Error getting current user: {e}")
         raise HTTPException(status_code=500, detail="Failed to get current user")
+
+# Catch-all route for SPA (MUST be defined LAST - after all API routes)
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_spa_catch_all(request: Request, full_path: str):
+    """Serve the single-page application."""
+    static_dir = Path("dist/frontend")
+    # If the requested path is for a file that exists, serve it.
+    file_path = static_dir / full_path
+    if file_path.is_file():
+        return FileResponse(file_path)
+
+    # For any other path, serve the index.html to support client-side routing.
+    index_path = static_dir / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    
+    # If no frontend is present, return a JSON 404 for API-like requests, or a simple message.
+    accept_header = request.headers.get("accept", "")
+    if "application/json" in accept_header or full_path.startswith("api/"):
+         return JSONResponse(
+            status_code=404,
+            content={"error": "Not Found", "path": f"/{full_path}"}
+        )
+
+    return JSONResponse(
+        status_code=404,
+        content={"message": "Frontend not found. API is running."}
+    )
 
 if __name__ == "__main__":
     # Get port from environment or use default
