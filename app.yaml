@@ -136,7 +136,7 @@ envs:
   value: "true"
 - key: LOG_LEVEL
   scope: RUN_AND_BUILD_TIME
-  value: INFO
+  value: DEBUG
 - key: LOG_FORMAT
   scope: RUN_AND_BUILD_TIME
   value: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -166,7 +166,7 @@ envs:
   value: "8000"
 - key: API_DEBUG
   scope: RUN_AND_BUILD_TIME
-  value: "false"
+  value: "true"
 - key: WS_MAX_CONNECTIONS
   scope: RUN_AND_BUILD_TIME
   value: "1000"
@@ -245,7 +245,7 @@ ingress:
       name: frontend
     match:
       path:
-        exact: /
+        prefix: /
 
 services:
 - environment_slug: python
