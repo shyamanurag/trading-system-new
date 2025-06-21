@@ -1,7 +1,7 @@
 # main.py
 """
 Main Application Entry Point with OpenAPI Documentation
-Updated: 2025-06-07 - FORCE DEPLOYMENT WITH ALL TRADING FEATURES
+Updated: 2025-06-21 - FORCE API REDEPLOYMENT TO FIX ROOT_PATH ISSUE
 INCLUDES: Authentication, Trading APIs, Autonomous Trading, Risk Management
 """
 
