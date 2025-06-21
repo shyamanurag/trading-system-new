@@ -1811,6 +1811,20 @@ async def direct_auth_test():
         "admin_password_hint": "admin123"
     }
 
+@app.get("/api/test/routes")
+async def test_routes():
+    """Test endpoint to verify what routes are available"""
+    return {
+        "message": "Routes test endpoint",
+        "available_routes": [
+            "/api/v1/auth/test",
+            "/api/market/indices", 
+            "/api/market/market-status",
+            "/api/test/routes"
+        ],
+        "timestamp": datetime.now().isoformat()
+    }
+
 # Add missing API endpoints that frontend expects
 @app.get("/api/v1/dashboard/data")
 async def get_dashboard_data():
