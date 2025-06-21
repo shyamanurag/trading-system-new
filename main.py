@@ -152,7 +152,7 @@ except ImportError as e:
     SecurityMonitor = None
 
 app = FastAPI(
-    root_path=os.getenv("ROOT_PATH", "/api"),
+    # root_path=os.getenv("ROOT_PATH", "/api"),  # Temporarily remove root_path
     title="Trading System API",
     description="""
     ## Comprehensive Trading System API
