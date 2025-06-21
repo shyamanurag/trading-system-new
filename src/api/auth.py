@@ -15,8 +15,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Create two routers - one for v1 and one for backward compatibility
-router_v1 = APIRouter(prefix="/auth")
-router = APIRouter(prefix="/auth")
+router_v1 = APIRouter()  # Remove prefix since it's included under /v1 in main.py
+router = APIRouter(prefix="/auth")  # Keep prefix for backward compatibility
 security = HTTPBearer()
 
 # Configuration
@@ -60,8 +60,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 # Helper function to create login endpoint
-def create_login_endpoint(router: APIRouter):
-    @router.post("/login")
+def create_login_endpoint(router: APIRouter, prefix: str = ""):
+    @router.post(f"{prefix}/login")
     async def login(request: Request, login_data: LoginRequest):
         """Login endpoint"""
         logger.info(f"Login attempt for user: {login_data.username}")
@@ -116,11 +116,68 @@ def create_login_endpoint(router: APIRouter):
         }
 
 # Create login endpoints for both routers
-create_login_endpoint(router_v1)
-create_login_endpoint(router)
+create_login_endpoint(router_v1, "/auth")  # Add /auth prefix for v1 router
+create_login_endpoint(router)  # No prefix needed for backward compatibility router
 
 # Export both routers
 __all__ = ["router", "router_v1"]
+
+@router_v1.get("/auth/me")
+async def get_current_user_v1(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get current user info"""
+    token = credentials.credentials
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        user = DEFAULT_USERS.get(username)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return {
+            "username": user["username"],
+            "full_name": user["full_name"],
+            "email": user["email"],
+            "is_admin": user.get("is_admin", False)
+        }
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+@router_v1.post("/auth/logout")
+async def logout_v1():
+    """Logout endpoint (client should remove token)"""
+    return {"message": "Logged out successfully"}
+
+@router_v1.get("/auth/test")
+async def test_auth_v1():
+    """Test endpoint to verify auth router is working"""
+    return {
+        "message": "Auth router is working!", 
+        "endpoint": "/api/v1/auth/test",
+        "default_users": list(DEFAULT_USERS.keys()),
+        "admin_password_hint": "admin123"
+    }
+
+@router_v1.get("/auth/debug")
+async def debug_auth_v1():
+    """Debug endpoint to check auth configuration"""
+    admin_user = DEFAULT_USERS.get("admin", {})
+    expected_hash = hashlib.sha256("admin123".encode()).hexdigest()
+    
+    return {
+        "auth_configured": True,
+        "admin_user_exists": "admin" in DEFAULT_USERS,
+        "admin_password_hash_matches": admin_user.get("password_hash") == expected_hash,
+        "expected_hash": expected_hash,
+        "actual_hash": admin_user.get("password_hash", "NOT_SET"),
+        "jwt_secret_configured": bool(SECRET_KEY),
+        "cors_note": "Make sure CORS is properly configured in main.py"
+    }
 
 @router.get("/me")
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
