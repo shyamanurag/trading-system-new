@@ -1,6 +1,6 @@
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-jd32t.ondigitalocean.app';
+const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-jd32t.ondigitalocean.app';
 
 // Add error handling wrapper
 const createEndpoint = (path) => {
