@@ -1,32 +1,63 @@
 #!/usr/bin/env python3
-"""Test script to check API endpoints"""
+"""
+Test script to check endpoint availability on deployed backend
+"""
 
 import requests
+import json
+from datetime import datetime
 
-def test_endpoint(url, name):
+BASE_URL = "https://algoauto-jd32t.ondigitalocean.app"
+
+def test_endpoint(path, expected_status=200):
+    """Test a single endpoint"""
+    url = f"{BASE_URL}{path}"
     try:
         response = requests.get(url, timeout=10)
-        print(f"{name}: {response.status_code}")
-        if response.status_code == 200:
-            print(f"  Response: {response.text[:100]}...")
+        print(f"✅ {path} - Status: {response.status_code}")
+        if response.status_code == expected_status:
+            try:
+                data = response.json()
+                print(f"   Response: {json.dumps(data, indent=2)[:200]}...")
+            except:
+                print(f"   Response: {response.text[:200]}...")
         else:
-            print(f"  Response: {response.text[:100]}...")
+            print(f"   ❌ Expected {expected_status}, got {response.status_code}")
+            print(f"   Response: {response.text[:200]}...")
     except Exception as e:
-        print(f"{name}: Error - {e}")
+        print(f"❌ {path} - Error: {e}")
     print()
 
-# Test endpoints
-base_url = "https://algoauto-jd32t.ondigitalocean.app"
+def main():
+    print(f"🔍 Testing endpoints on {BASE_URL}")
+    print(f"⏰ Time: {datetime.now().isoformat()}")
+    print("=" * 60)
+    
+    # Test basic endpoints
+    test_endpoint("/")
+    test_endpoint("/health")
+    test_endpoint("/health/ready")
+    
+    # Test API endpoints
+    test_endpoint("/api/v1/auth/test")
+    test_endpoint("/api/v1/market/indices")
+    test_endpoint("/api/v1/market/market-status")
+    test_endpoint("/api/market/indices")
+    test_endpoint("/api/market/market-status")
+    
+    # Test debug endpoint
+    test_endpoint("/api/debug/routes")
+    
+    # Test v1 endpoints
+    test_endpoint("/v1/market/indices")
+    test_endpoint("/v1/market/market-status")
+    
+    # Test dashboard endpoints
+    test_endpoint("/api/v1/dashboard/data")
+    test_endpoint("/api/v1/health/data")
+    
+    print("=" * 60)
+    print("🏁 Testing complete!")
 
-print("Testing API endpoints...")
-print("=" * 50)
-
-test_endpoint(f"{base_url}/health", "Health endpoint")
-test_endpoint(f"{base_url}/market/indices", "Market indices (no /api)")
-test_endpoint(f"{base_url}/api/market/indices", "Market indices (with /api)")
-test_endpoint(f"{base_url}/market/market-status", "Market status (no /api)")
-test_endpoint(f"{base_url}/api/market/market-status", "Market status (with /api)")
-test_endpoint(f"{base_url}/api/v1/auth/test", "Auth test")
-test_endpoint(f"{base_url}/api/v1/market/data", "Market data v1")
-test_endpoint(f"{base_url}/api/v1/dashboard/data", "Dashboard data")
-test_endpoint(f"{base_url}/api/test/routes", "Test routes") 
+if __name__ == "__main__":
+    main() 

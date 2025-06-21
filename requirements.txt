@@ -1,4 +1,8 @@
-# Trading System Requirements
+# Trading System Requirements - MAIN REQUIREMENTS FILE
+# This is the primary requirements file used for all deployments
+# DigitalOcean App Platform uses PIP_REQUIREMENTS in app.yaml (synced with this file)
+# Local development uses this file directly
+# 
 # Core API Framework
 fastapi>=0.104.1
 uvicorn[standard]>=0.24.0
