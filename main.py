@@ -1901,6 +1901,16 @@ async def get_market_data():
         logger.error(f"Error getting market data: {e}")
         raise HTTPException(status_code=500, detail="Failed to get market data")
 
+@app.get("/api/v1/market/indices")
+async def get_market_indices_v1():
+    """Get market indices data (v1 endpoint for frontend compatibility)"""
+    return await get_market_indices()
+
+@app.get("/api/v1/market/market-status")
+async def get_market_status_v1():
+    """Get market status information (v1 endpoint for frontend compatibility)"""
+    return await get_market_status()
+
 @app.get("/api/market/indices")
 async def get_market_indices():
     """Get market indices data"""
