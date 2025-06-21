@@ -1803,6 +1803,59 @@ async def send_user_alert(user_id: str, alert_data: dict):
         logger.error(f"Error sending user alert: {e}")
         raise HTTPException(status_code=500, detail="Failed to send user alert")
 
+# Add direct auth endpoints to ensure they're available
+@app.post("/api/v1/auth/login")
+async def direct_login(request: Request, login_data: dict):
+    """Direct login endpoint to bypass router issues"""
+    from src.api.auth import DEFAULT_USERS, verify_password, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+    from datetime import timedelta
+    
+    username = login_data.get("username")
+    password = login_data.get("password")
+    
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Username and password required")
+    
+    # Check if user exists
+    user = DEFAULT_USERS.get(username)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    # Verify password
+    if not verify_password(password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    # Create access token
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user["username"], "is_admin": user.get("is_admin", False)},
+        expires_delta=access_token_expires
+    )
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "user_info": {
+            "username": user["username"],
+            "full_name": user["full_name"],
+            "email": user["email"],
+            "is_admin": user.get("is_admin", False)
+        }
+    }
+
+@app.get("/api/v1/auth/test")
+async def direct_auth_test():
+    """Direct auth test endpoint"""
+    from src.api.auth import DEFAULT_USERS
+    return {
+        "message": "Direct auth endpoint is working!", 
+        "endpoint": "/api/v1/auth/test",
+        "default_users": list(DEFAULT_USERS.keys()),
+        "admin_password_hint": "admin123"
+    }
+
 # Catch-all route for SPA (MUST be defined LAST - after all API routes)
 @app.options("/auth/login")
 async def handle_auth_options():
