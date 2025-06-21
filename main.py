@@ -1814,6 +1814,11 @@ async def handle_v1_auth_options():
     """Handle OPTIONS requests for v1 auth endpoints"""
     return {"message": "OK"}
 
+@app.options("/api/v1/auth/login")
+async def handle_api_v1_auth_options():
+    """Handle OPTIONS requests for api/v1 auth endpoints (with root_path)"""
+    return {"message": "OK"}
+
 @app.options("/{full_path:path}")
 async def handle_options(full_path: str, request: Request):
     """Handle OPTIONS requests for CORS preflight"""
