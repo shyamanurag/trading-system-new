@@ -245,7 +245,7 @@ ingress:
       name: frontend
     match:
       path:
-        prefix: /
+        exact: /
 
 services:
 - environment_slug: python
