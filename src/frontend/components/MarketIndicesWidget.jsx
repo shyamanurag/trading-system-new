@@ -36,11 +36,11 @@ const MarketIndicesWidget = () => {
             }
 
             // Fetch indices data
-            const indicesResponse = await fetch(`${API_BASE_URL}/market/indices`);
+            const indicesResponse = await fetch(`${API_BASE_URL}/api/market/indices`);
             const indicesData = await indicesResponse.json();
 
             // Fetch market status
-            const statusResponse = await fetch(`${API_BASE_URL}/market/market-status`);
+            const statusResponse = await fetch(`${API_BASE_URL}/api/market/market-status`);
             const statusData = await statusResponse.json();
 
             if (indicesData.success) {
