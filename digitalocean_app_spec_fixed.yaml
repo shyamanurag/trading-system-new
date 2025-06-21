@@ -195,9 +195,6 @@ envs:
 - key: API_DEBUG
   scope: RUN_AND_BUILD_TIME
   value: "false"
-- key: ROOT_PATH
-  scope: RUN_AND_BUILD_TIME
-  value: /api
 # =============================================================================
 # WEBSOCKET CONFIGURATION
 # =============================================================================
