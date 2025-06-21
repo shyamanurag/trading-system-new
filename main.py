@@ -1804,6 +1804,13 @@ async def send_user_alert(user_id: str, alert_data: dict):
         raise HTTPException(status_code=500, detail="Failed to send user alert")
 
 # Catch-all route for SPA (MUST be defined LAST - after all API routes)
+@app.options("/{full_path:path}")
+async def handle_options(full_path: str, request: Request):
+    """Handle OPTIONS requests for CORS preflight"""
+    # Return empty response with CORS headers
+    # The CORS middleware will add the appropriate headers
+    return {"message": "OK"}
+
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str, request: Request):
     """Serve React SPA for all non-API routes"""
