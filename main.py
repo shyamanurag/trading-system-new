@@ -2027,6 +2027,14 @@ async def get_current_user():
 @app.get("/{full_path:path}", include_in_schema=False)
 async def serve_spa_catch_all(request: Request, full_path: str):
     """Serve the single-page application."""
+    # IMPORTANT: Don't handle API paths - let FastAPI routes handle them
+    if full_path.startswith("api/"):
+        # This should not happen if routes are defined properly
+        return JSONResponse(
+            status_code=404,
+            content={"error": "API endpoint not found", "path": f"/{full_path}"}
+        )
+    
     static_dir = Path("dist/frontend")
     # If the requested path is for a file that exists, serve it.
     file_path = static_dir / full_path
@@ -2038,15 +2046,7 @@ async def serve_spa_catch_all(request: Request, full_path: str):
     if index_path.exists():
         return FileResponse(index_path)
     
-    # If no frontend is present, return a JSON 404 for API-like requests, or a simple message.
-    accept_header = request.headers.get("accept", "")
-    # Only catch API requests that don't have a specific route defined
-    if "application/json" in accept_header and not full_path.startswith("api/v1/") and not full_path.startswith("api/market/"):
-         return JSONResponse(
-            status_code=404,
-            content={"error": "Not Found", "path": f"/{full_path}"}
-        )
-
+    # If no frontend is present, return a simple message.
     return JSONResponse(
         status_code=404,
         content={"message": "Frontend not found. API is running."}
