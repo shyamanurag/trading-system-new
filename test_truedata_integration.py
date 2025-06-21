@@ -10,7 +10,13 @@ import os
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from data.truedata_provider import TrueDataProvider
+from data.truedata_client import (
+    initialize_truedata,
+    get_truedata_status, 
+    is_connected,
+    live_market_data,
+    truedata_connection_status
+)
 
 # Configure logging
 logging.basicConfig(
@@ -23,66 +29,46 @@ logger = logging.getLogger(__name__)
 async def test_truedata_connection():
     """Test TrueData connection and basic functionality"""
     
-    # Configuration
-    config = {
-        'username': 'tdwsp697',
-        'password': 'shyam@697',
-        'live_port': 8084,  # Updated port as per TrueData support
-        'log_level': logging.INFO,
-        'url': 'push.truedata.in',
-        'redis_host': 'localhost',
-        'redis_port': 6379,
-        'redis_db': 0,
-    }
-    
-    provider = None
-    
     try:
-        logger.info("Initializing TrueData provider...")
-        provider = TrueDataProvider(config)
+        logger.info("Initializing TrueData singleton client...")
         
-        logger.info("Connecting to TrueData...")
-        connected = await provider.connect()
+        # Initialize the singleton client
+        success = initialize_truedata()
         
-        if not connected:
-            logger.error("Failed to connect to TrueData")
+        if not success:
+            logger.error("Failed to initialize TrueData singleton client")
             return False
         
-        logger.info("Successfully connected to TrueData!")
+        logger.info("Successfully initialized TrueData singleton client!")
         
-        # Test subscription to symbols
-        test_symbols = ['NIFTY-I', 'BANKNIFTY-I']
-        logger.info(f"Subscribing to symbols: {test_symbols}")
+        # Check connection status
+        status = get_truedata_status()
+        logger.info(f"TrueData status: {status}")
         
-        subscribed = await provider.subscribe_market_data(test_symbols)
-        
-        if not subscribed:
-            logger.error("Failed to subscribe to market data")
+        # Check if connected
+        if not is_connected():
+            logger.error("TrueData singleton client is not connected")
             return False
         
-        logger.info("Successfully subscribed to market data!")
+        logger.info("TrueData singleton client is connected!")
         
-        # Keep connection alive for a few seconds to receive data
-        logger.info("Waiting for data (10 seconds)...")
+        # Wait for data to start flowing
+        logger.info("Waiting for data to start flowing (10 seconds)...")
         
         for i in range(10):
-            # Check for any received data
-            try:
-                while not provider.data_queue.empty():
-                    data = await provider.data_queue.get()
-                    logger.info(f"Received data: {data['type']} for symbol: {data['data'].get('symbol', 'unknown')}")
-            except Exception as e:
-                logger.debug(f"No data in queue: {e}")
+            # Check connection status
+            connection_status = truedata_connection_status
+            logger.info(f"Connection status: {connection_status}")
+            
+            # Check live market data
+            if live_market_data:
+                logger.info(f"Live symbols: {list(live_market_data.keys())}")
+                for symbol, data in live_market_data.items():
+                    logger.info(f"Live data for {symbol}: {data}")
+            else:
+                logger.info("No live market data yet...")
             
             await asyncio.sleep(1)
-        
-        # Test getting latest data from cache
-        for symbol in test_symbols:
-            latest_data = await provider.get_latest_data(symbol)
-            if latest_data:
-                logger.info(f"Latest data for {symbol}: {list(latest_data.keys())}")
-            else:
-                logger.info(f"No cached data for {symbol}")
         
         logger.info("TrueData integration test completed successfully!")
         return True
@@ -95,11 +81,6 @@ async def test_truedata_connection():
     except Exception as e:
         logger.error(f"Error during TrueData test: {e}")
         return False
-        
-    finally:
-        if provider:
-            logger.info("Disconnecting from TrueData...")
-            await provider.disconnect()
 
 def main():
     """Main function to run the test"""

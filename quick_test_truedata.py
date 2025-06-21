@@ -39,7 +39,13 @@ def test_config():
 def test_provider():
     """Test provider import"""
     try:
-        from data.truedata_provider import TrueDataProvider
+        from data.truedata_client import (
+            initialize_truedata,
+            get_truedata_status, 
+            is_connected,
+            live_market_data,
+            truedata_connection_status
+        )
         print("[SUCCESS] TrueData provider imported successfully")
         return True
     except ImportError as e:

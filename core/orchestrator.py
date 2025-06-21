@@ -27,7 +27,13 @@ from strategies.news_impact_scalper import EnhancedNewsImpactScalper
 from strategies.regime_adaptive_controller import RegimeAdaptiveController
 from strategies.confluence_amplifier import ConfluenceAmplifier
 from brokers.zerodha import ZerodhaIntegration
-from data.truedata_provider import TrueDataProvider
+from data.truedata_client import (
+    initialize_truedata,
+    get_truedata_status, 
+    is_connected,
+    live_market_data,
+    truedata_connection_status
+)
 from monitoring.event_monitor import EventMonitor
 from src.core.position_tracker import PositionTracker
 from src.core.order_manager import OrderManager
