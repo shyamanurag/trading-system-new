@@ -1906,12 +1906,60 @@ async def get_market_data():
 @app.get("/api/v1/market/indices")
 async def get_market_indices_v1():
     """Get market indices data (v1 endpoint for frontend compatibility)"""
-    return await get_market_indices()
+    # Simple test - return hardcoded data without calling other functions
+    return {
+        "status": "success",
+        "data": {
+            "nifty50": {
+                "symbol": "NIFTY 50",
+                "price": 22450.75,
+                "change": 125.50,
+                "change_percent": 0.56,
+                "volume": 1250000,
+                "high": 22500.00,
+                "low": 22300.00
+            },
+            "banknifty": {
+                "symbol": "BANK NIFTY",
+                "price": 48520.25,
+                "change": -85.75,
+                "change_percent": -0.18,
+                "volume": 850000,
+                "high": 48700.00,
+                "low": 48400.00
+            },
+            "sensex": {
+                "symbol": "SENSEX",
+                "price": 73850.50,
+                "change": 450.25,
+                "change_percent": 0.61,
+                "volume": 2500000,
+                "high": 74000.00,
+                "low": 73600.00
+            },
+            "last_update": datetime.now().isoformat()
+        }
+    }
 
 @app.get("/api/v1/market/market-status")
 async def get_market_status_v1():
     """Get market status information (v1 endpoint for frontend compatibility)"""
-    return await get_market_status()
+    # Simple test - return hardcoded data without calling other functions
+    return {
+        "status": "success",
+        "data": {
+            "market_status": "closed",
+            "status_message": "Market closed for weekend",
+            "current_time": datetime.now().isoformat(),
+            "market_hours": {
+                "open": "09:15",
+                "close": "15:30",
+                "timezone": "IST"
+            },
+            "trading_days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+            "next_trading_day": "Monday"
+        }
+    }
 
 @app.get("/api/market/indices")
 async def get_market_indices():
@@ -2064,6 +2112,26 @@ async def get_market_indices_no_prefix():
 async def get_market_status_no_prefix():
     """Get market status information (without /api/ prefix for frontend compatibility)"""
     return await get_market_status()
+
+@app.get("/api/debug/routes")
+async def debug_routes():
+    """Debug endpoint to show all registered routes"""
+    routes = []
+    for route in app.routes:
+        route_info = {
+            "path": getattr(route, 'path', 'N/A'),
+            "name": getattr(route, 'name', 'N/A'),
+            "methods": list(getattr(route, 'methods', [])),
+            "endpoint": str(getattr(route, 'endpoint', 'N/A'))
+        }
+        routes.append(route_info)
+    
+    return {
+        "status": "success",
+        "total_routes": len(routes),
+        "routes": routes,
+        "timestamp": datetime.now().isoformat()
+    }
 
 if __name__ == "__main__":
     # Get port from environment or use default
