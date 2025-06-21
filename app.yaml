@@ -185,6 +185,9 @@ envs:
 - key: HEALTH_CHECK_INTERVAL
   scope: RUN_AND_BUILD_TIME
   value: "30"
+- key: ROOT_PATH
+  scope: RUN_AND_BUILD_TIME
+  value: ""
 
 ingress:
   rules:
