@@ -96,7 +96,7 @@ const UserManagementDashboard = () => {
     const fetchUsers = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/users`);
+            const response = await fetch(`${API_BASE_URL}/users`);
             if (!response.ok) {
                 throw new Error('Failed to fetch users');
             }
@@ -117,7 +117,7 @@ const UserManagementDashboard = () => {
 
     const fetchUserPositions = async (userId) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/users/${userId}/positions`);
+            const response = await fetch(`${API_BASE_URL}/users/${userId}/positions`);
             if (!response.ok) {
                 throw new Error('Failed to fetch positions');
             }
@@ -139,7 +139,7 @@ const UserManagementDashboard = () => {
 
     const fetchUserTrades = async (userId) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/users/${userId}/trades?limit=10`);
+            const response = await fetch(`${API_BASE_URL}/users/${userId}/trades?limit=10`);
             if (!response.ok) {
                 throw new Error('Failed to fetch trades');
             }
@@ -161,7 +161,7 @@ const UserManagementDashboard = () => {
 
     const fetchUserAnalytics = async (userId) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/users/${userId}/analytics`);
+            const response = await fetch(`${API_BASE_URL}/users/${userId}/analytics`);
             if (!response.ok) {
                 throw new Error('Failed to fetch analytics');
             }
@@ -224,7 +224,7 @@ const UserManagementDashboard = () => {
                 paper_trading: true
             };
 
-            const response = await fetch(`${API_BASE_URL}/api/users/broker`, {
+            const response = await fetch(`${API_BASE_URL}/users/broker`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -268,7 +268,7 @@ const UserManagementDashboard = () => {
         }
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
+            const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
                 method: 'DELETE'
             });
 

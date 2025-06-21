@@ -43,13 +43,13 @@ const TradingDashboard = () => {
                 }
 
                 // Fetch recommendations
-                const recommendationsResponse = await axios.get(`${API_BASE_URL}/api/recommendations/analysis?symbol=AAPL`);
+                const recommendationsResponse = await axios.get(`${API_BASE_URL}/recommendations/analysis?symbol=AAPL`);
                 if (recommendationsResponse.data.success) {
                     setRecommendations([recommendationsResponse.data]);
                 }
 
                 // Fetch risk metrics
-                const riskResponse = await axios.get(`${API_BASE_URL}/api/risk/metrics`);
+                const riskResponse = await axios.get(`${API_BASE_URL}/risk/metrics`);
                 if (riskResponse.data.success) {
                     setRiskMetrics(riskResponse.data.data);
                 }
