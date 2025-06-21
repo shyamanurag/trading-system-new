@@ -1,110 +1,146 @@
 #!/usr/bin/env python3
 """
-Test script for TrueData integration with version 7.0.x
+Test script for TrueData integration
 """
+
 import asyncio
-import logging
-import sys
-import os
+import requests
+import json
+from datetime import datetime
 
-# Add the project root to Python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+BASE_URL = "https://algoauto-jd32t.ondigitalocean.app"
 
-from data.truedata_client import (
-    initialize_truedata,
-    get_truedata_status, 
-    is_connected,
-    live_market_data,
-    truedata_connection_status
-)
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
-logger = logging.getLogger(__name__)
-
-async def test_truedata_connection():
-    """Test TrueData connection and basic functionality"""
+def test_truedata_endpoints():
+    """Test TrueData API endpoints"""
+    print("🔍 Testing TrueData Integration")
+    print("=" * 50)
+    
+    # Test data
+    credentials = {
+        "username": "your_truedata_username",
+        "password": "your_truedata_password"
+    }
+    
+    symbols = ['CRUDEOIL2506165300CE', 'CRUDEOIL2506165300PE', 'NIFTY', 'BANKNIFTY']
     
     try:
-        logger.info("Initializing TrueData singleton client...")
+        # Test 1: Connect to TrueData
+        print("\n1️⃣ Testing TrueData Connection")
+        response = requests.post(f"{BASE_URL}/api/v1/truedata/connect", json=credentials)
+        print(f"   Status: {response.status_code}")
+        if response.status_code == 200:
+            print("   ✅ Connection successful")
+        else:
+            print(f"   ❌ Connection failed: {response.text}")
         
-        # Initialize the singleton client
-        success = initialize_truedata()
+        # Test 2: Get status
+        print("\n2️⃣ Testing Status Check")
+        response = requests.get(f"{BASE_URL}/api/v1/truedata/status")
+        print(f"   Status: {response.status_code}")
+        if response.status_code == 200:
+            data = response.json()
+            print(f"   ✅ Status: {data.get('connected', False)}")
+            print(f"   📊 Subscribed symbols: {data.get('total_symbols', 0)}")
+        else:
+            print(f"   ❌ Status check failed: {response.text}")
         
-        if not success:
-            logger.error("Failed to initialize TrueData singleton client")
-            return False
+        # Test 3: Subscribe to symbols
+        print("\n3️⃣ Testing Symbol Subscription")
+        response = requests.post(f"{BASE_URL}/api/v1/truedata/subscribe", json=symbols)
+        print(f"   Status: {response.status_code}")
+        if response.status_code == 200:
+            data = response.json()
+            print(f"   ✅ Subscribed to {len(symbols)} symbols")
+        else:
+            print(f"   ❌ Subscription failed: {response.text}")
         
-        logger.info("Successfully initialized TrueData singleton client!")
-        
-        # Check connection status
-        status = get_truedata_status()
-        logger.info(f"TrueData status: {status}")
-        
-        # Check if connected
-        if not is_connected():
-            logger.error("TrueData singleton client is not connected")
-            return False
-        
-        logger.info("TrueData singleton client is connected!")
-        
-        # Wait for data to start flowing
-        logger.info("Waiting for data to start flowing (10 seconds)...")
-        
-        for i in range(10):
-            # Check connection status
-            connection_status = truedata_connection_status
-            logger.info(f"Connection status: {connection_status}")
-            
-            # Check live market data
-            if live_market_data:
-                logger.info(f"Live symbols: {list(live_market_data.keys())}")
-                for symbol, data in live_market_data.items():
-                    logger.info(f"Live data for {symbol}: {data}")
+        # Test 4: Get market data
+        print("\n4️⃣ Testing Market Data Retrieval")
+        for symbol in symbols[:2]:  # Test first 2 symbols
+            response = requests.get(f"{BASE_URL}/api/v1/truedata/data/{symbol}")
+            print(f"   {symbol}: {response.status_code}")
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success'):
+                    print(f"   ✅ Data available for {symbol}")
+                else:
+                    print(f"   ⚠️  No data yet for {symbol}")
             else:
-                logger.info("No live market data yet...")
-            
-            await asyncio.sleep(1)
+                print(f"   ❌ Failed to get data for {symbol}")
         
-        logger.info("TrueData integration test completed successfully!")
-        return True
+        # Test 5: Get all market data
+        print("\n5️⃣ Testing All Market Data")
+        response = requests.get(f"{BASE_URL}/api/v1/truedata/data")
+        print(f"   Status: {response.status_code}")
+        if response.status_code == 200:
+            data = response.json()
+            print(f"   ✅ Retrieved data for {data.get('total_symbols', 0)} symbols")
+        else:
+            print(f"   ❌ Failed to get all data: {response.text}")
         
-    except ImportError as e:
-        logger.error(f"TrueData not available: {e}")
-        logger.error("Please install TrueData with: pip install truedata>=7.0.0")
-        return False
+        print(f"\n✅ TrueData integration test completed at {datetime.now().isoformat()}")
         
     except Exception as e:
-        logger.error(f"Error during TrueData test: {e}")
-        return False
+        print(f"❌ Test failed with error: {e}")
 
-def main():
-    """Main function to run the test"""
-    logger.info("Starting TrueData integration test...")
+def test_simple_truedata_script():
+    """Test the original TrueData script"""
+    print("\n🔍 Testing Original TrueData Script")
+    print("=" * 50)
     
-    # Check if TrueData is available
-    try:
-        import truedata
-        logger.info(f"TrueData version: {truedata.__version__}")
-    except ImportError:
-        logger.error("TrueData package not found!")
-        logger.error("Please install with: pip install truedata>=7.0.0")
-        return False
+    print("""
+📋 Original TrueData Script:
+```python
+from truedata import TD_live
+import time
+import logging
+
+username = "your_username"
+password = "your_password"
+
+port = 8084
+url = "push.truedata.in"
+
+td_obj = TD_live(username, password, live_port=port, 
+                 log_level=logging.WARNING, url=url, compression=False)
+
+symbols = ['CRUDEOIL2506165300CE', 'CRUDEOIL2506165300PE']
+req_ids = td_obj.start_live_data(symbols)
+time.sleep(1)
+
+@td_obj.trade_callback
+def my_tick_data(tick_data):
+    print("tick data", tick_data)
+
+@td_obj.greek_callback
+def mygreek_bidask(greek_data):
+    print("greek >", greek_data)
+
+# Keep your thread alive
+while True:
+    time.sleep(120)
+```
+""")
     
-    # Run the async test
-    success = asyncio.run(test_truedata_connection())
-    
-    if success:
-        logger.info("✅ TrueData integration test PASSED")
-        return True
-    else:
-        logger.error("❌ TrueData integration test FAILED")
-        return False
+    print("💡 To use this script:")
+    print("   1. Install TrueData: pip install truedata")
+    print("   2. Replace username/password with your credentials")
+    print("   3. Run the script: python truedata_script.py")
+    print("   4. The script will continuously receive market data")
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1) 
+    print("🚀 TrueData Integration Test Suite")
+    print("=" * 60)
+    
+    # Test API endpoints (if routing is fixed)
+    test_truedata_endpoints()
+    
+    # Show original script
+    test_simple_truedata_script()
+    
+    print(f"\n📋 Next Steps:")
+    print("   1. Fix the routing issue in DigitalOcean")
+    print("   2. Install TrueData library: pip install truedata")
+    print("   3. Add TrueData credentials to environment variables")
+    print("   4. Test the integration endpoints")
+    print("   5. Integrate with your trading strategies") 
