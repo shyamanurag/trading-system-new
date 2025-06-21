@@ -1815,8 +1815,9 @@ async def serve_spa(full_path: str, request: Request):
     )
     
     # If this is an API route, return 404 instead of serving HTML
-    if full_path.startswith(api_prefixes):
-        raise HTTPException(status_code=404, detail="API endpoint not found")
+    for prefix in api_prefixes:
+        if full_path.startswith(prefix):
+            raise HTTPException(status_code=404, detail="API endpoint not found")
     
     # Check if this is an API request based on headers
     accept_header = request.headers.get("accept", "")
