@@ -37,7 +37,7 @@ const TradingDashboard = () => {
                 setHealthStatus(healthResponse.data);
 
                 // Fetch market data
-                const marketResponse = await axios.get(`${API_BASE_URL}/api/market/data?symbol=AAPL`);
+                const marketResponse = await axios.get(`${API_BASE_URL}/market/data?symbol=AAPL`);
                 if (marketResponse.data.success) {
                     setMarketData(marketResponse.data.data);
                 }

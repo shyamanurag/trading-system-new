@@ -2041,6 +2041,18 @@ async def serve_spa_catch_all(request: Request, full_path: str):
         content={"message": "Frontend not found. API is running."}
     )
 
+# Add duplicate endpoints without /api/ prefix for frontend compatibility
+# (Required due to DigitalOcean ROOT_PATH=/api setting)
+@app.get("/market/indices")
+async def get_market_indices_no_prefix():
+    """Get market indices data (without /api/ prefix for frontend compatibility)"""
+    return await get_market_indices()
+
+@app.get("/market/market-status")
+async def get_market_status_no_prefix():
+    """Get market status information (without /api/ prefix for frontend compatibility)"""
+    return await get_market_status()
+
 if __name__ == "__main__":
     # Get port from environment or use default
     port = int(os.getenv('APP_PORT', os.getenv('PORT', '8000')))
