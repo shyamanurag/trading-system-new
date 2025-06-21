@@ -191,7 +191,7 @@ envs:
 
 ingress:
   rules:
-  # API routes - HIGH PRIORITY (must come first)
+  # API routes - EXPLICIT HIGH PRIORITY
   - component:
       name: api
     match:
@@ -202,6 +202,21 @@ ingress:
     match:
       path:
         prefix: /api/market
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /api/websocket
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /api/test
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /api/debug
   - component:
       name: api
     match:
@@ -242,7 +257,7 @@ ingress:
     match:
       path:
         prefix: /ws
-  # Frontend catch-all - LOW PRIORITY (must come last)
+  # Frontend catch-all - MUST BE LAST
   - component:
       name: frontend
     match:

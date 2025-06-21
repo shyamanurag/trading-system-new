@@ -2072,47 +2072,6 @@ async def get_current_user():
         logger.error(f"Error getting current user: {e}")
         raise HTTPException(status_code=500, detail="Failed to get current user")
 
-# Catch-all route for SPA (MUST be defined LAST - after all API routes)
-@app.get("/{full_path:path}", include_in_schema=False)
-async def serve_spa_catch_all(request: Request, full_path: str):
-    """Serve the single-page application."""
-    # IMPORTANT: Don't handle API paths - let FastAPI routes handle them
-    if full_path.startswith("api/"):
-        # This should not happen if routes are defined properly
-        return JSONResponse(
-            status_code=404,
-            content={"error": "API endpoint not found", "path": f"/{full_path}"}
-        )
-    
-    static_dir = Path("dist/frontend")
-    # If the requested path is for a file that exists, serve it.
-    file_path = static_dir / full_path
-    if file_path.is_file():
-        return FileResponse(file_path)
-
-    # For any other path, serve the index.html to support client-side routing.
-    index_path = static_dir / "index.html"
-    if index_path.exists():
-        return FileResponse(index_path)
-    
-    # If no frontend is present, return a simple message.
-    return JSONResponse(
-        status_code=404,
-        content={"message": "Frontend not found. API is running."}
-    )
-
-# Add duplicate endpoints without /api/ prefix for frontend compatibility
-# (Required due to DigitalOcean ROOT_PATH=/api setting)
-@app.get("/market/indices")
-async def get_market_indices_no_prefix():
-    """Get market indices data (without /api/ prefix for frontend compatibility)"""
-    return await get_market_indices()
-
-@app.get("/market/market-status")
-async def get_market_status_no_prefix():
-    """Get market status information (without /api/ prefix for frontend compatibility)"""
-    return await get_market_status()
-
 @app.get("/api/debug/routes")
 async def debug_routes():
     """Debug endpoint to show all registered routes"""
