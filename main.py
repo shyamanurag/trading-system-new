@@ -1804,6 +1804,16 @@ async def send_user_alert(user_id: str, alert_data: dict):
         raise HTTPException(status_code=500, detail="Failed to send user alert")
 
 # Catch-all route for SPA (MUST be defined LAST - after all API routes)
+@app.options("/auth/login")
+async def handle_auth_options():
+    """Handle OPTIONS requests for auth endpoints"""
+    return {"message": "OK"}
+
+@app.options("/v1/auth/login")
+async def handle_v1_auth_options():
+    """Handle OPTIONS requests for v1 auth endpoints"""
+    return {"message": "OK"}
+
 @app.options("/{full_path:path}")
 async def handle_options(full_path: str, request: Request):
     """Handle OPTIONS requests for CORS preflight"""
