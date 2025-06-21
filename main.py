@@ -143,6 +143,7 @@ from src.api.elite_recommendations import router as recommendations_router
 from src.api.auth import router as auth_router, router_v1 as auth_router_v1
 from src.api.monitoring import router as monitoring_router
 from src.api.autonomous_trading import router as autonomous_router
+from src.api.truedata_integration import router as truedata_router
 
 # Import core components
 from src.core.websocket_manager import WebSocketManager
@@ -291,6 +292,7 @@ api_v1.include_router(recommendations_router, prefix="/recommendations", tags=["
 api_v1.include_router(monitoring_router, prefix="/monitoring", tags=["monitoring"])
 api_v1.include_router(autonomous_router, prefix="/trading", tags=["trading"])
 api_v1.include_router(market_data_router, prefix="/market-data", tags=["market-data"])
+api_v1.include_router(truedata_router, prefix="/truedata", tags=["truedata"])
 api_v1.include_router(auth_router_v1, tags=["auth"])  # Remove prefix since it's already in the router
 
 # Mount versioned router
