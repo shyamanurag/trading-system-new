@@ -4,6 +4,7 @@ Main Application Entry Point with OpenAPI Documentation
 Updated: 2025-06-21 - FORCE API REDEPLOYMENT TO FIX ROOT_PATH ISSUE
 INCLUDES: Authentication, Trading APIs, Autonomous Trading, Risk Management
 FORCE REDEPLOY: 2025-06-22 - Market endpoints not being served, need redeployment
+DEPLOYMENT MARKER: 2025-06-22 00:30 - Routes working locally, forcing DigitalOcean redeploy
 """
 
 import os
