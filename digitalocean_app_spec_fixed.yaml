@@ -96,6 +96,9 @@ envs:
 # =============================================================================
 # ZERODHA CONFIGURATION
 # =============================================================================
+- key: ZERODHA_CLIENT_ID
+  scope: RUN_AND_BUILD_TIME
+  value: QSW899
 - key: ZERODHA_API_KEY
   scope: RUN_AND_BUILD_TIME
   value: sylcoq492qz6f7ej
@@ -114,6 +117,9 @@ envs:
 - key: ENCRYPTION_KEY
   scope: RUN_AND_BUILD_TIME
   value: lulCrXu3nDX6I18WYuPpWcIrgf2IUGAGLS93ZDwczpQ
+- key: WEBHOOK_SECRET
+  scope: RUN_AND_BUILD_TIME
+  value: wh_sec_K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A_live
 # =============================================================================
 # APPLICATION CONFIGURATION
 # =============================================================================
@@ -217,9 +223,15 @@ envs:
   scope: RUN_AND_BUILD_TIME
   value: "30"
 
-# Ingress rules
+# Ingress rules - FIXED WITH PROPER API ROUTING
 ingress:
   rules:
+  # API routes - MUST come BEFORE frontend catch-all
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /api
   - component:
       name: api
     match:
@@ -255,6 +267,7 @@ ingress:
     match:
       path:
         prefix: /ws
+  # Frontend catch-all - MUST be LAST
   - component:
       name: frontend
     match:
