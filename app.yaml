@@ -191,6 +191,7 @@ envs:
 
 ingress:
   rules:
+  # API routes - HIGH PRIORITY (must come first)
   - component:
       name: api
     match:
@@ -241,6 +242,7 @@ ingress:
     match:
       path:
         prefix: /ws
+  # Frontend catch-all - LOW PRIORITY (must come last)
   - component:
       name: frontend
     match:
