@@ -2015,7 +2015,8 @@ async def serve_spa_catch_all(request: Request, full_path: str):
     
     # If no frontend is present, return a JSON 404 for API-like requests, or a simple message.
     accept_header = request.headers.get("accept", "")
-    if "application/json" in accept_header or full_path.startswith("api/"):
+    # Only catch API requests that don't have a specific route defined
+    if "application/json" in accept_header and not full_path.startswith("api/v1/") and not full_path.startswith("api/market/"):
          return JSONResponse(
             status_code=404,
             content={"error": "Not Found", "path": f"/{full_path}"}
