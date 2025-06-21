@@ -119,6 +119,17 @@ def create_login_endpoint(router: APIRouter, prefix: str = ""):
 create_login_endpoint(router_v1, "/auth")  # Add /auth prefix for v1 router
 create_login_endpoint(router)  # No prefix needed for backward compatibility router
 
+# Add OPTIONS handlers for CORS preflight requests
+@router_v1.options("/auth/login")
+async def options_login_v1():
+    """Handle CORS preflight for login endpoint"""
+    return {"message": "OK"}
+
+@router.options("/login")
+async def options_login():
+    """Handle CORS preflight for login endpoint"""
+    return {"message": "OK"}
+
 # Export both routers
 __all__ = ["router", "router_v1"]
 
