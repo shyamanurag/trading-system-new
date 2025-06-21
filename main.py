@@ -87,23 +87,26 @@ async def lifespan(app: FastAPI):
         health_checker = HealthChecker(settings)
         
         # Initialize security (if Redis is available)
-        if redis_client:
-            security_manager, security_monitor = await init_security()
-        else:
-            logger.warning("Redis unavailable, skipping security components")
+        # if redis_client:
+        #     security_manager, security_monitor = await init_security()
+        # else:
+        #     logger.warning("Redis unavailable, skipping security components")
+        security_manager = None
+        security_monitor = None
         
         # Initialize websocket manager
-        if redis_client:
-            websocket_manager = init_websocket_manager(redis_client)
-            if websocket_manager:
-                try:
-                    await websocket_manager.start()
-                except Exception as e:
-                    logger.error(f"Error starting WebSocket manager: {e}")
-                    logger.warning("Continuing without WebSocket manager")
-                    websocket_manager = None
-        else:
-            logger.warning("Redis unavailable, skipping WebSocket manager")
+        # if redis_client:
+        #     websocket_manager = init_websocket_manager(redis_client)
+        #     if websocket_manager:
+        #         try:
+        #             await websocket_manager.start()
+        #         except Exception as e:
+        #             logger.error(f"Error starting WebSocket manager: {e}")
+        #             logger.warning("Continuing without WebSocket manager")
+        #             websocket_manager = None
+        #     else:
+        #         logger.warning("Redis unavailable, skipping WebSocket manager")
+        websocket_manager = None
         
         logger.info("Application started successfully")
         
@@ -118,8 +121,8 @@ async def lifespan(app: FastAPI):
         logger.info("Shutting down application...")
         
         # Close WebSocket manager
-        if websocket_manager:
-            await websocket_manager.stop()
+        # if websocket_manager:
+        #     await websocket_manager.stop()
         
         # Close database connections
         try:
@@ -140,17 +143,17 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error during shutdown: {e}")
 
 # Import new API routers
-from src.api.market_data import router as market_data_router
-from src.api.elite_recommendations import router as recommendations_router
-from src.api.auth import router as auth_router, router_v1 as auth_router_v1
-from src.api.monitoring import router as monitoring_router
-from src.api.autonomous_trading import router as autonomous_router
-from src.api.truedata_integration import router as truedata_router
+# from src.api.market_data import router as market_data_router
+# from src.api.elite_recommendations import router as recommendations_router
+# from src.api.auth import router as auth_router, router_v1 as auth_router_v1
+# from src.api.monitoring import router as monitoring_router
+# from src.api.autonomous_trading import router as autonomous_router
+# from src.api.truedata_integration import router as truedata_router
 
 # Import core components
-from src.core.websocket_manager import WebSocketManager
-from monitoring.security_monitor import SecurityMonitor
-from security.auth_manager import AuthConfig, AuthManager as SecurityManager
+# from src.core.websocket_manager import WebSocketManager
+# from monitoring.security_monitor import SecurityMonitor
+# from security.auth_manager import AuthConfig, AuthManager as SecurityManager
 
 app = FastAPI(
     # root_path=os.getenv("ROOT_PATH", "/api"),  # Temporarily remove root_path
@@ -287,21 +290,21 @@ app.add_middleware(
 )
 
 # Create versioned router
-api_v1 = APIRouter(prefix="/v1")
+# api_v1 = APIRouter(prefix="/v1")
 
 # Include routers under v1 prefix
-api_v1.include_router(recommendations_router, prefix="/recommendations", tags=["recommendations"])
-api_v1.include_router(monitoring_router, prefix="/monitoring", tags=["monitoring"])
-api_v1.include_router(autonomous_router, prefix="/trading", tags=["trading"])
-api_v1.include_router(market_data_router, prefix="/market-data", tags=["market-data"])
-api_v1.include_router(truedata_router, prefix="/truedata", tags=["truedata"])
-api_v1.include_router(auth_router_v1, tags=["auth"])  # Remove prefix since it's already in the router
+# api_v1.include_router(recommendations_router, prefix="/recommendations", tags=["recommendations"])
+# api_v1.include_router(monitoring_router, prefix="/monitoring", tags=["monitoring"])
+# api_v1.include_router(autonomous_router, prefix="/trading", tags=["trading"])
+# api_v1.include_router(market_data_router, prefix="/market-data", tags=["market-data"])
+# api_v1.include_router(truedata_router, prefix="/truedata", tags=["truedata"])
+# api_v1.include_router(auth_router_v1, tags=["auth"])  # Remove prefix since it's already in the router
 
 # Mount versioned router
-app.include_router(api_v1)
+# app.include_router(api_v1)
 
 # Include non-versioned auth router for backward compatibility
-app.include_router(auth_router, tags=["auth"])  # Remove prefix since it's already in the router
+# app.include_router(auth_router, tags=["auth"])  # Remove prefix since it's already in the router
 
 # Mount static files for frontend assets
 static_dir = Path("dist/frontend")
@@ -382,9 +385,9 @@ app.openapi = custom_openapi
 # Global variables
 config: Dict = {}
 redis_client: Optional[redis.Redis] = None
-security_manager: Optional[SecurityManager] = None
-security_monitor: Optional[SecurityMonitor] = None
-websocket_manager: Optional[WebSocketManager] = None
+security_manager = None
+security_monitor = None
+websocket_manager = None
 health_checker: Optional[HealthChecker] = None
 
 # JWT Security
