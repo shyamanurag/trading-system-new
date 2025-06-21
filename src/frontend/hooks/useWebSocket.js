@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Use production WebSocket URL from environment variable
-const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-ua2iq.ondigitalocean.app';
+const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-jd32t.ondigitalocean.app';
 
 // Default symbols to subscribe on connection
 const DEFAULT_SYMBOLS = ['RELIANCE', 'TCS', 'NIFTY', 'BANKNIFTY', 'INFY', 'HDFCBANK'];

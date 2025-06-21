@@ -42,34 +42,8 @@ npm install
 
 ### Production
 The app is deployed on DigitalOcean App Platform at:
-- **URL**: https://algoauto-ua2iq.ondigitalocean.app
-- **API Docs**: https://algoauto-ua2iq.ondigitalocean.app/docs
+- **URL**: https://algoauto-jd32t.ondigitalocean.app
+- **API Docs**: https://algoauto-jd32t.ondigitalocean.app/docs
 
 ### Development
-```bash
-# Start backend
-python -m uvicorn main:app --reload --port 8000
-
-# Start frontend (in another terminal)
-cd src/frontend
-npm run dev
 ```
-
-## 📊 API Documentation
-
-Interactive API documentation is available at `/docs` when the server is running.
-
-## 🔐 Security
-
-- JWT authentication
-- SSL/TLS encryption
-- Environment-based configuration
-- Rate limiting
-
-## 📝 License
-
-Proprietary - All rights reserved
-
-## 🤝 Support
-
-For support, contact: support@algoauto.com
