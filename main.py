@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 import yaml
 import redis.asyncio as redis
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import json
 from typing import Dict, Optional, Annotated
 import os
@@ -1884,6 +1884,98 @@ async def get_market_data():
     except Exception as e:
         logger.error(f"Error getting market data: {e}")
         raise HTTPException(status_code=500, detail="Failed to get market data")
+
+@app.get("/api/market/indices")
+async def get_market_indices():
+    """Get market indices data"""
+    try:
+        return {
+            "status": "success",
+            "data": {
+                "nifty50": {
+                    "symbol": "NIFTY 50",
+                    "price": 22450.75,
+                    "change": 125.50,
+                    "change_percent": 0.56,
+                    "volume": 1250000,
+                    "high": 22500.00,
+                    "low": 22300.00
+                },
+                "banknifty": {
+                    "symbol": "BANK NIFTY",
+                    "price": 48520.25,
+                    "change": -85.75,
+                    "change_percent": -0.18,
+                    "volume": 850000,
+                    "high": 48700.00,
+                    "low": 48400.00
+                },
+                "sensex": {
+                    "symbol": "SENSEX",
+                    "price": 73850.50,
+                    "change": 450.25,
+                    "change_percent": 0.61,
+                    "volume": 2500000,
+                    "high": 74000.00,
+                    "low": 73600.00
+                },
+                "last_update": datetime.now().isoformat()
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error getting market indices: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get market indices")
+
+@app.get("/api/market/market-status")
+async def get_market_status():
+    """Get market status information"""
+    try:
+        # Get current time in IST
+        from datetime import timezone, timedelta
+        ist = timezone(timedelta(hours=5, minutes=30))
+        current_time = datetime.now(ist)
+        
+        # Determine market status based on time
+        current_hour = current_time.hour
+        current_minute = current_time.minute
+        current_weekday = current_time.weekday()  # Monday = 0, Sunday = 6
+        
+        # Market hours: 9:15 AM to 3:30 PM IST, Monday to Friday
+        market_open = time(9, 15)
+        market_close = time(15, 30)
+        current_time_obj = time(current_hour, current_minute)
+        
+        if current_weekday >= 5:  # Saturday or Sunday
+            market_status = "closed"
+            status_message = "Market closed for weekend"
+        elif current_time_obj < market_open:
+            market_status = "pre_market"
+            status_message = "Market opens at 9:15 AM IST"
+        elif current_time_obj >= market_open and current_time_obj <= market_close:
+            market_status = "open"
+            status_message = "Market is open"
+        else:
+            market_status = "closed"
+            status_message = "Market closed for the day"
+        
+        return {
+            "status": "success",
+            "data": {
+                "market_status": market_status,
+                "status_message": status_message,
+                "current_time": current_time.isoformat(),
+                "market_hours": {
+                    "open": "09:15",
+                    "close": "15:30",
+                    "timezone": "IST"
+                },
+                "trading_days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+                "next_trading_day": "Monday" if current_weekday >= 5 else "Today"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error getting market status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get market status")
 
 @app.get("/api/v1/users/current")
 async def get_current_user():
