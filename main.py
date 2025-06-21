@@ -1891,9 +1891,12 @@ async def serve_spa(full_path: str, request: Request):
         "scan/", "backtest/", "static/", "assets/", "users/", "analytics/"
     )
     
-    # Check if this is an API request based on headers
+    # Check if this is an API request based on path and headers
     accept_header = request.headers.get("accept", "")
     content_type = request.headers.get("content-type", "")
+    user_agent = request.headers.get("user-agent", "")
+    
+    # More comprehensive API detection
     is_api_request = (
         "application/json" in accept_header or 
         "application/json" in content_type or
@@ -1909,14 +1912,26 @@ async def serve_spa(full_path: str, request: Request):
         full_path.startswith("autonomous/") or
         full_path.startswith("monitoring/") or
         full_path.startswith("websocket/") or
-        full_path.startswith("ws/")
+        full_path.startswith("ws/") or
+        "curl" in user_agent.lower() or
+        "postman" in user_agent.lower() or
+        "insomnia" in user_agent.lower() or
+        "thunder" in user_agent.lower()
     )
     
-    # If this is an API route, return 404 instead of serving HTML
+    # If this is an API route, return 404 JSON instead of serving HTML
     for prefix in api_prefixes:
         if full_path.startswith(prefix):
             if is_api_request:
-                raise HTTPException(status_code=404, detail=f"API endpoint /{full_path} not found")
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "error": "API endpoint not found",
+                        "path": f"/{full_path}",
+                        "message": "This endpoint is not available or requires authentication",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
             else:
                 # For non-API requests to API paths, return JSON error
                 return JSONResponse(
@@ -1924,7 +1939,8 @@ async def serve_spa(full_path: str, request: Request):
                     content={
                         "error": "API endpoint not found",
                         "path": f"/{full_path}",
-                        "message": "This endpoint requires API authentication or is not available"
+                        "message": "This endpoint requires API authentication or is not available",
+                        "timestamp": datetime.now().isoformat()
                     }
                 )
     
@@ -1971,7 +1987,16 @@ async def serve_spa(full_path: str, request: Request):
             "message": "Frontend not built - API only mode"
         }
     
-    raise HTTPException(status_code=404, detail="Frontend not found")
+    # For any other path that's not an API request, return 404 JSON
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": "Not found",
+            "path": f"/{full_path}",
+            "message": "The requested resource was not found",
+            "timestamp": datetime.now().isoformat()
+        }
+    )
 
 # Add missing API endpoints that frontend expects
 @app.get("/api/v1/dashboard/data")

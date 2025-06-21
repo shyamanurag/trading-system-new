@@ -80,7 +80,7 @@ class DatabaseManager:
             last_reset=datetime.now()
         )
         
-        self.query_times = []
+        self.query_times: List[float] = []
         self.slow_query_threshold = 1.0  # 1 second
         
     async def initialize(self) -> bool:
@@ -138,124 +138,192 @@ class DatabaseManager:
     async def _create_tables(self, conn: Connection):
         """Create necessary database tables"""
         try:
-            # Users table
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
-                    username VARCHAR(100) UNIQUE NOT NULL,
-                    email VARCHAR(150) UNIQUE NOT NULL,
-                    password_hash VARCHAR(255) NOT NULL,
-                    full_name VARCHAR(200),
-                    initial_capital DECIMAL(15,2) DEFAULT 50000,
-                    current_balance DECIMAL(15,2) DEFAULT 50000,
-                    risk_tolerance VARCHAR(20) DEFAULT 'medium',
-                    is_active BOOLEAN DEFAULT true,
-                    zerodha_client_id VARCHAR(50),
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            # First, check if users table exists and create it if not
+            users_exists = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'users'
                 )
             """)
             
-            # Positions table
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS positions (
-                    position_id SERIAL PRIMARY KEY,
-                    user_id INTEGER REFERENCES users(id),
-                    symbol VARCHAR(20) NOT NULL,
-                    quantity INTEGER NOT NULL,
-                    entry_price DECIMAL(10,2) NOT NULL,
-                    current_price DECIMAL(10,2),
-                    entry_time TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    exit_time TIMESTAMP WITH TIME ZONE,
-                    strategy VARCHAR(50),
-                    status VARCHAR(20) DEFAULT 'open',
-                    unrealized_pnl DECIMAL(12,2),
-                    realized_pnl DECIMAL(12,2),
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            if not users_exists:
+                logger.info("Creating users table...")
+                await conn.execute("""
+                    CREATE TABLE users (
+                        id SERIAL PRIMARY KEY,
+                        username VARCHAR(100) UNIQUE NOT NULL,
+                        email VARCHAR(150) UNIQUE NOT NULL,
+                        password_hash VARCHAR(255) NOT NULL,
+                        full_name VARCHAR(200),
+                        initial_capital DECIMAL(15,2) DEFAULT 50000,
+                        current_balance DECIMAL(15,2) DEFAULT 50000,
+                        risk_tolerance VARCHAR(20) DEFAULT 'medium',
+                        is_active BOOLEAN DEFAULT true,
+                        zerodha_client_id VARCHAR(50),
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    )
+                """)
+                logger.info("✅ Users table created")
+            
+            # Check and create positions table
+            positions_exists = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'positions'
                 )
             """)
             
-            # Trades table
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS trades (
-                    trade_id SERIAL PRIMARY KEY,
-                    user_id INTEGER REFERENCES users(id),
-                    symbol VARCHAR(20) NOT NULL,
-                    trade_type VARCHAR(10) NOT NULL, -- 'buy' or 'sell'
-                    quantity INTEGER NOT NULL,
-                    price DECIMAL(10,2) NOT NULL,
-                    order_id VARCHAR(50),
-                    strategy VARCHAR(50),
-                    commission DECIMAL(8,2) DEFAULT 0,
-                    executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            if not positions_exists:
+                logger.info("Creating positions table...")
+                await conn.execute("""
+                    CREATE TABLE positions (
+                        position_id SERIAL PRIMARY KEY,
+                        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                        symbol VARCHAR(20) NOT NULL,
+                        quantity INTEGER NOT NULL,
+                        entry_price DECIMAL(10,2) NOT NULL,
+                        current_price DECIMAL(10,2),
+                        entry_time TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        exit_time TIMESTAMP WITH TIME ZONE,
+                        strategy VARCHAR(50),
+                        status VARCHAR(20) DEFAULT 'open',
+                        unrealized_pnl DECIMAL(12,2),
+                        realized_pnl DECIMAL(12,2),
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    )
+                """)
+                logger.info("✅ Positions table created")
+            
+            # Check and create trades table
+            trades_exists = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'trades'
                 )
             """)
             
-            # Orders table
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS orders (
-                    order_id VARCHAR(50) PRIMARY KEY,
-                    user_id INTEGER REFERENCES users(id),
-                    broker_order_id VARCHAR(100),
-                    parent_order_id VARCHAR(50),
-                    symbol VARCHAR(20) NOT NULL,
-                    order_type VARCHAR(20) NOT NULL,
-                    side VARCHAR(10) NOT NULL,
-                    quantity INTEGER NOT NULL,
-                    price DECIMAL(10,2),
-                    stop_price DECIMAL(10,2),
-                    filled_quantity INTEGER DEFAULT 0,
-                    average_price DECIMAL(10,2),
-                    status VARCHAR(20) DEFAULT 'PENDING',
-                    execution_strategy VARCHAR(30),
-                    time_in_force VARCHAR(10) DEFAULT 'DAY',
-                    strategy_name VARCHAR(50),
-                    signal_id VARCHAR(50),
-                    fees DECIMAL(8,2) DEFAULT 0,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    placed_at TIMESTAMP WITH TIME ZONE,
-                    filled_at TIMESTAMP WITH TIME ZONE,
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            if not trades_exists:
+                logger.info("Creating trades table...")
+                await conn.execute("""
+                    CREATE TABLE trades (
+                        trade_id SERIAL PRIMARY KEY,
+                        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                        symbol VARCHAR(20) NOT NULL,
+                        trade_type VARCHAR(10) NOT NULL, -- 'buy' or 'sell'
+                        quantity INTEGER NOT NULL,
+                        price DECIMAL(10,2) NOT NULL,
+                        order_id VARCHAR(50),
+                        strategy VARCHAR(50),
+                        commission DECIMAL(8,2) DEFAULT 0,
+                        executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    )
+                """)
+                logger.info("✅ Trades table created")
+            
+            # Check and create orders table
+            orders_exists = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'orders'
                 )
             """)
             
-            # Market data table
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS market_data (
-                    id SERIAL PRIMARY KEY,
-                    symbol VARCHAR(20) NOT NULL,
-                    price DECIMAL(10,2) NOT NULL,
-                    volume INTEGER,
-                    high DECIMAL(10,2),
-                    low DECIMAL(10,2),
-                    open_price DECIMAL(10,2),
-                    timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            if not orders_exists:
+                logger.info("Creating orders table...")
+                await conn.execute("""
+                    CREATE TABLE orders (
+                        order_id VARCHAR(50) PRIMARY KEY,
+                        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                        broker_order_id VARCHAR(100),
+                        parent_order_id VARCHAR(50),
+                        symbol VARCHAR(20) NOT NULL,
+                        order_type VARCHAR(20) NOT NULL,
+                        side VARCHAR(10) NOT NULL,
+                        quantity INTEGER NOT NULL,
+                        price DECIMAL(10,2),
+                        stop_price DECIMAL(10,2),
+                        filled_quantity INTEGER DEFAULT 0,
+                        average_price DECIMAL(10,2),
+                        status VARCHAR(20) DEFAULT 'PENDING',
+                        execution_strategy VARCHAR(30),
+                        time_in_force VARCHAR(10) DEFAULT 'DAY',
+                        strategy_name VARCHAR(50),
+                        signal_id VARCHAR(50),
+                        fees DECIMAL(8,2) DEFAULT 0,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        placed_at TIMESTAMP WITH TIME ZONE,
+                        filled_at TIMESTAMP WITH TIME ZONE,
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    )
+                """)
+                logger.info("✅ Orders table created")
+            
+            # Check and create market_data table
+            market_data_exists = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'market_data'
                 )
             """)
             
-            # Create indexes for performance
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_user_id ON positions(user_id)")
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol)")
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_user_id ON trades(user_id)")
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol)")
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_executed_at ON trades(executed_at)")
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_market_data_symbol ON market_data(symbol)")
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_market_data_timestamp ON market_data(timestamp)")
+            if not market_data_exists:
+                logger.info("Creating market_data table...")
+                await conn.execute("""
+                    CREATE TABLE market_data (
+                        id SERIAL PRIMARY KEY,
+                        symbol VARCHAR(20) NOT NULL,
+                        price DECIMAL(10,2) NOT NULL,
+                        volume INTEGER,
+                        high DECIMAL(10,2),
+                        low DECIMAL(10,2),
+                        open_price DECIMAL(10,2),
+                        timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    )
+                """)
+                logger.info("✅ Market data table created")
             
-            logger.info("✅ Database tables created/verified")
+            # Create indexes for performance (only if they don't exist)
+            logger.info("Creating database indexes...")
+            indexes = [
+                ("idx_users_username", "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)"),
+                ("idx_users_email", "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)"),
+                ("idx_positions_user_id", "CREATE INDEX IF NOT EXISTS idx_positions_user_id ON positions(user_id)"),
+                ("idx_positions_symbol", "CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol)"),
+                ("idx_trades_user_id", "CREATE INDEX IF NOT EXISTS idx_trades_user_id ON trades(user_id)"),
+                ("idx_trades_symbol", "CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol)"),
+                ("idx_trades_executed_at", "CREATE INDEX IF NOT EXISTS idx_trades_executed_at ON trades(executed_at)"),
+                ("idx_market_data_symbol", "CREATE INDEX IF NOT EXISTS idx_market_data_symbol ON market_data(symbol)"),
+                ("idx_market_data_timestamp", "CREATE INDEX IF NOT EXISTS idx_market_data_timestamp ON market_data(timestamp)")
+            ]
+            
+            for index_name, index_sql in indexes:
+                try:
+                    await conn.execute(index_sql)
+                    logger.debug(f"✅ Index {index_name} created/verified")
+                except Exception as e:
+                    logger.warning(f"Warning creating index {index_name}: {e}")
+            
+            logger.info("✅ Database tables and indexes created/verified")
             
         except Exception as e:
             logger.error(f"Error creating tables: {e}")
+            # Log more details about the error
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error details: {str(e)}")
             raise
     
     @asynccontextmanager
-    async def get_connection(self) -> AsyncContextManager[Connection]:
+    async def get_connection(self):
         """Get a database connection from the pool"""
-        if not self.is_initialized:
+        if not self.is_initialized or self.pool is None:
             raise RuntimeError("Database manager not initialized")
         
         start_time = datetime.now()
