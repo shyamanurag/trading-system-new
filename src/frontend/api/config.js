@@ -68,4 +68,8 @@ export const API_ENDPOINTS = {
     CONFIG: `${API_BASE_URL}/config`
 };
 
+// Debug logging
+console.log('[API Config] Base URL:', API_BASE_URL);
+console.log('[API Config] Login URL:', API_ENDPOINTS.LOGIN.url);
+
 export default API_ENDPOINTS; 

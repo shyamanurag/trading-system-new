@@ -30,7 +30,7 @@ import {
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-jd32t.ondigitalocean.app';
 
 const EliteRecommendationsDashboard = () => {
     const [recommendations, setRecommendations] = useState([]);

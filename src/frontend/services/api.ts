@@ -5,7 +5,7 @@
 import { format } from 'date-fns';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const BASE_URL: string = ((import.meta as any).env.VITE_API_URL as string) || window.location.origin;
+const BASE_URL: string = ((import.meta as any).env.VITE_API_URL as string) || 'https://algoauto-jd32t.ondigitalocean.app';
 
 interface RequestOptions extends RequestInit {
     // When true we will skip automatic JSON parsing.
