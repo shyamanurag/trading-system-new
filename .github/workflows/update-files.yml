@@ -5,16 +5,11 @@ on:
   push:
     branches: [ main, develop ]
     paths:
-      - 'trading-system/src/utils/async_utils.py'
-      - 'trading-system/src/config/config.yaml'
-      - 'trading-system/src/config/config.development.yaml'
-      - 'trading-system/src/config/config.test.yaml'
-      - 'trading-system/src/config/config_manager.py'
-      - 'trading-system/src/config/loader.py'
-      - 'trading-system/src/config/services.py'
-      - 'trading-system/src/core/orchestrator.py'
-      - 'trading-system/src/main.py'
-      - 'mock_trading/tests/test_order_manager.py'
+      - 'src/utils/**'
+      - 'src/config/**'
+      - 'src/core/**'
+      - 'main.py'
+      - 'tests/**'
 
 jobs:
   update-files:
@@ -33,16 +28,12 @@ jobs:
     - name: Check for changes
       id: changes
       run: |
-        git add trading-system/src/utils/async_utils.py
-        git add trading-system/src/config/config.yaml
-        git add trading-system/src/config/config.development.yaml
-        git add trading-system/src/config/config.test.yaml
-        git add trading-system/src/config/config_manager.py
-        git add trading-system/src/config/loader.py
-        git add trading-system/src/config/services.py
-        git add trading-system/src/core/orchestrator.py
-        git add trading-system/src/main.py
-        git add mock_trading/tests/test_order_manager.py
+        # Add any modified files in the specified directories
+        git add src/utils/* 2>/dev/null || true
+        git add src/config/* 2>/dev/null || true
+        git add src/core/* 2>/dev/null || true
+        git add main.py 2>/dev/null || true
+        git add tests/* 2>/dev/null || true
         
         if git diff --staged --quiet; then
           echo "changes=false" >> $GITHUB_OUTPUT
