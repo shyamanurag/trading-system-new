@@ -71,7 +71,7 @@ class TrueDataClient:
             self._setup_callbacks()
             
             self.is_connected = True
-            logger.info("✅ TrueData connection established")
+            logger.info("TrueData connection established")
             return True
             
         except Exception as e:
@@ -249,7 +249,7 @@ class TrueDataClient:
             # Wait for connection to establish
             await asyncio.sleep(1)
             
-            logger.info(f"✅ Subscribed to {len(symbols)} symbols")
+            logger.info(f"Subscribed to {len(symbols)} symbols")
             return True
             
         except Exception as e:
@@ -270,7 +270,7 @@ class TrueDataClient:
                 self.market_data.pop(symbol, None)
                 self.last_update.pop(symbol, None)
             
-            logger.info(f"✅ Unsubscribed from {len(symbols)} symbols")
+            logger.info(f"Unsubscribed from {len(symbols)} symbols")
             return True
             
         except Exception as e:
@@ -316,7 +316,7 @@ class TrueDataClient:
         """Start the keep-alive task"""
         if self.keep_alive_task is None:
             self.keep_alive_task = asyncio.create_task(self.keep_alive())
-            logger.info("✅ Started TrueData keep-alive task")
+            logger.info("Started TrueData keep-alive task")
     
     async def stop_keep_alive(self):
         """Stop the keep-alive task"""
@@ -327,7 +327,7 @@ class TrueDataClient:
             except asyncio.CancelledError:
                 pass
             self.keep_alive_task = None
-            logger.info("✅ Stopped TrueData keep-alive task")
+            logger.info("Stopped TrueData keep-alive task")
     
     async def disconnect(self):
         """Disconnect from TrueData"""
@@ -346,7 +346,7 @@ class TrueDataClient:
                     callback_list.clear()
                 
                 self.is_connected = False
-                logger.info("✅ TrueData disconnected")
+                logger.info("TrueData disconnected")
                 
         except Exception as e:
             logger.error(f"Error disconnecting from TrueData: {e}")
@@ -379,7 +379,7 @@ async def init_truedata_client(username: Optional[str] = None, password: Optiona
         if success:
             # Start keep-alive task
             await truedata_client.start_keep_alive()
-            logger.info("✅ TrueData client initialized successfully")
+            logger.info("TrueData client initialized successfully")
             return truedata_client
         else:
             logger.error("❌ Failed to initialize TrueData client")

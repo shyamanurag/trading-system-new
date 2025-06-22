@@ -41,9 +41,9 @@ async def get_truedata_client():
         success = initialize_truedata()
         if success:
             truedata_initialized = True
-            logger.info("✅ TrueData singleton client initialized successfully")
+            logger.info("TrueData singleton client initialized successfully")
         else:
-            logger.error("❌ Failed to initialize TrueData singleton client")
+            logger.error("Failed to initialize TrueData singleton client")
             raise HTTPException(status_code=500, detail="TrueData connection failed")
     return True
 
