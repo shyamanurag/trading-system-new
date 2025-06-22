@@ -18,12 +18,20 @@ const WebSocketStatus = ({ userId }) => {
 
         const connectWebSocket = () => {
             try {
-                const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/${userId}`;
+                // Use the correct WebSocket endpoint - just /ws
+                const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
                 const websocket = new WebSocket(wsUrl);
 
                 websocket.onopen = () => {
                     console.log('WebSocket connected');
                     setWsStatus('connected');
+                    // Send authentication message after connection
+                    if (userId && userId !== 'default_user') {
+                        websocket.send(JSON.stringify({
+                            type: 'auth',
+                            userId: userId
+                        }));
+                    }
                 };
 
                 websocket.onclose = () => {

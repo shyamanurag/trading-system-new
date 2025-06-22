@@ -28,7 +28,7 @@ const SystemHealthMonitor = () => {
     const fetchHealthData = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/health/ready`);
+            const response = await fetch(`${API_BASE_URL}/health/ready/json`);
 
             if (response.ok) {
                 const data = await response.json();
