@@ -104,4 +104,14 @@ try:
     db_manager = DatabaseManager()
 except Exception as e:
     logger.warning(f"Database manager initialization failed: {e}")
-    db_manager = None 
+    db_manager = None
+
+# Dependency for FastAPI
+def get_db():
+    """Get database session for dependency injection"""
+    if db_manager and db_manager.is_connected():
+        with db_manager.get_session() as session:
+            yield session
+    else:
+        # Return None if database is not available
+        yield None 

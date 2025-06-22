@@ -3,7 +3,6 @@ from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from ..models.responses import BaseResponse, TradeResponse, PositionResponse
 from ..core.orchestrator import TradingOrchestrator
-from ..core.database_manager import DatabaseManager
 import logging
 
 router = APIRouter()

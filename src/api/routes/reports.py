@@ -7,10 +7,16 @@ from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional
 import pandas as pd
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
+from ..auth import get_current_user
 from ...core.database import get_db
-from ...core.auth import get_current_user
-from ...models.schema import User
+
+# Simple user model for type hints
+class User(BaseModel):
+    username: str
+    email: str
+    is_active: bool = True
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
