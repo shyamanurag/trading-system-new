@@ -122,7 +122,7 @@ async def lifespan(app: FastAPI):
     # Cleanup
     logger.info("Shutting down AlgoAuto Trading System...")
     # Add cleanup code here (close connections, etc.)
-
+        
 # Create FastAPI application
 app = FastAPI(
     title="AlgoAuto Trading System API",

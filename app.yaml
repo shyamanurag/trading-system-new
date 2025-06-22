@@ -343,7 +343,7 @@ services:
 
 static_sites:
 - build_command: |
-    rm -rf node_modules package-lock.json && npm install --no-optional --prefer-offline --no-audit --progress=false && npm install @vitejs/plugin-react @rollup/rollup-linux-x64-gnu && npm run build
+    rm -rf node_modules package-lock.json && npm install --no-optional --prefer-offline --no-audit --progress=false && npm install @vitejs/plugin-react @rollup/rollup-linux-x64-gnu terser && npm run build
   catchall_document: index.html
   environment_slug: node-js
   envs:
