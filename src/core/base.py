@@ -285,3 +285,36 @@ class BaseStrategy(ABC):
             if time_since_signal > 3600:  # No signals for 1 hour
                 return False
         return True
+
+class BaseBroker(ABC):
+    """Base class for broker integrations"""
+    
+    def __init__(self, config: Dict):
+        self.config = config
+        self.is_connected = False
+        self.session_token = None
+        
+    @abstractmethod
+    async def connect(self) -> bool:
+        """Connect to broker"""
+        pass
+    
+    @abstractmethod
+    async def place_order(self, order: Dict) -> Dict:
+        """Place an order"""
+        pass
+    
+    @abstractmethod
+    async def get_positions(self) -> List[Dict]:
+        """Get current positions"""
+        pass
+    
+    @abstractmethod
+    async def get_orders(self) -> List[Dict]:
+        """Get orders"""
+        pass
+    
+    @abstractmethod
+    async def cancel_order(self, order_id: str) -> bool:
+        """Cancel an order"""
+        pass

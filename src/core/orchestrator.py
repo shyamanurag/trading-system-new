@@ -101,4 +101,7 @@ class TradingOrchestrator:
             "daily_pnl": self.daily_pnl,
             "risk_status": self.risk_status,
             "market_status": self.market_status
-        } 
+        }
+
+# Add alias for backward compatibility
+Orchestrator = TradingOrchestrator 
