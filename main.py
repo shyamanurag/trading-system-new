@@ -81,7 +81,7 @@ async def health_ready():
 # --- Include Routers ---
 if routers_loaded:
     logger.info("Including API routers...")
-    app.include_router(auth_router)
+    app.include_router(auth_router, prefix="/auth")
     app.include_router(market_router)
     app.include_router(users_router)
     logger.info("Routers included successfully.")
