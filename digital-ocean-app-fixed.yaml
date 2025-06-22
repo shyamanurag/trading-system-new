@@ -230,7 +230,6 @@ ingress:
         prefix: /auth
   - component:
       name: api
-      rewrite: /ws
     match:
       path:
         prefix: /ws
