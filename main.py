@@ -141,7 +141,8 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
-    lifespan=lifespan
+    lifespan=lifespan,
+    root_path=os.getenv("ROOT_PATH", "")  # Handle DigitalOcean routing
 )
 
 # Add middleware
@@ -207,65 +208,112 @@ async def generic_exception_handler(request, exc):
 @app.get("/", tags=["root"])
 async def root():
     """Root endpoint - API information"""
-    # Get router stats with safe access
-    loaded = getattr(app.state, 'routers_loaded', sum(1 for r in routers_loaded.values() if r is not None))
-    total = getattr(app.state, 'total_routers', len(router_imports))
-    
-    return {
-        "name": "AlgoAuto Trading System",
-        "version": "4.0.0",
-        "status": "operational",
-        "documentation": "/docs",
-        "health": "/health",
-        "routers_loaded": f"{loaded}/{total}"
-    }
+    try:
+        # Get router stats with safe access
+        loaded = getattr(app.state, 'routers_loaded', 0)
+        total = getattr(app.state, 'total_routers', 0)
+        
+        # If not set, calculate from routers_loaded dict
+        if loaded == 0 or total == 0:
+            loaded = sum(1 for r in routers_loaded.values() if r is not None)
+            total = len(router_imports)
+        
+        return {
+            "name": "AlgoAuto Trading System",
+            "version": "4.0.1",
+            "status": "operational",
+            "documentation": "/docs",
+            "health": "/health",
+            "routers_loaded": f"{loaded}/{total}"
+        }
+    except Exception as e:
+        # Fallback response
+        return {
+            "name": "AlgoAuto Trading System",
+            "version": "4.0.1",
+            "status": "operational",
+            "error": str(e)
+        }
 
 # Health check endpoints
 @app.get("/health", tags=["health"])
 async def health_check():
     """Basic health check - Fixed 2024-12-22 to handle missing app.state"""
-    # Get router stats with safe access to prevent AttributeError
-    loaded = getattr(app.state, 'routers_loaded', sum(1 for r in routers_loaded.values() if r is not None))
-    total = getattr(app.state, 'total_routers', len(router_imports))
+    logger.info("Health check endpoint called")
     
-    return {
-        "status": "healthy",
-        "version": "4.0.1",
-        "routers_loaded": f"{loaded}/{total}",
-        "timestamp": asyncio.get_event_loop().time(),
-        "deployment": "2024-12-22-fix"
-    }
+    try:
+        # Get router stats with safe access to prevent AttributeError
+        loaded = getattr(app.state, 'routers_loaded', None)
+        total = getattr(app.state, 'total_routers', None)
+        
+        # Calculate if not set
+        if loaded is None or total is None:
+            loaded = sum(1 for r in routers_loaded.values() if r is not None)
+            total = len(router_imports)
+        
+        response = {
+            "status": "healthy",
+            "version": "4.0.1",
+            "routers_loaded": f"{loaded}/{total}",
+            "timestamp": asyncio.get_event_loop().time(),
+            "deployment": "2024-12-22-fix"
+        }
+        logger.info(f"Health check response: {response}")
+        return response
+    except Exception as e:
+        logger.error(f"Health check error: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "status": "error"}
+        )
 
 @app.get("/health/ready", tags=["health"])
 async def health_ready():
     """Readiness check for load balancers - Fixed 2024-12-22"""
-    # Check if critical routers are loaded
-    critical_routers = ['auth', 'market', 'users']
-    all_critical_loaded = all(
-        routers_loaded.get(r) is not None for r in critical_routers
-    )
+    logger.info("Health ready endpoint called")
     
-    # Get router stats with safe access - THIS IS THE FIX FOR 400 ERRORS
-    loaded = getattr(app.state, 'routers_loaded', sum(1 for r in routers_loaded.values() if r is not None))
-    total = getattr(app.state, 'total_routers', len(router_imports))
-    
-    if not all_critical_loaded:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "not_ready",
-                "message": "Critical routers not loaded",
-                "routers_loaded": f"{loaded}/{total}",
-                "version": "4.0.1"
-            }
+    try:
+        # Check if critical routers are loaded
+        critical_routers = ['auth', 'market', 'users']
+        all_critical_loaded = all(
+            routers_loaded.get(r) is not None for r in critical_routers
         )
-    
-    return {
-        "status": "ready",
-        "version": "4.0.1",
-        "routers_loaded": f"{loaded}/{total}",
-        "deployment": "2024-12-22-fix"
-    }
+        
+        # Get router stats with safe access - THIS IS THE FIX FOR 400 ERRORS
+        loaded = getattr(app.state, 'routers_loaded', None)
+        total = getattr(app.state, 'total_routers', None)
+        
+        # Calculate if not set
+        if loaded is None or total is None:
+            loaded = sum(1 for r in routers_loaded.values() if r is not None)
+            total = len(router_imports)
+        
+        if not all_critical_loaded:
+            logger.warning(f"Critical routers not loaded: {critical_routers}")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "not_ready",
+                    "message": "Critical routers not loaded",
+                    "routers_loaded": f"{loaded}/{total}",
+                    "version": "4.0.1"
+                }
+            )
+        
+        response = {
+            "status": "ready",
+            "version": "4.0.1",
+            "routers_loaded": f"{loaded}/{total}",
+            "deployment": "2024-12-22-fix"
+        }
+        logger.info(f"Health ready response: {response}")
+        return response
+    except Exception as e:
+        logger.error(f"Health ready error: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "status": "error"}
+        )
 
 @app.get("/health/live", tags=["health"])
 async def health_live():
