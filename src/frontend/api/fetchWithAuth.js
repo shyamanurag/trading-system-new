@@ -4,9 +4,13 @@ export const fetchWithAuth = async (url, options = {}) => {
 
     const headers = {
         'Accept': 'application/json',
-        'Content-Type': 'application/json',
         ...options.headers
     };
+
+    // Only add Content-Type for requests with body
+    if (options.body) {
+        headers['Content-Type'] = 'application/json';
+    }
 
     // Add authorization header if token exists
     if (token) {

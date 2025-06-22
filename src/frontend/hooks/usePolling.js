@@ -1,61 +1,59 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import fetchWithAuth from '../api/fetchWithAuth';
 
-const usePolling = (endpoint, interval = 5000) => {
+/**
+ * Custom hook for polling API endpoints
+ * @param {string} url - The API endpoint to poll
+ * @param {number} interval - Polling interval in milliseconds
+ * @param {boolean} enabled - Whether polling is enabled
+ */
+export const usePolling = (url, interval = 5000, enabled = true) => {
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
-    const [isPolling, setIsPolling] = useState(false);
+    const [loading, setLoading] = useState(true);
     const intervalRef = useRef(null);
 
     const fetchData = useCallback(async () => {
+        if (!url || !enabled) return;
+
         try {
-            const response = await fetch(endpoint);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+            const response = await fetchWithAuth(url);
+            if (response.ok) {
+                const result = await response.json();
+                setData(result);
+                setError(null);
+            } else {
+                throw new Error(`HTTP ${response.status}`);
             }
-            const jsonData = await response.json();
-            setData(jsonData);
-            setError(null);
         } catch (err) {
-            console.error('Polling error:', err);
             setError(err.message);
+            // Don't clear data on error - keep showing last successful data
+        } finally {
+            setLoading(false);
         }
-    }, [endpoint]);
-
-    const startPolling = useCallback(() => {
-        if (isPolling) return;
-
-        setIsPolling(true);
-        // Fetch immediately
-        fetchData();
-
-        // Then set up interval
-        intervalRef.current = setInterval(fetchData, interval);
-    }, [fetchData, interval, isPolling]);
-
-    const stopPolling = useCallback(() => {
-        if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-            intervalRef.current = null;
-        }
-        setIsPolling(false);
-    }, []);
+    }, [url, enabled]);
 
     useEffect(() => {
-        startPolling();
+        if (!enabled) {
+            setLoading(false);
+            return;
+        }
 
+        // Initial fetch
+        fetchData();
+
+        // Set up polling
+        intervalRef.current = setInterval(fetchData, interval);
+
+        // Cleanup
         return () => {
-            stopPolling();
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+            }
         };
-    }, [startPolling, stopPolling]);
+    }, [fetchData, interval, enabled]);
 
-    return {
-        data,
-        error,
-        isPolling,
-        refetch: fetchData,
-        startPolling,
-        stopPolling
-    };
+    return { data, error, loading, refetch: fetchData };
 };
 
 export default usePolling; 

@@ -18,7 +18,7 @@ const createEndpoint = (path, requiresTrailingSlash = false) => {
     const fullUrl = `${normalizedApiUrl}${normalizedPath}`;
 
     // Debug logging
-    console.log(`[API Config] Creating endpoint: ${normalizedPath} -> ${fullUrl}`);
+    // console.log(`[API Config] Creating endpoint: ${normalizedPath} -> ${fullUrl}`);
 
     return {
         url: fullUrl,
@@ -112,8 +112,9 @@ export const API_ENDPOINTS = {
 };
 
 // Debug logging
-console.log('[API Config] Base URL:', normalizedApiUrl);
-console.log('[API Config] Login URL:', API_ENDPOINTS.LOGIN.url);
-console.log('[API Config] Health URL:', API_ENDPOINTS.HEALTH.url);
+// console.log('[API Config] Base URL:', normalizedApiUrl);
+// console.log('[API Config] Login URL:', API_ENDPOINTS.LOGIN.url);
+// console.log('[API Config] Health URL:', API_ENDPOINTS.HEALTH.url);
 
-export default API_ENDPOINTS; 
+// Remove default export as all components use named import
+// export default API_ENDPOINTS; 

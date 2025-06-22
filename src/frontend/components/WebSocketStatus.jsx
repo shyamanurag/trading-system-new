@@ -1,98 +1,13 @@
 import {
     Circle,
-    Refresh
+    Info
 } from '@mui/icons-material';
-import { Box, Chip, IconButton, Tooltip, Typography } from '@mui/material';
-import React, { useEffect, useState } from 'react';
+import { Box, Chip, Tooltip, Typography } from '@mui/material';
+import React from 'react';
 
 const WebSocketStatus = ({ userId }) => {
-    const [wsStatus, setWsStatus] = useState('disconnected');
-    const [ws, setWs] = useState(null);
-
-    useEffect(() => {
-        // Only connect if we have a valid userId (not 'default_user')
-        if (!userId || userId === 'default_user') {
-            setWsStatus('waiting');
-            return;
-        }
-
-        const connectWebSocket = () => {
-            try {
-                // Use environment variable or fallback to constructed URL
-                const wsUrl = import.meta.env.VITE_WS_URL || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
-                console.log('Connecting to WebSocket:', wsUrl);
-                const websocket = new WebSocket(wsUrl);
-
-                websocket.onopen = () => {
-                    console.log('WebSocket connected');
-                    setWsStatus('connected');
-                    // Send authentication message after connection
-                    if (userId && userId !== 'default_user') {
-                        websocket.send(JSON.stringify({
-                            type: 'auth',
-                            userId: userId
-                        }));
-                    }
-                };
-
-                websocket.onclose = () => {
-                    console.log('WebSocket disconnected');
-                    setWsStatus('disconnected');
-                    // Reconnect after 5 seconds
-                    setTimeout(connectWebSocket, 5000);
-                };
-
-                websocket.onerror = (error) => {
-                    console.error('WebSocket error:', error);
-                    setWsStatus('error');
-                    // Check if it's a 403 error (common with Digital Ocean + Cloudflare)
-                    console.warn('WebSocket not supported on Digital Ocean App Platform due to Cloudflare proxy limitations');
-                };
-
-                setWs(websocket);
-
-                return () => {
-                    websocket.close();
-                };
-            } catch (error) {
-                console.error('Failed to create WebSocket:', error);
-                setWsStatus('error');
-            }
-        };
-
-        const cleanup = connectWebSocket();
-        return cleanup;
-    }, [userId]);
-
-    const getStatusColor = () => {
-        switch (wsStatus) {
-            case 'connected':
-                return 'success';
-            case 'disconnected':
-                return 'error';
-            case 'waiting':
-                return 'warning';
-            case 'error':
-                return 'error';
-            default:
-                return 'default';
-        }
-    };
-
-    const getStatusText = () => {
-        switch (wsStatus) {
-            case 'connected':
-                return 'Live';
-            case 'disconnected':
-                return 'Offline';
-            case 'waiting':
-                return 'Waiting';
-            case 'error':
-                return 'Not Available';
-            default:
-                return 'Unknown';
-        }
-    };
+    // On Digital Ocean, we use polling instead of WebSocket
+    // due to Cloudflare proxy limitations
 
     return (
         <Box sx={{
@@ -108,8 +23,8 @@ const WebSocketStatus = ({ userId }) => {
             <Circle
                 sx={{
                     fontSize: 12,
-                    color: getStatusColor() === 'success' ? 'success.main' : getStatusColor() === 'error' ? 'error.main' : 'warning.main',
-                    animation: getStatusColor() === 'success' ? 'pulse 2s infinite' : 'none',
+                    color: 'info.main',
+                    animation: 'pulse 2s infinite',
                     '@keyframes pulse': {
                         '0%': { opacity: 1 },
                         '50%': { opacity: 0.5 },
@@ -119,38 +34,24 @@ const WebSocketStatus = ({ userId }) => {
             />
 
             <Typography variant="body2" sx={{ minWidth: 100 }}>
-                WebSocket
+                Live Updates
             </Typography>
 
-            <Tooltip title={`WebSocket Status: ${getStatusText()}`}>
+            <Tooltip title="Using polling for real-time updates on Digital Ocean">
                 <Chip
-                    icon={<Circle />}
-                    label={getStatusText()}
-                    color={getStatusColor()}
+                    icon={<Info />}
+                    label="Polling Mode"
+                    color="info"
                     size="small"
                     variant="filled"
                     sx={{
                         '& .MuiChip-icon': {
-                            fontSize: 12,
+                            fontSize: 16,
                             marginLeft: 1
                         }
                     }}
                 />
             </Tooltip>
-
-            {getStatusColor() === 'error' && (
-                <Tooltip title="Reconnect">
-                    <IconButton
-                        size="small"
-                        onClick={() => {
-                            // Implement reconnect logic here
-                        }}
-                        color="primary"
-                    >
-                        <Refresh />
-                    </IconButton>
-                </Tooltip>
-            )}
         </Box>
     );
 };
