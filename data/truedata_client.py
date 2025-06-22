@@ -66,51 +66,43 @@ class TrueDataSingletonClient:
                 self._nuclear_cleanup()
                 
                 # Wait for server-side session termination
-                logger.info("⏳ Waiting 30 seconds for server-side session cleanup...")
+                logger.info("Waiting 30 seconds for server-side session cleanup...")
                 time.sleep(30)
                 
                 # Import ONLY the official library
                 try:
                     from truedata import TD_live
-                    logger.info("📚 Using official truedata library")
+                    logger.info("Using official truedata library")
                 except ImportError:
                     try:
                         from truedata_ws.websocket.TD import TD
                         TD_live = TD
-                        logger.info("📚 Using truedata-ws library")
+                        logger.info("Using truedata-ws library")
                     except ImportError:
-                        logger.error("❌ No TrueData library available")
+                        logger.error("No TrueData library available")
                         return False
                 
                 # Create SINGLE connection
-                logger.info("🔗 Creating SINGLE TrueData connection...")
+                logger.info("Creating SINGLE TrueData connection...")
                 self.td_obj = TD_live(
                     self.username, 
                     self.password, 
                     live_port=self.port,
                     url=self.url,
-                    log_level=logging.WARNING
+                    log_level=logging.WARNING,
+                    compression=False
                 )
                 
                 # Test connection immediately
-                logger.info("🧪 Testing connection...")
+                logger.info("Testing connection...")
                 
-                # For truedata library
-                if hasattr(self.td_obj, 'get_ltp'):
-                    test_result = self.td_obj.get_ltp(['NIFTY'])
-                    if test_result:
-                        logger.info(f"✅ Connection test successful: {test_result}")
-                    else:
-                        logger.warning("⚠️ Connection test returned no data")
+                # Start live data for test symbols
+                test_symbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
+                req_ids = self.td_obj.start_live_data(test_symbols)
+                logger.info(f"Live data started: {req_ids}")
                 
-                # For truedata-ws library  
-                elif hasattr(self.td_obj, 'start_live_data'):
-                    symbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
-                    req_ids = self.td_obj.start_live_data(symbols)
-                    logger.info(f"✅ Live data started: {req_ids}")
-                    
-                    # Setup data monitoring
-                    self._setup_data_monitoring()
+                # Setup callbacks
+                self._setup_callbacks()
                 
                 # Mark as connected
                 self.connected = True
@@ -121,25 +113,25 @@ class TrueDataSingletonClient:
                     'error': None
                 })
                 
-                logger.info("🎉 TrueData connection SUCCESS!")
+                logger.info("TrueData connection SUCCESS!")
                 return True
                 
             except Exception as e:
                 error_msg = str(e)
-                logger.error(f"❌ Connection failed: {error_msg}")
+                logger.error(f"Connection failed: {error_msg}")
                 
                 # Check if it's the familiar error
                 if "User Already Connected" in error_msg:
-                    logger.error("🚨 CRITICAL: Server reports user already connected")
-                    logger.error("💡 SOLUTIONS:")
+                    logger.error("CRITICAL: Server reports user already connected")
+                    logger.error("SOLUTIONS:")
                     logger.error("   1. Contact TrueData support to reset session")
                     logger.error("   2. Wait 60+ minutes for automatic session expiry")
                     logger.error("   3. Try different credentials if available")
                     
                     truedata_connection_status['error'] = "User Already Connected - Contact TrueData Support"
                 elif "Connection refused" in error_msg:
-                    logger.error("🚨 CRITICAL: TrueData servers refusing connection")
-                    logger.error("💡 POSSIBLE CAUSES:")
+                    logger.error("CRITICAL: TrueData servers refusing connection")
+                    logger.error("POSSIBLE CAUSES:")
                     logger.error("   1. Account subscription expired")
                     logger.error("   2. IP address blocked due to multiple failed attempts")
                     logger.error("   3. Incorrect credentials")
@@ -154,7 +146,7 @@ class TrueDataSingletonClient:
 
     def _nuclear_cleanup(self):
         """Complete nuclear cleanup of ALL TrueData connections"""
-        logger.info("☢️ Performing NUCLEAR cleanup of ALL TrueData connections...")
+        logger.info("Performing NUCLEAR cleanup of ALL TrueData connections...")
         
         try:
             # Stop any running threads
@@ -169,7 +161,7 @@ class TrueDataSingletonClient:
                     if hasattr(self.td_obj, method):
                         try:
                             getattr(self.td_obj, method)()
-                            logger.info(f"✅ Called {method}()")
+                            logger.info(f"Called {method}()")
                         except:
                             pass
                             
@@ -183,43 +175,33 @@ class TrueDataSingletonClient:
             import gc
             gc.collect()
             
-            logger.info("☢️ Nuclear cleanup completed")
+            logger.info("Nuclear cleanup completed")
             
         except Exception as e:
             logger.warning(f"Cleanup error: {e}")
 
-    def _setup_data_monitoring(self):
-        """Setup data monitoring for truedata-ws library"""
-        if not self.td_obj or not hasattr(self.td_obj, 'live_data'):
+    def _setup_callbacks(self):
+        """Setup all callbacks for TrueData"""
+        if not self.td_obj:
             return
             
-        self.running = True
-        self.data_thread = threading.Thread(target=self._data_monitor_loop, daemon=True)
-        self.data_thread.start()
-        logger.info("🔄 Data monitoring started")
-
-    def _data_monitor_loop(self):
-        """Monitor live data from truedata-ws"""
-        logger.info("📊 Data monitoring loop started")
-        
-        while self.running:
+        # Trade/Tick callback
+        @self.td_obj.trade_callback
+        def on_tick_data(tick_data):
             try:
-                if hasattr(self.td_obj, 'live_data'):
-                    for req_id, tick_data in self.td_obj.live_data.items():
-                        if tick_data:
-                            symbol = getattr(tick_data, 'symbol', f'REQ_{req_id}')
-                            ltp = getattr(tick_data, 'ltp', 0)
-                            
-                            if ltp > 0:
-                                live_market_data[symbol] = {
-                                    'symbol': symbol,
-                                    'ltp': float(ltp),
-                                    'volume': getattr(tick_data, 'ttq', 0),
-                                    'timestamp': datetime.now().isoformat(),
-                                    'data_source': 'FINAL_TRUEDATA_CLIENT'
-                                }
-                                
-                                logger.info(f"📈 LIVE: {symbol} = ₹{ltp}")
+                symbol = getattr(tick_data, 'symbol', 'UNKNOWN')
+                ltp = getattr(tick_data, 'ltp', 0)
+                volume = getattr(tick_data, 'ttq', 0)
+                
+                live_market_data[symbol] = {
+                    'symbol': symbol,
+                    'ltp': float(ltp),
+                    'volume': int(volume),
+                    'timestamp': datetime.now().isoformat(),
+                    'data_source': 'FINAL_TRUEDATA_CLIENT'
+                }
+                
+                logger.info(f"LIVE: {symbol} = Rs.{ltp}")
                 
                 # Update connection status
                 truedata_connection_status.update({
@@ -227,11 +209,76 @@ class TrueDataSingletonClient:
                     'data_count': len(live_market_data)
                 })
                 
-                time.sleep(2)
+            except Exception as e:
+                logger.error(f"Tick callback error: {e}")
+        
+        # Greek callback for options
+        @self.td_obj.greek_callback
+        def on_greek_data(greek_data):
+            try:
+                symbol = getattr(greek_data, 'symbol', 'UNKNOWN')
+                
+                greek_info = {
+                    'symbol': symbol,
+                    'ltp': getattr(greek_data, 'ltp', 0),
+                    'iv': getattr(greek_data, 'iv', 0),
+                    'delta': getattr(greek_data, 'delta', 0),
+                    'gamma': getattr(greek_data, 'gamma', 0),
+                    'theta': getattr(greek_data, 'theta', 0),
+                    'vega': getattr(greek_data, 'vega', 0),
+                    'rho': getattr(greek_data, 'rho', 0),
+                    'timestamp': datetime.now().isoformat(),
+                    'data_type': 'GREEKS'
+                }
+                
+                # Store in market data with _GREEKS suffix
+                live_market_data[f"{symbol}_GREEKS"] = greek_info
+                
+                logger.info(f"GREEKS: {symbol} - IV:{greek_info['iv']:.2f}%, Delta:{greek_info['delta']:.4f}")
                 
             except Exception as e:
-                logger.error(f"Data monitor error: {e}")
-                time.sleep(5)
+                logger.error(f"Greek callback error: {e}")
+        
+        # Bid-Ask callback
+        @self.td_obj.bidask_callback
+        def on_bidask_data(bidask_data):
+            try:
+                symbol = getattr(bidask_data, 'symbol', 'UNKNOWN')
+                
+                bidask_info = {
+                    'symbol': symbol,
+                    'bid': getattr(bidask_data, 'bid', 0),
+                    'ask': getattr(bidask_data, 'ask', 0),
+                    'bid_qty': getattr(bidask_data, 'bid_qty', 0),
+                    'ask_qty': getattr(bidask_data, 'ask_qty', 0),
+                    'timestamp': datetime.now().isoformat(),
+                    'data_type': 'BIDASK'
+                }
+                
+                # Update main market data
+                if symbol in live_market_data:
+                    live_market_data[symbol].update(bidask_info)
+                else:
+                    live_market_data[symbol] = bidask_info
+                
+            except Exception as e:
+                logger.error(f"BidAsk callback error: {e}")
+        
+        logger.info("Callbacks setup completed")
+
+    def subscribe_symbols(self, symbols: list):
+        """Subscribe to additional symbols"""
+        if not self.td_obj or not self.connected:
+            logger.error("Not connected to TrueData")
+            return False
+            
+        try:
+            req_ids = self.td_obj.start_live_data(symbols)
+            logger.info(f"Subscribed to {len(symbols)} symbols: {req_ids}")
+            return True
+        except Exception as e:
+            logger.error(f"Subscribe error: {e}")
+            return False
 
     def get_status(self):
         """Get current status"""
@@ -248,7 +295,7 @@ class TrueDataSingletonClient:
         """Disconnect cleanly"""
         with self._lock:
             self._nuclear_cleanup()
-            logger.info("🔌 Final TrueData client disconnected")
+            logger.info("Final TrueData client disconnected")
 
 # Create GLOBAL SINGLETON instance
 truedata_client = TrueDataSingletonClient()
@@ -270,7 +317,11 @@ def get_live_data_for_symbol(symbol: str):
     """Get data for symbol - called by backend"""
     return live_market_data.get(symbol)
 
-logger.info("✅ FINAL TrueData Singleton Client loaded")
+def subscribe_to_symbols(symbols: list):
+    """Subscribe to symbols - called by backend"""
+    return truedata_client.subscribe_symbols(symbols)
+
+logger.info("FINAL TrueData Singleton Client loaded")
 
 # =====================================
 # DIAGNOSTIC FUNCTIONS
@@ -285,39 +336,39 @@ def verify_truedata_setup():
     password = os.environ.get('TRUEDATA_PASSWORD')
     
     if not username or not password:
-        issues.append("❌ TrueData credentials not set in environment")
+        issues.append("TrueData credentials not set in environment")
     elif username == 'Trial106':
-        issues.append("⚠️ Using trial account - may be expired")
+        issues.append("Using trial account - may be expired")
     
     # Check for multiple client files
     import glob
     truedata_files = glob.glob('data/truedata_client*.py')
     if len(truedata_files) > 1:
-        issues.append(f"❌ Multiple TrueData clients detected: {truedata_files}")
+        issues.append(f"Multiple TrueData clients detected: {truedata_files}")
     
     # Check library installation
     try:
         import truedata
-        issues.append("✅ Official truedata library available")
+        issues.append("Official truedata library available")
     except ImportError:
         try:
             import truedata_ws
-            issues.append("✅ truedata-ws library available")
+            issues.append("truedata-ws library available")
         except ImportError:
-            issues.append("❌ No TrueData library installed")
+            issues.append("No TrueData library installed")
     
     return issues
 
 def run_truedata_diagnosis():
     """Run complete TrueData diagnosis"""
-    print("🔍 TrueData Diagnosis Report")
+    print("TrueData Diagnosis Report")
     print("=" * 50)
     
     issues = verify_truedata_setup()
     for issue in issues:
         print(issue)
     
-    print("\n📋 Action Plan:")
+    print("\nAction Plan:")
     print("1. Remove all duplicate TrueData client files")
     print("2. Use only the FINAL singleton client")
     print("3. If 'User Already Connected', contact TrueData support")

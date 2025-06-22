@@ -55,6 +55,7 @@ router_imports = {
     'users': ('src.api.users', 'router'),
     'trading_control': ('src.api.trading_control', 'router'),
     'truedata': ('src.api.truedata_integration', 'router'),
+    'truedata_options': ('src.api.truedata_options', 'router'),
     'market_data': ('src.api.market_data', 'router'),
     'autonomous_trading': ('src.api.autonomous_trading', 'router'),
     'recommendations': ('src.api.recommendations', 'router'),
@@ -260,6 +261,7 @@ router_configs = [
     ('market', '', ('market-data',)),  # Already has /api/market prefix
     ('market_data', '/api/v1/market-data', ('market-data-v1',)),
     ('truedata', '/api/v1/truedata', ('truedata',)),
+    ('truedata_options', '', ('truedata-options',)),  # Already has /api/v1/truedata/options prefix
     
     # User management
     ('users', '', ('users',)),  # Already has /api/v1/users prefix
