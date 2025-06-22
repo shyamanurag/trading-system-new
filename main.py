@@ -203,23 +203,31 @@ async def generic_exception_handler(request, exc):
 @app.get("/", tags=["root"])
 async def root():
     """Root endpoint - API information"""
+    # Get router stats with safe access
+    loaded = getattr(app.state, 'routers_loaded', sum(1 for r in routers_loaded.values() if r is not None))
+    total = getattr(app.state, 'total_routers', len(router_imports))
+    
     return {
         "name": "AlgoAuto Trading System",
         "version": "4.0.0",
         "status": "operational",
         "documentation": "/docs",
         "health": "/health",
-        "routers_loaded": f"{app.state.routers_loaded}/{app.state.total_routers}"
+        "routers_loaded": f"{loaded}/{total}"
     }
 
 # Health check endpoints
 @app.get("/health", tags=["health"])
 async def health_check():
     """Basic health check"""
+    # Get router stats with safe access
+    loaded = getattr(app.state, 'routers_loaded', sum(1 for r in routers_loaded.values() if r is not None))
+    total = getattr(app.state, 'total_routers', len(router_imports))
+    
     return {
         "status": "healthy",
         "version": "4.0.0",
-        "routers_loaded": f"{app.state.routers_loaded}/{app.state.total_routers}",
+        "routers_loaded": f"{loaded}/{total}",
         "timestamp": asyncio.get_event_loop().time()
     }
 
@@ -232,19 +240,24 @@ async def health_ready():
         routers_loaded.get(r) is not None for r in critical_routers
     )
     
+    # Get router stats with safe access
+    loaded = getattr(app.state, 'routers_loaded', sum(1 for r in routers_loaded.values() if r is not None))
+    total = getattr(app.state, 'total_routers', len(router_imports))
+    
     if not all_critical_loaded:
         return JSONResponse(
             status_code=503,
             content={
                 "status": "not_ready",
-                "message": "Critical routers not loaded"
+                "message": "Critical routers not loaded",
+                "routers_loaded": f"{loaded}/{total}"
             }
         )
     
     return {
         "status": "ready",
         "version": "4.0.0",
-        "routers_loaded": f"{app.state.routers_loaded}/{app.state.total_routers}"
+        "routers_loaded": f"{loaded}/{total}"
     }
 
 @app.get("/health/live", tags=["health"])
