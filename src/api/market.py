@@ -3,10 +3,6 @@ from datetime import datetime
 
 router = APIRouter(prefix="/market", tags=["market-data"])
 
-@router.get("/test")
-async def market_test():
-    return {"message": "Market router test endpoint is working!"}
-
 @router.get("/indices")
 async def get_market_indices():
     """Get market indices data"""
