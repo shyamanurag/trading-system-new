@@ -31,7 +31,7 @@ import React, { useEffect, useState } from 'react';
 import API_ENDPOINTS from '../api/config';
 import BrokerUserSetup from './BrokerUserSetup';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-jd32t.ondigitalocean.app';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app';
 
 const AutonomousTradingDashboard = ({ userInfo }) => {
     const [marketStatus, setMarketStatus] = useState(null);

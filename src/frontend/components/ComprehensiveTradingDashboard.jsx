@@ -56,7 +56,7 @@ import MarketIndicesWidget from './MarketIndicesWidget';
 import SystemHealthMonitor from './SystemHealthMonitor';
 import WebSocketStatus from './WebSocketStatus';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-jd32t.ondigitalocean.app';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app';
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
 const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
