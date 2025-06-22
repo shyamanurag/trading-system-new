@@ -38,10 +38,10 @@ export const API_ENDPOINTS = {
     USER_PERFORMANCE: createEndpoint('/api/v1/users/performance'),
     USER_CURRENT: createEndpoint('/api/v1/users/current'),
 
-    // Trading endpoints
-    TRADES: createEndpoint('/v1/trades'),
-    POSITIONS: createEndpoint('/v1/positions'),
-    ORDERS: createEndpoint('/v1/orders'),
+    // Trading endpoints - FIXED: Added /api prefix
+    TRADES: createEndpoint('/api/v1/trades'),
+    POSITIONS: createEndpoint('/api/v1/positions'),
+    ORDERS: createEndpoint('/api/v1/orders'),
 
     // Market data endpoints - These use /api/market prefix
     MARKET_INDICES: createEndpoint('/api/market/indices'),
@@ -49,34 +49,45 @@ export const API_ENDPOINTS = {
     MARKET_DATA: createEndpoint('/api/market/data'),
     SYMBOLS: createEndpoint('/api/market/symbols'),
 
-    // Strategy endpoints
-    STRATEGIES: createEndpoint('/v1/strategies'),
-    STRATEGY_PERFORMANCE: createEndpoint('/v1/strategies/performance'),
+    // Strategy endpoints - FIXED: Added /api prefix
+    STRATEGIES: createEndpoint('/api/v1/strategies'),
+    STRATEGY_PERFORMANCE: createEndpoint('/api/v1/strategies/performance'),
 
-    // Dashboard endpoints
-    DASHBOARD_SUMMARY: createEndpoint('/v1/dashboard/summary'),
-    DAILY_PNL: createEndpoint('/v1/performance/daily-pnl'),
-    RECOMMENDATIONS: createEndpoint('/v1/recommendations'),
+    // Dashboard endpoints - FIXED: Added /api prefix
+    DASHBOARD_SUMMARY: createEndpoint('/api/v1/dashboard/summary'),
+    DAILY_PNL: createEndpoint('/api/v1/performance/daily-pnl'),
+    RECOMMENDATIONS: createEndpoint('/api/v1/recommendations'),
 
-    // Broker endpoints
-    BROKER_CONNECT: createEndpoint('/v1/broker/connect'),
-    BROKER_DISCONNECT: createEndpoint('/v1/broker/disconnect'),
-    BROKER_STATUS: createEndpoint('/v1/broker/status'),
+    // Broker endpoints - FIXED: Added /api prefix
+    BROKER_CONNECT: createEndpoint('/api/v1/broker/connect'),
+    BROKER_DISCONNECT: createEndpoint('/api/v1/broker/disconnect'),
+    BROKER_STATUS: createEndpoint('/api/v1/broker/status'),
 
-    // System endpoints
-    SYSTEM_STATUS: createEndpoint('/v1/system/status'),
-    SYSTEM_LOGS: createEndpoint('/v1/system/logs'),
-    SYSTEM_METRICS: createEndpoint('/v1/system/metrics'),
+    // System endpoints - FIXED: Added /api prefix
+    SYSTEM_STATUS: createEndpoint('/api/v1/system/status'),
+    SYSTEM_LOGS: createEndpoint('/api/v1/system/logs'),
+    SYSTEM_METRICS: createEndpoint('/api/v1/system/metrics'),
 
-    // WebSocket endpoints
-    WS_MARKET_DATA: `${WS_BASE_URL}/ws/market-data`,
-    WS_ORDERS: `${WS_BASE_URL}/ws/orders`,
-    WS_POSITIONS: `${WS_BASE_URL}/ws/positions`,
+    // Risk management endpoints - NEW
+    RISK_METRICS: createEndpoint('/api/v1/risk/metrics'),
+    RISK_LIMITS: createEndpoint('/api/v1/risk/limits'),
+    RISK_ALERTS: createEndpoint('/api/v1/risk/alerts'),
 
-    // Additional endpoints
-    TICK_DATA: createEndpoint('/v1/tick-data'),
-    ORDER_BOOK: createEndpoint('/v1/order-book'),
-    ACCOUNT: createEndpoint('/v1/account'),
+    // Autonomous trading endpoints - NEW
+    AUTONOMOUS_STATUS: createEndpoint('/api/v1/autonomous/status'),
+    AUTONOMOUS_CONTROL: createEndpoint('/api/v1/autonomous/control'),
+
+    // WebSocket endpoints - FIXED: Using single /ws endpoint
+    WS_ENDPOINT: `${WS_BASE_URL}/ws`,
+    // Legacy WebSocket endpoints for backward compatibility
+    WS_MARKET_DATA: `${WS_BASE_URL}/ws`,
+    WS_ORDERS: `${WS_BASE_URL}/ws`,
+    WS_POSITIONS: `${WS_BASE_URL}/ws`,
+
+    // Additional endpoints - FIXED: Added /api prefix where needed
+    TICK_DATA: createEndpoint('/api/v1/tick-data'),
+    ORDER_BOOK: createEndpoint('/api/v1/order-book'),
+    ACCOUNT: createEndpoint('/api/v1/account'),
     HEALTH: createEndpoint('/health'),
     METRICS: createEndpoint('/metrics'),
     CONFIG: createEndpoint('/config')
