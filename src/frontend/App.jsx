@@ -5,6 +5,7 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import React, { useEffect, useState } from 'react';
 
 // Import components
+import { API_ENDPOINTS } from './api/config';
 import ComprehensiveTradingDashboard from './components/ComprehensiveTradingDashboard';
 import LoginForm from './components/LoginForm';
 
@@ -75,20 +76,43 @@ function App() {
 
     useEffect(() => {
         // Check for existing authentication
-        const token = localStorage.getItem('access_token');
-        const storedUserInfo = localStorage.getItem('user_info');
+        const validateToken = async () => {
+            const token = localStorage.getItem('access_token');
+            const storedUserInfo = localStorage.getItem('user_info');
 
-        if (token && storedUserInfo) {
-            try {
-                setUserInfo(JSON.parse(storedUserInfo));
-                setIsAuthenticated(true);
-            } catch (e) {
-                console.error('Error parsing user info:', e);
-                localStorage.removeItem('access_token');
-                localStorage.removeItem('user_info');
+            if (token && storedUserInfo) {
+                try {
+                    // Validate token by calling the me endpoint
+                    const response = await fetch(API_ENDPOINTS.ME.url, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Accept': 'application/json'
+                        }
+                    });
+
+                    if (response.ok) {
+                        const userData = await response.json();
+                        setUserInfo(JSON.parse(storedUserInfo));
+                        setIsAuthenticated(true);
+                    } else {
+                        // Token is invalid, clear storage
+                        console.log('Token validation failed, clearing auth data');
+                        localStorage.removeItem('access_token');
+                        localStorage.removeItem('user_info');
+                        setIsAuthenticated(false);
+                    }
+                } catch (e) {
+                    console.error('Error validating token:', e);
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('user_info');
+                    setIsAuthenticated(false);
+                }
             }
-        }
-        setLoading(false);
+            setLoading(false);
+        };
+
+        validateToken();
     }, []);
 
     const handleLogin = (loginData) => {
@@ -107,7 +131,16 @@ function App() {
         return (
             <ThemeProvider theme={theme}>
                 <CssBaseline />
-                <div>Loading...</div>
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    height: '100vh',
+                    fontSize: '1.2rem',
+                    color: '#666'
+                }}>
+                    Validating authentication...
+                </div>
             </ThemeProvider>
         );
     }
