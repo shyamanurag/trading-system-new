@@ -147,7 +147,7 @@ async def lifespan(app: FastAPI):
 
 # --- START AUTH FIX ---
 # Selectively re-import and use the V1 auth router to restore login functionality
-from src.api.auth import router_v1 as auth_router_v1
+# from src.api.auth import router_v1 as auth_router_v1 # DISABLED FOR TEST
 # --- END AUTH FIX ---
 
 # --- START ROUTER REFACTOR ---
@@ -308,7 +308,7 @@ app.add_middleware(
 
 # --- START AUTH FIX ---
 # Mount the v1 auth router directly to the app
-app.include_router(auth_router_v1)
+# app.include_router(auth_router_v1) # DISABLED FOR TEST
 # --- END AUTH FIX ---
 
 # --- START ROUTER REFACTOR ---
@@ -319,16 +319,16 @@ app.include_router(market_router)
 # --- END AUTH FIX ---
 
 # --- START ROUTER DEBUG ---
-@app.get("/direct-test")
-async def direct_test():
-    """A simple endpoint defined directly on the app to test routing."""
-    return {"message": "Directly defined endpoint is working!"}
+# @app.get("/direct-test") # DISABLED FOR TEST
+# async def direct_test():
+#     """A simple endpoint defined directly on the app to test routing."""
+#     return {"message": "Directly defined endpoint is working!"}
 # --- END ROUTER DEBUG ---
 
 # Mount static files for frontend assets
-static_dir = Path("dist/frontend")
-if (static_dir / "assets").exists():
-    app.mount("/assets", StaticFiles(directory=(static_dir / "assets")), name="assets")
+# static_dir = Path("dist/frontend") # DISABLED FOR TEST
+# if (static_dir / "assets").exists():
+#     app.mount("/assets", StaticFiles(directory=(static_dir / "assets")), name="assets")
 
 # Custom OpenAPI schema
 def custom_openapi():
@@ -677,35 +677,6 @@ def init_websocket_manager(redis_client):
     except Exception as e:
         logger.error(f"Error initializing WebSocket manager: {e}")
         return None
-
-@app.get(
-    "/",
-    tags=["health"],
-    summary="Root endpoint", 
-    description="Basic health check endpoint that returns system status or serves frontend",
-    responses={
-        200: {
-            "description": "System is operational or frontend served",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "status": "ok",
-                        "timestamp": "2024-01-15T10:30:00Z",
-                        "version": "2.0.0"
-                    }
-                }
-            }
-        }
-    }
-)
-async def root(request: Request):
-    """Root endpoint - serves frontend or JSON based on request"""
-    return {
-        "status": "ok", 
-        "timestamp": datetime.now().isoformat(),
-        "version": "2.0.0",
-        "service": "Trading System API"
-    }
 
 @app.get(
     "/health",
