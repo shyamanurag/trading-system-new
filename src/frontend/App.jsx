@@ -83,7 +83,7 @@ function App() {
             if (token && storedUserInfo) {
                 try {
                     // Validate token by calling the me endpoint
-                    const response = await fetch(API_ENDPOINTS.ME.url, {
+                    const response = await fetch(API_ENDPOINTS.USER_PROFILE.url, {
                         method: 'GET',
                         headers: {
                             'Authorization': `Bearer ${token}`,

@@ -27,8 +27,8 @@ import {
     Typography
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
-
-import API_ENDPOINTS from '../api/config';
+import { API_ENDPOINTS } from '../api/config';
+import fetchWithAuth from '../api/fetchWithAuth';
 import BrokerUserSetup from './BrokerUserSetup';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app';
@@ -60,19 +60,12 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
     const fetchAutonomousData = async () => {
         setLoading(true);
         try {
-            // Get authentication token
-            const token = localStorage.getItem('auth_token');
-            const headers = {
-                'Content-Type': 'application/json',
-                ...(token && { 'Authorization': `Bearer ${token}` })
-            };
-
             // Fetch real autonomous trading data from API
             const results = await Promise.allSettled([
-                fetch(API_ENDPOINTS.SYSTEM_STATUS, { headers }),
-                fetch(API_ENDPOINTS.SESSION_STATS, { headers }),
-                fetch(API_ENDPOINTS.POSITIONS, { headers }),
-                fetch(API_ENDPOINTS.SYSTEM_STATUS, { headers })   // Using status endpoint for scheduler
+                fetchWithAuth(API_ENDPOINTS.SYSTEM_STATUS.url),
+                fetchWithAuth(API_ENDPOINTS.AUTONOMOUS_STATUS.url),
+                fetchWithAuth(API_ENDPOINTS.POSITIONS.url),
+                fetchWithAuth(API_ENDPOINTS.SYSTEM_STATUS.url)   // Using status endpoint for scheduler
             ]);
 
             const [
@@ -154,7 +147,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
 
     const fetchTradingStatus = async () => {
         try {
-            const response = await fetch(API_ENDPOINTS.BROKER_STATUS);
+            const response = await fetchWithAuth(API_ENDPOINTS.BROKER_STATUS.url);
             const data = await response.json();
             if (data.success) {
                 setTradingStatus(data);
@@ -166,7 +159,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
 
     const fetchBrokerUsers = async () => {
         try {
-            const response = await fetch(API_ENDPOINTS.USERS);
+            const response = await fetchWithAuth(API_ENDPOINTS.USERS.url);
             const data = await response.json();
             if (data.success) {
                 setBrokerUsers(data.users || []);
@@ -179,11 +172,8 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
     const handleTradingControl = async (action) => {
         setControlLoading(true);
         try {
-            const response = await fetch(API_ENDPOINTS.BROKER_CONNECT, {
+            const response = await fetchWithAuth(API_ENDPOINTS.BROKER_CONNECT.url, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
                 body: JSON.stringify({
                     action: action,
                     paper_trading: true
@@ -218,15 +208,8 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
 
     const handleEmergencyStop = async () => {
         try {
-            const token = localStorage.getItem('auth_token');
-            const headers = {
-                'Content-Type': 'application/json',
-                ...(token && { 'Authorization': `Bearer ${token}` })
-            };
-
-            const response = await fetch(API_ENDPOINTS.BROKER_DISCONNECT, {
-                method: 'POST',
-                headers
+            const response = await fetchWithAuth(API_ENDPOINTS.BROKER_DISCONNECT.url, {
+                method: 'POST'
             });
 
             if (!response.ok) {

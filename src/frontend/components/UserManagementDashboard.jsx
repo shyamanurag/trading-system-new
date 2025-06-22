@@ -52,6 +52,7 @@ import {
     YAxis
 } from 'recharts';
 import { API_ENDPOINTS } from '../api/config';
+import fetchWithAuth from '../api/fetchWithAuth';
 
 const UserManagementDashboard = () => {
     const [selectedTab, setSelectedTab] = useState(0);
@@ -96,7 +97,7 @@ const UserManagementDashboard = () => {
         try {
             setLoading(true);
             // Use the broker users endpoint instead
-            const response = await fetch(`${API_ENDPOINTS.BROKER_USERS?.url || API_ENDPOINTS.USERS.url.replace('/users/', '/control/users/broker')}`);
+            const response = await fetchWithAuth(`${API_ENDPOINTS.BROKER_USERS?.url || API_ENDPOINTS.USERS.url.replace('/users/', '/control/users/broker')}`);
             if (!response.ok) {
                 throw new Error('Failed to fetch users');
             }
@@ -132,7 +133,7 @@ const UserManagementDashboard = () => {
 
     const fetchUserPositions = async (userId) => {
         try {
-            const response = await fetch(`${API_ENDPOINTS.POSITIONS.url}?user_id=${userId}`);
+            const response = await fetchWithAuth(`${API_ENDPOINTS.POSITIONS.url}?user_id=${userId}`);
             if (!response.ok) {
                 throw new Error('Failed to fetch positions');
             }
@@ -154,7 +155,7 @@ const UserManagementDashboard = () => {
 
     const fetchUserTrades = async (userId) => {
         try {
-            const response = await fetch(`${API_ENDPOINTS.TRADES.url}?user_id=${userId}&limit=10`);
+            const response = await fetchWithAuth(`${API_ENDPOINTS.TRADES.url}?user_id=${userId}&limit=10`);
             if (!response.ok) {
                 throw new Error('Failed to fetch trades');
             }
@@ -177,7 +178,7 @@ const UserManagementDashboard = () => {
     const fetchUserAnalytics = async (userId) => {
         try {
             // Use performance endpoint for analytics
-            const response = await fetch(`${API_ENDPOINTS.USER_PERFORMANCE.url}?user_id=${userId}`);
+            const response = await fetchWithAuth(`${API_ENDPOINTS.USER_PERFORMANCE.url}?user_id=${userId}`);
             if (!response.ok) {
                 throw new Error('Failed to fetch analytics');
             }
@@ -240,7 +241,7 @@ const UserManagementDashboard = () => {
                 paper_trading: true
             };
 
-            const response = await fetch(API_ENDPOINTS.USERS.url.replace('/users/', '/control/users/broker'), {
+            const response = await fetchWithAuth(API_ENDPOINTS.USERS.url.replace('/users/', '/control/users/broker'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -284,7 +285,7 @@ const UserManagementDashboard = () => {
         }
 
         try {
-            const response = await fetch(`${API_ENDPOINTS.USERS.url}${userId}`, {
+            const response = await fetchWithAuth(`${API_ENDPOINTS.USERS.url}${userId}`, {
                 method: 'DELETE'
             });
 

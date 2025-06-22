@@ -44,6 +44,8 @@ import {
     XAxis,
     YAxis
 } from 'recharts';
+import { API_ENDPOINTS } from '../api/config';
+import fetchWithAuth from '../api/fetchWithAuth';
 
 // Import existing components
 import AutonomousTradingDashboard from './AutonomousTradingDashboard';
@@ -51,7 +53,6 @@ import EliteRecommendationsDashboard from './EliteRecommendationsDashboard';
 import UserManagementDashboard from './UserManagementDashboard';
 import UserPerformanceDashboard from './UserPerformanceDashboard';
 
-import API_ENDPOINTS from '../api/config';
 import MarketIndicesWidget from './MarketIndicesWidget';
 import SystemHealthMonitor from './SystemHealthMonitor';
 import WebSocketStatus from './WebSocketStatus';
@@ -80,9 +81,9 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
 
             // Fetch real data from APIs using Promise.allSettled to handle failures gracefully
             const [dashboardRes, performanceRes, recommendationsRes] = await Promise.allSettled([
-                fetch(API_ENDPOINTS.DASHBOARD_SUMMARY),
-                fetch(API_ENDPOINTS.DAILY_PNL),
-                fetch(API_ENDPOINTS.RECOMMENDATIONS)
+                fetchWithAuth(API_ENDPOINTS.DASHBOARD_SUMMARY.url),
+                fetchWithAuth(API_ENDPOINTS.DAILY_PNL.url),
+                fetchWithAuth(API_ENDPOINTS.RECOMMENDATIONS.url)
             ]);
 
             let dashboardData = {

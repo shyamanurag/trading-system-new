@@ -29,8 +29,8 @@ import {
     Typography
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app';
+import { API_ENDPOINTS } from '../api/config';
+import fetchWithAuth from '../api/fetchWithAuth';
 
 const EliteRecommendationsDashboard = () => {
     const [recommendations, setRecommendations] = useState([]);
@@ -44,7 +44,7 @@ const EliteRecommendationsDashboard = () => {
     const fetchRecommendations = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/recommendations/`);
+            const response = await fetchWithAuth(API_ENDPOINTS.RECOMMENDATIONS.url);
             if (response.ok) {
                 const data = await response.json();
                 setRecommendations(data.recommendations || []);
@@ -63,7 +63,7 @@ const EliteRecommendationsDashboard = () => {
 
     const fetchPerformanceData = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/performance/elite-trades`);
+            const response = await fetchWithAuth(API_ENDPOINTS.STRATEGY_PERFORMANCE.url);
             if (response.ok) {
                 const data = await response.json();
                 setPerformanceData(data.data || {

@@ -16,6 +16,7 @@ import {
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
 import { API_ENDPOINTS } from '../api/config';
+import fetchWithAuth from '../api/fetchWithAuth';
 
 const SystemHealthMonitor = () => {
     const [health, setHealth] = useState({
@@ -27,7 +28,7 @@ const SystemHealthMonitor = () => {
 
     const fetchHealthStatus = async () => {
         try {
-            const response = await fetch(API_ENDPOINTS.HEALTH_READY_JSON.url);
+            const response = await fetchWithAuth(API_ENDPOINTS.HEALTH_READY_JSON.url);
             const data = await response.json();
 
             // Parse the response to determine health status

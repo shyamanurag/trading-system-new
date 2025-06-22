@@ -58,7 +58,8 @@ import {
     XAxis,
     YAxis
 } from 'recharts';
-import API_ENDPOINTS from '../api/config';
+import { API_ENDPOINTS } from '../api/config';
+import fetchWithAuth from '../api/fetchWithAuth';
 
 const UserPerformanceDashboard = () => {
     const [users, setUsers] = useState([]);
@@ -107,7 +108,7 @@ const UserPerformanceDashboard = () => {
 
     const fetchUsers = async () => {
         try {
-            const usersResponse = await fetch(API_ENDPOINTS.USERS.url);
+            const usersResponse = await fetchWithAuth(API_ENDPOINTS.USERS.url);
             if (!usersResponse.ok) {
                 throw new Error('Failed to fetch users');
             }
@@ -128,7 +129,7 @@ const UserPerformanceDashboard = () => {
 
         try {
             setLoading(true);
-            const response = await fetch(`${API_ENDPOINTS.USER_PERFORMANCE.url}/${userId}`);
+            const response = await fetchWithAuth(`${API_ENDPOINTS.USER_PERFORMANCE.url}/${userId}`);
             if (!response.ok) {
                 throw new Error('Failed to fetch performance data');
             }
@@ -156,7 +157,7 @@ const UserPerformanceDashboard = () => {
     const fetchDailyPnL = async () => {
         try {
             setLoading(true);
-            const response = await fetch(API_ENDPOINTS.DAILY_PNL.url);
+            const response = await fetchWithAuth(API_ENDPOINTS.DAILY_PNL.url);
             if (!response.ok) {
                 throw new Error('Failed to fetch daily P&L data');
             }
@@ -173,7 +174,7 @@ const UserPerformanceDashboard = () => {
 
     const fetchSummaryMetrics = async () => {
         try {
-            const response = await fetch(API_ENDPOINTS.DASHBOARD_SUMMARY.url);
+            const response = await fetchWithAuth(API_ENDPOINTS.DASHBOARD_SUMMARY.url);
             if (!response.ok) {
                 throw new Error('Failed to fetch summary metrics');
             }
@@ -196,9 +197,8 @@ const UserPerformanceDashboard = () => {
 
     const handleCreateUser = async () => {
         try {
-            const response = await fetch(`${API_ENDPOINTS.USER_LIST}`, {
+            const response = await fetchWithAuth(API_ENDPOINTS.USERS.url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newUser)
             });
 
@@ -224,7 +224,7 @@ const UserPerformanceDashboard = () => {
     const handleDeleteUser = async (userId) => {
         if (window.confirm('Are you sure you want to delete this user?')) {
             try {
-                const response = await fetch(`${API_ENDPOINTS.USER_LIST}/${userId}`, {
+                const response = await fetchWithAuth(`${API_ENDPOINTS.USERS.url}${userId}`, {
                     method: 'DELETE'
                 });
 

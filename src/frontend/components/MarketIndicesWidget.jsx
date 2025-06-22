@@ -17,8 +17,8 @@ import {
     Typography
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app';
+import { API_ENDPOINTS } from '../api/config';
+import fetchWithAuth from '../api/fetchWithAuth';
 
 const MarketIndicesWidget = () => {
     const [indices, setIndices] = useState([]);
@@ -36,11 +36,11 @@ const MarketIndicesWidget = () => {
             }
 
             // Fetch indices data
-            const indicesResponse = await fetch(`${API_BASE_URL}/v1/market/indices`);
+            const indicesResponse = await fetchWithAuth(API_ENDPOINTS.MARKET_INDICES.url);
             const indicesData = await indicesResponse.json();
 
             // Fetch market status
-            const statusResponse = await fetch(`${API_BASE_URL}/v1/market/market-status`);
+            const statusResponse = await fetchWithAuth(API_ENDPOINTS.MARKET_STATUS.url);
             const statusData = await statusResponse.json();
 
             if (indicesData.success) {
