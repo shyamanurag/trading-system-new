@@ -4,7 +4,7 @@ region: blr
 envs:
 - key: VITE_API_URL
   scope: RUN_AND_BUILD_TIME
-  value: https://algoauto-9gx56.ondigitalocean.app/api
+  value: https://algoauto-9gx56.ondigitalocean.app
 - key: VITE_WS_URL
   scope: RUN_AND_BUILD_TIME
   value: wss://algoauto-9gx56.ondigitalocean.app/ws
@@ -349,7 +349,7 @@ static_sites:
   envs:
   - key: VITE_API_URL
     scope: BUILD_TIME
-    value: https://algoauto-9gx56.ondigitalocean.app/api
+    value: https://algoauto-9gx56.ondigitalocean.app
   - key: VITE_APP_NAME
     scope: BUILD_TIME
     value: AlgoAuto Trading
