@@ -11,8 +11,11 @@ import sys
 from pathlib import Path
 import asyncio
 import logging
-from typing import List
+from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
+from datetime import datetime
+import time
+import httpx
 
 from fastapi import FastAPI, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -460,6 +463,50 @@ async def list_routes():
         "health_routes": health_routes,
         "login_endpoint": "/auth/login"
     }
+
+# Add redirect for cached frontend issue
+@app.post("/api/auth/login", tags=["auth"])
+async def redirect_login(request: Request):
+    """Redirect from old login path to new one"""
+    # Get the request body
+    try:
+        body = await request.json()
+    except:
+        body = {}
+    
+    # Make the request to the correct endpoint
+    from fastapi import status
+    from fastapi.responses import RedirectResponse
+    
+    # For POST requests, we can't redirect with body, so we'll proxy the request
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{request.base_url}auth/login",
+            json=body,
+            headers={k: v for k, v in request.headers.items() if k.lower() not in ['host', 'content-length']}
+        )
+        
+        return JSONResponse(
+            content=response.json() if response.status_code == 200 else {"detail": "Authentication failed"},
+            status_code=response.status_code,
+            headers={k: v for k, v in response.headers.items() if k.lower() not in ['content-length', 'content-encoding']}
+        )
+
+# Add redirect for /api/auth/me
+@app.get("/api/auth/me", tags=["auth"])
+async def redirect_me(request: Request):
+    """Redirect from old me path to new one"""
+    # Proxy the request
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{request.base_url}auth/me",
+            headers={k: v for k, v in request.headers.items() if k.lower() not in ['host']}
+        )
+        
+        return JSONResponse(
+            content=response.json() if response.status_code == 200 else {"detail": response.text},
+            status_code=response.status_code
+        )
 
 # Catch-all route for debugging 404s and routing issues
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
