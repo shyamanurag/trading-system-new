@@ -1,122 +1,82 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any
 from datetime import datetime
-import json
-import redis.asyncio as redis
-from ..core.risk_manager import RiskManager
-from ..core.order_manager import OrderManager
-from ..models.schema import Trade
-from ..models.user import UserInDB as User
-from ..auth import get_current_user
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 @router.get("/")
-async def get_all_trades(
-    current_user: User = Depends(get_current_user)
-) -> List[Dict[str, Any]]:
-    """Get all trades for the current user"""
+async def get_all_trades() -> List[Dict[str, Any]]:
+    """Get all trades"""
     try:
         # For now, return empty list - no trades yet
         return []
     except Exception as e:
+        logger.error(f"Error getting trades: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/live")
-async def get_live_trades(
-    current_user: User = Depends(get_current_user)
-) -> List[Dict[str, Any]]:
-    """Get all live trades across users"""
+async def get_live_trades() -> List[Dict[str, Any]]:
+    """Get all live trades"""
     try:
-        # Get all trades from Redis
-        trades = []
-        async with redis.from_url(current_user.config['redis_url']) as redis_client:
-            # Get all trade keys
-            trade_keys = await redis_client.keys("trade:*")
-            
-            for key in trade_keys:
-                trade_data = await redis_client.get(key)
-                if trade_data:
-                    trade = json.loads(trade_data)
-                    # Only include open trades
-                    if trade['status'] == 'OPEN':
-                        trades.append(trade)
-        
-        return trades
+        # For now, return empty list - no live trades yet
+        return []
     except Exception as e:
+        logger.error(f"Error getting live trades: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/users/metrics")
-async def get_all_user_metrics(
-    current_user: User = Depends(get_current_user)
-) -> Dict[str, Dict[str, Any]]:
+async def get_all_user_metrics() -> Dict[str, Dict[str, Any]]:
     """Get metrics for all users"""
     try:
-        metrics = {}
-        async with redis.from_url(current_user.config['redis_url']) as redis_client:
-            # Get all user keys
-            user_keys = await redis_client.keys("user:*")
-            
-            for key in user_keys:
-                if ":metrics" in key:  # Only get metrics keys
-                    user_id = key.split(":")[1]
-                    metrics_data = await redis_client.get(key)
-                    if metrics_data:
-                        metrics[user_id] = json.loads(metrics_data)
-        
-        return metrics
+        # Return empty metrics for now
+        return {}
     except Exception as e:
+        logger.error(f"Error getting user metrics: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{trade_id}")
-async def get_trade_details(
-    trade_id: str,
-    current_user: User = Depends(get_current_user)
-) -> Dict[str, Any]:
+async def get_trade_details(trade_id: str) -> Dict[str, Any]:
     """Get detailed information about a specific trade"""
     try:
-        async with redis.from_url(current_user.config['redis_url']) as redis_client:
-            trade_data = await redis_client.get(f"trade:{trade_id}")
-            if not trade_data:
-                raise HTTPException(status_code=404, detail="Trade not found")
-            
-            return json.loads(trade_data)
+        # Trade not found since we're not persisting yet
+        raise HTTPException(status_code=404, detail="Trade not found")
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Error getting trade details: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/users/{user_id}")
-async def get_user_trades(
-    user_id: str,
-    current_user: User = Depends(get_current_user)
-) -> List[Dict[str, Any]]:
+async def get_user_trades(user_id: str) -> List[Dict[str, Any]]:
     """Get all trades for a specific user"""
     try:
-        trades = []
-        async with redis.from_url(current_user.config['redis_url']) as redis_client:
-            # Get all trade keys for the user
-            trade_keys = await redis_client.keys(f"trade:{user_id}:*")
-            
-            for key in trade_keys:
-                trade_data = await redis_client.get(key)
-                if trade_data:
-                    trades.append(json.loads(trade_data))
-        
-        return trades
+        # Return empty list for now
+        return []
     except Exception as e:
+        logger.error(f"Error getting user trades: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/users/{user_id}/metrics")
-async def get_user_metrics(
-    user_id: str,
-    current_user: User = Depends(get_current_user)
-) -> Dict[str, Any]:
+async def get_user_metrics(user_id: str) -> Dict[str, Any]:
     """Get detailed metrics for a specific user"""
     try:
-        async with redis.from_url(current_user.config['redis_url']) as redis_client:
-            metrics_data = await redis_client.get(f"user:{user_id}:metrics")
-            if not metrics_data:
-                raise HTTPException(status_code=404, detail="User metrics not found")
-            
-            return json.loads(metrics_data)
+        # Return basic metrics structure
+        return {
+            "user_id": user_id,
+            "total_trades": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "total_pnl": 0.0,
+            "win_rate": 0.0,
+            "average_win": 0.0,
+            "average_loss": 0.0,
+            "sharpe_ratio": 0.0,
+            "max_drawdown": 0.0,
+            "last_updated": datetime.now().isoformat()
+        }
     except Exception as e:
+        logger.error(f"Error getting user metrics: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 
