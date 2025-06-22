@@ -1,6 +1,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from typing import Optional
 import logging
+import json
 import redis
 from src.core.websocket_manager import get_websocket_manager, initialize_websocket_manager
 from src.core.redis_client import get_redis_client
@@ -17,38 +18,64 @@ async def get_ws_manager():
     return ws_manager
 
 @router.websocket("/ws")
-async def websocket_endpoint(
-    websocket: WebSocket,
-    ws_manager = Depends(get_ws_manager)
-):
+async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time trade updates"""
+    await websocket.accept()
     connection_id = None
+    user_id = None
+    
     try:
-        # For now, use a default user_id. In production, this would come from authentication
-        user_id = "default_user"
+        # Send initial connection success message
+        await websocket.send_json({
+            "type": "connection",
+            "status": "connected",
+            "message": "WebSocket connected. Please authenticate."
+        })
         
-        # Connect client with user_id
-        connection_id = await ws_manager.connect(websocket, user_id)
-        
+        # Wait for authentication message
+        auth_timeout = 30  # 30 seconds to authenticate
         try:
-            # Keep connection alive and handle messages
-            while True:
-                # Wait for any message from client
-                data = await websocket.receive_json()
+            # First message should be authentication
+            data = await websocket.receive_json()
+            
+            if data.get("type") == "auth":
+                user_id = data.get("userId", "anonymous")
+                # In production, validate the token here
+                # For now, accept any userId
                 
-                # Handle client messages
-                response = await ws_manager.handle_client_message(connection_id, data)
-                if response:
-                    await websocket.send_json(response)
+                await websocket.send_json({
+                    "type": "auth",
+                    "status": "success",
+                    "userId": user_id,
+                    "message": f"Authenticated as {user_id}"
+                })
+                
+                # Now handle regular messages
+                while True:
+                    data = await websocket.receive_json()
+                    
+                    # Echo back for now
+                    await websocket.send_json({
+                        "type": "echo",
+                        "data": data,
+                        "userId": user_id
+                    })
+                    
+            else:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": "First message must be authentication"
+                })
+                await websocket.close()
                 
         except WebSocketDisconnect:
-            logger.info(f"WebSocket disconnected: {connection_id}")
+            logger.info(f"WebSocket disconnected: {user_id or 'unauthenticated'}")
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
-        finally:
-            # Cleanup on disconnect
-            if connection_id:
-                await ws_manager.disconnect(websocket)
+            await websocket.send_json({
+                "type": "error",
+                "message": str(e)
+            })
             
     except Exception as e:
         logger.error(f"Error in WebSocket connection: {e}")

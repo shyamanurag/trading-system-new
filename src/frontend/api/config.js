@@ -44,10 +44,17 @@ export const API_ENDPOINTS = {
     USER_PERFORMANCE: createEndpoint('/api/v1/users/performance'),
     USER_CURRENT: createEndpoint('/api/v1/users/current'),
 
+    // Broker user management
+    BROKER_USERS: createEndpoint('/api/v1/control/users/broker'),
+
     // Trading endpoints - FIXED: Added /api prefix
     TRADES: createEndpoint('/api/v1/trades'),
     POSITIONS: createEndpoint('/api/v1/positions'),
     ORDERS: createEndpoint('/api/v1/orders'),
+
+    // Trading control endpoints
+    TRADING_CONTROL: createEndpoint('/api/v1/control/trading/control'),
+    TRADING_STATUS: createEndpoint('/api/v1/control/trading/status'),
 
     // Market data endpoints - These use /api/market prefix
     MARKET_INDICES: createEndpoint('/api/market/indices'),

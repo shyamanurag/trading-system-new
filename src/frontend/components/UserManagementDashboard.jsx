@@ -51,8 +51,7 @@ import {
     XAxis,
     YAxis
 } from 'recharts';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-jd32t.ondigitalocean.app';
+import { API_ENDPOINTS } from '../api/config';
 
 const UserManagementDashboard = () => {
     const [selectedTab, setSelectedTab] = useState(0);
@@ -96,13 +95,29 @@ const UserManagementDashboard = () => {
     const fetchUsers = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/users`);
+            // Use the broker users endpoint instead
+            const response = await fetch(`${API_ENDPOINTS.BROKER_USERS?.url || API_ENDPOINTS.USERS.url.replace('/users/', '/control/users/broker')}`);
             if (!response.ok) {
                 throw new Error('Failed to fetch users');
             }
             const data = await response.json();
             if (data.success) {
-                setUsers(data.users || []);
+                // Transform broker users to match expected format
+                const transformedUsers = (data.users || []).map(user => ({
+                    id: user.user_id,
+                    username: user.username || user.name,
+                    name: user.name,
+                    email: user.email || `${user.user_id}@trading.com`,
+                    zerodhaClientId: user.client_id || user.user_id,
+                    capital: user.initial_capital,
+                    currentBalance: user.current_capital,
+                    totalPnL: user.total_pnl,
+                    winRate: user.win_rate,
+                    totalTrades: user.total_trades,
+                    status: user.is_active ? 'active' : 'inactive',
+                    joinDate: user.created_at || new Date().toISOString()
+                }));
+                setUsers(transformedUsers);
             } else {
                 throw new Error(data.message || 'Failed to fetch users');
             }
@@ -117,7 +132,7 @@ const UserManagementDashboard = () => {
 
     const fetchUserPositions = async (userId) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/users/${userId}/positions`);
+            const response = await fetch(`${API_ENDPOINTS.POSITIONS.url}?user_id=${userId}`);
             if (!response.ok) {
                 throw new Error('Failed to fetch positions');
             }
@@ -139,7 +154,7 @@ const UserManagementDashboard = () => {
 
     const fetchUserTrades = async (userId) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/users/${userId}/trades?limit=10`);
+            const response = await fetch(`${API_ENDPOINTS.TRADES.url}?user_id=${userId}&limit=10`);
             if (!response.ok) {
                 throw new Error('Failed to fetch trades');
             }
@@ -161,7 +176,8 @@ const UserManagementDashboard = () => {
 
     const fetchUserAnalytics = async (userId) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/users/${userId}/analytics`);
+            // Use performance endpoint for analytics
+            const response = await fetch(`${API_ENDPOINTS.USER_PERFORMANCE.url}?user_id=${userId}`);
             if (!response.ok) {
                 throw new Error('Failed to fetch analytics');
             }
@@ -216,15 +232,15 @@ const UserManagementDashboard = () => {
                 user_id: newUserData.username,
                 name: newUserData.username,
                 broker: "zerodha",
-                api_key: import.meta.env.VITE_ZERODHA_API_KEY,
-                api_secret: import.meta.env.VITE_ZERODHA_API_SECRET,
+                api_key: import.meta.env.VITE_ZERODHA_API_KEY || 'sylcoq492qz6f7ej',
+                api_secret: import.meta.env.VITE_ZERODHA_API_SECRET || 'jm3h4iejwnxr4ngmma2qxccpkhevo8sy',
                 client_id: newUserData.zerodhaClientId,
                 initial_capital: newUserData.initialCapital,
                 risk_tolerance: newUserData.riskLevel,
                 paper_trading: true
             };
 
-            const response = await fetch(`${API_BASE_URL}/users/broker`, {
+            const response = await fetch(API_ENDPOINTS.USERS.url.replace('/users/', '/control/users/broker'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -268,7 +284,7 @@ const UserManagementDashboard = () => {
         }
 
         try {
-            const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
+            const response = await fetch(`${API_ENDPOINTS.USERS.url}${userId}`, {
                 method: 'DELETE'
             });
 
@@ -605,7 +621,7 @@ const UserManagementDashboard = () => {
                                                             size="small"
                                                         />
                                                     </TableCell>
-                                                    <TableCell>{user.joinDate}</TableCell>
+                                                    <TableCell>{new Date(user.joinDate).toLocaleDateString()}</TableCell>
                                                     <TableCell align="center">
                                                         <IconButton
                                                             size="small"
@@ -660,15 +676,6 @@ const UserManagementDashboard = () => {
                         />
                         <TextField
                             fullWidth
-                            label="Password"
-                            type="password"
-                            value={newUserData.password}
-                            onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
-                            margin="normal"
-                            required
-                        />
-                        <TextField
-                            fullWidth
                             label="Zerodha Client ID"
                             value={newUserData.zerodhaClientId}
                             onChange={(e) => setNewUserData(prev => ({ ...prev, zerodhaClientId: e.target.value }))}
@@ -677,20 +684,10 @@ const UserManagementDashboard = () => {
                         />
                         <TextField
                             fullWidth
-                            label="Zerodha Password"
-                            type="password"
-                            value={newUserData.zerodhaPassword}
-                            onChange={(e) => setNewUserData(prev => ({ ...prev, zerodhaPassword: e.target.value }))}
-                            margin="normal"
-                            required
-                            helperText="Required for authentication with our master API key"
-                        />
-                        <TextField
-                            fullWidth
-                            label="Initial Capital"
+                            label="Initial Capital (₹)"
                             type="number"
                             value={newUserData.initialCapital}
-                            onChange={(e) => setNewUserData(prev => ({ ...prev, initialCapital: parseInt(e.target.value) }))}
+                            onChange={(e) => setNewUserData(prev => ({ ...prev, initialCapital: parseFloat(e.target.value) }))}
                             margin="normal"
                             required
                         />
@@ -699,25 +696,36 @@ const UserManagementDashboard = () => {
                             <Select
                                 value={newUserData.riskLevel}
                                 onChange={(e) => setNewUserData(prev => ({ ...prev, riskLevel: e.target.value }))}
+                                label="Risk Level"
                             >
-                                <MenuItem value="low">Low Risk</MenuItem>
-                                <MenuItem value="medium">Medium Risk</MenuItem>
-                                <MenuItem value="high">High Risk</MenuItem>
+                                <MenuItem value="low">Low</MenuItem>
+                                <MenuItem value="medium">Medium</MenuItem>
+                                <MenuItem value="high">High</MenuItem>
                             </Select>
                         </FormControl>
                     </DialogContent>
                     <DialogActions>
                         <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
-                        <Button
-                            type="submit"
-                            variant="contained"
-                            disabled={!newUserData.username || !newUserData.email || !newUserData.zerodhaClientId || addUserLoading}
-                        >
+                        <Button type="submit" variant="contained" disabled={addUserLoading}>
                             {addUserLoading ? 'Adding...' : 'Add User'}
                         </Button>
                     </DialogActions>
                 </form>
             </Dialog>
+
+            {/* User Details Dialog */}
+            {selectedUser && (
+                <Dialog open={!!selectedUser} onClose={() => setSelectedUser(null)} maxWidth="md" fullWidth>
+                    <DialogTitle>{selectedUser.username} - Detailed Information</DialogTitle>
+                    <DialogContent>
+                        {/* Add detailed user information here */}
+                        <Typography>Detailed user analytics and trading history will be displayed here.</Typography>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setSelectedUser(null)}>Close</Button>
+                    </DialogActions>
+                </Dialog>
+            )}
         </Box>
     );
 };

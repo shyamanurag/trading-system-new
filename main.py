@@ -164,6 +164,39 @@ app.add_middleware(
     expose_headers=["*"]
 )
 
+# Middleware to fix Digital Ocean path stripping
+@app.middleware("http")
+async def fix_path_stripping(request: Request, call_next):
+    """Handle Digital Ocean's path stripping behavior"""
+    original_path = request.url.path
+    
+    # If path doesn't start with /, add it
+    if original_path and not original_path.startswith('/'):
+        # Create a new URL with the leading slash
+        from starlette.datastructures import URL, MutableHeaders
+        # Build the correct URL
+        scheme = request.url.scheme
+        netloc = request.url.netloc
+        query = request.url.query
+        fragment = request.url.fragment
+        
+        # Add leading slash to path
+        fixed_path = f'/{original_path}'
+        
+        # Create new URL
+        new_url_str = f"{scheme}://{netloc}{fixed_path}"
+        if query:
+            new_url_str += f"?{query}"
+        if fragment:
+            new_url_str += f"#{fragment}"
+            
+        # Update the request URL
+        request._url = URL(new_url_str)
+        logger.info(f"Fixed path: {original_path} -> {fixed_path}")
+    
+    response = await call_next(request)
+    return response
+
 # Gzip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
