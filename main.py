@@ -249,34 +249,17 @@ async def root():
 # Health check endpoints
 @app.get("/health", tags=["health"])
 async def health_check():
-    """Basic health check - Fixed 2024-12-22 to handle missing app.state"""
+    """Health check endpoint for load balancer"""
     logger.info("Health check endpoint called")
-    
-    try:
-        # Get router stats with safe access to prevent AttributeError
-        loaded = getattr(app.state, 'routers_loaded', None)
-        total = getattr(app.state, 'total_routers', None)
-        
-        # Calculate if not set
-        if loaded is None or total is None:
-            loaded = sum(1 for r in routers_loaded.values() if r is not None)
-            total = len(router_imports)
-        
-        response = {
-            "status": "healthy",
-            "version": "4.0.1",
-            "routers_loaded": f"{loaded}/{total}",
-            "timestamp": asyncio.get_event_loop().time(),
-            "deployment": "2024-12-22-fix"
-        }
-        logger.info(f"Health check response: {response}")
-        return response
-    except Exception as e:
-        logger.error(f"Health check error: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e), "status": "error"}
-        )
+    response = {
+        "status": "healthy",
+        "version": "4.0.2-redirect",  # Updated version
+        "routers_loaded": f"{len(routers_loaded)}/{len(router_imports)}",
+        "timestamp": time.time(),
+        "deployment": "2024-12-22-redirect-fix"
+    }
+    logger.info(f"Health check response: {response}")
+    return response
 
 @app.get("/health/ready", tags=["health"], response_class=PlainTextResponse)
 async def health_ready():
