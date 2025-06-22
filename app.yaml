@@ -127,7 +127,7 @@ envs:
   value: "false"
 - key: PYTHONPATH
   scope: RUN_AND_BUILD_TIME
-  value: /workspace
+  value: /app
 - key: CORS_ORIGINS
   scope: RUN_AND_BUILD_TIME
   value: '["https://algoauto-jd32t.ondigitalocean.app", "http://localhost:3000", "http://localhost:5173"]'
@@ -335,8 +335,10 @@ services:
     gunicorn main:app \
       --workers 1 \
       --worker-class uvicorn.workers.UvicornWorker \
-      --bind 0.0.0.0:$PORT \
-      --timeout 120
+      --bind 0.0.0.0:${PORT:-8000} \
+      --timeout 120 \
+      --access-logfile - \
+      --error-logfile -
   source_dir: /
 
 static_sites:

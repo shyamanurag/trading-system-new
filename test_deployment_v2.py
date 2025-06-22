@@ -1,10 +1,18 @@
 import requests
 import os
+import sys
 from datetime import datetime
 import time
 
 # --- Configuration ---
-BASE_URL = "https://algoauto-jd32t.ondigitalocean.app"
+# Get BASE_URL from environment variable or command line argument
+if len(sys.argv) > 1:
+    BASE_URL = sys.argv[1]
+else:
+    BASE_URL = os.getenv("APP_URL", "http://localhost:8000")
+    
+print(f"Using BASE_URL: {BASE_URL}")
+
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 access_token = None
@@ -38,10 +46,10 @@ def test_health_check():
 def test_login():
     """Tests the login functionality and retrieves an access token."""
     global access_token
-    test_name = "Admin Login (/api/auth/login)"
+    test_name = "Admin Login (/auth/login)"
     try:
         login_data = {"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD}
-        response = requests.post(f"{BASE_URL}/api/auth/login", json=login_data, timeout=15)
+        response = requests.post(f"{BASE_URL}/auth/login", json=login_data, timeout=15)
         
         if response.status_code == 200:
             data = response.json()
@@ -76,14 +84,14 @@ def test_market_data_endpoint():
 
 def test_authenticated_endpoint():
     """Tests an endpoint that requires authentication."""
-    test_name = "Authenticated Route (/api/auth/me)"
+    test_name = "Authenticated Route (/auth/me)"
     if not access_token:
         print_test_result(test_name, "SKIPPED", "No access token available.")
         return False
         
     try:
         headers = {"Authorization": f"Bearer {access_token}"}
-        response = requests.get(f"{BASE_URL}/api/auth/me", headers=headers, timeout=15)
+        response = requests.get(f"{BASE_URL}/auth/me", headers=headers, timeout=15)
         if response.status_code == 200:
             print_test_result(test_name, "✅ PASS", f"Status: {response.status_code}")
             return True

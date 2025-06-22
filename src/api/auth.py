@@ -15,7 +15,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Create a single router for v1
-router_v1 = APIRouter(prefix="/auth") 
+router_v1 = APIRouter(tags=["auth"]) 
 security = HTTPBearer()
 
 # Configuration

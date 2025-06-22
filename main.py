@@ -18,13 +18,20 @@ project_root = str(Path(__file__).parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Load environment variables
-load_dotenv('config/production.env')
+# Load environment variables (optional - won't fail if file doesn't exist)
+env_file = 'config/production.env'
+if os.path.exists(env_file):
+    load_dotenv(env_file)
 
-# Import routers
-from src.api.auth import router_v1 as auth_router
-from src.api.market import router as market_router
-from src.api.users import router as users_router
+# Import routers with error handling
+try:
+    from src.api.auth import router_v1 as auth_router
+    from src.api.market import router as market_router
+    from src.api.users import router as users_router
+    routers_loaded = True
+except ImportError as e:
+    logging.error(f"Failed to import routers: {e}")
+    routers_loaded = False
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -37,7 +44,7 @@ async def lifespan(app: FastAPI):
     # In a real application, you would initialize resources like database connections here.
     yield
     logger.info("Shutting down application...")
-
+        
 # --- FastAPI App Initialization ---
 app = FastAPI(
     title="Trading System API (Refactored)",
@@ -61,17 +68,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Health Check Endpoint ---
+# --- Health Check Endpoints ---
 @app.get("/health", tags=["health"])
 async def health_check():
-    return {"status": "ok", "version": "3.0.0"}
+    return {"status": "ok", "version": "3.0.0", "routers_loaded": routers_loaded}
+
+@app.get("/health/ready", tags=["health"])
+async def health_ready():
+    """Health check endpoint for DigitalOcean"""
+    return {"status": "ready", "version": "3.0.0", "routers_loaded": routers_loaded}
 
 # --- Include Routers ---
-logger.info("Including API routers...")
-app.include_router(auth_router)
-app.include_router(market_router)
-app.include_router(users_router)
-logger.info("Routers included successfully.")
+if routers_loaded:
+    logger.info("Including API routers...")
+    app.include_router(auth_router)
+    app.include_router(market_router)
+    app.include_router(users_router)
+    logger.info("Routers included successfully.")
+else:
+    logger.error("Routers not loaded due to import errors")
+    
+    # Add a fallback route to help debug
+    @app.get("/debug/import-error")
+    async def debug_import():
+        import traceback
+        try:
+            from src.api.auth import router_v1 as auth_router
+            return {"status": "imports_ok"}
+        except Exception as e:
+            return {"error": str(e), "traceback": traceback.format_exc()}
 
 # --- Main Execution ---
 if __name__ == "__main__":
@@ -83,4 +108,4 @@ if __name__ == "__main__":
         port=port,
         reload=False,
         log_level="info",
-    ) 
+    )
