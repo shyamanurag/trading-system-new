@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import { Refresh as RefreshIcon } from '@mui/icons-material';
 import {
   Box,
+  Chip,
+  CircularProgress,
+  IconButton,
   Paper,
   Table,
   TableBody,
@@ -8,14 +11,11 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Typography,
-  Chip,
-  IconButton,
   Tooltip,
-  CircularProgress,
+  Typography,
 } from '@mui/material';
-import { Refresh as RefreshIcon, TrendingUp, TrendingDown } from '@mui/icons-material';
 import { format } from 'date-fns';
+import React, { useEffect, useState } from 'react';
 
 interface Trade {
   trade_id: string;
@@ -70,7 +70,7 @@ const LiveTradesDashboard: React.FC = () => {
   useEffect(() => {
     fetchData();
     // Set up WebSocket connection for real-time updates
-    const ws = new WebSocket(process.env.REACT_APP_WS_URL || 'ws://localhost:8000/ws');
+    const ws = new WebSocket(import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws');
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -155,18 +155,18 @@ const LiveTradesDashboard: React.FC = () => {
                       <TableCell>{userId}</TableCell>
                       <TableCell align="right">{formatCurrency(metrics.current_capital)}</TableCell>
                       <TableCell align="right">{formatCurrency(metrics.opening_capital)}</TableCell>
-                      <TableCell 
+                      <TableCell
                         align="right"
-                        sx={{ 
+                        sx={{
                           color: metrics.daily_pnl >= 0 ? 'success.main' : 'error.main',
                           fontWeight: 'bold'
                         }}
                       >
                         {formatCurrency(metrics.daily_pnl)}
                       </TableCell>
-                      <TableCell 
+                      <TableCell
                         align="right"
-                        sx={{ 
+                        sx={{
                           color: metrics.daily_pnl_percentage >= 0 ? 'success.main' : 'error.main',
                           fontWeight: 'bold'
                         }}
@@ -215,18 +215,18 @@ const LiveTradesDashboard: React.FC = () => {
                       <TableCell align="right">{trade.quantity}</TableCell>
                       <TableCell align="right">{formatCurrency(trade.entry_price)}</TableCell>
                       <TableCell align="right">{formatCurrency(trade.current_price)}</TableCell>
-                      <TableCell 
+                      <TableCell
                         align="right"
-                        sx={{ 
+                        sx={{
                           color: trade.pnl >= 0 ? 'success.main' : 'error.main',
                           fontWeight: 'bold'
                         }}
                       >
                         {formatCurrency(trade.pnl)}
                       </TableCell>
-                      <TableCell 
+                      <TableCell
                         align="right"
-                        sx={{ 
+                        sx={{
                           color: trade.pnl_percentage >= 0 ? 'success.main' : 'error.main',
                           fontWeight: 'bold'
                         }}

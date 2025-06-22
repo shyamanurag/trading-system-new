@@ -18,8 +18,9 @@ const WebSocketStatus = ({ userId }) => {
 
         const connectWebSocket = () => {
             try {
-                // Use the correct WebSocket endpoint - just /ws
-                const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
+                // Use environment variable or fallback to constructed URL
+                const wsUrl = import.meta.env.VITE_WS_URL || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
+                console.log('Connecting to WebSocket:', wsUrl);
                 const websocket = new WebSocket(wsUrl);
 
                 websocket.onopen = () => {
