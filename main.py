@@ -313,7 +313,7 @@ app.include_router(auth_router_v1)
 
 # --- START ROUTER REFACTOR ---
 # Mount the market router
-app.include_router(market_router)
+app.include_router(market_router, prefix="/api")
 # --- END ROUTER REFACTOR ---
 
 # --- END AUTH FIX ---
