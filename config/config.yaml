@@ -1,3 +1,37 @@
+# config/config.yaml
+# Configuration for the Trading System API
+#
+# In production environments (like DigitalOcean), these values should be
+# set using environment variables for security and flexibility.
+
+# Redis Cache Configuration
+redis:
+  host: localhost          # For local development
+  port: 6379               # Default Redis port
+  password: null           # No password for local Redis by default
+  ssl: false               # SSL is typically disabled for local development
+
+# PostgreSQL Database Configuration
+database:
+  host: localhost          # For local development
+  port: 5432               # Default PostgreSQL port
+  name: trading_system     # Local database name
+  user: user               # Local database user
+  password: password       # Local database password
+
+# Security Settings
+security:
+  # It is STRONGLY recommended to set this as an environment variable in production
+  # Example: export JWT_SECRET="your-long-random-secret-key"
+  jwt_secret: "a-secret-key-for-local-development"
+  encryption_key: "a-local-encryption-key-that-is-32-bytes-long"
+  webhook_secret: "local-webhook-secret"
+
+# Application Settings
+app:
+  environment: "development"
+  log_level: "INFO"
+
 brokers:
   zerodha:
     api_key: your_zerodha_api_key
@@ -12,16 +46,9 @@ compliance:
   foreign_investment_limit_percent: 49.0
   max_position_value: 50000000.0
   sebi_reporting_enabled: true
-database:
-  database: trading_system
-  host: localhost
-  password: change_me_in_production
-  pool_size: 10
-  port: 5432
-  ssl_mode: prefer
-  username: trading_user
+pool_size: 10
+ssl_mode: prefer
 debug: false
-environment: production
 max_workers: 4
 monitoring:
   health_check_interval_seconds: 30
@@ -30,19 +57,8 @@ monitoring:
   metrics_retention_days: 30
   prometheus_enabled: true
   prometheus_port: 8001
-redis:
-  db: 0
-  host: localhost
-  password: null
-  port: 6379
-  ssl: false
-security:
-  jwt_algorithm: HS256
-  jwt_expiration_hours: 24
-  jwt_secret: your-super-secret-jwt-key-change-in-production-minimum-32-chars
-  max_login_attempts: 5
-  password_hash_rounds: 12
-  require_2fa: false
+db: trading_system
+username: trading_user
 timezone: Asia/Kolkata
 trading:
   default_stop_loss_percent: 2.0

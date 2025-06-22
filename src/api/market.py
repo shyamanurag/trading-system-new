@@ -44,4 +44,29 @@ async def get_market_status():
             "status_message": "Market is currently closed.",
             "current_time": datetime.now().isoformat()
         }
-    } 
+    }
+
+# --- START USER ENDPOINTS ---
+# Note: This is a temporary measure to test the router refactoring.
+import hashlib
+
+def get_database_operations():
+    return None
+
+users_router = APIRouter(
+    prefix="/api/v1/users",
+    tags=["users"],
+    responses={404: {"description": "Not found"}},
+)
+
+@users_router.get("/current", summary="Get current user")
+async def get_current_user():
+    """Get current user information (mocked)"""
+    try:
+        return {
+            "status": "success",
+            "data": {"username": "admin", "full_name": "Administrator", "email": "admin@trading-system.com", "is_admin": True, "last_login": datetime.now().isoformat(), "permissions": ["read", "write", "admin"]}
+        }
+    except Exception as e:
+        print(f"Error getting current user: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get current user") 
