@@ -167,12 +167,17 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Trusted host (for production)
 if os.getenv('ENVIRONMENT') == 'production':
+    # Log the middleware configuration
+    logger.info("Adding TrustedHostMiddleware for production")
     app.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=[
             "algoauto-9gx56.ondigitalocean.app",
             "*.ondigitalocean.app",
-            "localhost"
+            "localhost",
+            "127.0.0.1",
+            "0.0.0.0",
+            "*"  # Allow all hosts temporarily to debug
         ]
     )
 
@@ -331,11 +336,11 @@ async def health_live():
     return {"status": "alive", "timestamp": asyncio.get_event_loop().time()}
 
 # Handle DigitalOcean's path stripping when "Preserve Path Prefix" is disabled
-@app.get("/ready", tags=["health"], response_class=PlainTextResponse)
+@app.get("/ready", tags=["health"])
 async def ready_stripped():
     """Health ready endpoint for when DigitalOcean strips /health prefix"""
-    logger.info("Ready endpoint called (path stripped by DigitalOcean)")
-    return PlainTextResponse("ready", status_code=200)
+    # Simplest possible implementation
+    return "ready"
 
 # Debug endpoint to check request details
 @app.get("/debug/request", tags=["debug"])
@@ -427,6 +432,28 @@ if os.getenv('DEBUG', 'false').lower() == 'true':
             if route_info['path'] != 'unknown':
                 routes.append(route_info)
         return {"total_routes": len(routes), "routes": sorted(routes, key=lambda x: x['path'])}
+
+# Catch-all route for debugging 404s and routing issues
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+async def catch_all(request: Request, path: str):
+    """Catch-all route to debug routing issues"""
+    logger.warning(f"Catch-all route hit - Path: {path}, Method: {request.method}")
+    logger.warning(f"Full URL: {request.url}, Headers: {dict(request.headers)}")
+    
+    # Check if this is the ready endpoint
+    if path == "ready" and request.method == "GET":
+        logger.info("Catch-all handling /ready request")
+        return PlainTextResponse("ready", status_code=200)
+    
+    # Return 404 for other paths
+    return JSONResponse(
+        status_code=404,
+        content={
+            "detail": f"Path not found: {path}",
+            "method": request.method,
+            "url": str(request.url)
+        }
+    )
 
 # Main execution
 if __name__ == "__main__":
