@@ -1,6 +1,6 @@
 // API Configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app';
-const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-9gx56.ondigitalocean.app';
+const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-9gx56.ondigitalocean.app/ws';
 
 // Ensure API_BASE_URL doesn't end with a slash
 const normalizedApiUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
@@ -36,11 +36,10 @@ export const API_ENDPOINTS = {
     REGISTER: createEndpoint('/auth/register'),
     LOGOUT: createEndpoint('/auth/logout'),
     REFRESH_TOKEN: createEndpoint('/auth/refresh-token'),
-    ME: createEndpoint('/auth/me'),
+    USER_PROFILE: createEndpoint('/auth/me'),
 
     // User endpoints - These use /api/v1/users prefix - FIXED: Added trailing slash
     USERS: createEndpoint('/api/v1/users/', true),
-    USER_PROFILE: createEndpoint('/api/v1/users/profile'),
     USER_PERFORMANCE: createEndpoint('/api/v1/users/performance'),
     USER_CURRENT: createEndpoint('/api/v1/users/current'),
 
@@ -59,7 +58,7 @@ export const API_ENDPOINTS = {
     // Market data endpoints - These use /api/market prefix
     MARKET_INDICES: createEndpoint('/api/market/indices'),
     MARKET_STATUS: createEndpoint('/api/market/market-status'),
-    MARKET_DATA: createEndpoint('/api/market/data'),
+    MARKET_DATA: createEndpoint('/api/v1/market-data/NIFTY'),
     SYMBOLS: createEndpoint('/api/market/symbols'),
 
     // Strategy endpoints - FIXED: Added /api prefix
@@ -70,6 +69,7 @@ export const API_ENDPOINTS = {
     DASHBOARD_SUMMARY: createEndpoint('/api/v1/dashboard/dashboard/summary'),
     DAILY_PNL: createEndpoint('/api/v1/monitoring/daily-pnl'),
     RECOMMENDATIONS: createEndpoint('/api/v1/recommendations'),
+    DASHBOARD_DATA: createEndpoint('/api/v1/dashboard/data'),
 
     // Broker endpoints - FIXED: Added /api prefix
     BROKER_CONNECT: createEndpoint('/api/v1/broker/connect'),
@@ -89,6 +89,7 @@ export const API_ENDPOINTS = {
     // Autonomous trading endpoints - NEW
     AUTONOMOUS_STATUS: createEndpoint('/api/v1/autonomous/status'),
     AUTONOMOUS_CONTROL: createEndpoint('/api/v1/autonomous/control'),
+    AUTONOMOUS_DATA: createEndpoint('/api/v1/autonomous/autonomous/status'),
 
     // WebSocket endpoints - FIXED: Using single /ws endpoint
     WS_ENDPOINT: `${WS_BASE_URL}/ws`,
@@ -104,7 +105,10 @@ export const API_ENDPOINTS = {
     HEALTH: createEndpoint('/health'),
     HEALTH_READY_JSON: createEndpoint('/health/ready/json'),
     METRICS: createEndpoint('/metrics'),
-    CONFIG: createEndpoint('/config')
+    CONFIG: createEndpoint('/config'),
+
+    // New endpoints
+    ZERODHA_LOGIN: createEndpoint('/api/zerodha/login'),
 };
 
 // Debug logging
