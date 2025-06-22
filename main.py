@@ -145,6 +145,11 @@ async def lifespan(app: FastAPI):
 # from monitoring.security_monitor import SecurityMonitor
 # from security.auth_manager import AuthConfig, AuthManager as SecurityManager
 
+# --- START AUTH FIX ---
+# Selectively re-import and use the V1 auth router to restore login functionality
+from src.api.auth import router_v1 as auth_router_v1
+# --- END AUTH FIX ---
+
 app = FastAPI(
     # root_path=os.getenv("ROOT_PATH", "/api"),  # Temporarily remove root_path
     title="Trading System API",
@@ -295,6 +300,11 @@ app.add_middleware(
 
 # Include non-versioned auth router for backward compatibility (DISABLED)
 # app.include_router(auth_router, tags=["auth"])  # Remove prefix since it's already in the router
+
+# --- START AUTH FIX ---
+# Mount the v1 auth router directly to the app
+app.include_router(auth_router_v1, prefix="/api/v1")
+# --- END AUTH FIX ---
 
 # Mount static files for frontend assets
 static_dir = Path("dist/frontend")
@@ -638,10 +648,12 @@ async def init_security():
 def init_websocket_manager(redis_client):
     """Initialize WebSocket manager"""
     try:
-        if WebSocketManager:
+        # Since WebSocketManager is not imported, this will always be false.
+        # This function can be left as is, since it will gracefully return None.
+        if 'WebSocketManager' in globals() and globals()['WebSocketManager']:
             return WebSocketManager(redis_client)
         else:
-            logger.warning("WebSocketManager not available")
+            logger.warning("WebSocketManager not available, returning None.")
             return None
     except Exception as e:
         logger.error(f"Error initializing WebSocket manager: {e}")
@@ -1660,78 +1672,78 @@ async def send_user_alert(user_id: str, alert_data: dict):
     raise HTTPException(status_code=503, detail="WebSocket service temporarily unavailable")
 
 # Add direct auth endpoints to ensure they're available
-@app.post("/api/v1/auth/login")
-async def direct_login(request: Request, login_data: dict):
-    """Direct login endpoint to bypass router issues"""
-    # This endpoint has its own imports, which is risky.
-    # For now, let's assume it works or fails gracefully.
-    from src.api.auth import DEFAULT_USERS, verify_password, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
-    from datetime import timedelta
-    
-    username = login_data.get("username")
-    password = login_data.get("password")
-    
-    if not username or not password:
-        raise HTTPException(status_code=400, detail="Username and password required")
-    
-    # Check if user exists
-    user = DEFAULT_USERS.get(username)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-    
-    # Verify password
-    if not verify_password(password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-    
-    # Create access token
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user["username"], "is_admin": user.get("is_admin", False)},
-        expires_delta=access_token_expires
-    )
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        "user_info": {
-            "username": user["username"],
-            "full_name": user["full_name"],
-            "email": user["email"],
-            "is_admin": user.get("is_admin", False)
-        }
-    }
+# @app.post("/api/v1/auth/login")
+# async def direct_login(request: Request, login_data: dict):
+#     """Direct login endpoint to bypass router issues"""
+#     # This endpoint has its own imports, which is risky.
+#     # For now, let's assume it works or fails gracefully.
+#     from src.api.auth import DEFAULT_USERS, verify_password, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+#     from datetime import timedelta
+#     
+#     username = login_data.get("username")
+#     password = login_data.get("password")
+#     
+#     if not username or not password:
+#         raise HTTPException(status_code=400, detail="Username and password required")
+#     
+#     # Check if user exists
+#     user = DEFAULT_USERS.get(username)
+#     
+#     if not user:
+#         raise HTTPException(status_code=401, detail="Invalid username or password")
+#     
+#     # Verify password
+#     if not verify_password(password, user["password_hash"]):
+#         raise HTTPException(status_code=401, detail="Invalid username or password")
+#     
+#     # Create access token
+#     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+#     access_token = create_access_token(
+#         data={"sub": user["username"], "is_admin": user.get("is_admin", False)},
+#         expires_delta=access_token_expires
+#     )
+#     
+#     return {
+#         "access_token": access_token,
+#         "token_type": "bearer",
+#         "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+#         "user_info": {
+#             "username": user["username"],
+#             "full_name": user["full_name"],
+#             "email": user["email"],
+#             "is_admin": user.get("is_admin", False)
+#         }
+#     }
 
-@app.get("/api/v1/auth/test")
-async def direct_auth_test():
-    """Direct auth test endpoint"""
-    # This might fail if src.api.auth has issues.
-    try:
-        from src.api.auth import DEFAULT_USERS
-        return {
-            "message": "Direct auth endpoint is working!", 
-            "endpoint": "/api/v1/auth/test",
-            "default_users": list(DEFAULT_USERS.keys()),
-            "admin_password_hint": "admin123"
-        }
-    except ImportError:
-        return {"message": "Direct auth endpoint is available, but src.api.auth could not be imported."}
-
-
-@app.get("/api/test/routes")
-async def test_routes():
-    """Test endpoint to verify what routes are available"""
-    return {
-        "message": "Routes test endpoint",
-        "available_routes": [
-            "/api/v1/auth/test",
-            "/api/market/indices", 
-            "/api/market/market-status",
-            "/api/test/routes"
-        ],
-        "timestamp": datetime.now().isoformat()
-    }
+# @app.get("/api/v1/auth/test")
+# async def direct_auth_test():
+#     """Direct auth test endpoint"""
+#     # This might fail if src.api.auth has issues.
+#     try:
+#         from src.api.auth import DEFAULT_USERS
+#         return {
+#             "message": "Direct auth endpoint is working!", 
+#             "endpoint": "/api/v1/auth/test",
+#             "default_users": list(DEFAULT_USERS.keys()),
+#             "admin_password_hint": "admin123"
+#         }
+#     except ImportError:
+#         return {"message": "Direct auth endpoint is available, but src.api.auth could not be imported."}
+# 
+# 
+# @app.get("/api/test/routes")
+# async def test_routes():
+#     """Test endpoint to verify what routes are available"""
+#     return {
+#         "message": "Routes test endpoint",
+#         "available_routes": [
+#             "/api/v1/auth/test",
+#             "/api/market/indices", 
+#             "/api/market/market-status",
+#             "/api/test/routes"
+#         ],
+#         "timestamp": datetime.now().isoformat()
+#     }
 
 # Add missing API endpoints that frontend expects
 @app.get("/api/v1/dashboard/data")
@@ -1963,6 +1975,8 @@ async def get_market_status():
 async def get_current_user():
     """Get current user information"""
     try:
+        # This is a mock response since auth is simplified.
+        # In a real scenario, you would use `verify_token` to get the user.
         return {
             "status": "success",
             "data": {
