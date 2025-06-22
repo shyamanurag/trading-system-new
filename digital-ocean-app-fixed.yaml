@@ -154,6 +154,7 @@ envs:
   value: "8000"
 - key: ROOT_PATH
   scope: RUN_AND_BUILD_TIME
+  value: ""
 - key: PAPER_TRADING
   scope: RUN_AND_BUILD_TIME
   value: "true"
@@ -202,31 +203,31 @@ ingress:
   rules:
   - component:
       name: api
-      preserve_path_prefix: true
+      rewrite: /api
     match:
       path:
         prefix: /api
   - component:
       name: api
-      preserve_path_prefix: true
+      rewrite: /health
     match:
       path:
         prefix: /health
   - component:
       name: api
-      preserve_path_prefix: true
+      rewrite: /docs
     match:
       path:
         prefix: /docs
   - component:
       name: api
-      preserve_path_prefix: true
+      rewrite: /auth
     match:
       path:
         prefix: /auth
   - component:
       name: api
-      preserve_path_prefix: true
+      rewrite: /ws
     match:
       path:
         prefix: /ws
