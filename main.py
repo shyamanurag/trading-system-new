@@ -306,6 +306,13 @@ app.add_middleware(
 app.include_router(auth_router_v1, prefix="/api/v1")
 # --- END AUTH FIX ---
 
+# --- START ROUTER DEBUG ---
+@app.get("/api/v1/direct-test")
+async def direct_test():
+    """A simple endpoint defined directly on the app to test routing."""
+    return {"message": "Directly defined endpoint is working!"}
+# --- END ROUTER DEBUG ---
+
 # Mount static files for frontend assets
 static_dir = Path("dist/frontend")
 if (static_dir / "assets").exists():
