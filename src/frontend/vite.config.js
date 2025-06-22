@@ -8,7 +8,7 @@ export default defineConfig({
         outDir: 'dist',
         emptyOutDir: true,
         sourcemap: false,
-        minify: 'terser',
+        minify: 'esbuild',
         chunkSizeWarningLimit: 1000,
         rollupOptions: {
             output: {
@@ -19,11 +19,8 @@ export default defineConfig({
             },
         },
         // Optimize for DigitalOcean deployment
-        terserOptions: {
-            compress: {
-                drop_console: true,
-                drop_debugger: true,
-            },
+        esbuildOptions: {
+            drop: ['console', 'debugger'],
         },
     },
     server: {
