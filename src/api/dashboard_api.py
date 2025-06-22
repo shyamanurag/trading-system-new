@@ -218,4 +218,42 @@ async def get_performance_summary():
         
     except Exception as e:
         logger.error(f"Error getting performance summary: {e}")
-        raise HTTPException(status_code=500, detail="Unable to fetch performance summary") 
+        raise HTTPException(status_code=500, detail="Unable to fetch performance summary")
+
+@router.get("/data")
+async def get_dashboard_data():
+    """Get comprehensive dashboard data - main endpoint for frontend"""
+    try:
+        # Get all the data from other endpoints
+        health_data = await get_detailed_health()
+        trading_metrics = await get_trading_metrics()
+        summary_data = await get_dashboard_summary()
+        performance_data = await get_performance_summary()
+        
+        # Combine all data
+        return {
+            "success": True,
+            "data": {
+                "health": health_data.get("data", {}),
+                "trading": trading_metrics.get("data", {}),
+                "users": summary_data.get("users", []),
+                "system_metrics": summary_data.get("system_metrics", {}),
+                "performance": performance_data.get("metrics", {})
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting dashboard data: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "data": {
+                "health": {},
+                "trading": {},
+                "users": [],
+                "system_metrics": {},
+                "performance": {}
+            },
+            "timestamp": datetime.now().isoformat()
+        } 
