@@ -78,6 +78,7 @@ router_imports = {
     'position_management': ('src.api.position_management', 'router'),
     'order_management': ('src.api.order_management', 'router'),
     'strategy_management': ('src.api.strategy_management', 'router'),
+    'routes_fix': ('src.api.routes_fix', 'router'),
 }
 
 # Import routers dynamically
@@ -357,8 +358,11 @@ async def health_live():
 @app.get("/ready", tags=["health"])
 async def ready_stripped():
     """Health ready endpoint for when DigitalOcean strips /health prefix"""
-    # Simplest possible implementation
-    return "ready"
+    # Return JSON response instead of plain text
+    return {
+        "status": "ready",
+        "timestamp": time.time()
+    }
 
 # Debug endpoint to check request details
 @app.get("/debug/request", tags=["debug"])
@@ -419,6 +423,9 @@ router_configs = [
     
     # WebSocket
     ('websocket', '/ws', ('websocket',)),
+    
+    # Routes fix - mount at root since it has full paths
+    ('routes_fix', '', ('routes-fix',)),
 ]
 
 # Mount routers
