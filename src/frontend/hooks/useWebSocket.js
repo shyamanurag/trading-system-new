@@ -45,7 +45,8 @@ export const useWebSocket = (userId = 'default_user') => {
         }
 
         try {
-            const wsUrl = `${WS_BASE_URL}/ws/${userId}`;
+            // Use the correct WebSocket endpoint - just /ws
+            const wsUrl = `${WS_BASE_URL}/ws`;
             console.log('Connecting to WebSocket:', wsUrl);
 
             const newWs = new WebSocket(wsUrl);
@@ -61,6 +62,15 @@ export const useWebSocket = (userId = 'default_user') => {
                     lastError: null
                 });
 
+                // Send authentication message
+                if (userId && userId !== 'default_user') {
+                    sendMessage({
+                        type: 'auth',
+                        userId: userId
+                    });
+                    console.log('Sent authentication for user:', userId);
+                }
+
                 // Subscribe to default symbols after connection
                 setTimeout(() => {
                     DEFAULT_SYMBOLS.forEach(symbol => {
@@ -71,7 +81,7 @@ export const useWebSocket = (userId = 'default_user') => {
                         setSubscribedSymbols(prev => new Set([...prev, symbol]));
                     });
                     console.log(`Subscribed to default symbols: ${DEFAULT_SYMBOLS.join(', ')}`);
-                }, 100);
+                }, 500); // Increased delay to ensure auth is processed
             };
 
             newWs.onmessage = (event) => {

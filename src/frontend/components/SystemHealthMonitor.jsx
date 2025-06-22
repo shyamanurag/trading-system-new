@@ -1,9 +1,7 @@
 import {
     CheckCircle,
-    Error,
-    Memory,
-    NetworkCheck,
-    Storage,
+    Error as ErrorIcon,
+    Info,
     Warning
 } from '@mui/icons-material';
 import {
@@ -17,70 +15,87 @@ import {
     Typography
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-jd32t.ondigitalocean.app';
+import { API_ENDPOINTS } from '../api/config';
 
 const SystemHealthMonitor = () => {
-    const [healthData, setHealthData] = useState(null);
+    const [health, setHealth] = useState({
+        overall: 'unknown',
+        components: {},
+        lastCheck: null
+    });
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
 
-    const fetchHealthData = async () => {
+    const fetchHealthStatus = async () => {
         try {
-            setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/health/ready/json`);
+            const response = await fetch(API_ENDPOINTS.HEALTH_READY_JSON.url);
+            const data = await response.json();
 
-            if (response.ok) {
-                const data = await response.json();
-                setHealthData(data);
-                setError(null);
-            } else {
-                throw new Error('Failed to fetch health data');
-            }
-        } catch (err) {
-            console.error('Health data fetch error:', err);
-            setError('Unable to fetch system health data');
+            // Parse the response to determine health status
+            const isHealthy = data.status === 'ready' || data.status === 'healthy';
+            const components = {
+                api: isHealthy ? 'healthy' : 'unhealthy',
+                database: data.database_connected !== false ? 'healthy' : 'unhealthy',
+                redis: data.redis_connected !== false ? 'healthy' : 'unhealthy',
+                trading: data.trading_enabled ? 'active' : 'inactive'
+            };
+
+            setHealth({
+                overall: isHealthy ? 'healthy' : 'unhealthy',
+                components,
+                lastCheck: new Date().toISOString(),
+                details: data
+            });
+        } catch (error) {
+            console.error('Error fetching health status:', error);
+            setHealth({
+                overall: 'error',
+                components: {
+                    api: 'error',
+                    database: 'unknown',
+                    redis: 'unknown',
+                    trading: 'unknown'
+                },
+                lastCheck: new Date().toISOString(),
+                error: error.message
+            });
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchHealthData();
-        // Refresh health data every 2 minutes to reduce UI interruptions
-        const interval = setInterval(fetchHealthData, 120000); // 120 000 ms = 2 minutes
+        fetchHealthStatus();
+        const interval = setInterval(fetchHealthStatus, 30000); // Check every 30 seconds
         return () => clearInterval(interval);
     }, []);
 
-    const getStatusIcon = (status) => {
-        switch (status?.toLowerCase()) {
+    const getStatusColor = (status) => {
+        switch (status) {
             case 'healthy':
-            case 'pass':
-                return <CheckCircle color="success" />;
-            case 'warning':
-            case 'partial':
-                return <Warning color="warning" />;
+            case 'active':
+                return 'success';
             case 'unhealthy':
-            case 'fail':
-                return <Error color="error" />;
+            case 'inactive':
+                return 'error';
+            case 'warning':
+                return 'warning';
             default:
-                return <Warning color="disabled" />;
+                return 'default';
         }
     };
 
-    const getStatusColor = (status) => {
-        switch (status?.toLowerCase()) {
+    const getStatusIcon = (status) => {
+        switch (status) {
             case 'healthy':
-            case 'pass':
-                return 'success';
-            case 'warning':
-            case 'partial':
-                return 'warning';
+            case 'active':
+                return <CheckCircle color="success" />;
             case 'unhealthy':
-            case 'fail':
-                return 'error';
+            case 'inactive':
+                return <ErrorIcon color="error" />;
+            case 'warning':
+                return <Warning color="warning" />;
             default:
-                return 'default';
+                return <Info color="disabled" />;
         }
     };
 
@@ -88,23 +103,10 @@ const SystemHealthMonitor = () => {
         return (
             <Card>
                 <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                        System Health
-                    </Typography>
-                    <LinearProgress />
-                </CardContent>
-            </Card>
-        );
-    }
-
-    if (error) {
-        return (
-            <Card>
-                <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                        System Health
-                    </Typography>
-                    <Alert severity="error">{error}</Alert>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <LinearProgress sx={{ flex: 1 }} />
+                        <Typography variant="body2">Checking system health...</Typography>
+                    </Box>
                 </CardContent>
             </Card>
         );
@@ -113,96 +115,50 @@ const SystemHealthMonitor = () => {
     return (
         <Card>
             <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                    <Typography variant="h6" sx={{ flexGrow: 1 }}>
-                        System Health Monitor
-                    </Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="h6">System Health</Typography>
                     <Chip
-                        label={healthData?.status || 'Unknown'}
-                        color={getStatusColor(healthData?.status)}
-                        icon={getStatusIcon(healthData?.status)}
+                        icon={getStatusIcon(health.overall)}
+                        label={health.overall.toUpperCase()}
+                        color={getStatusColor(health.overall)}
                         size="small"
                     />
                 </Box>
 
-                <Grid container spacing={2}>
-                    {/* Overall System Status */}
-                    <Grid item xs={12}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                            {getStatusIcon(healthData?.status)}
-                            <Typography variant="body1" sx={{ ml: 1 }}>
-                                Overall System: {healthData?.status || 'Unknown'}
-                            </Typography>
-                        </Box>
-                    </Grid>
+                {health.error && (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                        {health.error}
+                    </Alert>
+                )}
 
-                    {/* Component Health */}
-                    {healthData?.components && Object.entries(healthData.components).map(([component, data]) => (
-                        <Grid item xs={12} sm={6} key={component}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', p: 1, border: '1px solid #e0e0e0', borderRadius: 1 }}>
-                                {getStatusIcon(data.status)}
-                                <Box sx={{ ml: 1, flexGrow: 1 }}>
-                                    <Typography variant="body2" fontWeight="bold">
-                                        {component.replace('_', ' ').toUpperCase()}
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                        {data.message || 'No details available'}
-                                    </Typography>
-                                </Box>
-                                <Chip
-                                    label={data.status}
-                                    color={getStatusColor(data.status)}
-                                    size="small"
-                                />
+                <Grid container spacing={2}>
+                    {Object.entries(health.components).map(([component, status]) => (
+                        <Grid item xs={6} sm={3} key={component}>
+                            <Box sx={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                p: 1,
+                                borderRadius: 1,
+                                bgcolor: 'background.default'
+                            }}>
+                                {getStatusIcon(status)}
+                                <Typography variant="caption" sx={{ mt: 1, textTransform: 'capitalize' }}>
+                                    {component}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {status}
+                                </Typography>
                             </Box>
                         </Grid>
                     ))}
-
-                    {/* System Metrics */}
-                    {healthData?.metrics && (
-                        <Grid item xs={12}>
-                            <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>
-                                System Metrics
-                            </Typography>
-                            <Grid container spacing={1}>
-                                {healthData.metrics.memory_usage && (
-                                    <Grid item xs={4}>
-                                        <Box sx={{ textAlign: 'center' }}>
-                                            <Memory color="primary" />
-                                            <Typography variant="caption" display="block">
-                                                Memory: {healthData.metrics.memory_usage}%
-                                            </Typography>
-                                        </Box>
-                                    </Grid>
-                                )}
-                                {healthData.metrics.disk_usage && (
-                                    <Grid item xs={4}>
-                                        <Box sx={{ textAlign: 'center' }}>
-                                            <Storage color="primary" />
-                                            <Typography variant="caption" display="block">
-                                                Disk: {healthData.metrics.disk_usage}%
-                                            </Typography>
-                                        </Box>
-                                    </Grid>
-                                )}
-                                {healthData.metrics.uptime && (
-                                    <Grid item xs={4}>
-                                        <Box sx={{ textAlign: 'center' }}>
-                                            <NetworkCheck color="primary" />
-                                            <Typography variant="caption" display="block">
-                                                Uptime: {healthData.metrics.uptime}
-                                            </Typography>
-                                        </Box>
-                                    </Grid>
-                                )}
-                            </Grid>
-                        </Grid>
-                    )}
                 </Grid>
 
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
-                    Last updated: {new Date().toLocaleTimeString()}
-                </Typography>
+                {health.lastCheck && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2, textAlign: 'center' }}>
+                        Last checked: {new Date(health.lastCheck).toLocaleTimeString()}
+                    </Typography>
+                )}
             </CardContent>
         </Card>
     );

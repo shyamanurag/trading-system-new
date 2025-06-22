@@ -6,9 +6,15 @@ const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-9gx56.ondigit
 const normalizedApiUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
 
 // Add error handling wrapper
-const createEndpoint = (path) => {
+const createEndpoint = (path, requiresTrailingSlash = false) => {
     // Ensure path starts with a slash
-    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    let normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+    // Add trailing slash if required
+    if (requiresTrailingSlash && !normalizedPath.endsWith('/')) {
+        normalizedPath += '/';
+    }
+
     const fullUrl = `${normalizedApiUrl}${normalizedPath}`;
 
     // Debug logging
@@ -32,8 +38,8 @@ export const API_ENDPOINTS = {
     REFRESH_TOKEN: createEndpoint('/auth/refresh-token'),
     ME: createEndpoint('/auth/me'),
 
-    // User endpoints - These use /api/v1/users prefix
-    USERS: createEndpoint('/api/v1/users'),
+    // User endpoints - These use /api/v1/users prefix - FIXED: Added trailing slash
+    USERS: createEndpoint('/api/v1/users/', true),
     USER_PROFILE: createEndpoint('/api/v1/users/profile'),
     USER_PERFORMANCE: createEndpoint('/api/v1/users/performance'),
     USER_CURRENT: createEndpoint('/api/v1/users/current'),
@@ -89,6 +95,7 @@ export const API_ENDPOINTS = {
     ORDER_BOOK: createEndpoint('/api/v1/order-book'),
     ACCOUNT: createEndpoint('/api/v1/account'),
     HEALTH: createEndpoint('/health'),
+    HEALTH_READY_JSON: createEndpoint('/health/ready/json'),
     METRICS: createEndpoint('/metrics'),
     CONFIG: createEndpoint('/config')
 };
