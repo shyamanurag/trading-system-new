@@ -54,7 +54,7 @@ class TrueDataSingletonClient:
         self.data_thread = None
         self._initialized = True
         
-        logger.info(f"🎯 FINAL TrueData Client - User: {self.username}")
+        logger.info(f"FINAL TrueData Client - User: {self.username}")
 
     def connect(self):
         """Connect with COMPLETE session cleanup"""

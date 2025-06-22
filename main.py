@@ -1,16 +1,24 @@
 # main_refactored.py
 """
-Main Application Entry Point - Refactored for Stability
+AlgoAuto Trading System - Main Application Entry Point
+A comprehensive automated trading system with real-time market data,
+trade execution, risk management, and monitoring capabilities.
 """
 import os
 import sys
 from pathlib import Path
 import asyncio
 import logging
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
+from typing import List
 from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, APIRouter
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError, HTTPException
+import uvicorn
 from dotenv import load_dotenv
 
 # Add project root to Python path
@@ -18,47 +26,124 @@ project_root = str(Path(__file__).parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Load environment variables (optional - won't fail if file doesn't exist)
-env_file = 'config/production.env'
-if os.path.exists(env_file):
+# Load environment variables
+env_file = os.getenv('ENV_FILE', 'config/production.env')
+if os.getenv('ENVIRONMENT') == 'production':
     load_dotenv(env_file)
-
-# Import routers with error handling
-try:
-    from src.api.auth import router_v1 as auth_router
-    from src.api.market import router as market_router
-    from src.api.users import router as users_router
-    routers_loaded = True
-except ImportError as e:
-    logging.error(f"Failed to import routers: {e}")
-    routers_loaded = False
+else:
+    # Try loading from .env in root
+    load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+log_level = os.getenv('LOG_LEVEL', 'INFO')
+logging.basicConfig(
+    level=getattr(logging, log_level),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        # Add file handler for production
+        logging.FileHandler('logs/app.log', mode='a') if os.path.exists('logs') else logging.NullHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
+
+# Import all routers with error handling
+routers_loaded = {}
+router_imports = {
+    'auth': ('src.api.auth', 'router_v1'),
+    'market': ('src.api.market', 'router'),
+    'users': ('src.api.users', 'router'),
+    'trading_control': ('src.api.trading_control', 'router'),
+    'truedata': ('src.api.truedata_integration', 'router'),
+    'market_data': ('src.api.market_data', 'router'),
+    'autonomous_trading': ('src.api.autonomous_trading', 'router'),
+    'recommendations': ('src.api.recommendations', 'router'),
+    'trade_management': ('src.api.trade_management', 'router'),
+    'zerodha_auth': ('src.api.zerodha_auth', 'router'),
+    'websocket': ('src.api.websocket', 'router'),
+    'monitoring': ('src.api.monitoring', 'router'),
+    'performance': ('src.api.performance', 'router'),
+    'webhooks': ('src.api.webhooks', 'router'),
+    'dashboard': ('src.api.dashboard_api', 'router'),
+    'database_health': ('src.api.database_health', 'router'),
+    'error_monitoring': ('src.api.error_monitoring', 'router'),
+    'risk_management': ('src.api.risk_management', 'router'),
+    'position_management': ('src.api.position_management', 'router'),
+    'order_management': ('src.api.order_management', 'router'),
+    'strategy_management': ('src.api.strategy_management', 'router'),
+}
+
+# Import routers dynamically
+for router_name, (module_path, router_attr) in router_imports.items():
+    try:
+        module = __import__(module_path, fromlist=[router_attr])
+        routers_loaded[router_name] = getattr(module, router_attr)
+        logger.info(f"Successfully loaded router: {router_name}")
+    except Exception as e:
+        logger.warning(f"Failed to load router {router_name}: {str(e)}")
+        routers_loaded[router_name] = None
+
+# Global exception handler
+async def global_exception_handler(request, exc):
+    """Handle all unhandled exceptions"""
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "message": str(exc) if os.getenv('DEBUG', 'false').lower() == 'true' else "An unexpected error occurred"
+        }
+    )
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    logger.info("Starting trading system application...")
-    # In a real application, you would initialize resources like database connections here.
+    logger.info("Starting AlgoAuto Trading System...")
+    
+    # Initialize any required services here
+    # For example: database connections, cache, message queues, etc.
+    
+    # Store successfully loaded routers count
+    loaded_count = sum(1 for r in routers_loaded.values() if r is not None)
+    app.state.routers_loaded = loaded_count
+    app.state.total_routers = len(router_imports)
+    
+    logger.info(f"Loaded {loaded_count}/{len(router_imports)} routers successfully")
+    
     yield
-    logger.info("Shutting down application...")
-        
-# --- FastAPI App Initialization ---
+    
+    # Cleanup
+    logger.info("Shutting down AlgoAuto Trading System...")
+    # Add cleanup code here (close connections, etc.)
+
+# Create FastAPI application
 app = FastAPI(
-    title="Trading System API (Refactored)",
-    description="A production-ready automated trading system.",
-    version="3.0.0",
-    lifespan=lifespan,
+    title="AlgoAuto Trading System API",
+    description="""
+    A comprehensive automated trading system with:
+    - Real-time market data from TrueData and Zerodha
+    - Automated trade execution and position management
+    - Risk management and compliance monitoring
+    - User authentication and authorization
+    - WebSocket support for real-time updates
+    - Webhook integrations for external systems
+    - Performance analytics and reporting
+    - System monitoring and health checks
+    """,
+    version="4.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    lifespan=lifespan
 )
 
-# --- Middleware ---
-origins = os.getenv("CORS_ORIGINS", "[]")
+# Add middleware
+# CORS
+cors_origins = os.getenv("CORS_ORIGINS", "[]")
 try:
-    allowed_origins = eval(origins)
+    allowed_origins = eval(cors_origins) if cors_origins != "[]" else ["*"]
 except:
-    allowed_origins = ["*"] # Default to all for now
+    allowed_origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -66,46 +151,192 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
-# --- Health Check Endpoints ---
+# Gzip compression
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Trusted host (for production)
+if os.getenv('ENVIRONMENT') == 'production':
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=[
+            "algoauto-9gx56.ondigitalocean.app",
+            "*.ondigitalocean.app",
+            "localhost"
+        ]
+    )
+
+# Exception handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    """Handle validation errors"""
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.errors(),
+            "message": "Validation error"
+        }
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    """Handle HTTP exceptions"""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail,
+            "message": str(exc.detail)
+        }
+    )
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request, exc):
+    """Handle all other exceptions"""
+    return await global_exception_handler(request, exc)
+
+# Root endpoint
+@app.get("/", tags=["root"])
+async def root():
+    """Root endpoint - API information"""
+    return {
+        "name": "AlgoAuto Trading System",
+        "version": "4.0.0",
+        "status": "operational",
+        "documentation": "/docs",
+        "health": "/health",
+        "routers_loaded": f"{app.state.routers_loaded}/{app.state.total_routers}"
+    }
+
+# Health check endpoints
 @app.get("/health", tags=["health"])
 async def health_check():
-    return {"status": "ok", "version": "3.0.0", "routers_loaded": routers_loaded}
+    """Basic health check"""
+    return {
+        "status": "healthy",
+        "version": "4.0.0",
+        "routers_loaded": f"{app.state.routers_loaded}/{app.state.total_routers}",
+        "timestamp": asyncio.get_event_loop().time()
+    }
 
 @app.get("/health/ready", tags=["health"])
 async def health_ready():
-    """Health check endpoint for DigitalOcean"""
-    return {"status": "ready", "version": "3.0.0", "routers_loaded": routers_loaded}
-
-# --- Include Routers ---
-if routers_loaded:
-    logger.info("Including API routers...")
-    app.include_router(auth_router, prefix="/auth")
-    app.include_router(market_router)
-    app.include_router(users_router)
-    logger.info("Routers included successfully.")
-else:
-    logger.error("Routers not loaded due to import errors")
+    """Readiness check for load balancers"""
+    # Check if critical routers are loaded
+    critical_routers = ['auth', 'market', 'users']
+    all_critical_loaded = all(
+        routers_loaded.get(r) is not None for r in critical_routers
+    )
     
-    # Add a fallback route to help debug
-    @app.get("/debug/import-error")
-    async def debug_import():
-        import traceback
-        try:
-            from src.api.auth import router_v1 as auth_router
-            return {"status": "imports_ok"}
-        except Exception as e:
-            return {"error": str(e), "traceback": traceback.format_exc()}
+    if not all_critical_loaded:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "message": "Critical routers not loaded"
+            }
+        )
+    
+    return {
+        "status": "ready",
+        "version": "4.0.0",
+        "routers_loaded": f"{app.state.routers_loaded}/{app.state.total_routers}"
+    }
 
-# --- Main Execution ---
+@app.get("/health/live", tags=["health"])
+async def health_live():
+    """Liveness check"""
+    return {"status": "alive", "timestamp": asyncio.get_event_loop().time()}
+
+# Include routers with proper prefixes and error handling
+router_configs = [
+    # Authentication - mounted at /auth
+    ('auth', '/auth', ('authentication',)),
+    
+    # Market data endpoints
+    ('market', '', ('market-data',)),  # Already has /api/market prefix
+    ('market_data', '/api/v1/market-data', ('market-data-v1',)),
+    ('truedata', '/api/v1/truedata', ('truedata',)),
+    
+    # User management
+    ('users', '', ('users',)),  # Already has /api/v1/users prefix
+    
+    # Trading operations
+    ('trading_control', '/api/v1/control', ('trading-control',)),
+    ('autonomous_trading', '/api/v1/autonomous', ('autonomous-trading',)),
+    ('trade_management', '/api/v1/trades', ('trade-management',)),
+    ('order_management', '/api/v1/orders', ('order-management',)),
+    ('position_management', '/api/v1/positions', ('position-management',)),
+    ('strategy_management', '/api/v1/strategies', ('strategy-management',)),
+    
+    # Risk and compliance
+    ('risk_management', '/api/v1/risk', ('risk-management',)),
+    
+    # Analytics and monitoring
+    ('recommendations', '/api/v1/recommendations', ('recommendations',)),
+    ('performance', '/api/v1/performance', ('performance',)),
+    ('monitoring', '/api/v1/monitoring', ('monitoring',)),
+    ('error_monitoring', '/api/v1/errors', ('error-monitoring',)),
+    ('database_health', '/api/v1/db-health', ('database-health',)),
+    ('dashboard', '/api/v1/dashboard', ('dashboard',)),
+    
+    # External integrations
+    ('zerodha_auth', '', ('zerodha',)),  # Already has /api/zerodha prefix
+    ('webhooks', '/api/v1/webhooks', ('webhooks',)),
+    
+    # WebSocket
+    ('websocket', '/ws', ('websocket',)),
+]
+
+# Mount routers
+for router_name, prefix, tags in router_configs:
+    router = routers_loaded.get(router_name)
+    if router:
+        try:
+            # Only add prefix if it's not empty
+            if prefix:
+                app.include_router(router, prefix=prefix, tags=list(tags))
+            else:
+                app.include_router(router, tags=list(tags))
+            logger.info(f"Mounted router: {router_name} at {prefix or 'root'}")
+        except Exception as e:
+            logger.error(f"Failed to mount router {router_name}: {str(e)}")
+
+# Debug endpoint (only in development)
+if os.getenv('DEBUG', 'false').lower() == 'true':
+    @app.get("/debug/routes", tags=["debug"])
+    async def debug_routes():
+        """List all registered routes"""
+        routes = []
+        for route in app.routes:
+            route_info = {
+                "path": getattr(route, 'path', 'unknown'),
+                "methods": list(getattr(route, 'methods', [])),
+                "name": getattr(route, 'name', None)
+            }
+            if route_info['path'] != 'unknown':
+                routes.append(route_info)
+        return {"total_routes": len(routes), "routes": sorted(routes, key=lambda x: x['path'])}
+
+# Main execution
 if __name__ == "__main__":
-    port = int(os.getenv('PORT', '8000'))
-    logger.info(f"Starting server on http://0.0.0.0:{port}")
+    # Get configuration from environment
+    host = os.getenv('API_HOST', '0.0.0.0')
+    port = int(os.getenv('PORT', os.getenv('API_PORT', '8000')))
+    reload = os.getenv('API_DEBUG', 'false').lower() == 'true'
+    workers = int(os.getenv('API_WORKERS', '1'))
+    
+    logger.info(f"Starting AlgoAuto Trading System on {host}:{port}")
+    logger.info(f"Debug mode: {reload}, Workers: {workers}")
+    
+    # Run with uvicorn
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host=host,
         port=port,
-        reload=False,
-        log_level="info",
+        reload=reload,
+        log_level=log_level.lower(),
+        access_log=True,
+        workers=workers if not reload else 1  # Can't use multiple workers with reload
     )
