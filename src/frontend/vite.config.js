@@ -16,6 +16,9 @@ export default defineConfig({
                     vendor: ['react', 'react-dom', 'react-router-dom'],
                     mui: ['@mui/material', '@mui/icons-material'],
                 },
+                entryFileNames: `assets/[name].[hash].js`,
+                chunkFileNames: `assets/[name].[hash].js`,
+                assetFileNames: `assets/[name].[hash].[ext]`
             },
         },
         // Optimize for DigitalOcean deployment
@@ -24,19 +27,16 @@ export default defineConfig({
         },
     },
     server: {
-        port: 3000,
+        port: 5173,
         host: true,
         proxy: {
             '/api': {
-                target: process.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app',
+                target: 'http://localhost:8000',
                 changeOrigin: true,
-                secure: true
             },
             '/ws': {
-                target: process.env.VITE_API_URL?.replace('https', 'wss') || 'wss://algoauto-9gx56.ondigitalocean.app',
+                target: 'ws://localhost:8000',
                 ws: true,
-                changeOrigin: true,
-                secure: true
             }
         }
     },

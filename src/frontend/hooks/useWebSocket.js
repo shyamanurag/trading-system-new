@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Use production WebSocket URL from environment variable
-const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-9gx56.ondigitalocean.app';
+const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-9gx56.ondigitalocean.app/ws';
 
 // Default symbols to subscribe on connection
 const DEFAULT_SYMBOLS = ['RELIANCE', 'TCS', 'NIFTY', 'BANKNIFTY', 'INFY', 'HDFCBANK'];
@@ -16,6 +16,9 @@ const useWebSocket = (url) => {
     const maxReconnectAttempts = 5;
     const reconnectDelay = 3000; // 3 seconds
 
+    // Use the provided URL or default to WS_BASE_URL
+    const wsUrl = url || WS_BASE_URL;
+
     const connect = useCallback(() => {
         try {
             // Clear any existing connection
@@ -23,8 +26,8 @@ const useWebSocket = (url) => {
                 wsRef.current.close();
             }
 
-            console.log(`Connecting to WebSocket: ${url}`);
-            const ws = new WebSocket(url);
+            console.log(`Connecting to WebSocket: ${wsUrl}`);
+            const ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
                 console.log('WebSocket connected');
@@ -71,7 +74,7 @@ const useWebSocket = (url) => {
             console.error('Error creating WebSocket:', err);
             setError(err.message);
         }
-    }, [url]);
+    }, [wsUrl]);
 
     const disconnect = useCallback(() => {
         if (reconnectTimeoutRef.current) {
