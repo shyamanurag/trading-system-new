@@ -329,6 +329,13 @@ async def health_live():
     """Liveness check"""
     return {"status": "alive", "timestamp": asyncio.get_event_loop().time()}
 
+# Handle DigitalOcean's path stripping when "Preserve Path Prefix" is disabled
+@app.get("/ready", tags=["health"], response_class=PlainTextResponse)
+async def ready_stripped():
+    """Health ready endpoint for when DigitalOcean strips /health prefix"""
+    logger.info("Ready endpoint called (path stripped by DigitalOcean)")
+    return PlainTextResponse("ready", status_code=200)
+
 # Debug endpoint to check request details
 @app.get("/debug/request", tags=["debug"])
 async def debug_request(request: Request):
