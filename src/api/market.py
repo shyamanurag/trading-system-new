@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from datetime import datetime
 
-router = APIRouter(prefix="/market", tags=["market-data"])
+router = APIRouter(prefix="/api/market", tags=["market-data"])
 
 @router.get("/indices")
 async def get_market_indices():
