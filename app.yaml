@@ -343,7 +343,7 @@ services:
 
 static_sites:
 - build_command: |
-    rm -rf node_modules package-lock.json && npm cache clean --force && npm install && npm run build
+    npm ci && npm run build
   catchall_document: index.html
   environment_slug: node-js
   envs:
