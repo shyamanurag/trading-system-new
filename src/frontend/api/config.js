@@ -15,25 +15,29 @@ const createEndpoint = (path) => {
 };
 
 export const API_ENDPOINTS = {
-    // Auth endpoints
-    LOGIN: createEndpoint('/v1/auth/login'),
-    REGISTER: createEndpoint('/v1/auth/register'),
-    LOGOUT: createEndpoint('/v1/auth/logout'),
-    REFRESH_TOKEN: createEndpoint('/v1/auth/refresh-token'),
+    // Auth endpoints - Updated to match backend routes
+    LOGIN: createEndpoint('/auth/login'),
+    REGISTER: createEndpoint('/auth/register'),
+    LOGOUT: createEndpoint('/auth/logout'),
+    REFRESH_TOKEN: createEndpoint('/auth/refresh-token'),
+    ME: createEndpoint('/auth/me'),
 
-    // User endpoints
-    USERS: createEndpoint('/v1/users'),
-    USER_PROFILE: createEndpoint('/v1/users/profile'),
-    USER_PERFORMANCE: createEndpoint('/v1/users/performance'),
+    // User endpoints - These use /api/v1/users prefix
+    USERS: createEndpoint('/api/v1/users'),
+    USER_PROFILE: createEndpoint('/api/v1/users/profile'),
+    USER_PERFORMANCE: createEndpoint('/api/v1/users/performance'),
+    USER_CURRENT: createEndpoint('/api/v1/users/current'),
 
     // Trading endpoints
     TRADES: createEndpoint('/v1/trades'),
     POSITIONS: createEndpoint('/v1/positions'),
     ORDERS: createEndpoint('/v1/orders'),
 
-    // Market data endpoints
-    MARKET_DATA: createEndpoint('/v1/market-data'),
-    SYMBOLS: createEndpoint('/v1/symbols'),
+    // Market data endpoints - These use /api/market prefix
+    MARKET_INDICES: createEndpoint('/api/market/indices'),
+    MARKET_STATUS: createEndpoint('/api/market/market-status'),
+    MARKET_DATA: createEndpoint('/api/market/data'),
+    SYMBOLS: createEndpoint('/api/market/symbols'),
 
     // Strategy endpoints
     STRATEGIES: createEndpoint('/v1/strategies'),
