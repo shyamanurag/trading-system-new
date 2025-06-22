@@ -14,11 +14,11 @@ import logging
 from typing import List
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.exceptions import RequestValidationError, HTTPException
 import uvicorn
 from dotenv import load_dotenv
@@ -180,6 +180,7 @@ if os.getenv('ENVIRONMENT') == 'production':
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
     """Handle validation errors"""
+    logger.error(f"Validation error on {request.url.path}: {exc.errors()}")
     return JSONResponse(
         status_code=422,
         content={
@@ -191,6 +192,7 @@ async def validation_exception_handler(request, exc):
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     """Handle HTTP exceptions"""
+    logger.error(f"HTTP exception on {request.url.path}: {exc.detail}")
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -202,6 +204,7 @@ async def http_exception_handler(request, exc):
 @app.exception_handler(Exception)
 async def generic_exception_handler(request, exc):
     """Handle all other exceptions"""
+    logger.error(f"Unhandled exception on {request.url.path}: {str(exc)}", exc_info=True)
     return await global_exception_handler(request, exc)
 
 # Root endpoint
@@ -267,10 +270,16 @@ async def health_check():
             content={"error": str(e), "status": "error"}
         )
 
-@app.get("/health/ready", tags=["health"])
+@app.get("/health/ready", tags=["health"], response_class=PlainTextResponse)
 async def health_ready():
-    """Readiness check for load balancers - Fixed 2024-12-22"""
-    logger.info("Health ready endpoint called")
+    """Readiness check for load balancers - Returns plain text to avoid JSON issues"""
+    logger.info("Health ready endpoint called - returning plain text")
+    return PlainTextResponse("ready", status_code=200)
+
+@app.get("/health/ready/json", tags=["health"])
+async def health_ready_json():
+    """Readiness check with JSON response - Fixed 2024-12-22"""
+    logger.info("Health ready JSON endpoint called")
     
     try:
         # Check if critical routers are loaded
@@ -319,6 +328,24 @@ async def health_ready():
 async def health_live():
     """Liveness check"""
     return {"status": "alive", "timestamp": asyncio.get_event_loop().time()}
+
+# Debug endpoint to check request details
+@app.get("/debug/request", tags=["debug"])
+async def debug_request(request: Request):
+    """Debug endpoint to see request details"""
+    return {
+        "method": request.method,
+        "url": str(request.url),
+        "path": request.url.path,
+        "headers": dict(request.headers),
+        "query_params": dict(request.query_params),
+        "path_params": request.path_params,
+        "client": request.client,
+        "app_state": {
+            "routers_loaded": getattr(app.state, 'routers_loaded', 'not set'),
+            "total_routers": getattr(app.state, 'total_routers', 'not set')
+        }
+    }
 
 # Include routers with proper prefixes and error handling
 router_configs = [
