@@ -273,6 +273,7 @@ async def health_check():
 @app.get("/health/ready", tags=["health"], response_class=PlainTextResponse)
 async def health_ready():
     """Readiness check for load balancers - Returns plain text to avoid JSON issues"""
+    print("HEALTH READY ENDPOINT CALLED - RETURNING PLAIN TEXT")  # Direct print for debugging
     logger.info("Health ready endpoint called - returning plain text")
     return PlainTextResponse("ready", status_code=200)
 
