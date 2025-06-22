@@ -182,6 +182,9 @@ envs:
 - key: WS_CONNECTION_TIMEOUT
   scope: RUN_AND_BUILD_TIME
   value: "60"
+- key: WDS_SOCKET_PORT
+  scope: RUN_AND_BUILD_TIME
+  value: "443"
 - key: ENABLE_METRICS
   scope: RUN_AND_BUILD_TIME
   value: "true"
@@ -277,6 +280,9 @@ static_sites:
   - key: VITE_APP_ENV
     scope: BUILD_TIME
     value: production
+  - key: WDS_SOCKET_PORT
+    scope: BUILD_TIME
+    value: "443"
   github:
     branch: main
     deploy_on_push: true

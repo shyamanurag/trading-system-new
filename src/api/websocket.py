@@ -1,9 +1,9 @@
 """
 WebSocket API endpoints for real-time data streaming
 """
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-from typing import Set, Optional
+from typing import Set
 import json
 import asyncio
 import logging
@@ -16,15 +16,12 @@ router = APIRouter()
 active_connections: Set[WebSocket] = set()
 
 @router.websocket("/")
-async def websocket_endpoint(
-    websocket: WebSocket,
-    token: Optional[str] = Query(None)
-):
+async def websocket_endpoint(websocket: WebSocket):
     """Main WebSocket endpoint for real-time updates"""
-    # Accept all connections for now (authentication can be added later)
+    # Accept the connection without any conditions
     await websocket.accept()
     active_connections.add(websocket)
-    logger.info(f"WebSocket client connected. Total connections: {len(active_connections)}")
+    logger.info(f"WebSocket client connected from {websocket.client}. Total connections: {len(active_connections)}")
     
     try:
         # Send initial connection message
@@ -34,31 +31,37 @@ async def websocket_endpoint(
             "message": "WebSocket connection established"
         })
         
-        # Keep connection alive
+        # Keep connection alive with ping/pong
         while True:
             try:
-                # Wait for any message from client
-                data = await websocket.receive_text()
+                # Set a timeout for receiving messages
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
                 
-                # Echo back or process the message
-                if data == "ping":
+                # Handle different message types
+                if message == "ping":
                     await websocket.send_text("pong")
+                elif message == "heartbeat":
+                    await websocket.send_json({"type": "heartbeat", "timestamp": asyncio.get_event_loop().time()})
                 else:
-                    # Process other messages if needed
+                    # Echo back any other message
                     try:
-                        # Try to parse as JSON
-                        json_data = json.loads(data)
+                        json_data = json.loads(message)
                         await websocket.send_json({
-                            "type": "echo",
+                            "type": "message",
                             "data": json_data
                         })
                     except json.JSONDecodeError:
-                        # If not JSON, send as text
                         await websocket.send_json({
-                            "type": "echo",
-                            "data": data
+                            "type": "message",
+                            "data": message
                         })
-                    
+                        
+            except asyncio.TimeoutError:
+                # Send a ping to keep connection alive
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except:
+                    break
             except WebSocketDisconnect:
                 break
             except Exception as e:
@@ -71,6 +74,23 @@ async def websocket_endpoint(
         # Remove from active connections
         active_connections.discard(websocket)
         logger.info(f"WebSocket client disconnected. Total connections: {len(active_connections)}")
+
+async def broadcast_message(message: dict):
+    """Broadcast message to all connected clients"""
+    if active_connections:
+        # Create tasks for all connections
+        disconnected = set()
+        
+        for connection in active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception as e:
+                logger.error(f"Error broadcasting to client: {e}")
+                disconnected.add(connection)
+        
+        # Remove disconnected clients
+        for conn in disconnected:
+            active_connections.discard(conn)
 
 # Add a test page for WebSocket
 @router.get("/test")
@@ -125,24 +145,4 @@ async def get_websocket_test():
     </body>
     </html>
     """
-    return HTMLResponse(content=html)
-
-async def broadcast_message(message: dict):
-    """Broadcast message to all connected clients"""
-    if active_connections:
-        # Create tasks for all connections
-        tasks = []
-        for connection in active_connections.copy():
-            tasks.append(send_to_client(connection, message))
-        
-        # Wait for all sends to complete
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-async def send_to_client(websocket: WebSocket, message: dict):
-    """Send message to a specific client"""
-    try:
-        await websocket.send_json(message)
-    except Exception as e:
-        logger.error(f"Error sending to client: {e}")
-        # Remove dead connection
-        active_connections.discard(websocket) 
+    return HTMLResponse(content=html) 
