@@ -15,7 +15,6 @@ from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
 from datetime import datetime
 import time
-import httpx
 
 from fastapi import FastAPI, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -455,40 +454,72 @@ async def redirect_login(request: Request):
     try:
         body = await request.json()
     except:
-        body = {}
-    
-    # Make the request to the correct endpoint
-    from fastapi import status
-    from fastapi.responses import RedirectResponse
-    
-    # For POST requests, we can't redirect with body, so we'll proxy the request
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{request.base_url}auth/login",
-            json=body,
-            headers={k: v for k, v in request.headers.items() if k.lower() not in ['host', 'content-length']}
-        )
-        
         return JSONResponse(
-            content=response.json() if response.status_code == 200 else {"detail": "Authentication failed"},
-            status_code=response.status_code,
-            headers={k: v for k, v in response.headers.items() if k.lower() not in ['content-length', 'content-encoding']}
+            content={"detail": "Invalid request body"},
+            status_code=400
+        )
+    
+    # Import auth dependencies directly
+    from src.api.auth import LoginRequest, login
+    
+    # Call the login function directly
+    try:
+        # Create LoginRequest object
+        login_data = LoginRequest(
+            username=body.get("username", ""),
+            password=body.get("password", "")
+        )
+        result = await login(login_data)
+        return result
+    except HTTPException as e:
+        return JSONResponse(
+            content={"detail": e.detail},
+            status_code=e.status_code
+        )
+    except Exception as e:
+        logger.error(f"Redirect login error: {str(e)}")
+        return JSONResponse(
+            content={"detail": "Authentication failed"},
+            status_code=401
         )
 
 # Add redirect for /api/auth/me
 @app.get("/api/auth/me", tags=["auth"])
 async def redirect_me(request: Request):
     """Redirect from old me path to new one"""
-    # Proxy the request
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            f"{request.base_url}auth/me",
-            headers={k: v for k, v in request.headers.items() if k.lower() not in ['host']}
+    # Import auth dependencies
+    from src.api.auth import get_current_user_v1
+    from fastapi.security import HTTPAuthorizationCredentials
+    
+    # Get authorization header
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return JSONResponse(
+            content={"detail": "Not authenticated"},
+            status_code=401
+        )
+    
+    try:
+        # Create proper credentials object
+        token = auth_header.replace("Bearer ", "")
+        credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer",
+            credentials=token
         )
         
+        # Call the function directly
+        result = await get_current_user_v1(credentials)
+        return result
+    except HTTPException as e:
         return JSONResponse(
-            content=response.json() if response.status_code == 200 else {"detail": response.text},
-            status_code=response.status_code
+            content={"detail": e.detail},
+            status_code=e.status_code
+        )
+    except Exception as e:
+        logger.error(f"Redirect me error: {str(e)}")
+        return JSONResponse(
+            content={"detail": "Not authenticated"},
+            status_code=401
         )
 
 # Catch-all route for debugging 404s and routing issues
