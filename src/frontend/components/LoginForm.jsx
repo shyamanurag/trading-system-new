@@ -52,7 +52,7 @@ const LoginForm = ({ onLogin }) => {
 
             if (data.access_token) {
                 // Store authentication token
-                localStorage.setItem('auth_token', data.access_token);
+                localStorage.setItem('access_token', data.access_token);
                 localStorage.setItem('user_info', JSON.stringify(data.user_info));
 
                 // Create user info object with proper structure
@@ -64,7 +64,7 @@ const LoginForm = ({ onLogin }) => {
                     permissions: data.user_info.is_admin ? ['trade', 'view_analytics'] : ['trade']
                 };
 
-                onLogin(userInfo);
+                onLogin({ user_info: userInfo });
             } else {
                 throw new Error('Invalid response from server: Missing access token');
             }

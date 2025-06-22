@@ -11,6 +11,9 @@ const createEndpoint = (path) => {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     const fullUrl = `${normalizedApiUrl}${normalizedPath}`;
 
+    // Debug logging
+    console.log(`[API Config] Creating endpoint: ${normalizedPath} -> ${fullUrl}`);
+
     return {
         url: fullUrl,
         fallback: {
@@ -22,7 +25,7 @@ const createEndpoint = (path) => {
 };
 
 export const API_ENDPOINTS = {
-    // Auth endpoints - Updated to match backend routes
+    // Auth endpoints - IMPORTANT: These are at /auth, not /api/auth
     LOGIN: createEndpoint('/auth/login'),
     REGISTER: createEndpoint('/auth/register'),
     LOGOUT: createEndpoint('/auth/logout'),
