@@ -433,6 +433,34 @@ if os.getenv('DEBUG', 'false').lower() == 'true':
                 routes.append(route_info)
         return {"total_routes": len(routes), "routes": sorted(routes, key=lambda x: x['path'])}
 
+# Add a simple route list endpoint that's always available
+@app.get("/api/routes", tags=["debug"])
+async def list_routes():
+    """List all available API routes"""
+    routes = []
+    for route in app.routes:
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            path = getattr(route, 'path', '')
+            if path and not path.startswith('/debug'):
+                routes.append({
+                    "path": path,
+                    "methods": list(getattr(route, 'methods', [])),
+                    "name": getattr(route, 'name', 'unnamed')
+                })
+    
+    # Group by prefix
+    auth_routes = [r for r in routes if r['path'].startswith('/auth')]
+    api_routes = [r for r in routes if r['path'].startswith('/api')]
+    health_routes = [r for r in routes if 'health' in r['path'] or r['path'] in ['/ready', '/ping', '/status']]
+    
+    return {
+        "total_routes": len(routes),
+        "auth_routes": auth_routes,
+        "api_routes": api_routes,
+        "health_routes": health_routes,
+        "login_endpoint": "/auth/login"
+    }
+
 # Catch-all route for debugging 404s and routing issues
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def catch_all(request: Request, path: str):

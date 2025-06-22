@@ -2,10 +2,17 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app';
 const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-9gx56.ondigitalocean.app';
 
+// Ensure API_BASE_URL doesn't end with a slash
+const normalizedApiUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
+
 // Add error handling wrapper
 const createEndpoint = (path) => {
+    // Ensure path starts with a slash
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const fullUrl = `${normalizedApiUrl}${normalizedPath}`;
+
     return {
-        url: `${API_BASE_URL}${path}`,
+        url: fullUrl,
         fallback: {
             success: false,
             error: 'Service temporarily unavailable',
@@ -64,16 +71,17 @@ export const API_ENDPOINTS = {
     WS_POSITIONS: `${WS_BASE_URL}/ws/positions`,
 
     // Additional endpoints
-    TICK_DATA: `${API_BASE_URL}/v1/tick-data`,
-    ORDER_BOOK: `${API_BASE_URL}/v1/order-book`,
-    ACCOUNT: `${API_BASE_URL}/v1/account`,
-    HEALTH: `${API_BASE_URL}/health`,
-    METRICS: `${API_BASE_URL}/metrics`,
-    CONFIG: `${API_BASE_URL}/config`
+    TICK_DATA: createEndpoint('/v1/tick-data'),
+    ORDER_BOOK: createEndpoint('/v1/order-book'),
+    ACCOUNT: createEndpoint('/v1/account'),
+    HEALTH: createEndpoint('/health'),
+    METRICS: createEndpoint('/metrics'),
+    CONFIG: createEndpoint('/config')
 };
 
 // Debug logging
-console.log('[API Config] Base URL:', API_BASE_URL);
+console.log('[API Config] Base URL:', normalizedApiUrl);
 console.log('[API Config] Login URL:', API_ENDPOINTS.LOGIN.url);
+console.log('[API Config] Health URL:', API_ENDPOINTS.HEALTH.url);
 
 export default API_ENDPOINTS; 
