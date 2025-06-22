@@ -3,6 +3,8 @@
 AlgoAuto Trading System - Main Application Entry Point
 A comprehensive automated trading system with real-time market data,
 trade execution, risk management, and monitoring capabilities.
+
+Last updated: 2024-12-22 - Fixed health check endpoints for DigitalOcean
 """
 import os
 import sys
