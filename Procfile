@@ -1,0 +1,1 @@
+web: gunicorn main_refactored:app --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT 
