@@ -69,16 +69,15 @@ router_imports = {
     'zerodha_multi_user': ('src.api.zerodha_multi_user_auth', 'router'),
     'websocket': ('src.api.websocket', 'router'),
     'monitoring': ('src.api.monitoring', 'router'),
-    'performance': ('src.api.performance', 'router'),
     'webhooks': ('src.api.webhooks', 'router'),
-    'dashboard': ('src.api.dashboard_api', 'router'),
-    'database_health': ('src.api.database_health', 'router'),
-    'error_monitoring': ('src.api.error_monitoring', 'router'),
-    'risk_management': ('src.api.risk_management', 'router'),
-    'position_management': ('src.api.position_management', 'router'),
     'order_management': ('src.api.order_management', 'router'),
+    'position_management': ('src.api.position_management', 'router'),
     'strategy_management': ('src.api.strategy_management', 'router'),
-    'routes_fix': ('src.api.routes_fix', 'router'),
+    'risk_management': ('src.api.risk_management', 'router'),
+    'performance': ('src.api.performance', 'router'),
+    'error_monitoring': ('src.api.error_monitoring', 'router'),
+    'database_health': ('src.api.database_health', 'router'),
+    'dashboard': ('src.api.dashboard_api', 'router'),
 }
 
 # Import routers dynamically
@@ -423,9 +422,6 @@ router_configs = [
     
     # WebSocket
     ('websocket', '/ws', ('websocket',)),
-    
-    # Routes fix - mount at root since it has full paths
-    ('routes_fix', '', ('routes-fix',)),
 ]
 
 # Mount routers

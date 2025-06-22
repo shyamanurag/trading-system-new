@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.post("/orders", response_model=Order)
+@router.post("/", response_model=Order)
 async def create_order(
     order: OrderCreate,
     order_manager: OrderManager = Depends(),
@@ -68,7 +68,7 @@ async def create_order(
         logger.error(f"Error creating order: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/orders/{order_id}", response_model=Order)
+@router.get("/{order_id}", response_model=Order)
 async def get_order(
     order_id: str,
     order_manager: OrderManager = Depends(),
@@ -90,7 +90,7 @@ async def get_order(
         logger.error(f"Error getting order: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.put("/orders/{order_id}", response_model=Order)
+@router.put("/{order_id}", response_model=Order)
 async def update_order(
     order_id: str,
     order_update: OrderUpdate,
@@ -122,7 +122,7 @@ async def update_order(
         logger.error(f"Error updating order: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.delete("/orders/{order_id}")
+@router.delete("/{order_id}")
 async def cancel_order(
     order_id: str,
     order_manager: OrderManager = Depends(),
@@ -148,7 +148,7 @@ async def cancel_order(
         logger.error(f"Error cancelling order: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/users/{user_id}/orders", response_model=List[Order])
+@router.get("/users/{user_id}", response_model=List[Order])
 async def get_user_orders(
     user_id: str,
     status: Optional[str] = None,
@@ -168,7 +168,7 @@ async def get_user_orders(
         logger.error(f"Error getting user orders: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/orders/live", response_model=List[Order])
+@router.get("/live", response_model=List[Order])
 async def get_live_orders(
     order_manager: OrderManager = Depends(),
     current_user = Depends(get_current_user)
@@ -180,4 +180,19 @@ async def get_live_orders(
 
     except Exception as e:
         logger.error(f"Error getting live orders: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Add a simple GET endpoint for /api/v1/orders
+@router.get("/", response_model=List[Order])
+async def get_all_orders(
+    order_manager: OrderManager = Depends(),
+    current_user = Depends(get_current_user)
+):
+    """Get all orders for the current user"""
+    try:
+        orders = await order_manager.get_user_orders(current_user.user_id)
+        return orders
+
+    except Exception as e:
+        logger.error(f"Error getting orders: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 

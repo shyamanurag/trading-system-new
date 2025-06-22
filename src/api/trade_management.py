@@ -11,7 +11,18 @@ from ..auth import get_current_user
 
 router = APIRouter()
 
-@router.get("/trades/live")
+@router.get("/")
+async def get_all_trades(
+    current_user: User = Depends(get_current_user)
+) -> List[Dict[str, Any]]:
+    """Get all trades for the current user"""
+    try:
+        # For now, return empty list - no trades yet
+        return []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/live")
 async def get_live_trades(
     current_user: User = Depends(get_current_user)
 ) -> List[Dict[str, Any]]:
@@ -36,7 +47,7 @@ async def get_live_trades(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/users/metrics")
-async def get_user_metrics(
+async def get_all_user_metrics(
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Dict[str, Any]]:
     """Get metrics for all users"""
@@ -57,7 +68,7 @@ async def get_user_metrics(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/trades/{trade_id}")
+@router.get("/{trade_id}")
 async def get_trade_details(
     trade_id: str,
     current_user: User = Depends(get_current_user)
@@ -73,7 +84,7 @@ async def get_trade_details(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/users/{user_id}/trades")
+@router.get("/users/{user_id}")
 async def get_user_trades(
     user_id: str,
     current_user: User = Depends(get_current_user)
