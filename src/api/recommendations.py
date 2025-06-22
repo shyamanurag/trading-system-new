@@ -24,7 +24,7 @@ class RecommendationsResponse(BaseModel):
     recommendations: List[StockRecommendation]
     message: str = ""
 
-@router.get("/recommendations", response_model=RecommendationsResponse)
+@router.get("/", response_model=RecommendationsResponse)
 async def get_recommendations():
     """
     Generate stock recommendations based on analysis.
@@ -44,8 +44,8 @@ async def get_recommendations():
             detail=f"Error generating recommendations: {str(e)}"
         )
 
-@router.get("/recommendations/{symbol}")
-async def get_symbol_recommendation(symbol: str):
+@router.get("/{symbol}")
+async def get_symbol_recommendations(symbol: str):
     """Get recommendation for a specific symbol"""
     try:
         # Mock data for now
