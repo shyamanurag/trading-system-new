@@ -240,10 +240,10 @@ const UserPerformanceDashboard = () => {
         }
     };
 
-    const formatCurrency = (value) => `₹${value.toLocaleString()}`;
+    const formatCurrency = (value) => `₹${(value || 0).toLocaleString()}`;
     const formatPercent = (value) => {
         const sign = value > 0 ? '+' : '';
-        return `${sign}${value.toFixed(1)}%`;
+        return `${sign}${(value || 0).toFixed(1)}%`;
     };
 
     const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];

@@ -232,7 +232,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
         }
     };
 
-    const formatCurrency = (value) => `₹${value.toLocaleString()}`;
+    const formatCurrency = (value) => `₹${(value || 0).toLocaleString()}`;
     const formatTime = (seconds) => {
         const hours = Math.floor(seconds / 3600);
         const minutes = Math.floor((seconds % 3600) / 60);

@@ -17,8 +17,14 @@ class StockRecommendation(BaseModel):
     timestamp: datetime
     quality_score: float
     confidence: float
+    strategy: str = "Momentum"  # Added for frontend compatibility
 
-@router.get("/recommendations", response_model=List[StockRecommendation])
+class RecommendationsResponse(BaseModel):
+    success: bool
+    recommendations: List[StockRecommendation]
+    message: str = ""
+
+@router.get("/recommendations", response_model=RecommendationsResponse)
 async def get_recommendations():
     """
     Generate stock recommendations based on analysis.
@@ -26,7 +32,11 @@ async def get_recommendations():
     """
     try:
         # For now, return empty list since we don't have real market data
-        return []
+        return RecommendationsResponse(
+            success=True,
+            recommendations=[],
+            message="No recommendations available at this time"
+        )
     
     except Exception as e:
         raise HTTPException(
@@ -53,7 +63,8 @@ async def get_symbol_recommendation(symbol: str):
             "analysis": f"Analysis for {symbol} - Market conditions are neutral. Wait for better entry points.",
             "timestamp": datetime.now().isoformat(),
             "quality_score": 7.5,
-            "confidence": 65.0
+            "confidence": 65.0,
+            "strategy": "Momentum"
         }
     
     except Exception as e:

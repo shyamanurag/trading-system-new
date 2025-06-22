@@ -205,8 +205,8 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
         onLogout();
     };
 
-    const formatCurrency = (value) => `₹${value.toLocaleString()}`;
-    const formatPercent = (value) => `${value.toFixed(1)}%`;
+    const formatCurrency = (value) => `₹${(value || 0).toLocaleString()}`;
+    const formatPercent = (value) => `${(value || 0).toFixed(1)}%`;
 
     if (loading) {
         return (
@@ -398,7 +398,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                     <CardContent sx={{ textAlign: 'center' }}>
                                         <Typography variant="body2" sx={{ opacity: 0.9 }}>Total Trades</Typography>
                                         <Typography variant="h4" sx={{ fontWeight: 600, my: 1 }}>
-                                            {dashboardData.systemMetrics.totalTrades.toLocaleString()}
+                                            {(dashboardData.systemMetrics.totalTrades || 0).toLocaleString()}
                                         </Typography>
                                         <Typography variant="caption" sx={{ opacity: 0.8 }}>
                                             Executed today
