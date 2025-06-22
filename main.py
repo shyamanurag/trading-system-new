@@ -303,11 +303,11 @@ app.add_middleware(
 
 # --- START AUTH FIX ---
 # Mount the v1 auth router directly to the app
-app.include_router(auth_router_v1, prefix="/api/v1")
+app.include_router(auth_router_v1)
 # --- END AUTH FIX ---
 
 # --- START ROUTER DEBUG ---
-@app.get("/api/v1/direct-test")
+@app.get("/direct-test")
 async def direct_test():
     """A simple endpoint defined directly on the app to test routing."""
     return {"message": "Directly defined endpoint is working!"}
