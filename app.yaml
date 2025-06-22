@@ -347,6 +347,9 @@ static_sites:
   catchall_document: index.html
   environment_slug: node-js
   envs:
+  - key: VITE_API_URL
+    scope: BUILD_TIME
+    value: https://algoauto-jd32t.ondigitalocean.app/api
   - key: VITE_APP_NAME
     scope: BUILD_TIME
     value: AlgoAuto Trading
