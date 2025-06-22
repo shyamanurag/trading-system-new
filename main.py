@@ -134,8 +134,10 @@ app = FastAPI(
     - Webhook integrations for external systems
     - Performance analytics and reporting
     - System monitoring and health checks
+    
+    Deployment: 2024-12-22 10:40 UTC - Fixed health check endpoints
     """,
-    version="4.0.0",
+    version="4.0.1",  # Updated version to force rebuild
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -221,28 +223,29 @@ async def root():
 # Health check endpoints
 @app.get("/health", tags=["health"])
 async def health_check():
-    """Basic health check"""
-    # Get router stats with safe access
+    """Basic health check - Fixed 2024-12-22 to handle missing app.state"""
+    # Get router stats with safe access to prevent AttributeError
     loaded = getattr(app.state, 'routers_loaded', sum(1 for r in routers_loaded.values() if r is not None))
     total = getattr(app.state, 'total_routers', len(router_imports))
     
     return {
         "status": "healthy",
-        "version": "4.0.0",
+        "version": "4.0.1",
         "routers_loaded": f"{loaded}/{total}",
-        "timestamp": asyncio.get_event_loop().time()
+        "timestamp": asyncio.get_event_loop().time(),
+        "deployment": "2024-12-22-fix"
     }
 
 @app.get("/health/ready", tags=["health"])
 async def health_ready():
-    """Readiness check for load balancers"""
+    """Readiness check for load balancers - Fixed 2024-12-22"""
     # Check if critical routers are loaded
     critical_routers = ['auth', 'market', 'users']
     all_critical_loaded = all(
         routers_loaded.get(r) is not None for r in critical_routers
     )
     
-    # Get router stats with safe access
+    # Get router stats with safe access - THIS IS THE FIX FOR 400 ERRORS
     loaded = getattr(app.state, 'routers_loaded', sum(1 for r in routers_loaded.values() if r is not None))
     total = getattr(app.state, 'total_routers', len(router_imports))
     
@@ -252,14 +255,16 @@ async def health_ready():
             content={
                 "status": "not_ready",
                 "message": "Critical routers not loaded",
-                "routers_loaded": f"{loaded}/{total}"
+                "routers_loaded": f"{loaded}/{total}",
+                "version": "4.0.1"
             }
         )
     
     return {
         "status": "ready",
-        "version": "4.0.0",
-        "routers_loaded": f"{loaded}/{total}"
+        "version": "4.0.1",
+        "routers_loaded": f"{loaded}/{total}",
+        "deployment": "2024-12-22-fix"
     }
 
 @app.get("/health/live", tags=["health"])
