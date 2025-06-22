@@ -45,6 +45,8 @@ const WebSocketStatus = ({ userId }) => {
                 websocket.onerror = (error) => {
                     console.error('WebSocket error:', error);
                     setWsStatus('error');
+                    // Check if it's a 403 error (common with Digital Ocean + Cloudflare)
+                    console.warn('WebSocket not supported on Digital Ocean App Platform due to Cloudflare proxy limitations');
                 };
 
                 setWs(websocket);
@@ -86,7 +88,7 @@ const WebSocketStatus = ({ userId }) => {
             case 'waiting':
                 return 'Waiting';
             case 'error':
-                return 'Error';
+                return 'Not Available';
             default:
                 return 'Unknown';
         }
