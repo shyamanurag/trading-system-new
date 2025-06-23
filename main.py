@@ -171,6 +171,11 @@ async def fix_path_stripping(request: Request, call_next):
     """Handle Digital Ocean's path stripping behavior"""
     original_path = request.url.path
     
+    # Skip path fixing for WebSocket connections to avoid interfering with protocol upgrade
+    if request.headers.get("upgrade") == "websocket":
+        response = await call_next(request)
+        return response
+    
     # If path doesn't start with /, add it
     if original_path and not original_path.startswith('/'):
         # Create a new URL with the leading slash
@@ -201,8 +206,10 @@ async def fix_path_stripping(request: Request, call_next):
 # Gzip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Trusted host (for production)
-if os.getenv('ENVIRONMENT') == 'production':
+# Trusted host (for production) - DISABLED for WebSocket compatibility
+# WebSocket connections are being blocked by TrustedHostMiddleware with HTTP 403
+# Temporarily disabled until we can implement WebSocket-aware host checking
+if False and os.getenv('ENVIRONMENT') == 'production':
     # Log the middleware configuration
     logger.info("Adding TrustedHostMiddleware for production")
     app.add_middleware(
