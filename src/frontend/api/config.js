@@ -46,10 +46,10 @@ export const API_ENDPOINTS = {
     // Broker user management
     BROKER_USERS: createEndpoint('/api/v1/control/users/broker'),
 
-    // Trading endpoints - FIXED: Added /api prefix
-    TRADES: createEndpoint('/api/v1/trades'),
-    POSITIONS: createEndpoint('/api/v1/positions'),
-    ORDERS: createEndpoint('/api/v1/orders'),
+    // Trading endpoints - FIXED: Added /api prefix and trailing slashes
+    TRADES: createEndpoint('/api/v1/trades', true),
+    POSITIONS: createEndpoint('/api/v1/positions', true),
+    ORDERS: createEndpoint('/api/v1/orders', true),
 
     // Trading control endpoints
     TRADING_CONTROL: createEndpoint('/api/v1/control/trading/control'),
@@ -68,7 +68,7 @@ export const API_ENDPOINTS = {
     // Dashboard endpoints - FIXED: Added /api prefix
     DASHBOARD_SUMMARY: createEndpoint('/api/v1/dashboard/dashboard/summary'),
     DAILY_PNL: createEndpoint('/api/v1/monitoring/daily-pnl'),
-    RECOMMENDATIONS: createEndpoint('/api/v1/recommendations'),
+    RECOMMENDATIONS: createEndpoint('/api/v1/recommendations', true),
     DASHBOARD_DATA: createEndpoint('/api/v1/dashboard/data'),
 
     // Broker endpoints - FIXED: Added /api prefix

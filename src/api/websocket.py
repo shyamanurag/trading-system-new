@@ -17,7 +17,7 @@ router = APIRouter()
 active_connections: Set[WebSocket] = set()
 sse_clients: Set[asyncio.Queue] = set()
 
-@router.websocket("/")
+@router.websocket("")
 async def websocket_endpoint(websocket: WebSocket):
     """Main WebSocket endpoint for real-time updates"""
     # Log the connection attempt
