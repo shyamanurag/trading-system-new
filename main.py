@@ -405,7 +405,7 @@ router_configs = [
     
     # Trading operations
     ('trading_control', '/api/v1/control', ('trading-control',)),
-    ('autonomous_trading', '/api/v1/autonomous', ('autonomous-trading',)),
+    ('autonomous_trading', '/api/v1', ('autonomous-trading',)),  # Router has own /autonomous prefix
     ('trade_management', '/api/v1/trades', ('trade-management',)),
     ('order_management', '/api/v1/orders', ('order-management',)),
     ('position_management', '/api/v1/positions', ('position-management',)),
