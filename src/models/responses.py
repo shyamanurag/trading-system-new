@@ -1,20 +1,42 @@
 """
-Response models for the trading system API
+Response Models for API endpoints
 """
-from pydantic import BaseModel, Field
-from typing import Optional, Any, Dict, List
+from pydantic import BaseModel
+from typing import Dict, Any, Optional
 from datetime import datetime
+
+class HealthResponse(BaseModel):
+    """Health check response model"""
+    success: bool
+    message: str
+    version: str = "4.0.1"
+    components: Dict[str, Any] = {}
+    uptime: str = "0s"
+    memory_usage: float = 0.0
+    cpu_usage: float = 0.0
+    active_connections: int = 0
+    last_backup: Optional[str] = None
+    timestamp: Optional[str] = None
+
+class StatusResponse(BaseModel):
+    """Generic status response"""
+    success: bool
+    message: str
+    data: Optional[Dict[str, Any]] = None
+    timestamp: Optional[str] = None
+
+class ErrorResponse(BaseModel):
+    """Error response model"""
+    success: bool = False
+    error: str
+    detail: Optional[str] = None
+    timestamp: Optional[str] = None
 
 class BaseResponse(BaseModel):
     """Base response model"""
     success: bool
     message: str
     data: Optional[Dict[str, Any]] = None
-
-class ErrorResponse(BaseResponse):
-    """Standard error response"""
-    error_code: str
-    error_details: Optional[Dict[str, Any]] = None
 
 class PaginatedResponse(BaseResponse):
     """Paginated response with metadata"""
@@ -70,16 +92,6 @@ class UserResponse(BaseResponse):
     status: str
     last_login: Optional[datetime] = None
     preferences: Optional[Dict[str, Any]] = None
-
-class HealthResponse(BaseResponse):
-    """System health response"""
-    version: str
-    components: Dict[str, str]
-    uptime: float
-    memory_usage: float
-    cpu_usage: float
-    active_connections: int
-    last_backup: Optional[datetime] = None
 
 class RiskResponse(BaseResponse):
     """Risk management response"""
