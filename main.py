@@ -79,6 +79,7 @@ router_imports = {
     'database_health': ('src.api.database_health', 'router'),
     'dashboard': ('src.api.dashboard_api', 'router'),
     'reports': ('src.api.routes.reports', 'router'),
+    'system_status': ('src.api.system_status', 'router'),
 }
 
 # Import routers dynamically
@@ -422,6 +423,7 @@ router_configs = [
     ('database_health', '/api/v1/db-health', ('database-health',)),
     ('dashboard', '/api/v1/dashboard', ('dashboard',)),
     ('reports', '', ('reports',)),  # Already has /api/reports prefix
+    ('system_status', '', ('system-status',)),  # Has full paths in router
     
     # External integrations
     ('zerodha_auth', '', ('zerodha',)),  # Already has /api/zerodha prefix
