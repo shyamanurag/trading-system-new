@@ -4,8 +4,9 @@ from datetime import datetime, time
 from typing import Dict, Any, List
 import json
 
-from .models import Order, OrderStatus, Trade
-from .exceptions import OrderError
+from .models import Order, OrderStatus
+from ..models.schema import Trade
+from core.exceptions import OrderError
 
 logger = logging.getLogger(__name__)
 
@@ -143,14 +144,18 @@ class CapitalManager:
     def _calculate_trade_pnl(self, trade: Trade) -> float:
         """Calculate P&L for a trade"""
         try:
-            if trade.order_type == "MARKET":
-                return (trade.execution_price - trade.entry_price) * trade.quantity
-            elif trade.order_type == "LIMIT":
-                return (trade.limit_price - trade.entry_price) * trade.quantity
-            elif trade.order_type == "STOP":
-                return (trade.stop_price - trade.entry_price) * trade.quantity
+            # Trade model already has calculated pnl field
+            if hasattr(trade, 'pnl') and trade.pnl is not None:
+                return trade.pnl
+            
+            # Fallback calculation if pnl is not set
+            if trade.status == "CLOSED" and trade.exit_time is not None:
+                # For closed trades, calculate based on entry vs exit
+                exit_price = trade.current_price  # Assuming current_price is exit price for closed trades
+                return (exit_price - trade.entry_price) * trade.quantity
             else:
-                return 0.0
+                # For open trades, use unrealized P&L
+                return (trade.current_price - trade.entry_price) * trade.quantity
                 
         except Exception as e:
             logger.error(f"Error calculating trade P&L: {str(e)}")

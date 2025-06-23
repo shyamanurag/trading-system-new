@@ -4,9 +4,7 @@ from datetime import datetime
 import logging
 
 from ..models.schema import RiskMetrics, RiskLimits
-from ..core.risk_manager import RiskManager
-from ..core.capital_manager import CapitalManager
-from ..auth import get_current_user, require_admin
+# Removed problematic imports that aren't used in the endpoints
 
 logger = logging.getLogger(__name__)
 

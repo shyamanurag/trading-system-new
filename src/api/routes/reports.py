@@ -9,7 +9,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from ..auth import get_current_user
+from ..auth import get_current_user_v1 as get_current_user
 from ...core.database import get_db
 
 # Simple user model for type hints
