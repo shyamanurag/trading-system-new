@@ -340,4 +340,99 @@ async def force_create_sample_data():
         return {
             "success": False,
             "error": str(e)
+        }
+
+@router.get("/debug/callback-status")
+async def debug_callback_status():
+    """Debug TrueData callback registration and data flow"""
+    try:
+        from data.truedata_client import truedata_client, live_market_data
+        
+        debug_info = {
+            "timestamp": datetime.now().isoformat(),
+            "client_connected": truedata_client.connected if truedata_client else False,
+            "td_obj_exists": hasattr(truedata_client, 'td_obj') and truedata_client.td_obj is not None,
+            "live_data_count": len(live_market_data),
+            "live_data_keys": list(live_market_data.keys()),
+        }
+        
+        # Check if td_obj has the callback methods
+        if hasattr(truedata_client, 'td_obj') and truedata_client.td_obj:
+            td_obj = truedata_client.td_obj
+            debug_info.update({
+                "has_trade_callback": hasattr(td_obj, 'trade_callback'),
+                "has_bidask_callback": hasattr(td_obj, 'bidask_callback'),
+                "has_greek_callback": hasattr(td_obj, 'greek_callback'),
+                "td_obj_type": str(type(td_obj)),
+                "td_obj_methods": [method for method in dir(td_obj) if 'callback' in method.lower()]
+            })
+            
+            # Try to get internal callback info if available
+            try:
+                callbacks_attr = getattr(td_obj, '_callbacks', None)
+                if callbacks_attr is not None:
+                    debug_info["internal_callbacks"] = str(callbacks_attr)
+                else:
+                    debug_info["internal_callbacks"] = "No _callbacks attribute found"
+            except Exception:
+                debug_info["internal_callbacks"] = "Cannot access _callbacks"
+        
+        # Test manual data injection to verify the flow works
+        test_symbol = "DEBUG_TEST"
+        live_market_data[test_symbol] = {
+            'symbol': test_symbol,
+            'ltp': 999.99,
+            'volume': 12345,
+            'timestamp': datetime.now().isoformat(),
+            'data_source': 'MANUAL_DEBUG_INJECTION'
+        }
+        
+        debug_info["manual_injection_test"] = "injected DEBUG_TEST symbol"
+        debug_info["manual_injection_success"] = test_symbol in live_market_data
+        
+        return {
+            "success": True,
+            "debug_info": debug_info
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": str(type(e))
+        }
+
+@router.post("/debug/force-callback-test")
+async def force_callback_test():
+    """Force trigger callback test data"""
+    try:
+        from data.truedata_client import truedata_client, live_market_data
+        
+        if not truedata_client.connected:
+            return {"success": False, "error": "TrueData not connected"}
+        
+        # Manually inject test data to simulate callback
+        test_data = {
+            'MANUAL_TEST_NIFTY': {
+                'symbol': 'MANUAL_TEST_NIFTY',
+                'ltp': 23456.78,
+                'volume': 987654,
+                'timestamp': datetime.now().isoformat(),
+                'data_source': 'FORCED_CALLBACK_SIMULATION'
+            }
+        }
+        
+        live_market_data.update(test_data)
+        
+        return {
+            "success": True,
+            "message": "Test data injected manually",
+            "test_data": test_data,
+            "total_symbols": len(live_market_data)
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
         } 
