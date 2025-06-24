@@ -434,7 +434,7 @@ router_configs = [
     ('zerodha_auth', '', ('zerodha',)),  # Already has /api/zerodha prefix
     ('zerodha_daily_auth', '', ('zerodha-daily',)),  # Mount at root, has /zerodha prefix
     ('zerodha_multi_user', '', ('zerodha-multi',)),  # Mount at root, has /zerodha-multi prefix
-    ('zerodha_manual_auth', '', ('zerodha-manual',)),  # Mount at root, has /zerodha-manual prefix
+    ('zerodha_manual_auth', '/api/v1', ('zerodha-manual',)),  # Mount at /api/v1, router has /zerodha-manual prefix
     ('webhooks', '/api/v1/webhooks', ('webhooks',)),
     
     # WebSocket
