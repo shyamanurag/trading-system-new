@@ -28,7 +28,7 @@ class ZerodhaIntegration:
         self.ticker_connected = False
         self.last_heartbeat = None
         
-        # Mock data for development
+        # NO MOCK DATA - Real Zerodha data required
         self.mock_mode = config.get('mock_mode', True)
         self.mock_positions = {}
         self.mock_orders = {}

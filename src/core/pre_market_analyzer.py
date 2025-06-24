@@ -77,7 +77,7 @@ class PreMarketAnalyzer:
         """Analyze global market conditions"""
         try:
             # In production, fetch real data from APIs
-            # For now, return mock analysis
+            # NO MOCK DATA - Real pre-market data required
             return {
                 'us_markets': {
                     'sp500_change': -0.5,

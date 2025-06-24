@@ -26,7 +26,7 @@ async def get_market_indices():
             "success": True,
             "timestamp": datetime.now().isoformat(),
             "market_status": "OPEN" if datetime.now().hour >= 9 and datetime.now().hour < 16 else "CLOSED",
-            "indices": [],  # Empty array - no mock data
+            "indices": [],  # Real market index data required
             "message": "Waiting for live market data..." if truedata_configured else "TrueData not configured"
         }
         
@@ -46,12 +46,12 @@ async def get_index_details(symbol: str):
     try:
         symbol = symbol.upper()
         
-        # Return empty data structure - no mock data
+        # Real market data required
         index_details = {
             "success": True,
             "symbol": symbol,
             "timestamp": datetime.now().isoformat(),
-            "data": None,  # No mock data
+            "data": None,  # Real data required
             "constituents": {
                 "top_gainers": [],
                 "top_losers": []

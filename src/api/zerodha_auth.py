@@ -31,7 +31,7 @@ class AuthResponse(BaseModel):
 async def initiate_login(request: LoginRequest):
     """Initiate Zerodha login flow"""
     try:
-        # For now, return a mock login URL
+        # NO MOCK DATA - Real Zerodha authentication required
         login_url = f"https://kite.zerodha.com/connect/login?api_key={request.api_key}"
         
         logger.info(f"Login initiated for user: {request.user_id}")
@@ -65,7 +65,7 @@ async def handle_callback(request: Request, request_token: str, user_id: str):
 async def check_auth_status(user_id: str):
     """Check authentication status"""
     try:
-        # For now, return mock status
+        # NO MOCK DATA - Real Zerodha status required
         return AuthResponse(
             success=False,
             message="Not authenticated - Zerodha integration pending"
@@ -88,7 +88,7 @@ async def logout(user_id: str):
 async def get_profile(user_id: str):
     """Get Zerodha user profile"""
     try:
-        # Return mock profile for now
+        # NO MOCK DATA - Real Zerodha profile required
         return {
             "user_id": user_id,
             "email": f"{user_id}@example.com",

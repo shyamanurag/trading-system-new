@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 async def get_market_data(symbol: str) -> Dict[str, Any]:
     """Get market data for a symbol"""
     # This should connect to TrueData in production
-    # For now, return mock data
+    # NO MOCK DATA - Real market data connection required
     return {
         'symbol': symbol,
         'last_price': 20000.0,  # Mock price

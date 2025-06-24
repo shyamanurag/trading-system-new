@@ -145,19 +145,11 @@ autonomous_scanner = AutonomousEliteScanner()
 async def get_elite_recommendations():
     """Get current elite trading recommendations (8.5+ confluence only)"""
     try:
-        # Return empty recommendations - no mock data
-        # Real recommendations will only appear when actual market analysis detects elite setups
-        
-        return {
-            "success": True,
-            "recommendations": [],  # Empty array - no mock data
-            "total_count": 0,
-            "status": "WAITING_FOR_MARKET_DATA",
-            "message": "Elite recommendations will appear when real market conditions meet 8.5+ confluence criteria",
-            "data_source": "Live market analysis required",
-            "scan_timestamp": datetime.now().isoformat(),
-            "timestamp": datetime.now().isoformat()
-        }
+        # NO MOCK DATA - Real market data required for elite recommendations
+        raise HTTPException(
+            status_code=503,
+            detail="Elite recommendations unavailable. TrueData connection required for real market analysis."
+        )
         
     except Exception as e:
         logger.error(f"Error fetching elite recommendations: {e}")

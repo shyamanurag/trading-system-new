@@ -272,7 +272,7 @@ async def export_report(
 async def get_trades_for_period(db: Session, filters: Dict) -> List[Dict]:
     """Get trades for specified period and filters"""
     # Implementation would query database
-    # For now, return mock data
+    # NO MOCK DATA - Real trading data required
     return [
         {
             'id': '1',

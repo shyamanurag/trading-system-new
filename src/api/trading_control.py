@@ -110,7 +110,7 @@ async def get_broker_users():
         
         # Add mock data if no users exist
         if not users_list:
-            # Return empty list instead of mock data
+            # NO MOCK DATA - Real broker data required
             return {
                 "success": True,
                 "users": []

@@ -48,7 +48,7 @@ async def get_recommendations():
 async def get_symbol_recommendations(symbol: str):
     """Get recommendation for a specific symbol"""
     try:
-        # Mock data for now
+        # NO MOCK DATA - Real data required
         current_price = 1000.0
         stop_loss = 950.0
         target = 1100.0

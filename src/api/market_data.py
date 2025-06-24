@@ -72,23 +72,11 @@ async def get_market_data(
                 "source": "live_data"
             }
         else:
-            # Return mock data if live data not available
-            mock_data = {
-                "symbol": symbol,
-                "ltp": 22450.75,
-                "volume": 1250000,
-                "timestamp": datetime.now().isoformat(),
-                "data_source": "mock_data"
-            }
-            
-            return {
-                "success": True,
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "data": mock_data,
-                "timestamp": datetime.now().isoformat(),
-                "source": "mock_data"
-            }
+            # NO MOCK DATA - Fail properly when real data unavailable
+            raise HTTPException(
+                status_code=503, 
+                detail=f"No live data available for {symbol}. TrueData connection required."
+            )
         
     except Exception as e:
         logger.error(f"Error fetching market data: {e}")
@@ -105,31 +93,11 @@ async def get_option_chain(
         if not is_connected():
             raise HTTPException(status_code=503, detail="TrueData not connected")
         
-        # Return mock option chain data
-        mock_chain = [
-            {
-                "strike": 22000,
-                "call_oi": 1250,
-                "put_oi": 980,
-                "call_ltp": 450.75,
-                "put_ltp": 125.50
-            },
-            {
-                "strike": 22100,
-                "call_oi": 1100,
-                "put_oi": 1050,
-                "call_ltp": 350.25,
-                "put_ltp": 175.75
-            }
-        ]
-        
-        return {
-            "success": True,
-            "symbol": symbol,
-            "data": mock_chain,
-            "timestamp": datetime.now().isoformat(),
-            "source": "mock_data"
-        }
+        # NO MOCK DATA - Real option chain data required
+        raise HTTPException(
+            status_code=503,
+            detail=f"Option chain data unavailable for {symbol}. TrueData connection required."
+        )
         
     except Exception as e:
         logger.error(f"Error fetching option chain: {e}")

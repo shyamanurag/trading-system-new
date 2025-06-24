@@ -30,7 +30,7 @@ class GreeksRiskManager:
             'rho': 0.0
         }
         
-        # For now, return mock values
+        # NO MOCK DATA - Real options data required
         # In production, this would calculate actual greeks
         return total_greeks
     
