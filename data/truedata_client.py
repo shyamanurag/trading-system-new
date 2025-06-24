@@ -192,17 +192,17 @@ class TrueDataSingletonClient:
         @self.td_obj.trade_callback
         def on_tick_data(tick_data):
             try:
-                # Use official pattern: dictionary access, not getattr
-                symbol = tick_data.get('symbol', 'UNKNOWN')
-                ltp = tick_data.get('ltp', 0)
-                volume = tick_data.get('volume', 0)  # Changed from 'ttq' to 'volume'
+                # CORRECT: TrueData sends tick_feed objects, use getattr() not .get()
+                symbol = getattr(tick_data, 'symbol', 'UNKNOWN')
+                ltp = getattr(tick_data, 'ltp', 0)
+                volume = getattr(tick_data, 'volume', 0)
                 
                 live_market_data[symbol] = {
                     'symbol': symbol,
                     'ltp': float(ltp),
                     'volume': int(volume),
                     'timestamp': datetime.now().isoformat(),
-                    'data_source': 'OFFICIAL_TRUEDATA_PATTERN'
+                    'data_source': 'FIXED_OBJECT_ATTRIBUTES'
                 }
                 
                 logger.info(f"LIVE: {symbol} = Rs.{ltp}")
@@ -221,18 +221,18 @@ class TrueDataSingletonClient:
         @self.td_obj.greek_callback
         def on_greek_data(greek_data):
             try:
-                # Use official pattern: dictionary access
-                symbol = greek_data.get('symbol', 'UNKNOWN')
+                # CORRECT: TrueData sends objects, use getattr() not .get()
+                symbol = getattr(greek_data, 'symbol', 'UNKNOWN')
                 
                 greek_info = {
                     'symbol': symbol,
-                    'ltp': greek_data.get('ltp', 0),
-                    'iv': greek_data.get('iv', 0),
-                    'delta': greek_data.get('delta', 0),
-                    'gamma': greek_data.get('gamma', 0),
-                    'theta': greek_data.get('theta', 0),
-                    'vega': greek_data.get('vega', 0),
-                    'rho': greek_data.get('rho', 0),
+                    'ltp': getattr(greek_data, 'ltp', 0),
+                    'iv': getattr(greek_data, 'iv', 0),
+                    'delta': getattr(greek_data, 'delta', 0),
+                    'gamma': getattr(greek_data, 'gamma', 0),
+                    'theta': getattr(greek_data, 'theta', 0),
+                    'vega': getattr(greek_data, 'vega', 0),
+                    'rho': getattr(greek_data, 'rho', 0),
                     'timestamp': datetime.now().isoformat(),
                     'data_type': 'GREEKS'
                 }
@@ -250,15 +250,15 @@ class TrueDataSingletonClient:
         @self.td_obj.bidask_callback
         def on_bidask_data(bidask_data):
             try:
-                # Use official pattern: dictionary access
-                symbol = bidask_data.get('symbol', 'UNKNOWN')
+                # CORRECT: TrueData sends objects, use getattr() not .get()
+                symbol = getattr(bidask_data, 'symbol', 'UNKNOWN')
                 
                 bidask_info = {
                     'symbol': symbol,
-                    'bid': bidask_data.get('bid', 0),
-                    'ask': bidask_data.get('ask', 0),
-                    'bid_qty': bidask_data.get('bid_qty', 0),
-                    'ask_qty': bidask_data.get('ask_qty', 0),
+                    'bid': getattr(bidask_data, 'bid', 0),
+                    'ask': getattr(bidask_data, 'ask', 0),
+                    'bid_qty': getattr(bidask_data, 'bid_qty', 0),
+                    'ask_qty': getattr(bidask_data, 'ask_qty', 0),
                     'timestamp': datetime.now().isoformat(),
                     'data_type': 'BIDASK'
                 }
