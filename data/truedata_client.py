@@ -65,9 +65,9 @@ class TrueDataSingletonClient:
                 # CRITICAL: Complete cleanup first
                 self._nuclear_cleanup()
                 
-                # Wait for server-side session termination
-                logger.info("Waiting 30 seconds for server-side session cleanup...")
-                time.sleep(30)
+                # Quick cleanup pause (reduced from 30s to prevent production timeouts)
+                logger.info("Quick session cleanup...")
+                time.sleep(3)
                 
                 # Import ONLY the official library
                 try:
@@ -181,24 +181,25 @@ class TrueDataSingletonClient:
             logger.warning(f"Cleanup error: {e}")
 
     def _setup_callbacks(self):
-        """Setup all callbacks for TrueData"""
+        """Setup all callbacks for TrueData - FIXED using official pattern"""
         if not self.td_obj:
             return
             
-        # Trade/Tick callback
+        # Trade/Tick callback - FIXED to use official pattern
         @self.td_obj.trade_callback
         def on_tick_data(tick_data):
             try:
-                symbol = getattr(tick_data, 'symbol', 'UNKNOWN')
-                ltp = getattr(tick_data, 'ltp', 0)
-                volume = getattr(tick_data, 'ttq', 0)
+                # Use official pattern: dictionary access, not getattr
+                symbol = tick_data.get('symbol', 'UNKNOWN')
+                ltp = tick_data.get('ltp', 0)
+                volume = tick_data.get('volume', 0)  # Changed from 'ttq' to 'volume'
                 
                 live_market_data[symbol] = {
                     'symbol': symbol,
                     'ltp': float(ltp),
                     'volume': int(volume),
                     'timestamp': datetime.now().isoformat(),
-                    'data_source': 'FINAL_TRUEDATA_CLIENT'
+                    'data_source': 'OFFICIAL_TRUEDATA_PATTERN'
                 }
                 
                 logger.info(f"LIVE: {symbol} = Rs.{ltp}")
@@ -211,22 +212,24 @@ class TrueDataSingletonClient:
                 
             except Exception as e:
                 logger.error(f"Tick callback error: {e}")
+                logger.error(f"Tick data structure: {tick_data}")
         
-        # Greek callback for options
+        # Greek callback for options - FIXED to use official pattern
         @self.td_obj.greek_callback
         def on_greek_data(greek_data):
             try:
-                symbol = getattr(greek_data, 'symbol', 'UNKNOWN')
+                # Use official pattern: dictionary access
+                symbol = greek_data.get('symbol', 'UNKNOWN')
                 
                 greek_info = {
                     'symbol': symbol,
-                    'ltp': getattr(greek_data, 'ltp', 0),
-                    'iv': getattr(greek_data, 'iv', 0),
-                    'delta': getattr(greek_data, 'delta', 0),
-                    'gamma': getattr(greek_data, 'gamma', 0),
-                    'theta': getattr(greek_data, 'theta', 0),
-                    'vega': getattr(greek_data, 'vega', 0),
-                    'rho': getattr(greek_data, 'rho', 0),
+                    'ltp': greek_data.get('ltp', 0),
+                    'iv': greek_data.get('iv', 0),
+                    'delta': greek_data.get('delta', 0),
+                    'gamma': greek_data.get('gamma', 0),
+                    'theta': greek_data.get('theta', 0),
+                    'vega': greek_data.get('vega', 0),
+                    'rho': greek_data.get('rho', 0),
                     'timestamp': datetime.now().isoformat(),
                     'data_type': 'GREEKS'
                 }
@@ -238,19 +241,21 @@ class TrueDataSingletonClient:
                 
             except Exception as e:
                 logger.error(f"Greek callback error: {e}")
+                logger.error(f"Greek data structure: {greek_data}")
         
-        # Bid-Ask callback
+        # Bid-Ask callback - FIXED to use official pattern
         @self.td_obj.bidask_callback
         def on_bidask_data(bidask_data):
             try:
-                symbol = getattr(bidask_data, 'symbol', 'UNKNOWN')
+                # Use official pattern: dictionary access
+                symbol = bidask_data.get('symbol', 'UNKNOWN')
                 
                 bidask_info = {
                     'symbol': symbol,
-                    'bid': getattr(bidask_data, 'bid', 0),
-                    'ask': getattr(bidask_data, 'ask', 0),
-                    'bid_qty': getattr(bidask_data, 'bid_qty', 0),
-                    'ask_qty': getattr(bidask_data, 'ask_qty', 0),
+                    'bid': bidask_data.get('bid', 0),
+                    'ask': bidask_data.get('ask', 0),
+                    'bid_qty': bidask_data.get('bid_qty', 0),
+                    'ask_qty': bidask_data.get('ask_qty', 0),
                     'timestamp': datetime.now().isoformat(),
                     'data_type': 'BIDASK'
                 }
@@ -261,10 +266,13 @@ class TrueDataSingletonClient:
                 else:
                     live_market_data[symbol] = bidask_info
                 
+                logger.info(f"BIDASK: {symbol} - Bid:{bidask_info['bid']}, Ask:{bidask_info['ask']}")
+                
             except Exception as e:
                 logger.error(f"BidAsk callback error: {e}")
+                logger.error(f"BidAsk data structure: {bidask_data}")
         
-        logger.info("Callbacks setup completed")
+        logger.info("Callbacks setup completed using OFFICIAL TrueData pattern")
 
     def subscribe_symbols(self, symbols: list):
         """Subscribe to additional symbols"""
