@@ -42,11 +42,11 @@ class TrueDataSingletonClient:
         if hasattr(self, '_initialized') and self._initialized:
             return
             
-        # Use VERIFIED credentials from environment
+        # Use OFFICIAL TrueData account credentials
         self.username = os.environ.get('TRUEDATA_USERNAME', 'tdwsp697')
         self.password = os.environ.get('TRUEDATA_PASSWORD', 'shyam@697')
         self.url = "push.truedata.in"
-        self.port = 8084
+        self.port = 8084  # OFFICIAL port from TrueData support
         
         self.td_obj = None
         self.connected = False
@@ -96,12 +96,15 @@ class TrueDataSingletonClient:
                 # Test connection immediately
                 logger.info("Testing connection...")
                 
-                # Start live data for test symbols
-                test_symbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
+                # OFFICIAL PATTERN: Start live data for NSE symbols FIRST (account supports NSE Equity, F&O, Indices)
+                test_symbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'RELIANCE', 'TCS']
                 req_ids = self.td_obj.start_live_data(test_symbols)
-                logger.info(f"Live data started: {req_ids}")
+                logger.info(f"Live data started for NSE symbols: {req_ids}")
                 
-                # Setup callbacks
+                # Brief pause as per official pattern
+                time.sleep(1)
+                
+                # Setup callbacks AFTER start_live_data (official TrueData pattern)
                 self._setup_callbacks()
                 
                 # Mark as connected
