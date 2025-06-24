@@ -43,8 +43,8 @@ class TrueDataSingletonClient:
             return
             
         # Use VERIFIED credentials from environment
-        self.username = os.environ.get('TRUEDATA_USERNAME', 'Trial106')
-        self.password = os.environ.get('TRUEDATA_PASSWORD', 'shyam106')
+        self.username = os.environ.get('TRUEDATA_USERNAME', 'tdwsp697')
+        self.password = os.environ.get('TRUEDATA_PASSWORD', 'shyam@697')
         self.url = "push.truedata.in"
         self.port = 8084
         
@@ -85,12 +85,12 @@ class TrueDataSingletonClient:
                 # Create SINGLE connection
                 logger.info("Creating SINGLE TrueData connection...")
                 self.td_obj = TD_live(
-                    self.username, 
-                    self.password, 
+                    login_id=self.username, 
+                    password=self.password, 
                     live_port=self.port,
                     url=self.url,
                     log_level=logging.WARNING,
-                    compression=False
+                    compression=False  # CRITICAL: Disable compression to fix decompression bug
                 )
                 
                 # Test connection immediately
@@ -337,8 +337,8 @@ def verify_truedata_setup():
     
     if not username or not password:
         issues.append("TrueData credentials not set in environment")
-    elif username == 'Trial106':
-        issues.append("Using trial account - may be expired")
+    elif username == 'tdwsp697':
+        issues.append("Using subscription account - should work")
     
     # Check for multiple client files
     import glob

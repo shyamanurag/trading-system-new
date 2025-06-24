@@ -192,10 +192,10 @@ async def control_trading(command: TradingCommand):
                     'client_id': os.getenv('ZERODHA_CLIENT_ID')
                 },
                 'data_provider': {
-                    'username': os.getenv('TRUEDATA_USERNAME', 'Trial106'),
-                    'password': os.getenv('TRUEDATA_PASSWORD', 'shyam106'),
+                                    'username': os.getenv('TRUEDATA_USERNAME', 'tdwsp697'),
+                'password': os.getenv('TRUEDATA_PASSWORD', 'shyam@697'),
                     'url': os.getenv('TRUEDATA_URL', 'push.truedata.in'),
-                    'port': int(os.getenv('TRUEDATA_PORT', 8086))
+                    'port': int(os.getenv('TRUEDATA_PORT', 8084))
                 },
                 'strategies': {
                     'volatility_explosion': {'enabled': True},
