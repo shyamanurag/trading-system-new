@@ -12,9 +12,15 @@ from pathlib import Path
 src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
+# Also add the parent directory for any parent imports
+sys.path.insert(0, str(Path(__file__).parent))
+
 if __name__ == "__main__":
-    # Import and run the app
-    from bootstrap import app
+    # Set environment to ensure we're running locally
+    os.environ["ENVIRONMENT"] = "local"
+    
+    # Import and run the app - import as module since we added src to path
+    import bootstrap
     import uvicorn
     
     print("🚀 Starting AlgoAuto Trading System locally...")
@@ -23,7 +29,7 @@ if __name__ == "__main__":
     print("🔧 Health Check: http://localhost:8000/health")
     
     uvicorn.run(
-        app,
+        bootstrap.app,
         host="0.0.0.0",
         port=8000,
         reload=True,
