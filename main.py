@@ -143,7 +143,7 @@ app = FastAPI(
     
     Deployment: 2024-12-22 10:40 UTC - Fixed health check endpoints
     """,
-    version="4.0.1",  # Updated version to force rebuild
+    version="4.1.0",  # Updated version - manual auth system with routing fix
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -575,27 +575,50 @@ async def redirect_me(request: Request):
             status_code=401
         )
 
-# Catch-all route for debugging 404s and routing issues
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+# Catch-all route for frontend serving - ONLY for non-API paths
+@app.api_route("/{path:path}", methods=["GET"])
 async def catch_all(request: Request, path: str):
-    """Catch-all route to debug routing issues"""
-    logger.warning(f"Catch-all route hit - Path: {path}, Method: {request.method}")
-    logger.warning(f"Full URL: {request.url}, Headers: {dict(request.headers)}")
+    """Serve frontend for non-API routes, return 404 for API routes"""
+    
+    # Don't intercept API routes - let them return proper 404s
+    if (path.startswith("api/") or 
+        path.startswith("auth/") or 
+        path.startswith("zerodha-") or 
+        path.startswith("ws/") or
+        path == "docs" or 
+        path == "redoc" or 
+        path == "openapi.json"):
+        logger.warning(f"API path not found: {path}")
+        return JSONResponse(
+            status_code=404,
+            content={
+                "detail": f"API endpoint not found: {path}",
+                "method": request.method
+            }
+        )
     
     # Check if this is the ready endpoint
-    if path == "ready" and request.method == "GET":
+    if path == "ready":
         logger.info("Catch-all handling /ready request")
         return PlainTextResponse("ready", status_code=200)
     
-    # Return 404 for other paths
-    return JSONResponse(
-        status_code=404,
-        content={
-            "detail": f"Path not found: {path}",
-            "method": request.method,
-            "url": str(request.url)
-        }
-    )
+    # For all other paths, serve the frontend (HTML)
+    # This allows the frontend router to handle the path
+    from fastapi.responses import FileResponse
+    import os
+    
+    frontend_path = os.path.join(os.getcwd(), "src", "frontend", "index.html")
+    if os.path.exists(frontend_path):
+        return FileResponse(frontend_path)
+    else:
+        # Fallback - return a simple message
+        return JSONResponse(
+            status_code=404,
+            content={
+                "detail": f"Path not found: {path}",
+                "message": "Frontend not available"
+            }
+        )
 
 # Main execution
 if __name__ == "__main__":
