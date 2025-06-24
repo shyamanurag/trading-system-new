@@ -435,4 +435,97 @@ async def force_callback_test():
         return {
             "success": False,
             "error": str(e)
+        }
+
+@router.post("/debug/test-live-data-call")
+async def test_live_data_call():
+    """Test the actual start_live_data call to see if it's working"""
+    try:
+        from data.truedata_client import truedata_client, live_market_data
+        
+        if not truedata_client.connected or not truedata_client.td_obj:
+            return {"success": False, "error": "TrueData not connected"}
+        
+        td_obj = truedata_client.td_obj
+        
+        # Test symbols
+        test_symbols = ['NIFTY', 'BANKNIFTY']
+        
+        # Clear any existing data
+        for symbol in test_symbols:
+            live_market_data.pop(symbol, None)
+        
+        # Try calling start_live_data directly and capture the result
+        try:
+            result = td_obj.start_live_data(test_symbols)
+            
+            return {
+                "success": True,
+                "start_live_data_result": str(result),
+                "test_symbols": test_symbols,
+                "td_obj_type": str(type(td_obj)),
+                "message": "start_live_data called - check if callbacks fire in next 30 seconds"
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"start_live_data failed: {str(e)}",
+                "error_type": str(type(e))
+            }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@router.get("/debug/callback-registration-test")
+async def callback_registration_test():
+    """Test if callbacks can be re-registered manually"""
+    try:
+        from data.truedata_client import truedata_client, live_market_data
+        
+        if not truedata_client.connected or not truedata_client.td_obj:
+            return {"success": False, "error": "TrueData not connected"}
+        
+        td_obj = truedata_client.td_obj
+        
+        # Counter for callback calls
+        callback_counter = {"count": 0}
+        
+        # Re-register a simple test callback
+        @td_obj.trade_callback
+        def test_callback(tick_data):
+            callback_counter["count"] += 1
+            symbol = tick_data.get('symbol', 'UNKNOWN')
+            ltp = tick_data.get('ltp', 0)
+            
+            # Inject into live data
+            live_market_data[f"TEST_CALLBACK_{symbol}"] = {
+                'symbol': f"TEST_CALLBACK_{symbol}",
+                'ltp': ltp,
+                'volume': tick_data.get('volume', 0),
+                'timestamp': datetime.now().isoformat(),
+                'data_source': 'MANUAL_CALLBACK_REGISTRATION',
+                'callback_count': callback_counter["count"]
+            }
+        
+        # Try to start live data for a specific symbol
+        test_symbol = 'NIFTY'
+        result = td_obj.start_live_data([test_symbol])
+        
+        return {
+            "success": True,
+            "message": "Test callback re-registered",
+            "start_live_data_result": str(result),
+            "test_symbol": test_symbol,
+            "note": "Check for TEST_CALLBACK_NIFTY in live data after 30 seconds"
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": str(type(e))
         } 
