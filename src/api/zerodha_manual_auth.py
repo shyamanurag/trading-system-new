@@ -13,7 +13,7 @@ import redis.asyncio as redis
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/zerodha-manual", tags=["zerodha-manual"])
+router = APIRouter(tags=["zerodha-manual"])
 
 class ManualTokenRequest(BaseModel):
     """Manual token submission model"""
