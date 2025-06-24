@@ -79,13 +79,14 @@ async def submit_manual_token(request: ManualTokenRequest, background_tasks: Bac
             )
         
         # Process token in background
-        background_tasks.add_task(process_manual_token, request.request_token, request.user_id)
+        user_id_str = request.user_id or "ZERODHA_DEFAULT"
+        background_tasks.add_task(process_manual_token, request.request_token, user_id_str)
         
         return TokenStatus(
             success=True,
             message="Token submitted successfully. Processing in background...",
             authenticated=False,
-            user_id=request.user_id
+            user_id=user_id_str
         )
         
     except Exception as e:
@@ -241,7 +242,14 @@ async def test_zerodha_connection(user_id: str = "ZERODHA_DEFAULT"):
             )
         
         # Test connection
-        from kiteconnect import KiteConnect
+        try:
+            from kiteconnect import KiteConnect
+        except ImportError:
+            raise HTTPException(
+                status_code=500,
+                detail="kiteconnect library not available"
+            )
+        
         api_key = os.getenv('ZERODHA_API_KEY', 'sylcoq492qz6f7ej')
         kite = KiteConnect(api_key=api_key)
         kite.set_access_token(access_token)
