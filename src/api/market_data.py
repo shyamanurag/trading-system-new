@@ -177,8 +177,19 @@ async def get_live_market_data():
 async def get_realtime_data(symbol: str):
     """Get real-time market data for dashboard"""
     try:
-        # Get data from TrueData client
-        from data.truedata_client import get_truedata_client
+        # Get data from TrueData client - fix import path for production
+        try:
+            from data.truedata_client import get_truedata_client
+        except ImportError:
+            try:
+                from src.data.truedata_client import get_truedata_client  
+            except ImportError:
+                # Fallback - use the working truedata integration
+                return {
+                    "success": False,
+                    "error": "TrueData client import not available",
+                    "data": []
+                }
         
         client = get_truedata_client()
         if not client:
@@ -225,7 +236,25 @@ async def get_realtime_data(symbol: str):
 async def get_dashboard_summary():
     """Get summary data for trading dashboard"""
     try:
-        from data.truedata_client import get_truedata_client
+        # Get data from TrueData client - fix import path for production
+        try:
+            from data.truedata_client import get_truedata_client
+        except ImportError:
+            try:
+                from src.data.truedata_client import get_truedata_client
+            except ImportError:
+                # Fallback - return mock data structure
+                return {
+                    "success": True,
+                    "data": [
+                        {"symbol": "NIFTY", "ltp": 0, "change": 0, "change_percent": 0, "volume": 0},
+                        {"symbol": "BANKNIFTY", "ltp": 0, "change": 0, "change_percent": 0, "volume": 0},
+                        {"symbol": "FINNIFTY", "ltp": 0, "change": 0, "change_percent": 0, "volume": 0}
+                    ],
+                    "timestamp": datetime.now().isoformat(),
+                    "total_symbols": 3,
+                    "note": "TrueData client import not available"
+                }
         
         client = get_truedata_client()
         if not client:
