@@ -4,10 +4,10 @@ region: blr
 envs:
 - key: VITE_API_URL
   scope: RUN_AND_BUILD_TIME
-  value: https://trading-system-new-fgpmx.ondigitalocean.app
+  value: https://algoauto-9gx56.ondigitalocean.app
 - key: VITE_WS_URL
   scope: RUN_AND_BUILD_TIME
-  value: wss://trading-system-new-fgpmx.ondigitalocean.app/ws
+  value: wss://algoauto-9gx56.ondigitalocean.app/ws
 - key: VITE_APP_NAME
   scope: RUN_AND_BUILD_TIME
   value: AlgoAuto Trading
@@ -349,7 +349,7 @@ static_sites:
   envs:
   - key: VITE_API_URL
     scope: BUILD_TIME
-    value: https://trading-system-new-fgpmx.ondigitalocean.app
+    value: https://algoauto-9gx56.ondigitalocean.app
   - key: VITE_APP_NAME
     scope: BUILD_TIME
     value: AlgoAuto Trading
@@ -361,7 +361,7 @@ static_sites:
     value: production
   - key: VITE_WS_URL
     scope: BUILD_TIME
-    value: wss://trading-system-new-fgpmx.ondigitalocean.app/ws
+    value: wss://algoauto-9gx56.ondigitalocean.app/ws
   github:
     branch: main
     deploy_on_push: true
