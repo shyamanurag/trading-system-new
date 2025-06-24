@@ -26,10 +26,11 @@ class DatabaseManager:
         """Initialize database connection"""
         try:
             # Try to create engine with the configured URL
-            database_url = settings.DATABASE_URL
+            database_url = settings.database_url
             connect_args = settings.DATABASE_CONNECT_ARGS
             
             logger.info(f"Attempting to connect to database...")
+            logger.info(f"Database URL (masked): {database_url.split('@')[0]}@[MASKED]")
             logger.info(f"Using connect_args: {connect_args}")
             
             # Create engine with proper SSL configuration

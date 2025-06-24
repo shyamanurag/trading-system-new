@@ -20,43 +20,29 @@ class Settings(BaseSettings):
     DEBUG: bool = Field(default=False)
     
     # Database Settings - Check for DigitalOcean DATABASE_URL first
-    DATABASE_URL_OVERRIDE: Optional[str] = Field(default=None, env='DATABASE_URL')
-    DB_HOST: str = Field(default="localhost", env='DB_HOST')
-    DB_PORT: int = Field(default=5432, env='DB_PORT')
-    DB_NAME: str = Field(default="trading", env='DB_NAME')
-    DB_USER: str = Field(default="postgres", env='DB_USER')
-    DB_PASSWORD: str = Field(default="", env='DB_PASSWORD')
-    DB_SSL_MODE: str = Field(default="disable", env='DB_SSL_MODE')
+    DATABASE_URL: Optional[str] = Field(default=None, alias='DATABASE_URL')
+    DB_HOST: str = Field(default="localhost", alias='DB_HOST')
+    DB_PORT: int = Field(default=5432, alias='DB_PORT')
+    DB_NAME: str = Field(default="trading", alias='DB_NAME')
+    DB_USER: str = Field(default="postgres", alias='DB_USER')
+    DB_PASSWORD: str = Field(default="", alias='DB_PASSWORD')
+    DB_SSL_MODE: str = Field(default="disable", alias='DB_SSL_MODE')
+    DATABASE_SSL: str = Field(default="disable", alias='DATABASE_SSL')
     
     @property
-    def DATABASE_URL(self) -> str:
-        """Construct database URL with proper SSL configuration"""
-        # If DigitalOcean provides DATABASE_URL, use it but fix SSL issues
-        if self.DATABASE_URL_OVERRIDE:
-            url = self.DATABASE_URL_OVERRIDE
-            
-            # Parse the URL
-            parsed = urlparse(url)
-            
-            # Parse query parameters
-            query_params = parse_qs(parsed.query)
-            
-            # Fix SSL parameters for SQLAlchemy
-            if 'sslmode' in query_params:
-                # Remove sslmode from query params as SQLAlchemy handles it differently
-                del query_params['sslmode']
-            
-            # Reconstruct the URL without sslmode
-            new_query = urlencode(query_params, doseq=True)
-            new_parsed = parsed._replace(query=new_query)
-            base_url = urlunparse(new_parsed)
-            
-            # For DigitalOcean managed databases, we need to use SSL
-            # but handle it through connect_args in SQLAlchemy
-            return base_url
+    def database_url(self) -> str:
+        """Get the database URL with proper configuration"""
+        # If DigitalOcean provides DATABASE_URL, use it but ensure proper SSL handling
+        if self.DATABASE_URL:
+            # For SQLAlchemy, we need to remove sslmode from the URL and handle it via connect_args
+            url = self.DATABASE_URL
+            if '?sslmode=' in url:
+                # Remove sslmode parameter from URL
+                base_url = url.split('?sslmode=')[0]
+                return base_url
+            return url
         
         # Otherwise, construct from individual settings
-        # Don't include sslmode in the URL for SQLAlchemy
         return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
     
     @property
@@ -64,29 +50,30 @@ class Settings(BaseSettings):
         """Get connection arguments for SQLAlchemy"""
         connect_args = {}
         
-        # If using DigitalOcean or SSL is required
-        if self.DATABASE_URL_OVERRIDE or self.DB_SSL_MODE != 'disable':
-            connect_args['sslmode'] = self.DB_SSL_MODE or 'require'
-            # DigitalOcean managed databases require SSL
-            if 'ondigitalocean.com' in (self.DATABASE_URL_OVERRIDE or self.DB_HOST):
-                connect_args['sslmode'] = 'require'
-        
+        # If using DigitalOcean DATABASE_URL or SSL is required
+        if self.DATABASE_URL or self.DATABASE_SSL == 'require':
+            connect_args['sslmode'] = 'require'
+            
+        # DigitalOcean managed databases always require SSL
+        if self.DATABASE_URL and 'ondigitalocean.com' in self.DATABASE_URL:
+            connect_args['sslmode'] = 'require'
+            
         return connect_args
     
     # Redis Settings - Check for DigitalOcean REDIS_URL first
-    REDIS_URL_OVERRIDE: Optional[str] = Field(default=None, env='REDIS_URL')
-    REDIS_HOST: str = Field(default="localhost", env='REDIS_HOST')
-    REDIS_PORT: int = Field(default=6379, env='REDIS_PORT')
-    REDIS_DB: int = Field(default=0, env='REDIS_DB')
-    REDIS_PASSWORD: Optional[str] = Field(default=None, env='REDIS_PASSWORD')
-    REDIS_SSL: bool = Field(default=False, env='REDIS_SSL')
+    REDIS_URL: Optional[str] = Field(default=None, alias='REDIS_URL')
+    REDIS_HOST: str = Field(default="localhost", alias='REDIS_HOST')
+    REDIS_PORT: int = Field(default=6379, alias='REDIS_PORT')
+    REDIS_DB: int = Field(default=0, alias='REDIS_DB')
+    REDIS_PASSWORD: Optional[str] = Field(default=None, alias='REDIS_PASSWORD')
+    REDIS_SSL: bool = Field(default=False, alias='REDIS_SSL')
     
     @property
-    def REDIS_URL(self) -> str:
-        """Construct Redis URL with proper SSL configuration"""
+    def redis_url(self) -> str:
+        """Get Redis URL with proper SSL configuration"""
         # If DigitalOcean provides REDIS_URL, use it directly
-        if self.REDIS_URL_OVERRIDE:
-            return self.REDIS_URL_OVERRIDE
+        if self.REDIS_URL:
+            return self.REDIS_URL
         
         # Otherwise, construct from individual settings
         protocol = "rediss" if self.REDIS_SSL else "redis"
@@ -126,6 +113,8 @@ class Settings(BaseSettings):
     # TrueData
     TRUEDATA_USERNAME: Optional[str] = Field(None, description="TrueData username")
     TRUEDATA_PASSWORD: Optional[str] = Field(None, description="TrueData password")
+    TRUEDATA_LIVE_PORT: int = Field(8084, description="TrueData live port")
+    TRUEDATA_IS_SANDBOX: bool = Field(False, description="TrueData sandbox mode")
     
     # Orchestrator
     ORCHESTRATOR_CONFIG: dict = Field(
