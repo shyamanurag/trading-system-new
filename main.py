@@ -148,7 +148,15 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
     lifespan=lifespan,
-    root_path=os.getenv("ROOT_PATH", "")  # Handle DigitalOcean routing
+    root_path=os.getenv("ROOT_PATH", ""),  # Handle DigitalOcean routing
+    openapi_tags=[
+        {"name": "root", "description": "Root endpoints"},
+        {"name": "health", "description": "Health check endpoints"},
+        {"name": "auth", "description": "Authentication endpoints"},
+        {"name": "trading", "description": "Trading operations"},
+        {"name": "market-data", "description": "Market data endpoints"},
+        {"name": "monitoring", "description": "System monitoring"},
+    ]
 )
 
 # Add middleware
