@@ -80,6 +80,7 @@ router_imports = {
     'dashboard': ('src.api.dashboard_api', 'router'),
     'reports': ('src.api.routes.reports', 'router'),
     'system_status': ('src.api.system_status', 'router'),
+    'intelligent_symbols': ('src.api.intelligent_symbol_api', 'router'),
 }
 
 # Import routers dynamically
@@ -411,6 +412,9 @@ router_configs = [
     ('order_management', '/api/v1/orders', ('order-management',)),
     ('position_management', '/api/v1/positions', ('position-management',)),
     ('strategy_management', '/api/v1/strategies', ('strategy-management',)),
+    
+    # Intelligent Symbol Management - NEW
+    ('intelligent_symbols', '/api/v1', ('intelligent-symbols',)),
     
     # Risk and compliance
     ('risk_management', '/api/v1/risk', ('risk-management',)),

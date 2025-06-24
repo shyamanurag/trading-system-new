@@ -35,12 +35,12 @@ except ImportError:
     TradingOrchestrator = None
 
 try:
-    from common.logging import get_logger
+from common.logging import get_logger
 except ImportError:
     get_logger = None
 
 try:
-    from database_manager import get_database_operations
+from database_manager import get_database_operations
 except ImportError:
     def get_database_operations():
         return None

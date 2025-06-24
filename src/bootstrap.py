@@ -22,6 +22,7 @@ from .middleware.error_handler import error_handler
 from .api import users, webhooks, market_data, monitoring, performance
 from scripts.run_migrations import MigrationRunner
 import redis.asyncio as redis
+from src.core.intelligent_symbol_manager import start_intelligent_symbol_management
 
 # Configure logging
 logging.basicConfig(
@@ -99,6 +100,13 @@ async def lifespan(app: FastAPI):
             
             logger.info(f"Market data aggregator started with symbols: {default_symbols}")
         
+        # Start intelligent symbol management
+        try:
+            await start_intelligent_symbol_management()
+            logger.info("✅ Intelligent Symbol Manager started")
+        except Exception as e:
+            logger.error(f"❌ Failed to start Intelligent Symbol Manager: {e}")
+        
         # Store components in app state
         app.state.orchestrator = orchestrator
         app.state.websocket_manager = websocket_manager
@@ -108,6 +116,13 @@ async def lifespan(app: FastAPI):
         app.state.position_manager = position_manager
         app.state.redis_client = redis_client
         app.state.market_data_aggregator = market_data_aggregator
+        
+        # Store successfully loaded routers count
+        loaded_count = sum(1 for r in routers_loaded.values() if r is not None)
+        app.state.routers_loaded = loaded_count
+        app.state.total_routers = len(router_imports)
+        
+        logger.info(f"Loaded {loaded_count}/{len(router_imports)} routers successfully")
         
         logger.info("Trading system startup completed successfully")
         yield
@@ -129,6 +144,15 @@ async def lifespan(app: FastAPI):
             await position_manager.cleanup()
             if redis_client:
                 await redis_client.close()
+            
+            # Stop intelligent symbol management
+            try:
+                from src.core.intelligent_symbol_manager import stop_intelligent_symbol_management
+                await stop_intelligent_symbol_management()
+                logger.info("✅ Intelligent Symbol Manager stopped")
+            except Exception as e:
+                logger.error(f"❌ Error stopping Intelligent Symbol Manager: {e}")
+            
             logger.info("Trading system shutdown completed successfully")
         except Exception as e:
             logger.error(f"Error during shutdown: {str(e)}")
