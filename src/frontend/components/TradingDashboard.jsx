@@ -36,22 +36,34 @@ const TradingDashboard = () => {
                 const healthResponse = await axios.get(`${API_BASE_URL}/health`);
                 setHealthStatus(healthResponse.data);
 
-                // Fetch market data
-                const marketResponse = await axios.get(`${API_BASE_URL}/market/data?symbol=AAPL`);
-                if (marketResponse.data.success) {
-                    setMarketData(marketResponse.data.data);
+                // Fetch market data for Indian market symbols
+                try {
+                    const marketResponse = await axios.get(`${API_BASE_URL}/api/v1/truedata/truedata/data/NIFTY`);
+                    if (marketResponse.data.success) {
+                        setMarketData([marketResponse.data.data]);
+                    }
+                } catch (err) {
+                    console.warn('Market data not available:', err.message);
                 }
 
                 // Fetch recommendations
-                const recommendationsResponse = await axios.get(`${API_BASE_URL}/recommendations/analysis?symbol=AAPL`);
-                if (recommendationsResponse.data.success) {
-                    setRecommendations([recommendationsResponse.data]);
+                try {
+                    const recommendationsResponse = await axios.get(`${API_BASE_URL}/api/v1/recommendations/`);
+                    if (recommendationsResponse.data.success) {
+                        setRecommendations(recommendationsResponse.data.recommendations || []);
+                    }
+                } catch (err) {
+                    console.warn('Recommendations not available:', err.message);
                 }
 
                 // Fetch risk metrics
-                const riskResponse = await axios.get(`${API_BASE_URL}/risk/metrics`);
-                if (riskResponse.data.success) {
-                    setRiskMetrics(riskResponse.data.data);
+                try {
+                    const riskResponse = await axios.get(`${API_BASE_URL}/api/v1/risk/metrics`);
+                    if (riskResponse.data.success) {
+                        setRiskMetrics(riskResponse.data.data);
+                    }
+                } catch (err) {
+                    console.warn('Risk metrics not available:', err.message);
                 }
 
                 setError(null);

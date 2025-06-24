@@ -172,3 +172,96 @@ async def get_live_market_data():
     except Exception as e:
         logger.error(f"Error fetching live market data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/realtime/{symbol}")
+async def get_realtime_data(symbol: str):
+    """Get real-time market data for dashboard"""
+    try:
+        # Get data from TrueData client
+        from data.truedata_client import get_truedata_client
+        
+        client = get_truedata_client()
+        if not client:
+            return {
+                "success": False,
+                "error": "TrueData client not connected",
+                "data": []
+            }
+        
+        # Get latest market data
+        market_data = client.get_market_data(symbol)
+        
+        if market_data:
+            # Format for frontend chart
+            formatted_data = [{
+                "timestamp": datetime.now().strftime("%H:%M:%S"),
+                "price": market_data.get("ltp", 0),
+                "volume": market_data.get("volume", 0),
+                "symbol": symbol
+            }]
+            
+            return {
+                "success": True,
+                "data": formatted_data,
+                "symbol": symbol,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"No data available for {symbol}",
+                "data": []
+            }
+            
+    except Exception as e:
+        logger.error(f"Error getting realtime data for {symbol}: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "data": []
+        }
+
+@router.get("/dashboard/summary")
+async def get_dashboard_summary():
+    """Get summary data for trading dashboard"""
+    try:
+        from data.truedata_client import get_truedata_client
+        
+        client = get_truedata_client()
+        if not client:
+            return {
+                "success": False,
+                "message": "TrueData not connected"
+            }
+        
+        # Get data for key symbols
+        symbols = ["NIFTY", "BANKNIFTY", "FINNIFTY"]
+        summary_data = []
+        
+        for symbol in symbols:
+            try:
+                data = client.get_market_data(symbol)
+                if data:
+                    summary_data.append({
+                        "symbol": symbol,
+                        "ltp": data.get("ltp", 0),
+                        "change": data.get("change", 0),
+                        "change_percent": data.get("change_percent", 0),
+                        "volume": data.get("volume", 0)
+                    })
+            except Exception as e:
+                logger.warning(f"Could not get data for {symbol}: {e}")
+        
+        return {
+            "success": True,
+            "data": summary_data,
+            "timestamp": datetime.now().isoformat(),
+            "total_symbols": len(summary_data)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting dashboard summary: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }

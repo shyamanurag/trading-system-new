@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import EliteTradeCard from './EliteTradeCard';
+import React, { useEffect, useState } from 'react';
 import './EliteDashboard.css';
+import EliteTradeCard from './EliteTradeCard';
 
 const EliteDashboard = () => {
     const [recommendations, setRecommendations] = useState([]);
@@ -13,9 +13,9 @@ const EliteDashboard = () => {
             setLoading(true);
             setError(null);
 
-            const response = await fetch('/api/elite-recommendations', {
+            const response = await fetch('/api/v1/recommendations/', {
                 headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    'Content-Type': 'application/json'
                 }
             });
 
@@ -24,8 +24,8 @@ const EliteDashboard = () => {
             }
 
             const data = await response.json();
-            setRecommendations(data.recommendations);
-            setLastScanTime(new Date(data.scan_timestamp));
+            setRecommendations(data.recommendations || []);
+            setLastScanTime(new Date());
         } catch (err) {
             setError(err.message);
         } finally {
@@ -42,9 +42,9 @@ const EliteDashboard = () => {
             <div className="dashboard-header">
                 <h1>Elite Trade Recommendations</h1>
                 <p className="subtitle">10/10 Perfect Setup Opportunities Only</p>
-                
+
                 <div className="scan-controls">
-                    <button 
+                    <button
                         className="scan-button"
                         onClick={fetchRecommendations}
                         disabled={loading}
