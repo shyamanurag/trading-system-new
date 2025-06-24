@@ -67,6 +67,7 @@ router_imports = {
     'zerodha_auth': ('src.api.zerodha_auth', 'router'),
     'zerodha_daily_auth': ('src.api.zerodha_daily_auth', 'router'),
     'zerodha_multi_user': ('src.api.zerodha_multi_user_auth', 'router'),
+    'zerodha_manual_auth': ('src.api.zerodha_manual_auth', 'router'),
     'websocket': ('src.api.websocket', 'router'),
     'monitoring': ('src.api.monitoring', 'router'),
     'webhooks': ('src.api.webhooks', 'router'),
@@ -433,6 +434,7 @@ router_configs = [
     ('zerodha_auth', '', ('zerodha',)),  # Already has /api/zerodha prefix
     ('zerodha_daily_auth', '', ('zerodha-daily',)),  # Mount at root, has /zerodha prefix
     ('zerodha_multi_user', '', ('zerodha-multi',)),  # Mount at root, has /zerodha-multi prefix
+    ('zerodha_manual_auth', '', ('zerodha-manual',)),  # Mount at root, has /zerodha-manual prefix
     ('webhooks', '/api/v1/webhooks', ('webhooks',)),
     
     # WebSocket
