@@ -102,7 +102,7 @@ async def get_positions(
     try:
         # Handle case where position_tracker isn't fully initialized
         if hasattr(orchestrator, 'position_tracker') and hasattr(orchestrator.position_tracker, 'get_all_positions'):
-        positions = await orchestrator.position_tracker.get_all_positions()
+            positions = await orchestrator.position_tracker.get_all_positions()
         else:
             positions = []  # Return empty list if not initialized
         
