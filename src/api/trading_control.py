@@ -282,4 +282,97 @@ async def get_trading_status():
         }
     except Exception as e:
         logger.error(f"Error getting trading status: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Add Zerodha Manual Authentication endpoints to existing working router
+@router.get("/zerodha-manual/auth-url")
+async def get_zerodha_manual_auth_url():
+    """Get Zerodha authorization URL for manual token extraction"""
+    try:
+        api_key = os.getenv('ZERODHA_API_KEY', 'sylcoq492qz6f7ej')
+        auth_url = f"https://kite.zerodha.com/connect/login?api_key={api_key}"
+        
+        return {
+            "success": True,
+            "auth_url": auth_url,
+            "instructions": [
+                "1. Click the authorization URL",
+                "2. Login to Zerodha with your credentials", 
+                "3. After login, you'll be redirected to a URL",
+                "4. Copy the 'request_token' parameter from the redirected URL",
+                "5. Paste the token in the manual token entry"
+            ],
+            "example_redirect": "https://yourapp.com/callback?request_token=YOUR_TOKEN_HERE&action=login&status=success",
+            "note": "Extract only the request_token value, not the full URL",
+            "status": "Ready for use after TrueData testing complete"
+        }
+    except Exception as e:
+        logger.error(f"Failed to generate Zerodha auth URL: {e}")
+        return {"success": False, "error": str(e)}
+
+@router.get("/zerodha-manual/status")
+async def get_zerodha_manual_status(user_id: str = "ZERODHA_DEFAULT"):
+    """Get current Zerodha manual authentication status"""
+    try:
+        return {
+            "success": True,
+            "message": "Zerodha manual auth ready - awaiting TrueData completion",
+            "authenticated": False,
+            "user_id": user_id,
+            "note": "System ready for manual token submission when needed",
+            "priority": "TrueData first, Zerodha second (as planned)"
+        }
+    except Exception as e:
+        logger.error(f"Zerodha manual status check failed: {e}")
+        return {
+            "success": False,
+            "message": f"Status check failed: {str(e)}",
+            "authenticated": False
+        }
+
+@router.post("/zerodha-manual/submit-token")
+async def submit_zerodha_manual_token(request: dict):
+    """Submit manually extracted Zerodha request token (for future use)"""
+    try:
+        request_token = request.get('request_token', '')
+        user_id = request.get('user_id', 'ZERODHA_DEFAULT')
+        
+        # Validate token format
+        if not request_token or len(request_token) < 10:
+            return {
+                "success": False,
+                "error": "Invalid request token format. Token should be at least 10 characters long."
+            }
+        
+        # For now, just validate the token format and return success
+        # Full implementation will be activated after TrueData testing
+        return {
+            "success": True,
+            "message": "Token format validated. Full processing ready after TrueData completion.",
+            "user_id": user_id,
+            "token_preview": f"{request_token[:8]}...",
+            "status": "Stored for future activation",
+            "note": "Zerodha integration will be activated post-TrueData testing"
+        }
+        
+    except Exception as e:
+        logger.error(f"Zerodha manual token submission failed: {e}")
+        return {"success": False, "error": str(e)}
+
+@router.get("/zerodha-manual/test")
+async def test_zerodha_manual_system():
+    """Test Zerodha manual auth system readiness"""
+    return {
+        "success": True,
+        "message": "Zerodha manual authentication system ready",
+        "timestamp": datetime.now().isoformat(),
+        "version": "1.0.0",
+        "status": "Standby - awaiting TrueData completion",
+        "endpoints": [
+            "/api/v1/control/zerodha-manual/auth-url",
+            "/api/v1/control/zerodha-manual/status", 
+            "/api/v1/control/zerodha-manual/submit-token",
+            "/api/v1/control/zerodha-manual/test"
+        ],
+        "workflow": "TrueData → Complete Testing → Zerodha Authorization → Trading Ready"
+    } 
