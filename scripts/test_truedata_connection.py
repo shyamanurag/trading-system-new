@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test TrueData connectivity with Trial106 credentials
+Test TrueData connectivity with subscription credentials
 """
 
 import asyncio
@@ -17,7 +17,7 @@ class TrueDataTester:
         self.provider = None
         
     async def test_connection(self):
-        """Test TrueData connection with Trial106 credentials"""
+        """Test TrueData connection with subscription credentials"""
         try:
             print("🔌 Testing TrueData Connection...")
             config = TrueDataConfig.get_connection_config()
