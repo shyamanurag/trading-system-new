@@ -8,7 +8,14 @@ import logging
 from datetime import datetime
 import asyncio
 
-from src.data.truedata_client import get_truedata_client, init_truedata_client
+from data.truedata_client import (
+    truedata_client, 
+    live_market_data, 
+    truedata_connection_status,
+    initialize_truedata,
+    subscribe_to_symbols,
+    get_live_data_for_symbol
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +31,15 @@ async def connect_truedata(credentials: Dict):
         if not username or not password:
             raise HTTPException(status_code=400, detail="Username and password required")
         
-        # Initialize TrueData client
-        client = await init_truedata_client(username, password)
+        # Set credentials in environment for singleton client
+        import os
+        os.environ['TRUEDATA_USERNAME'] = username
+        os.environ['TRUEDATA_PASSWORD'] = password
         
-        if client:
+        # Initialize TrueData singleton client
+        success = initialize_truedata()
+        
+        if success:
             return {
                 "success": True,
                 "message": "TrueData connected successfully",
@@ -46,11 +58,10 @@ async def connect_truedata(credentials: Dict):
 async def subscribe_symbols(symbols: List[str]):
     """Subscribe to symbols for live data"""
     try:
-        client = get_truedata_client()
-        if not client:
+        if not truedata_client.connected:
             raise HTTPException(status_code=503, detail="TrueData client not connected")
         
-        success = await client.subscribe_symbols(symbols)
+        success = subscribe_to_symbols(symbols)
         
         if success:
             return {
@@ -72,21 +83,19 @@ async def subscribe_symbols(symbols: List[str]):
 async def unsubscribe_symbols(symbols: List[str]):
     """Unsubscribe from symbols"""
     try:
-        client = get_truedata_client()
-        if not client:
+        if not truedata_client.connected:
             raise HTTPException(status_code=503, detail="TrueData client not connected")
         
-        success = await client.unsubscribe_symbols(symbols)
+        # For now, just remove from live data (TrueData SDK doesn't have unsubscribe)
+        for symbol in symbols:
+            live_market_data.pop(symbol, None)
         
-        if success:
-            return {
-                "success": True,
-                "message": f"Unsubscribed from {len(symbols)} symbols",
-                "symbols": symbols,
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Failed to unsubscribe from symbols")
+        return {
+            "success": True,
+            "message": f"Unsubscribed from {len(symbols)} symbols",
+            "symbols": symbols,
+            "timestamp": datetime.now().isoformat()
+        }
             
     except HTTPException:
         raise
@@ -98,9 +107,7 @@ async def unsubscribe_symbols(symbols: List[str]):
 async def get_truedata_status():
     """Get TrueData connection status"""
     try:
-        client = get_truedata_client()
-        
-        if not client:
+        if not truedata_client:
             return {
                 "connected": False,
                 "message": "TrueData client not initialized",
@@ -108,9 +115,9 @@ async def get_truedata_status():
             }
         
         return {
-            "connected": client.is_connected,
-            "subscribed_symbols": client.get_subscribed_symbols(),
-            "total_symbols": len(client.get_subscribed_symbols()),
+            "connected": truedata_client.connected,
+            "subscribed_symbols": list(live_market_data.keys()),
+            "total_symbols": len(live_market_data),
             "timestamp": datetime.now().isoformat()
         }
         
@@ -122,11 +129,10 @@ async def get_truedata_status():
 async def get_symbol_data(symbol: str):
     """Get latest market data for a specific symbol"""
     try:
-        client = get_truedata_client()
-        if not client:
+        if not truedata_client.connected:
             raise HTTPException(status_code=503, detail="TrueData client not connected")
         
-        data = client.get_market_data(symbol)
+        data = get_live_data_for_symbol(symbol)
         
         if data:
             return {
@@ -153,16 +159,13 @@ async def get_symbol_data(symbol: str):
 async def get_all_market_data():
     """Get all market data"""
     try:
-        client = get_truedata_client()
-        if not client:
+        if not truedata_client.connected:
             raise HTTPException(status_code=503, detail="TrueData client not connected")
-        
-        data = client.get_all_market_data()
         
         return {
             "success": True,
-            "data": data,
-            "total_symbols": len(data),
+            "data": live_market_data,
+            "total_symbols": len(live_market_data),
             "timestamp": datetime.now().isoformat()
         }
         
@@ -176,11 +179,10 @@ async def get_all_market_data():
 async def disconnect_truedata():
     """Disconnect from TrueData"""
     try:
-        client = get_truedata_client()
-        if not client:
+        if not truedata_client.connected:
             raise HTTPException(status_code=503, detail="TrueData client not connected")
         
-        await client.disconnect()
+        truedata_client.disconnect()
         
         return {
             "success": True,
@@ -199,17 +201,16 @@ async def disconnect_truedata():
 async def truedata_websocket(websocket, symbol: str):
     """WebSocket endpoint for real-time TrueData"""
     try:
-        client = get_truedata_client()
-        if not client:
+        if not truedata_client.connected:
             await websocket.close(code=1011, reason="TrueData client not connected")
             return
         
         # Subscribe to symbol if not already subscribed
-        if symbol not in client.get_subscribed_symbols():
-            await client.subscribe_symbols([symbol])
+        if symbol not in live_market_data:
+            subscribe_to_symbols([symbol])
         
         # Send initial data
-        initial_data = client.get_market_data(symbol)
+        initial_data = get_live_data_for_symbol(symbol)
         if initial_data:
             await websocket.send_json({
                 "type": "initial_data",
@@ -220,7 +221,7 @@ async def truedata_websocket(websocket, symbol: str):
         # Keep connection alive and send updates
         while True:
             # Get latest data
-            data = client.get_market_data(symbol)
+            data = get_live_data_for_symbol(symbol)
             if data:
                 await websocket.send_json({
                     "type": "market_data",
@@ -234,4 +235,109 @@ async def truedata_websocket(websocket, symbol: str):
             
     except Exception as e:
         logger.error(f"WebSocket error for symbol {symbol}: {e}")
-        await websocket.close(code=1011, reason="Internal error") 
+        await websocket.close(code=1011, reason="Internal error")
+
+@router.get("/debug/client-internals")
+async def debug_client_internals():
+    """Debug TrueData client internals"""
+    try:
+        # Try both client paths
+        client = None
+        client_type = "unknown"
+        
+        try:
+            from data.truedata_client import truedata_client, live_market_data, truedata_connection_status
+            client = truedata_client
+            client_type = "singleton"
+            
+            return {
+                "success": True,
+                "client_type": client_type,
+                "client_status": client.get_status() if hasattr(client, 'get_status') else "no_status_method",
+                "live_data_count": len(live_market_data),
+                "live_data_keys": list(live_market_data.keys()),
+                "connection_status": truedata_connection_status,
+                "sample_data": dict(list(live_market_data.items())[:3]) if live_market_data else {}
+            }
+            
+        except ImportError:
+            try:
+                from src.data.truedata_client import get_truedata_client
+                client = get_truedata_client()
+                client_type = "async"
+                
+                if client:
+                    return {
+                        "success": True,
+                        "client_type": client_type,
+                        "is_connected": client.is_connected,
+                        "subscribed_symbols": list(client.subscribed_symbols),
+                        "market_data_count": len(client.market_data),
+                        "market_data_keys": list(client.market_data.keys()),
+                        "sample_data": dict(list(client.market_data.items())[:3]) if client.market_data else {}
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": "Client not initialized"
+                    }
+                    
+            except ImportError:
+                return {
+                    "success": False,
+                    "error": "No TrueData client found"
+                }
+                
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@router.post("/debug/force-data")
+async def force_create_sample_data():
+    """Force create sample data to test frontend"""
+    try:
+        # Import the working client
+        try:
+            from data.truedata_client import live_market_data
+            
+            # Force inject sample data for testing
+            live_market_data.update({
+                "NIFTY": {
+                    "symbol": "NIFTY",
+                    "ltp": 23250.75,
+                    "volume": 1250000,
+                    "change": 125.50,
+                    "change_percent": 0.54,
+                    "timestamp": datetime.now().isoformat(),
+                    "data_source": "FORCED_SAMPLE"
+                },
+                "BANKNIFTY": {
+                    "symbol": "BANKNIFTY", 
+                    "ltp": 51150.25,
+                    "volume": 850000,
+                    "change": -85.75,
+                    "change_percent": -0.17,
+                    "timestamp": datetime.now().isoformat(),
+                    "data_source": "FORCED_SAMPLE"
+                }
+            })
+            
+            return {
+                "success": True,
+                "message": "Sample data injected",
+                "data_count": len(live_market_data)
+            }
+            
+        except ImportError:
+            return {
+                "success": False,
+                "error": "Cannot access live_market_data"
+            }
+            
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        } 
