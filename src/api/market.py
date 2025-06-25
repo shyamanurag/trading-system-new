@@ -63,24 +63,54 @@ async def get_market_indices():
             }
         
         # Build response with live TrueData
-        response_data = {
-            "nifty_50": get_price_data(nifty_data, "NIFTY 50", 22450),
-            "bank_nifty": get_price_data(banknifty_data, "BANK NIFTY", 48500),
+        nifty_index = get_price_data(nifty_data, "NIFTY 50", 22450)
+        bank_nifty_index = get_price_data(banknifty_data, "BANK NIFTY", 48500)
+        
+        # Format data as array for frontend compatibility
+        indices_array = [
+            {
+                "symbol": "NIFTY",
+                "name": "NIFTY 50",
+                "last_price": nifty_index["price"],
+                "price": nifty_index["price"],
+                "change": nifty_index["change"],
+                "change_percent": nifty_index["change_percent"],
+                "high": nifty_index["high"],
+                "low": nifty_index["low"],
+                "open": nifty_index["price"],  # Using current price as open for now
+                "volume": nifty_index["volume"],
+                "status": nifty_index["status"],
+                "last_update": nifty_index["last_update"]
+            },
+            {
+                "symbol": "BANKNIFTY",
+                "name": "BANK NIFTY",
+                "last_price": bank_nifty_index["price"],
+                "price": bank_nifty_index["price"],
+                "change": bank_nifty_index["change"],
+                "change_percent": bank_nifty_index["change_percent"],
+                "high": bank_nifty_index["high"],
+                "low": bank_nifty_index["low"],
+                "open": bank_nifty_index["price"],  # Using current price as open for now
+                "volume": bank_nifty_index["volume"],
+                "status": bank_nifty_index["status"],
+                "last_update": bank_nifty_index["last_update"]
+            }
+        ]
+        
+        return {
+            "success": True,
+            "indices": indices_array,
+            "market_status": "OPEN" if 9 <= now_ist.hour < 16 else "CLOSED",
             "last_update": now_ist.isoformat(),
             "timestamp": now_ist.strftime("%Y-%m-%d %H:%M:%S IST"),
             "data_provider": "TrueData",
-            "market_status": "LIVE" if 9 <= now_ist.hour < 16 else "CLOSED",
             "truedata_connection": {
                 "symbols_available": len(live_market_data),
                 "nifty_available": bool(nifty_data),
                 "banknifty_available": bool(banknifty_data),
                 "live_data_symbols": list(live_market_data.keys())
             }
-        }
-        
-        return {
-            "status": "success",
-            "data": response_data
         }
         
     except Exception as e:
@@ -124,28 +154,26 @@ async def get_market_status():
             status = "CLOSED"
         
         return {
-            "status": "success",
-            "data": {
-                "market_status": status,
-                "market_phase": phase,
-                "current_time": now_ist.isoformat(),
-                "timezone": "Asia/Kolkata",
-                "ist_time": now_ist.strftime("%Y-%m-%d %H:%M:%S IST"),
-                "market_open": "09:15",
-                "market_close": "15:30",
-                "is_trading_hours": status == "OPEN",
-                "timings": {
-                    "pre_open": "09:00 - 09:15",
-                    "normal": "09:15 - 15:30",
-                    "post_close": "15:30 - 16:00",
-                    "closed": "16:00 - 09:00"
-                },
-                "is_trading_day": now_ist.weekday() not in [5, 6],
-                "data_provider": {
-                    "name": "TrueData",
-                    "status": "CONNECTED" if os.getenv('TRUEDATA_USERNAME') else "NOT_CONFIGURED",
-                    "user": os.getenv('TRUEDATA_USERNAME', 'Not configured')
-                }
+            "success": True,
+            "market_status": status,
+            "market_phase": phase,
+            "current_time": now_ist.isoformat(),
+            "timezone": "Asia/Kolkata",  
+            "ist_time": now_ist.strftime("%Y-%m-%d %H:%M:%S IST"),
+            "market_open": "09:15",
+            "market_close": "15:30",
+            "is_trading_hours": status == "OPEN",
+            "timings": {
+                "pre_open": "09:00 - 09:15",
+                "normal": "09:15 - 15:30",
+                "post_close": "15:30 - 16:00",
+                "closed": "16:00 - 09:00"
+            },
+            "is_trading_day": now_ist.weekday() not in [5, 6],
+            "data_provider": {
+                "name": "TrueData",
+                "status": "CONNECTED" if os.getenv('TRUEDATA_USERNAME') else "NOT_CONFIGURED",
+                "user": os.getenv('TRUEDATA_USERNAME', 'Not configured')
             }
         }
         
