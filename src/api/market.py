@@ -10,57 +10,81 @@ router = APIRouter(prefix="/api/market", tags=["market-data"])
 
 @router.get("/indices")
 async def get_market_indices():
-    """Get market indices data"""
+    """Get market indices data from TrueData live feed"""
     try:
+        # Import TrueData live data
+        from data.truedata_client import live_market_data
+        
         # Use IST timezone for timestamp
         now_ist = datetime.now(IST)
         
-        # Mock implementation with proper structure that frontend expects
-        return {
-            "status": "success",
-            "data": {
-                "nifty_50": {
-                    "symbol": "NIFTY 50",
-                    "name": "Nifty 50",
-                    "price": 22450.75,
-                    "change": 125.50,
-                    "change_percent": 0.56,
-                    "last_price": 22450.75,
-                    "high": 22485.30,
-                    "low": 22380.15,
-                    "volume": 1250000
-                },
-                "bank_nifty": {
-                    "symbol": "BANK NIFTY",
-                    "name": "Bank Nifty",
-                    "price": 48520.25,
-                    "change": -85.75,
-                    "change_percent": -0.18,
-                    "last_price": 48520.25,
-                    "high": 48650.80,
-                    "low": 48420.30,
-                    "volume": 890000
-                },
-                "sensex": {
-                    "symbol": "SENSEX",
-                    "name": "BSE Sensex",
-                    "price": 73850.50,
-                    "change": 450.25,
-                    "change_percent": 0.61,
-                    "last_price": 73850.50,
-                    "high": 73920.75,
-                    "low": 73680.25,
-                    "volume": 2100000
-                },
-                "last_update": now_ist.isoformat(),
-                "timestamp": now_ist.strftime("%Y-%m-%d %H:%M:%S IST"),
-                "data_provider": "TrueData",
-                "market_status": "LIVE" if 9 <= now_ist.hour < 16 else "CLOSED"
+        # Get live data from TrueData singleton client
+        nifty_data = live_market_data.get('NIFTY', {})
+        banknifty_data = live_market_data.get('BANKNIFTY', {})
+        
+        # Helper function to extract price data with fallbacks
+        def get_price_data(data, symbol_name, fallback_price=0):
+            if not data:
+                return {
+                    "symbol": symbol_name,
+                    "name": symbol_name,
+                    "price": fallback_price,
+                    "change": 0,
+                    "change_percent": 0,
+                    "last_price": fallback_price,
+                    "high": fallback_price,
+                    "low": fallback_price,
+                    "volume": 0,
+                    "status": "NO_DATA"
+                }
+            
+            ltp = data.get('ltp', data.get('last_price', fallback_price))
+            high = data.get('high', data.get('day_high', ltp))
+            low = data.get('low', data.get('day_low', ltp))
+            volume = data.get('volume', data.get('total_volume', 0))
+            
+            # Calculate change (simplified - in real implementation you'd need previous close)
+            prev_close = data.get('prev_close', ltp)
+            change = ltp - prev_close if prev_close > 0 else 0
+            change_percent = (change / prev_close * 100) if prev_close > 0 else 0
+            
+            return {
+                "symbol": symbol_name,
+                "name": symbol_name,
+                "price": round(ltp, 2),
+                "change": round(change, 2),
+                "change_percent": round(change_percent, 2),
+                "last_price": round(ltp, 2),
+                "high": round(high, 2),
+                "low": round(low, 2),
+                "volume": int(volume),
+                "status": "LIVE" if ltp > 0 else "NO_DATA",
+                "last_update": data.get('timestamp', now_ist.isoformat())
+            }
+        
+        # Build response with live TrueData
+        response_data = {
+            "nifty_50": get_price_data(nifty_data, "NIFTY 50", 22450),
+            "bank_nifty": get_price_data(banknifty_data, "BANK NIFTY", 48500),
+            "last_update": now_ist.isoformat(),
+            "timestamp": now_ist.strftime("%Y-%m-%d %H:%M:%S IST"),
+            "data_provider": "TrueData",
+            "market_status": "LIVE" if 9 <= now_ist.hour < 16 else "CLOSED",
+            "truedata_connection": {
+                "symbols_available": len(live_market_data),
+                "nifty_available": bool(nifty_data),
+                "banknifty_available": bool(banknifty_data),
+                "live_data_symbols": list(live_market_data.keys())
             }
         }
         
+        return {
+            "status": "success",
+            "data": response_data
+        }
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Unable to fetch market indices")
+        raise HTTPException(status_code=500, detail=f"Unable to fetch market indices: {str(e)}")
 
 @router.get("/market-status")
 async def get_market_status():
