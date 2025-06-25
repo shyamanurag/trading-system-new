@@ -18,13 +18,17 @@ async def get_market_indices():
         # Use IST timezone for timestamp
         now_ist = datetime.now(IST)
         
-        # Get live data from TrueData singleton client
-        nifty_data = live_market_data.get('NIFTY', {})
-        banknifty_data = live_market_data.get('BANKNIFTY', {})
+        # Get live data from TrueData singleton client (using correct symbol formats)
+        nifty_data = live_market_data.get('NIFTY-I', {})
+        banknifty_data = live_market_data.get('BANKNIFTY-I', {})
         
         # Helper function to extract price data with fallbacks
         def get_price_data(data, symbol_name, fallback_price=0):
+            # Debug: Log what data we're getting
+            print(f"DEBUG: Processing {symbol_name}, data type: {type(data)}, data: {data}")
+            
             if not data:
+                print(f"DEBUG: No data for {symbol_name}, using fallback")
                 return {
                     "symbol": symbol_name,
                     "name": symbol_name,
@@ -39,6 +43,8 @@ async def get_market_indices():
                 }
             
             ltp = data.get('ltp', data.get('last_price', fallback_price))
+            print(f"DEBUG: {symbol_name} LTP extracted: {ltp}")
+            
             high = data.get('high', data.get('day_high', ltp))
             low = data.get('low', data.get('day_low', ltp))
             volume = data.get('volume', data.get('total_volume', 0))
@@ -48,7 +54,7 @@ async def get_market_indices():
             change = ltp - prev_close if prev_close > 0 else 0
             change_percent = (change / prev_close * 100) if prev_close > 0 else 0
             
-            return {
+            result = {
                 "symbol": symbol_name,
                 "name": symbol_name,
                 "price": round(ltp, 2),
@@ -61,6 +67,9 @@ async def get_market_indices():
                 "status": "LIVE" if ltp > 0 else "NO_DATA",
                 "last_update": data.get('timestamp', now_ist.isoformat())
             }
+            
+            print(f"DEBUG: {symbol_name} final result: price={result['price']}, status={result['status']}")
+            return result
         
         # Build response with live TrueData
         response_data = {
