@@ -597,34 +597,42 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
                         left: 0,
                         width: '100%',
                         height: '100%',
-                        bgcolor: 'rgba(0,0,0,0.5)',
+                        bgcolor: 'rgba(255,255,255,0.95)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        zIndex: 1300
+                        zIndex: 1300,
+                        backdropFilter: 'blur(5px)'
                     }}
                     onClick={() => setShowZerodhaAuth(false)}
                 >
                     <Box
                         sx={{
-                            bgcolor: 'background.paper',
-                            borderRadius: 2,
+                            bgcolor: '#ffffff',
+                            borderRadius: 3,
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
                             p: 0,
-                            maxWidth: '90vw',
-                            maxHeight: '90vh',
-                            overflow: 'auto'
+                            maxWidth: '95vw',
+                            maxHeight: '95vh',
+                            overflow: 'auto',
+                            border: '2px solid #e0e0e0'
                         }}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <ZerodhaManualAuth />
-                        <Box sx={{ p: 2, textAlign: 'right', borderTop: '1px solid #eee' }}>
+                        <Box sx={{ p: 2, borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="h6" sx={{ color: '#2c3e50', fontWeight: 600 }}>
+                                🔐 Zerodha Daily Auth Token Setup
+                            </Typography>
                             <Button
                                 variant="outlined"
+                                size="small"
                                 onClick={() => setShowZerodhaAuth(false)}
+                                sx={{ minWidth: '80px' }}
                             >
-                                Close
+                                ✕ Close
                             </Button>
                         </Box>
+                        <ZerodhaManualAuth />
                     </Box>
                 </Box>
             )}

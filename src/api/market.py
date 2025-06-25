@@ -41,32 +41,32 @@ async def get_market_indices():
                 # TrueData client not available, use fallback data
                 pass
         
-        # If market is closed, use fallback historical data
+        # If market is closed or TrueData disconnected, show NO DATA instead of fake values
         if not is_market_open or not connection_health.get('connected', False):
-            # Use representative values for closed market display
+            # REMOVED FAKE DATA - Show clearly that no real data is available
             nifty_data = {
-                'ltp': 24500.0,
-                'high': 24600.0, 
-                'low': 24400.0,
-                'open_price': 24450.0,
+                'ltp': 0,
+                'high': 0, 
+                'low': 0,
+                'open_price': 0,
                 'change': 0,
                 'change_percent': 0,
                 'volume': 0,
-                'prev_close': 24500.0,
+                'prev_close': 0,
                 'timestamp': now_ist.isoformat(),
-                'status': 'CLOSED'
+                'status': 'NO_LIVE_DATA_AVAILABLE' if not is_market_open else 'TRUEDATA_DISCONNECTED'
             }
             banknifty_data = {
-                'ltp': 51000.0,
-                'high': 51200.0,
-                'low': 50800.0, 
-                'open_price': 51050.0,
+                'ltp': 0,
+                'high': 0,
+                'low': 0, 
+                'open_price': 0,
                 'change': 0,
                 'change_percent': 0,
                 'volume': 0,
-                'prev_close': 51000.0,
+                'prev_close': 0,
                 'timestamp': now_ist.isoformat(),
-                'status': 'CLOSED'
+                'status': 'NO_LIVE_DATA_AVAILABLE' if not is_market_open else 'TRUEDATA_DISCONNECTED'
             }
         
         # Helper function to extract price data with enhanced volume handling
@@ -119,13 +119,13 @@ async def get_market_indices():
             
             # Determine status based on data age and values
             if not is_market_open:
-                status = "MARKET_CLOSED"
+                status = "MARKET_CLOSED_NO_DATA"
             elif data_age > 300:  # 5 minutes old
-                status = "STALE"
+                status = "STALE_DATA"
             elif ltp > 0:
-                status = "LIVE"
+                status = "LIVE_TRUEDATA"
             else:
-                status = "NO_DATA"
+                status = "TRUEDATA_DISCONNECTED"
             
             return {
                 "symbol": symbol_name,
