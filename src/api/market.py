@@ -36,7 +36,8 @@ async def get_market_indices():
                     "high": fallback_price,
                     "low": fallback_price,
                     "volume": 0,
-                    "status": "NO_DATA"
+                    "status": "NO_DATA",
+                    "last_update": now_ist.isoformat()
                 }
             
             ltp = data.get('ltp', data.get('last_price', fallback_price))
