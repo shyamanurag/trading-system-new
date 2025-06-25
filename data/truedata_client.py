@@ -143,21 +143,53 @@ class TrueDataSingletonClient:
         @self.td_obj.trade_callback
         def on_tick_data(tick_data):
             try:
-                # Get symbol
+                # DEBUGGING: Log raw packet structure to understand TrueData format
                 symbol = getattr(tick_data, 'symbol', 'UNKNOWN')
+                if symbol in ['NIFTY', 'BANKNIFTY', 'NIFTY-I', 'BANKNIFTY-I']:
+                    # Log packet structure for major indices only (avoid spam)
+                    logger.info(f"🔍 RAW_PACKET {symbol}: type={type(tick_data)}")
+                    logger.info(f"🔍 RAW_FIELDS {symbol}: {list(dir(tick_data)) if hasattr(tick_data, '__dict__') else 'no __dict__'}")
+                    try:
+                        if hasattr(tick_data, '__dict__'):
+                            logger.info(f"🔍 RAW_DATA {symbol}: {tick_data.__dict__}")
+                        elif hasattr(tick_data, 'keys'):
+                            logger.info(f"🔍 RAW_KEYS {symbol}: {list(tick_data.keys())}")
+                    except:
+                        logger.info(f"🔍 RAW_UNKNOWN {symbol}: Cannot extract raw data")
+                
+                # Get symbol
                 
                 # Get price with fallbacks
                 ltp = (getattr(tick_data, 'ltp', 0) or 
                       getattr(tick_data, 'price', 0) or 
                       getattr(tick_data, 'last_price', 0))
                 
-                # Enhanced volume parsing - try multiple field names
-                volume = (getattr(tick_data, 'volume', 0) or 
-                         getattr(tick_data, 'vol', 0) or 
-                         getattr(tick_data, 'v', 0) or 
-                         getattr(tick_data, 'total_volume', 0) or
-                         getattr(tick_data, 'day_volume', 0) or
-                         getattr(tick_data, 'traded_volume', 0))
+                # HYBRID volume parsing - try both object attributes AND dictionary keys
+                def get_volume_safely(data):
+                    """Try both getattr() and .get() methods for volume extraction"""
+                    volume_fields = ['volume', 'vol', 'v', 'total_volume', 'day_volume', 'traded_volume']
+                    
+                    for field in volume_fields:
+                        # Try object attribute first
+                        try:
+                            vol = getattr(data, field, 0)
+                            if vol and vol > 0:
+                                return vol
+                        except:
+                            pass
+                        
+                        # Try dictionary key if attribute fails
+                        try:
+                            if hasattr(data, 'get'):
+                                vol = data.get(field, 0)
+                                if vol and vol > 0:
+                                    return vol
+                        except:
+                            pass
+                    
+                    return 0
+                
+                volume = get_volume_safely(tick_data)
                 
                 # Get OHLC data with fallbacks
                 high = getattr(tick_data, 'high', ltp) or getattr(tick_data, 'h', ltp)
@@ -185,8 +217,35 @@ class TrueDataSingletonClient:
                     'heartbeat': True
                 }
                 
-                # Enhanced logging with volume
-                vol_str = f" | Vol: {volume:,}" if volume > 0 else " | Vol: 0"
+                # Enhanced logging with volume field source debugging
+                def get_volume_field_source(data):
+                    """Debug which field actually contains volume data"""
+                    volume_fields = ['volume', 'vol', 'v', 'total_volume', 'day_volume', 'traded_volume']
+                    found_fields = []
+                    
+                    for field in volume_fields:
+                        # Check object attribute
+                        try:
+                            vol = getattr(data, field, 0)
+                            if vol and vol > 0:
+                                found_fields.append(f"{field}={vol}(attr)")
+                        except:
+                            pass
+                        
+                        # Check dictionary key
+                        try:
+                            if hasattr(data, 'get'):
+                                vol = data.get(field, 0)
+                                if vol and vol > 0:
+                                    found_fields.append(f"{field}={vol}(dict)")
+                        except:
+                            pass
+                    
+                    return found_fields
+                
+                volume_sources = get_volume_field_source(tick_data)
+                vol_debug = f"[{','.join(volume_sources)}]" if volume_sources else "[NO_VOL_FOUND]"
+                vol_str = f" | Vol: {volume:,} {vol_debug}" if volume > 0 else f" | Vol: 0 {vol_debug}"
                 logger.info(f"📊 {symbol}: ₹{ltp:,.2f}{vol_str}")
                 
                 # Update global connection status with heartbeat
