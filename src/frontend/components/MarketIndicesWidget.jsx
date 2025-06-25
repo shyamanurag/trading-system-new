@@ -242,8 +242,13 @@ const MarketIndicesWidget = () => {
                                         <Typography variant="caption" color="text.secondary">
                                             Volume
                                         </Typography>
-                                        <Typography variant="body2">
-                                            {(index.volume / 10000000).toFixed(1)}Cr
+                                        <Typography variant="body2" sx={{ fontWeight: 600, color: 'primary.main' }}>
+                                            {index.volume >= 10000000
+                                                ? `${(index.volume / 10000000).toFixed(1)}Cr`
+                                                : index.volume >= 100000
+                                                    ? `${(index.volume / 100000).toFixed(1)}L`
+                                                    : formatNumber(index.volume)
+                                            }
                                         </Typography>
                                     </Box>
                                 </Box>
