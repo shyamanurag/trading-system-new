@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
 import os
+import pytz
 
 class AutonomousDashboardUpdater:
     """Updates dashboard with real autonomous trading data"""
@@ -13,6 +14,7 @@ class AutonomousDashboardUpdater:
     def __init__(self):
         self.update_interval = 60  # Update every minute
         self.is_running = False
+        self.ist_timezone = pytz.timezone('Asia/Kolkata')
         
     async def get_real_market_data(self) -> Dict[str, Any]:
         """Fetch real market data for dashboard"""
@@ -22,17 +24,19 @@ class AutonomousDashboardUpdater:
             symbols = ["RELIANCE", "TCS", "INFY", "NIFTY", "BANKNIFTY"]
             market_data = {}
             
+            now_ist = datetime.now(self.ist_timezone)
+            
             for symbol in symbols:
                 # Simulate realistic market movements
                 base_price = {"RELIANCE": 2485, "TCS": 3658, "INFY": 1285, "NIFTY": 18450, "BANKNIFTY": 42350}.get(symbol, 1000)
-                current_price = base_price + (base_price * 0.02 * (0.5 - hash(symbol + str(datetime.now().minute)) % 100 / 100))
+                current_price = base_price + (base_price * 0.02 * (0.5 - hash(symbol + str(now_ist.minute)) % 100 / 100))
                 
                 market_data[symbol] = {
                     "current_price": round(current_price, 2),
                     "change": round(current_price - base_price, 2),
                     "change_percent": round(((current_price - base_price) / base_price) * 100, 2),
-                    "volume": hash(symbol + str(datetime.now().hour)) % 1000000,
-                    "last_updated": datetime.now().isoformat()
+                    "volume": hash(symbol + str(now_ist.hour)) % 1000000,
+                    "last_updated": now_ist.isoformat()
                 }
                 
             return market_data
@@ -46,10 +50,10 @@ class AutonomousDashboardUpdater:
         try:
             # In production, this would fetch from trading database
             # For now, simulate realistic performance based on current time
-            now = datetime.now()
+            now_ist = datetime.now(self.ist_timezone)
             
             # Simulate realistic trading performance
-            daily_trades = (now.hour - 9) if now.hour >= 9 and now.hour <= 15 else 0
+            daily_trades = (now_ist.hour - 9) if now_ist.hour >= 9 and now_ist.hour <= 15 else 0
             
             performance = {
                 "session_performance": {
@@ -63,19 +67,19 @@ class AutonomousDashboardUpdater:
                         "name": "Momentum Surfer",
                         "trades": max(0, daily_trades // 2),
                         "pnl": round(daily_trades * 85.0, 2) if daily_trades > 0 else 0.0,
-                        "status": "ACTIVE" if 9 <= now.hour <= 15 else "SCHEDULED"
+                        "status": "ACTIVE" if 9 <= now_ist.hour <= 15 else "SCHEDULED"
                     },
                     {
                         "name": "Volatility Explosion", 
                         "trades": max(0, daily_trades // 3),
                         "pnl": round(daily_trades * 62.5, 2) if daily_trades > 0 else 0.0,
-                        "status": "ACTIVE" if 9 <= now.hour <= 15 else "SCHEDULED"
+                        "status": "ACTIVE" if 9 <= now_ist.hour <= 15 else "SCHEDULED"
                     },
                     {
                         "name": "Elite Confluence",
                         "trades": max(0, daily_trades // 4),
                         "pnl": round(daily_trades * 45.0, 2) if daily_trades > 0 else 0.0,
-                        "status": "ACTIVE" if 9 <= now.hour <= 15 else "SCHEDULED"
+                        "status": "ACTIVE" if 9 <= now_ist.hour <= 15 else "SCHEDULED"
                     }
                 ],
                 "autonomous_actions": {
@@ -95,14 +99,15 @@ class AutonomousDashboardUpdater:
     async def get_autonomous_schedule_status(self) -> Dict[str, Any]:
         """Get current autonomous trading schedule status"""
         try:
-            now = datetime.now()
-            current_time = now.strftime("%H:%M:%S")
+            # Use IST timezone for market hours
+            now_ist = datetime.now(self.ist_timezone)
+            current_time = now_ist.strftime("%H:%M:%S")
             
             schedule_items = [
-                {"time": "09:10:00", "task": "Pre-market system check", "status": "COMPLETED" if now.hour >= 9 and now.minute >= 10 else "PENDING"},
-                {"time": "09:15:00", "task": "Auto-start trading session", "status": "COMPLETED" if now.hour >= 9 and now.minute >= 15 else "PENDING"},
-                {"time": "15:25:00", "task": "Begin position closure", "status": "COMPLETED" if now.hour > 15 or (now.hour == 15 and now.minute >= 25) else "SCHEDULED"},
-                {"time": "15:30:00", "task": "Force close all positions", "status": "COMPLETED" if now.hour > 15 or (now.hour == 15 and now.minute >= 30) else "SCHEDULED"}
+                {"time": "09:10:00", "task": "Pre-market system check", "status": "COMPLETED" if now_ist.hour >= 9 and now_ist.minute >= 10 else "PENDING"},
+                {"time": "09:15:00", "task": "Auto-start trading session", "status": "COMPLETED" if now_ist.hour >= 9 and now_ist.minute >= 15 else "PENDING"},
+                {"time": "15:25:00", "task": "Begin position closure", "status": "COMPLETED" if now_ist.hour > 15 or (now_ist.hour == 15 and now_ist.minute >= 25) else "SCHEDULED"},
+                {"time": "15:30:00", "task": "Force close all positions", "status": "COMPLETED" if now_ist.hour > 15 or (now_ist.hour == 15 and now_ist.minute >= 30) else "SCHEDULED"}
             ]
             
             return {
@@ -111,7 +116,7 @@ class AutonomousDashboardUpdater:
                 "auto_stop_enabled": True,
                 "current_time": current_time,
                 "today_schedule": schedule_items,
-                "market_status": "OPEN" if 9 <= now.hour < 15 or (now.hour == 15 and now.minute < 30) else "CLOSED"
+                "market_status": "OPEN" if 9 <= now_ist.hour < 15 or (now_ist.hour == 15 and now_ist.minute < 30) else "CLOSED"
             }
             
         except Exception as e:
@@ -121,6 +126,8 @@ class AutonomousDashboardUpdater:
     async def update_dashboard_data(self) -> Dict[str, Any]:
         """Compile all real-time data for dashboard update"""
         try:
+            now_ist = datetime.now(self.ist_timezone)
+            
             market_data = await self.get_real_market_data()
             performance = await self.calculate_autonomous_performance()
             schedule = await self.get_autonomous_schedule_status()
@@ -130,7 +137,7 @@ class AutonomousDashboardUpdater:
             total_trades = performance.get("session_performance", {}).get("total_trades", 0)
             
             dashboard_update = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": now_ist.isoformat(),
                 "market_status": schedule.get("market_status", "UNKNOWN"),
                 "autonomous_status": "ACTIVE" if schedule.get("scheduler_active") else "INACTIVE",
                 "real_time_data": True,
@@ -147,7 +154,7 @@ class AutonomousDashboardUpdater:
                 "performance_details": performance,
                 "schedule_status": schedule,
                 "data_source": "autonomous_real_time_analysis",
-                "last_updated": datetime.now().isoformat()
+                "last_updated": now_ist.isoformat()
             }
             
             return dashboard_update

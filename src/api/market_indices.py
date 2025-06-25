@@ -7,6 +7,7 @@ from typing import Dict, List, Any
 from datetime import datetime
 import os
 import logging
+import pytz
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -14,18 +15,24 @@ router = APIRouter()
 # Global variable to store market data
 market_data_cache = {}
 
+# IST timezone
+IST = pytz.timezone('Asia/Kolkata')
+
 @router.get("/indices")
 async def get_market_indices():
     """Get live market indices data"""
     try:
+        # Use IST timezone for accurate market status
+        now_ist = datetime.now(IST)
+        
         # Check if TrueData is configured
         truedata_configured = bool(os.getenv('TRUEDATA_USERNAME'))
         
         # Return empty data if not configured or no real data available
         indices_data = {
             "success": True,
-            "timestamp": datetime.now().isoformat(),
-            "market_status": "OPEN" if datetime.now().hour >= 9 and datetime.now().hour < 16 else "CLOSED",
+            "timestamp": now_ist.isoformat(),
+            "market_status": "OPEN" if 9 <= now_ist.hour < 15 or (now_ist.hour == 15 and now_ist.minute < 30) else "CLOSED",
             "indices": [],  # Real market index data required
             "message": "Waiting for live market data..." if truedata_configured else "TrueData not configured"
         }
@@ -45,12 +52,13 @@ async def get_index_details(symbol: str):
     """Get detailed data for a specific index"""
     try:
         symbol = symbol.upper()
+        now_ist = datetime.now(IST)
         
         # Real market data required
         index_details = {
             "success": True,
             "symbol": symbol,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": now_ist.isoformat(),
             "data": None,  # Real data required
             "constituents": {
                 "top_gainers": [],
@@ -73,8 +81,9 @@ async def get_index_details(symbol: str):
 async def get_market_status():
     """Get current market status and timings"""
     try:
-        now = datetime.now()
-        current_time = now.time()
+        # Use IST timezone for accurate market timing
+        now_ist = datetime.now(IST)
+        current_time = now_ist.time()
         
         # Market timings (IST)
         pre_open_start = datetime.strptime("09:00", "%H:%M").time()
@@ -101,24 +110,25 @@ async def get_market_status():
             status = "CLOSED"
         
         # Check if it's a weekend
-        if now.weekday() in [5, 6]:  # Saturday or Sunday
+        if now_ist.weekday() in [5, 6]:  # Saturday or Sunday
             phase = "WEEKEND"
             status = "CLOSED"
         
         market_status = {
             "success": True,
-            "timestamp": now.isoformat(),
+            "timestamp": now_ist.isoformat(),
             "market_status": status,
             "market_phase": phase,
             "current_time": current_time.strftime("%H:%M:%S"),
+            "ist_time": now_ist.strftime("%Y-%m-%d %H:%M:%S IST"),
             "timings": {
                 "pre_open": "09:00 - 09:15",
                 "normal": "09:15 - 15:30",
                 "post_close": "15:30 - 16:00",
                 "closed": "16:00 - 09:00"
             },
-            "is_trading_day": now.weekday() not in [5, 6],
-            "next_trading_day": "Monday" if now.weekday() >= 4 else "Tomorrow",
+            "is_trading_day": now_ist.weekday() not in [5, 6],
+            "next_trading_day": "Monday" if now_ist.weekday() >= 4 else "Tomorrow",
             "data_provider": {
                 "name": "TrueData",
                 "status": "CONNECTED" if os.getenv('TRUEDATA_USERNAME') else "NOT_CONFIGURED",

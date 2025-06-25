@@ -479,6 +479,24 @@ if os.getenv('DEBUG', 'false').lower() == 'true':
                 routes.append(route_info)
         return {"total_routes": len(routes), "routes": sorted(routes, key=lambda x: x['path'])}
 
+# Add API root endpoint
+@app.get("/api", tags=["root"])
+async def api_root():
+    """API root endpoint - shows available API versions"""
+    return {
+        "name": "AlgoAuto Trading System API",
+        "version": "4.1.0",
+        "available_versions": ["v1"],
+        "endpoints": {
+            "v1": "/api/v1",
+            "health": "/health",
+            "auth": "/auth",
+            "docs": "/docs",
+            "routes": "/api/routes"
+        },
+        "status": "operational"
+    }
+
 # Add a simple route list endpoint that's always available
 @app.get("/api/routes", tags=["debug"])
 async def list_routes():
@@ -590,7 +608,9 @@ async def catch_all(request: Request, path: str):
     
     # Don't intercept API routes - let them return proper 404s
     if (path.startswith("api/") or 
+        path == "api" or  # Handle /api direct access
         path.startswith("auth/") or 
+        path == "auth" or  # Handle /auth direct access
         path.startswith("zerodha-") or 
         path.startswith("ws/") or
         path == "docs" or 
