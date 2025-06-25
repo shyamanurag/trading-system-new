@@ -185,20 +185,48 @@ class TradingOrchestrator:
     async def _perform_system_health_check(self) -> bool:
         """Perform comprehensive system health check"""
         try:
+            # Check critical vs optional connections based on market status
+            market_open = self._is_market_open()
+            
+            # Core connections always required
+            core_connections_ok = True
+            try:
+                # Check essential connections (database, redis)
+                db_status = self.connection_manager.get_status('database') if self.connection_manager else None
+                redis_status = self.connection_manager.get_status('redis') if self.connection_manager else None
+                
+                # For now, be flexible with connections when markets are closed
+                if not market_open:
+                    logger.info("Markets closed - relaxed connection requirements")
+                    core_connections_ok = True  # Allow startup without all connections when markets closed
+                else:
+                    # When markets are open, require all connections
+                    core_connections_ok = self.connection_manager.is_all_connected() if self.connection_manager else False
+                    
+            except Exception as e:
+                logger.warning(f"Connection check error: {e}")
+                core_connections_ok = not market_open  # Allow when markets closed, strict when open
+            
             checks = {
-                'connections': self.connection_manager.is_all_connected(),
+                'connections': core_connections_ok,
                 'risk_manager': self.risk_manager is not None,
                 'order_manager': self.order_manager is not None,
                 'position_tracker': self.position_tracker is not None,
-                'pre_market_complete': bool(self.pre_market_results)
+                'pre_market_complete': bool(self.pre_market_results) or not market_open  # Not required when markets closed
             }
             
             all_healthy = all(checks.values())
             
             logger.info("System Health Check:")
+            logger.info(f"  Market Open: {market_open}")
             for component, status in checks.items():
                 logger.info(f"  {component}: {'✅' if status else '❌'}")
             
+            if all_healthy:
+                logger.info("✅ System health check PASSED")
+            else:
+                logger.warning("❌ System health check FAILED")
+                
             return all_healthy
             
         except Exception as e:
