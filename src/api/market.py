@@ -64,9 +64,9 @@ async def get_market_indices():
                 "last_update": data.get('timestamp', now_ist.isoformat())
             }
         
-        # Build response with live TrueData
-        nifty_index = get_price_data(nifty_data, "NIFTY 50", 22450)
-        bank_nifty_index = get_price_data(banknifty_data, "BANK NIFTY", 48500)
+        # Build response with live TrueData (no hardcoded fallbacks)
+        nifty_index = get_price_data(nifty_data, "NIFTY 50", 0)
+        bank_nifty_index = get_price_data(banknifty_data, "BANK NIFTY", 0)
         
         # Format data as array for frontend compatibility
         indices_array = [
