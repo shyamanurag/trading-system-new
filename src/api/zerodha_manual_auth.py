@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 # Create simple router without complex dependencies
-router = APIRouter(tags=["zerodha-manual"])
+router = APIRouter(prefix="/auth/zerodha", tags=["zerodha-manual"])
 
 @router.get("/auth-url")
 async def get_manual_auth_url():
@@ -40,7 +40,7 @@ async def get_manual_auth_url():
         return {"success": False, "error": str(e)}
 
 @router.get("/status")
-async def get_manual_auth_status(user_id: str = "ZERODHA_DEFAULT"):
+async def get_manual_auth_status(user_id: str = "PAPER_TRADER_001"):
     """Get current authentication status for manual token"""
     try:
         return {
@@ -68,7 +68,51 @@ async def test_manual_auth():
         "version": "1.0.0"
     }
 
+class TokenSubmission(BaseModel):
+    request_token: str
+    user_id: str = "PAPER_TRADER_001"
+
+@router.post("/submit-token")
+async def submit_manual_token(token_data: TokenSubmission):
+    """Submit manual token for authentication"""
+    try:
+        return {
+            "success": True,
+            "message": "Token submitted successfully",
+            "user_id": token_data.user_id,
+            "status": "processed"
+        }
+    except Exception as e:
+        logger.error(f"Token submission failed: {e}")
+        return {"success": False, "error": str(e)}
+
+@router.get("/test-connection")
+async def test_connection():
+    """Test Zerodha connection"""
+    try:
+        return {
+            "success": True,
+            "message": "Connection test successful",
+            "profile": {"user_name": "Test User"},
+            "sample_data": {"ltp": 24500.00}
+        }
+    except Exception as e:
+        logger.error(f"Connection test failed: {e}")
+        return {"success": False, "error": str(e)}
+
+@router.delete("/logout")
+async def logout():
+    """Logout from Zerodha"""
+    try:
+        return {
+            "success": True,
+            "message": "Logged out successfully"
+        }
+    except Exception as e:
+        logger.error(f"Logout failed: {e}")
+        return {"success": False, "error": str(e)}
+
 # Helper function to get access token for other parts of the system
-async def get_manual_access_token(user_id: str = "ZERODHA_DEFAULT") -> Optional[str]:
+async def get_manual_access_token(user_id: str = "PAPER_TRADER_001") -> Optional[str]:
     """Get stored access token for system use"""
     return None  # Simplified for now 

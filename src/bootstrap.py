@@ -20,6 +20,7 @@ from .core.position_manager import PositionManager
 from .core.market_data_aggregator import MarketDataAggregator
 from .middleware.error_handler import error_handler
 from .api import users, webhooks, market_data, monitoring, performance
+from .api import zerodha_manual_auth
 from scripts.run_migrations import MigrationRunner
 import redis.asyncio as redis
 from src.core.intelligent_symbol_manager import start_intelligent_symbol_management
@@ -243,7 +244,8 @@ routers: List[APIRouter] = [
     webhooks.router,
     market_data.router,
     monitoring.router,
-    performance.router
+    performance.router,
+    zerodha_manual_auth.router
 ]
 
 # Mount v1 router with all sub-routers
