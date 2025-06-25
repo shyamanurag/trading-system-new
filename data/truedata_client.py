@@ -97,8 +97,9 @@ class TrueDataSingletonClient:
                 logger.info("Testing connection...")
                 
                 # OFFICIAL PATTERN: Start live data for NSE symbols FIRST (account supports NSE Equity, F&O, Indices)
-                test_symbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'RELIANCE', 'TCS']
-                req_ids = self.td_obj.start_live_data(test_symbols)
+                from config.truedata_symbols import get_default_subscription_symbols
+                default_symbols = get_default_subscription_symbols()
+                req_ids = self.td_obj.start_live_data(default_symbols)
                 logger.info(f"Live data started for NSE symbols: {req_ids}")
                 
                 # Brief pause as per official pattern
