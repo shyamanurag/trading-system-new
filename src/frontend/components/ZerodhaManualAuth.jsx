@@ -7,33 +7,118 @@ const ZerodhaManualAuth = () => {
     const [status, setStatus] = useState(null);
     const [loading, setLoading] = useState(false);
     const [instructions, setInstructions] = useState([]);
+    const [componentLoading, setComponentLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
-        fetchAuthUrl();
-        checkStatus();
+        const initializeComponent = async () => {
+            try {
+                await fetchAuthUrl();
+                await checkStatus();
+                setComponentLoading(false);
+            } catch (err) {
+                setError('Failed to initialize auth component: ' + err.message);
+                setComponentLoading(false);
+            }
+        };
+
+        initializeComponent();
     }, []);
+
+    if (componentLoading) {
+        return (
+            <div className="zerodha-manual-auth">
+                <div className="auth-container">
+                    <h2>🔐 Loading Zerodha Auth...</h2>
+                    <p>Initializing authentication interface...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="zerodha-manual-auth">
+                <div className="auth-container">
+                    <h2>🔐 Zerodha Manual Authentication</h2>
+                    <div className="status-card not-authenticated">
+                        <h3>⚠️ Initialization Error</h3>
+                        <p>{error}</p>
+                        <p><strong>Note:</strong> Backend might still be deploying. Please try again in a few minutes.</p>
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="refresh-button"
+                            style={{ marginTop: '10px' }}
+                        >
+                            🔄 Retry
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     const fetchAuthUrl = async () => {
         try {
             const response = await fetch('/api/v1/auth/zerodha/auth-url');
-            const data = await response.json();
 
+            if (response.status === 404) {
+                // Fallback when endpoints not deployed yet
+                setAuthUrl(`https://kite.zerodha.com/connect/login?api_key=${process.env.REACT_APP_ZERODHA_API_KEY || 'your_api_key'}`);
+                setInstructions([
+                    "1. Click the authorization URL below",
+                    "2. Login to Zerodha with your credentials",
+                    "3. After login, you'll be redirected to a URL",
+                    "4. Copy the 'request_token' parameter from the redirected URL",
+                    "5. Paste the token in the manual token entry below"
+                ]);
+                return;
+            }
+
+            const data = await response.json();
             if (data.success) {
                 setAuthUrl(data.auth_url);
                 setInstructions(data.instructions);
             }
         } catch (error) {
             console.error('Failed to fetch auth URL:', error);
+            // Fallback URL
+            setAuthUrl('https://kite.zerodha.com/connect/login?api_key=sylcoq492qz6f7ej');
+            setInstructions([
+                "1. Click the authorization URL below",
+                "2. Login to Zerodha with your credentials",
+                "3. Copy the 'request_token' from the redirect URL",
+                "4. Paste it below"
+            ]);
         }
     };
 
     const checkStatus = async () => {
         try {
             const response = await fetch('/api/v1/auth/zerodha/status');
+
+            if (response.status === 404) {
+                // Fallback status when endpoints not deployed yet
+                setStatus({
+                    success: true,
+                    message: "Auth system starting up - endpoints deploying...",
+                    authenticated: false,
+                    user_id: "PAPER_TRADER_001",
+                    note: "Backend deployment in progress"
+                });
+                return;
+            }
+
             const data = await response.json();
             setStatus(data);
         } catch (error) {
             console.error('Failed to check status:', error);
+            setStatus({
+                success: false,
+                message: "Connection error - check network",
+                authenticated: false,
+                user_id: "PAPER_TRADER_001"
+            });
         }
     };
 
@@ -56,6 +141,12 @@ const ZerodhaManualAuth = () => {
                 })
             });
 
+            if (response.status === 404) {
+                alert('Auth endpoints are deploying... Please try again in a few minutes when deployment completes.');
+                setLoading(false);
+                return;
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -70,7 +161,7 @@ const ZerodhaManualAuth = () => {
                 alert('Failed to submit token: ' + data.message);
             }
         } catch (error) {
-            alert('Error submitting token: ' + error.message);
+            alert('Error submitting token: ' + error.message + ' - Check if endpoints are deployed');
         }
         setLoading(false);
     };
@@ -117,13 +208,18 @@ const ZerodhaManualAuth = () => {
                 <h2>🔐 Zerodha Manual Authentication</h2>
 
                 {/* Status Display */}
-                {status && (
+                {status ? (
                     <div className={`status-card ${status.authenticated ? 'authenticated' : 'not-authenticated'}`}>
                         <h3>Current Status</h3>
                         <p><strong>Authenticated:</strong> {status.authenticated ? '✅ Yes' : '❌ No'}</p>
                         {status.user_id && <p><strong>User ID:</strong> {status.user_id}</p>}
                         {status.token_expires_at && <p><strong>Expires:</strong> {status.token_expires_at}</p>}
                         <p><strong>Message:</strong> {status.message}</p>
+                    </div>
+                ) : (
+                    <div className="status-card not-authenticated">
+                        <h3>⏳ Checking Status...</h3>
+                        <p>Connecting to authentication server...</p>
                     </div>
                 )}
 
