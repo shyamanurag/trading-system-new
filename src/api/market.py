@@ -11,20 +11,23 @@ router = APIRouter(prefix="/api/market", tags=["market-data"])
 
 @router.get("/indices")
 async def get_market_indices():
-    """Get market indices data from TrueData live feed"""
+    """Get market indices data from TrueData live feed with enhanced volume parsing"""
     try:
-        # Import TrueData live data
-        from data.truedata_client import live_market_data
+        # Import enhanced TrueData functions
+        from data.truedata_client import live_market_data, get_connection_health, get_all_live_data
         
         # Use IST timezone for timestamp
         now_ist = datetime.now(IST)
+        
+        # Get connection health
+        connection_health = get_connection_health()
         
         # Get live data from TrueData singleton client (using correct symbol formats)
         nifty_data = live_market_data.get('NIFTY-I', {})
         banknifty_data = live_market_data.get('BANKNIFTY-I', {})
         
-        # Helper function to extract price data with fallbacks
-        def get_price_data(data, symbol_name, fallback_price=0):
+        # Helper function to extract price data with enhanced volume handling
+        def get_enhanced_price_data(data, symbol_name, fallback_price=0):
             if not data:
                 return {
                     "symbol": symbol_name,
@@ -37,36 +40,67 @@ async def get_market_indices():
                     "low": fallback_price,
                     "volume": 0,
                     "status": "NO_DATA",
-                    "last_update": now_ist.isoformat()
+                    "last_update": now_ist.isoformat(),
+                    "data_age_seconds": 999
                 }
             
+            # Get current time for age calculation
+            current_time = now_ist.timestamp()
+            last_update_time = data.get('last_update_time', current_time)
+            data_age = current_time - last_update_time
+            
+            # Extract data with enhanced volume parsing
             ltp = data.get('ltp', data.get('last_price', fallback_price))
             high = data.get('high', data.get('day_high', ltp))
             low = data.get('low', data.get('day_low', ltp))
-            volume = data.get('volume', data.get('total_volume', 0))
+            open_price = data.get('open', data.get('day_open', ltp))
             
-            # Calculate change (simplified - in real implementation you'd need previous close)
-            prev_close = data.get('prev_close', ltp)
-            change = ltp - prev_close if prev_close > 0 else 0
-            change_percent = (change / prev_close * 100) if prev_close > 0 else 0
+            # Enhanced volume extraction - try multiple fields
+            volume = (data.get('volume', 0) or 
+                     data.get('vol', 0) or 
+                     data.get('total_volume', 0) or
+                     data.get('day_volume', 0) or
+                     data.get('traded_volume', 0))
+            
+            # Get change data
+            change = data.get('change', 0)
+            change_percent = data.get('change_percent', 0)
+            
+            # Calculate change if not available (simplified)
+            if change == 0 and change_percent == 0:
+                prev_close = data.get('prev_close', ltp)
+                if prev_close > 0 and ltp != prev_close:
+                    change = ltp - prev_close
+                    change_percent = (change / prev_close * 100)
+            
+            # Determine status based on data age and values
+            if data_age > 300:  # 5 minutes old
+                status = "STALE"
+            elif ltp > 0:
+                status = "LIVE"
+            else:
+                status = "NO_DATA"
             
             return {
                 "symbol": symbol_name,
                 "name": symbol_name,
-                "price": round(ltp, 2),
-                "change": round(change, 2),
-                "change_percent": round(change_percent, 2),
-                "last_price": round(ltp, 2),
-                "high": round(high, 2),
-                "low": round(low, 2),
-                "volume": int(volume),
-                "status": "LIVE" if ltp > 0 else "NO_DATA",
-                "last_update": data.get('timestamp', now_ist.isoformat())
+                "price": round(float(ltp), 2) if ltp else 0,
+                "change": round(float(change), 2) if change else 0,
+                "change_percent": round(float(change_percent), 2) if change_percent else 0,
+                "last_price": round(float(ltp), 2) if ltp else 0,
+                "high": round(float(high), 2) if high else 0,
+                "low": round(float(low), 2) if low else 0,
+                "open": round(float(open_price), 2) if open_price else 0,
+                "volume": int(volume) if volume else 0,
+                "status": status,
+                "last_update": data.get('timestamp', now_ist.isoformat()),
+                "data_age_seconds": round(data_age, 1),
+                "heartbeat": data.get('heartbeat', False)
             }
         
-        # Build response with live TrueData (no hardcoded fallbacks)
-        nifty_index = get_price_data(nifty_data, "NIFTY 50", 0)
-        bank_nifty_index = get_price_data(banknifty_data, "BANK NIFTY", 0)
+        # Build response with enhanced TrueData parsing
+        nifty_index = get_enhanced_price_data(nifty_data, "NIFTY 50", 0)
+        bank_nifty_index = get_enhanced_price_data(banknifty_data, "BANK NIFTY", 0)
         
         # Format data as array for frontend compatibility
         indices_array = [
@@ -79,10 +113,12 @@ async def get_market_indices():
                 "change_percent": nifty_index["change_percent"],
                 "high": nifty_index["high"],
                 "low": nifty_index["low"],
-                "open": nifty_index["price"],  # Using current price as open for now
+                "open": nifty_index["open"],
                 "volume": nifty_index["volume"],
                 "status": nifty_index["status"],
-                "last_update": nifty_index["last_update"]
+                "last_update": nifty_index["last_update"],
+                "data_age_seconds": nifty_index["data_age_seconds"],
+                "heartbeat": nifty_index["heartbeat"]
             },
             {
                 "symbol": "BANKNIFTY",
@@ -93,14 +129,22 @@ async def get_market_indices():
                 "change_percent": bank_nifty_index["change_percent"],
                 "high": bank_nifty_index["high"],
                 "low": bank_nifty_index["low"],
-                "open": bank_nifty_index["price"],  # Using current price as open for now
+                "open": bank_nifty_index["open"],
                 "volume": bank_nifty_index["volume"],
                 "status": bank_nifty_index["status"],
-                "last_update": bank_nifty_index["last_update"]
+                "last_update": bank_nifty_index["last_update"],
+                "data_age_seconds": bank_nifty_index["data_age_seconds"],
+                "heartbeat": bank_nifty_index["heartbeat"]
             }
         ]
         
-        market_status = "OPEN" if 9 <= now_ist.hour < 16 else "CLOSED"
+        # Enhanced market status
+        current_hour = now_ist.hour
+        market_status = "OPEN" if 9 <= current_hour < 16 else "CLOSED"
+        
+        # Weekend check
+        if now_ist.weekday() in [5, 6]:
+            market_status = "CLOSED"
         
         return MarketIndicesResponse.create(
             indices_data=indices_array,
@@ -111,7 +155,11 @@ async def get_market_indices():
                 "symbols_available": len(live_market_data),
                 "nifty_available": bool(nifty_data),
                 "banknifty_available": bool(banknifty_data),
-                "live_data_symbols": list(live_market_data.keys())
+                "live_data_symbols": list(live_market_data.keys()),
+                "connection_healthy": connection_health['connected'] and connection_health['heartbeat_healthy'],
+                "heartbeat_age_seconds": connection_health.get('heartbeat_age', 999),
+                "data_flowing": connection_health['data_flowing'],
+                "total_symbols": connection_health['symbols_count']
             }
         ).dict()
         
@@ -120,7 +168,7 @@ async def get_market_indices():
 
 @router.get("/market-status")
 async def get_market_status():
-    """Get current market status and timings"""
+    """Get current market status and timings with TrueData health"""
     try:
         # Use IST timezone for accurate market timing
         now_ist = datetime.now(IST)
@@ -155,6 +203,15 @@ async def get_market_status():
             phase = "WEEKEND"
             status = "CLOSED"
         
+        # Get TrueData connection health
+        try:
+            from data.truedata_client import get_connection_health
+            truedata_health = get_connection_health()
+            truedata_status = "CONNECTED" if truedata_health['connected'] and truedata_health['heartbeat_healthy'] else "DISCONNECTED"
+        except:
+            truedata_health = {'connected': False, 'heartbeat_healthy': False}
+            truedata_status = "ERROR"
+        
         return MarketStatusResponse.create(
             status=status,
             phase=phase,
@@ -172,14 +229,54 @@ async def get_market_status():
             },
             is_trading_day=now_ist.weekday() not in [5, 6],
             data_provider={
-                "name": "TrueData",
-                "status": "CONNECTED" if os.getenv('TRUEDATA_USERNAME') else "NOT_CONFIGURED",
-                "user": os.getenv('TRUEDATA_USERNAME', 'Not configured')
+                "name": "TrueData Enhanced",
+                "status": truedata_status,
+                "user": os.getenv('TRUEDATA_USERNAME', 'Not configured'),
+                "connection_healthy": truedata_health['connected'] and truedata_health['heartbeat_healthy'],
+                "heartbeat_age": truedata_health.get('heartbeat_age', 999),
+                "data_flowing": truedata_health.get('data_flowing', False)
             }
         ).dict()
         
     except Exception as e:
         raise HTTPException(status_code=500, detail="Unable to fetch market status")
+
+# Enhanced volume data endpoint
+@router.get("/volume-data")
+async def get_volume_data():
+    """Get detailed volume data for debugging"""
+    try:
+        from data.truedata_client import live_market_data, get_all_live_data
+        
+        volume_data = {}
+        for symbol, data in live_market_data.items():
+            if not symbol.endswith('_GREEKS'):  # Skip options data
+                volume_data[symbol] = {
+                    'symbol': symbol,
+                    'ltp': data.get('ltp', 0),
+                    'volume': data.get('volume', 0),
+                    'volume_fields': {
+                        'volume': data.get('volume', 0),
+                        'vol': data.get('vol', 0),
+                        'v': data.get('v', 0),
+                        'total_volume': data.get('total_volume', 0),
+                        'day_volume': data.get('day_volume', 0),
+                        'traded_volume': data.get('traded_volume', 0)
+                    },
+                    'timestamp': data.get('timestamp'),
+                    'data_source': data.get('data_source'),
+                    'heartbeat': data.get('heartbeat', False)
+                }
+        
+        return {
+            "success": True,
+            "volume_data": volume_data,
+            "total_symbols": len(volume_data),
+            "symbols_with_volume": len([s for s in volume_data.values() if s['volume'] > 0])
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unable to fetch volume data: {str(e)}")
 
 # --- START USER ENDPOINTS ---
 # Note: This is a temporary measure to test the router refactoring.
@@ -199,9 +296,21 @@ async def get_current_user():
     """Get current user information (mocked)"""
     try:
         return {
-            "status": "success",
-            "data": {"username": "admin", "full_name": "Administrator", "email": "admin@trading-system.com", "is_admin": True, "last_login": datetime.now().isoformat(), "permissions": ["read", "write", "admin"]}
+            "success": True,
+            "user": {
+                "id": "test_user_001",
+                "username": "test_user",
+                "email": "test@example.com",
+                "name": "Test User",
+                "role": "trader",
+                "created_at": "2024-01-01T00:00:00Z",
+                "is_active": True,
+                "preferences": {
+                    "theme": "dark",
+                    "notifications": True,
+                    "paper_trading": True
+                }
+            }
         }
     except Exception as e:
-        print(f"Error getting current user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get current user") 
+        raise HTTPException(status_code=500, detail=str(e)) 

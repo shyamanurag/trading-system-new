@@ -131,7 +131,8 @@ async def get_broker_users():
                 "total_trades": user["total_trades"],
                 "win_rate": user["win_rate"],
                 "is_active": user["is_active"],
-                "open_trades": user["open_trades"]
+                "open_trades": user["open_trades"],
+                "paper_trading": user["paper_trading"]
             })
         
         return {
@@ -141,6 +142,80 @@ async def get_broker_users():
         
     except Exception as e:
         logger.error(f"Error fetching broker users: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/users/broker/{user_id}")
+async def update_broker_user(user_id: str, user: BrokerUser):
+    """Update an existing broker user"""
+    try:
+        # Check if user exists
+        if user_id not in broker_users:
+            raise HTTPException(
+                status_code=404,
+                detail=f"User {user_id} not found"
+            )
+        
+        # Update user data
+        broker_users[user_id].update({
+            "name": user.name,
+            "broker": user.broker,
+            "api_key": user.api_key,
+            "api_secret": user.api_secret,
+            "client_id": user.client_id,
+            "initial_capital": user.initial_capital,
+            "risk_tolerance": user.risk_tolerance,
+            "paper_trading": user.paper_trading,
+            "updated_at": datetime.now().isoformat()
+        })
+        
+        # Update environment variables
+        os.environ['ZERODHA_API_KEY'] = user.api_key
+        os.environ['ZERODHA_API_SECRET'] = user.api_secret
+        os.environ['ZERODHA_CLIENT_ID'] = user.client_id
+        os.environ['PAPER_TRADING'] = str(user.paper_trading).lower()
+        
+        logger.info(f"Updated broker user: {user_id} - Paper Trading: {user.paper_trading}")
+        
+        return {
+            "success": True,
+            "message": f"Broker user {user_id} updated successfully",
+            "user": broker_users[user_id]
+        }
+        
+    except HTTPException as he:
+        logger.error(f"Validation error updating broker user: {he.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"Error updating broker user: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/users/broker/{user_id}")
+async def delete_broker_user(user_id: str):
+    """Delete a broker user"""
+    try:
+        # Check if user exists
+        if user_id not in broker_users:
+            raise HTTPException(
+                status_code=404,
+                detail=f"User {user_id} not found"
+            )
+        
+        # Remove user
+        deleted_user = broker_users.pop(user_id)
+        
+        logger.info(f"Deleted broker user: {user_id}")
+        
+        return {
+            "success": True,
+            "message": f"Broker user {user_id} deleted successfully",
+            "deleted_user": deleted_user
+        }
+        
+    except HTTPException as he:
+        logger.error(f"Error deleting broker user: {he.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting broker user: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/trading/control")

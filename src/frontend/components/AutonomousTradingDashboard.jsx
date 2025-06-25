@@ -159,7 +159,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
 
     const fetchBrokerUsers = async () => {
         try {
-            const response = await fetchWithAuth(API_ENDPOINTS.USERS.url);
+            const response = await fetchWithAuth(API_ENDPOINTS.BROKER_USERS.url);
             const data = await response.json();
             if (data.success) {
                 setBrokerUsers(data.users || []);

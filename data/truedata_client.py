@@ -1,21 +1,24 @@
+#!/usr/bin/env python3
 """
-FINAL TrueData Client - SINGLETON PATTERN
-Fixes all "User Already Connected" errors
+FINAL TrueData WebSocket Client - SINGLETON PATTERN
+Fixes "User Already Connected" errors and volume parsing issues
 """
+
+import os
 import logging
 import threading
 import time
 from datetime import datetime
-from typing import Dict, Any, Optional
-import os
+from typing import Dict, Optional, List
 
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Global data storage - EXACTLY as backend expects
-live_market_data = {}
+# Global data storage
+live_market_data: Dict[str, Dict] = {}
 truedata_connection_status = {
     'connected': False,
-    'username': '',
     'last_update': None,
     'error': None,
     'data_count': 0
@@ -24,7 +27,7 @@ truedata_connection_status = {
 class TrueDataSingletonClient:
     """
     FINAL TrueData Client - ONE CONNECTION ONLY
-    Fixes all "User Already Connected" errors
+    Fixes all "User Already Connected" errors and volume parsing
     """
     
     _instance = None
@@ -35,194 +38,183 @@ class TrueDataSingletonClient:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = super().__new__(cls)
-                    cls._instance._initialized = False
         return cls._instance
     
     def __init__(self):
-        if hasattr(self, '_initialized') and self._initialized:
+        if hasattr(self, 'initialized'):
             return
-            
-        # Use OFFICIAL TrueData account credentials
-        self.username = os.environ.get('TRUEDATA_USERNAME', 'tdwsp697')
-        self.password = os.environ.get('TRUEDATA_PASSWORD', 'shyam@697')
-        self.url = "push.truedata.in"
-        self.port = 8084  # OFFICIAL port from TrueData support
         
+        self.initialized = True
         self.td_obj = None
         self.connected = False
-        self.running = False
-        self.data_thread = None
-        self._initialized = True
+        self.username = os.environ.get('TRUEDATA_USERNAME', 'tdwsp697')
+        self.password = os.environ.get('TRUEDATA_PASSWORD', 'shyam@697')
+        self.url = 'push.truedata.in'
+        self.port = 8084
         
-        logger.info(f"FINAL TrueData Client - User: {self.username}")
+        # Connection state
+        self._connection_lock = threading.Lock()
+        self._last_heartbeat = 0
+        
+        logger.info(f"TrueData Singleton Client initialized for {self.username}")
 
     def connect(self):
-        """Connect with COMPLETE session cleanup"""
-        global truedata_connection_status, live_market_data
-        
-        with self._lock:
-            try:
-                # CRITICAL: Complete cleanup first
-                self._nuclear_cleanup()
-                
-                # Quick cleanup pause (reduced from 30s to prevent production timeouts)
-                logger.info("Quick session cleanup...")
-                time.sleep(3)
-                
-                # Import ONLY the official library
-                try:
-                    from truedata import TD_live
-                    logger.info("Using official truedata library")
-                except ImportError:
-                    try:
-                        from truedata_ws.websocket.TD import TD
-                        TD_live = TD
-                        logger.info("Using truedata-ws library")
-                    except ImportError:
-                        logger.error("No TrueData library available")
-                        return False
-                
-                # Create SINGLE connection
-                logger.info("Creating SINGLE TrueData connection...")
-                self.td_obj = TD_live(
-                    login_id=self.username, 
-                    password=self.password, 
-                    live_port=self.port,
-                    url=self.url,
-                    log_level=logging.WARNING,
-                    compression=False  # CRITICAL: Disable compression to fix decompression bug
-                )
-                
-                # Test connection immediately
-                logger.info("Testing connection...")
-                
-                # OFFICIAL PATTERN: Start live data for NSE symbols FIRST (account supports NSE Equity, F&O, Indices)
-                from config.truedata_symbols import get_default_subscription_symbols
-                default_symbols = get_default_subscription_symbols()
-                req_ids = self.td_obj.start_live_data(default_symbols)
-                logger.info(f"Live data started for NSE symbols: {req_ids}")
-                
-                # Brief pause as per official pattern
-                time.sleep(1)
-                
-                # Setup callbacks AFTER start_live_data (official TrueData pattern)
-                self._setup_callbacks()
-                
-                # Mark as connected
-                self.connected = True
-                truedata_connection_status.update({
-                    'connected': True,
-                    'username': self.username,
-                    'last_update': datetime.now().isoformat(),
-                    'error': None
-                })
-                
-                logger.info("TrueData connection SUCCESS!")
+        """Connect to TrueData with enhanced error handling"""
+        with self._connection_lock:
+            if self.connected and self.td_obj:
+                logger.info("Already connected to TrueData")
                 return True
-                
-            except Exception as e:
-                error_msg = str(e)
-                logger.error(f"Connection failed: {error_msg}")
-                
-                # Check if it's the familiar error
-                if "User Already Connected" in error_msg:
-                    logger.error("CRITICAL: Server reports user already connected")
-                    logger.error("SOLUTIONS:")
-                    logger.error("   1. Contact TrueData support to reset session")
-                    logger.error("   2. Wait 60+ minutes for automatic session expiry")
-                    logger.error("   3. Try different credentials if available")
-                    
-                    truedata_connection_status['error'] = "User Already Connected - Contact TrueData Support"
-                elif "Connection refused" in error_msg:
-                    logger.error("CRITICAL: TrueData servers refusing connection")
-                    logger.error("POSSIBLE CAUSES:")
-                    logger.error("   1. Account subscription expired")
-                    logger.error("   2. IP address blocked due to multiple failed attempts")
-                    logger.error("   3. Incorrect credentials")
-                    logger.error("   4. TrueData server maintenance")
-                    
-                    truedata_connection_status['error'] = "Connection Refused - Check Account Status"
-                else:
-                    truedata_connection_status['error'] = error_msg
-                
+            
+            try:
+                # Nuclear cleanup first
                 self._nuclear_cleanup()
+                
+                # Import TrueData library
+                from truedata_ws.websocket.TD import TD
+                
+                logger.info(f"Connecting to TrueData: {self.username}@{self.url}:{self.port}")
+                
+                # Create connection
+                self.td_obj = TD(self.username, self.password, live_port=self.port)
+                
+                # Connect
+                connect_result = self.td_obj.connect()
+                
+                if connect_result:
+                    self.connected = True
+                    logger.info("✅ TrueData connected successfully")
+                    
+                    # Setup enhanced callbacks
+                    self._setup_enhanced_callbacks()
+                    
+                    # Subscribe to indices
+                    self._subscribe_to_indices()
+                    
+                    # Update status
+                    truedata_connection_status.update({
+                        'connected': True,
+                        'last_update': datetime.now().isoformat(),
+                        'error': None,
+                        'username': self.username
+                    })
+                    
+                    return True
+                else:
+                    logger.error("❌ TrueData connection failed")
+                    return False
+                    
+            except Exception as e:
+                logger.error(f"❌ TrueData connection error: {e}")
+                truedata_connection_status.update({
+                    'connected': False,
+                    'error': str(e),
+                    'last_error_time': datetime.now().isoformat()
+                })
                 return False
 
     def _nuclear_cleanup(self):
-        """Complete nuclear cleanup of ALL TrueData connections"""
-        logger.info("Performing NUCLEAR cleanup of ALL TrueData connections...")
-        
+        """Complete cleanup of any existing connections"""
         try:
-            # Stop any running threads
-            self.running = False
-            if self.data_thread and self.data_thread.is_alive():
-                self.data_thread.join(timeout=3)
-            
-            # Cleanup current connection
             if self.td_obj:
-                cleanup_methods = ['disconnect', 'close', 'stop', 'logout']
-                for method in cleanup_methods:
-                    if hasattr(self.td_obj, method):
-                        try:
-                            getattr(self.td_obj, method)()
-                            logger.info(f"Called {method}()")
-                        except:
-                            pass
-                            
+                try:
+                    self.td_obj.disconnect()
+                except:
+                    pass
                 self.td_obj = None
             
-            # Clear all data
             self.connected = False
+            
+            # Clear global data
             live_market_data.clear()
             
-            # Force garbage collection
-            import gc
-            gc.collect()
-            
-            logger.info("Nuclear cleanup completed")
+            # Small delay to ensure cleanup
+            time.sleep(0.5)
             
         except Exception as e:
-            logger.warning(f"Cleanup error: {e}")
+            logger.error(f"Cleanup error: {e}")
 
-    def _setup_callbacks(self):
-        """Setup all callbacks for TrueData - FIXED using official pattern"""
+    def _setup_enhanced_callbacks(self):
+        """Setup enhanced callbacks with better volume parsing"""
         if not self.td_obj:
+            logger.error("No TrueData object for callback setup")
             return
             
-        # Trade/Tick callback - FIXED to use official pattern
+        # Enhanced Trade/Tick callback with multiple volume field support
         @self.td_obj.trade_callback
         def on_tick_data(tick_data):
             try:
-                # CORRECT: TrueData sends tick_feed objects, use getattr() not .get()
+                # Get symbol
                 symbol = getattr(tick_data, 'symbol', 'UNKNOWN')
-                ltp = getattr(tick_data, 'ltp', 0)
-                volume = getattr(tick_data, 'volume', 0)
                 
+                # Get price with fallbacks
+                ltp = (getattr(tick_data, 'ltp', 0) or 
+                      getattr(tick_data, 'price', 0) or 
+                      getattr(tick_data, 'last_price', 0))
+                
+                # Enhanced volume parsing - try multiple field names
+                volume = (getattr(tick_data, 'volume', 0) or 
+                         getattr(tick_data, 'vol', 0) or 
+                         getattr(tick_data, 'v', 0) or 
+                         getattr(tick_data, 'total_volume', 0) or
+                         getattr(tick_data, 'day_volume', 0) or
+                         getattr(tick_data, 'traded_volume', 0))
+                
+                # Get OHLC data with fallbacks
+                high = getattr(tick_data, 'high', ltp) or getattr(tick_data, 'h', ltp)
+                low = getattr(tick_data, 'low', ltp) or getattr(tick_data, 'l', ltp)
+                open_price = getattr(tick_data, 'open', ltp) or getattr(tick_data, 'o', ltp)
+                
+                # Get change data
+                change = getattr(tick_data, 'change', 0) or getattr(tick_data, 'chg', 0)
+                change_percent = getattr(tick_data, 'change_percent', 0) or getattr(tick_data, 'chg_per', 0)
+                
+                # Store comprehensive data with heartbeat
+                now = datetime.now()
                 live_market_data[symbol] = {
                     'symbol': symbol,
-                    'ltp': float(ltp),
-                    'volume': int(volume),
-                    'timestamp': datetime.now().isoformat(),
-                    'data_source': 'FIXED_OBJECT_ATTRIBUTES'
+                    'ltp': float(ltp) if ltp else 0.0,
+                    'volume': int(volume) if volume else 0,
+                    'high': float(high) if high else float(ltp) if ltp else 0.0,
+                    'low': float(low) if low else float(ltp) if ltp else 0.0,
+                    'open': float(open_price) if open_price else float(ltp) if ltp else 0.0,
+                    'change': float(change) if change else 0.0,
+                    'change_percent': float(change_percent) if change_percent else 0.0,
+                    'timestamp': now.isoformat(),
+                    'data_source': 'ENHANCED_CALLBACK',
+                    'last_update_time': now.timestamp(),
+                    'heartbeat': True
                 }
                 
-                logger.info(f"LIVE: {symbol} = Rs.{ltp}")
+                # Enhanced logging with volume
+                vol_str = f" | Vol: {volume:,}" if volume > 0 else " | Vol: 0"
+                logger.info(f"📊 {symbol}: ₹{ltp:,.2f}{vol_str}")
                 
-                # Update connection status
+                # Update global connection status with heartbeat
                 truedata_connection_status.update({
-                    'last_update': datetime.now().isoformat(),
-                    'data_count': len(live_market_data)
+                    'connected': True,
+                    'last_update': now.isoformat(),
+                    'data_count': len(live_market_data),
+                    'last_symbol': symbol,
+                    'heartbeat': now.timestamp(),
+                    'last_volume': volume
                 })
                 
+                # Update heartbeat tracker
+                self._last_heartbeat = now.timestamp()
+                
             except Exception as e:
-                logger.error(f"Tick callback error: {e}")
-                logger.error(f"Tick data structure: {tick_data}")
+                logger.error(f"❌ Tick callback error: {e}")
+                # Enhanced error logging
+                try:
+                    logger.error(f"Tick data attributes: {dir(tick_data)}")
+                    logger.error(f"Tick data vars: {vars(tick_data)}")
+                except:
+                    logger.error("Could not extract tick data structure")
         
-        # Greek callback for options - FIXED to use official pattern
+        # Enhanced Greek callback
         @self.td_obj.greek_callback
         def on_greek_data(greek_data):
             try:
-                # CORRECT: TrueData sends objects, use getattr() not .get()
                 symbol = getattr(greek_data, 'symbol', 'UNKNOWN')
                 
                 greek_info = {
@@ -238,20 +230,16 @@ class TrueDataSingletonClient:
                     'data_type': 'GREEKS'
                 }
                 
-                # Store in market data with _GREEKS suffix
                 live_market_data[f"{symbol}_GREEKS"] = greek_info
-                
-                logger.info(f"GREEKS: {symbol} - IV:{greek_info['iv']:.2f}%, Delta:{greek_info['delta']:.4f}")
+                logger.info(f"📈 GREEKS: {symbol} - IV:{greek_info['iv']:.2f}%")
                 
             except Exception as e:
-                logger.error(f"Greek callback error: {e}")
-                logger.error(f"Greek data structure: {greek_data}")
+                logger.error(f"❌ Greek callback error: {e}")
         
-        # Bid-Ask callback - FIXED to use official pattern
+        # Enhanced Bid-Ask callback
         @self.td_obj.bidask_callback
         def on_bidask_data(bidask_data):
             try:
-                # CORRECT: TrueData sends objects, use getattr() not .get()
                 symbol = getattr(bidask_data, 'symbol', 'UNKNOWN')
                 
                 bidask_info = {
@@ -264,19 +252,37 @@ class TrueDataSingletonClient:
                     'data_type': 'BIDASK'
                 }
                 
-                # Update main market data
+                # Merge with existing data
                 if symbol in live_market_data:
                     live_market_data[symbol].update(bidask_info)
                 else:
                     live_market_data[symbol] = bidask_info
                 
-                logger.info(f"BIDASK: {symbol} - Bid:{bidask_info['bid']}, Ask:{bidask_info['ask']}")
+                logger.info(f"💹 BIDASK: {symbol} - Bid:₹{bidask_info['bid']}, Ask:₹{bidask_info['ask']}")
                 
             except Exception as e:
-                logger.error(f"BidAsk callback error: {e}")
-                logger.error(f"BidAsk data structure: {bidask_data}")
+                logger.error(f"❌ BidAsk callback error: {e}")
         
-        logger.info("Callbacks setup completed using OFFICIAL TrueData pattern")
+        logger.info("✅ Enhanced callbacks setup completed")
+
+    def _subscribe_to_indices(self):
+        """Subscribe to market indices with correct symbol formats"""
+        if not self.td_obj or not self.connected:
+            logger.error("Cannot subscribe - not connected")
+            return False
+            
+        try:
+            # Use correct TrueData symbol formats
+            symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS']
+            
+            req_ids = self.td_obj.start_live_data(symbols)
+            logger.info(f"📡 Subscribed to symbols: {symbols}")
+            logger.info(f"📡 Request IDs: {req_ids}")
+            
+            return True
+        except Exception as e:
+            logger.error(f"❌ Subscription error: {e}")
+            return False
 
     def subscribe_symbols(self, symbols: list):
         """Subscribe to additional symbols"""
@@ -286,28 +292,35 @@ class TrueDataSingletonClient:
             
         try:
             req_ids = self.td_obj.start_live_data(symbols)
-            logger.info(f"Subscribed to {len(symbols)} symbols: {req_ids}")
+            logger.info(f"📡 Subscribed to {len(symbols)} additional symbols: {req_ids}")
             return True
         except Exception as e:
-            logger.error(f"Subscribe error: {e}")
+            logger.error(f"❌ Subscribe error: {e}")
             return False
 
     def get_status(self):
-        """Get current status"""
+        """Get enhanced status with heartbeat monitoring"""
+        now = datetime.now().timestamp()
+        heartbeat_age = now - self._last_heartbeat if self._last_heartbeat > 0 else 999
+        
         return {
             'connected': self.connected,
             'username': self.username,
             'url': f"{self.url}:{self.port}",
             'symbols_active': len(live_market_data),
-            'implementation': 'FINAL_SINGLETON_CLIENT',
-            'data_flowing': len(live_market_data) > 0
+            'implementation': 'ENHANCED_SINGLETON_CLIENT',
+            'data_flowing': len(live_market_data) > 0,
+            'heartbeat_age_seconds': heartbeat_age,
+            'heartbeat_healthy': heartbeat_age < 30,  # Consider healthy if updated within 30s
+            'last_heartbeat': self._last_heartbeat,
+            'live_symbols': list(live_market_data.keys())
         }
 
     def disconnect(self):
         """Disconnect cleanly"""
-        with self._lock:
+        with self._connection_lock:
             self._nuclear_cleanup()
-            logger.info("Final TrueData client disconnected")
+            logger.info("🔌 TrueData client disconnected")
 
 # Create GLOBAL SINGLETON instance
 truedata_client = TrueDataSingletonClient()
@@ -318,12 +331,13 @@ def initialize_truedata():
     return truedata_client.connect()
 
 def get_truedata_status():
-    """Get status - called by backend"""
+    """Get enhanced status - called by backend"""
     return truedata_client.get_status()
 
 def is_connected():
-    """Check connection - called by backend"""
-    return truedata_client.connected
+    """Check connection with heartbeat monitoring - called by backend"""
+    status = truedata_client.get_status()
+    return status['connected'] and status['heartbeat_healthy']
 
 def get_live_data_for_symbol(symbol: str):
     """Get data for symbol - called by backend"""
@@ -333,7 +347,22 @@ def subscribe_to_symbols(symbols: list):
     """Subscribe to symbols - called by backend"""
     return truedata_client.subscribe_symbols(symbols)
 
-logger.info("FINAL TrueData Singleton Client loaded")
+def get_all_live_data():
+    """Get all live market data - called by backend"""
+    return live_market_data.copy()
+
+def get_connection_health():
+    """Get connection health metrics"""
+    status = get_truedata_status()
+    return {
+        'connected': status['connected'],
+        'heartbeat_healthy': status['heartbeat_healthy'],
+        'data_flowing': status['data_flowing'],
+        'symbols_count': status['symbols_active'],
+        'heartbeat_age': status['heartbeat_age_seconds']
+    }
+
+logger.info("🚀 ENHANCED TrueData Singleton Client loaded with volume parsing fix")
 
 # =====================================
 # DIAGNOSTIC FUNCTIONS

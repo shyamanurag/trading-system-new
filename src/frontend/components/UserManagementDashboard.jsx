@@ -97,7 +97,7 @@ const UserManagementDashboard = () => {
         try {
             setLoading(true);
             // Use the broker users endpoint instead
-            const response = await fetchWithAuth(`${API_ENDPOINTS.BROKER_USERS?.url || API_ENDPOINTS.USERS.url.replace('/users/', '/control/users/broker')}`);
+            const response = await fetchWithAuth(API_ENDPOINTS.BROKER_USERS.url);
             if (!response.ok) {
                 throw new Error('Failed to fetch users');
             }
@@ -241,7 +241,7 @@ const UserManagementDashboard = () => {
                 paper_trading: true
             };
 
-            const response = await fetchWithAuth(API_ENDPOINTS.USERS.url.replace('/users/', '/control/users/broker'), {
+            const response = await fetchWithAuth(API_ENDPOINTS.BROKER_USERS.url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
