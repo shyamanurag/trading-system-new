@@ -70,11 +70,24 @@ async def start_trading(
 ):
     """Start autonomous trading"""
     try:
-        await orchestrator.enable_trading()
-        return BaseResponse(
-            success=True,
-            message="Autonomous trading started successfully"
-        )
+        # Initialize system first if not ready
+        if not orchestrator.system_ready:
+            logger.info("System not ready, initializing...")
+            init_success = await orchestrator.initialize_system()
+            if not init_success:
+                raise HTTPException(status_code=500, detail="Failed to initialize trading system")
+        
+        # Now enable trading
+        trading_enabled = await orchestrator.enable_trading()
+        
+        if trading_enabled:
+            return BaseResponse(
+                success=True,
+                message="Autonomous trading started successfully"
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to enable trading - system not ready")
+            
     except Exception as e:
         logger.error(f"Error starting trading: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
