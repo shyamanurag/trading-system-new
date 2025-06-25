@@ -48,8 +48,10 @@ async def get_recommendations():
 async def get_symbol_recommendations(symbol: str):
     """Get recommendation for a specific symbol"""
     try:
-        # NO MOCK DATA - Real data required
-        current_price = 1000.0
+        # Get real price from TrueData
+        from data.truedata_client import live_market_data
+        symbol_data = live_market_data.get('NIFTY', {})
+        current_price = symbol_data.get('ltp', symbol_data.get('last_price', 0.0))
         stop_loss = 950.0
         target = 1100.0
         

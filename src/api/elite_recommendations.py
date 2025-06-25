@@ -69,7 +69,10 @@ class AutonomousEliteScanner:
                     
                     # Generate realistic price levels based on symbol
                     import random
-                    base_price = 1000 + random.uniform(0, 2000)  # Simulated current price
+                    # Get real price from TrueData instead of simulated price
+        from data.truedata_client import live_market_data
+        symbol_data = live_market_data.get(symbol, {})
+        base_price = symbol_data.get('ltp', symbol_data.get('last_price', 0.0))
                     
                     if direction == "LONG":
                         entry_price = base_price * 0.99  # Entry slightly below current

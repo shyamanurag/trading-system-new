@@ -141,7 +141,10 @@ class PreMarketAnalyzer:
         """Calculate key support/resistance levels"""
         try:
             # In production, use technical analysis
-            spot_price = 19800  # Example
+            # Get real spot price from TrueData
+            from data.truedata_client import live_market_data
+            nifty_data = live_market_data.get('NIFTY', {})
+            spot_price = nifty_data.get('ltp', nifty_data.get('last_price', 0.0))
             
             # Calculate pivot points
             high = 19850

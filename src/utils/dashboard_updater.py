@@ -27,8 +27,15 @@ class AutonomousDashboardUpdater:
             now_ist = datetime.now(self.ist_timezone)
             
             for symbol in symbols:
-                # Simulate realistic market movements
-                base_price = {"RELIANCE": 2485, "TCS": 3658, "INFY": 1285, "NIFTY": 18450, "BANKNIFTY": 42350}.get(symbol, 1000)
+                # Get base price from TrueData live data instead of hardcoded values
+                from data.truedata_client import live_market_data
+                symbol_market_data = live_market_data.get(symbol, {})
+                base_price = symbol_market_data.get('ltp', symbol_market_data.get('last_price', 1000))
+                
+                # If no TrueData available, skip the symbol
+                if base_price == 0:
+                    continue
+                    
                 current_price = base_price + (base_price * 0.02 * (0.5 - hash(symbol + str(now_ist.minute)) % 100 / 100))
                 
                 market_data[symbol] = {

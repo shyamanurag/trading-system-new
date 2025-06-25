@@ -605,8 +605,10 @@ class RiskManager:
     async def _check_greeks_risk(self, signal: Signal) -> Dict[str, Any]:
         """Check Greeks risk for new position - CRITICAL for options trading"""
         try:
-            # Get current spot price (simplified - would get from market data)
-            spot_price = 24000.0  # Would get actual spot price
+            # Get actual spot price from TrueData live feed
+            from data.truedata_client import live_market_data
+            nifty_data = live_market_data.get('NIFTY', {})
+            spot_price = nifty_data.get('ltp', nifty_data.get('last_price', 0.0))
 
             # Create temporary position from signal for Greeks validation
             temp_position = Position(

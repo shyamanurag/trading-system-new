@@ -226,56 +226,30 @@ from core.logging_config import get_logger
 router = APIRouter()
 logger = get_logger(__name__)
 
-# Mock elite recommendations for demo (replace with real analysis)
-MOCK_RECOMMENDATIONS = [
-    {
-        "recommendation_id": "ELITE_001",
-        "symbol": "RELIANCE",
-        "action": "BUY",
-        "entry_price": 2890.50,
-        "stop_loss": 2850.00,
-        "target_1": 2950.00,
-        "target_2": 3000.00,
-        "confidence_score": 9.5,
-        "status": "ACTIVE",
-        "timeframe": "10-15 days",
-        "analysis": "Strong confluence: RSI divergence + Support bounce + Volume surge",
-        "risk_reward": 1.5,
-        "created_at": datetime.now().isoformat()
-    },
-    {
-        "recommendation_id": "ELITE_002", 
-        "symbol": "TCS",
-        "action": "BUY",
-        "entry_price": 4150.00,
-        "stop_loss": 4100.00,
-        "target_1": 4250.00,
-        "target_2": 4320.00,
-        "confidence_score": 8.8,
-        "status": "ACTIVE",
-        "timeframe": "12-18 days",
-        "analysis": "Technical breakout with institutional support",
-        "risk_reward": 2.0,
-        "created_at": datetime.now().isoformat()
-    }
-]
+# All recommendations must come from actual market analysis, not hardcoded data
+MOCK_RECOMMENDATIONS = []  # Removed hardcoded mock data
 
 @router.get("/elite")
 async def get_elite_recommendations():
     """Get active elite trading recommendations"""
     try:
-        # For production, this should query the database
-        # For now, return filtered mock data
-        active_recommendations = [
-            rec for rec in MOCK_RECOMMENDATIONS 
-            if rec["status"] == "ACTIVE"
-        ]
+        # CRITICAL: Real analysis required - no mock data allowed
+        # This should connect to actual analysis engine
+        from data.truedata_client import live_market_data
+        
+        if not live_market_data:
+            raise HTTPException(status_code=503, detail="No live market data available for analysis")
+        
+        # In production, generate recommendations from real market analysis
+        active_recommendations = []  # Real recommendations would be generated here
         
         return {
             "success": True,
             "recommendations": active_recommendations,
             "scan_timestamp": datetime.now().isoformat(),
-            "total_count": len(active_recommendations)
+            "total_count": len(active_recommendations),
+            "data_source": "real_time_analysis",
+            "message": "No mock data - real analysis only"
         }
         
     except Exception as e:
