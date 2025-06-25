@@ -614,6 +614,8 @@ async def catch_all(request: Request, path: str):
         path.startswith("auth/") or 
         path == "auth" or  # Handle /auth direct access
         path.startswith("zerodha-") or 
+        path.startswith("daily-auth/") or  # Exclude daily-auth paths
+        path == "daily-auth" or  # Handle /daily-auth direct access
         path.startswith("ws/") or
         path == "docs" or 
         path == "redoc" or 
