@@ -230,4 +230,44 @@ BEFORE UPDATE OF current_price ON positions
 FOR EACH ROW
 EXECUTE FUNCTION calculate_position_pnl();
 
+-- Insert hardcoded master trading user (recreated on every deployment)
+INSERT INTO users (
+    username, 
+    email, 
+    password_hash, 
+    full_name, 
+    initial_capital, 
+    current_balance, 
+    risk_tolerance, 
+    is_active, 
+    zerodha_client_id,
+    trading_enabled,
+    max_daily_trades,
+    max_position_size
+) VALUES (
+    'PAPER_TRADER_001',
+    'paper.trader@algoauto.com',
+    '$2b$12$dummy.hash.for.paper.trading.user.not.used.for.login',
+    'AlgoAuto Paper Trading Master',
+    100000.00,
+    100000.00,
+    'medium',
+    true,
+    'PAPER_API_KEY',
+    true,
+    1000,
+    500000.00
+) ON CONFLICT (username) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = EXCLUDED.full_name,
+    initial_capital = EXCLUDED.initial_capital,
+    current_balance = EXCLUDED.current_balance,
+    risk_tolerance = EXCLUDED.risk_tolerance,
+    is_active = EXCLUDED.is_active,
+    zerodha_client_id = EXCLUDED.zerodha_client_id,
+    trading_enabled = EXCLUDED.trading_enabled,
+    max_daily_trades = EXCLUDED.max_daily_trades,
+    max_position_size = EXCLUDED.max_position_size,
+    updated_at = NOW();
+
 COMMIT; 

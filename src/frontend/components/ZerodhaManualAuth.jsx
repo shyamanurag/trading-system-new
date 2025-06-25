@@ -15,7 +15,7 @@ const ZerodhaManualAuth = () => {
 
     const fetchAuthUrl = async () => {
         try {
-            const response = await fetch('/zerodha-manual/auth-url');
+            const response = await fetch('/api/v1/auth/zerodha/auth-url');
             const data = await response.json();
 
             if (data.success) {
@@ -29,7 +29,7 @@ const ZerodhaManualAuth = () => {
 
     const checkStatus = async () => {
         try {
-            const response = await fetch('/zerodha-manual/status');
+            const response = await fetch('/api/v1/auth/zerodha/status');
             const data = await response.json();
             setStatus(data);
         } catch (error) {
@@ -45,14 +45,14 @@ const ZerodhaManualAuth = () => {
 
         setLoading(true);
         try {
-            const response = await fetch('/zerodha-manual/submit-token', {
+            const response = await fetch('/api/v1/auth/zerodha/submit-token', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
                     request_token: requestToken.trim(),
-                    user_id: 'ZERODHA_DEFAULT'
+                    user_id: 'PAPER_TRADER_001'
                 })
             });
 
@@ -78,7 +78,7 @@ const ZerodhaManualAuth = () => {
     const testConnection = async () => {
         setLoading(true);
         try {
-            const response = await fetch('/zerodha-manual/test-connection');
+            const response = await fetch('/api/v1/auth/zerodha/test-connection');
             const data = await response.json();
 
             if (data.success) {
@@ -95,7 +95,7 @@ const ZerodhaManualAuth = () => {
     const logout = async () => {
         setLoading(true);
         try {
-            const response = await fetch('/zerodha-manual/logout', {
+            const response = await fetch('/api/v1/auth/zerodha/logout', {
                 method: 'DELETE'
             });
             const data = await response.json();

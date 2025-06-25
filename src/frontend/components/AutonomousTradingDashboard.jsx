@@ -29,7 +29,6 @@ import {
 import React, { useEffect, useState } from 'react';
 import { API_ENDPOINTS } from '../api/config';
 import fetchWithAuth from '../api/fetchWithAuth';
-import BrokerUserSetup from './BrokerUserSetup';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app';
 
@@ -42,7 +41,7 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
     const [error, setError] = useState(null);
     const [tradingStatus, setTradingStatus] = useState(null);
     const [brokerUsers, setBrokerUsers] = useState([]);
-    const [showBrokerSetup, setShowBrokerSetup] = useState(false);
+    const [showZerodhaAuth, setShowZerodhaAuth] = useState(false);
     const [controlLoading, setControlLoading] = useState(false);
 
     useEffect(() => {
@@ -264,64 +263,63 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
                             <Typography variant="h6">
                                 Trading Control Center
                             </Typography>
-                            {brokerUsers.length === 0 && (
-                                <Button
-                                    variant="contained"
-                                    startIcon={<PersonAdd />}
-                                    onClick={() => setShowBrokerSetup(true)}
-                                    color="primary"
-                                >
-                                    Add Broker User
-                                </Button>
-                            )}
+                            <Button
+                                variant="contained"
+                                startIcon={<PersonAdd />}
+                                onClick={() => setShowZerodhaAuth(true)}
+                                color="primary"
+                                sx={{ minWidth: 180 }}
+                            >
+                                🔐 Daily Auth Token
+                            </Button>
                         </Box>
 
-                        {brokerUsers.length === 0 ? (
-                            <Alert severity="warning">
-                                No broker users configured. Please add your Zerodha credentials to start paper trading.
+                        <Box>
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                                📊 Default Paper Trader: PAPER_TRADER_001 | 💰 Capital: ₹100,000
+                            </Typography>
+
+                            <Alert severity="info" sx={{ mb: 2 }}>
+                                <strong>Daily Setup Required:</strong> Zerodha tokens expire at 6:00 AM IST.
+                                Please refresh your auth token daily for live trading data.
                             </Alert>
-                        ) : (
-                            <Box>
-                                <Typography variant="body2" color="text.secondary" gutterBottom>
-                                    Active Broker Users: {brokerUsers.length}
-                                </Typography>
-                                <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
-                                    {tradingStatus?.is_running ? (
-                                        <Button
-                                            variant="contained"
-                                            color="error"
-                                            startIcon={<Stop />}
-                                            onClick={() => handleTradingControl('stop')}
-                                            disabled={controlLoading}
-                                        >
-                                            Stop Trading
-                                        </Button>
-                                    ) : (
-                                        <Button
-                                            variant="contained"
-                                            color="success"
-                                            startIcon={<PlayArrow />}
-                                            onClick={() => handleTradingControl('start')}
-                                            disabled={controlLoading}
-                                        >
-                                            Start Trading
-                                        </Button>
-                                    )}
+
+                            <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+                                {tradingStatus?.is_running ? (
+                                    <Button
+                                        variant="contained"
+                                        color="error"
+                                        startIcon={<Stop />}
+                                        onClick={() => handleTradingControl('stop')}
+                                        disabled={controlLoading}
+                                    >
+                                        Stop Trading
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        variant="contained"
+                                        color="success"
+                                        startIcon={<PlayArrow />}
+                                        onClick={() => handleTradingControl('start')}
+                                        disabled={controlLoading}
+                                    >
+                                        Start Trading
+                                    </Button>
+                                )}
+                                <Chip
+                                    label={tradingStatus?.is_running ? "Trading Active" : "Trading Stopped"}
+                                    color={tradingStatus?.is_running ? "success" : "default"}
+                                    variant="outlined"
+                                />
+                                {tradingStatus?.paper_trading && (
                                     <Chip
-                                        label={tradingStatus?.is_running ? "Trading Active" : "Trading Stopped"}
-                                        color={tradingStatus?.is_running ? "success" : "default"}
+                                        label="Paper Trading Mode"
+                                        color="info"
                                         variant="outlined"
                                     />
-                                    {tradingStatus?.paper_trading && (
-                                        <Chip
-                                            label="Paper Trading Mode"
-                                            color="info"
-                                            variant="outlined"
-                                        />
-                                    )}
-                                </Box>
+                                )}
                             </Box>
-                        )}
+                        </Box>
                     </CardContent>
                 </Card>
             </Grid>
@@ -590,12 +588,46 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
                 </Card>
             </Grid>
 
-            {/* Broker User Setup Dialog */}
-            <BrokerUserSetup
-                open={showBrokerSetup}
-                onClose={() => setShowBrokerSetup(false)}
-                onUserAdded={handleUserAdded}
-            />
+            {/* Zerodha Daily Auth Token Dialog */}
+            {showZerodhaAuth && (
+                <Box
+                    sx={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        bgcolor: 'rgba(0,0,0,0.5)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 1300
+                    }}
+                    onClick={() => setShowZerodhaAuth(false)}
+                >
+                    <Box
+                        sx={{
+                            bgcolor: 'background.paper',
+                            borderRadius: 2,
+                            p: 0,
+                            maxWidth: '90vw',
+                            maxHeight: '90vh',
+                            overflow: 'auto'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <ZerodhaManualAuth />
+                        <Box sx={{ p: 2, textAlign: 'right', borderTop: '1px solid #eee' }}>
+                            <Button
+                                variant="outlined"
+                                onClick={() => setShowZerodhaAuth(false)}
+                            >
+                                Close
+                            </Button>
+                        </Box>
+                    </Box>
+                </Box>
+            )}
         </Grid>
     );
 };

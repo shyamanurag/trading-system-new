@@ -55,6 +55,53 @@ async def run_database_migrations():
         logger.error(f"Failed to run migrations: {e}")
         # Don't fail startup if migrations fail - app can run without DB
 
+async def ensure_master_user_exists():
+    """Ensure the master paper trading user exists in database"""
+    try:
+        from src.config.database import AsyncSessionLocal
+        from sqlalchemy import text
+        
+        logger.info("Ensuring master trading user exists...")
+        
+        async with AsyncSessionLocal() as session:
+            # Check if master user exists
+            result = await session.execute(
+                text("SELECT id FROM users WHERE username = 'PAPER_TRADER_001'")
+            )
+            user = result.fetchone()
+            
+            if not user:
+                # Create master user if it doesn't exist
+                await session.execute(text("""
+                    INSERT INTO users (
+                        username, email, password_hash, full_name, 
+                        initial_capital, current_balance, risk_tolerance, 
+                        is_active, zerodha_client_id, trading_enabled,
+                        max_daily_trades, max_position_size
+                    ) VALUES (
+                        'PAPER_TRADER_001',
+                        'paper.trader@algoauto.com',
+                        '$2b$12$dummy.hash.for.paper.trading.user.not.used.for.login',
+                        'AlgoAuto Paper Trading Master',
+                        100000.00,
+                        100000.00,
+                        'medium',
+                        true,
+                        'PAPER_API_KEY',
+                        true,
+                        1000,
+                        500000.00
+                    )
+                """))
+                await session.commit()
+                logger.info("✅ Master trading user PAPER_TRADER_001 created")
+            else:
+                logger.info("✅ Master trading user PAPER_TRADER_001 already exists")
+                
+    except Exception as e:
+        logger.error(f"❌ Failed to ensure master user exists: {e}")
+        # Don't fail startup if user creation fails
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
@@ -66,6 +113,9 @@ async def lifespan(app: FastAPI):
         
         # Run database migrations
         await run_database_migrations()
+        
+        # Ensure master trading user exists
+        await ensure_master_user_exists()
         
         # Initialize Redis
         try:

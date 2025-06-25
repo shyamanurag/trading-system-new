@@ -87,14 +87,31 @@ def main():
         # Set up callbacks using official SDK decorators (exactly as in your script)
         @td_obj.trade_callback
         def my_tick_data(tick_data):
-            """Handle tick data using official SDK"""
+            """Handle tick data using official SDK with enhanced volume parsing"""
             try:
                 symbol = tick_data.get('symbol', 'UNKNOWN')
                 price = tick_data.get('ltp', 0)
-                volume = tick_data.get('volume', 0)
+                
+                # Enhanced volume parsing - try multiple field names like TrueData client
+                volume = (tick_data.get('volume', 0) or 
+                         tick_data.get('vol', 0) or 
+                         tick_data.get('v', 0) or 
+                         tick_data.get('total_volume', 0) or
+                         tick_data.get('day_volume', 0) or
+                         tick_data.get('traded_volume', 0))
+                
                 timestamp = datetime.now().strftime('%H:%M:%S')
                 
-                print(f"[{timestamp}] TICK: {symbol} - Price: {price}, Volume: {volume}")
+                # Enhanced logging shows which field contained volume
+                vol_source = "none"
+                if tick_data.get('volume', 0): vol_source = "volume"
+                elif tick_data.get('vol', 0): vol_source = "vol"
+                elif tick_data.get('v', 0): vol_source = "v"
+                elif tick_data.get('total_volume', 0): vol_source = "total_volume"
+                elif tick_data.get('day_volume', 0): vol_source = "day_volume"
+                elif tick_data.get('traded_volume', 0): vol_source = "traded_volume"
+                
+                print(f"[{timestamp}] TICK: {symbol} - Price: {price}, Volume: {volume} (from: {vol_source})")
                 
                 # Save to file for analysis
                 with open('tick_data.json', 'a') as f:
