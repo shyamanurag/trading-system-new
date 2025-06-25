@@ -16,6 +16,7 @@ from data.truedata_client import (
     subscribe_to_symbols,
     get_live_data_for_symbol
 )
+from src.models.responses import TrueDataResponse, APIResponse
 
 logger = logging.getLogger(__name__)
 
@@ -114,12 +115,10 @@ async def get_truedata_status():
                 "timestamp": datetime.now().isoformat()
             }
         
-        return {
-            "connected": truedata_client.connected,
-            "subscribed_symbols": list(live_market_data.keys()),
-            "total_symbols": len(live_market_data),
-            "timestamp": datetime.now().isoformat()
-        }
+        return TrueDataResponse.create_status(
+            connected=truedata_client.connected,
+            symbols=list(live_market_data.keys())
+        ).dict()
         
     except Exception as e:
         logger.error(f"Error getting TrueData status: {e}")
@@ -135,19 +134,13 @@ async def get_symbol_data(symbol: str):
         data = get_live_data_for_symbol(symbol)
         
         if data:
-            return {
-                "success": True,
-                "symbol": symbol,
-                "data": data,
-                "timestamp": datetime.now().isoformat()
-            }
+            return TrueDataResponse.create_symbol_data(symbol, data).dict()
         else:
-            return {
-                "success": False,
-                "symbol": symbol,
-                "message": "No data available for symbol",
-                "timestamp": datetime.now().isoformat()
-            }
+            return APIResponse(
+                success=False,
+                message=f"No data available for symbol {symbol}",
+                data={"symbol": symbol}
+            ).dict()
             
     except HTTPException:
         raise
@@ -162,12 +155,14 @@ async def get_all_market_data():
         if not truedata_client.connected:
             raise HTTPException(status_code=503, detail="TrueData client not connected")
         
-        return {
-            "success": True,
-            "data": live_market_data,
-            "total_symbols": len(live_market_data),
-            "timestamp": datetime.now().isoformat()
-        }
+        return APIResponse(
+            success=True,
+            message="All market data retrieved successfully",
+            data={
+                "market_data": live_market_data,
+                "total_symbols": len(live_market_data)
+            }
+        ).dict()
         
     except HTTPException:
         raise
@@ -184,11 +179,11 @@ async def disconnect_truedata():
         
         truedata_client.disconnect()
         
-        return {
-            "success": True,
-            "message": "TrueData disconnected successfully",
-            "timestamp": datetime.now().isoformat()
-        }
+        return APIResponse(
+            success=True,
+            message="TrueData disconnected successfully",
+            data={"disconnected_at": datetime.now().isoformat()}
+        ).dict()
         
     except HTTPException:
         raise

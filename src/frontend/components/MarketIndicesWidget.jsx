@@ -44,13 +44,25 @@ const MarketIndicesWidget = () => {
             const statusData = await statusResponse.json();
 
             if (indicesData.success) {
-                setIndices(indicesData.indices || []);
+                // Handle standardized API response format
+                const indices = indicesData.data?.indices || [];
+                setIndices(indices);
+
+                // Extract market status from indices response if available
+                if (indicesData.data?.market_status) {
+                    setMarketStatus({
+                        market_status: indicesData.data.market_status,
+                        current_time: indicesData.timestamp
+                    });
+                }
             } else {
                 setError('Unable to fetch market data');
             }
 
             if (statusData.success) {
-                setMarketStatus(statusData);
+                // Handle standardized market status response
+                const statusInfo = statusData.data || statusData;
+                setMarketStatus(statusInfo);
             }
 
             setLastUpdate(new Date());

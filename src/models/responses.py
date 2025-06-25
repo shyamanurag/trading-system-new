@@ -1,9 +1,97 @@
 """
 Response Models for API endpoints
+Standardized API response patterns for consistency
 """
 from pydantic import BaseModel
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
+
+# ===== CORE RESPONSE MODELS =====
+
+class APIResponse(BaseModel):
+    """
+    Standardized API Response Format
+    ALL APIs should follow this pattern for consistency
+    """
+    success: bool
+    message: str
+    data: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None
+    timestamp: str = datetime.now().isoformat()
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+class APIErrorResponse(BaseModel):
+    """Standardized API Error Response"""
+    success: bool = False
+    error: str
+    detail: Optional[str] = None
+    code: Optional[str] = None
+    timestamp: str = datetime.now().isoformat()
+
+# ===== SPECIFIC RESPONSE MODELS =====
+
+class MarketIndicesResponse(APIResponse):
+    """Market indices specific response"""
+    
+    @classmethod
+    def create(cls, indices_data: List[Dict[str, Any]], market_status: str, **kwargs):
+        return cls(
+            success=True,
+            message="Market indices data retrieved successfully",
+            data={
+                "indices": indices_data,
+                "market_status": market_status,
+                "provider": "TrueData",
+                **kwargs
+            }
+        )
+
+class MarketStatusResponse(APIResponse):
+    """Market status specific response"""
+    
+    @classmethod
+    def create(cls, status: str, phase: str, **kwargs):
+        return cls(
+            success=True,
+            message=f"Market is currently {status}",
+            data={
+                "market_status": status,
+                "market_phase": phase,
+                **kwargs
+            }
+        )
+
+class TrueDataResponse(APIResponse):
+    """TrueData specific response"""
+    
+    @classmethod
+    def create_symbol_data(cls, symbol: str, data: Dict[str, Any]):
+        return cls(
+            success=True,
+            message=f"Data retrieved for {symbol}",
+            data={
+                "symbol": symbol,
+                "market_data": data
+            }
+        )
+    
+    @classmethod
+    def create_status(cls, connected: bool, symbols: List[str], **kwargs):
+        return cls(
+            success=True,
+            message=f"TrueData {'connected' if connected else 'disconnected'}",
+            data={
+                "connected": connected,
+                "subscribed_symbols": symbols,
+                "total_symbols": len(symbols),
+                **kwargs
+            }
+        )
+
+# ===== LEGACY MODELS (For backward compatibility) =====
 
 class HealthResponse(BaseModel):
     """Health check response model"""

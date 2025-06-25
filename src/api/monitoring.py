@@ -7,6 +7,7 @@ from datetime import datetime
 import logging
 import psutil
 import random
+from src.models.responses import APIResponse
 
 # Import with error handling
 try:
@@ -178,11 +179,11 @@ async def get_system_metrics():
             "timestamp": datetime.utcnow().isoformat()
         }
         
-        return {
-            "success": True,
-            "message": "System metrics retrieved successfully",
-            "data": metrics
-        }
+        return APIResponse(
+            success=True,
+            message="System metrics retrieved successfully",
+            data=metrics
+        ).dict()
     except Exception as e:
         logger.error(f"Error getting system metrics: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

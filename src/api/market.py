@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from datetime import datetime
 import pytz
 import os
+from src.models.responses import MarketIndicesResponse, MarketStatusResponse
 
 # IST timezone
 IST = pytz.timezone('Asia/Kolkata')
@@ -98,20 +99,20 @@ async def get_market_indices():
             }
         ]
         
-        return {
-            "success": True,
-            "indices": indices_array,
-            "market_status": "OPEN" if 9 <= now_ist.hour < 16 else "CLOSED",
-            "last_update": now_ist.isoformat(),
-            "timestamp": now_ist.strftime("%Y-%m-%d %H:%M:%S IST"),
-            "data_provider": "TrueData",
-            "truedata_connection": {
+        market_status = "OPEN" if 9 <= now_ist.hour < 16 else "CLOSED"
+        
+        return MarketIndicesResponse.create(
+            indices_data=indices_array,
+            market_status=market_status,
+            last_update=now_ist.isoformat(),
+            timestamp=now_ist.strftime("%Y-%m-%d %H:%M:%S IST"),
+            truedata_connection={
                 "symbols_available": len(live_market_data),
                 "nifty_available": bool(nifty_data),
                 "banknifty_available": bool(banknifty_data),
                 "live_data_symbols": list(live_market_data.keys())
             }
-        }
+        ).dict()
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unable to fetch market indices: {str(e)}")
@@ -153,29 +154,28 @@ async def get_market_status():
             phase = "WEEKEND"
             status = "CLOSED"
         
-        return {
-            "success": True,
-            "market_status": status,
-            "market_phase": phase,
-            "current_time": now_ist.isoformat(),
-            "timezone": "Asia/Kolkata",  
-            "ist_time": now_ist.strftime("%Y-%m-%d %H:%M:%S IST"),
-            "market_open": "09:15",
-            "market_close": "15:30",
-            "is_trading_hours": status == "OPEN",
-            "timings": {
+        return MarketStatusResponse.create(
+            status=status,
+            phase=phase,
+            current_time=now_ist.isoformat(),
+            timezone="Asia/Kolkata",
+            ist_time=now_ist.strftime("%Y-%m-%d %H:%M:%S IST"),
+            market_open="09:15",
+            market_close="15:30",
+            is_trading_hours=status == "OPEN",
+            timings={
                 "pre_open": "09:00 - 09:15",
                 "normal": "09:15 - 15:30",
                 "post_close": "15:30 - 16:00",
                 "closed": "16:00 - 09:00"
             },
-            "is_trading_day": now_ist.weekday() not in [5, 6],
-            "data_provider": {
+            is_trading_day=now_ist.weekday() not in [5, 6],
+            data_provider={
                 "name": "TrueData",
                 "status": "CONNECTED" if os.getenv('TRUEDATA_USERNAME') else "NOT_CONFIGURED",
                 "user": os.getenv('TRUEDATA_USERNAME', 'Not configured')
             }
-        }
+        ).dict()
         
     except Exception as e:
         raise HTTPException(status_code=500, detail="Unable to fetch market status")
