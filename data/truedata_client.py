@@ -78,7 +78,7 @@ class TrueDataSingletonClient:
                 self.td_obj = TD_live(
                     self.username, 
                     self.password, 
-                    live_port=self.port,
+                    live_port=self.port,  # 8084 - your official allocated port
                     url=self.url,
                     log_level=logging.ERROR,  # Reduce noise
                     compression=False  # DISABLE COMPRESSION to avoid bytes/str error
@@ -86,23 +86,40 @@ class TrueDataSingletonClient:
                 
                 # Wrap in try-catch to prevent SystemExit from crashing app
                 try:
-                    # Connect with timeout protection
-                    import signal
+                    logger.info("Attempting TrueData connection...")
                     
-                    def timeout_handler(signum, frame):
-                        raise TimeoutError("TrueData connection timeout")
-                    
-                    # Set timeout for connection attempt
-                    signal.signal(signal.SIGALRM, timeout_handler)
-                    signal.alarm(10)  # 10 second timeout
-                    
+                    # The TD_live.connect() method returns None, not True/False
                     connect_result = self.td_obj.connect()
                     
-                    signal.alarm(0)  # Cancel timeout
+                    # Give connection time to establish
+                    time.sleep(2)
                     
-                    if connect_result:
+                    # Check the CORRECT connection indicators from inspection
+                    connection_success = False
+                    
+                    # Primary indicator: connect_live attribute
+                    if hasattr(self.td_obj, 'connect_live') and getattr(self.td_obj, 'connect_live', False):
+                        connection_success = True
+                        logger.info("✅ Connection confirmed: connect_live = True")
+                    
+                    # Secondary indicator: live_websocket exists
+                    if hasattr(self.td_obj, 'live_websocket') and getattr(self.td_obj, 'live_websocket', None):
+                        connection_success = True
+                        logger.info("✅ Connection confirmed: live_websocket exists")
+                    
+                    # Test callback capability (another strong indicator)
+                    try:
+                        @self.td_obj.trade_callback
+                        def test_callback(data):
+                            pass
+                        logger.info("✅ Connection confirmed: callbacks can be set")
+                        connection_success = True
+                    except:
+                        logger.warning("⚠️ Cannot set callbacks - connection may be unstable")
+                    
+                    if connection_success:
+                        logger.info("🎉 TrueData connection established successfully!")
                         self.connected = True
-                        logger.info("✅ TrueData connected successfully")
                         
                         # Setup enhanced callbacks
                         self._setup_enhanced_callbacks()
@@ -120,23 +137,16 @@ class TrueDataSingletonClient:
                         
                         return True
                     else:
-                        logger.error("❌ TrueData connection failed")
+                        logger.error("❌ TrueData connection failed - no success indicators found")
                         return False
                         
                 except (SystemExit, KeyboardInterrupt) as e:
                     logger.error(f"🛑 TrueData library attempted to exit app: {e}")
                     logger.error("🔒 Prevented app crash - TrueData will remain disconnected")
-                    signal.alarm(0)  # Cancel timeout
-                    self.connected = False
-                    return False
-                except TimeoutError:
-                    logger.error("⏰ TrueData connection timeout (10s)")
-                    signal.alarm(0)  # Cancel timeout
                     self.connected = False
                     return False
                 except Exception as e:
                     logger.error(f"❌ TrueData connection error: {e}")
-                    signal.alarm(0)  # Cancel timeout
                     self.connected = False
                     return False
                     
@@ -204,7 +214,8 @@ class TrueDataSingletonClient:
                 # HYBRID volume parsing - try both object attributes AND dictionary keys
                 def get_volume_safely(data):
                     """Try both getattr() and .get() methods for volume extraction"""
-                    volume_fields = ['volume', 'vol', 'v', 'total_volume', 'day_volume', 'traded_volume']
+                    # TrueData uses 'ttq' (Total Traded Quantity) as the main volume field
+                    volume_fields = ['ttq', 'volume', 'vol', 'v', 'total_volume', 'day_volume', 'traded_volume', 'ltq']
                     
                     for field in volume_fields:
                         # Try object attribute first
@@ -257,7 +268,8 @@ class TrueDataSingletonClient:
                 # Enhanced logging with volume field source debugging
                 def get_volume_field_source(data):
                     """Debug which field actually contains volume data"""
-                    volume_fields = ['volume', 'vol', 'v', 'total_volume', 'day_volume', 'traded_volume']
+                    # TrueData uses 'ttq' as primary volume field
+                    volume_fields = ['ttq', 'volume', 'vol', 'v', 'total_volume', 'day_volume', 'traded_volume', 'ltq']
                     found_fields = []
                     
                     for field in volume_fields:

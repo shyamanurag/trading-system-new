@@ -115,27 +115,22 @@ async def lifespan(app: FastAPI):
     # Initialize any required services here
     # For example: database connections, cache, message queues, etc.
     
-    # TrueData initialization DISABLED due to library crash
-    # The TrueData library has a bug causing SystemExit and app crashes
-    # Will be initialized manually via API endpoint instead
+    # TrueData initialization - RE-ENABLED after fixing connection issues
     try:
-        logger.info("🔌 TrueData auto-initialization DISABLED")
-        logger.info("💡 TrueData will be initialized on-demand via API calls")
+        logger.info("🚀 Initializing TrueData connection...")
+        from data.truedata_client import initialize_truedata
         
-        # Just verify credentials are available
-        username = os.environ.get('TRUEDATA_USERNAME')
-        password = os.environ.get('TRUEDATA_PASSWORD')
+        # Attempt initialization with error handling
+        truedata_success = initialize_truedata()
         
-        if username and password:
-            logger.info(f"✅ TrueData credentials available - Username: {username}")
-            app.state.truedata_credentials_available = True
+        if truedata_success:
+            logger.info("✅ TrueData initialized successfully on startup")
         else:
-            logger.warning("⚠️ TrueData credentials missing from environment")
-            app.state.truedata_credentials_available = False
+            logger.warning("⚠️ TrueData initialization failed - will be available on-demand")
             
     except Exception as e:
-        logger.error(f"❌ TrueData credential check error: {e}")
-        app.state.truedata_credentials_available = False
+        logger.error(f"❌ TrueData initialization error: {e}")
+        logger.info("📊 App will continue without TrueData - available on-demand")
     
     # App state for debugging
     app.state.build_timestamp = datetime.now().isoformat()
