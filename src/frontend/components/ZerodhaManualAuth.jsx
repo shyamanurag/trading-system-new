@@ -11,18 +11,31 @@ const ZerodhaManualAuth = () => {
     const [error, setError] = useState(null);
 
     useEffect(() => {
+        let isMounted = true;
+
         const initializeComponent = async () => {
             try {
+                if (!isMounted) return;
+
                 await fetchAuthUrl();
+                if (!isMounted) return;
+
                 await checkStatus();
+                if (!isMounted) return;
+
                 setComponentLoading(false);
             } catch (err) {
-                setError('Failed to initialize auth component: ' + err.message);
+                if (!isMounted) return;
+                setError('Failed to initialize auth component: ' + (err?.message || 'Unknown error'));
                 setComponentLoading(false);
             }
         };
 
         initializeComponent();
+
+        return () => {
+            isMounted = false;
+        };
     }, []);
 
     if (componentLoading) {

@@ -695,15 +695,15 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
                 </Card>
             </Grid>
 
-            {/* Zerodha Daily Auth Token Dialog - IMPROVED MODAL */}
+            {/* Zerodha Daily Auth Token Dialog - SAFE MODAL */}
             {showZerodhaAuth && (
                 <div
                     style={{
                         position: 'fixed',
-                        top: 0,
-                        left: 0,
-                        width: '100vw',
-                        height: '100vh',
+                        top: '0px',
+                        left: '0px',
+                        width: '100%',
+                        height: '100%',
                         backgroundColor: 'rgba(0, 0, 0, 0.5)',
                         display: 'flex',
                         alignItems: 'center',
@@ -719,8 +719,8 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
                             backgroundColor: '#ffffff',
                             borderRadius: '12px',
                             boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-                            maxWidth: '90vw',
-                            maxHeight: '90vh',
+                            maxWidth: '90%',
+                            maxHeight: '90%',
                             overflow: 'auto',
                             border: '2px solid #ddd',
                             position: 'relative',
@@ -762,14 +762,14 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
                             </button>
                         </div>
 
-                        {/* Modal Content with Error Boundary */}
+                        {/* Modal Content with Enhanced Error Boundary */}
                         <div style={{
                             padding: '0',
                             minHeight: '400px',
                             backgroundColor: '#ffffff'
                         }}>
                             <ErrorBoundary>
-                                <ZerodhaManualAuth />
+                                {React.createElement(ZerodhaManualAuth, null)}
                             </ErrorBoundary>
                         </div>
                     </div>
