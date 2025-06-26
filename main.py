@@ -115,27 +115,44 @@ async def lifespan(app: FastAPI):
     # Initialize any required services here
     # For example: database connections, cache, message queues, etc.
     
-    # TrueData initialization - TEMPORARILY DISABLED due to retry loop issue
+    # TrueData initialization - PERMANENT FIX with retry loop prevention
     try:
-        logger.info("🔧 TrueData auto-initialization DISABLED")
-        logger.info("🔒 Reason: 'User Already Connected' retry loop detected in production")
-        logger.info("💡 TrueData will be available via manual API connection only")
-        logger.info("🎯 Use /api/v1/truedata/truedata/force-disconnect then /connect")
+        logger.info("🚀 Initializing TrueData connection with PERMANENT FIX...")
+        from data.truedata_client import initialize_truedata, truedata_connection_status
         
-        # Verify credentials are available but don't auto-connect
-        username = os.environ.get('TRUEDATA_USERNAME')
-        password = os.environ.get('TRUEDATA_PASSWORD')
-        
-        if username and password:
-            logger.info(f"✅ TrueData credentials available - Username: {username}")
-            logger.info("🔧 Ready for manual connection via API endpoints")
+        # Check if connection is blocked due to persistent state
+        if truedata_connection_status.get('permanent_block', False):
+            error_type = truedata_connection_status.get('error', 'UNKNOWN')
+            logger.warning(f"⚠️ TrueData PERMANENTLY BLOCKED - reason: {error_type}")
+            logger.info("💡 Use /api/v1/truedata/truedata/force-disconnect to reset state")
+        elif truedata_connection_status.get('retry_disabled', False):
+            error_type = truedata_connection_status.get('error', 'UNKNOWN')
+            logger.warning(f"⚠️ TrueData retry disabled - reason: {error_type}")
+            logger.info("💡 Connection will be available via manual API only")
         else:
-            logger.warning("⚠️ TrueData credentials missing from environment")
-            logger.info("   Required: TRUEDATA_USERNAME and TRUEDATA_PASSWORD")
+            # Attempt initialization with permanent fix
+            logger.info("🔄 Attempting TrueData initialization with retry loop prevention...")
+            truedata_success = initialize_truedata()
+            
+            if truedata_success:
+                logger.info("✅ TrueData initialized successfully with PERMANENT FIX!")
+                logger.info("🛡️ Retry loop prevention active")
+            else:
+                # Check specific error type from permanent fix
+                error_type = truedata_connection_status.get('error')
+                if error_type == 'USER_ALREADY_CONNECTED':
+                    logger.warning("⚠️ TrueData: Account connected elsewhere (PERMANENT FIX)")
+                    logger.info("🔧 Use /api/v1/truedata/truedata/force-disconnect to reset")
+                elif error_type and 'CONNECTION_VERIFICATION_FAILED' in error_type:
+                    logger.warning("⚠️ TrueData: Connection verification failed")
+                    logger.info("🔧 Manual retry may be needed")
+                else:
+                    logger.warning("⚠️ TrueData initialization failed with permanent fix")
+                    logger.info("🔧 Check connection status via API endpoints")
             
     except Exception as e:
-        logger.error(f"❌ TrueData credential check error: {e}")
-        logger.info("📊 App will continue without TrueData")
+        logger.error(f"❌ TrueData initialization error: {e}")
+        logger.info("📊 App will continue - TrueData available via manual API")
     
     # App state for debugging
     app.state.build_timestamp = datetime.now().isoformat()

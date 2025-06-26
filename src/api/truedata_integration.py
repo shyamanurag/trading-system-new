@@ -527,35 +527,34 @@ async def callback_registration_test():
 
 @router.post("/force-disconnect")
 async def force_disconnect_truedata():
-    """Force disconnect and clear 'User Already Connected' status"""
+    """Force disconnect and clear ALL connection state - PERMANENT FIX"""
     try:
-        from data.truedata_client import truedata_client, truedata_connection_status
+        from data.truedata_client import force_disconnect_and_reset
         
-        logger.info("🔧 Force disconnect requested...")
+        logger.info("🔧 Force disconnect and reset requested...")
         
-        # Clear any existing connection
-        if truedata_client.connected:
-            truedata_client.disconnect()
+        # Use the new permanent fix force disconnect
+        success = force_disconnect_and_reset()
         
-        # Clear "User Already Connected" lock
-        truedata_connection_status.update({
-            'connected': False,
-            'error': None,
-            'retry_disabled': False,
-            'last_update': datetime.now().isoformat(),
-            'message': 'Force disconnect completed - ready for new connection'
-        })
-        
-        logger.info("✅ Force disconnect completed")
-        
-        return APIResponse(
-            success=True,
-            message="Force disconnect completed. Ready for new connection attempt.",
-            data={
-                "disconnected_at": datetime.now().isoformat(),
-                "retry_enabled": True
-            }
-        ).dict()
+        if success:
+            logger.info("✅ Force disconnect and reset completed successfully")
+            
+            return APIResponse(
+                success=True,
+                message="Force disconnect and reset completed. Connection state cleared. Ready for new connection attempt.",
+                data={
+                    "disconnected_at": datetime.now().isoformat(),
+                    "state_cleared": True,
+                    "retry_enabled": True,
+                    "permanent_fix": True
+                }
+            ).dict()
+        else:
+            return APIResponse(
+                success=False,
+                message="Force disconnect completed but state reset may have failed",
+                data={"disconnected_at": datetime.now().isoformat()}
+            ).dict()
         
     except Exception as e:
         logger.error(f"Error in force disconnect: {e}")
@@ -563,11 +562,11 @@ async def force_disconnect_truedata():
 
 @router.get("/connection-status")
 async def get_detailed_connection_status():
-    """Get detailed TrueData connection status including error information"""
+    """Get detailed TrueData connection status with PERMANENT FIX information"""
     try:
         from data.truedata_client import truedata_client, truedata_connection_status
         
-        # Get enhanced status
+        # Get enhanced status from permanent fix
         if truedata_client:
             client_status = truedata_client.get_status()
         else:
@@ -577,29 +576,49 @@ async def get_detailed_connection_status():
             'client_connected': client_status.get('connected', False),
             'global_status': truedata_connection_status,
             'retry_disabled': truedata_connection_status.get('retry_disabled', False),
+            'permanent_block': truedata_connection_status.get('permanent_block', False),
             'error_type': truedata_connection_status.get('error'),
             'can_retry': not truedata_connection_status.get('retry_disabled', False),
+            'connection_attempts': client_status.get('connection_attempts', 0),
+            'max_attempts': client_status.get('max_attempts', 1),
+            'global_connection_active': client_status.get('global_connection_active', False),
+            'implementation': client_status.get('implementation', 'UNKNOWN'),
             'recommendations': []
         }
         
-        # Add recommendations based on status
+        # Add recommendations based on status with permanent fix info
         if truedata_connection_status.get('error') == 'USER_ALREADY_CONNECTED':
             detailed_status['recommendations'] = [
-                "Account is connected from another session",
-                "Use /force-disconnect endpoint to clear connection",
-                "Or contact TrueData support to reset connection",
-                "Wait 5-10 minutes and try again"
+                "PERMANENT FIX: Account connection conflict detected",
+                "Use /force-disconnect endpoint to clear ALL connection state",
+                "Persistent state tracking prevents retry loops",
+                "Connection blocked until manual reset",
+                "Alternative: Wait 10 minutes for auto-expiry"
+            ]
+        elif detailed_status['permanent_block']:
+            detailed_status['recommendations'] = [
+                "Connection permanently blocked due to repeated failures",
+                "Use /force-disconnect to reset connection state",
+                "Check TrueData account status and credentials",
+                "Verify no other applications are connected"
             ]
         elif not detailed_status['client_connected']:
             detailed_status['recommendations'] = [
                 "Try manual connection via /connect endpoint",
                 "Check credentials in environment variables",
-                "Verify TrueData account is active"
+                "Verify TrueData account is active",
+                "Use /force-disconnect first if previous attempts failed"
+            ]
+        else:
+            detailed_status['recommendations'] = [
+                "Connection is healthy and active",
+                "Market data should be flowing normally",
+                "All systems operational"
             ]
         
         return APIResponse(
             success=True,
-            message="Detailed connection status retrieved",
+            message="Detailed connection status retrieved (PERMANENT FIX)",
             data=detailed_status
         ).dict()
         
