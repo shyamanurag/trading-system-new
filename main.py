@@ -115,19 +115,15 @@ async def lifespan(app: FastAPI):
     # Initialize any required services here
     # For example: database connections, cache, message queues, etc.
     
-    # TrueData initialization - SIMPLIFIED VERSION
+    # TrueData initialization - DISABLED TO PREVENT RETRY LOOP CRASH
     try:
-        logger.info("🚀 Initializing TrueData connection...")
-        from data.truedata_client import initialize_truedata
-        
-        # Simple initialization attempt
-        truedata_success = initialize_truedata()
-        
-        if truedata_success:
-            logger.info("✅ TrueData initialized successfully!")
-        else:
-            logger.warning("⚠️ TrueData initialization failed")
-            logger.info("🔧 Check connection status via API endpoints")
+        logger.info("⚠️ TrueData auto-initialization DISABLED")
+        logger.info("📊 TrueData will be available via manual API calls only")
+        logger.info("🔧 This prevents 'User Already Connected' retry loop crashes")
+        # 
+        # COMMENTED OUT TO PREVENT CRASH:
+        # from data.truedata_client import initialize_truedata
+        # truedata_success = initialize_truedata()
             
     except Exception as e:
         logger.error(f"❌ TrueData initialization error: {e}")
