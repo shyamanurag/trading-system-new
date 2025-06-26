@@ -59,7 +59,7 @@ class TrueDataSingletonClient:
         logger.info(f"TrueData Singleton Client initialized for {self.username}")
 
     def connect(self):
-        """Connect to TrueData with enhanced error handling"""
+        """Connect to TrueData with enhanced error handling and crash prevention"""
         with self._connection_lock:
             if self.connected and self.td_obj:
                 logger.info("Already connected to TrueData")
@@ -74,37 +74,74 @@ class TrueDataSingletonClient:
                 
                 logger.info(f"Connecting to TrueData: {self.username}@{self.url}:{self.port}")
                 
-                # Create connection
-                self.td_obj = TD_live(self.username, self.password, live_port=self.port)
+                # Create connection with safety wrapper
+                self.td_obj = TD_live(
+                    self.username, 
+                    self.password, 
+                    live_port=self.port,
+                    url=self.url,
+                    log_level=logging.ERROR,  # Reduce noise
+                    compression=False  # DISABLE COMPRESSION to avoid bytes/str error
+                )
                 
-                # Connect
-                connect_result = self.td_obj.connect()
-                
-                if connect_result:
-                    self.connected = True
-                    logger.info("✅ TrueData connected successfully")
+                # Wrap in try-catch to prevent SystemExit from crashing app
+                try:
+                    # Connect with timeout protection
+                    import signal
                     
-                    # Setup enhanced callbacks
-                    self._setup_enhanced_callbacks()
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError("TrueData connection timeout")
                     
-                    # Subscribe to indices
-                    self._subscribe_to_indices()
+                    # Set timeout for connection attempt
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(10)  # 10 second timeout
                     
-                    # Update status
-                    truedata_connection_status.update({
-                        'connected': True,
-                        'last_update': datetime.now().isoformat(),
-                        'error': None,
-                        'username': self.username
-                    })
+                    connect_result = self.td_obj.connect()
                     
-                    return True
-                else:
-                    logger.error("❌ TrueData connection failed")
+                    signal.alarm(0)  # Cancel timeout
+                    
+                    if connect_result:
+                        self.connected = True
+                        logger.info("✅ TrueData connected successfully")
+                        
+                        # Setup enhanced callbacks
+                        self._setup_enhanced_callbacks()
+                        
+                        # Subscribe to indices
+                        self._subscribe_to_indices()
+                        
+                        # Update status
+                        truedata_connection_status.update({
+                            'connected': True,
+                            'last_update': datetime.now().isoformat(),
+                            'error': None,
+                            'username': self.username
+                        })
+                        
+                        return True
+                    else:
+                        logger.error("❌ TrueData connection failed")
+                        return False
+                        
+                except (SystemExit, KeyboardInterrupt) as e:
+                    logger.error(f"🛑 TrueData library attempted to exit app: {e}")
+                    logger.error("🔒 Prevented app crash - TrueData will remain disconnected")
+                    signal.alarm(0)  # Cancel timeout
+                    self.connected = False
+                    return False
+                except TimeoutError:
+                    logger.error("⏰ TrueData connection timeout (10s)")
+                    signal.alarm(0)  # Cancel timeout
+                    self.connected = False
+                    return False
+                except Exception as e:
+                    logger.error(f"❌ TrueData connection error: {e}")
+                    signal.alarm(0)  # Cancel timeout
+                    self.connected = False
                     return False
                     
             except Exception as e:
-                logger.error(f"❌ TrueData connection error: {e}")
+                logger.error(f"❌ TrueData setup error: {e}")
                 truedata_connection_status.update({
                     'connected': False,
                     'error': str(e),
