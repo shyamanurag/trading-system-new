@@ -362,6 +362,9 @@ static_sites:
   - key: VITE_WS_URL
     scope: BUILD_TIME
     value: wss://algoauto-9gx56.ondigitalocean.app/ws
+  - key: VITE_ZERODHA_API_KEY
+    scope: BUILD_TIME
+    value: sylcoq492qz6f7ej
   github:
     branch: main
     deploy_on_push: true
