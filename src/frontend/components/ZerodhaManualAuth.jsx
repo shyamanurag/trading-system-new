@@ -60,11 +60,11 @@ const ZerodhaManualAuth = () => {
 
     const fetchAuthUrl = async () => {
         try {
-            const response = await fetch('/api/v1/auth/zerodha/auth-url');
+            const response = await fetch('/auth/zerodha/auth-url');
 
             if (response.status === 404) {
                 // Fallback when endpoints not deployed yet
-                setAuthUrl(`https://kite.zerodha.com/connect/login?api_key=${process.env.REACT_APP_ZERODHA_API_KEY || 'your_api_key'}`);
+                setAuthUrl(`https://kite.zerodha.com/connect/login?api_key=${process.env.REACT_APP_ZERODHA_API_KEY || 'sylcoq492qz6f7ej'}`);
                 setInstructions([
                     "1. Click the authorization URL below",
                     "2. Login to Zerodha with your credentials",
@@ -95,7 +95,7 @@ const ZerodhaManualAuth = () => {
 
     const checkStatus = async () => {
         try {
-            const response = await fetch('/api/v1/auth/zerodha/status');
+            const response = await fetch('/auth/zerodha/status');
 
             if (response.status === 404) {
                 // Fallback status when endpoints not deployed yet
@@ -130,7 +130,7 @@ const ZerodhaManualAuth = () => {
 
         setLoading(true);
         try {
-            const response = await fetch('/api/v1/auth/zerodha/submit-token', {
+            const response = await fetch('/auth/zerodha/submit-token', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -169,7 +169,7 @@ const ZerodhaManualAuth = () => {
     const testConnection = async () => {
         setLoading(true);
         try {
-            const response = await fetch('/api/v1/auth/zerodha/test-connection');
+            const response = await fetch('/auth/zerodha/test-connection');
             const data = await response.json();
 
             if (data.success) {
@@ -186,7 +186,7 @@ const ZerodhaManualAuth = () => {
     const logout = async () => {
         setLoading(true);
         try {
-            const response = await fetch('/api/v1/auth/zerodha/logout', {
+            const response = await fetch('/auth/zerodha/logout', {
                 method: 'DELETE'
             });
             const data = await response.json();

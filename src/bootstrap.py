@@ -168,12 +168,12 @@ async def lifespan(app: FastAPI):
         app.state.redis_client = redis_client
         app.state.market_data_aggregator = market_data_aggregator
         
-        # Store successfully loaded routers count
-        loaded_count = sum(1 for r in routers_loaded.values() if r is not None)
-        app.state.routers_loaded = loaded_count
-        app.state.total_routers = len(router_imports)
+        # Store successfully loaded routers count (including zerodha_manual_auth)
+        total_routers = len(routers) + 1  # +1 for zerodha_manual_auth
+        app.state.routers_loaded = total_routers
+        app.state.total_routers = total_routers
         
-        logger.info(f"Loaded {loaded_count}/{len(router_imports)} routers successfully")
+        logger.info(f"Loaded {total_routers} routers successfully")
         
         logger.info("Trading system startup completed successfully")
         yield
@@ -238,14 +238,13 @@ app.add_middleware(
 from fastapi import APIRouter
 api_v1 = APIRouter(prefix="/api/v1")
 
-# Include all routers
+# Include all routers except zerodha_manual_auth (mounted separately)
 routers: List[APIRouter] = [
     users.router,
     webhooks.router,
     market_data.router,
     monitoring.router,
-    performance.router,
-    zerodha_manual_auth.router
+    performance.router
 ]
 
 # Mount v1 router with all sub-routers
@@ -254,6 +253,9 @@ for router in routers:
 
 # Mount v1 router
 app.include_router(api_v1)
+
+# Mount Zerodha Manual Auth router directly (not under /api/v1)
+app.include_router(zerodha_manual_auth.router)
 
 # Also mount under /api for backward compatibility
 for router in routers:

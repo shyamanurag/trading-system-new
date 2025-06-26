@@ -29,8 +29,115 @@ import {
 import React, { useEffect, useState } from 'react';
 import { API_ENDPOINTS } from '../api/config';
 import fetchWithAuth from '../api/fetchWithAuth';
+import ZerodhaManualAuth from './ZerodhaManualAuth';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app';
+
+// Error Boundary to prevent black screen from component errors
+class ErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+
+    componentDidCatch(error, errorInfo) {
+        console.error('ZerodhaManualAuth component error:', error, errorInfo);
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div style={{
+                    padding: '40px',
+                    textAlign: 'center',
+                    backgroundColor: '#ffffff',
+                    borderRadius: '8px',
+                    margin: '20px',
+                    border: '1px solid #e1e1e1'
+                }}>
+                    <h3 style={{ color: '#dc3545', margin: '0 0 20px 0' }}>🔧 Auth Component Error</h3>
+                    <div style={{
+                        backgroundColor: '#f8d7da',
+                        border: '1px solid #f5c6cb',
+                        borderRadius: '6px',
+                        padding: '20px',
+                        margin: '20px 0',
+                        color: '#721c24'
+                    }}>
+                        <p><strong>The authentication interface encountered an issue.</strong></p>
+                        <p>This usually happens when:</p>
+                        <ul style={{ textAlign: 'left', margin: '15px 0' }}>
+                            <li>🚀 <strong>Backend is still deploying</strong> - Wait 3-4 minutes</li>
+                            <li>🌐 <strong>Network connectivity issue</strong> - Check your internet</li>
+                            <li>⚙️ <strong>Authentication endpoints not ready</strong> - Deployment in progress</li>
+                        </ul>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '25px' }}>
+                        <button
+                            onClick={() => this.setState({ hasError: false, error: null })}
+                            style={{
+                                background: '#007bff',
+                                color: 'white',
+                                border: 'none',
+                                padding: '12px 24px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontWeight: 'bold'
+                            }}
+                        >
+                            🔄 Try Again
+                        </button>
+                        <button
+                            onClick={() => window.location.reload()}
+                            style={{
+                                background: '#28a745',
+                                color: 'white',
+                                border: 'none',
+                                padding: '12px 24px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontWeight: 'bold'
+                            }}
+                        >
+                            🔃 Refresh Page
+                        </button>
+                    </div>
+
+                    {this.state.error?.message && (
+                        <details style={{
+                            marginTop: '20px',
+                            padding: '10px',
+                            backgroundColor: '#f8f9fa',
+                            borderRadius: '4px',
+                            border: '1px solid #dee2e6',
+                            textAlign: 'left'
+                        }}>
+                            <summary style={{ cursor: 'pointer', fontWeight: 'bold', color: '#495057' }}>
+                                🔍 Technical Details
+                            </summary>
+                            <pre style={{
+                                fontSize: '12px',
+                                color: '#6c757d',
+                                marginTop: '10px',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word'
+                            }}>
+                                {this.state.error.message}
+                            </pre>
+                        </details>
+                    )}
+                </div>
+            );
+        }
+
+        return this.props.children;
+    }
+}
 
 const AutonomousTradingDashboard = ({ userInfo }) => {
     const [marketStatus, setMarketStatus] = useState(null);
@@ -588,53 +695,85 @@ const AutonomousTradingDashboard = ({ userInfo }) => {
                 </Card>
             </Grid>
 
-            {/* Zerodha Daily Auth Token Dialog */}
+            {/* Zerodha Daily Auth Token Dialog - IMPROVED MODAL */}
             {showZerodhaAuth && (
-                <Box
-                    sx={{
+                <div
+                    style={{
                         position: 'fixed',
                         top: 0,
                         left: 0,
-                        width: '100%',
-                        height: '100%',
-                        bgcolor: 'rgba(255,255,255,0.95)',
+                        width: '100vw',
+                        height: '100vh',
+                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        zIndex: 1300,
-                        backdropFilter: 'blur(5px)'
+                        zIndex: 9999,
+                        padding: '20px',
+                        boxSizing: 'border-box'
                     }}
                     onClick={() => setShowZerodhaAuth(false)}
                 >
-                    <Box
-                        sx={{
-                            bgcolor: '#ffffff',
-                            borderRadius: 3,
+                    <div
+                        style={{
+                            backgroundColor: '#ffffff',
+                            borderRadius: '12px',
                             boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-                            p: 0,
-                            maxWidth: '95vw',
-                            maxHeight: '95vh',
+                            maxWidth: '90vw',
+                            maxHeight: '90vh',
                             overflow: 'auto',
-                            border: '2px solid #e0e0e0'
+                            border: '2px solid #ddd',
+                            position: 'relative',
+                            minWidth: '600px',
+                            minHeight: '500px'
                         }}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <Box sx={{ p: 2, borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Typography variant="h6" sx={{ color: '#2c3e50', fontWeight: 600 }}>
+                        {/* Modal Header */}
+                        <div style={{
+                            padding: '20px',
+                            borderBottom: '1px solid #eee',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            backgroundColor: '#f8f9fa',
+                            borderRadius: '12px 12px 0 0',
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 1
+                        }}>
+                            <h3 style={{ margin: 0, color: '#2c3e50', fontSize: '18px' }}>
                                 🔐 Zerodha Daily Auth Token Setup
-                            </Typography>
-                            <Button
-                                variant="outlined"
-                                size="small"
+                            </h3>
+                            <button
                                 onClick={() => setShowZerodhaAuth(false)}
-                                sx={{ minWidth: '80px' }}
+                                style={{
+                                    background: '#dc3545',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    padding: '8px 16px',
+                                    cursor: 'pointer',
+                                    fontSize: '14px',
+                                    fontWeight: 'bold'
+                                }}
                             >
                                 ✕ Close
-                            </Button>
-                        </Box>
-                        <ZerodhaManualAuth />
-                    </Box>
-                </Box>
+                            </button>
+                        </div>
+
+                        {/* Modal Content with Error Boundary */}
+                        <div style={{
+                            padding: '0',
+                            minHeight: '400px',
+                            backgroundColor: '#ffffff'
+                        }}>
+                            <ErrorBoundary>
+                                <ZerodhaManualAuth />
+                            </ErrorBoundary>
+                        </div>
+                    </div>
+                </div>
             )}
         </Grid>
     );

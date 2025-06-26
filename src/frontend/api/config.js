@@ -107,6 +107,13 @@ export const API_ENDPOINTS = {
     METRICS: createEndpoint('/metrics'),
     CONFIG: createEndpoint('/config'),
 
+    // Zerodha Manual Auth endpoints
+    ZERODHA_AUTH_URL: createEndpoint('/auth/zerodha/auth-url'),
+    ZERODHA_AUTH_STATUS: createEndpoint('/auth/zerodha/status'),
+    ZERODHA_SUBMIT_TOKEN: createEndpoint('/auth/zerodha/submit-token'),
+    ZERODHA_TEST_CONNECTION: createEndpoint('/auth/zerodha/test-connection'),
+    ZERODHA_LOGOUT: createEndpoint('/auth/zerodha/logout'),
+
     // New endpoints
     ZERODHA_LOGIN: createEndpoint('/api/zerodha/login'),
 };
