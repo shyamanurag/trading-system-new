@@ -47,12 +47,12 @@ def main():
     port = 8084
     url = "push.truedata.in"
     
-    # Symbols to subscribe to (as per your original script)
+    # Symbols to subscribe to (using correct TrueData formats)
     symbols = [
         'CRUDEOIL2506165300CE',  # Crude Oil Call Option
         'CRUDEOIL2506165300PE',  # Crude Oil Put Option
-        'NIFTY',                 # Nifty Index
-        'BANKNIFTY',             # Bank Nifty Index
+        'NIFTY-I',               # Nifty Index (correct -I format)
+        'BANKNIFTY-I',           # Bank Nifty Index (correct -I format)
         'RELIANCE',              # Reliance Industries
         'TCS',                   # Tata Consultancy Services
         'HDFC',                  # HDFC Bank
@@ -89,29 +89,39 @@ def main():
         def my_tick_data(tick_data):
             """Handle tick data using official SDK with enhanced volume parsing"""
             try:
-                symbol = tick_data.get('symbol', 'UNKNOWN')
-                price = tick_data.get('ltp', 0)
+                # Use both getattr and .get for maximum compatibility
+                symbol = getattr(tick_data, 'symbol', None) or tick_data.get('symbol', 'UNKNOWN')
+                price = getattr(tick_data, 'ltp', None) or tick_data.get('ltp', 0)
                 
-                # Enhanced volume parsing - try multiple field names like TrueData client
-                volume = (tick_data.get('volume', 0) or 
-                         tick_data.get('vol', 0) or 
-                         tick_data.get('v', 0) or 
-                         tick_data.get('total_volume', 0) or
-                         tick_data.get('day_volume', 0) or
-                         tick_data.get('traded_volume', 0))
+                # Enhanced volume parsing - try both object attributes AND dictionary keys
+                def get_volume_safely(data):
+                    """Try both getattr() and .get() methods for volume extraction"""
+                    volume_fields = ['volume', 'vol', 'v', 'total_volume', 'day_volume', 'traded_volume']
+                    
+                    for field in volume_fields:
+                        # Try object attribute first
+                        try:
+                            vol = getattr(data, field, 0)
+                            if vol and vol > 0:
+                                return vol, f"{field}(attr)"
+                        except:
+                            pass
+                        
+                        # Try dictionary key if attribute fails
+                        try:
+                            if hasattr(data, 'get'):
+                                vol = data.get(field, 0)
+                                if vol and vol > 0:
+                                    return vol, f"{field}(dict)"
+                        except:
+                            pass
+                    
+                    return 0, "none"
                 
+                volume, vol_source = get_volume_safely(tick_data)
                 timestamp = datetime.now().strftime('%H:%M:%S')
                 
-                # Enhanced logging shows which field contained volume
-                vol_source = "none"
-                if tick_data.get('volume', 0): vol_source = "volume"
-                elif tick_data.get('vol', 0): vol_source = "vol"
-                elif tick_data.get('v', 0): vol_source = "v"
-                elif tick_data.get('total_volume', 0): vol_source = "total_volume"
-                elif tick_data.get('day_volume', 0): vol_source = "day_volume"
-                elif tick_data.get('traded_volume', 0): vol_source = "traded_volume"
-                
-                print(f"[{timestamp}] TICK: {symbol} - Price: {price}, Volume: {volume} (from: {vol_source})")
+                print(f"[{timestamp}] TICK: {symbol} - Price: {price}, Volume: {volume:,} (from: {vol_source})")
                 
                 # Save to file for analysis
                 with open('tick_data.json', 'a') as f:
@@ -128,9 +138,9 @@ def main():
         def new_bidask(bidask_data):
             """Handle bid-ask data using official SDK"""
             try:
-                symbol = bidask_data.get('symbol', 'UNKNOWN')
-                bid = bidask_data.get('bid', 0)
-                ask = bidask_data.get('ask', 0)
+                symbol = getattr(bidask_data, 'symbol', None) or bidask_data.get('symbol', 'UNKNOWN')
+                bid = getattr(bidask_data, 'bid', None) or bidask_data.get('bid', 0)
+                ask = getattr(bidask_data, 'ask', None) or bidask_data.get('ask', 0)
                 timestamp = datetime.now().strftime('%H:%M:%S')
                 
                 print(f"[{timestamp}] BID-ASK: {symbol} - Bid: {bid}, Ask: {ask}")
@@ -150,11 +160,11 @@ def main():
         def mygreek_bidask(greek_data):
             """Handle greek data for options using official SDK"""
             try:
-                symbol = greek_data.get('symbol', 'UNKNOWN')
-                delta = greek_data.get('delta', 0)
-                gamma = greek_data.get('gamma', 0)
-                theta = greek_data.get('theta', 0)
-                vega = greek_data.get('vega', 0)
+                symbol = getattr(greek_data, 'symbol', None) or greek_data.get('symbol', 'UNKNOWN')
+                delta = getattr(greek_data, 'delta', None) or greek_data.get('delta', 0)
+                gamma = getattr(greek_data, 'gamma', None) or greek_data.get('gamma', 0)
+                theta = getattr(greek_data, 'theta', None) or greek_data.get('theta', 0)
+                vega = getattr(greek_data, 'vega', None) or greek_data.get('vega', 0)
                 timestamp = datetime.now().strftime('%H:%M:%S')
                 
                 print(f"[{timestamp}] GREEK: {symbol} - Δ:{delta:.4f}, Γ:{gamma:.4f}, Θ:{theta:.4f}, ν:{vega:.4f}")
