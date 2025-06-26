@@ -443,7 +443,7 @@ router_configs = [
     ('zerodha_auth', '', ('zerodha',)),  # Already has /api/zerodha prefix
     ('zerodha_daily_auth', '', ('zerodha-daily',)),  # Mount at root, has /zerodha prefix
     ('zerodha_multi_user', '', ('zerodha-multi',)),  # Mount at root, has /zerodha-multi prefix
-    ('zerodha_manual_auth', '/zerodha-manual', ('zerodha-manual',)),  # Mount at /zerodha-manual, no router prefix
+    ('zerodha_manual_auth', '', ('zerodha-manual',)),  # Mount at root - router already has /auth/zerodha prefix
     ('daily_auth_workflow', '', ('daily-auth',)),  # Mount at root, has /daily-auth prefix
     ('webhooks', '/api/v1/webhooks', ('webhooks',)),
     
