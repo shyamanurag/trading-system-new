@@ -523,4 +523,86 @@ async def callback_registration_test():
             "success": False,
             "error": str(e),
             "error_type": str(type(e))
-        } 
+        }
+
+@router.post("/force-disconnect")
+async def force_disconnect_truedata():
+    """Force disconnect and clear 'User Already Connected' status"""
+    try:
+        from data.truedata_client import truedata_client, truedata_connection_status
+        
+        logger.info("🔧 Force disconnect requested...")
+        
+        # Clear any existing connection
+        if truedata_client.connected:
+            truedata_client.disconnect()
+        
+        # Clear "User Already Connected" lock
+        truedata_connection_status.update({
+            'connected': False,
+            'error': None,
+            'retry_disabled': False,
+            'last_update': datetime.now().isoformat(),
+            'message': 'Force disconnect completed - ready for new connection'
+        })
+        
+        logger.info("✅ Force disconnect completed")
+        
+        return APIResponse(
+            success=True,
+            message="Force disconnect completed. Ready for new connection attempt.",
+            data={
+                "disconnected_at": datetime.now().isoformat(),
+                "retry_enabled": True
+            }
+        ).dict()
+        
+    except Exception as e:
+        logger.error(f"Error in force disconnect: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/connection-status")
+async def get_detailed_connection_status():
+    """Get detailed TrueData connection status including error information"""
+    try:
+        from data.truedata_client import truedata_client, truedata_connection_status
+        
+        # Get enhanced status
+        if truedata_client:
+            client_status = truedata_client.get_status()
+        else:
+            client_status = {'connected': False}
+        
+        detailed_status = {
+            'client_connected': client_status.get('connected', False),
+            'global_status': truedata_connection_status,
+            'retry_disabled': truedata_connection_status.get('retry_disabled', False),
+            'error_type': truedata_connection_status.get('error'),
+            'can_retry': not truedata_connection_status.get('retry_disabled', False),
+            'recommendations': []
+        }
+        
+        # Add recommendations based on status
+        if truedata_connection_status.get('error') == 'USER_ALREADY_CONNECTED':
+            detailed_status['recommendations'] = [
+                "Account is connected from another session",
+                "Use /force-disconnect endpoint to clear connection",
+                "Or contact TrueData support to reset connection",
+                "Wait 5-10 minutes and try again"
+            ]
+        elif not detailed_status['client_connected']:
+            detailed_status['recommendations'] = [
+                "Try manual connection via /connect endpoint",
+                "Check credentials in environment variables",
+                "Verify TrueData account is active"
+            ]
+        
+        return APIResponse(
+            success=True,
+            message="Detailed connection status retrieved",
+            data=detailed_status
+        ).dict()
+        
+    except Exception as e:
+        logger.error(f"Error getting detailed status: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error") 

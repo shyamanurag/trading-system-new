@@ -115,18 +115,28 @@ async def lifespan(app: FastAPI):
     # Initialize any required services here
     # For example: database connections, cache, message queues, etc.
     
-    # TrueData initialization - RE-ENABLED after fixing connection issues
+    # TrueData initialization - SAFE with "User Already Connected" handling
     try:
         logger.info("🚀 Initializing TrueData connection...")
-        from data.truedata_client import initialize_truedata
+        from data.truedata_client import initialize_truedata, truedata_connection_status
         
-        # Attempt initialization with error handling
-        truedata_success = initialize_truedata()
-        
-        if truedata_success:
-            logger.info("✅ TrueData initialized successfully on startup")
+        # Check if previous attempt failed with "User Already Connected"
+        if truedata_connection_status.get('retry_disabled', False):
+            logger.warning("⚠️ TrueData initialization skipped - previous 'User Already Connected' error")
+            logger.info("💡 TrueData will be available for manual connection via API only")
         else:
-            logger.warning("⚠️ TrueData initialization failed - will be available on-demand")
+            # Attempt initialization with error handling
+            truedata_success = initialize_truedata()
+            
+            if truedata_success:
+                logger.info("✅ TrueData initialized successfully on startup")
+            else:
+                # Check if it's the "User Already Connected" case
+                if truedata_connection_status.get('error') == 'USER_ALREADY_CONNECTED':
+                    logger.warning("⚠️ TrueData: Account already connected elsewhere")
+                    logger.info("🔧 Manual disconnect may be required via TrueData support")
+                else:
+                    logger.warning("⚠️ TrueData initialization failed - will be available on-demand")
             
     except Exception as e:
         logger.error(f"❌ TrueData initialization error: {e}")

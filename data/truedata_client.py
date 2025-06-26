@@ -146,17 +146,49 @@ class TrueDataSingletonClient:
                     self.connected = False
                     return False
                 except Exception as e:
-                    logger.error(f"❌ TrueData connection error: {e}")
-                    self.connected = False
-                    return False
+                    error_msg = str(e).lower()
+                    
+                    # Handle "User Already Connected" error specifically
+                    if "user already connected" in error_msg or "already connected" in error_msg:
+                        logger.error("🔒 TrueData 'User Already Connected' error detected")
+                        logger.error("💡 This means the account is connected from another session")
+                        logger.error("🛑 STOPPING connection attempts to prevent retry loop")
+                        
+                        # Mark as permanently failed for this session to prevent retries
+                        truedata_connection_status.update({
+                            'connected': False,
+                            'error': 'USER_ALREADY_CONNECTED',
+                            'last_error_time': datetime.now().isoformat(),
+                            'retry_disabled': True,
+                            'message': 'Account connected elsewhere. Manual intervention required.'
+                        })
+                        
+                        self.connected = False
+                        return False
+                    else:
+                        logger.error(f"❌ TrueData connection error: {e}")
+                        self.connected = False
+                        return False
                     
             except Exception as e:
-                logger.error(f"❌ TrueData setup error: {e}")
-                truedata_connection_status.update({
-                    'connected': False,
-                    'error': str(e),
-                    'last_error_time': datetime.now().isoformat()
-                })
+                error_msg = str(e).lower()
+                
+                # Handle setup errors
+                if "user already connected" in error_msg or "already connected" in error_msg:
+                    logger.error("🔒 TrueData setup failed: User Already Connected")
+                    truedata_connection_status.update({
+                        'connected': False,
+                        'error': 'USER_ALREADY_CONNECTED_SETUP',
+                        'last_error_time': datetime.now().isoformat(),
+                        'retry_disabled': True
+                    })
+                else:
+                    logger.error(f"❌ TrueData setup error: {e}")
+                    truedata_connection_status.update({
+                        'connected': False,
+                        'error': str(e),
+                        'last_error_time': datetime.now().isoformat()
+                    })
                 return False
 
     def _nuclear_cleanup(self):
