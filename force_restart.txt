@@ -1,0 +1,3 @@
+Build timestamp: 2025-06-26 10:30:00
+TrueData initialization fix deployed
+Force app restart to load new code 

@@ -118,17 +118,62 @@ async def lifespan(app: FastAPI):
     # Initialize TrueData connection on startup
     try:
         logger.info("🔌 Initializing TrueData connection...")
-        from data.truedata_client import initialize_truedata, get_truedata_status
         
-        # Try to initialize TrueData
-        success = initialize_truedata()
-        if success:
-            status = get_truedata_status()
-            logger.info(f"✅ TrueData initialized: {status['symbols_active']} symbols")
-        else:
-            logger.warning("⚠️ TrueData initialization failed - will retry later")
+        # Try multiple import paths for production compatibility
+        truedata_success = False
+        
+        # Method 1: Direct import
+        try:
+            from data.truedata_client import initialize_truedata, get_truedata_status
+            logger.info("✅ TrueData client imported via data.truedata_client")
+            
+            success = initialize_truedata()
+            if success:
+                status = get_truedata_status()
+                logger.info(f"✅ TrueData initialized: {status.get('symbols_active', 0)} symbols")
+                truedata_success = True
+        except Exception as e:
+            logger.warning(f"❌ Method 1 failed: {e}")
+        
+        # Method 2: Alternative import path
+        if not truedata_success:
+            try:
+                import sys
+                import os
+                sys.path.append(os.path.join(os.getcwd(), 'data'))
+                import truedata_client
+                
+                logger.info("✅ TrueData client imported via alternative path")
+                success = truedata_client.initialize_truedata()
+                if success:
+                    status = truedata_client.get_truedata_status()
+                    logger.info(f"✅ TrueData initialized: {status.get('symbols_active', 0)} symbols")
+                    truedata_success = True
+            except Exception as e:
+                logger.warning(f"❌ Method 2 failed: {e}")
+        
+        # Method 3: Force environment check
+        if not truedata_success:
+            username = os.environ.get('TRUEDATA_USERNAME')
+            password = os.environ.get('TRUEDATA_PASSWORD')
+            logger.info(f"🔍 Environment check - Username: {username}, Password: {'*' * len(password) if password else 'MISSING'}")
+            
+            if username and password:
+                logger.info("✅ TrueData credentials available - initialization will retry later")
+            else:
+                logger.error("❌ TrueData credentials missing from environment")
+        
+        if not truedata_success:
+            logger.warning("⚠️ TrueData initialization failed - will retry via API endpoint")
+            
     except Exception as e:
         logger.error(f"❌ TrueData initialization error: {e}")
+        logger.error(f"Current working directory: {os.getcwd()}")
+        logger.error(f"Python path: {sys.path}")
+    
+    # Force app restart trigger by updating build timestamp
+    app.state.build_timestamp = datetime.now().isoformat()
+    app.state.truedata_auto_init = True
     
     # Store successfully loaded routers count
     loaded_count = sum(1 for r in routers_loaded.values() if r is not None)
