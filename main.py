@@ -115,40 +115,19 @@ async def lifespan(app: FastAPI):
     # Initialize any required services here
     # For example: database connections, cache, message queues, etc.
     
-    # TrueData initialization - PERMANENT FIX with retry loop prevention
+    # TrueData initialization - SIMPLIFIED VERSION
     try:
-        logger.info("🚀 Initializing TrueData connection with PERMANENT FIX...")
-        from data.truedata_client import initialize_truedata, truedata_connection_status
+        logger.info("🚀 Initializing TrueData connection...")
+        from data.truedata_client import initialize_truedata
         
-        # Check if connection is blocked due to persistent state
-        if truedata_connection_status.get('permanent_block', False):
-            error_type = truedata_connection_status.get('error', 'UNKNOWN')
-            logger.warning(f"⚠️ TrueData PERMANENTLY BLOCKED - reason: {error_type}")
-            logger.info("💡 Use /api/v1/truedata/truedata/force-disconnect to reset state")
-        elif truedata_connection_status.get('retry_disabled', False):
-            error_type = truedata_connection_status.get('error', 'UNKNOWN')
-            logger.warning(f"⚠️ TrueData retry disabled - reason: {error_type}")
-            logger.info("💡 Connection will be available via manual API only")
+        # Simple initialization attempt
+        truedata_success = initialize_truedata()
+        
+        if truedata_success:
+            logger.info("✅ TrueData initialized successfully!")
         else:
-            # Attempt initialization with permanent fix
-            logger.info("🔄 Attempting TrueData initialization with retry loop prevention...")
-            truedata_success = initialize_truedata()
-            
-            if truedata_success:
-                logger.info("✅ TrueData initialized successfully with PERMANENT FIX!")
-                logger.info("🛡️ Retry loop prevention active")
-            else:
-                # Check specific error type from permanent fix
-                error_type = truedata_connection_status.get('error')
-                if error_type == 'USER_ALREADY_CONNECTED':
-                    logger.warning("⚠️ TrueData: Account connected elsewhere (PERMANENT FIX)")
-                    logger.info("🔧 Use /api/v1/truedata/truedata/force-disconnect to reset")
-                elif error_type and 'CONNECTION_VERIFICATION_FAILED' in error_type:
-                    logger.warning("⚠️ TrueData: Connection verification failed")
-                    logger.info("🔧 Manual retry may be needed")
-                else:
-                    logger.warning("⚠️ TrueData initialization failed with permanent fix")
-                    logger.info("🔧 Check connection status via API endpoints")
+            logger.warning("⚠️ TrueData initialization failed")
+            logger.info("🔧 Check connection status via API endpoints")
             
     except Exception as e:
         logger.error(f"❌ TrueData initialization error: {e}")
