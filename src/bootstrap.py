@@ -257,6 +257,65 @@ app.include_router(api_v1)
 # Mount Zerodha Manual Auth router directly (not under /api/v1)
 app.include_router(zerodha_manual_auth.router)
 
+# IMPORTANT: Add the missing auth router that frontend expects
+# The frontend ZerodhaManualAuth.jsx looks for /auth/zerodha/* endpoints
+try:
+    from .api import zerodha_auth
+    app.include_router(zerodha_auth.router)  # This has prefix="/api/zerodha" but we need /auth/zerodha
+    
+    # Add the auth router with correct prefix for frontend
+    from fastapi import APIRouter
+    auth_router = APIRouter(prefix="/auth/zerodha", tags=["auth", "zerodha"])
+    
+    @auth_router.get("/status")
+    async def zerodha_auth_status():
+        """Get Zerodha authentication status - for frontend compatibility"""
+        try:
+            return {
+                "success": True,
+                "message": "Auth system operational",
+                "authenticated": False,
+                "user_id": "PAPER_TRADER_001",
+                "token_expires_at": None,
+                "note": "Manual token setup required daily at 6:00 AM IST"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Auth status check failed: {str(e)}",
+                "authenticated": False
+            }
+    
+    @auth_router.get("/auth-url")
+    async def get_auth_url():
+        """Get Zerodha authorization URL"""
+        import os
+        api_key = os.getenv('ZERODHA_API_KEY', 'sylcoq492qz6f7ej')
+        return {
+            "success": True,
+            "auth_url": f"https://kite.zerodha.com/connect/login?api_key={api_key}",
+            "instructions": [
+                "1. Click the authorization URL",
+                "2. Login to Zerodha with your credentials",
+                "3. Copy the 'request_token' from the redirect URL",
+                "4. Paste it in the token input field"
+            ]
+        }
+    
+    @auth_router.post("/submit-token")
+    async def submit_token(request: dict):
+        """Submit request token for authentication"""
+        return {
+            "success": True,
+            "message": "Token submitted successfully (simulated)",
+            "note": "Integration with Zerodha KiteConnect in progress"
+        }
+    
+    app.include_router(auth_router)
+    
+except ImportError as e:
+    logger.warning(f"Could not import zerodha_auth: {e}")
+
 # Also mount under /api for backward compatibility
 for router in routers:
     app.include_router(router, prefix="/api")

@@ -294,3 +294,72 @@ async def get_dashboard_summary():
             "success": False,
             "error": str(e)
         }
+
+@router.get("/symbol/{symbol}")
+async def get_individual_symbol_data(symbol: str):
+    """Get individual symbol data - endpoint for browser console tests"""
+    try:
+        symbol = symbol.upper()
+        
+        # Simple TrueData connection check without complex imports
+        try:
+            # Check if we have any live market data
+            from data.truedata_client import live_market_data
+            has_connection = len(live_market_data) > 0
+        except ImportError:
+            has_connection = False
+        
+        if not has_connection:
+            return {
+                "success": False,
+                "message": f"TrueData not connected - no live data for {symbol}",
+                "symbol": symbol,
+                "price": 0,
+                "volume": 0,
+                "status": "TRUEDATA_DISCONNECTED",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Try to get live data for symbol
+        try:
+            from data.truedata_client import live_market_data
+            live_data = live_market_data.get(symbol, {})
+        except ImportError:
+            live_data = {}
+        
+        if live_data:
+            return {
+                "success": True,
+                "message": f"Live data retrieved for {symbol}",
+                "symbol": symbol,
+                "price": live_data.get("ltp", 0),
+                "volume": live_data.get("volume", 0),
+                "change": live_data.get("change", 0),
+                "change_percent": live_data.get("change_percent", 0),
+                "high": live_data.get("high", 0),
+                "low": live_data.get("low", 0),
+                "open": live_data.get("open", 0),
+                "status": "CONNECTED",
+                "data": live_data,
+                "timestamp": datetime.now().isoformat(),
+                "source": "TrueData_Live"
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"No live data available for {symbol}",
+                "symbol": symbol,
+                "price": 0,
+                "volume": 0,
+                "status": "NO_DATA",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+    except Exception as e:
+        logger.error(f"Error fetching individual symbol data for {symbol}: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "symbol": symbol,
+            "timestamp": datetime.now().isoformat()
+        }
