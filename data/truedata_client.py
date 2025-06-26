@@ -70,12 +70,12 @@ class TrueDataSingletonClient:
                 self._nuclear_cleanup()
                 
                 # Import TrueData library
-                from truedata_ws.websocket.TD import TD
+                from truedata import TD_live
                 
                 logger.info(f"Connecting to TrueData: {self.username}@{self.url}:{self.port}")
                 
                 # Create connection
-                self.td_obj = TD(self.username, self.password, live_port=self.port)
+                self.td_obj = TD_live(self.username, self.password, live_port=self.port)
                 
                 # Connect
                 connect_result = self.td_obj.connect()
