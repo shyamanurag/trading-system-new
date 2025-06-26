@@ -77,7 +77,7 @@ const ZerodhaManualAuth = () => {
 
             if (response.status === 404) {
                 // Fallback when endpoints not deployed yet
-                setAuthUrl(`https://kite.zerodha.com/connect/login?api_key=${process.env.REACT_APP_ZERODHA_API_KEY || 'sylcoq492qz6f7ej'}`);
+                setAuthUrl(`https://kite.zerodha.com/connect/login?api_key=${import.meta.env.VITE_ZERODHA_API_KEY || 'sylcoq492qz6f7ej'}`);
                 setInstructions([
                     "1. Click the authorization URL below",
                     "2. Login to Zerodha with your credentials",

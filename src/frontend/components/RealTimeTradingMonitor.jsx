@@ -53,7 +53,7 @@ const RealTimeTradingMonitor = () => {
 
     // WebSocket connection
     const { isConnected, sendMessage, lastMessage } = useWebSocket(
-        process.env.REACT_APP_WS_URL || 'ws://localhost:8000/ws'
+        import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
     );
 
     // Fetch initial data
@@ -270,8 +270,8 @@ const RealTimeTradingMonitor = () => {
 
         return (
             <div className={`flex items-start gap-3 p-3 rounded-lg border ${alert.severity === 'critical' ? 'bg-red-50 border-red-200' :
-                    alert.severity === 'warning' ? 'bg-yellow-50 border-yellow-200' :
-                        'bg-blue-50 border-blue-200'
+                alert.severity === 'warning' ? 'bg-yellow-50 border-yellow-200' :
+                    'bg-blue-50 border-blue-200'
                 }`}>
                 {getAlertIcon()}
                 <div className="flex-1">
@@ -369,8 +369,8 @@ const RealTimeTradingMonitor = () => {
                         <button
                             onClick={toggleTrading}
                             className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 ${systemStatus.is_active
-                                    ? 'bg-red-600 text-white hover:bg-red-700'
-                                    : 'bg-green-600 text-white hover:bg-green-700'
+                                ? 'bg-red-600 text-white hover:bg-red-700'
+                                : 'bg-green-600 text-white hover:bg-green-700'
                                 }`}
                         >
                             {systemStatus.is_active ? (
@@ -516,8 +516,8 @@ const RealTimeTradingMonitor = () => {
                                         </div>
                                     </div>
                                     <span className={`px-2 py-1 rounded text-xs font-medium ${strategy.status === 'active'
-                                            ? 'bg-green-100 text-green-800'
-                                            : 'bg-gray-100 text-gray-800'
+                                        ? 'bg-green-100 text-green-800'
+                                        : 'bg-gray-100 text-gray-800'
                                         }`}>
                                         {strategy.status}
                                     </span>
