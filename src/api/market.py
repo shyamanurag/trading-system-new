@@ -30,13 +30,13 @@ async def get_market_indices():
             try:
                 # Import enhanced TrueData functions
                 from data.truedata_client import live_market_data, get_connection_health, get_all_live_data
-                
-                # Get connection health
-                connection_health = get_connection_health()
-                
-                # Get live data from TrueData singleton client (using correct symbol formats)
-                nifty_data = live_market_data.get('NIFTY-I', {})
-                banknifty_data = live_market_data.get('BANKNIFTY-I', {})
+        
+        # Get connection health
+        connection_health = get_connection_health()
+        
+        # Get live data from TrueData singleton client (using correct symbol formats)
+        nifty_data = live_market_data.get('NIFTY-I', {})
+        banknifty_data = live_market_data.get('BANKNIFTY-I', {})
             except ImportError:
                 # TrueData client not available, use fallback data
                 pass

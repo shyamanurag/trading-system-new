@@ -50,24 +50,58 @@ class TrueDataClient:
                 
                 logger.info("✅ TD_live object created")
                 
-                # Subscribe to symbols FIRST, then set callback
-                symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS']
-                req_ids = self.td_obj.start_live_data(symbols)
-                logger.info(f"✅ Subscribed to {len(symbols)} symbols: {req_ids}")
-                
-                # Setup callback AFTER subscription
-                self._setup_callback()
-                
-                # Mark as connected ONLY after successful setup
-                self.connected = True
-                logger.info("✅ TrueData connected successfully")
-                return True
+                # CRITICAL: Wrap subscription to catch "User Already Connected"
+                try:
+                    symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS']
+                    req_ids = self.td_obj.start_live_data(symbols)
+                    logger.info(f"✅ Subscribed to {len(symbols)} symbols: {req_ids}")
+                    
+                    # Setup callback AFTER successful subscription
+                    self._setup_callback()
+                    
+                    # Mark as connected ONLY after successful setup
+                    self.connected = True
+                    logger.info("✅ TrueData connected successfully")
+                    return True
+                    
+                except Exception as sub_error:
+                    error_msg = str(sub_error).lower()
+                    if "user already connected" in error_msg or "already connected" in error_msg:
+                        logger.warning("⚠️ TrueData: Account already connected elsewhere")
+                        logger.info("💡 Stopping connection attempt to prevent retry loop")
+                        self._clean_disconnect()
+                        return False
+                    else:
+                        # Re-raise other errors
+                        raise sub_error
                 
             except Exception as e:
-                logger.error(f"TrueData connection failed: {e}")
-                self.connected = False
-                self.td_obj = None
+                error_msg = str(e).lower()
+                if "user already connected" in error_msg:
+                    logger.warning("⚠️ TrueData: User Already Connected (connection phase)")
+                    logger.info("💡 Account connected elsewhere - manual retry needed")
+                else:
+                    logger.error(f"TrueData connection failed: {e}")
+                
+                self._clean_disconnect()
                 return False
+    
+    def _clean_disconnect(self):
+        """Clean disconnect to prevent retry loops"""
+        if self.td_obj:
+            try:
+                # Force close connection to prevent library retry
+                if hasattr(self.td_obj, 'close'):
+                    self.td_obj.close()
+                if hasattr(self.td_obj, 'disconnect'):
+                    self.td_obj.disconnect()
+            except:
+                pass
+            finally:
+                self.td_obj = None
+        
+        self.connected = False
+        logger.info("🔌 TrueData disconnected cleanly (retry loop prevented)")
     
     def _setup_callback(self):
         """Setup callback - WORKING VERSION"""

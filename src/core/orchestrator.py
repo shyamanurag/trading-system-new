@@ -226,7 +226,7 @@ class TradingOrchestrator:
                 logger.info("✅ System health check PASSED")
             else:
                 logger.warning("❌ System health check FAILED")
-                
+            
             return all_healthy
             
         except Exception as e:
