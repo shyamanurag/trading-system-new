@@ -115,6 +115,21 @@ async def lifespan(app: FastAPI):
     # Initialize any required services here
     # For example: database connections, cache, message queues, etc.
     
+    # Initialize TrueData connection on startup
+    try:
+        logger.info("🔌 Initializing TrueData connection...")
+        from data.truedata_client import initialize_truedata, get_truedata_status
+        
+        # Try to initialize TrueData
+        success = initialize_truedata()
+        if success:
+            status = get_truedata_status()
+            logger.info(f"✅ TrueData initialized: {status['symbols_active']} symbols")
+        else:
+            logger.warning("⚠️ TrueData initialization failed - will retry later")
+    except Exception as e:
+        logger.error(f"❌ TrueData initialization error: {e}")
+    
     # Store successfully loaded routers count
     loaded_count = sum(1 for r in routers_loaded.values() if r is not None)
     app.state.routers_loaded = loaded_count
@@ -126,6 +141,12 @@ async def lifespan(app: FastAPI):
     
     # Cleanup
     logger.info("Shutting down AlgoAuto Trading System...")
+    try:
+        from data.truedata_client import truedata_client
+        truedata_client.disconnect()
+        logger.info("✅ TrueData disconnected cleanly")
+    except Exception as e:
+        logger.error(f"TrueData cleanup error: {e}")
     # Add cleanup code here (close connections, etc.)
         
 # Create FastAPI application
