@@ -115,32 +115,27 @@ async def lifespan(app: FastAPI):
     # Initialize any required services here
     # For example: database connections, cache, message queues, etc.
     
-    # TrueData initialization - SAFE with "User Already Connected" handling
+    # TrueData initialization - TEMPORARILY DISABLED due to retry loop issue
     try:
-        logger.info("🚀 Initializing TrueData connection...")
-        from data.truedata_client import initialize_truedata, truedata_connection_status
+        logger.info("🔧 TrueData auto-initialization DISABLED")
+        logger.info("🔒 Reason: 'User Already Connected' retry loop detected in production")
+        logger.info("💡 TrueData will be available via manual API connection only")
+        logger.info("🎯 Use /api/v1/truedata/truedata/force-disconnect then /connect")
         
-        # Check if previous attempt failed with "User Already Connected"
-        if truedata_connection_status.get('retry_disabled', False):
-            logger.warning("⚠️ TrueData initialization skipped - previous 'User Already Connected' error")
-            logger.info("💡 TrueData will be available for manual connection via API only")
+        # Verify credentials are available but don't auto-connect
+        username = os.environ.get('TRUEDATA_USERNAME')
+        password = os.environ.get('TRUEDATA_PASSWORD')
+        
+        if username and password:
+            logger.info(f"✅ TrueData credentials available - Username: {username}")
+            logger.info("🔧 Ready for manual connection via API endpoints")
         else:
-            # Attempt initialization with error handling
-            truedata_success = initialize_truedata()
-            
-            if truedata_success:
-                logger.info("✅ TrueData initialized successfully on startup")
-            else:
-                # Check if it's the "User Already Connected" case
-                if truedata_connection_status.get('error') == 'USER_ALREADY_CONNECTED':
-                    logger.warning("⚠️ TrueData: Account already connected elsewhere")
-                    logger.info("🔧 Manual disconnect may be required via TrueData support")
-                else:
-                    logger.warning("⚠️ TrueData initialization failed - will be available on-demand")
+            logger.warning("⚠️ TrueData credentials missing from environment")
+            logger.info("   Required: TRUEDATA_USERNAME and TRUEDATA_PASSWORD")
             
     except Exception as e:
-        logger.error(f"❌ TrueData initialization error: {e}")
-        logger.info("📊 App will continue without TrueData - available on-demand")
+        logger.error(f"❌ TrueData credential check error: {e}")
+        logger.info("📊 App will continue without TrueData")
     
     # App state for debugging
     app.state.build_timestamp = datetime.now().isoformat()
