@@ -12,38 +12,36 @@ def subscribe_indices():
     print('📊 SUBSCRIBING TO MARKET INDICES')
     print('=' * 40)
     
-    # Subscribe to indices
+    # Subscribe to indices - send as list, not individual objects
     symbols = ['NIFTY-I', 'BANKNIFTY-I']
     
-    for symbol in symbols:
-        print(f'\n📈 Subscribing to {symbol}...')
-        try:
-            subscribe_data = {'symbol': symbol}
+    print(f'\n📈 Subscribing to {len(symbols)} symbols: {symbols}')
+    try:
+        # Send symbols as a list (correct API format)
+        response = requests.post(
+            'https://algoauto-9gx56.ondigitalocean.app/api/v1/truedata/truedata/subscribe',
+            json=symbols,  # ✅ Send list directly
+            timeout=15
+        )
+        
+        print(f'   Status: {response.status_code}')
+        
+        if response.status_code == 200:
+            data = response.json()
+            success = data.get('success', False)
+            message = data.get('message', 'N/A')
+            print(f'   Success: {success}')
+            print(f'   Message: {message}')
             
-            response = requests.post(
-                'https://algoauto-9gx56.ondigitalocean.app/api/v1/truedata/truedata/subscribe',
-                json=subscribe_data,
-                timeout=15
-            )
-            
-            print(f'   Status: {response.status_code}')
-            
-            if response.status_code == 200:
-                data = response.json()
-                success = data.get('success', False)
-                message = data.get('message', 'N/A')
-                print(f'   Success: {success}')
-                print(f'   Message: {message}')
-                
-                if success:
-                    print(f'   ✅ {symbol} subscribed successfully!')
-                else:
-                    print(f'   ❌ {symbol} subscription failed: {message}')
+            if success:
+                print(f'   ✅ All symbols subscribed successfully!')
             else:
-                print(f'   ❌ Request failed: {response.text[:100]}')
-                
-        except Exception as e:
-            print(f'   ❌ Error subscribing to {symbol}: {e}')
+                print(f'   ❌ Subscription failed: {message}')
+        else:
+            print(f'   ❌ Request failed: {response.text[:100]}')
+            
+    except Exception as e:
+        print(f'   ❌ Error subscribing to symbols: {e}')
     
     print('\n⏳ Waiting for data to flow...')
     time.sleep(5)
