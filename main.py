@@ -132,28 +132,38 @@ async def lifespan(app: FastAPI):
             logger.info("🔄 Remove environment variable to re-enable auto-initialization")
             # Continue with app startup, just skip TrueData initialization
         else:
-            # Check for deployment scenarios
-            is_production = os.getenv('ENVIRONMENT') == 'production'
-            is_deployment = 'ondigitalocean.app' in os.getenv('HOST', '') or is_production
+            # Non-blocking TrueData initialization to prevent deployment timeouts
+            logger.info("🚀 Starting non-blocking TrueData initialization...")
             
-            if is_deployment:
-                logger.info("🏭 Deployment overlap protection active")
-                logger.info("⏳ Waiting 45s for old container TrueData cleanup...")
-                logger.info("💡 This prevents 'User Already Connected' errors during deployments")
-                # Wait for old container to gracefully release TrueData connection
-                await asyncio.sleep(45)
-                logger.info("✅ Deployment overlap window complete - proceeding with connection")
+            def init_truedata_background():
+                """Initialize TrueData in background to prevent blocking startup"""
+                try:
+                    # Check for deployment scenarios
+                    is_production = os.getenv('ENVIRONMENT') == 'production'
+                    is_deployment = 'ondigitalocean.app' in os.getenv('APP_URL', '') or is_production
+                    
+                    if is_deployment:
+                        logger.info("🏭 Deployment environment detected - using graceful connection")
+                        # Small delay to let old container finish, but don't block health checks
+                        import time
+                        time.sleep(10)
+                    
+                    truedata_success = initialize_truedata()
+                    
+                    if truedata_success:
+                        logger.info("✅ TrueData initialized successfully!")
+                        logger.info("📊 Live market data is now available")
+                    else:
+                        logger.warning("⚠️ TrueData initialization failed - will retry automatically")
+                        logger.info("💡 Normal during deployment overlaps - system remains autonomous")
+                except Exception as e:
+                    logger.error(f"❌ Background TrueData init error: {e}")
             
-            # Try TrueData initialization
-            truedata_success = initialize_truedata()
-            
-            if truedata_success:
-                logger.info("✅ TrueData initialized successfully!")
-                logger.info("📊 Live market data is now available")
-            else:
-                logger.warning("⚠️ TrueData initialization failed - will retry automatically")
-                logger.info("💡 Normal during deployment overlaps - system remains autonomous")
-                logger.info("🔄 TrueData will automatically retry on next API call")
+            # Start TrueData initialization in background thread (non-blocking)
+            import threading
+            truedata_thread = threading.Thread(target=init_truedata_background, daemon=True)
+            truedata_thread.start()
+            logger.info("⚡ TrueData initialization started in background - app startup continues")
             
     except Exception as e:
         logger.error(f"❌ TrueData initialization error: {e}")
