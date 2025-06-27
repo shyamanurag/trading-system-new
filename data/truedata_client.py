@@ -116,44 +116,125 @@ class TrueDataClient:
                 return False
     
     def _aggressive_cleanup(self):
-        """Aggressive cleanup to prevent SDK auto-retry loops"""
-        logger.info("🧹 AGGRESSIVE CLEANUP: Stopping SDK auto-retry...")
+        """Ultra-aggressive cleanup to prevent SDK auto-retry loops"""
+        logger.info("🧹 ULTRA-AGGRESSIVE CLEANUP: Stopping SDK auto-retry completely...")
         
         if self.td_obj:
             try:
-                # Multiple cleanup approaches to stop SDK retries
-                if hasattr(self.td_obj, 'close'):
-                    self.td_obj.close()
-                    logger.info("🧹 Called TD close()")
-                    
-                if hasattr(self.td_obj, 'disconnect'):
-                    self.td_obj.disconnect()
-                    logger.info("🧹 Called TD disconnect()")
-                    
-                # Force disconnect WebSocket connection
-                if hasattr(self.td_obj, '_websocket_client'):
-                    try:
-                        self.td_obj._websocket_client.close()
-                        logger.info("🧹 Force closed WebSocket client")
-                    except:
-                        pass
+                # STEP 1: Multiple cleanup approaches in sequence
+                cleanup_methods = [
+                    ('close', lambda: self.td_obj.close() if hasattr(self.td_obj, 'close') else None),
+                    ('disconnect', lambda: self.td_obj.disconnect() if hasattr(self.td_obj, 'disconnect') else None),
+                    ('stop', lambda: self.td_obj.stop() if hasattr(self.td_obj, 'stop') else None),
+                ]
                 
-                # Set internal connection flags to False
-                if hasattr(self.td_obj, '_connected'):
-                    self.td_obj._connected = False
-                    logger.info("🧹 Set _connected to False")
+                for method_name, method in cleanup_methods:
+                    try:
+                        method()
+                        logger.info(f"🧹 Called TD {method_name}()")
+                    except Exception as e:
+                        logger.warning(f"Cleanup method {method_name} failed: {e}")
+                
+                # STEP 2: Force disconnect WebSocket and internal connections
+                websocket_cleanup_attempts = [
+                    '_websocket_client',
+                    '_websocket',
+                    'websocket',
+                    'ws',
+                    '_ws'
+                ]
+                
+                for ws_attr in websocket_cleanup_attempts:
+                    try:
+                        if hasattr(self.td_obj, ws_attr):
+                            ws_obj = getattr(self.td_obj, ws_attr)
+                            if ws_obj:
+                                if hasattr(ws_obj, 'close'):
+                                    ws_obj.close()
+                                if hasattr(ws_obj, 'disconnect'):
+                                    ws_obj.disconnect()
+                                setattr(self.td_obj, ws_attr, None)
+                                logger.info(f"🧹 Force cleaned {ws_attr}")
+                    except Exception as e:
+                        logger.debug(f"WebSocket cleanup attempt {ws_attr}: {e}")
+                
+                # STEP 3: Set all internal flags to prevent further operations
+                connection_flags = [
+                    '_connected',
+                    'connected',
+                    'is_connected',
+                    '_is_connected',
+                    '_active',
+                    'active',
+                    '_running',
+                    'running'
+                ]
+                
+                for flag in connection_flags:
+                    try:
+                        if hasattr(self.td_obj, flag):
+                            setattr(self.td_obj, flag, False)
+                            logger.info(f"🧹 Set {flag} = False")
+                    except Exception as e:
+                        logger.debug(f"Flag setting {flag}: {e}")
+                
+                # STEP 4: Try to stop any internal threads or timers
+                thread_attrs = [
+                    '_thread',
+                    'thread',
+                    '_timer',
+                    'timer',
+                    '_executor',
+                    'executor'
+                ]
+                
+                for thread_attr in thread_attrs:
+                    try:
+                        if hasattr(self.td_obj, thread_attr):
+                            thread_obj = getattr(self.td_obj, thread_attr)
+                            if thread_obj:
+                                if hasattr(thread_obj, 'stop'):
+                                    thread_obj.stop()
+                                if hasattr(thread_obj, 'cancel'):
+                                    thread_obj.cancel()
+                                if hasattr(thread_obj, 'join'):
+                                    thread_obj.join(timeout=1)  # 1 second timeout
+                                setattr(self.td_obj, thread_attr, None)
+                                logger.info(f"🧹 Stopped {thread_attr}")
+                    except Exception as e:
+                        logger.debug(f"Thread cleanup {thread_attr}: {e}")
+                
+                # STEP 5: Nuclear option - delete all callable methods
+                try:
+                    dangerous_methods = [
+                        'start_live_data',
+                        'subscribe',
+                        'connect',
+                        'reconnect'
+                    ]
                     
-                # Nullify the object to prevent further use
+                    for method_name in dangerous_methods:
+                        if hasattr(self.td_obj, method_name):
+                            delattr(self.td_obj, method_name)
+                            logger.info(f"🧹 Deleted method {method_name}")
+                except Exception as e:
+                    logger.debug(f"Method deletion: {e}")
+                
+                # STEP 6: Final deletion
                 del self.td_obj
-                logger.info("🧹 Deleted TD object")
+                logger.info("🧹 Deleted TD object completely")
                 
             except Exception as cleanup_error:
-                logger.warning(f"Cleanup warning: {cleanup_error}")
+                logger.warning(f"Ultra-aggressive cleanup warning: {cleanup_error}")
             finally:
                 self.td_obj = None
         
         self.connected = False
-        logger.info("🔌 Aggressive cleanup complete - SDK retry loop prevented")
+        
+        # CIRCUIT BREAKER: Set a "cooling off" period to prevent immediate reconnection
+        self.last_cleanup_time = datetime.now()
+        logger.info("🔌 Ultra-aggressive cleanup complete - SDK retry loop TERMINATED")
+        logger.info("⏰ Circuit breaker activated - will wait before allowing reconnection")
     
     def _clean_disconnect(self):
         """Clean disconnect to prevent SDK issues"""
@@ -207,11 +288,18 @@ class TrueDataClient:
         logger.info("✅ Callback setup completed")
     
     def should_retry(self):
-        """Determine if connection should be retried (autonomous logic)"""
+        """Determine if connection should be retried (autonomous logic with circuit breaker)"""
         if not self.last_attempt_time:
             return True
         
-        # Allow retry after 30 seconds (deployment overlap should resolve by then)
+        # Circuit breaker: If we just did aggressive cleanup, wait longer
+        if hasattr(self, 'last_cleanup_time') and self.last_cleanup_time:
+            cleanup_elapsed = (datetime.now() - self.last_cleanup_time).total_seconds()
+            if cleanup_elapsed < 300:  # Wait 5 minutes after aggressive cleanup
+                logger.info(f"🚫 Circuit breaker active: {300-cleanup_elapsed:.0f} seconds remaining")
+                return False
+        
+        # Normal retry logic: allow retry after 30 seconds
         time_since_last = (datetime.now() - self.last_attempt_time).total_seconds()
         return time_since_last > 30
     

@@ -115,13 +115,13 @@ async def lifespan(app: FastAPI):
     # Initialize any required services here
     # For example: database connections, cache, message queues, etc.
     
-    # TrueData initialization - AUTONOMOUS with deployment-aware startup delay
+    # TrueData initialization - AUTONOMOUS with robust deployment overlap protection
     try:
         logger.info("🚀 Initializing TrueData (autonomous mode)...")
         from data.truedata_client import initialize_truedata
         import os
         
-        # DEPLOYMENT OVERLAP PROTECTION: Add startup delay in production
+        # DEPLOYMENT OVERLAP PROTECTION: Extended delay for DigitalOcean deployments
         is_production = os.getenv('ENVIRONMENT') == 'production'
         is_deployment = 'ondigitalocean.app' in os.getenv('HOST', '') or is_production
         
@@ -129,18 +129,25 @@ async def lifespan(app: FastAPI):
             global truedata_startup_delay_active
             truedata_startup_delay_active = True
             
-            startup_delay = 60  # 60 seconds for old container to disconnect
-            logger.info(f"🏭 DEPLOYMENT DETECTED: Waiting {startup_delay}s for graceful TrueData handover")
-            logger.info("💡 This prevents SDK retry loops during container overlap")
+            # INCREASED DELAY: DigitalOcean containers can take longer to terminate
+            startup_delay = 120  # Increased from 60 to 120 seconds
+            logger.info(f"🏭 DEPLOYMENT DETECTED: Waiting {startup_delay}s for complete TrueData handover")
+            logger.info("💡 This prevents SDK retry loops during extended container overlap")
             logger.info("📡 Health checks will return 200 during this delay")
-            time.sleep(startup_delay)
+            logger.info("⏰ Extended delay for DigitalOcean deployment stability")
+            
+            # Progressive delay with status updates
+            for i in range(4):
+                segment_delay = startup_delay // 4  # 30 seconds each
+                logger.info(f"⏳ Waiting... {(i+1)*segment_delay}/{startup_delay} seconds elapsed")
+                time.sleep(segment_delay)
             
             truedata_startup_delay_active = False
-            logger.info("✅ Startup delay complete - proceeding with TrueData connection")
+            logger.info("✅ Extended startup delay complete - proceeding with TrueData connection")
         
-        # Intelligent retry for post-delay deployment scenarios
-        max_attempts = 2  # Reduced from 3 since we have startup delay
-        retry_delay = 15  # Reduced from 30 since overlap should be resolved
+        # Robust retry with exponential backoff for deployment scenarios
+        max_attempts = 3  # Increased back to 3 attempts
+        base_delay = 30   # Base delay of 30 seconds
         
         for attempt in range(1, max_attempts + 1):
             logger.info(f"🔄 TrueData connection attempt {attempt}/{max_attempts}")
@@ -153,12 +160,16 @@ async def lifespan(app: FastAPI):
                 break
             else:
                 if attempt < max_attempts:
-                    logger.info(f"⏳ Waiting {retry_delay} seconds before retry (final cleanup)")
+                    # Exponential backoff: 30s, 60s, then give up
+                    retry_delay = base_delay * attempt
+                    logger.info(f"⏳ Waiting {retry_delay} seconds before retry (exponential backoff)")
+                    logger.info("💡 Allowing more time for complete container termination")
                     time.sleep(retry_delay)
                 else:
-                    logger.warning("⚠️ TrueData initialization failed after startup delay + retries")
+                    logger.warning("⚠️ TrueData initialization failed after extended delays + retries")
                     logger.info("📊 App continues normally - system remains autonomous")
                     logger.info("🔄 TrueData will automatically retry on next API call")
+                    logger.info("🚨 Consider manual TrueData restart if needed: /api/v1/truedata/truedata/reconnect")
             
     except Exception as e:
         logger.error(f"❌ TrueData initialization error: {e}")
