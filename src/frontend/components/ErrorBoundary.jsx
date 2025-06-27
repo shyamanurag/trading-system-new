@@ -31,6 +31,8 @@ class ErrorBoundary extends React.Component {
 
     render() {
         if (this.state.hasError) {
+            const isObjectRenderingError = this.state.error?.message?.includes('Objects are not valid as a React child');
+
             return (
                 <Box sx={{ p: 3, textAlign: 'center' }}>
                     <Alert severity="error" sx={{ mb: 2 }}>
@@ -46,20 +48,46 @@ class ErrorBoundary extends React.Component {
                             <li>Network connectivity issues</li>
                         </Box>
 
+                        {isObjectRenderingError && (
+                            <Alert severity="warning" sx={{ mb: 2, textAlign: 'left' }}>
+                                <Typography variant="subtitle2" gutterBottom>
+                                    🔧 React Error #31 Detected
+                                </Typography>
+                                <Typography variant="body2">
+                                    This error occurs when trying to display an object directly in React.
+                                    Likely cause: TrueData status information being rendered incorrectly.
+                                    <br />
+                                    <strong>Quick Fix:</strong> Try the "Retry Component" button below.
+                                </Typography>
+                            </Alert>
+                        )}
+
                         {this.state.error && (
                             <Typography variant="caption" sx={{ fontFamily: 'monospace', display: 'block', mb: 2 }}>
                                 Error: {this.state.error.message}
                             </Typography>
                         )}
 
-                        <Button
-                            variant="contained"
-                            startIcon={<Refresh />}
-                            onClick={() => window.location.reload()}
-                            sx={{ mt: 1 }}
-                        >
-                            Reload Application
-                        </Button>
+                        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                            <Button
+                                variant="outlined"
+                                startIcon={<Refresh />}
+                                onClick={() => {
+                                    this.setState({ hasError: false, error: null, errorInfo: null });
+                                }}
+                                sx={{ mt: 1 }}
+                            >
+                                Retry Component
+                            </Button>
+                            <Button
+                                variant="contained"
+                                startIcon={<Refresh />}
+                                onClick={() => window.location.reload()}
+                                sx={{ mt: 1 }}
+                            >
+                                Reload Application
+                            </Button>
+                        </Box>
                     </Alert>
                 </Box>
             );
