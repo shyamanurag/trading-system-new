@@ -598,7 +598,13 @@ async def list_routes():
         "login_endpoint": "/auth/login"
     }
 
-# Add redirect for cached frontend issue
+# Add redirects for frontend compatibility
+@app.get("/api/v1/dashboard/summary", tags=["dashboard"]) 
+async def redirect_dashboard_summary():
+    """Redirect frontend's expected dashboard path to actual endpoint"""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/api/v1/dashboard/dashboard/summary", status_code=307)
+
 @app.post("/api/auth/login", tags=["auth"])
 async def redirect_login(request: Request):
     """Redirect from old login path to new one"""
@@ -635,7 +641,20 @@ async def redirect_login(request: Request):
             status_code=401
         )
 
-# Add redirect for /api/auth/me
+# Add fallback for unauthenticated users to prevent frontend crashes
+@app.get("/auth/me", tags=["auth"])
+async def auth_me_fallback():
+    """Fallback for unauthenticated users - prevents frontend crash"""
+    return JSONResponse(
+        status_code=200,  # Return 200 instead of 403 to prevent frontend crash
+        content={
+            "authenticated": False,
+            "user": None,
+            "message": "Not authenticated - using guest mode"
+        }
+    )
+
+# Add redirect for /api/auth/me  
 @app.get("/api/auth/me", tags=["auth"])
 async def redirect_me(request: Request):
     """Redirect from old me path to new one"""
