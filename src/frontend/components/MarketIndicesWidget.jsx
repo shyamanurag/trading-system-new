@@ -262,11 +262,29 @@ const MarketIndicesWidget = () => {
                     <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <Typography variant="caption" color="text.secondary">
-                                Data Provider: {marketStatus.data_provider.name}
+                                Data Provider: {
+                                    typeof marketStatus.data_provider === 'string'
+                                        ? marketStatus.data_provider
+                                        : marketStatus.data_provider?.name || 'TrueData'
+                                }
                             </Typography>
                             <Chip
-                                label={marketStatus.data_provider.status}
-                                color={marketStatus.data_provider.status === 'CONNECTED' ? 'success' : 'default'}
+                                label={
+                                    typeof marketStatus.data_provider === 'string'
+                                        ? marketStatus.data_provider
+                                        : marketStatus.data_provider?.status
+                                            ? String(marketStatus.data_provider.status)
+                                            : marketStatus.data_provider?.connected
+                                                ? 'CONNECTED'
+                                                : 'DISCONNECTED'
+                                }
+                                color={
+                                    (typeof marketStatus.data_provider === 'string' && marketStatus.data_provider === 'CONNECTED') ||
+                                        (typeof marketStatus.data_provider === 'object' && (
+                                            marketStatus.data_provider?.status === 'CONNECTED' ||
+                                            marketStatus.data_provider?.connected === true
+                                        )) ? 'success' : 'default'
+                                }
                                 size="small"
                                 variant="outlined"
                             />
