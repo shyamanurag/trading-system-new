@@ -705,6 +705,8 @@ async def catch_all(request: Request, path: str):
         path == "api" or  # Handle /api direct access
         path.startswith("auth/") or 
         path == "auth" or  # Handle /auth direct access
+        path.startswith("health/") or  # FIXED: Exclude health endpoints
+        path == "health" or  # Handle /health direct access
         path.startswith("zerodha-") or 
         path.startswith("daily-auth/") or  # Exclude daily-auth paths
         path == "daily-auth" or  # Handle /daily-auth direct access
