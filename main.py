@@ -122,6 +122,16 @@ async def lifespan(app: FastAPI):
         import asyncio
         import os
         
+        # Check if TrueData auto-init should be skipped (break persistent connection cycle)
+        skip_truedata = os.getenv('SKIP_TRUEDATA_AUTO_INIT', 'false').lower() == 'true'
+        
+        if skip_truedata:
+            logger.info("⏭️ TrueData auto-init SKIPPED (SKIP_TRUEDATA_AUTO_INIT=true)")
+            logger.info("💡 This breaks persistent connection cycles during deployments")
+            logger.info("📊 TrueData available via manual API connection: /api/v1/truedata/truedata/reconnect")
+            logger.info("🔄 Remove environment variable to re-enable auto-initialization")
+            return  # Exit early, skip TrueData initialization completely
+        
         # Check for deployment scenarios
         is_production = os.getenv('ENVIRONMENT') == 'production'
         is_deployment = 'ondigitalocean.app' in os.getenv('HOST', '') or is_production
