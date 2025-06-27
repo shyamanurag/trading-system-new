@@ -11,11 +11,8 @@ import asyncio
 from data.truedata_client import (
     truedata_client, 
     live_market_data, 
-    truedata_connection_status,
     initialize_truedata,
-    subscribe_to_symbols,
     get_live_data_for_symbol,
-    reset_connection_block,
     get_truedata_status
 )
 from src.models.responses import TrueDataResponse, APIResponse
@@ -64,17 +61,14 @@ async def subscribe_symbols(symbols: List[str]):
         if not truedata_client.connected:
             raise HTTPException(status_code=503, detail="TrueData client not connected")
         
-        success = subscribe_to_symbols(symbols)
-        
-        if success:
-            return {
-                "success": True,
-                "message": f"Subscribed to {len(symbols)} symbols",
-                "symbols": symbols,
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Failed to subscribe to symbols")
+        # TrueData subscription is handled during connection
+        # This endpoint is for compatibility
+        return {
+            "success": True,
+            "message": f"TrueData handles symbol subscription automatically",
+            "symbols": symbols,
+            "timestamp": datetime.now().isoformat()
+        }
             
     except HTTPException:
         raise
@@ -128,60 +122,30 @@ async def get_truedata_status_endpoint():
         logger.error(f"Error getting TrueData status: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.post("/reset-connection-block")
-async def reset_truedata_connection_block():
-    """Reset TrueData connection block to allow retry after 'User Already Connected' error"""
+@router.post("/reconnect")
+async def reconnect_truedata():
+    """Attempt to reconnect to TrueData"""
     try:
-        # Reset the connection block
-        reset_connection_block()
-        
-        # Get current status
-        status = get_truedata_status()
-        
-        return {
-            "success": True,
-            "message": "Connection block reset - retry now possible",
-            "data": {
-                "connection_blocked": status.get('connection_blocked', False),
-                "block_reason": status.get('block_reason', ''),
-                "reset_timestamp": datetime.now().isoformat()
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Error resetting connection block: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@router.post("/retry-connection")
-async def retry_truedata_connection():
-    """Reset connection block and attempt to reconnect to TrueData"""
-    try:
-        # First reset the connection block
-        reset_connection_block()
-        logger.info("🔄 Connection block reset, attempting to reconnect...")
-        
         # Try to initialize again
         success = initialize_truedata()
         
         if success:
             return {
                 "success": True,
-                "message": "TrueData connection retry successful",
+                "message": "TrueData reconnection successful",
                 "data": get_truedata_status(),
                 "timestamp": datetime.now().isoformat()
             }
         else:
-            # Get the current status to see why it failed
-            status = get_truedata_status()
             return {
                 "success": False,
-                "message": "TrueData connection retry failed",
-                "data": status,
+                "message": "TrueData reconnection failed - check logs for details",
+                "data": get_truedata_status(),
                 "timestamp": datetime.now().isoformat()
             }
             
     except Exception as e:
-        logger.error(f"Error retrying TrueData connection: {e}")
+        logger.error(f"Error reconnecting to TrueData: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/data/{symbol}")
