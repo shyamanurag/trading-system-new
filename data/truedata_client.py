@@ -69,7 +69,16 @@ class TrueDataClient:
                 logger.info("✅ TD_live object created")
 
                 # Subscribe to symbols FIRST, then set callback
-                symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS']
+                # Import default symbols from configuration
+                try:
+                    from config.truedata_symbols import get_default_subscription_symbols
+                    symbols = get_default_subscription_symbols()
+                    logger.info(f"Using configured DEFAULT_SYMBOLS: {symbols}")
+                except ImportError:
+                    # Fallback to full default list
+                    symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS', 'HDFC', 'INFY']
+                    logger.info(f"Using fallback symbols: {symbols}")
+                
                 req_ids = self.td_obj.start_live_data(symbols)
                 logger.info(f"✅ Subscribed to {len(symbols)} symbols: {req_ids}")
 
