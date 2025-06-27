@@ -29,14 +29,21 @@ async def get_market_indices():
         if is_market_open:
             try:
                 # Import enhanced TrueData functions
-                from data.truedata_client import live_market_data, get_connection_health, get_all_live_data
-        
-        # Get connection health
-        connection_health = get_connection_health()
-        
-        # Get live data from TrueData singleton client (using correct symbol formats)
-        nifty_data = live_market_data.get('NIFTY-I', {})
-        banknifty_data = live_market_data.get('BANKNIFTY-I', {})
+                from data.truedata_client import live_market_data, get_truedata_status
+                
+                # Get connection health
+                status = get_truedata_status()
+                connection_health = {
+                    'connected': status.get('connected', False),
+                    'heartbeat_healthy': status.get('data_flowing', False),
+                    'data_flowing': status.get('data_flowing', False),
+                    'symbols_count': status.get('symbols_active', 0),
+                    'heartbeat_age': 0 if status.get('connected') else 999
+                }
+                
+                # Get live data from TrueData singleton client (using correct symbol formats)
+                nifty_data = live_market_data.get('NIFTY-I', {})
+                banknifty_data = live_market_data.get('BANKNIFTY-I', {})
             except ImportError:
                 # TrueData client not available, use fallback data
                 pass
@@ -248,8 +255,12 @@ async def get_market_status():
         
         # Get TrueData connection health
         try:
-            from data.truedata_client import get_connection_health
-            truedata_health = get_connection_health()
+            from data.truedata_client import get_truedata_status
+            status = get_truedata_status()
+            truedata_health = {
+                'connected': status.get('connected', False),
+                'heartbeat_healthy': status.get('data_flowing', False)
+            }
             truedata_status = "CONNECTED" if truedata_health['connected'] and truedata_health['heartbeat_healthy'] else "DISCONNECTED"
         except:
             truedata_health = {'connected': False, 'heartbeat_healthy': False}
@@ -289,7 +300,7 @@ async def get_market_status():
 async def get_volume_data():
     """Get detailed volume data for debugging"""
     try:
-        from data.truedata_client import live_market_data, get_all_live_data
+        from data.truedata_client import live_market_data
         
         volume_data = {}
         for symbol, data in live_market_data.items():
