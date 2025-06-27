@@ -115,62 +115,21 @@ async def lifespan(app: FastAPI):
     # Initialize any required services here
     # For example: database connections, cache, message queues, etc.
     
-    # TrueData initialization - AUTONOMOUS with robust deployment overlap protection
+    # TrueData initialization - Simple autonomous mode
     try:
-        logger.info("🚀 Initializing TrueData (autonomous mode)...")
+        logger.info("🚀 Initializing TrueData (simple autonomous mode)...")
         from data.truedata_client import initialize_truedata
-        import os
-        import asyncio  # Import asyncio for non-blocking sleep
         
-        # DEPLOYMENT OVERLAP PROTECTION: Extended delay for DigitalOcean deployments
-        is_production = os.getenv('ENVIRONMENT') == 'production'
-        is_deployment = 'ondigitalocean.app' in os.getenv('HOST', '') or is_production
+        # Simple initialization - no complex deployment delays
+        truedata_success = initialize_truedata()
         
-        if is_deployment:
-            global truedata_startup_delay_active
-            truedata_startup_delay_active = True
-            
-            # INCREASED DELAY: DigitalOcean containers can take longer to terminate
-            startup_delay = 120  # Increased from 60 to 120 seconds
-            logger.info(f"🏭 DEPLOYMENT DETECTED: Waiting {startup_delay}s for complete TrueData handover")
-            logger.info("💡 This prevents SDK retry loops during extended container overlap")
-            logger.info("📡 Health checks will return 200 during this delay")
-            logger.info("⏰ Extended delay for DigitalOcean deployment stability")
-            
-            # FIXED: Progressive delay with NON-BLOCKING sleep to keep health checks responsive
-            for i in range(4):
-                segment_delay = startup_delay // 4  # 30 seconds each
-                logger.info(f"⏳ Waiting... {(i+1)*segment_delay}/{startup_delay} seconds elapsed")
-                await asyncio.sleep(segment_delay)  # FIXED: Use asyncio.sleep instead of time.sleep
-            
-            truedata_startup_delay_active = False
-            logger.info("✅ Extended startup delay complete - proceeding with TrueData connection")
-        
-        # Robust retry with exponential backoff for deployment scenarios
-        max_attempts = 3  # Increased back to 3 attempts
-        base_delay = 30   # Base delay of 30 seconds
-        
-        for attempt in range(1, max_attempts + 1):
-            logger.info(f"🔄 TrueData connection attempt {attempt}/{max_attempts}")
-            
-            truedata_success = initialize_truedata()
-            
-            if truedata_success:
-                logger.info("✅ TrueData initialized successfully!")
-                logger.info("📊 Live market data is now available")
-                break
-            else:
-                if attempt < max_attempts:
-                    # Exponential backoff: 30s, 60s, then give up
-                    retry_delay = base_delay * attempt
-                    logger.info(f"⏳ Waiting {retry_delay} seconds before retry (exponential backoff)")
-                    logger.info("💡 Allowing more time for complete container termination")
-                    await asyncio.sleep(retry_delay)  # FIXED: Use asyncio.sleep here too
-                else:
-                    logger.warning("⚠️ TrueData initialization failed after extended delays + retries")
-                    logger.info("📊 App continues normally - system remains autonomous")
-                    logger.info("🔄 TrueData will automatically retry on next API call")
-                    logger.info("🚨 Consider manual TrueData restart if needed: /api/v1/truedata/truedata/reconnect")
+        if truedata_success:
+            logger.info("✅ TrueData initialized successfully!")
+            logger.info("📊 Live market data is now available")
+        else:
+            logger.warning("⚠️ TrueData initialization failed - will retry automatically")
+            logger.info("📊 App continues normally - system remains autonomous")
+            logger.info("🔄 TrueData will automatically retry on next API call")
             
     except Exception as e:
         logger.error(f"❌ TrueData initialization error: {e}")
@@ -220,7 +179,7 @@ app = FastAPI(
     
     Deployment: 2024-12-22 10:40 UTC - Fixed health check endpoints
     """,
-    version="4.1.0",  # Updated version - manual auth system with routing fix
+    version="4.2.0",  # Simplified TrueData - removed over-engineering, intelligence over complexity
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -359,7 +318,7 @@ async def root():
         
         return {
             "name": "AlgoAuto Trading System",
-            "version": "4.0.1",
+            "version": "4.2.0",
             "status": "operational",
             "documentation": "/docs",
             "health": "/health",
@@ -369,14 +328,13 @@ async def root():
         # Fallback response
         return {
             "name": "AlgoAuto Trading System",
-            "version": "4.0.1",
+            "version": "4.2.0",
             "status": "operational",
             "error": str(e)
         }
 
 # Add startup state tracking for health checks
 app_startup_complete = False
-truedata_startup_delay_active = False
 
 @app.get("/health")
 async def health_check():
@@ -386,7 +344,7 @@ async def health_check():
 @app.get("/health/ready/json")
 async def health_ready_json():
     """Enhanced health check with component status for frontend SystemHealthMonitor"""
-    global app_startup_complete, truedata_startup_delay_active
+    global app_startup_complete
     
     try:
         # Check TrueData status
@@ -400,11 +358,8 @@ async def health_ready_json():
         except:
             pass
         
-        # Determine overall status
-        if truedata_startup_delay_active:
-            status = "initializing"
-            ready = False
-        elif not app_startup_complete:
+        # Simple status determination
+        if not app_startup_complete:
             status = "starting"
             ready = False
         else:
@@ -421,7 +376,6 @@ async def health_ready_json():
             "truedata_connected": truedata_connected,
             "truedata_healthy": truedata_healthy,
             "app_startup_complete": app_startup_complete,
-            "startup_delay_active": truedata_startup_delay_active,
             "components": {
                 "api": "healthy",
                 "database": "healthy",
@@ -455,19 +409,8 @@ async def health_ready_json():
 
 @app.get("/ready")
 async def readiness_check():
-    """Readiness check that accounts for TrueData startup delays"""
-    global app_startup_complete, truedata_startup_delay_active
-    
-    if truedata_startup_delay_active:
-        return JSONResponse(
-            status_code=200,  # Return 200 during startup delay
-            content={
-                "status": "initializing",
-                "message": "TrueData startup delay in progress (deployment overlap protection)",
-                "ready": False,
-                "timestamp": datetime.now().isoformat()
-            }
-        )
+    """Simple readiness check"""
+    global app_startup_complete
     
     if not app_startup_complete:
         return JSONResponse(
@@ -591,7 +534,7 @@ async def api_root():
     """API root endpoint - shows available API versions"""
     return {
         "name": "AlgoAuto Trading System API",
-        "version": "4.1.0",
+        "version": "4.2.0",
         "available_versions": ["v1"],
         "endpoints": {
             "v1": "/api/v1",
