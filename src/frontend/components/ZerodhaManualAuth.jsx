@@ -10,67 +10,6 @@ const ZerodhaManualAuth = () => {
     const [componentLoading, setComponentLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    useEffect(() => {
-        let isMounted = true;
-
-        const initializeComponent = async () => {
-            try {
-                if (!isMounted) return;
-
-                await fetchAuthUrl();
-                if (!isMounted) return;
-
-                await checkStatus();
-                if (!isMounted) return;
-
-                setComponentLoading(false);
-            } catch (err) {
-                if (!isMounted) return;
-                setError('Failed to initialize auth component: ' + (err?.message || 'Unknown error'));
-                setComponentLoading(false);
-            }
-        };
-
-        initializeComponent();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-
-    if (componentLoading) {
-        return (
-            <div className="zerodha-manual-auth">
-                <div className="auth-container">
-                    <h2>🔐 Loading Zerodha Auth...</h2>
-                    <p>Initializing authentication interface...</p>
-                </div>
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="zerodha-manual-auth">
-                <div className="auth-container">
-                    <h2>🔐 Zerodha Manual Authentication</h2>
-                    <div className="status-card not-authenticated">
-                        <h3>⚠️ Initialization Error</h3>
-                        <p>{error}</p>
-                        <p><strong>Note:</strong> Backend might still be deploying. Please try again in a few minutes.</p>
-                        <button
-                            onClick={() => window.location.reload()}
-                            className="refresh-button"
-                            style={{ marginTop: '10px' }}
-                        >
-                            🔄 Retry
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
     const fetchAuthUrl = async () => {
         try {
             const response = await fetch('/auth/zerodha/auth-url');
@@ -214,6 +153,67 @@ const ZerodhaManualAuth = () => {
         }
         setLoading(false);
     };
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const initializeComponent = async () => {
+            try {
+                if (!isMounted) return;
+
+                await fetchAuthUrl();
+                if (!isMounted) return;
+
+                await checkStatus();
+                if (!isMounted) return;
+
+                setComponentLoading(false);
+            } catch (err) {
+                if (!isMounted) return;
+                setError('Failed to initialize auth component: ' + (err?.message || 'Unknown error'));
+                setComponentLoading(false);
+            }
+        };
+
+        initializeComponent();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    if (componentLoading) {
+        return (
+            <div className="zerodha-manual-auth">
+                <div className="auth-container">
+                    <h2>🔐 Loading Zerodha Auth...</h2>
+                    <p>Initializing authentication interface...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="zerodha-manual-auth">
+                <div className="auth-container">
+                    <h2>🔐 Zerodha Manual Authentication</h2>
+                    <div className="status-card not-authenticated">
+                        <h3>⚠️ Initialization Error</h3>
+                        <p>{error}</p>
+                        <p><strong>Note:</strong> Backend might still be deploying. Please try again in a few minutes.</p>
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="refresh-button"
+                            style={{ marginTop: '10px' }}
+                        >
+                            🔄 Retry
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="zerodha-manual-auth">
