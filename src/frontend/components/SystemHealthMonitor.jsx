@@ -148,7 +148,7 @@ const SystemHealthMonitor = () => {
                                     {component}
                                 </Typography>
                                 <Typography variant="caption" color="text.secondary">
-                                    {status}
+                                    {typeof status === 'string' ? status : String(status || 'Unknown')}
                                 </Typography>
                             </Box>
                         </Grid>
