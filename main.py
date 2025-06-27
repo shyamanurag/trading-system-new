@@ -374,6 +374,22 @@ async def root():
 # Add startup state tracking for health checks
 app_startup_complete = False
 
+# CRITICAL: Define auth fallbacks BEFORE mounting routers to prevent 403 errors
+@app.get("/auth/me", tags=["auth"], priority=1)
+async def auth_me_fallback_high_priority():
+    """High priority fallback for unauthenticated users - prevents frontend crash"""
+    logger.info("Auth /me high priority fallback called - preventing frontend crash")
+    return JSONResponse(
+        status_code=200,  # Return 200 instead of 403 to prevent frontend crash
+        content={
+            "authenticated": False,
+            "user": None,
+            "message": "Not authenticated - using guest mode",
+            "status": "unauthenticated"
+        },
+        headers={"Content-Type": "application/json"}
+    )
+
 @app.get("/health")
 async def health_check():
     """Basic health check endpoint"""
@@ -675,20 +691,7 @@ async def redirect_login(request: Request):
             status_code=401
         )
 
-# Add fallback for unauthenticated users to prevent frontend crashes
-@app.get("/auth/me", tags=["auth"])
-async def auth_me_fallback():
-    """Fallback for unauthenticated users - prevents frontend crash"""
-    return JSONResponse(
-        status_code=200,  # Return 200 instead of 403 to prevent frontend crash
-        content={
-            "authenticated": False,
-            "user": None,
-            "message": "Not authenticated - using guest mode",
-            "status": "unauthenticated"
-        },
-        headers={"Content-Type": "application/json"}
-    )
+# Removed duplicate auth fallback - now defined before router mounting
 
 # Add redirect for /api/auth/me  
 @app.get("/api/auth/me", tags=["auth"])
