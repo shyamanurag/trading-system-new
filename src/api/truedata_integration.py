@@ -112,6 +112,14 @@ async def get_truedata_status_endpoint():
             }
         
         status = get_truedata_status()
+        
+        # Add production disable status
+        try:
+            import data.truedata_client as td_module
+            status['production_disabled'] = getattr(td_module, 'DISABLE_TRUEDATA_IN_PRODUCTION', False)
+        except:
+            status['production_disabled'] = False
+        
         return {
             "success": True,
             "data": status,
@@ -126,6 +134,14 @@ async def get_truedata_status_endpoint():
 async def reconnect_truedata():
     """Attempt to reconnect to TrueData"""
     try:
+        # Reset any production disable flags first
+        try:
+            import data.truedata_client as td_module
+            td_module.DISABLE_TRUEDATA_IN_PRODUCTION = False
+            logger.info("🔄 Reset production disable flag")
+        except Exception as reset_error:
+            logger.warning(f"Could not reset production flag: {reset_error}")
+        
         # Try to initialize again
         success = initialize_truedata()
         
@@ -146,6 +162,31 @@ async def reconnect_truedata():
             
     except Exception as e:
         logger.error(f"Error reconnecting to TrueData: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/enable-production")
+async def enable_truedata_production():
+    """Enable TrueData in production mode (reset disable flag)"""
+    try:
+        import data.truedata_client as td_module
+        td_module.DISABLE_TRUEDATA_IN_PRODUCTION = False
+        
+        # Reset connection attempts
+        if hasattr(truedata_client, 'connection_attempts'):
+            truedata_client.connection_attempts = 0
+        
+        return {
+            "success": True,
+            "message": "TrueData production mode enabled - can now attempt connection",
+            "data": {
+                "production_disabled": False,
+                "ready_for_connection": True,
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error enabling TrueData production mode: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/data/{symbol}")

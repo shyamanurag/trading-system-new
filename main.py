@@ -115,21 +115,30 @@ async def lifespan(app: FastAPI):
     # Initialize any required services here
     # For example: database connections, cache, message queues, etc.
     
-    # TrueData initialization - WITH RETRY LOOP PREVENTION
+    # TrueData initialization - MANUAL ONLY IN PRODUCTION
     try:
-        logger.info("🚀 Initializing TrueData with retry loop prevention...")
-        from data.truedata_client import initialize_truedata
+        is_production = os.getenv('ENVIRONMENT') == 'production'
         
-        # Initialize with proper error handling (no retry loops)
-        truedata_success = initialize_truedata()
-        
-        if truedata_success:
-            logger.info("✅ TrueData initialized successfully!")
-            logger.info("📊 Live market data will be available")
+        if is_production:
+            logger.info("🏭 PRODUCTION MODE: TrueData auto-initialization DISABLED")
+            logger.info("💡 TrueData connection available via:")
+            logger.info("   • /api/v1/truedata/reconnect (manual connection)")
+            logger.info("   • /api/v1/truedata/status (check status)")
+            logger.info("📊 Application continues normally - TrueData available on-demand")
         else:
-            logger.warning("⚠️ TrueData initialization failed (no retry loop)")
-            logger.info("💡 This is normal if account connected elsewhere")
-            logger.info("📊 App continues normally - TrueData available via API")
+            logger.info("🚀 Initializing TrueData with retry loop prevention...")
+            from data.truedata_client import initialize_truedata
+            
+            # Initialize with proper error handling (no retry loops)
+            truedata_success = initialize_truedata()
+            
+            if truedata_success:
+                logger.info("✅ TrueData initialized successfully!")
+                logger.info("📊 Live market data will be available")
+            else:
+                logger.warning("⚠️ TrueData initialization failed (no retry loop)")
+                logger.info("💡 This is normal if account connected elsewhere")
+                logger.info("📊 App continues normally - TrueData available via API")
             
     except Exception as e:
         logger.error(f"❌ TrueData initialization error: {e}")

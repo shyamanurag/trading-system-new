@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 # Global data storage
 live_market_data: Dict[str, Dict] = {}
 
+# Global flag to prevent TrueData connection in production if failing
+DISABLE_TRUEDATA_IN_PRODUCTION = False
+
 class TrueDataClient:
     """Simple TrueData client - WORKING VERSION with intelligent error analysis"""
     
@@ -33,12 +36,29 @@ class TrueDataClient:
     
     def connect(self):
         """Connect to TrueData - SIMPLE WORKING VERSION with smart error analysis"""
+        global DISABLE_TRUEDATA_IN_PRODUCTION
+        
         with self._lock:
+            # Check if TrueData is disabled in production due to persistent issues
+            is_production = os.getenv('ENVIRONMENT') == 'production'
+            if is_production and DISABLE_TRUEDATA_IN_PRODUCTION:
+                logger.warning("🚫 TrueData disabled in production due to persistent connection issues")
+                logger.info("💡 To re-enable, restart the application or call /api/v1/truedata/reconnect")
+                return False
+                
             if self.connected and self.td_obj:
                 logger.info("TrueData already connected")
                 return True
             
             self.connection_attempts += 1
+            
+            # PRODUCTION SAFETY: If multiple attempts fail in production, disable TrueData
+            if is_production and self.connection_attempts > 3:
+                logger.warning("🚫 Multiple TrueData connection failures in production")
+                logger.warning("💡 DISABLING TrueData to prevent app instability")
+                logger.info("📊 Application continues normally without live data")
+                DISABLE_TRUEDATA_IN_PRODUCTION = True
+                return False
             
             try:
                 from truedata import TD_live
@@ -46,44 +66,81 @@ class TrueDataClient:
                 logger.info(f"🔄 TrueData connection attempt #{self.connection_attempts}")
                 logger.info(f"Connecting to TrueData: {self.username}@{self.url}:{self.port}")
                 
-                # Direct connection (same as working debug script)
-                self.td_obj = TD_live(
-                    self.username, 
-                    self.password, 
-                    live_port=self.port,
-                    url=self.url,
-                    compression=False
-                )
-                
-                logger.info("✅ TD_live object created")
-                
-                # CRITICAL: Catch "User Already Connected" during start_live_data
-                try:
-                    symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS']
-                    req_ids = self.td_obj.start_live_data(symbols)
-                    logger.info(f"✅ Subscribed to {len(symbols)} symbols: {req_ids}")
-                    
-                    # Setup callback AFTER subscription
-                    self._setup_callback()
-                    
-                    # Mark as connected ONLY after successful setup
-                    self.connected = True
-                    logger.info("✅ TrueData connected successfully")
-                    return True
-                    
-                except Exception as sub_error:
-                    # This is where the "User Already Connected" error occurs
-                    error_msg = str(sub_error).lower()
-                    if "user already connected" in error_msg or "already connected" in error_msg:
-                        logger.warning("🔍 ANALYZING 'User Already Connected' Error...")
-                        self._analyze_already_connected_error()
+                # PRODUCTION: Set aggressive timeout to prevent hanging (Unix systems only)
+                timeout_set = False
+                if is_production and hasattr(os, 'kill'):  # Unix-like systems
+                    try:
+                        import signal
                         
-                        # FORCE CLEANUP to prevent SDK auto-retry
-                        self._force_cleanup()
-                        return False
-                    else:
-                        # Re-raise other subscription errors
-                        raise sub_error
+                        def timeout_handler(signum, frame):
+                            raise TimeoutError("TrueData connection timeout in production")
+                        
+                        # Set 10-second timeout for production
+                        signal.signal(signal.SIGALRM, timeout_handler)
+                        signal.alarm(10)
+                        timeout_set = True
+                        logger.info("⏰ Set 10-second timeout for TrueData connection")
+                    except ImportError:
+                        logger.warning("⚠️ Signal timeout not available on this system")
+                
+                try:
+                    # Direct connection (same as working debug script)
+                    self.td_obj = TD_live(
+                        self.username, 
+                        self.password, 
+                        live_port=self.port,
+                        url=self.url,
+                        compression=False
+                    )
+                    
+                    if 'timeout_set' in locals() and timeout_set:
+                        signal.alarm(0)  # Cancel timeout
+                    
+                    logger.info("✅ TD_live object created")
+                    
+                    # CRITICAL: Catch "User Already Connected" during start_live_data
+                    try:
+                        symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS']
+                        req_ids = self.td_obj.start_live_data(symbols)
+                        logger.info(f"✅ Subscribed to {len(symbols)} symbols: {req_ids}")
+                        
+                        # Setup callback AFTER subscription
+                        self._setup_callback()
+                        
+                        # Mark as connected ONLY after successful setup
+                        self.connected = True
+                        logger.info("✅ TrueData connected successfully")
+                        return True
+                        
+                    except Exception as sub_error:
+                        # This is where the "User Already Connected" error occurs
+                        error_msg = str(sub_error).lower()
+                        if "user already connected" in error_msg or "already connected" in error_msg:
+                            logger.warning("🔍 ANALYZING 'User Already Connected' Error...")
+                            self._analyze_already_connected_error()
+                            
+                            # PRODUCTION: Disable TrueData to prevent retry loops
+                            if is_production:
+                                logger.warning("🚫 PRODUCTION: Disabling TrueData due to User Already Connected")
+                                DISABLE_TRUEDATA_IN_PRODUCTION = True
+                            
+                            # FORCE CLEANUP to prevent SDK auto-retry
+                            self._force_cleanup()
+                            return False
+                        else:
+                            # Re-raise other subscription errors
+                            raise sub_error
+                
+                except TimeoutError:
+                    logger.error("⏰ TrueData connection timeout in production")
+                    if is_production:
+                        try:
+                            if 'timeout_set' in locals() and timeout_set:
+                                signal.alarm(0)
+                        except:
+                            pass
+                        DISABLE_TRUEDATA_IN_PRODUCTION = True
+                    return False
                 
             except Exception as e:
                 self.last_error = str(e)
@@ -93,6 +150,8 @@ class TrueDataClient:
                 error_msg = str(e).lower()
                 if "user already connected" in error_msg or "already connected" in error_msg:
                     self._analyze_already_connected_error()
+                    if is_production:
+                        DISABLE_TRUEDATA_IN_PRODUCTION = True
                 
                 self.connected = False
                 self.td_obj = None
