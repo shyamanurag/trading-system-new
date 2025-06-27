@@ -552,13 +552,17 @@ if os.getenv('DEBUG', 'false').lower() == 'true':
                 routes.append(route_info)
         return {"total_routes": len(routes), "routes": sorted(routes, key=lambda x: x['path'])}
 
-# Add API root endpoint
+# Add API root endpoint with explicit JSON response
 @app.get("/api", tags=["root"])
-async def api_root():
+async def api_root(request: Request):
     """API root endpoint - shows available API versions"""
-    return {
+    logger.info(f"API root called by: {request.headers.get('user-agent', 'unknown')}")
+    logger.info(f"Accept header: {request.headers.get('accept', 'unknown')}")
+    
+    # Explicit JSON response to prevent any HTML conversion
+    response_data = {
         "name": "AlgoAuto Trading System API",
-        "version": "4.2.0",
+        "version": "4.2.0", 
         "available_versions": ["v1"],
         "endpoints": {
             "v1": "/api/v1",
@@ -567,8 +571,18 @@ async def api_root():
             "docs": "/docs",
             "routes": "/api/routes"
         },
-        "status": "operational"
+        "status": "operational",
+        "debug": {
+            "user_agent": request.headers.get('user-agent', 'unknown')[:50],
+            "accept": request.headers.get('accept', 'unknown')[:50],
+            "timestamp": datetime.now().isoformat()
+        }
     }
+    
+    return JSONResponse(
+        content=response_data,
+        headers={"Content-Type": "application/json"}
+    )
 
 # Add a simple route list endpoint that's always available
 @app.get("/api/routes", tags=["debug"])
@@ -698,28 +712,38 @@ async def redirect_me(request: Request):
 async def catch_all(request: Request, path: str):
     """Serve frontend for non-API routes, return 404 for API routes"""
     
-    # Don't intercept API routes - let them return proper 404s
-    if (path.startswith("api/") or 
-        path == "api" or  # Handle /api direct access
-        path.startswith("auth/") or 
-        path == "auth" or  # Handle /auth direct access
-        path.startswith("health/") or  # FIXED: Exclude health endpoints
-        path == "health" or  # Handle /health direct access
-        path.startswith("zerodha-") or 
-        path.startswith("daily-auth/") or  # Exclude daily-auth paths
-        path == "daily-auth" or  # Handle /daily-auth direct access
-        path.startswith("ws/") or
-        path == "docs" or 
-        path == "redoc" or 
-        path == "openapi.json"):
-        logger.warning(f"API path not found: {path}")
-        return JSONResponse(
-            status_code=404,
-            content={
-                "detail": f"API endpoint not found: {path}",
-                "method": request.method
-            }
-        )
+    # Debug logging for troubleshooting
+    logger.info(f"Catch-all route called for path: '{path}' by {request.headers.get('user-agent', 'unknown')[:30]}")
+    
+    # CRITICAL: Don't intercept API routes - let them return proper 404s
+    api_paths = [
+        "api",          # Exact match for /api
+        "api/",         # Paths starting with api/
+        "auth",         # Exact match for /auth  
+        "auth/",        # Paths starting with auth/
+        "health",       # Exact match for /health
+        "health/",      # Paths starting with health/
+        "docs",         # Documentation
+        "redoc",        # Alternative docs
+        "openapi.json", # OpenAPI spec
+        "ws/",          # WebSocket paths
+        "zerodha-",     # Zerodha integration paths
+        "daily-auth",   # Daily auth workflow
+        "daily-auth/"   # Daily auth workflow paths
+    ]
+    
+    # Check if this is an API path that should NOT be caught
+    for api_path in api_paths:
+        if path == api_path or path.startswith(api_path):
+            logger.warning(f"API path not found: {path} (method: {request.method})")
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "detail": f"API endpoint not found: {path}",
+                    "method": request.method,
+                    "debug": f"Matched API pattern: {api_path}"
+                }
+            )
     
     # Check if this is the ready endpoint
     if path == "ready":
