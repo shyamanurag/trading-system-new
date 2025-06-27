@@ -386,7 +386,7 @@ async def root():
 app_startup_complete = False
 
 # CRITICAL: Define auth fallbacks BEFORE mounting routers to prevent 403 errors
-@app.get("/auth/me", tags=["auth"], priority=1)
+@app.get("/auth/me", tags=["auth"])
 async def auth_me_fallback_high_priority():
     """High priority fallback for unauthenticated users - prevents frontend crash"""
     logger.info("Auth /me high priority fallback called - preventing frontend crash")
