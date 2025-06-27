@@ -115,12 +115,26 @@ async def lifespan(app: FastAPI):
     # Initialize any required services here
     # For example: database connections, cache, message queues, etc.
     
-    # TrueData initialization - Simple autonomous mode
+    # TrueData initialization - Smart deployment overlap handling
     try:
-        logger.info("🚀 Initializing TrueData (simple autonomous mode)...")
+        logger.info("🚀 Initializing TrueData (deployment-aware)...")
         from data.truedata_client import initialize_truedata
+        import asyncio
+        import os
         
-        # Simple initialization - no complex deployment delays
+        # Check for deployment scenarios
+        is_production = os.getenv('ENVIRONMENT') == 'production'
+        is_deployment = 'ondigitalocean.app' in os.getenv('HOST', '') or is_production
+        
+        if is_deployment:
+            logger.info("🏭 Deployment overlap protection active")
+            logger.info("⏳ Waiting 45s for old container TrueData cleanup...")
+            logger.info("💡 This prevents 'User Already Connected' errors during deployments")
+            # Wait for old container to gracefully release TrueData connection
+            await asyncio.sleep(45)
+            logger.info("✅ Deployment overlap window complete - proceeding with connection")
+        
+        # Try TrueData initialization
         truedata_success = initialize_truedata()
         
         if truedata_success:
@@ -128,7 +142,7 @@ async def lifespan(app: FastAPI):
             logger.info("📊 Live market data is now available")
         else:
             logger.warning("⚠️ TrueData initialization failed - will retry automatically")
-            logger.info("📊 App continues normally - system remains autonomous")
+            logger.info("💡 Normal during deployment overlaps - system remains autonomous")
             logger.info("🔄 TrueData will automatically retry on next API call")
             
     except Exception as e:
