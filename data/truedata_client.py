@@ -48,7 +48,18 @@ class TrueDataClient:
                 logger.info(f"🔄 TrueData connection attempt #{self.connection_attempts}")
                 logger.info(f"Connecting to TrueData: {self.username}@{self.url}:{self.port}")
                 
-                # Create TD_live object
+                # AGGRESSIVE CLEANUP: Ensure no lingering connections
+                if self.td_obj:
+                    try:
+                        self.td_obj.close()
+                        del self.td_obj
+                        logger.info("🧹 Cleaned up previous TD object")
+                    except:
+                        pass
+                    self.td_obj = None
+                
+                # Create TD_live object with timeout protection
+                logger.info("⏱️ Creating TD_live object with timeout protection...")
                 self.td_obj = TD_live(
                     self.username, 
                     self.password, 
@@ -59,13 +70,16 @@ class TrueDataClient:
                 
                 logger.info("✅ TD_live object created")
                 
-                # Try to start live data subscription
+                # Try to start live data subscription with immediate error detection
                 try:
                     symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS']
+                    logger.info(f"📡 Attempting to subscribe to {len(symbols)} symbols...")
+                    
+                    # This is where "User Already Connected" occurs
                     req_ids = self.td_obj.start_live_data(symbols)
                     logger.info(f"✅ Subscribed to {len(symbols)} symbols: {req_ids}")
                     
-                    # Setup callback AFTER subscription
+                    # Setup callback AFTER successful subscription
                     self._setup_callback()
                     
                     # Mark as connected ONLY after successful setup
@@ -80,8 +94,8 @@ class TrueDataClient:
                         logger.info("🤖 AUTONOMOUS: Will retry automatically - no human intervention needed")
                         logger.info("💡 This is normal during deployments and will resolve automatically")
                         
-                        # Clean disconnect but don't disable - remain autonomous
-                        self._clean_disconnect()
+                        # AGGRESSIVE CLEANUP to prevent SDK auto-retry
+                        self._aggressive_cleanup()
                         return False
                     else:
                         # Re-raise other errors
@@ -94,25 +108,57 @@ class TrueDataClient:
                 error_msg = str(e).lower()
                 if "user already connected" in error_msg or "already connected" in error_msg:
                     logger.info("🤖 AUTONOMOUS: System will handle this automatically")
+                    # Aggressive cleanup for connection-level errors too
+                    self._aggressive_cleanup()
                 
                 self.connected = False
                 self.td_obj = None
                 return False
     
-    def _clean_disconnect(self):
-        """Clean disconnect to prevent SDK issues"""
+    def _aggressive_cleanup(self):
+        """Aggressive cleanup to prevent SDK auto-retry loops"""
+        logger.info("🧹 AGGRESSIVE CLEANUP: Stopping SDK auto-retry...")
+        
         if self.td_obj:
             try:
+                # Multiple cleanup approaches to stop SDK retries
                 if hasattr(self.td_obj, 'close'):
                     self.td_obj.close()
+                    logger.info("🧹 Called TD close()")
+                    
                 if hasattr(self.td_obj, 'disconnect'):
                     self.td_obj.disconnect()
-            except:
-                pass
+                    logger.info("🧹 Called TD disconnect()")
+                    
+                # Force disconnect WebSocket connection
+                if hasattr(self.td_obj, '_websocket_client'):
+                    try:
+                        self.td_obj._websocket_client.close()
+                        logger.info("🧹 Force closed WebSocket client")
+                    except:
+                        pass
+                
+                # Set internal connection flags to False
+                if hasattr(self.td_obj, '_connected'):
+                    self.td_obj._connected = False
+                    logger.info("🧹 Set _connected to False")
+                    
+                # Nullify the object to prevent further use
+                del self.td_obj
+                logger.info("🧹 Deleted TD object")
+                
+            except Exception as cleanup_error:
+                logger.warning(f"Cleanup warning: {cleanup_error}")
             finally:
                 self.td_obj = None
         
         self.connected = False
+        logger.info("🔌 Aggressive cleanup complete - SDK retry loop prevented")
+    
+    def _clean_disconnect(self):
+        """Clean disconnect to prevent SDK issues"""
+        # Use aggressive cleanup for all disconnects
+        self._aggressive_cleanup()
     
     def _setup_callback(self):
         """Setup callback - WORKING VERSION"""

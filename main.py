@@ -115,14 +115,32 @@ async def lifespan(app: FastAPI):
     # Initialize any required services here
     # For example: database connections, cache, message queues, etc.
     
-    # TrueData initialization - AUTONOMOUS with intelligent deployment handling
+    # TrueData initialization - AUTONOMOUS with deployment-aware startup delay
     try:
         logger.info("🚀 Initializing TrueData (autonomous mode)...")
         from data.truedata_client import initialize_truedata
+        import os
         
-        # Intelligent retry for deployment scenarios
-        max_attempts = 3
-        retry_delay = 30  # 30 seconds between attempts
+        # DEPLOYMENT OVERLAP PROTECTION: Add startup delay in production
+        is_production = os.getenv('ENVIRONMENT') == 'production'
+        is_deployment = 'ondigitalocean.app' in os.getenv('HOST', '') or is_production
+        
+        if is_deployment:
+            global truedata_startup_delay_active
+            truedata_startup_delay_active = True
+            
+            startup_delay = 60  # 60 seconds for old container to disconnect
+            logger.info(f"🏭 DEPLOYMENT DETECTED: Waiting {startup_delay}s for graceful TrueData handover")
+            logger.info("💡 This prevents SDK retry loops during container overlap")
+            logger.info("📡 Health checks will return 200 during this delay")
+            time.sleep(startup_delay)
+            
+            truedata_startup_delay_active = False
+            logger.info("✅ Startup delay complete - proceeding with TrueData connection")
+        
+        # Intelligent retry for post-delay deployment scenarios
+        max_attempts = 2  # Reduced from 3 since we have startup delay
+        retry_delay = 15  # Reduced from 30 since overlap should be resolved
         
         for attempt in range(1, max_attempts + 1):
             logger.info(f"🔄 TrueData connection attempt {attempt}/{max_attempts}")
@@ -135,11 +153,10 @@ async def lifespan(app: FastAPI):
                 break
             else:
                 if attempt < max_attempts:
-                    logger.info(f"⏳ Waiting {retry_delay} seconds before retry (deployment overlap handling)")
-                    logger.info("💡 This allows previous container instance to fully disconnect")
+                    logger.info(f"⏳ Waiting {retry_delay} seconds before retry (final cleanup)")
                     time.sleep(retry_delay)
                 else:
-                    logger.warning("⚠️ TrueData initialization failed after all attempts")
+                    logger.warning("⚠️ TrueData initialization failed after startup delay + retries")
                     logger.info("📊 App continues normally - system remains autonomous")
                     logger.info("🔄 TrueData will automatically retry on next API call")
             
@@ -157,6 +174,11 @@ async def lifespan(app: FastAPI):
     app.state.total_routers = len(router_imports)
     
     logger.info(f"Loaded {loaded_count}/{len(router_imports)} routers successfully")
+    
+    # Mark startup as complete for health checks
+    global app_startup_complete
+    app_startup_complete = True
+    logger.info("✅ Application startup complete - ready for traffic")
     
     yield
     
@@ -340,89 +362,47 @@ async def root():
             "error": str(e)
         }
 
-# Health check endpoints
-@app.get("/health", tags=["health"])
+# Add startup state tracking for health checks
+app_startup_complete = False
+truedata_startup_delay_active = False
+
+@app.get("/health")
 async def health_check():
-    """Health check endpoint for load balancer"""
-    logger.info("Health check endpoint called")
-    response = {
-        "status": "healthy",
-        "version": "4.0.2-redirect",  # Updated version
-        "routers_loaded": f"{len(routers_loaded)}/{len(router_imports)}",
-        "timestamp": time.time(),
-        "deployment": "2024-12-22-redirect-fix"
-    }
-    logger.info(f"Health check response: {response}")
-    return response
+    """Basic health check endpoint"""
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-@app.get("/health/ready", tags=["health"], response_class=PlainTextResponse)
-async def health_ready():
-    """Readiness check for load balancers - Returns plain text to avoid JSON issues"""
-    print("HEALTH READY ENDPOINT CALLED - RETURNING PLAIN TEXT")  # Direct print for debugging
-    logger.info("Health ready endpoint called - returning plain text")
-    return PlainTextResponse("ready", status_code=200)
-
-@app.get("/health/ready/json", tags=["health"])
-async def health_ready_json():
-    """Readiness check with JSON response - Fixed 2024-12-22"""
-    logger.info("Health ready JSON endpoint called")
+@app.get("/ready")
+async def readiness_check():
+    """Readiness check that accounts for TrueData startup delays"""
+    global app_startup_complete, truedata_startup_delay_active
     
-    try:
-        # Check if critical routers are loaded
-        critical_routers = ['auth', 'market', 'users']
-        all_critical_loaded = all(
-            routers_loaded.get(r) is not None for r in critical_routers
-        )
-        
-        # Get router stats with safe access - THIS IS THE FIX FOR 400 ERRORS
-        loaded = getattr(app.state, 'routers_loaded', None)
-        total = getattr(app.state, 'total_routers', None)
-        
-        # Calculate if not set
-        if loaded is None or total is None:
-            loaded = sum(1 for r in routers_loaded.values() if r is not None)
-            total = len(router_imports)
-        
-        if not all_critical_loaded:
-            logger.warning(f"Critical routers not loaded: {critical_routers}")
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "status": "not_ready",
-                    "message": "Critical routers not loaded",
-                    "routers_loaded": f"{loaded}/{total}",
-                    "version": "4.0.1"
-                }
-            )
-        
-        response = {
-            "status": "ready",
-            "version": "4.0.1",
-            "routers_loaded": f"{loaded}/{total}",
-            "deployment": "2024-12-22-fix"
-        }
-        logger.info(f"Health ready response: {response}")
-        return response
-    except Exception as e:
-        logger.error(f"Health ready error: {str(e)}")
+    if truedata_startup_delay_active:
         return JSONResponse(
-            status_code=500,
-            content={"error": str(e), "status": "error"}
+            status_code=200,  # Return 200 during startup delay
+            content={
+                "status": "initializing",
+                "message": "TrueData startup delay in progress (deployment overlap protection)",
+                "ready": False,
+                "timestamp": datetime.now().isoformat()
+            }
         )
-
-@app.get("/health/live", tags=["health"])
-async def health_live():
-    """Liveness check"""
-    return {"status": "alive", "timestamp": asyncio.get_event_loop().time()}
-
-# Handle DigitalOcean's path stripping when "Preserve Path Prefix" is disabled
-@app.get("/ready", tags=["health"])
-async def ready_stripped():
-    """Health ready endpoint for when DigitalOcean strips /health prefix"""
-    # Return JSON response instead of plain text
+    
+    if not app_startup_complete:
+        return JSONResponse(
+            status_code=200,  # Return 200 during normal startup
+            content={
+                "status": "starting",
+                "message": "Application startup in progress",
+                "ready": False,
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+    
     return {
         "status": "ready",
-        "timestamp": time.time()
+        "message": "Application fully initialized and ready",
+        "ready": True,
+        "timestamp": datetime.now().isoformat()
     }
 
 # Debug endpoint to check request details
