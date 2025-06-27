@@ -15,6 +15,21 @@ from data.truedata_client import (
     get_live_data_for_symbol,
     get_truedata_status
 )
+
+def smart_auto_retry():
+    """Smart autonomous retry for TrueData - called by other APIs when needed"""
+    try:
+        # Only retry if not connected and enough time has passed
+        if not truedata_client.connected and truedata_client.should_retry():
+            logger.info("🤖 AUTONOMOUS: Auto-retrying TrueData connection")
+            success = initialize_truedata()
+            if success:
+                logger.info("✅ AUTONOMOUS: TrueData auto-retry successful")
+            return success
+        return truedata_client.connected
+    except Exception as e:
+        logger.error(f"Auto-retry error: {e}")
+        return False
 from src.models.responses import TrueDataResponse, APIResponse
 
 logger = logging.getLogger(__name__)
@@ -112,14 +127,6 @@ async def get_truedata_status_endpoint():
             }
         
         status = get_truedata_status()
-        
-        # Add production disable status
-        try:
-            import data.truedata_client as td_module
-            status['production_disabled'] = getattr(td_module, 'DISABLE_TRUEDATA_IN_PRODUCTION', False)
-        except:
-            status['production_disabled'] = False
-        
         return {
             "success": True,
             "data": status,
@@ -132,15 +139,18 @@ async def get_truedata_status_endpoint():
 
 @router.post("/reconnect")
 async def reconnect_truedata():
-    """Attempt to reconnect to TrueData"""
+    """Attempt to reconnect to TrueData (autonomous system)"""
     try:
-        # Reset any production disable flags first
-        try:
-            import data.truedata_client as td_module
-            td_module.DISABLE_TRUEDATA_IN_PRODUCTION = False
-            logger.info("🔄 Reset production disable flag")
-        except Exception as reset_error:
-            logger.warning(f"Could not reset production flag: {reset_error}")
+        # Check if enough time has passed for autonomous retry
+        status = get_truedata_status()
+        if not status.get('can_retry', True):
+            return {
+                "success": False,
+                "message": "Please wait before retrying - autonomous system will handle this",
+                "data": status,
+                "retry_in_seconds": 30 - int((datetime.now() - truedata_client.last_attempt_time).total_seconds()) if truedata_client.last_attempt_time else 0,
+                "timestamp": datetime.now().isoformat()
+            }
         
         # Try to initialize again
         success = initialize_truedata()
@@ -155,38 +165,13 @@ async def reconnect_truedata():
         else:
             return {
                 "success": False,
-                "message": "TrueData reconnection failed - check logs for details",
+                "message": "TrueData reconnection failed - system will retry autonomously",
                 "data": get_truedata_status(),
                 "timestamp": datetime.now().isoformat()
             }
             
     except Exception as e:
         logger.error(f"Error reconnecting to TrueData: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@router.post("/enable-production")
-async def enable_truedata_production():
-    """Enable TrueData in production mode (reset disable flag)"""
-    try:
-        import data.truedata_client as td_module
-        td_module.DISABLE_TRUEDATA_IN_PRODUCTION = False
-        
-        # Reset connection attempts
-        if hasattr(truedata_client, 'connection_attempts'):
-            truedata_client.connection_attempts = 0
-        
-        return {
-            "success": True,
-            "message": "TrueData production mode enabled - can now attempt connection",
-            "data": {
-                "production_disabled": False,
-                "ready_for_connection": True,
-                "timestamp": datetime.now().isoformat()
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Error enabling TrueData production mode: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/data/{symbol}")

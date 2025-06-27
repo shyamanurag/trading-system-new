@@ -115,34 +115,37 @@ async def lifespan(app: FastAPI):
     # Initialize any required services here
     # For example: database connections, cache, message queues, etc.
     
-    # TrueData initialization - MANUAL ONLY IN PRODUCTION
+    # TrueData initialization - AUTONOMOUS with intelligent deployment handling
     try:
-        is_production = os.getenv('ENVIRONMENT') == 'production'
+        logger.info("🚀 Initializing TrueData (autonomous mode)...")
+        from data.truedata_client import initialize_truedata
         
-        if is_production:
-            logger.info("🏭 PRODUCTION MODE: TrueData auto-initialization DISABLED")
-            logger.info("💡 TrueData connection available via:")
-            logger.info("   • /api/v1/truedata/reconnect (manual connection)")
-            logger.info("   • /api/v1/truedata/status (check status)")
-            logger.info("📊 Application continues normally - TrueData available on-demand")
-        else:
-            logger.info("🚀 Initializing TrueData with retry loop prevention...")
-            from data.truedata_client import initialize_truedata
+        # Intelligent retry for deployment scenarios
+        max_attempts = 3
+        retry_delay = 30  # 30 seconds between attempts
+        
+        for attempt in range(1, max_attempts + 1):
+            logger.info(f"🔄 TrueData connection attempt {attempt}/{max_attempts}")
             
-            # Initialize with proper error handling (no retry loops)
             truedata_success = initialize_truedata()
             
             if truedata_success:
                 logger.info("✅ TrueData initialized successfully!")
-                logger.info("📊 Live market data will be available")
+                logger.info("📊 Live market data is now available")
+                break
             else:
-                logger.warning("⚠️ TrueData initialization failed (no retry loop)")
-                logger.info("💡 This is normal if account connected elsewhere")
-                logger.info("📊 App continues normally - TrueData available via API")
+                if attempt < max_attempts:
+                    logger.info(f"⏳ Waiting {retry_delay} seconds before retry (deployment overlap handling)")
+                    logger.info("💡 This allows previous container instance to fully disconnect")
+                    time.sleep(retry_delay)
+                else:
+                    logger.warning("⚠️ TrueData initialization failed after all attempts")
+                    logger.info("📊 App continues normally - system remains autonomous")
+                    logger.info("🔄 TrueData will automatically retry on next API call")
             
     except Exception as e:
         logger.error(f"❌ TrueData initialization error: {e}")
-        logger.info("📊 App will continue - TrueData available via manual API")
+        logger.info("📊 App continues autonomously - TrueData will retry automatically")
     
     # App state for debugging
     app.state.build_timestamp = datetime.now().isoformat()

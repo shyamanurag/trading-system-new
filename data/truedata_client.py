@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Simple TrueData WebSocket Client - WORKING VERSION
-Based on successful direct connection test
+Simple TrueData WebSocket Client - AUTONOMOUS VERSION
+Handles deployment overlaps gracefully while remaining fully autonomous
 """
 
 import os
@@ -17,11 +17,8 @@ logger = logging.getLogger(__name__)
 # Global data storage
 live_market_data: Dict[str, Dict] = {}
 
-# Global flag to prevent TrueData connection in production if failing
-DISABLE_TRUEDATA_IN_PRODUCTION = False
-
 class TrueDataClient:
-    """Simple TrueData client - WORKING VERSION with intelligent error analysis"""
+    """Autonomous TrueData client with smart deployment overlap handling"""
     
     def __init__(self):
         self.td_obj = None
@@ -33,32 +30,17 @@ class TrueDataClient:
         self._lock = threading.Lock()
         self.connection_attempts = 0
         self.last_error = None
+        self.last_attempt_time = None
     
     def connect(self):
-        """Connect to TrueData - SIMPLE WORKING VERSION with smart error analysis"""
-        global DISABLE_TRUEDATA_IN_PRODUCTION
-        
+        """Connect to TrueData - AUTONOMOUS with deployment overlap handling"""
         with self._lock:
-            # Check if TrueData is disabled in production due to persistent issues
-            is_production = os.getenv('ENVIRONMENT') == 'production'
-            if is_production and DISABLE_TRUEDATA_IN_PRODUCTION:
-                logger.warning("🚫 TrueData disabled in production due to persistent connection issues")
-                logger.info("💡 To re-enable, restart the application or call /api/v1/truedata/reconnect")
-                return False
-                
             if self.connected and self.td_obj:
                 logger.info("TrueData already connected")
                 return True
             
             self.connection_attempts += 1
-            
-            # PRODUCTION SAFETY: If multiple attempts fail in production, disable TrueData
-            if is_production and self.connection_attempts > 3:
-                logger.warning("🚫 Multiple TrueData connection failures in production")
-                logger.warning("💡 DISABLING TrueData to prevent app instability")
-                logger.info("📊 Application continues normally without live data")
-                DISABLE_TRUEDATA_IN_PRODUCTION = True
-                return False
+            self.last_attempt_time = datetime.now()
             
             try:
                 from truedata import TD_live
@@ -66,167 +48,71 @@ class TrueDataClient:
                 logger.info(f"🔄 TrueData connection attempt #{self.connection_attempts}")
                 logger.info(f"Connecting to TrueData: {self.username}@{self.url}:{self.port}")
                 
-                # PRODUCTION: Set aggressive timeout to prevent hanging (Unix systems only)
-                timeout_set = False
-                if is_production and hasattr(os, 'kill'):  # Unix-like systems
-                    try:
-                        import signal
-                        
-                        def timeout_handler(signum, frame):
-                            raise TimeoutError("TrueData connection timeout in production")
-                        
-                        # Set 10-second timeout for production
-                        signal.signal(signal.SIGALRM, timeout_handler)
-                        signal.alarm(10)
-                        timeout_set = True
-                        logger.info("⏰ Set 10-second timeout for TrueData connection")
-                    except ImportError:
-                        logger.warning("⚠️ Signal timeout not available on this system")
+                # Create TD_live object
+                self.td_obj = TD_live(
+                    self.username, 
+                    self.password, 
+                    live_port=self.port,
+                    url=self.url,
+                    compression=False
+                )
                 
+                logger.info("✅ TD_live object created")
+                
+                # Try to start live data subscription
                 try:
-                    # Direct connection (same as working debug script)
-                    self.td_obj = TD_live(
-                        self.username, 
-                        self.password, 
-                        live_port=self.port,
-                        url=self.url,
-                        compression=False
-                    )
+                    symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS']
+                    req_ids = self.td_obj.start_live_data(symbols)
+                    logger.info(f"✅ Subscribed to {len(symbols)} symbols: {req_ids}")
                     
-                    if 'timeout_set' in locals() and timeout_set:
-                        signal.alarm(0)  # Cancel timeout
+                    # Setup callback AFTER subscription
+                    self._setup_callback()
                     
-                    logger.info("✅ TD_live object created")
+                    # Mark as connected ONLY after successful setup
+                    self.connected = True
+                    logger.info("✅ TrueData connected successfully (autonomous)")
+                    return True
                     
-                    # CRITICAL: Catch "User Already Connected" during start_live_data
-                    try:
-                        symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS']
-                        req_ids = self.td_obj.start_live_data(symbols)
-                        logger.info(f"✅ Subscribed to {len(symbols)} symbols: {req_ids}")
+                except Exception as sub_error:
+                    error_msg = str(sub_error).lower()
+                    if "user already connected" in error_msg or "already connected" in error_msg:
+                        logger.warning("⚠️ TrueData: User Already Connected (deployment overlap)")
+                        logger.info("🤖 AUTONOMOUS: Will retry automatically - no human intervention needed")
+                        logger.info("💡 This is normal during deployments and will resolve automatically")
                         
-                        # Setup callback AFTER subscription
-                        self._setup_callback()
-                        
-                        # Mark as connected ONLY after successful setup
-                        self.connected = True
-                        logger.info("✅ TrueData connected successfully")
-                        return True
-                        
-                    except Exception as sub_error:
-                        # This is where the "User Already Connected" error occurs
-                        error_msg = str(sub_error).lower()
-                        if "user already connected" in error_msg or "already connected" in error_msg:
-                            logger.warning("🔍 ANALYZING 'User Already Connected' Error...")
-                            self._analyze_already_connected_error()
-                            
-                            # PRODUCTION: Disable TrueData to prevent retry loops
-                            if is_production:
-                                logger.warning("🚫 PRODUCTION: Disabling TrueData due to User Already Connected")
-                                DISABLE_TRUEDATA_IN_PRODUCTION = True
-                            
-                            # FORCE CLEANUP to prevent SDK auto-retry
-                            self._force_cleanup()
-                            return False
-                        else:
-                            # Re-raise other subscription errors
-                            raise sub_error
-                
-                except TimeoutError:
-                    logger.error("⏰ TrueData connection timeout in production")
-                    if is_production:
-                        try:
-                            if 'timeout_set' in locals() and timeout_set:
-                                signal.alarm(0)
-                        except:
-                            pass
-                        DISABLE_TRUEDATA_IN_PRODUCTION = True
-                    return False
+                        # Clean disconnect but don't disable - remain autonomous
+                        self._clean_disconnect()
+                        return False
+                    else:
+                        # Re-raise other errors
+                        raise sub_error
                 
             except Exception as e:
                 self.last_error = str(e)
                 logger.error(f"TrueData connection failed: {e}")
                 
-                # INTELLIGENT ERROR ANALYSIS for connection-level errors
                 error_msg = str(e).lower()
                 if "user already connected" in error_msg or "already connected" in error_msg:
-                    self._analyze_already_connected_error()
-                    if is_production:
-                        DISABLE_TRUEDATA_IN_PRODUCTION = True
+                    logger.info("🤖 AUTONOMOUS: System will handle this automatically")
                 
                 self.connected = False
                 self.td_obj = None
                 return False
     
-    def _force_cleanup(self):
-        """Force cleanup TD object to prevent SDK auto-retry"""
+    def _clean_disconnect(self):
+        """Clean disconnect to prevent SDK issues"""
         if self.td_obj:
             try:
-                # Multiple cleanup approaches to stop auto-retry
                 if hasattr(self.td_obj, 'close'):
                     self.td_obj.close()
-                    logger.info("🧹 Called close() on TD object")
-                
                 if hasattr(self.td_obj, 'disconnect'):
                     self.td_obj.disconnect()
-                    logger.info("🧹 Called disconnect() on TD object")
-                
-                # Force nullify internal connections
-                if hasattr(self.td_obj, '_websocket_client'):
-                    self.td_obj._websocket_client = None
-                    logger.info("🧹 Nullified websocket client")
-                    
-                if hasattr(self.td_obj, '_connected'):
-                    self.td_obj._connected = False
-                    logger.info("🧹 Set _connected to False")
-                    
-            except Exception as cleanup_error:
-                logger.error(f"Cleanup error: {cleanup_error}")
+            except:
+                pass
             finally:
                 self.td_obj = None
         
         self.connected = False
-        logger.info("🔌 TrueData forcibly cleaned up - SDK retry loop prevented")
-    
-    def _analyze_already_connected_error(self):
-        """Intelligently analyze 'User Already Connected' error to understand root cause"""
-        logger.warning("🔍 ANALYZING 'User Already Connected' Error...")
-        
-        # Check deployment environment
-        is_production = os.getenv('ENVIRONMENT') == 'production'
-        is_digitalocean = 'ondigitalocean.app' in os.getenv('HOST', '')
-        
-        # Deployment scenario analysis
-        if is_production or is_digitalocean:
-            logger.warning("📦 DEPLOYMENT SCENARIO DETECTED:")
-            logger.warning("   Likely cause: Multiple container instances during deployment")
-            logger.warning("   • Old container still running while new container starts")
-            logger.warning("   • Both trying to connect to TrueData simultaneously")
-            logger.warning("   • TrueData only allows one connection per account")
-            
-            # Suggest deployment-aware solution
-            if self.connection_attempts == 1:
-                logger.info("💡 INTELLIGENT SOLUTION:")
-                logger.info("   1. Wait for old container to fully shutdown (30-60 seconds)")
-                logger.info("   2. TrueData connection will succeed once old instance disconnects")
-                logger.info("   3. No action needed - this is normal during deployments")
-        else:
-            logger.warning("🖥️ LOCAL/DEVELOPMENT SCENARIO:")
-            logger.warning("   Possible causes:")
-            logger.warning("   • Another instance of this app is running locally")
-            logger.warning("   • Previous process didn't disconnect cleanly")
-            logger.warning("   • TrueData session from standalone script still active")
-            
-            logger.info("💡 SUGGESTED ACTIONS:")
-            logger.info("   1. Check for other running Python processes")
-            logger.info("   2. Kill any other instances of this app")
-            logger.info("   3. Wait 2-3 minutes for TrueData session timeout")
-            logger.info("   4. Contact TrueData support if issue persists")
-        
-        # General guidance
-        logger.info("⏰ AUTO-RETRY INFO:")
-        logger.info("   • This error will resolve automatically when other connection drops")
-        logger.info("   • No need to restart the application")
-        logger.info("   • Use /api/v1/truedata/reconnect endpoint to retry manually")
     
     def _setup_callback(self):
         """Setup callback - WORKING VERSION"""
@@ -274,22 +160,27 @@ class TrueDataClient:
                 
         logger.info("✅ Callback setup completed")
     
+    def should_retry(self):
+        """Determine if connection should be retried (autonomous logic)"""
+        if not self.last_attempt_time:
+            return True
+        
+        # Allow retry after 30 seconds (deployment overlap should resolve by then)
+        time_since_last = (datetime.now() - self.last_attempt_time).total_seconds()
+        return time_since_last > 30
+    
     def get_status(self):
-        """Get comprehensive status with error analysis"""
+        """Get comprehensive status"""
         status = {
             'connected': self.connected,
             'username': self.username,
             'symbols_active': len(live_market_data),
             'data_flowing': len(live_market_data) > 0,
             'connection_attempts': self.connection_attempts,
-            'last_error': self.last_error
-        }
-        
-        # Add environment context
-        status['environment'] = {
-            'is_production': os.getenv('ENVIRONMENT') == 'production',
-            'is_digitalocean': 'ondigitalocean.app' in os.getenv('HOST', ''),
-            'deployment_scenario': 'likely' if os.getenv('ENVIRONMENT') == 'production' else 'unlikely'
+            'last_error': self.last_error,
+            'autonomous_mode': True,
+            'last_attempt': self.last_attempt_time.isoformat() if self.last_attempt_time else None,
+            'can_retry': self.should_retry()
         }
         
         return status
@@ -311,15 +202,8 @@ truedata_client = TrueDataClient()
 
 # Backend interface functions
 def initialize_truedata():
-    """Initialize TrueData - Simple version with intelligent error handling"""
-    success = truedata_client.connect()
-    
-    if not success and truedata_client.last_error:
-        if "user already connected" in truedata_client.last_error.lower():
-            logger.info("🎯 SUMMARY: TrueData 'User Already Connected' - Normal during deployments")
-            logger.info("📊 Application continues normally - TrueData will connect when other instance disconnects")
-    
-    return success
+    """Initialize TrueData - Autonomous version"""
+    return truedata_client.connect()
 
 def get_truedata_status():
     """Get comprehensive status"""
