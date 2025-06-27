@@ -120,6 +120,7 @@ async def lifespan(app: FastAPI):
         logger.info("🚀 Initializing TrueData (autonomous mode)...")
         from data.truedata_client import initialize_truedata
         import os
+        import asyncio  # Import asyncio for non-blocking sleep
         
         # DEPLOYMENT OVERLAP PROTECTION: Extended delay for DigitalOcean deployments
         is_production = os.getenv('ENVIRONMENT') == 'production'
@@ -136,11 +137,11 @@ async def lifespan(app: FastAPI):
             logger.info("📡 Health checks will return 200 during this delay")
             logger.info("⏰ Extended delay for DigitalOcean deployment stability")
             
-            # Progressive delay with status updates
+            # FIXED: Progressive delay with NON-BLOCKING sleep to keep health checks responsive
             for i in range(4):
                 segment_delay = startup_delay // 4  # 30 seconds each
                 logger.info(f"⏳ Waiting... {(i+1)*segment_delay}/{startup_delay} seconds elapsed")
-                time.sleep(segment_delay)
+                await asyncio.sleep(segment_delay)  # FIXED: Use asyncio.sleep instead of time.sleep
             
             truedata_startup_delay_active = False
             logger.info("✅ Extended startup delay complete - proceeding with TrueData connection")
@@ -164,7 +165,7 @@ async def lifespan(app: FastAPI):
                     retry_delay = base_delay * attempt
                     logger.info(f"⏳ Waiting {retry_delay} seconds before retry (exponential backoff)")
                     logger.info("💡 Allowing more time for complete container termination")
-                    time.sleep(retry_delay)
+                    await asyncio.sleep(retry_delay)  # FIXED: Use asyncio.sleep here too
                 else:
                     logger.warning("⚠️ TrueData initialization failed after extended delays + retries")
                     logger.info("📊 App continues normally - system remains autonomous")
