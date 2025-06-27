@@ -310,14 +310,28 @@ async def validation_exception_handler(request, exc):
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
-    """Handle HTTP exceptions"""
+    """Handle HTTP exceptions with proper JSON responses"""
+    if exc.status_code == 403 and request.url.path.startswith('/auth'):
+        # Return JSON for auth failures instead of HTML
+        return JSONResponse(
+            status_code=200,  # Convert 403 to 200 to prevent frontend crashes
+            content={
+                "authenticated": False,
+                "error": "Authentication required",
+                "message": "Please log in to access this resource"
+            },
+            headers={"Content-Type": "application/json"}
+        )
+    
     logger.error(f"HTTP exception on {request.url.path}: {exc.detail}")
     return JSONResponse(
         status_code=exc.status_code,
         content={
             "detail": exc.detail,
-            "message": str(exc.detail)
-        }
+            "message": str(exc.detail),
+            "success": False
+        },
+        headers={"Content-Type": "application/json"}
     )
 
 @app.exception_handler(Exception)
@@ -390,24 +404,29 @@ async def health_ready_json():
             status = "ready"
             ready = True
         
-        return {
-            "status": status,
-            "ready": ready,
-            "timestamp": datetime.now().isoformat(),
-            "database_connected": True,  # We'll assume DB is working if app started
-            "redis_connected": True,     # We'll assume Redis is working if app started  
-            "trading_enabled": True,
-            "truedata_connected": truedata_connected,
-            "truedata_healthy": truedata_healthy,
-            "app_startup_complete": app_startup_complete,
-            "components": {
-                "api": "healthy",
-                "database": "healthy",
-                "redis": "healthy", 
-                "truedata": "healthy" if truedata_connected else "degraded",
-                "trading": "active"
-            }
-        }
+        # CRITICAL: Always return JSONResponse to ensure proper Content-Type
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": status,
+                "ready": ready,
+                "timestamp": datetime.now().isoformat(),
+                "database_connected": True,  # We'll assume DB is working if app started
+                "redis_connected": True,     # We'll assume Redis is working if app started  
+                "trading_enabled": True,
+                "truedata_connected": truedata_connected,
+                "truedata_healthy": truedata_healthy,
+                "app_startup_complete": app_startup_complete,
+                "components": {
+                    "api": "healthy",
+                    "database": "healthy",
+                    "redis": "healthy", 
+                    "truedata": "healthy" if truedata_connected else "degraded",
+                    "trading": "active"
+                }
+            },
+            headers={"Content-Type": "application/json"}
+        )
         
     except Exception as e:
         logger.error(f"Health check error: {e}")
@@ -428,7 +447,8 @@ async def health_ready_json():
                     "truedata": "unknown",
                     "trading": "inactive"
                 }
-            }
+            },
+            headers={"Content-Type": "application/json"}
         )
 
 @app.get("/ready")
@@ -664,8 +684,10 @@ async def auth_me_fallback():
         content={
             "authenticated": False,
             "user": None,
-            "message": "Not authenticated - using guest mode"
-        }
+            "message": "Not authenticated - using guest mode",
+            "status": "unauthenticated"
+        },
+        headers={"Content-Type": "application/json"}
     )
 
 # Add redirect for /api/auth/me  
@@ -723,13 +745,17 @@ async def catch_all(request: Request, path: str):
         "auth/",        # Paths starting with auth/
         "health",       # Exact match for /health
         "health/",      # Paths starting with health/
+        "ready",        # Health ready endpoint
         "docs",         # Documentation
         "redoc",        # Alternative docs
         "openapi.json", # OpenAPI spec
         "ws/",          # WebSocket paths
         "zerodha-",     # Zerodha integration paths
         "daily-auth",   # Daily auth workflow
-        "daily-auth/"   # Daily auth workflow paths
+        "daily-auth/",  # Daily auth workflow paths
+        "favicon.ico",  # Favicon
+        "assets/",      # Static assets
+        "static/"       # Static files
     ]
     
     # Check if this is an API path that should NOT be caught

@@ -7,6 +7,7 @@ import React, { useEffect, useState } from 'react';
 // Import components
 import { API_ENDPOINTS } from './api/config';
 import ComprehensiveTradingDashboard from './components/ComprehensiveTradingDashboard';
+import ErrorBoundary from './components/ErrorBoundary';
 import LoginForm from './components/LoginForm';
 
 const theme = createTheme({
@@ -148,14 +149,16 @@ function App() {
     return (
         <ThemeProvider theme={theme}>
             <CssBaseline />
-            {isAuthenticated ? (
-                <ComprehensiveTradingDashboard
-                    userInfo={userInfo}
-                    onLogout={handleLogout}
-                />
-            ) : (
-                <LoginForm onLogin={handleLogin} />
-            )}
+            <ErrorBoundary>
+                {isAuthenticated ? (
+                    <ComprehensiveTradingDashboard
+                        userInfo={userInfo}
+                        onLogout={handleLogout}
+                    />
+                ) : (
+                    <LoginForm onLogin={handleLogin} />
+                )}
+            </ErrorBoundary>
         </ThemeProvider>
     );
 }
