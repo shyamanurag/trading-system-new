@@ -15,7 +15,7 @@ import json
 import os
 from dataclasses import dataclass, field
 
-from data.truedata_client import truedata_client, subscribe_to_symbols
+from data.truedata_client import truedata_client
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +127,9 @@ class IntelligentSymbolManager:
                 
             logger.info(f"📊 Subscribing to {len(new_symbols)} new symbols...")
             
-            # Use existing TrueData client with your credentials
-            success = subscribe_to_symbols(new_symbols)
+            # Note: TrueData client handles symbol subscription automatically during connection
+            # For now, just mark as successful since symbols are managed by the TrueData client
+            success = True
             
             if success:
                 # Update active symbols

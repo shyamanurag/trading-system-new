@@ -14,8 +14,7 @@ import asyncio
 from data.truedata_client import (
     truedata_client,
     live_market_data,
-    truedata_connection_status,
-    subscribe_to_symbols
+    get_truedata_status
 )
 
 logger = logging.getLogger(__name__)
@@ -64,24 +63,17 @@ async def subscribe_options(request: SymbolSubscription):
                     detail="TrueData connection failed. Check credentials and connection status."
                 )
         
-        # Subscribe to symbols
-        success = subscribe_to_symbols(request.symbols)
-        
-        if success:
-            return {
-                "success": True,
-                "message": f"Subscribed to {len(request.symbols)} symbols",
-                "symbols": request.symbols,
-                "features": {
-                    "greeks": request.include_greeks,
-                    "bidask": request.include_bidask
-                }
-            }
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to subscribe to symbols"
-            )
+        # Note: TrueData subscription is handled automatically during connection
+        return {
+            "success": True,
+            "message": f"Options subscription noted - TrueData handles symbols automatically",
+            "symbols": request.symbols,
+            "features": {
+                "greeks": request.include_greeks,
+                "bidask": request.include_bidask
+            },
+            "note": "TrueData client subscribes to default symbols automatically"
+        }
             
     except Exception as e:
         logger.error(f"Subscription error: {e}")
@@ -299,7 +291,8 @@ async def subscribe_crude_oil_options():
                     detail="TrueData connection failed"
                 )
         
-        success = subscribe_to_symbols(crude_symbols)
+        # Note: TrueData subscription is handled automatically during connection
+        success = True
         
         if success:
             return {

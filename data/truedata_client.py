@@ -57,24 +57,39 @@ class TrueDataClient:
                 
                 logger.info("✅ TD_live object created")
                 
-                # Subscribe to symbols FIRST, then set callback
-                symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS']
-                req_ids = self.td_obj.start_live_data(symbols)
-                logger.info(f"✅ Subscribed to {len(symbols)} symbols: {req_ids}")
-                
-                # Setup callback AFTER subscription
-                self._setup_callback()
-                
-                # Mark as connected ONLY after successful setup
-                self.connected = True
-                logger.info("✅ TrueData connected successfully")
-                return True
+                # CRITICAL: Catch "User Already Connected" during start_live_data
+                try:
+                    symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS']
+                    req_ids = self.td_obj.start_live_data(symbols)
+                    logger.info(f"✅ Subscribed to {len(symbols)} symbols: {req_ids}")
+                    
+                    # Setup callback AFTER subscription
+                    self._setup_callback()
+                    
+                    # Mark as connected ONLY after successful setup
+                    self.connected = True
+                    logger.info("✅ TrueData connected successfully")
+                    return True
+                    
+                except Exception as sub_error:
+                    # This is where the "User Already Connected" error occurs
+                    error_msg = str(sub_error).lower()
+                    if "user already connected" in error_msg or "already connected" in error_msg:
+                        logger.warning("🔍 ANALYZING 'User Already Connected' Error...")
+                        self._analyze_already_connected_error()
+                        
+                        # FORCE CLEANUP to prevent SDK auto-retry
+                        self._force_cleanup()
+                        return False
+                    else:
+                        # Re-raise other subscription errors
+                        raise sub_error
                 
             except Exception as e:
                 self.last_error = str(e)
                 logger.error(f"TrueData connection failed: {e}")
                 
-                # INTELLIGENT ERROR ANALYSIS
+                # INTELLIGENT ERROR ANALYSIS for connection-level errors
                 error_msg = str(e).lower()
                 if "user already connected" in error_msg or "already connected" in error_msg:
                     self._analyze_already_connected_error()
@@ -82,6 +97,36 @@ class TrueDataClient:
                 self.connected = False
                 self.td_obj = None
                 return False
+    
+    def _force_cleanup(self):
+        """Force cleanup TD object to prevent SDK auto-retry"""
+        if self.td_obj:
+            try:
+                # Multiple cleanup approaches to stop auto-retry
+                if hasattr(self.td_obj, 'close'):
+                    self.td_obj.close()
+                    logger.info("🧹 Called close() on TD object")
+                
+                if hasattr(self.td_obj, 'disconnect'):
+                    self.td_obj.disconnect()
+                    logger.info("🧹 Called disconnect() on TD object")
+                
+                # Force nullify internal connections
+                if hasattr(self.td_obj, '_websocket_client'):
+                    self.td_obj._websocket_client = None
+                    logger.info("🧹 Nullified websocket client")
+                    
+                if hasattr(self.td_obj, '_connected'):
+                    self.td_obj._connected = False
+                    logger.info("🧹 Set _connected to False")
+                    
+            except Exception as cleanup_error:
+                logger.error(f"Cleanup error: {cleanup_error}")
+            finally:
+                self.td_obj = None
+        
+        self.connected = False
+        logger.info("🔌 TrueData forcibly cleaned up - SDK retry loop prevented")
     
     def _analyze_already_connected_error(self):
         """Intelligently analyze 'User Already Connected' error to understand root cause"""
