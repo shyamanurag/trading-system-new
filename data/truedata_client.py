@@ -32,6 +32,38 @@ class TrueDataClient:
         self.last_error = None
         self.last_attempt_time = None
 
+    def _get_dynamic_symbols(self):
+        """Get symbols from Intelligent Symbol Manager or fall back to defaults"""
+        try:
+            # Try to get symbols from Intelligent Symbol Manager
+            from src.core.intelligent_symbol_manager import get_active_symbols, get_intelligent_symbol_status
+            
+            # Check if intelligent manager is running
+            status = get_intelligent_symbol_status()
+            if status.get('is_running', False):
+                active_symbols = get_active_symbols()
+                if active_symbols and len(active_symbols) > 0:
+                    logger.info(f"🤖 Using {len(active_symbols)} symbols from Intelligent Symbol Manager")
+                    return active_symbols
+                else:
+                    logger.info("🤖 Intelligent Symbol Manager running but no symbols yet, using defaults")
+            else:
+                logger.info("🤖 Intelligent Symbol Manager not running yet, using defaults")
+        except Exception as e:
+            logger.info(f"🤖 Intelligent Symbol Manager not available: {e}")
+        
+        # Fall back to default symbols
+        try:
+            from config.truedata_symbols import get_default_subscription_symbols
+            symbols = get_default_subscription_symbols()
+            logger.info(f"📋 Using configured DEFAULT_SYMBOLS: {symbols}")
+            return symbols
+        except ImportError:
+            # Ultimate fallback
+            symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS', 'HDFC', 'INFY']
+            logger.info(f"📋 Using hardcoded fallback symbols: {symbols}")
+            return symbols
+
     def connect(self):
         """Connect to TrueData - Simple working version"""
         with self._lock:
@@ -69,15 +101,9 @@ class TrueDataClient:
                 logger.info("✅ TD_live object created")
 
                 # Subscribe to symbols FIRST, then set callback
-                # Import default symbols from configuration
-                try:
-                    from config.truedata_symbols import get_default_subscription_symbols
-                    symbols = get_default_subscription_symbols()
-                    logger.info(f"Using configured DEFAULT_SYMBOLS: {symbols}")
-                except ImportError:
-                    # Fallback to full default list
-                    symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS', 'HDFC', 'INFY']
-                    logger.info(f"Using fallback symbols: {symbols}")
+                # Get symbols from Intelligent Symbol Manager if available, otherwise use defaults
+                symbols = self._get_dynamic_symbols()
+                logger.info(f"📊 Subscribing to {len(symbols)} symbols: {symbols[:10]}{'...' if len(symbols) > 10 else ''}")
                 
                 req_ids = self.td_obj.start_live_data(symbols)
                 logger.info(f"✅ Subscribed to {len(symbols)} symbols: {req_ids}")
@@ -220,6 +246,27 @@ def subscribe_to_symbols(symbols: list):
         return True
     except Exception as e:
         logger.error(f"Subscribe error: {e}")
+        return False
+
+def update_symbols_from_intelligent_manager():
+    """Update symbol subscriptions from Intelligent Symbol Manager"""
+    if not truedata_client.connected:
+        logger.warning("TrueData not connected - cannot update symbols")
+        return False
+    
+    try:
+        # Get latest symbols from intelligent manager
+        symbols = truedata_client._get_dynamic_symbols()
+        
+        # Subscribe to new symbols (TrueData SDK handles duplicates)
+        if symbols:
+            return subscribe_to_symbols(symbols)
+        else:
+            logger.warning("No symbols received from intelligent manager")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Failed to update symbols from intelligent manager: {e}")
         return False
 
 logger.info("Simplified TrueData Client loaded - intelligence over complexity") 

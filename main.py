@@ -170,6 +170,17 @@ async def lifespan(app: FastAPI):
     
     logger.info(f"Loaded {loaded_count}/{len(router_imports)} routers successfully")
     
+    # Initialize Intelligent Symbol Management System
+    try:
+        logger.info("🤖 Starting Intelligent Symbol Management System...")
+        from src.core.intelligent_symbol_manager import start_intelligent_symbol_management
+        await start_intelligent_symbol_management()
+        logger.info("✅ Intelligent Symbol Manager started successfully!")
+        logger.info("📊 Now managing up to 250 NSE F&O symbols dynamically")
+    except Exception as e:
+        logger.error(f"❌ Intelligent Symbol Manager startup failed: {e}")
+        logger.info("🔄 Will continue with basic symbol management")
+
     # Mark startup as complete for health checks
     global app_startup_complete
     app_startup_complete = True
