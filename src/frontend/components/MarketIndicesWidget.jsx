@@ -269,22 +269,48 @@ const MarketIndicesWidget = () => {
                                 }
                             </Typography>
                             <Chip
-                                label={
-                                    typeof marketStatus.data_provider === 'string'
-                                        ? marketStatus.data_provider
-                                        : marketStatus.data_provider?.status
-                                            ? String(marketStatus.data_provider.status)
-                                            : marketStatus.data_provider?.connected
-                                                ? 'CONNECTED'
-                                                : 'DISCONNECTED'
-                                }
-                                color={
-                                    (typeof marketStatus.data_provider === 'string' && marketStatus.data_provider === 'CONNECTED') ||
-                                        (typeof marketStatus.data_provider === 'object' && (
-                                            marketStatus.data_provider?.status === 'CONNECTED' ||
-                                            marketStatus.data_provider?.connected === true
-                                        )) ? 'success' : 'default'
-                                }
+                                label={(() => {
+                                    // Safe rendering to prevent React Error #31
+                                    const provider = marketStatus.data_provider;
+
+                                    if (typeof provider === 'string') {
+                                        return provider;
+                                    }
+
+                                    if (typeof provider === 'object' && provider !== null) {
+                                        // Safely extract status information
+                                        if (provider.status && typeof provider.status === 'string') {
+                                            return provider.status;
+                                        }
+                                        if (provider.connected === true) {
+                                            return 'CONNECTED';
+                                        }
+                                        if (provider.connected === false) {
+                                            return 'DISCONNECTED';
+                                        }
+                                        // If it's an object with deployment info, show connection status
+                                        if ('deployment_id' in provider || 'connection_attempts' in provider) {
+                                            return provider.connected ? 'CONNECTED' : 'DISCONNECTED';
+                                        }
+                                    }
+
+                                    return 'UNKNOWN';
+                                })()}
+                                color={(() => {
+                                    const provider = marketStatus.data_provider;
+
+                                    if (typeof provider === 'string') {
+                                        return provider === 'CONNECTED' ? 'success' : 'default';
+                                    }
+
+                                    if (typeof provider === 'object' && provider !== null) {
+                                        if (provider.status === 'CONNECTED' || provider.connected === true) {
+                                            return 'success';
+                                        }
+                                    }
+
+                                    return 'default';
+                                })()}
                                 size="small"
                                 variant="outlined"
                             />

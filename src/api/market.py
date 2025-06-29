@@ -256,14 +256,18 @@ async def get_market_status():
         # Get TrueData connection health
         try:
             from data.truedata_client import get_truedata_status
-            status = get_truedata_status()
+            td_status = get_truedata_status()
+            
+            # Safely extract values to prevent React Error #31
             truedata_health = {
-                'connected': status.get('connected', False),
-                'heartbeat_healthy': status.get('data_flowing', False)
+                'connected': td_status.get('connected', False) if isinstance(td_status, dict) else False,
+                'heartbeat_healthy': td_status.get('data_flowing', False) if isinstance(td_status, dict) else False,
+                'heartbeat_age': td_status.get('heartbeat_age', 999) if isinstance(td_status, dict) else 999,
+                'data_flowing': td_status.get('data_flowing', False) if isinstance(td_status, dict) else False
             }
             truedata_status = "CONNECTED" if truedata_health['connected'] and truedata_health['heartbeat_healthy'] else "DISCONNECTED"
         except:
-            truedata_health = {'connected': False, 'heartbeat_healthy': False}
+            truedata_health = {'connected': False, 'heartbeat_healthy': False, 'heartbeat_age': 999, 'data_flowing': False}
             truedata_status = "ERROR"
         
         return MarketStatusResponse.create(
@@ -284,11 +288,11 @@ async def get_market_status():
             is_trading_day=now_ist.weekday() not in [5, 6],
             data_provider={
                 "name": "TrueData Enhanced",
-                "status": truedata_status,
-                "user": os.getenv('TRUEDATA_USERNAME', 'Not configured'),
-                "connection_healthy": truedata_health['connected'] and truedata_health['heartbeat_healthy'],
-                "heartbeat_age": truedata_health.get('heartbeat_age', 999),
-                "data_flowing": truedata_health.get('data_flowing', False)
+                "status": str(truedata_status),  # Ensure it's a string
+                "user": str(os.getenv('TRUEDATA_USERNAME', 'Not configured')),  # Ensure it's a string
+                "connection_healthy": bool(truedata_health['connected'] and truedata_health['heartbeat_healthy']),  # Ensure it's a boolean
+                "heartbeat_age_seconds": int(truedata_health.get('heartbeat_age', 999)),  # Ensure it's an int, not an object
+                "data_flowing": bool(truedata_health.get('data_flowing', False))  # Ensure it's a boolean
             }
         ).dict()
         

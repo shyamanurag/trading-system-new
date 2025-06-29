@@ -26,10 +26,15 @@ export const safeRender = (value, fallback = 'N/A') => {
 
         // Handle objects - convert to readable format
         try {
+            // Handle TrueData deployment status object (React Error #31 fix)
+            if (value.hasOwnProperty('deployment_id') && value.hasOwnProperty('connection_attempts')) {
+                return `TrueData: ${value.connected ? 'Connected' : 'Disconnected'} | Deployment: ${value.deployment_id?.substring(0, 8) || 'Unknown'}`;
+            }
+
             // For common status objects, extract key information
             if (value.hasOwnProperty('connected') && value.hasOwnProperty('symbols_active')) {
                 // TrueData status object
-                return `Connected: ${value.connected ? 'Yes' : 'No'}, Symbols: ${value.symbols_active || 0}`;
+                return `TrueData: ${value.connected ? 'Connected' : 'Disconnected'} | Symbols: ${value.symbols_active || 0}`;
             }
 
             if (value.hasOwnProperty('status') && value.hasOwnProperty('message')) {
@@ -65,6 +70,10 @@ export const safeRenderStatus = (statusObj, type = 'generic') => {
     try {
         switch (type) {
             case 'truedata':
+                // Handle TrueData deployment status object (prevents React Error #31)
+                if (statusObj.hasOwnProperty('deployment_id') && statusObj.hasOwnProperty('connection_attempts')) {
+                    return `TrueData: ${statusObj.connected ? 'Connected' : 'Disconnected'} | Deploy: ${statusObj.deployment_id?.substring(0, 8) || 'Unknown'} | Attempts: ${statusObj.connection_attempts || 0}`;
+                }
                 return `TrueData: ${statusObj.connected ? 'Connected' : 'Disconnected'} | Symbols: ${statusObj.symbols_active || 0}`;
 
             case 'zerodha':
