@@ -577,38 +577,112 @@ async def callback_registration_test():
 
 @router.post("/force-disconnect")
 async def force_disconnect_truedata():
-    """Force disconnect and clear ALL connection state - PERMANENT FIX"""
+    """Force disconnect TrueData (deployment cleanup)"""
     try:
-        from data.truedata_client import force_disconnect_and_reset
+        from data.truedata_client import force_disconnect_truedata
         
-        logger.info("🔧 Force disconnect and reset requested...")
+        logger.info("🛑 Force disconnect requested via API")
+        result = force_disconnect_truedata()
         
-        # Use the new permanent fix force disconnect
-        success = force_disconnect_and_reset()
-        
-        if success:
-            logger.info("✅ Force disconnect and reset completed successfully")
-            
-            return APIResponse(
-                success=True,
-                message="Force disconnect and reset completed. Connection state cleared. Ready for new connection attempt.",
-                data={
-                    "disconnected_at": datetime.now().isoformat(),
-                    "state_cleared": True,
-                    "retry_enabled": True,
-                    "permanent_fix": True
-                }
-            ).dict()
+        if result:
+            return {
+                "success": True,
+                "message": "TrueData force disconnected successfully",
+                "action": "force_disconnect",
+                "timestamp": datetime.now().isoformat()
+            }
         else:
-            return APIResponse(
-                success=False,
-                message="Force disconnect completed but state reset may have failed",
-                data={"disconnected_at": datetime.now().isoformat()}
-            ).dict()
+            return {
+                "success": False,
+                "message": "Force disconnect failed",
+                "action": "force_disconnect"
+            }
+            
+    except Exception as e:
+        logger.error(f"Force disconnect error: {e}")
+        return {
+            "success": False,
+            "message": f"Force disconnect failed: {str(e)}",
+            "error": str(e)
+        }
+
+@router.post("/deployment-safe-connect")
+async def deployment_safe_connect():
+    """Deployment-safe connection with overlap handling"""
+    try:
+        from data.truedata_client import truedata_client
+        
+        logger.info("🔄 Deployment-safe connection requested")
+        
+        # Force disconnect any existing connections first
+        truedata_client.force_disconnect()
+        
+        # Wait a moment for cleanup
+        import asyncio
+        await asyncio.sleep(2)
+        
+        # Now attempt new connection
+        result = truedata_client.connect()
+        
+        if result:
+            status = truedata_client.get_status()
+            return {
+                "success": True,
+                "message": "TrueData connected with deployment overlap handling",
+                "status": status,
+                "action": "deployment_safe_connect"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Deployment-safe connection failed",
+                "action": "deployment_safe_connect",
+                "help": "Try setting SKIP_TRUEDATA_AUTO_INIT=true to break overlap cycle"
+            }
+            
+    except Exception as e:
+        logger.error(f"Deployment-safe connect error: {e}")
+        return {
+            "success": False,
+            "message": f"Deployment-safe connect failed: {str(e)}",
+            "error": str(e)
+        }
+
+@router.get("/deployment-status")
+async def get_deployment_status():
+    """Get deployment-specific status information"""
+    try:
+        from data.truedata_client import get_truedata_status
+        import os
+        
+        status = get_truedata_status()
+        
+        # Add deployment environment info
+        deployment_info = {
+            "environment": os.getenv("ENVIRONMENT", "development"),
+            "app_url": os.getenv("APP_URL", ""),
+            "skip_auto_init": os.getenv("SKIP_TRUEDATA_AUTO_INIT", "false"),
+            "is_production": os.getenv("ENVIRONMENT") == "production",
+            "is_digitalocean": "ondigitalocean.app" in os.getenv("APP_URL", "")
+        }
+        
+        return {
+            "success": True,
+            "truedata_status": status,
+            "deployment_info": deployment_info,
+            "overlap_prevention": {
+                "active": deployment_info["skip_auto_init"] == "true",
+                "recommendation": "Set SKIP_TRUEDATA_AUTO_INIT=true if experiencing overlap issues"
+            }
+        }
         
     except Exception as e:
-        logger.error(f"Error in force disconnect: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error(f"Deployment status error: {e}")
+        return {
+            "success": False,
+            "message": f"Deployment status check failed: {str(e)}",
+            "error": str(e)
+        }
 
 @router.get("/connection-status")
 async def get_detailed_connection_status():

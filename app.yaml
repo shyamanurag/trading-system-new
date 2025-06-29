@@ -371,4 +371,33 @@ static_sites:
     repo: shyamanurag/trading-system-new
   name: frontend
   output_dir: dist
-  source_dir: /src/frontend 
+  source_dir: /src/frontend
+
+env_variables:
+  # Database Configuration
+  DATABASE_URL: postgresql://algoauto:XXXX@db-postgresql-sgp1-23093341-do-user-23093341-0.k.db.ondigitalocean.com:25060/algoauto
+  REDIS_URL: redis://default:XXXX@redis-cache-do-user-23093341-0.k.db.ondigitalocean.com:25061
+
+  # Zerodha Configuration
+  ZERODHA_API_KEY: sylcoq492qz6f7ej
+  ZERODHA_API_SECRET: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
+  ZERODHA_USER_ID: QSW899
+
+  # TrueData Configuration
+  TRUEDATA_USERNAME: tdwsp697
+  TRUEDATA_PASSWORD: shyam@697
+  
+  # DEPLOYMENT OVERLAP SOLUTION - Prevents "User Already Connected" errors
+  # Set to 'true' if experiencing TrueData connection issues during deployments
+  # This skips auto-initialization and allows manual connection via API
+  SKIP_TRUEDATA_AUTO_INIT: 'false'
+
+  # Application Configuration
+  ENVIRONMENT: production
+  APP_URL: https://algoauto-9gx56.ondigitalocean.app
+  DEBUG: false
+  LOG_LEVEL: INFO
+
+  # Security
+  JWT_SECRET: your-super-secret-jwt-key-change-in-production
+  API_RATE_LIMIT: 1000 
