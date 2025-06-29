@@ -1,0 +1,60 @@
+{
+  "audit_timestamp": "2025-06-29T17:54:45.930479",
+  "test_results": {
+    "Kiteconnect Import": true,
+    "Environment Variables": false,
+    "Redis Connection": false
+  },
+  "issues_found": [
+    {
+      "category": "CONFIG",
+      "issue": "Environment variable ZERODHA_API_KEY not set",
+      "severity": "HIGH",
+      "timestamp": "2025-06-29T17:54:40.310105"
+    },
+    {
+      "category": "CONFIG",
+      "issue": "Environment variable ZERODHA_API_SECRET not set",
+      "severity": "HIGH",
+      "timestamp": "2025-06-29T17:54:40.310105"
+    },
+    {
+      "category": "CONFIG",
+      "issue": "Environment variable ZERODHA_USER_ID not set",
+      "severity": "HIGH",
+      "timestamp": "2025-06-29T17:54:40.310105"
+    },
+    {
+      "category": "CONFIG",
+      "issue": "Environment variable REDIS_URL not set",
+      "severity": "HIGH",
+      "timestamp": "2025-06-29T17:54:40.310105"
+    },
+    {
+      "category": "REDIS",
+      "issue": "Redis connection failed: Error 22 connecting to localhost:6379. The remote computer refused the network connection.",
+      "severity": "HIGH",
+      "timestamp": "2025-06-29T17:54:45.930479"
+    }
+  ],
+  "recommended_fixes": [
+    {
+      "issue": "Missing env vars",
+      "fix": "Set environment variables: ZERODHA_API_KEY, ZERODHA_API_SECRET, ZERODHA_USER_ID, REDIS_URL",
+      "timestamp": "2025-06-29T17:54:40.310105"
+    },
+    {
+      "issue": "Redis connection",
+      "fix": "Check REDIS_URL and Redis server status",
+      "timestamp": "2025-06-29T17:54:45.930479"
+    }
+  ],
+  "summary": {
+    "total_tests": 3,
+    "passed_tests": 1,
+    "failed_tests": 2,
+    "critical_issues": 0,
+    "high_issues": 5,
+    "medium_issues": 0
+  }
+}

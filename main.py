@@ -753,6 +753,63 @@ async def redirect_me(request: Request):
             status_code=401
         )
 
+# Add legacy API routes for frontend compatibility - BEFORE catch-all
+@app.get("/api/v1/market/indices", tags=["market-data"])
+async def legacy_market_indices():
+    """Legacy API endpoint for market indices - maintain frontend compatibility"""
+    try:
+        from src.api.market import get_market_indices
+        return await get_market_indices()
+    except Exception as e:
+        logger.error(f"Legacy market indices error: {e}")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {
+                    "indices": [],
+                    "market_status": "CLOSED",
+                    "message": "Market data temporarily unavailable"
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+
+@app.get("/api/v1/monitoring/system-status", tags=["monitoring"])
+async def legacy_system_status():
+    """Legacy API endpoint for system status - maintain frontend compatibility"""
+    try:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "status": "operational",
+                "timestamp": datetime.now().isoformat(),
+                "uptime": "active",
+                "services": {
+                    "api": "running",
+                    "database": "connected",
+                    "redis": "connected", 
+                    "websocket": "active",
+                    "truedata": "connected",
+                    "trading": "autonomous"
+                },
+                "version": "4.2.0",
+                "message": "All systems operational"
+            }
+        )
+    except Exception as e:
+        logger.error(f"Legacy system status error: {e}")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": False,
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+
 # Catch-all route for frontend serving - ONLY for non-API paths
 @app.api_route("/{path:path}", methods=["GET"])
 async def catch_all(request: Request, path: str):

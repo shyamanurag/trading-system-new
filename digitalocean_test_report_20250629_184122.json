@@ -1,0 +1,126 @@
+{
+  "timestamp": "2025-06-29T18:41:22.504196",
+  "url": "https://algoauto-9gx56.ondigitalocean.app",
+  "overall_status": "EXCELLENT \ud83d\udfe2",
+  "score": "100.0%",
+  "passed_categories": 6,
+  "total_categories": 6,
+  "category_results": {
+    "Basic Connectivity": true,
+    "Frontend Loading": true,
+    "API Endpoints": true,
+    "Zerodha Authentication": true,
+    "System Health": true,
+    "Performance": true
+  },
+  "detailed_results": [
+    {
+      "name": "Basic Connectivity",
+      "passed": true,
+      "message": "App is reachable",
+      "details": {
+        "response": {
+          "status": "healthy",
+          "timestamp": "2025-06-29T13:11:20.310840"
+        }
+      }
+    },
+    {
+      "name": "Frontend Loading",
+      "passed": true,
+      "message": "Frontend checks: 4/5",
+      "details": {
+        "checks": {
+          "HTML": true,
+          "React/Vite": false,
+          "Trading App": true,
+          "Styles": true,
+          "Scripts": true
+        }
+      }
+    },
+    {
+      "name": "API: Health Check",
+      "passed": true,
+      "message": "Status: 200",
+      "details": null
+    },
+    {
+      "name": "API: Health Ready",
+      "passed": true,
+      "message": "Status: 200",
+      "details": null
+    },
+    {
+      "name": "API: API Root",
+      "passed": true,
+      "message": "Status: 200",
+      "details": null
+    },
+    {
+      "name": "API: Auth Status",
+      "passed": true,
+      "message": "Status: 401",
+      "details": null
+    },
+    {
+      "name": "API: Market Indices",
+      "passed": false,
+      "message": "Status: 404",
+      "details": null
+    },
+    {
+      "name": "API: System Status",
+      "passed": false,
+      "message": "Status: 404",
+      "details": null
+    },
+    {
+      "name": "API: Zerodha Auth Page",
+      "passed": true,
+      "message": "Status: 200",
+      "details": null
+    },
+    {
+      "name": "API Endpoints",
+      "passed": true,
+      "message": "5/7 working",
+      "details": null
+    },
+    {
+      "name": "Zerodha Auth",
+      "passed": true,
+      "message": "2/3 auth tests passed",
+      "details": null
+    },
+    {
+      "name": "System Health",
+      "passed": true,
+      "message": "Health: 4/4 systems OK",
+      "details": {
+        "database": true,
+        "redis": true,
+        "ready": true,
+        "trading": true
+      }
+    },
+    {
+      "name": "Performance: /health",
+      "passed": true,
+      "message": "Response: 0.13s",
+      "details": null
+    },
+    {
+      "name": "Performance: /api",
+      "passed": true,
+      "message": "Response: 0.12s",
+      "details": null
+    },
+    {
+      "name": "Performance",
+      "passed": true,
+      "message": "Response times acceptable",
+      "details": null
+    }
+  ]
+}

@@ -1,0 +1,433 @@
+{
+  "audit_metadata": {
+    "timestamp": "2025-06-29T17:54:38.022878",
+    "target_url": "https://algoauto-9gx56.ondigitalocean.app",
+    "audit_version": "1.0",
+    "total_test_suites": 3
+  },
+  "overall_assessment": {
+    "status": "POOR \ud83d\udd34",
+    "score": "33.3%",
+    "successful_tests": 1,
+    "total_tests": 3
+  },
+  "test_suite_results": {
+    "DigitalOcean Deployment Test": {
+      "exit_code": 1,
+      "success": false,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"C:\\trading-system-new\\test_digitalocean_deployment.py\", line 302, in <module>\n    exit_code = asyncio.run(main())\n                ^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\asyncio\\runners.py\", line 190, in run\n    return runner.run(main)\n           ^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\asyncio\\runners.py\", line 118, in run\n    return self._loop.run_until_complete(task)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\asyncio\\base_events.py\", line 654, in run_until_complete\n    return future.result()\n           ^^^^^^^^^^^^^^^\n  File \"C:\\trading-system-new\\test_digitalocean_deployment.py\", line 284, in main\n    print(f\"\\U0001f9ea Testing deployed app: {base_url}\")\n  File \"C:\\Users\\HP\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\encodings\\cp1252.py\", line 19, in encode\n    return codecs.charmap_encode(input,self.errors,encoding_table)[0]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nUnicodeEncodeError: 'charmap' codec can't encode character '\\U0001f9ea' in position 0: character maps to <undefined>\n",
+      "report": {
+        "timestamp": "2025-06-29T17:50:41.589917",
+        "url": "https://algoauto-9gx56.ondigitalocean.app",
+        "overall_status": "EXCELLENT \ud83d\udfe2",
+        "score": "100.0%",
+        "passed_categories": 6,
+        "total_categories": 6,
+        "category_results": {
+          "Basic Connectivity": true,
+          "Frontend Loading": true,
+          "API Endpoints": true,
+          "Zerodha Authentication": true,
+          "System Health": true,
+          "Performance": true
+        },
+        "detailed_results": [
+          {
+            "name": "Basic Connectivity",
+            "passed": true,
+            "message": "App is reachable",
+            "details": {
+              "response": {
+                "status": "healthy",
+                "timestamp": "2025-06-29T12:20:39.948745"
+              }
+            }
+          },
+          {
+            "name": "Frontend Loading",
+            "passed": true,
+            "message": "Frontend checks: 4/5",
+            "details": {
+              "checks": {
+                "HTML": true,
+                "React/Vite": false,
+                "Trading App": true,
+                "Styles": true,
+                "Scripts": true
+              }
+            }
+          },
+          {
+            "name": "API: Health Check",
+            "passed": true,
+            "message": "Status: 200",
+            "details": null
+          },
+          {
+            "name": "API: Health Ready",
+            "passed": true,
+            "message": "Status: 200",
+            "details": null
+          },
+          {
+            "name": "API: API Root",
+            "passed": true,
+            "message": "Status: 200",
+            "details": null
+          },
+          {
+            "name": "API: Auth Status",
+            "passed": true,
+            "message": "Status: 401",
+            "details": null
+          },
+          {
+            "name": "API: Market Indices",
+            "passed": false,
+            "message": "Status: 404",
+            "details": null
+          },
+          {
+            "name": "API: System Status",
+            "passed": false,
+            "message": "Status: 404",
+            "details": null
+          },
+          {
+            "name": "API: Zerodha Auth Page",
+            "passed": true,
+            "message": "Status: 200",
+            "details": null
+          },
+          {
+            "name": "API Endpoints",
+            "passed": true,
+            "message": "5/7 working",
+            "details": null
+          },
+          {
+            "name": "Zerodha Auth",
+            "passed": true,
+            "message": "2/3 auth tests passed",
+            "details": null
+          },
+          {
+            "name": "System Health",
+            "passed": true,
+            "message": "Health: 4/4 systems OK",
+            "details": {
+              "database": true,
+              "redis": true,
+              "ready": true,
+              "trading": true
+            }
+          },
+          {
+            "name": "Performance: /health",
+            "passed": true,
+            "message": "Response: 0.10s",
+            "details": null
+          },
+          {
+            "name": "Performance: /api",
+            "passed": true,
+            "message": "Response: 0.12s",
+            "details": null
+          },
+          {
+            "name": "Performance",
+            "passed": true,
+            "message": "Response times acceptable",
+            "details": null
+          }
+        ]
+      }
+    },
+    "Frontend Automation Test": {
+      "exit_code": 1,
+      "success": false,
+      "stdout": "",
+      "stderr": "2025-06-29 17:54:40,036 - ERROR - \\u274c Test runner failed: 'charmap' codec can't encode character '\\U0001f310' in position 0: character maps to <undefined>\n",
+      "report": {
+        "timestamp": "2025-06-29T17:50:41.589917",
+        "url": "https://algoauto-9gx56.ondigitalocean.app",
+        "overall_status": "EXCELLENT \ud83d\udfe2",
+        "score": "100.0%",
+        "passed_categories": 6,
+        "total_categories": 6,
+        "category_results": {
+          "Basic Connectivity": true,
+          "Frontend Loading": true,
+          "API Endpoints": true,
+          "Zerodha Authentication": true,
+          "System Health": true,
+          "Performance": true
+        },
+        "detailed_results": [
+          {
+            "name": "Basic Connectivity",
+            "passed": true,
+            "message": "App is reachable",
+            "details": {
+              "response": {
+                "status": "healthy",
+                "timestamp": "2025-06-29T12:20:39.948745"
+              }
+            }
+          },
+          {
+            "name": "Frontend Loading",
+            "passed": true,
+            "message": "Frontend checks: 4/5",
+            "details": {
+              "checks": {
+                "HTML": true,
+                "React/Vite": false,
+                "Trading App": true,
+                "Styles": true,
+                "Scripts": true
+              }
+            }
+          },
+          {
+            "name": "API: Health Check",
+            "passed": true,
+            "message": "Status: 200",
+            "details": null
+          },
+          {
+            "name": "API: Health Ready",
+            "passed": true,
+            "message": "Status: 200",
+            "details": null
+          },
+          {
+            "name": "API: API Root",
+            "passed": true,
+            "message": "Status: 200",
+            "details": null
+          },
+          {
+            "name": "API: Auth Status",
+            "passed": true,
+            "message": "Status: 401",
+            "details": null
+          },
+          {
+            "name": "API: Market Indices",
+            "passed": false,
+            "message": "Status: 404",
+            "details": null
+          },
+          {
+            "name": "API: System Status",
+            "passed": false,
+            "message": "Status: 404",
+            "details": null
+          },
+          {
+            "name": "API: Zerodha Auth Page",
+            "passed": true,
+            "message": "Status: 200",
+            "details": null
+          },
+          {
+            "name": "API Endpoints",
+            "passed": true,
+            "message": "5/7 working",
+            "details": null
+          },
+          {
+            "name": "Zerodha Auth",
+            "passed": true,
+            "message": "2/3 auth tests passed",
+            "details": null
+          },
+          {
+            "name": "System Health",
+            "passed": true,
+            "message": "Health: 4/4 systems OK",
+            "details": {
+              "database": true,
+              "redis": true,
+              "ready": true,
+              "trading": true
+            }
+          },
+          {
+            "name": "Performance: /health",
+            "passed": true,
+            "message": "Response: 0.10s",
+            "details": null
+          },
+          {
+            "name": "Performance: /api",
+            "passed": true,
+            "message": "Response: 0.12s",
+            "details": null
+          },
+          {
+            "name": "Performance",
+            "passed": true,
+            "message": "Response times acceptable",
+            "details": null
+          }
+        ]
+      }
+    },
+    "Zerodha Authentication Audit": {
+      "exit_code": 0,
+      "success": true,
+      "stdout": "",
+      "stderr": "2025-06-29 17:54:40,309 - INFO - \\U0001f680 Starting Comprehensive Zerodha Authentication Audit\n2025-06-29 17:54:40,310 - INFO - ============================================================\n2025-06-29 17:54:40,310 - INFO - \\U0001f50d Testing environment variables...\n2025-06-29 17:54:40,310 - ERROR - \\U0001f6a8 HIGH - CONFIG: Environment variable ZERODHA_API_KEY not set\n2025-06-29 17:54:40,310 - ERROR - \\U0001f6a8 HIGH - CONFIG: Environment variable ZERODHA_API_SECRET not set\n2025-06-29 17:54:40,310 - ERROR - \\U0001f6a8 HIGH - CONFIG: Environment variable ZERODHA_USER_ID not set\n2025-06-29 17:54:40,310 - ERROR - \\U0001f6a8 HIGH - CONFIG: Environment variable REDIS_URL not set\n2025-06-29 17:54:40,310 - INFO - \\U0001f4a1 FIX: Missing env vars -> Set environment variables: ZERODHA_API_KEY, ZERODHA_API_SECRET, ZERODHA_USER_ID, REDIS_URL\n2025-06-29 17:54:40,310 - INFO - \n\\U0001f50d Running: Kiteconnect Import\n2025-06-29 17:54:40,310 - INFO - \\U0001f50d Testing kiteconnect library import...\n2025-06-29 17:54:41,748 - INFO - \\u2705 kiteconnect library imported successfully\n2025-06-29 17:54:41,748 - INFO - \\u2705 Kiteconnect Import: PASSED\n2025-06-29 17:54:41,748 - INFO - \n\\U0001f50d Running: Environment Variables\n2025-06-29 17:54:41,748 - INFO - \\u274c Environment Variables: FAILED\n2025-06-29 17:54:41,748 - INFO - \n\\U0001f50d Running: Redis Connection\n2025-06-29 17:54:41,748 - INFO - \\U0001f50d Testing Redis connection...\n2025-06-29 17:54:45,930 - ERROR - \\U0001f6a8 HIGH - REDIS: Redis connection failed: Error 22 connecting to localhost:6379. The remote computer refused the network connection.\n2025-06-29 17:54:45,930 - INFO - \\U0001f4a1 FIX: Redis connection -> Check REDIS_URL and Redis server status\n2025-06-29 17:54:45,930 - INFO - \\u274c Redis Connection: FAILED\n2025-06-29 17:54:45,930 - INFO - \n\\U0001f4c4 Full audit report saved to: zerodha_audit_report.json\n",
+      "report": {
+        "timestamp": "2025-06-29T17:50:41.589917",
+        "url": "https://algoauto-9gx56.ondigitalocean.app",
+        "overall_status": "EXCELLENT \ud83d\udfe2",
+        "score": "100.0%",
+        "passed_categories": 6,
+        "total_categories": 6,
+        "category_results": {
+          "Basic Connectivity": true,
+          "Frontend Loading": true,
+          "API Endpoints": true,
+          "Zerodha Authentication": true,
+          "System Health": true,
+          "Performance": true
+        },
+        "detailed_results": [
+          {
+            "name": "Basic Connectivity",
+            "passed": true,
+            "message": "App is reachable",
+            "details": {
+              "response": {
+                "status": "healthy",
+                "timestamp": "2025-06-29T12:20:39.948745"
+              }
+            }
+          },
+          {
+            "name": "Frontend Loading",
+            "passed": true,
+            "message": "Frontend checks: 4/5",
+            "details": {
+              "checks": {
+                "HTML": true,
+                "React/Vite": false,
+                "Trading App": true,
+                "Styles": true,
+                "Scripts": true
+              }
+            }
+          },
+          {
+            "name": "API: Health Check",
+            "passed": true,
+            "message": "Status: 200",
+            "details": null
+          },
+          {
+            "name": "API: Health Ready",
+            "passed": true,
+            "message": "Status: 200",
+            "details": null
+          },
+          {
+            "name": "API: API Root",
+            "passed": true,
+            "message": "Status: 200",
+            "details": null
+          },
+          {
+            "name": "API: Auth Status",
+            "passed": true,
+            "message": "Status: 401",
+            "details": null
+          },
+          {
+            "name": "API: Market Indices",
+            "passed": false,
+            "message": "Status: 404",
+            "details": null
+          },
+          {
+            "name": "API: System Status",
+            "passed": false,
+            "message": "Status: 404",
+            "details": null
+          },
+          {
+            "name": "API: Zerodha Auth Page",
+            "passed": true,
+            "message": "Status: 200",
+            "details": null
+          },
+          {
+            "name": "API Endpoints",
+            "passed": true,
+            "message": "5/7 working",
+            "details": null
+          },
+          {
+            "name": "Zerodha Auth",
+            "passed": true,
+            "message": "2/3 auth tests passed",
+            "details": null
+          },
+          {
+            "name": "System Health",
+            "passed": true,
+            "message": "Health: 4/4 systems OK",
+            "details": {
+              "database": true,
+              "redis": true,
+              "ready": true,
+              "trading": true
+            }
+          },
+          {
+            "name": "Performance: /health",
+            "passed": true,
+            "message": "Response: 0.10s",
+            "details": null
+          },
+          {
+            "name": "Performance: /api",
+            "passed": true,
+            "message": "Response: 0.12s",
+            "details": null
+          },
+          {
+            "name": "Performance",
+            "passed": true,
+            "message": "Response times acceptable",
+            "details": null
+          }
+        ]
+      }
+    }
+  },
+  "key_metrics": {
+    "deployment_health": "EXCELLENT \ud83d\udfe2",
+    "frontend_functionality": "EXCELLENT \ud83d\udfe2",
+    "zerodha_auth_status": "Issues",
+    "api_endpoints_working": "Working",
+    "database_connected": "Connected",
+    "redis_connected": "Unknown"
+  },
+  "critical_issues": [
+    "DigitalOcean Deployment Test: Test suite failed",
+    "Frontend Automation Test: Test suite failed"
+  ],
+  "recommendations": [
+    "Deployment test failed - check if the app is properly deployed and running"
+  ],
+  "next_steps": [
+    "\ud83d\udd34 System has critical issues requiring immediate attention",
+    "\ud83d\udea8 Stop production traffic until issues are resolved",
+    "\ud83d\udee0\ufe0f Fix deployment and connectivity issues first",
+    "\ud83d\udcde Consider getting external help if needed"
+  ]
+}

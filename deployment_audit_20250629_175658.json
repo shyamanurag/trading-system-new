@@ -1,0 +1,35 @@
+{
+  "timestamp": "2025-06-29T17:56:58.164853",
+  "target_url": "https://algoauto-9gx56.ondigitalocean.app",
+  "overall_score": 93.33333333333333,
+  "status": "EXCELLENT \ud83d\udfe2",
+  "detailed_results": {
+    "connectivity": true,
+    "health_data": {
+      "status": "healthy",
+      "timestamp": "2025-06-29T12:26:56.134171"
+    },
+    "system_health": {
+      "database": true,
+      "redis": true,
+      "trading": true
+    },
+    "frontend": {
+      "loads": true,
+      "has_framework": false,
+      "good_size": true
+    },
+    "zerodha_auth": {
+      "score": 2,
+      "total": 3,
+      "working": true
+    },
+    "api_endpoints": {
+      "working": 3,
+      "total": 3
+    }
+  },
+  "recommendations": [
+    "\u2705 System is healthy - continue monitoring"
+  ]
+}

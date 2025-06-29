@@ -367,4 +367,21 @@ async def get_current_user():
             }
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Add legacy API route for backward compatibility  
+@router.get("/v1/indices")
+async def get_market_indices_legacy():
+    """Legacy endpoint - redirect to main indices endpoint"""
+    return await get_market_indices()
+
+# Also add direct route without prefix for legacy calls
+from fastapi import APIRouter as BaseRouter
+legacy_router = BaseRouter()
+
+@legacy_router.get("/api/v1/market/indices")
+async def get_market_indices_v1_legacy():
+    """Legacy v1 API endpoint for market indices"""
+    return await get_market_indices()
+
+# We'll need to mount this in main.py 
