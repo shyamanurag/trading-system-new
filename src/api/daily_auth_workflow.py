@@ -372,10 +372,42 @@ async def submit_daily_token(
         access_token = data["access_token"]
         user_id = data["user_id"]
         
-        # Store the token (in production, store in Redis/database)
-        # For now, we'll set environment variables
-        os.environ['ZERODHA_ACCESS_TOKEN'] = access_token
-        os.environ['ZERODHA_USER_ID'] = user_id
+        # Store the token properly in Redis (not just environment variables)
+        try:
+            import redis.asyncio as redis
+            redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+            redis_client = redis.from_url(redis_url)
+            
+            # Calculate proper expiry (6 AM next day)
+            from datetime import time
+            now = datetime.now()
+            tomorrow_6am = datetime.combine(
+                now.date() + timedelta(days=1),
+                time(6, 0, 0)
+            )
+            
+            if now.time() < time(6, 0, 0):
+                expiry = datetime.combine(now.date(), time(6, 0, 0))  # Today 6 AM
+            else:
+                expiry = tomorrow_6am  # Tomorrow 6 AM
+            
+            # Store token and expiry in Redis (will replace existing token)
+            await redis_client.set(f"zerodha:token:{user_id}", access_token)
+            await redis_client.set(f"zerodha:token_expiry:{user_id}", expiry.isoformat())
+            
+            # Also set environment variables for backward compatibility
+            os.environ['ZERODHA_ACCESS_TOKEN'] = access_token
+            os.environ['ZERODHA_USER_ID'] = user_id
+            
+            await redis_client.close()
+            
+            logger.info(f"Token stored in Redis for user {user_id}, expires at {expiry}")
+            
+        except Exception as redis_error:
+            logger.error(f"Failed to store token in Redis: {redis_error}")
+            # Fallback to environment variables only
+            os.environ['ZERODHA_ACCESS_TOKEN'] = access_token
+            os.environ['ZERODHA_USER_ID'] = user_id
         
         # Start autonomous trading in background
         background_tasks.add_task(start_autonomous_trading_after_auth)
@@ -386,7 +418,7 @@ async def submit_daily_token(
             "success": True,
             "message": "Authentication successful, starting trading...",
             "user_id": user_id,
-            "expires_at": (datetime.now() + timedelta(hours=8)).isoformat()
+            "expires_at": expiry.isoformat() if 'expiry' in locals() else (datetime.now() + timedelta(hours=8)).isoformat()
         }
         
     except Exception as e:
