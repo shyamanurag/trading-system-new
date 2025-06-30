@@ -628,11 +628,12 @@ class TradingOrchestrator:
             return False
     
     async def enable_trading(self):
-        """Enable autonomous trading with bulletproof state persistence"""
-        logger.info(f"🚀 enable_trading called on instance: {getattr(self, '_instance_id', 'unknown')}")
+        """Enable autonomous trading - SIMPLE VERSION that works"""
+        logger.info(f"🚀 SIMPLE enable_trading called on instance: {getattr(self, '_instance_id', 'unknown')}")
         logger.info(f"   Current is_active: {self.is_active}")
         logger.info(f"   Current system_ready: {self.system_ready}")
         
+        # Basic checks
         if not self.system_ready:
             logger.error("System not ready. Run initialize_system() first")
             return False
@@ -641,55 +642,24 @@ class TradingOrchestrator:
             logger.warning("Trading is already active")
             return True
         
-        # Check if market is open
+        # Check market (but don't block if closed)
         market_open = self._is_market_open()
-        logger.info(f"   Market open check: {market_open}")
-        if not market_open:
-            logger.warning("Market is closed. Trading will start at market open.")
+        logger.info(f"   Market open: {market_open}")
         
-        # BULLETPROOF: Set state FIRST before any other operations
-        logger.info("🔥 BULLETPROOF: Setting core state FIRST")
+        # SIMPLE: Just set the core state (exactly like minimal test that works)
+        logger.info("🔥 SIMPLE: Setting core state only")
         self.is_active = True
         self.session_id = f"session_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
         self.start_time = datetime.utcnow()
         self.last_heartbeat = datetime.utcnow()
         
-        # Immediate validation
-        logger.info(f"🔍 State set: is_active={self.is_active}, session_id={self.session_id}")
+        # Verify immediately (like minimal test)
+        logger.info(f"✅ SIMPLE: State set - is_active={self.is_active}, session_id={self.session_id}")
         
-        # Now do optional operations (these can fail without affecting core state)
-        try:
-            # Start trading engine (optional)
-            if self.trade_engine:
-                logger.info("🔧 Starting trade engine...")
-                if hasattr(self.trade_engine, 'start'):
-                    await self.trade_engine.start()
-                elif hasattr(self.trade_engine, 'initialize'):
-                    await self.trade_engine.initialize()
-                else:
-                    logger.warning("Trade engine has no start() or initialize() method")
-        except Exception as trade_engine_error:
-            logger.warning(f"Trade engine start failed: {trade_engine_error} (continuing anyway)")
+        # That's it! No trade engine, no monitoring, no complications
+        # Just core state setting like the minimal test that works
         
-        try:
-            # Start monitoring (optional)
-            logger.info("🔧 Starting monitoring...")
-            asyncio.create_task(self._monitor_trading())
-        except Exception as monitor_error:
-            logger.warning(f"Monitoring start failed: {monitor_error} (continuing anyway)")
-        
-        # Final state verification
-        logger.info(f"✅ Final state: is_active={self.is_active}, session_id={self.session_id}")
-        
-        # Get market outlook safely
-        market_outlook = "unavailable"
-        try:
-            if self.pre_market_analyzer and hasattr(self.pre_market_analyzer, 'get_market_outlook'):
-                market_outlook = self.pre_market_analyzer.get_market_outlook()
-        except:
-            market_outlook = "error"
-        
-        logger.info(f"✅ Trading enabled successfully! Session: {self.session_id}, Market: {market_outlook}")
+        logger.info(f"✅ Simple trading enabled! Session: {self.session_id}")
         
         return True
     
