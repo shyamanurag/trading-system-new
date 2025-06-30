@@ -340,14 +340,35 @@ async def test_signal_generation(orchestrator: TradingOrchestrator = Depends(get
             try:
                 symbols = ['BANKNIFTY', 'NIFTY', 'SBIN']
                 market_data = await orchestrator.market_data.get_latest_data(symbols)
-                result['market_data_sample'] = {
-                    'symbols_returned': list(market_data.keys()),
-                    'sample_data_keys': list(market_data.values())[0].keys() if market_data else [],
-                    'price_history_type': type(market_data[symbols[0]]['price_history']).__name__ if market_data and 'price_history' in market_data.get(symbols[0], {}) else None,
-                    'price_history_length': len(market_data[symbols[0]]['price_history']) if market_data and 'price_history' in market_data.get(symbols[0], {}) else 0
-                }
+                
+                # Handle MarketData objects properly
+                if market_data:
+                    sample_symbol = list(market_data.keys())[0]
+                    sample_data = market_data[sample_symbol]
+                    
+                    # Check if it's a MarketData object or dictionary
+                    if hasattr(sample_data, 'symbol'):  # MarketData object
+                        result['market_data_sample'] = {
+                            'symbols_returned': list(market_data.keys()),
+                            'sample_data_keys': ['symbol', 'current_price', 'price_history', 'timestamp', 'volume'],
+                            'price_history_type': type(sample_data.price_history).__name__,
+                            'price_history_length': len(sample_data.price_history) if hasattr(sample_data, 'price_history') else 0,
+                            'sample_data_type': type(sample_data).__name__,
+                            'current_price': getattr(sample_data, 'current_price', None)
+                        }
+                    else:  # Dictionary format
+                        result['market_data_sample'] = {
+                            'symbols_returned': list(market_data.keys()),
+                            'sample_data_keys': list(sample_data.keys()) if sample_data else [],
+                            'price_history_type': type(sample_data.get('price_history', [])).__name__ if sample_data else None,
+                            'price_history_length': len(sample_data.get('price_history', [])) if sample_data and 'price_history' in sample_data else 0
+                        }
+                else:
+                    result['market_data_sample'] = {'error': 'No market data returned'}
+                    
             except Exception as e:
                 result['errors'].append(f"Market data error: {str(e)}")
+                result['market_data_sample'] = {'error': str(e)}
         
         # Test 2: Try to generate signals
         if orchestrator.strategy_engine and orchestrator.market_data:
