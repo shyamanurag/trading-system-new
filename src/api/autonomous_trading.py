@@ -28,13 +28,8 @@ from models.responses import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/autonomous")
 
-# Dependency injection for orchestrator
-def get_orchestrator() -> TradingOrchestrator:
-    """Get the singleton orchestrator instance"""
-    orchestrator = TradingOrchestrator.get_instance()
-    # Ensure initialization
-    orchestrator._initialize()
-    return orchestrator
+# Use shared dependency to prevent singleton issues
+from src.core.dependencies import get_orchestrator
 
 @router.get("/status", response_model=TradingStatusResponse)
 async def get_status(
