@@ -228,4 +228,96 @@ async def test_enable_trading_direct(
         return {
             "error": str(e),
             "timestamp": datetime.utcnow().isoformat()
+        }
+
+@router.post("/test-minimal-enable", response_model=Dict[str, Any])
+async def test_minimal_enable(
+    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
+):
+    """Minimal enable test - just set state and return immediately"""
+    try:
+        logger.info("🧪 MINIMAL TEST: Setting state and returning immediately")
+        
+        # Get before state
+        before_active = getattr(orchestrator, 'is_active', 'MISSING')
+        before_session = getattr(orchestrator, 'session_id', 'MISSING')
+        
+        # Set state (copy of bulletproof logic)
+        logger.info("🔥 MINIMAL: Setting core state")
+        orchestrator.is_active = True
+        orchestrator.session_id = f"test_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        orchestrator.start_time = datetime.utcnow()
+        
+        # Get after state immediately
+        after_active = getattr(orchestrator, 'is_active', 'MISSING')
+        after_session = getattr(orchestrator, 'session_id', 'MISSING')
+        
+        logger.info(f"🔍 MINIMAL RESULT: {before_active} -> {after_active}, session: {after_session}")
+        
+        return {
+            "test_type": "minimal_enable",
+            "before": {
+                "is_active": before_active,
+                "session_id": before_session
+            },
+            "after": {
+                "is_active": after_active,
+                "session_id": after_session
+            },
+            "success": after_active == True and after_session is not None,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Minimal enable test failed: {e}")
+        return {
+            "error": str(e),
+            "test_type": "minimal_enable_failed",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+@router.post("/test-bulletproof-deployed", response_model=Dict[str, Any])
+async def test_bulletproof_deployed(
+    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
+):
+    """Test if the bulletproof enable_trading code is actually deployed"""
+    try:
+        logger.info("🧪 TESTING: Checking if bulletproof code is deployed")
+        
+        # Try to call enable_trading and capture any specific logs
+        import io
+        import sys
+        from contextlib import redirect_stderr, redirect_stdout
+        
+        # Capture logs during enable_trading call
+        log_capture = io.StringIO()
+        
+        try:
+            # Call enable_trading with logging capture
+            result = await orchestrator.enable_trading()
+            
+            return {
+                "test_type": "bulletproof_deployment_check",
+                "enable_trading_result": result,
+                "bulletproof_deployed": "BULLETPROOF: Setting core state" in str(log_capture.getvalue()),
+                "current_is_active": getattr(orchestrator, 'is_active', 'MISSING'),
+                "current_session_id": getattr(orchestrator, 'session_id', 'MISSING'),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as enable_error:
+            return {
+                "test_type": "bulletproof_deployment_check",
+                "enable_trading_error": str(enable_error),
+                "current_is_active": getattr(orchestrator, 'is_active', 'MISSING'),
+                "current_session_id": getattr(orchestrator, 'session_id', 'MISSING'),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        
+    except Exception as e:
+        logger.error(f"Bulletproof deployment test failed: {e}")
+        return {
+            "error": str(e),
+            "test_type": "bulletproof_deployment_check_failed",
+            "timestamp": datetime.utcnow().isoformat()
         } 
