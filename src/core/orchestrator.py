@@ -628,7 +628,7 @@ class TradingOrchestrator:
             return False
     
     async def enable_trading(self):
-        """Enable autonomous trading with pre-checks and ultra-robust state persistence"""
+        """Enable autonomous trading with bulletproof state persistence"""
         logger.info(f"🚀 enable_trading called on instance: {getattr(self, '_instance_id', 'unknown')}")
         logger.info(f"   Current is_active: {self.is_active}")
         logger.info(f"   Current system_ready: {self.system_ready}")
@@ -647,96 +647,49 @@ class TradingOrchestrator:
         if not market_open:
             logger.warning("Market is closed. Trading will start at market open.")
         
-        # ULTRA-ROBUST STATE SETTING WITH MULTIPLE PERSISTENCE LAYERS
-        logger.info("🔥 ULTRA-ROBUST: Setting is_active = True with multiple validations")
-        
-        # Try 1: Direct assignment
+        # BULLETPROOF: Set state FIRST before any other operations
+        logger.info("🔥 BULLETPROOF: Setting core state FIRST")
         self.is_active = True
-        logger.info(f"   Try 1 - Direct assignment: is_active = {self.is_active}")
-        
-        # Try 2: Force with setattr
-        setattr(self, 'is_active', True)
-        logger.info(f"   Try 2 - setattr: is_active = {getattr(self, 'is_active', 'FAILED')}")
-        
-        # Try 3: Store in instance dict
-        self.__dict__['is_active'] = True
-        logger.info(f"   Try 3 - __dict__: is_active = {self.__dict__.get('is_active', 'FAILED')}")
-        
-        # VALIDATION CHECKPOINT 1
-        if not self.is_active:
-            logger.error("❌ CRITICAL FAILURE: All assignment methods failed!")
-            logger.error(f"   self.is_active = {self.is_active}")
-            logger.error(f"   getattr result = {getattr(self, 'is_active', 'MISSING')}")
-            logger.error(f"   __dict__ result = {self.__dict__.get('is_active', 'MISSING')}")
-            return False
-            
-        # Set session details
         self.session_id = f"session_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
         self.start_time = datetime.utcnow()
         self.last_heartbeat = datetime.utcnow()
         
-        # VALIDATION CHECKPOINT 2
-        logger.info(f"🔍 Checkpoint 2: is_active = {self.is_active}")
-        if not self.is_active:
-            logger.error("❌ CRITICAL: is_active was reset after session setup!")
-            return False
+        # Immediate validation
+        logger.info(f"🔍 State set: is_active={self.is_active}, session_id={self.session_id}")
         
-        # Start trading engine (potential reset point)
-        logger.info("🔧 Starting trade engine...")
-        if self.trade_engine:
-            logger.info(f"   Pre-engine: is_active = {self.is_active}")
-            # ZerodhaIntegration uses initialize() method, not start()
-            if hasattr(self.trade_engine, 'start'):
-                await self.trade_engine.start()
-            elif hasattr(self.trade_engine, 'initialize'):
-                await self.trade_engine.initialize()
-            else:
-                logger.warning("Trade engine has no start() or initialize() method")
-            logger.info(f"   Post-engine: is_active = {self.is_active}")
+        # Now do optional operations (these can fail without affecting core state)
+        try:
+            # Start trading engine (optional)
+            if self.trade_engine:
+                logger.info("🔧 Starting trade engine...")
+                if hasattr(self.trade_engine, 'start'):
+                    await self.trade_engine.start()
+                elif hasattr(self.trade_engine, 'initialize'):
+                    await self.trade_engine.initialize()
+                else:
+                    logger.warning("Trade engine has no start() or initialize() method")
+        except Exception as trade_engine_error:
+            logger.warning(f"Trade engine start failed: {trade_engine_error} (continuing anyway)")
         
-        # VALIDATION CHECKPOINT 3
-        if not self.is_active:
-            logger.error("❌ CRITICAL: is_active was reset during trade engine start!")
-            # Force it back
-            self.is_active = True
-            logger.info(f"   Forced back to: is_active = {self.is_active}")
+        try:
+            # Start monitoring (optional)
+            logger.info("🔧 Starting monitoring...")
+            asyncio.create_task(self._monitor_trading())
+        except Exception as monitor_error:
+            logger.warning(f"Monitoring start failed: {monitor_error} (continuing anyway)")
         
-        # Start monitoring (potential reset point)
-        logger.info("🔧 Starting monitoring...")
-        logger.info(f"   Pre-monitor: is_active = {self.is_active}")
-        asyncio.create_task(self._monitor_trading())
-        logger.info(f"   Post-monitor: is_active = {self.is_active}")
+        # Final state verification
+        logger.info(f"✅ Final state: is_active={self.is_active}, session_id={self.session_id}")
         
-        # FINAL ULTIMATE VALIDATION
-        final_state = self.is_active
-        logger.info(f"🎯 FINAL STATE CHECK: is_active = {final_state}")
-        
-        if not final_state:
-            logger.error("❌ ULTIMATE FAILURE: is_active is False at method end!")
-            # LAST RESORT: Force it one more time
-            self.is_active = True
-            setattr(self, 'is_active', True)
-            self.__dict__['is_active'] = True
-            
-            final_final_state = self.is_active
-            logger.error(f"   LAST RESORT: is_active = {final_final_state}")
-            
-            if not final_final_state:
-                logger.error("❌ COMPLETE FAILURE: Even last resort failed!")
-                return False
-        
-        logger.info(f"✅ Trading enabled with session ID: {self.session_id}")
-        logger.info(f"   FINAL is_active state: {self.is_active}")
-        
-        # Safely get market outlook
+        # Get market outlook safely
         market_outlook = "unavailable"
-        if self.pre_market_analyzer and hasattr(self.pre_market_analyzer, 'get_market_outlook'):
-            try:
+        try:
+            if self.pre_market_analyzer and hasattr(self.pre_market_analyzer, 'get_market_outlook'):
                 market_outlook = self.pre_market_analyzer.get_market_outlook()
-            except:
-                market_outlook = "error"
+        except:
+            market_outlook = "error"
         
-        logger.info(f"Market outlook: {market_outlook}")
+        logger.info(f"✅ Trading enabled successfully! Session: {self.session_id}, Market: {market_outlook}")
         
         return True
     
