@@ -50,6 +50,10 @@ class TradingOrchestrator:
     
     def __init__(self):
         """Initialize the orchestrator"""
+        # Prevent re-initialization of singleton instance
+        if hasattr(self, '_initialized') and self._initialized:
+            return
+        
         # Add instance tracking for debugging
         import time
         self._instance_id = f"orch_{int(time.time() * 1000) % 10000}"
@@ -90,6 +94,9 @@ class TradingOrchestrator:
         
         # Pre-market analyzer placeholder
         self.pre_market_analyzer = None
+        
+        # Mark as initialized to prevent re-initialization
+        self._initialized = True
     
     def _initialize(self):
         """Initialize the orchestrator with basic setup"""
