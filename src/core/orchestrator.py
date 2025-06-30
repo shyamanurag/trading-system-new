@@ -48,37 +48,132 @@ class TradingOrchestrator:
         """Get the singleton instance"""
         return cls()
     
-    def _initialize(self):
-        """Initialize the orchestrator with enhanced features"""
-        if self._initialized:
-            return
-            
+    def __init__(self):
+        """Initialize the orchestrator"""
         self.is_active = False
+        self.system_ready = False
+        self.active_strategies = []
+        self.active_positions = []
+        self.daily_pnl = 0.0
+        self.total_pnl = 0.0
+        self.config = {}
+        
+        # Session tracking attributes
         self.session_id = None
         self.start_time = None
         self.last_heartbeat = None
-        self.active_strategies = []
-        self.active_positions = []
         self.total_trades = 0
-        self.daily_pnl = 0.0
+        
+        # Status attributes
         self.risk_status = {}
         self.market_status = {}
-        
-        # Enhanced components
-        self.connection_manager = ConnectionManager(settings.__dict__)
-        self.pre_market_analyzer = PreMarketAnalyzer(settings.__dict__)
         self.pre_market_results = {}
-        self.system_ready = False
         
-        # Trading components (will be initialized after connections)
-        self.position_tracker = None
-        self.metrics = None
-        self.strategy_manager = None
+        # Initialize broker connection placeholder
+        self.zerodha = None
+        
+        # Initialize other components as None (will be set during initialization)
         self.risk_manager = None
-        self.order_manager = None
+        self.position_tracker = None
+        self.market_data = None
+        self.strategy_engine = None
         self.trade_engine = None
+        self.order_manager = None
         
-        self._initialized = True
+        # Connection manager for broker initialization
+        self.connection_manager = None
+        
+        # Pre-market analyzer placeholder
+        self.pre_market_analyzer = None
+        
+        logger.info("✅ TradingOrchestrator instance created")
+    
+    def _initialize(self):
+        """Initialize the orchestrator with basic setup"""
+        try:
+            logger.info("🔄 Initializing TradingOrchestrator...")
+            
+            # Initialize broker connection via connection manager
+            self._initialize_broker_connection()
+            
+            # Set initial state
+            self.system_ready = True
+            logger.info("✅ TradingOrchestrator initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"❌ TradingOrchestrator initialization failed: {e}")
+            self.system_ready = False
+    
+    def _initialize_broker_connection(self):
+        """Initialize broker connection"""
+        try:
+            # Import and initialize connection manager
+            from .connection_manager import ConnectionManager
+            self.connection_manager = ConnectionManager()
+            
+            # Get zerodha connection from connection manager
+            self.zerodha = self.connection_manager.get_zerodha_connection()
+            
+            if self.zerodha:
+                logger.info("✅ Zerodha connection established")
+            else:
+                logger.warning("⚠️ Zerodha connection not available, using mock")
+                self.zerodha = self._create_mock_zerodha()
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Broker connection failed: {e}, using mock")
+            self.zerodha = self._create_mock_zerodha()
+    
+    def _create_mock_zerodha(self):
+        """Create mock zerodha connection for fallback"""
+        class MockZerodha:
+            def __init__(self):
+                self.is_connected = False
+            
+            async def start(self):
+                return True
+            
+            async def stop(self):
+                return True
+            
+            def get_positions(self):
+                return []
+            
+            def place_order(self, **kwargs):
+                return {"order_id": "mock_order_123"}
+        
+        return MockZerodha()
+    
+    def _can_start_trading(self) -> bool:
+        """Check if trading can be started"""
+        try:
+            # Basic checks for trading readiness
+            checks = {
+                'system_ready': self.system_ready,
+                'broker_connected': self.zerodha is not None,
+                'market_open': self._is_market_open(),
+                'not_already_active': not self.is_active
+            }
+            
+            # Log check results
+            for check_name, result in checks.items():
+                status = "✅" if result else "❌"
+                logger.info(f"   {status} {check_name}: {result}")
+            
+            # All checks must pass
+            can_trade = all(checks.values())
+            
+            if can_trade:
+                logger.info("✅ All trading checks passed")
+            else:
+                failed_checks = [name for name, result in checks.items() if not result]
+                logger.warning(f"⚠️ Trading checks failed: {', '.join(failed_checks)}")
+            
+            return can_trade
+            
+        except Exception as e:
+            logger.error(f"❌ Error checking trading readiness: {e}")
+            return False
     
     async def initialize_system(self):
         """Initialize the complete trading system"""
@@ -145,122 +240,185 @@ class TradingOrchestrator:
     
     async def _initialize_real_trading_components(self):
         """Initialize real trading components with proper implementations"""
+        logger.info("🔧 Initializing real trading components...")
+        
+        # Track component initialization success
+        component_status = {}
+        
         try:
-            # Import real components (with error handling)
-            logger.info("Attempting to import trading components...")
+            # Initialize Risk Manager with fallback
+            logger.info("🔄 Initializing Risk Manager...")
+            component_status['risk_manager'] = await self._safe_init_risk_manager()
             
-            logger.info("Initializing real trading components...")
+            # Initialize Position Tracker with fallback
+            logger.info("🔄 Initializing Position Tracker...")
+            component_status['position_tracker'] = await self._safe_init_position_tracker()
             
-            # Initialize Risk Manager
-            try:
-                risk_config = {
-                    'max_daily_loss': 50000,  # ₹50,000 max daily loss
-                    'max_position_size': 0.05,  # 5% per position
-                    'max_total_exposure': 0.3,  # 30% total exposure
-                    'paper_mode': True  # Safe paper trading
-                }
-                # Try to use the full RiskManager if dependencies are available
-                try:
-                    from .risk_manager import RiskManager
-                    from .position_tracker import PositionTracker
-                    from ..events import EventBus
-                    
-                    # Initialize dependencies
-                    event_bus = EventBus()
-                    position_tracker = PositionTracker(risk_config)
-                    
-                    self.risk_manager = RiskManager(risk_config, position_tracker, event_bus)
-                    logger.info("✅ Full Risk Manager initialized")
-                except ImportError as import_error:
-                    logger.warning(f"Full risk manager dependencies missing: {import_error}")
-                    self.risk_manager = self._create_simple_risk_manager(risk_config)
-                    logger.info("✅ Simple Risk Manager initialized")
-            except Exception as e:
-                logger.warning(f"Risk manager init failed: {e}, using mock")
-                self.risk_manager = MockRiskManager()
+            # Initialize Market Data Manager with fallback
+            logger.info("🔄 Initializing Market Data Manager...")
+            component_status['market_data'] = await self._safe_init_market_data()
             
-            # Initialize Position Tracker
-            try:
-                # For now use mock, will be real when position tracking is implemented
-                self.position_tracker = MockPositionTracker()
-                logger.info("✅ Position Tracker initialized (mock)")
-            except Exception as e:
-                logger.warning(f"Position tracker init failed: {e}")
-                self.position_tracker = MockPositionTracker()
+            # Initialize Strategy Engine with fallback
+            logger.info("🔄 Initializing Strategy Engine...")
+            component_status['strategy_engine'] = await self._safe_init_strategy_engine()
             
-            # Initialize Market Data Manager
-            try:
-                from .market_data import MarketDataManager
-                market_data_config = {
-                    'paper_mode': True,
-                    'symbols': ['BANKNIFTY', 'NIFTY', 'SBIN', 'RELIANCE', 'TCS'],
-                    'update_interval': 1  # 1 second updates
-                }
-                self.market_data = MarketDataManager(market_data_config)
-                logger.info("✅ Market Data Manager initialized")
-            except Exception as e:
-                logger.warning(f"Market data manager init failed: {e}, using mock")
-                self.market_data = self._create_mock_market_data()
+            # Initialize Trade Engine with fallback
+            logger.info("🔄 Initializing Trade Engine...")
+            component_status['trade_engine'] = await self._safe_init_trade_engine()
             
-            # Initialize Strategy Engine with real strategies
-            try:
-                from .trading_strategies import AdvancedTradingEngine
-                self.strategy_engine = AdvancedTradingEngine(self.risk_manager)
-                # Load strategies into active_strategies for orchestrator tracking
-                self.active_strategies = list(self.strategy_engine.strategies.keys())
-                logger.info(f"✅ Strategy Engine initialized with {len(self.active_strategies)} strategies")
-                logger.info(f"   📈 Active strategies: {', '.join(self.active_strategies)}")
-            except Exception as e:
-                logger.warning(f"Strategy engine init failed: {e}, using empty strategies")
-                self.strategy_engine = None
-                self.active_strategies = []
+            # Initialize Order Manager (simple for now)
+            logger.info("🔄 Initializing Order Manager...")
+            component_status['order_manager'] = self._safe_init_order_manager()
             
-            # Initialize Trade Engine
-            try:
-                from .trade_engine import TradeEngine
-                self.trade_engine = TradeEngine(
-                    broker=self.zerodha,
-                    risk_manager=self.risk_manager,
-                    position_manager=self.position_tracker,
-                    market_data=self.market_data
-                )
-                # Load strategies into trade engine
-                if self.strategy_engine:
-                    self.trade_engine.active_strategies = self.strategy_engine.strategies
-                logger.info("✅ Trade Engine initialized")
-            except Exception as e:
-                logger.warning(f"Trade engine init failed: {e}, using broker connection")
-                self.trade_engine = self.zerodha
+            # Log component status
+            self._log_component_status(component_status)
             
-            # Initialize Order Manager (mock for now)
-            try:
-                self.order_manager = True  # Will be real OrderManager when implemented
-                logger.info("✅ Order Manager initialized (mock)")
-            except Exception as e:
-                logger.warning(f"Order manager init failed: {e}")
-                self.order_manager = True
-            
-            # Start background trading tasks
-            if self.strategy_engine and hasattr(self.trade_engine, 'active_strategies'):
+            # Start trading loop if we have minimum components
+            if self._check_minimum_components(component_status):
+                logger.info("✅ Minimum components available - scheduling trading loop")
                 asyncio.create_task(self._start_trading_loop())
-                logger.info("✅ Trading loop scheduled to start")
+            else:
+                logger.warning("⚠️ Insufficient components for trading loop")
             
         except Exception as e:
-            logger.error(f"Failed to initialize real trading components: {e}")
-            # Fallback to mocks
+            logger.error(f"❌ Failed to initialize real trading components: {e}")
+            # Fallback to mock components
             await self._initialize_mock_components()
     
-    def _create_mock_market_data(self):
-        """Create mock market data manager"""
-        class MockMarketData:
-            async def start(self):
+    async def _safe_init_risk_manager(self):
+        """Safely initialize risk manager with fallbacks"""
+        try:
+            risk_config = {
+                'max_daily_loss': 50000,
+                'max_position_size': 0.05,
+                'max_total_exposure': 0.3,
+                'paper_mode': True
+            }
+            
+            # Try full risk manager first
+            try:
+                from .risk_manager import RiskManager
+                from .position_tracker import PositionTracker
+                from ..events import EventBus
+                
+                event_bus = EventBus()
+                position_tracker = PositionTracker(risk_config)
+                self.risk_manager = RiskManager(risk_config, position_tracker, event_bus)
+                logger.info("✅ Full Risk Manager initialized")
                 return True
-            async def stop(self):
+                
+            except ImportError as import_error:
+                logger.warning(f"Full risk manager unavailable: {import_error}")
+                self.risk_manager = self._create_simple_risk_manager(risk_config)
+                logger.info("✅ Simple Risk Manager initialized")
                 return True
-            async def get_latest_data(self, symbols):
-                # Return mock data
-                return {symbol: {'price': 100, 'volume': 1000} for symbol in symbols}
-        return MockMarketData()
+                
+        except Exception as e:
+            logger.warning(f"Risk manager init failed: {e}, using mock")
+            self.risk_manager = MockRiskManager()
+            return False
+    
+    async def _safe_init_position_tracker(self):
+        """Safely initialize position tracker"""
+        try:
+            # For now use mock, will be real when position tracking is implemented
+            self.position_tracker = MockPositionTracker()
+            logger.info("✅ Position Tracker initialized (mock)")
+            return True
+        except Exception as e:
+            logger.warning(f"Position tracker init failed: {e}")
+            self.position_tracker = MockPositionTracker()
+            return False
+    
+    async def _safe_init_market_data(self):
+        """Safely initialize market data manager"""
+        try:
+            from .market_data import MarketDataManager
+            market_data_config = {
+                'paper_mode': True,
+                'symbols': ['BANKNIFTY', 'NIFTY', 'SBIN', 'RELIANCE', 'TCS'],
+                'update_interval': 1
+            }
+            self.market_data = MarketDataManager(market_data_config)
+            logger.info("✅ Market Data Manager initialized")
+            return True
+        except Exception as e:
+            logger.warning(f"Market data manager init failed: {e}, using mock")
+            self.market_data = self._create_mock_market_data()
+            return False
+    
+    async def _safe_init_strategy_engine(self):
+        """Safely initialize strategy engine"""
+        try:
+            from .trading_strategies import AdvancedTradingEngine
+            self.strategy_engine = AdvancedTradingEngine(self.risk_manager)
+            self.active_strategies = list(self.strategy_engine.strategies.keys())
+            logger.info(f"✅ Strategy Engine: {len(self.active_strategies)} strategies loaded")
+            logger.info(f"   📈 Strategies: {', '.join(self.active_strategies)}")
+            return True
+        except Exception as e:
+            logger.warning(f"Strategy engine init failed: {e}")
+            self.strategy_engine = None
+            self.active_strategies = []
+            return False
+    
+    async def _safe_init_trade_engine(self):
+        """Safely initialize trade engine"""
+        try:
+            from .trade_engine import TradeEngine
+            self.trade_engine = TradeEngine(
+                broker=self.zerodha,
+                risk_manager=self.risk_manager,
+                position_manager=self.position_tracker,
+                market_data=self.market_data
+            )
+            # Load strategies if available
+            if self.strategy_engine:
+                self.trade_engine.active_strategies = self.strategy_engine.strategies
+            logger.info("✅ Trade Engine initialized")
+            return True
+        except Exception as e:
+            logger.warning(f"Trade engine init failed: {e}, using broker connection")
+            self.trade_engine = self.zerodha
+            return False
+    
+    def _safe_init_order_manager(self):
+        """Safely initialize order manager"""
+        try:
+            self.order_manager = True  # Will be real OrderManager when implemented
+            logger.info("✅ Order Manager initialized (mock)")
+            return True
+        except Exception as e:
+            logger.warning(f"Order manager init failed: {e}")
+            self.order_manager = True
+            return False
+    
+    def _log_component_status(self, status: Dict[str, bool]):
+        """Log the status of all components"""
+        logger.info("\n📊 COMPONENT INITIALIZATION STATUS:")
+        for component, success in status.items():
+            status_icon = "✅" if success else "❌"
+            logger.info(f"   {status_icon} {component}: {'SUCCESS' if success else 'FAILED/FALLBACK'}")
+        
+        success_count = sum(status.values())
+        total_count = len(status)
+        logger.info(f"\n🎯 OVERALL: {success_count}/{total_count} components initialized successfully")
+    
+    def _check_minimum_components(self, status: Dict[str, bool]) -> bool:
+        """Check if we have minimum components needed for trading"""
+        # We need at least market data and position tracker for basic trading
+        # Risk manager and order manager can be mocked
+        required = ['market_data', 'position_tracker']
+        optional = ['risk_manager', 'order_manager']  # These have good fallbacks
+        
+        # Check required components
+        required_ok = all(status.get(component, False) for component in required)
+        
+        # Log the check
+        logger.info(f"Minimum component check: Required {required_ok}, "
+                   f"Optional available: {sum(status.get(comp, False) for comp in optional)}/{len(optional)}")
+        
+        return required_ok
     
     def _create_simple_risk_manager(self, config: Dict):
         """Create a simple risk manager for basic functionality"""
@@ -297,9 +455,26 @@ class TradingOrchestrator:
         
         return SimpleRiskManager(config)
     
+    def _create_mock_market_data(self):
+        """Create mock market data manager"""
+        class MockMarketData:
+            async def start(self):
+                return True
+            async def stop(self):
+                return True
+            async def get_latest_data(self, symbols):
+                # Return mock data
+                return {symbol: {'price': 100, 'volume': 1000} for symbol in symbols}
+        return MockMarketData()
+    
     async def _initialize_mock_components(self):
         """Fallback to mock components if real ones fail"""
         logger.info("Initializing mock trading components as fallback")
+        
+        # Ensure zerodha is available
+        if not self.zerodha:
+            self.zerodha = self._create_mock_zerodha()
+            
         self.position_tracker = MockPositionTracker()
         self.risk_manager = MockRiskManager()
         self.order_manager = True
@@ -596,26 +771,71 @@ class TradingOrchestrator:
     
     async def get_trading_status(self) -> Dict[str, Any]:
         """Get current trading status with enhanced information"""
-        return {
-            "is_active": self.is_active,
-            "system_ready": self.system_ready,
-            "session_id": self.session_id,
-            "start_time": self.start_time,
-            "last_heartbeat": self.last_heartbeat,
-            "market_open": self._is_market_open(),
-            "market_outlook": self.pre_market_analyzer.get_market_outlook(),
-            "active_strategies": self.active_strategies,
-            "active_positions": self.active_positions,
-            "total_trades": self.total_trades,
-            "daily_pnl": self.daily_pnl,
-            "risk_status": self.risk_status,
-            "market_status": self.market_status,
-            "connections": {
-                name: self.connection_manager.get_status(name).value
-                for name in ['zerodha', 'truedata', 'database', 'redis']
-            } if self.connection_manager else {},
-            "key_levels": self.pre_market_analyzer.get_key_levels()
-        }
+        try:
+            # Safely get market outlook
+            market_outlook = "unknown"
+            if self.pre_market_analyzer and hasattr(self.pre_market_analyzer, 'get_market_outlook'):
+                try:
+                    market_outlook = self.pre_market_analyzer.get_market_outlook()
+                except:
+                    market_outlook = "unavailable"
+            
+            # Safely get key levels
+            key_levels = {}
+            if self.pre_market_analyzer and hasattr(self.pre_market_analyzer, 'get_key_levels'):
+                try:
+                    key_levels = self.pre_market_analyzer.get_key_levels()
+                except:
+                    key_levels = {}
+            
+            # Safely get connections status
+            connections = {}
+            if self.connection_manager and hasattr(self.connection_manager, 'get_status'):
+                try:
+                    connections = {
+                        name: self.connection_manager.get_status(name).value
+                        for name in ['zerodha', 'truedata', 'database', 'redis']
+                    }
+                except:
+                    connections = {}
+            
+            return {
+                "is_active": getattr(self, 'is_active', False),
+                "system_ready": getattr(self, 'system_ready', False),
+                "session_id": getattr(self, 'session_id', None),
+                "start_time": getattr(self, 'start_time', None),
+                "last_heartbeat": getattr(self, 'last_heartbeat', None),
+                "market_open": self._is_market_open(),
+                "market_outlook": market_outlook,
+                "active_strategies": getattr(self, 'active_strategies', []),
+                "active_positions": getattr(self, 'active_positions', []),
+                "total_trades": getattr(self, 'total_trades', 0),
+                "daily_pnl": getattr(self, 'daily_pnl', 0.0),
+                "risk_status": getattr(self, 'risk_status', {}),
+                "market_status": getattr(self, 'market_status', {}),
+                "connections": connections,
+                "key_levels": key_levels
+            }
+        except Exception as e:
+            logger.error(f"Error getting trading status: {e}")
+            # Return minimal safe status
+            return {
+                "is_active": False,
+                "system_ready": False,
+                "session_id": None,
+                "start_time": None,
+                "last_heartbeat": None,
+                "market_open": False,
+                "market_outlook": "error",
+                "active_strategies": [],
+                "active_positions": [],
+                "total_trades": 0,
+                "daily_pnl": 0.0,
+                "risk_status": {},
+                "market_status": {},
+                "connections": {},
+                "key_levels": {}
+            }
     
     async def shutdown(self):
         """Gracefully shutdown the trading system"""

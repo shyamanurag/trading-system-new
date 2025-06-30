@@ -10,7 +10,9 @@ from .helpers import (
     to_decimal,
     round_price_to_tick,
     calculate_implied_volatility,
-    calculate_delta
+    calculate_delta,
+    retry_with_backoff,
+    calculate_technical_indicators
 )
 
 __all__ = [
@@ -21,5 +23,7 @@ __all__ = [
     'to_decimal',
     'round_price_to_tick',
     'calculate_implied_volatility',
-    'calculate_delta'
+    'calculate_delta',
+    'retry_with_backoff',
+    'calculate_technical_indicators'
 ] 
