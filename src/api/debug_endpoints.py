@@ -113,4 +113,56 @@ async def force_enable_trading(
         logger.error(f"Force enable trading error: {e}")
         # Restore original state
         orchestrator.system_ready = original_system_ready
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/test-state-setting", response_model=Dict[str, Any])
+async def test_state_setting(
+    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
+):
+    """Test basic state setting to isolate the issue"""
+    try:
+        logger.info("🧪 TEST: Starting basic state setting test")
+        
+        # Get initial state
+        initial_active = getattr(orchestrator, 'is_active', 'MISSING')
+        logger.info(f"   Initial is_active: {initial_active}")
+        
+        # Test 1: Direct assignment
+        orchestrator.is_active = True
+        after_direct = getattr(orchestrator, 'is_active', 'MISSING')
+        logger.info(f"   After direct assignment: {after_direct}")
+        
+        # Test 2: setattr
+        setattr(orchestrator, 'is_active', True)
+        after_setattr = getattr(orchestrator, 'is_active', 'MISSING')
+        logger.info(f"   After setattr: {after_setattr}")
+        
+        # Test 3: dict assignment
+        orchestrator.__dict__['is_active'] = True
+        after_dict = orchestrator.__dict__.get('is_active', 'MISSING')
+        logger.info(f"   After dict assignment: {after_dict}")
+        
+        # Test 4: Check if it persists
+        final_check = orchestrator.is_active
+        logger.info(f"   Final check: {final_check}")
+        
+        return {
+            "test_results": {
+                "initial": initial_active,
+                "after_direct": after_direct,
+                "after_setattr": after_setattr,
+                "after_dict": after_dict,
+                "final_check": final_check,
+                "success": final_check == True
+            },
+            "orchestrator_id": getattr(orchestrator, '_instance_id', 'unknown'),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"State setting test failed: {e}")
+        return {
+            "error": str(e),
+            "test_results": None,
+            "timestamp": datetime.utcnow().isoformat()
+        } 
