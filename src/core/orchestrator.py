@@ -196,7 +196,15 @@ class TradingOrchestrator:
             
             # Step 3: Run pre-market analysis
             logger.info("Running pre-market analysis...")
-            self.pre_market_results = await self.pre_market_analyzer.run_pre_market_analysis()
+            if self.pre_market_analyzer and hasattr(self.pre_market_analyzer, 'run_pre_market_analysis'):
+                try:
+                    self.pre_market_results = await self.pre_market_analyzer.run_pre_market_analysis()
+                except Exception as e:
+                    logger.warning(f"Pre-market analysis failed: {e}")
+                    self.pre_market_results = {}
+            else:
+                logger.warning("Pre-market analyzer not available, skipping analysis")
+                self.pre_market_results = {}
             
             # Step 4: Apply pre-market recommendations
             await self._apply_pre_market_recommendations()
@@ -649,7 +657,16 @@ class TradingOrchestrator:
         asyncio.create_task(self._monitor_trading())
         
         logger.info(f"Trading enabled with session ID: {self.session_id}")
-        logger.info(f"Market outlook: {self.pre_market_analyzer.get_market_outlook()}")
+        
+        # Safely get market outlook
+        market_outlook = "unavailable"
+        if self.pre_market_analyzer and hasattr(self.pre_market_analyzer, 'get_market_outlook'):
+            try:
+                market_outlook = self.pre_market_analyzer.get_market_outlook()
+            except:
+                market_outlook = "error"
+        
+        logger.info(f"Market outlook: {market_outlook}")
         
         return True
     
