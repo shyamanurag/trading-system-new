@@ -50,6 +50,11 @@ class TradingOrchestrator:
     
     def __init__(self):
         """Initialize the orchestrator"""
+        # Add instance tracking for debugging
+        import time
+        self._instance_id = f"orch_{int(time.time() * 1000) % 10000}"
+        logger.info(f"✅ TradingOrchestrator instance created: {self._instance_id}")
+        
         self.is_active = False
         self.system_ready = False
         self.active_strategies = []
@@ -85,8 +90,6 @@ class TradingOrchestrator:
         
         # Pre-market analyzer placeholder
         self.pre_market_analyzer = None
-        
-        logger.info("✅ TradingOrchestrator instance created")
     
     def _initialize(self):
         """Initialize the orchestrator with basic setup"""
@@ -626,6 +629,10 @@ class TradingOrchestrator:
     
     async def enable_trading(self):
         """Enable autonomous trading with pre-checks"""
+        logger.info(f"🚀 enable_trading called on instance: {getattr(self, '_instance_id', 'unknown')}")
+        logger.info(f"   Current is_active: {self.is_active}")
+        logger.info(f"   Current system_ready: {self.system_ready}")
+        
         if not self.system_ready:
             logger.error("System not ready. Run initialize_system() first")
             return False
@@ -635,13 +642,20 @@ class TradingOrchestrator:
             return True
         
         # Check if market is open
-        if not self._is_market_open():
+        market_open = self._is_market_open()
+        logger.info(f"   Market open check: {market_open}")
+        if not market_open:
             logger.warning("Market is closed. Trading will start at market open.")
         
+        # CRITICAL: Set is_active to True
+        logger.info("🔥 Setting is_active = True")
         self.is_active = True
         self.session_id = f"session_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
         self.start_time = datetime.utcnow()
         self.last_heartbeat = datetime.utcnow()
+        
+        # Verify the change took effect
+        logger.info(f"🔍 Verification: is_active = {self.is_active}")
         
         # Start trading engine
         if self.trade_engine:
@@ -656,7 +670,8 @@ class TradingOrchestrator:
         # Start monitoring
         asyncio.create_task(self._monitor_trading())
         
-        logger.info(f"Trading enabled with session ID: {self.session_id}")
+        logger.info(f"✅ Trading enabled with session ID: {self.session_id}")
+        logger.info(f"   Final is_active state: {self.is_active}")
         
         # Safely get market outlook
         market_outlook = "unavailable"
@@ -725,16 +740,29 @@ class TradingOrchestrator:
                 await asyncio.sleep(60)
     
     def _is_market_open(self) -> bool:
-        """Check if market is open"""
-        current_time = datetime.now().time()
+        """Check if market is open (IST timezone)"""
+        import pytz
+        
+        # Get current time in IST (Indian Standard Time)
+        ist = pytz.timezone('Asia/Kolkata')
+        current_time_ist = datetime.now(ist).time()
+        current_date_ist = datetime.now(ist)
+        
         market_open = time(9, 15)
         market_close = time(15, 30)
         
         # Check weekday (Monday = 0, Friday = 4)
-        if datetime.now().weekday() > 4:
+        if current_date_ist.weekday() > 4:
             return False
         
-        return market_open <= current_time <= market_close
+        # Check if current IST time is within market hours
+        is_open = market_open <= current_time_ist <= market_close
+        
+        # Debug logging
+        logger.debug(f"Market hours check: {current_time_ist.strftime('%H:%M')} IST, "
+                    f"Weekday: {current_date_ist.weekday()}, Open: {is_open}")
+        
+        return is_open
     
     async def _update_metrics(self):
         """Update trading metrics"""
@@ -788,6 +816,8 @@ class TradingOrchestrator:
     
     async def get_trading_status(self) -> Dict[str, Any]:
         """Get current trading status with enhanced information"""
+        logger.debug(f"📊 get_trading_status called on instance: {getattr(self, '_instance_id', 'unknown')}")
+        logger.debug(f"   is_active: {self.is_active}")
         try:
             # Safely get market outlook
             market_outlook = "unknown"
