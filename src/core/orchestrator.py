@@ -254,7 +254,13 @@ class TradingOrchestrator:
         
         # Start trading engine
         if self.trade_engine:
-            await self.trade_engine.start()
+            # ZerodhaIntegration uses initialize() method, not start()
+            if hasattr(self.trade_engine, 'start'):
+                await self.trade_engine.start()
+            elif hasattr(self.trade_engine, 'initialize'):
+                await self.trade_engine.initialize()
+            else:
+                logger.warning("Trade engine has no start() or initialize() method")
         
         # Start monitoring
         asyncio.create_task(self._monitor_trading())
@@ -274,7 +280,11 @@ class TradingOrchestrator:
         
         # Stop trading engine
         if self.trade_engine:
-            await self.trade_engine.stop()
+            # Handle different trade engine types gracefully
+            if hasattr(self.trade_engine, 'stop'):
+                await self.trade_engine.stop()
+            else:
+                logger.info("Trade engine has no stop() method - using graceful shutdown")
         
         # Log session summary
         await self._log_session_summary()
