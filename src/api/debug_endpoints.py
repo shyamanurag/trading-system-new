@@ -165,4 +165,67 @@ async def test_state_setting(
             "error": str(e),
             "test_results": None,
             "timestamp": datetime.utcnow().isoformat()
+        }
+
+@router.post("/test-enable-trading", response_model=Dict[str, Any])
+async def test_enable_trading_direct(
+    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
+):
+    """Test enable_trading method directly with full exception handling"""
+    try:
+        logger.info("🧪 TEST: Calling enable_trading() directly")
+        
+        # Capture before state
+        before_state = {
+            "is_active": getattr(orchestrator, 'is_active', 'MISSING'),
+            "session_id": getattr(orchestrator, 'session_id', 'MISSING'),
+            "start_time": str(getattr(orchestrator, 'start_time', 'MISSING')),
+            "system_ready": getattr(orchestrator, 'system_ready', 'MISSING')
+        }
+        logger.info(f"   Before state: {before_state}")
+        
+        # Call enable_trading with exception handling
+        try:
+            result = await orchestrator.enable_trading()
+            logger.info(f"   enable_trading() returned: {result}")
+        except Exception as enable_error:
+            logger.error(f"   EXCEPTION in enable_trading(): {enable_error}")
+            return {
+                "error": f"Exception in enable_trading(): {str(enable_error)}",
+                "before_state": before_state,
+                "after_state": None,
+                "result": None
+            }
+        
+        # Capture after state
+        after_state = {
+            "is_active": getattr(orchestrator, 'is_active', 'MISSING'),
+            "session_id": getattr(orchestrator, 'session_id', 'MISSING'),
+            "start_time": str(getattr(orchestrator, 'start_time', 'MISSING')),
+            "system_ready": getattr(orchestrator, 'system_ready', 'MISSING')
+        }
+        logger.info(f"   After state: {after_state}")
+        
+        # Analysis
+        analysis = {
+            "method_returned": result,
+            "is_active_changed": before_state["is_active"] != after_state["is_active"],
+            "session_created": after_state["session_id"] != "MISSING" and after_state["session_id"] is not None,
+            "start_time_set": after_state["start_time"] != "MISSING" and after_state["start_time"] != "None"
+        }
+        
+        return {
+            "before_state": before_state,
+            "after_state": after_state,
+            "result": result,
+            "analysis": analysis,
+            "orchestrator_id": getattr(orchestrator, '_instance_id', 'unknown'),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Test enable trading failed: {e}")
+        return {
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
         } 
