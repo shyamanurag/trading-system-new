@@ -334,6 +334,32 @@ class ConnectionManager:
         """Register callback for status updates"""
         self.status_callbacks.append(callback)
     
+    async def refresh_connections(self, force: bool = False):
+        """Force refresh all connections - useful after authentication"""
+        logger.info("Refreshing all connections...")
+        
+        if force:
+            # Clear existing connections to force re-initialization
+            self.connections.clear()
+            self.reconnect_attempts.clear()
+            logger.info("Cleared cached connections for fresh initialization")
+        
+        # Re-initialize all connections
+        return await self.initialize_all_connections()
+    
+    async def refresh_zerodha_connection(self):
+        """Force refresh only Zerodha connection - optimized for post-auth"""
+        logger.info("Refreshing Zerodha connection...")
+        
+        # Clear only Zerodha connection
+        if 'zerodha' in self.connections:
+            del self.connections['zerodha']
+        if 'zerodha' in self.reconnect_attempts:
+            del self.reconnect_attempts['zerodha']
+        
+        # Re-initialize Zerodha connection
+        return await self._initialize_zerodha_safe()
+    
     async def shutdown(self):
         """Gracefully shutdown all connections"""
         for name, conn_info in self.connections.items():

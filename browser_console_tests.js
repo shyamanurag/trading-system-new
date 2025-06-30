@@ -322,4 +322,297 @@ Available Commands:
     'color: #28a745; font-size: 18px; font-weight: bold',
     'color: #007bff; font-size: 14px',
     'color: #dc3545; font-size: 14px; font-weight: bold'
-); 
+);
+
+// AUTONOMOUS TRADING BROWSER CONSOLE SCRIPT
+// Copy and paste this entire script into your browser console on the trading app page
+
+console.log("🚀 AUTONOMOUS TRADING CONSOLE CONTROLLER");
+console.log("=" * 50);
+
+const API_BASE = 'https://algoauto-9gx56.ondigitalocean.app/api/v1';
+
+// Helper function for API calls
+async function apiCall(endpoint, method = 'GET', data = null) {
+    const config = {
+        method: method,
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    };
+
+    if (data) {
+        config.body = JSON.stringify(data);
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}${endpoint}`, config);
+        const result = await response.json();
+        return {
+            status: response.status,
+            success: response.ok,
+            data: result
+        };
+    } catch (error) {
+        return {
+            status: 0,
+            success: false,
+            error: error.message
+        };
+    }
+}
+
+// 1. Check Current Trading Status
+async function checkTradingStatus() {
+    console.log("\n📊 CHECKING CURRENT TRADING STATUS");
+    console.log("-".repeat(40));
+
+    const result = await apiCall('/autonomous/status');
+
+    if (result.success) {
+        const data = result.data.data || result.data;
+        console.log(`✅ Status Check Success`);
+        console.log(`🤖 Trading Active: ${data.is_active}`);
+        console.log(`🆔 Session ID: ${data.session_id}`);
+        console.log(`⏰ Start Time: ${data.start_time}`);
+        console.log(`💚 Last Heartbeat: ${data.last_heartbeat}`);
+        console.log(`📈 Active Strategies: ${data.active_strategies?.length || 0}`);
+        console.log(`📊 Active Positions: ${data.active_positions?.length || 0}`);
+        console.log(`💰 Daily P&L: ${data.daily_pnl}`);
+
+        return data.is_active;
+    } else {
+        console.log(`❌ Status Check Failed: ${result.status}`);
+        console.log(`Error: ${JSON.stringify(result.data, null, 2)}`);
+        return false;
+    }
+}
+
+// 2. Start Autonomous Trading (Multiple Methods)
+async function startAutonomousTrading() {
+    console.log("\n🚀 ATTEMPTING TO START AUTONOMOUS TRADING");
+    console.log("-".repeat(45));
+
+    // Method 1: Standard start endpoint
+    console.log("Method 1: Standard Start Endpoint");
+    let result = await apiCall('/autonomous/start', 'POST');
+
+    if (result.success) {
+        console.log("✅ SUCCESS! Autonomous trading started");
+        console.log(`Response: ${JSON.stringify(result.data, null, 2)}`);
+        return true;
+    } else {
+        console.log(`❌ Method 1 Failed: ${result.status}`);
+        console.log(`Error: ${JSON.stringify(result.data, null, 2)}`);
+    }
+
+    // Method 2: Try trading control endpoint
+    console.log("\nMethod 2: Trading Control Endpoint");
+    result = await apiCall('/trading/control/autonomous/start', 'POST');
+
+    if (result.success) {
+        console.log("✅ SUCCESS! Trading started via control endpoint");
+        return true;
+    } else {
+        console.log(`❌ Method 2 Failed: ${result.status}`);
+    }
+
+    // Method 3: Try direct enable
+    console.log("\nMethod 3: Direct Enable");
+    result = await apiCall('/autonomous/enable', 'POST');
+
+    if (result.success) {
+        console.log("✅ SUCCESS! Trading enabled");
+        return true;
+    } else {
+        console.log(`❌ Method 3 Failed: ${result.status}`);
+    }
+
+    console.log("\n❌ All start methods failed!");
+    return false;
+}
+
+// 3. Force Initialize System (if needed)
+async function forceInitializeSystem() {
+    console.log("\n🔧 ATTEMPTING FORCE SYSTEM INITIALIZATION");
+    console.log("-".repeat(45));
+
+    // Try to initialize components individually
+    const endpoints = [
+        '/system/initialize',
+        '/autonomous/initialize',
+        '/trading/initialize',
+        '/system/health-check'
+    ];
+
+    for (const endpoint of endpoints) {
+        console.log(`Trying: ${endpoint}`);
+        const result = await apiCall(endpoint, 'POST');
+
+        if (result.success) {
+            console.log(`✅ Success: ${endpoint}`);
+            console.log(`Response: ${JSON.stringify(result.data, null, 2)}`);
+        } else {
+            console.log(`❌ Failed: ${endpoint} - ${result.status}`);
+        }
+    }
+}
+
+// 4. Check Market Status
+async function checkMarketStatus() {
+    console.log("\n📈 CHECKING MARKET STATUS");
+    console.log("-".repeat(30));
+
+    const result = await apiCall('/market/market-status');
+
+    if (result.success) {
+        const data = result.data;
+        console.log(`✅ Market Status: ${data.status}`);
+        console.log(`🕐 Current Time: ${data.current_time}`);
+        console.log(`📊 Trading Hours: ${data.is_trading_hours}`);
+        console.log(`📅 Trading Day: ${data.is_trading_day}`);
+        return data.status === 'OPEN';
+    } else {
+        console.log(`❌ Market Status Check Failed: ${result.status}`);
+        return false;
+    }
+}
+
+// 5. Monitor Trading (Run continuously)
+function startTradingMonitor() {
+    console.log("\n👁️ STARTING TRADING MONITOR");
+    console.log("-".repeat(30));
+    console.log("Monitoring every 30 seconds...");
+
+    const monitor = setInterval(async () => {
+        const status = await checkTradingStatus();
+
+        if (status) {
+            console.log(`✅ ${new Date().toLocaleTimeString()} - Trading is ACTIVE`);
+        } else {
+            console.log(`⚠️ ${new Date().toLocaleTimeString()} - Trading is INACTIVE`);
+        }
+    }, 30000);
+
+    // Save monitor reference globally so user can stop it
+    window.tradingMonitor = monitor;
+    console.log("💡 To stop monitoring, run: clearInterval(window.tradingMonitor)");
+
+    return monitor;
+}
+
+// 6. Emergency Trading Stop
+async function emergencyStop() {
+    console.log("\n🛑 EMERGENCY STOP AUTONOMOUS TRADING");
+    console.log("-".repeat(40));
+
+    const result = await apiCall('/autonomous/stop', 'POST');
+
+    if (result.success) {
+        console.log("✅ Emergency stop successful");
+        if (window.tradingMonitor) {
+            clearInterval(window.tradingMonitor);
+            console.log("🛑 Monitor stopped");
+        }
+    } else {
+        console.log(`❌ Emergency stop failed: ${result.status}`);
+    }
+}
+
+// 7. Complete Trading Setup (All-in-one)
+async function completeTradingSetup() {
+    console.log("\n🎯 COMPLETE AUTONOMOUS TRADING SETUP");
+    console.log("=".repeat(50));
+
+    // Step 1: Check market status
+    const marketOpen = await checkMarketStatus();
+    if (!marketOpen) {
+        console.log("⚠️ Warning: Market appears to be closed");
+    }
+
+    // Step 2: Check current status
+    const isActive = await checkTradingStatus();
+
+    if (isActive) {
+        console.log("✅ Trading is already active!");
+        startTradingMonitor();
+        return true;
+    }
+
+    // Step 3: Try to start trading
+    const started = await startAutonomousTrading();
+
+    if (!started) {
+        console.log("🔧 Trying force initialization...");
+        await forceInitializeSystem();
+
+        // Try starting again after initialization
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+        const retryStarted = await startAutonomousTrading();
+
+        if (retryStarted) {
+            console.log("✅ Trading started after force initialization!");
+        } else {
+            console.log("❌ Failed to start trading even after initialization");
+            return false;
+        }
+    }
+
+    // Step 4: Start monitoring
+    console.log("\n🎉 TRADING SETUP COMPLETE!");
+    console.log("Starting continuous monitoring...");
+    startTradingMonitor();
+
+    return true;
+}
+
+// 8. Quick Status Dashboard
+async function quickDashboard() {
+    console.log("\n📊 QUICK TRADING DASHBOARD");
+    console.log("=".repeat(40));
+
+    // Get multiple status checks in parallel
+    const [tradingStatus, marketStatus] = await Promise.all([
+        apiCall('/autonomous/status'),
+        apiCall('/market/market-status')
+    ]);
+
+    // Trading Status
+    if (tradingStatus.success) {
+        const data = tradingStatus.data.data || tradingStatus.data;
+        console.log(`🤖 Trading: ${data.is_active ? '🟢 ACTIVE' : '🔴 INACTIVE'}`);
+        console.log(`💰 Daily P&L: ${data.daily_pnl || 0}`);
+        console.log(`📊 Positions: ${data.active_positions?.length || 0}`);
+    }
+
+    // Market Status
+    if (marketStatus.success) {
+        const data = marketStatus.data;
+        console.log(`📈 Market: ${data.status === 'OPEN' ? '🟢 OPEN' : '🔴 CLOSED'}`);
+        console.log(`🕐 Time: ${data.current_time || 'Unknown'}`);
+    }
+
+    console.log("\n💡 Available Commands:");
+    console.log("  completeTradingSetup() - Full setup and start");
+    console.log("  startAutonomousTrading() - Just start trading");
+    console.log("  checkTradingStatus() - Check status");
+    console.log("  startTradingMonitor() - Start monitoring");
+    console.log("  emergencyStop() - Emergency stop");
+    console.log("  quickDashboard() - This dashboard");
+}
+
+// Make functions globally available
+window.completeTradingSetup = completeTradingSetup;
+window.startAutonomousTrading = startAutonomousTrading;
+window.checkTradingStatus = checkTradingStatus;
+window.startTradingMonitor = startTradingMonitor;
+window.emergencyStop = emergencyStop;
+window.quickDashboard = quickDashboard;
+window.forceInitializeSystem = forceInitializeSystem;
+
+// Auto-run dashboard
+setTimeout(quickDashboard, 1000);
+
+console.log("\n🎯 AUTONOMOUS TRADING CONSOLE READY!");
+console.log("Type 'completeTradingSetup()' to start everything!");
+console.log("Or type 'quickDashboard()' to see status"); 

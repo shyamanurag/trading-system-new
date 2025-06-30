@@ -287,6 +287,24 @@ async def start_autonomous_trading_after_auth():
         import asyncio
         await asyncio.sleep(2)
         
+        # IMPORTANT: Refresh connections to pick up new token from Redis
+        logger.info("Refreshing connections after authentication...")
+        try:
+            # Get the orchestrator instance and refresh Zerodha connection
+            from src.core.orchestrator import TradingOrchestrator
+            orchestrator = TradingOrchestrator.get_instance()
+            
+            if orchestrator.connection_manager:
+                refresh_success = await orchestrator.connection_manager.refresh_zerodha_connection()
+                if refresh_success:
+                    logger.info("✅ Zerodha connection refreshed successfully after authentication")
+                else:
+                    logger.warning("⚠️ Zerodha connection refresh failed, but continuing with trading start")
+            
+        except Exception as refresh_error:
+            logger.error(f"Connection refresh error: {refresh_error}")
+            # Continue anyway - the token might still work
+        
         # Start autonomous trading
         start_response = requests.post(
             "https://algoauto-9gx56.ondigitalocean.app/api/v1/autonomous/start",

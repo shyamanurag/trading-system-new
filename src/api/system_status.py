@@ -138,6 +138,53 @@ async def get_zerodha_status():
         logger.error(f"Error getting Zerodha status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/api/v1/system/refresh-connections")
+async def refresh_connections():
+    """Refresh all system connections - useful after authentication"""
+    try:
+        from src.core.orchestrator import TradingOrchestrator
+        orchestrator = TradingOrchestrator.get_instance()
+        
+        if not orchestrator.connection_manager:
+            raise HTTPException(status_code=500, detail="Connection manager not available")
+        
+        # Refresh all connections
+        refresh_success = await orchestrator.connection_manager.refresh_connections(force=True)
+        
+        return {
+            "success": True,
+            "message": "Connections refreshed successfully",
+            "refresh_successful": refresh_success,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error refreshing connections: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/api/v1/broker/refresh")
+async def refresh_broker_connection():
+    """Refresh only broker connection - optimized for post-authentication"""
+    try:
+        from src.core.orchestrator import TradingOrchestrator
+        orchestrator = TradingOrchestrator.get_instance()
+        
+        if not orchestrator.connection_manager:
+            raise HTTPException(status_code=500, detail="Connection manager not available")
+        
+        # Refresh only Zerodha connection
+        refresh_success = await orchestrator.connection_manager.refresh_zerodha_connection()
+        
+        return {
+            "success": True,
+            "message": "Broker connection refreshed successfully",
+            "broker": "zerodha",
+            "refresh_successful": refresh_success,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error refreshing broker connection: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/api/v1/strategies/performance")
 async def get_strategies_performance():
     """Get strategies performance metrics"""
