@@ -530,18 +530,37 @@ class TradingOrchestrator:
                 }
                 
             async def generate_all_signals(self, market_data):
-                """Generate signals from all mock strategies"""
+                """Generate signals from all mock strategies - ensuring no contradictions"""
                 all_signals = []
+                symbol_signals = {}  # Track signals per symbol to avoid contradictions
                 
                 for strategy_name, strategy in self.strategies.items():
                     try:
                         signals = await strategy.generate_signals(market_data)
-                        all_signals.extend(signals)
+                        
+                        # Only add signals for symbols we haven't seen yet
+                        for signal in signals:
+                            if signal.symbol not in symbol_signals:
+                                symbol_signals[signal.symbol] = signal
+                                all_signals.append(signal)
+                            else:
+                                # If we already have a signal for this symbol, keep the higher quality one
+                                existing_signal = symbol_signals[signal.symbol]
+                                if signal.quality_score > existing_signal.quality_score:
+                                    # Replace with higher quality signal
+                                    all_signals.remove(existing_signal)
+                                    all_signals.append(signal)
+                                    symbol_signals[signal.symbol] = signal
+                                    
                     except Exception as e:
                         logger.warning(f"Mock strategy {strategy_name} failed: {e}")
                 
-                # Return top 5 signals
-                return all_signals[:5]
+                # Log signal summary for debugging
+                logger.info(f"📊 Generated {len(all_signals)} non-contradictory signals:")
+                for signal in all_signals:
+                    logger.info(f"   {signal.symbol} {signal.side} @ ₹{signal.expected_price:.2f} (Quality: {signal.quality_score:.1f})")
+                
+                return all_signals
         
         logger.info("✅ Mock Strategy Engine created")
         return MockStrategyEngine()
