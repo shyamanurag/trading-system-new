@@ -635,8 +635,8 @@ class TradingOrchestrator:
             return False
     
     async def enable_trading(self):
-        """Enable autonomous trading - SIMPLE VERSION that works"""
-        logger.info(f"🚀 SIMPLE enable_trading called on instance: {getattr(self, '_instance_id', 'unknown')}")
+        """Enable autonomous trading with proper signal generation"""
+        logger.info(f"🚀 enable_trading called on instance: {getattr(self, '_instance_id', 'unknown')}")
         logger.info(f"   Current is_active: {self.is_active}")
         logger.info(f"   Current system_ready: {self.system_ready}")
         
@@ -653,21 +653,36 @@ class TradingOrchestrator:
         market_open = self._is_market_open()
         logger.info(f"   Market open: {market_open}")
         
-        # SIMPLE: Just set the core state (exactly like minimal test that works)
-        logger.info("🔥 SIMPLE: Setting core state only")
+        # Set core state
+        logger.info("🔥 Setting core trading state")
         self.is_active = True
         self.session_id = f"session_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
         self.start_time = datetime.utcnow()
         self.last_heartbeat = datetime.utcnow()
         
-        # Verify immediately (like minimal test)
-        logger.info(f"✅ SIMPLE: State set - is_active={self.is_active}, session_id={self.session_id}")
+        # Verify state was set
+        logger.info(f"✅ State set - is_active={self.is_active}, session_id={self.session_id}")
         
-        # That's it! No trade engine, no monitoring, no complications
-        # Just core state setting like the minimal test that works
+        # Start trading loop if market is open and we have components
+        if market_open and self.strategy_engine and self.market_data:
+            logger.info("🔄 Starting trading signal generation loop...")
+            asyncio.create_task(self._start_trading_loop())
+            logger.info("✅ Trading loop started")
+        else:
+            logger.info("📝 Trading loop not started:")
+            logger.info(f"   Market open: {market_open}")
+            logger.info(f"   Strategy engine: {self.strategy_engine is not None}")
+            logger.info(f"   Market data: {self.market_data is not None}")
+            
+            # If market is closed, still show as active but not generating signals
+            if not market_open:
+                logger.info("💤 Trading enabled but waiting for market open")
         
-        logger.info(f"✅ Simple trading enabled! Session: {self.session_id}")
+        # Start monitoring
+        logger.info("📊 Starting trading monitor...")
+        asyncio.create_task(self._monitor_trading())
         
+        logger.info(f"✅ Trading enabled! Session: {self.session_id}")
         return True
     
     async def disable_trading(self):

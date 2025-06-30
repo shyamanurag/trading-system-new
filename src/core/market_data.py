@@ -5,10 +5,32 @@ Provides market data access and management
 import asyncio
 import logging
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
+from dataclasses import dataclass
 import random
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class Candle:
+    """Represents a market data candle"""
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+@dataclass 
+class MarketData:
+    """Market data container that strategies expect"""
+    symbol: str
+    current_price: float
+    price_history: List[Candle]  # List of candle objects
+    timestamp: datetime
+    volume: int
+    volatility: float = 0.0
+    momentum: float = 0.0
 
 class MarketDataManager:
     """Market data manager that provides real-time market data"""
@@ -43,11 +65,11 @@ class MarketDataManager:
         logger.info("Market data stopped")
         return True
     
-    async def get_latest_data(self, symbols: List[str]) -> Dict[str, Any]:
-        """Get latest market data for symbols"""
+    async def get_latest_data(self, symbols: List[str]) -> Dict[str, MarketData]:
+        """Get latest market data for symbols - returns MarketData objects"""
         try:
             if self.paper_mode:
-                return self._get_mock_data(symbols)
+                return self._get_mock_market_data(symbols)
             else:
                 # Return real data
                 return {}
@@ -55,31 +77,36 @@ class MarketDataManager:
             logger.error(f"Error getting market data: {e}")
             return {}
     
-    def _get_mock_data(self, symbols: List[str]) -> Dict[str, Any]:
-        """Generate mock market data for testing"""
+    def _get_mock_market_data(self, symbols: List[str]) -> Dict[str, MarketData]:
+        """Generate proper MarketData objects for strategies"""
         data = {}
         base_time = datetime.now()
         
         for symbol in symbols:
-            # Generate realistic-looking price data
-            base_price = self._get_base_price(symbol)
-            price_change = random.uniform(-0.02, 0.02)  # ±2% change
-            current_price = base_price * (1 + price_change)
-            
-            data[symbol] = {
-                'symbol': symbol,
-                'price': round(current_price, 2),
-                'open': round(base_price * (1 + random.uniform(-0.01, 0.01)), 2),
-                'high': round(current_price * (1 + random.uniform(0, 0.01)), 2),
-                'low': round(current_price * (1 - random.uniform(0, 0.01)), 2),
-                'volume': random.randint(1000, 10000),
-                'timestamp': base_time,
-                'bid': round(current_price * 0.999, 2),
-                'ask': round(current_price * 1.001, 2),
-                'price_history': self._generate_price_history(base_price),
-                'volatility': random.uniform(0.15, 0.45),
-                'momentum': random.uniform(-0.05, 0.05)
-            }
+            try:
+                # Generate realistic-looking price data
+                base_price = self._get_base_price(symbol)
+                current_price = base_price * (1 + random.uniform(-0.02, 0.02))
+                
+                # Generate price history as proper Candle objects
+                price_history = self._generate_candle_history(base_price, 50)
+                
+                # Create proper MarketData object
+                market_data = MarketData(
+                    symbol=symbol,
+                    current_price=round(current_price, 2),
+                    price_history=price_history,
+                    timestamp=base_time,
+                    volume=random.randint(1000, 10000),
+                    volatility=random.uniform(0.15, 0.45),
+                    momentum=random.uniform(-0.05, 0.05)
+                )
+                
+                data[symbol] = market_data
+                
+            except Exception as e:
+                logger.error(f"Error creating market data for {symbol}: {e}")
+                continue
         
         return data
     
@@ -94,25 +121,52 @@ class MarketDataManager:
         }
         return base_prices.get(symbol, 1000)
     
-    def _generate_price_history(self, base_price: float) -> List[float]:
-        """Generate mock price history for technical analysis"""
+    def _generate_candle_history(self, base_price: float, count: int = 50) -> List[Candle]:
+        """Generate mock candle history with proper OHLCV data"""
         history = []
         current_price = base_price
+        base_time = datetime.now() - timedelta(minutes=count)
         
-        # Generate 50 price points
-        for i in range(50):
-            change = random.uniform(-0.01, 0.01)  # ±1% change per step
-            current_price *= (1 + change)
-            history.append(round(current_price, 2))
+        for i in range(count):
+            # Generate OHLC data
+            open_price = current_price
+            change_percent = random.uniform(-0.015, 0.015)  # ±1.5% per candle
+            close_price = open_price * (1 + change_percent)
+            
+            # High and low based on volatility
+            volatility = random.uniform(0.005, 0.02)
+            high_price = max(open_price, close_price) * (1 + volatility)
+            low_price = min(open_price, close_price) * (1 - volatility)
+            
+            # Volume
+            volume = random.randint(500, 5000)
+            
+            # Create candle
+            candle = Candle(
+                timestamp=base_time + timedelta(minutes=i),
+                open=round(open_price, 2),
+                high=round(high_price, 2),
+                low=round(low_price, 2),
+                close=round(close_price, 2),
+                volume=volume
+            )
+            
+            history.append(candle)
+            current_price = close_price  # Next candle starts where this one ended
         
         return history
+    
+    # Legacy method for backward compatibility
+    def _get_mock_data(self, symbols: List[str]) -> Dict[str, Any]:
+        """Legacy mock data - kept for compatibility"""
+        return {symbol: {'price': 100, 'volume': 1000} for symbol in symbols}
     
     async def _generate_mock_data(self):
         """Background task to continuously update mock data"""
         while self.is_running:
             try:
                 # Update cached data
-                self.market_data_cache = self._get_mock_data(self.symbols)
+                self.market_data_cache = self._get_mock_market_data(self.symbols)
                 await asyncio.sleep(self.update_interval)
             except Exception as e:
                 logger.error(f"Error generating mock data: {e}")

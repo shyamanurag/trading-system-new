@@ -316,4 +316,79 @@ async def test_bulletproof_deployed(
             "error": str(e),
             "test_type": "bulletproof_deployment_check_failed",
             "timestamp": datetime.utcnow().isoformat()
-        } 
+        }
+
+@router.get("/test-signal-generation")
+async def test_signal_generation(orchestrator: TradingOrchestrator = Depends(get_orchestrator)):
+    """Test if trading strategies are generating signals"""
+    try:
+        logger.info("🔍 TESTING SIGNAL GENERATION")
+        
+        result = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'market_open': orchestrator._is_market_open(),
+            'strategy_engine_exists': orchestrator.strategy_engine is not None,
+            'market_data_exists': orchestrator.market_data is not None,
+            'signals_generated': 0,
+            'signal_details': [],
+            'market_data_sample': {},
+            'errors': []
+        }
+        
+        # Test 1: Check if market data is available
+        if orchestrator.market_data:
+            try:
+                symbols = ['BANKNIFTY', 'NIFTY', 'SBIN']
+                market_data = await orchestrator.market_data.get_latest_data(symbols)
+                result['market_data_sample'] = {
+                    'symbols_returned': list(market_data.keys()),
+                    'sample_data_keys': list(market_data.values())[0].keys() if market_data else [],
+                    'price_history_type': type(market_data[symbols[0]]['price_history']).__name__ if market_data and 'price_history' in market_data.get(symbols[0], {}) else None,
+                    'price_history_length': len(market_data[symbols[0]]['price_history']) if market_data and 'price_history' in market_data.get(symbols[0], {}) else 0
+                }
+            except Exception as e:
+                result['errors'].append(f"Market data error: {str(e)}")
+        
+        # Test 2: Try to generate signals
+        if orchestrator.strategy_engine and orchestrator.market_data:
+            try:
+                symbols = ['BANKNIFTY', 'NIFTY', 'SBIN']
+                market_data = await orchestrator.market_data.get_latest_data(symbols)
+                
+                if market_data:
+                    # Try to generate signals
+                    signals = await orchestrator.strategy_engine.generate_all_signals(market_data)
+                    
+                    result['signals_generated'] = len(signals)
+                    result['signal_details'] = [
+                        {
+                            'symbol': signal.symbol,
+                            'side': signal.side.value if hasattr(signal.side, 'value') else str(signal.side),
+                            'quality_score': signal.quality_score,
+                            'strategy_name': signal.strategy_name
+                        }
+                        for signal in signals[:5]  # First 5 signals
+                    ]
+                    
+            except Exception as e:
+                result['errors'].append(f"Signal generation error: {str(e)}")
+        else:
+            if not orchestrator.strategy_engine:
+                result['errors'].append("Strategy engine not initialized")
+            if not orchestrator.market_data:
+                result['errors'].append("Market data not initialized")
+        
+        # Test 3: Check trading loop status
+        result['trading_loop_info'] = {
+            'is_active': orchestrator.is_active,
+            'system_ready': orchestrator.system_ready,
+            'active_strategies': orchestrator.active_strategies
+        }
+        
+        logger.info(f"📊 Signal generation test results: {result['signals_generated']} signals, {len(result['errors'])} errors")
+        
+        return {"success": True, "data": result}
+        
+    except Exception as e:
+        logger.error(f"Signal generation test failed: {e}")
+        return {"success": False, "error": str(e)} 
