@@ -83,6 +83,7 @@ router_imports = {
     'reports': ('src.api.routes.reports', 'router'),
     'system_status': ('src.api.system_status', 'router'),
     'intelligent_symbols': ('src.api.intelligent_symbol_api', 'router'),
+    'debug_endpoints': ('src.api.debug_endpoints', 'router'),
 }
 
 # Import routers dynamically
@@ -566,6 +567,9 @@ router_configs = [
     ('dashboard', '/api/v1/dashboard', ('dashboard',)),
     ('reports', '', ('reports',)),  # Already has /api/reports prefix
     ('system_status', '', ('system-status',)),  # Has full paths in router
+    
+    # Debug endpoints
+    ('debug_endpoints', '/api/v1', ('debug',)),
     
     # External integrations
     ('zerodha_auth', '', ('zerodha',)),  # Already has /api/zerodha prefix
