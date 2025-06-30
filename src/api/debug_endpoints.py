@@ -391,4 +391,176 @@ async def test_signal_generation(orchestrator: TradingOrchestrator = Depends(get
         
     except Exception as e:
         logger.error(f"Signal generation test failed: {e}")
+        return {"success": False, "error": str(e)}
+
+@router.get("/initialization-status")
+async def check_initialization_status(orchestrator: TradingOrchestrator = Depends(get_orchestrator)):
+    """Check detailed initialization status"""
+    try:
+        logger.info("🔍 CHECKING INITIALIZATION STATUS")
+        
+        result = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'system_ready': orchestrator.system_ready,
+            'initialization_attempted': hasattr(orchestrator, '_initialized'),
+            'connection_manager_status': {},
+            'component_initialization_attempts': {},
+            'errors_during_init': []
+        }
+        
+        # Check if system initialization was attempted
+        if hasattr(orchestrator, 'connection_manager') and orchestrator.connection_manager:
+            try:
+                # Get connection status
+                connections = ['zerodha', 'database', 'redis', 'truedata']
+                for conn in connections:
+                    try:
+                        status = orchestrator.connection_manager.get_status(conn)
+                        result['connection_manager_status'][conn] = status.value if hasattr(status, 'value') else str(status)
+                    except Exception as e:
+                        result['connection_manager_status'][conn] = f"Error: {str(e)}"
+            except Exception as e:
+                result['errors_during_init'].append(f"Connection manager error: {str(e)}")
+        else:
+            result['errors_during_init'].append("Connection manager not initialized")
+        
+        # Check component initialization status
+        components = {
+            'strategy_engine': orchestrator.strategy_engine,
+            'market_data': orchestrator.market_data,
+            'risk_manager': orchestrator.risk_manager,
+            'position_tracker': orchestrator.position_tracker,
+            'trade_engine': orchestrator.trade_engine,
+            'pre_market_analyzer': orchestrator.pre_market_analyzer
+        }
+        
+        for name, component in components.items():
+            result['component_initialization_attempts'][name] = {
+                'exists': component is not None,
+                'type': type(component).__name__ if component else None,
+                'is_mock': 'Mock' in type(component).__name__ if component else False
+            }
+        
+        # Try to force initialize system if not ready
+        if not orchestrator.system_ready:
+            result['forcing_initialization'] = True
+            try:
+                init_result = await orchestrator.initialize_system()
+                result['forced_init_result'] = init_result
+                result['system_ready_after_force'] = orchestrator.system_ready
+                
+                # Re-check components after forced init
+                result['components_after_force_init'] = {
+                    'strategy_engine': orchestrator.strategy_engine is not None,
+                    'market_data': orchestrator.market_data is not None,
+                    'risk_manager': orchestrator.risk_manager is not None,
+                    'position_tracker': orchestrator.position_tracker is not None
+                }
+                
+            except Exception as e:
+                result['forced_init_error'] = str(e)
+                result['errors_during_init'].append(f"Forced initialization failed: {str(e)}")
+        
+        logger.info(f"📊 Initialization status: system_ready={result['system_ready']}, errors={len(result['errors_during_init'])}")
+        
+        return {"success": True, "data": result}
+        
+    except Exception as e:
+        logger.error(f"Initialization status check failed: {e}")
+        return {"success": False, "error": str(e)}
+
+@router.get("/force-initialize")
+async def force_initialize(orchestrator: TradingOrchestrator = Depends(get_orchestrator)):
+    """Force system initialization regardless of system_ready flag"""
+    try:
+        logger.info("🔧 FORCE INITIALIZATION DEBUG")
+        
+        result = {
+            'before_init': {
+                'system_ready': orchestrator.system_ready,
+                'strategy_engine': orchestrator.strategy_engine is not None,
+                'market_data': orchestrator.market_data is not None,
+                'connection_manager': orchestrator.connection_manager is not None
+            }
+        }
+        
+        # Force initialization regardless of system_ready flag
+        logger.info("🔥 Forcing system initialization...")
+        init_success = await orchestrator.initialize_system()
+        
+        result['init_success'] = init_success
+        result['after_init'] = {
+            'system_ready': orchestrator.system_ready,
+            'strategy_engine': orchestrator.strategy_engine is not None,
+            'market_data': orchestrator.market_data is not None,
+            'connection_manager': orchestrator.connection_manager is not None,
+            'strategy_engine_type': type(orchestrator.strategy_engine).__name__ if orchestrator.strategy_engine else None,
+            'market_data_type': type(orchestrator.market_data).__name__ if orchestrator.market_data else None
+        }
+        
+        # Test components immediately
+        if orchestrator.strategy_engine and orchestrator.market_data:
+            try:
+                symbols = ['BANKNIFTY', 'NIFTY']
+                market_data = await orchestrator.market_data.get_latest_data(symbols)
+                result['component_test'] = {
+                    'market_data_works': len(market_data) > 0,
+                    'sample_symbol': list(market_data.keys())[0] if market_data else None,
+                    'sample_data_type': type(list(market_data.values())[0]).__name__ if market_data else None
+                }
+                
+                # Try to generate signals
+                if market_data:
+                    signals = await orchestrator.strategy_engine.generate_all_signals(market_data)
+                    result['component_test']['signals_generated'] = len(signals)
+                    
+            except Exception as e:
+                result['component_test'] = {'error': str(e)}
+        
+        return {"success": True, "data": result}
+        
+    except Exception as e:
+        logger.error(f"Force initialization failed: {e}")
+        return {"success": False, "error": str(e)}
+
+@router.get("/check-system-ready-state")  
+async def check_system_ready_state(orchestrator: TradingOrchestrator = Depends(get_orchestrator)):
+    """Check why system_ready might be true but components are missing"""
+    try:
+        result = {
+            'system_ready': orchestrator.system_ready,
+            'components_status': {
+                'strategy_engine': {
+                    'exists': orchestrator.strategy_engine is not None,
+                    'type': type(orchestrator.strategy_engine).__name__ if orchestrator.strategy_engine else None
+                },
+                'market_data': {
+                    'exists': orchestrator.market_data is not None,
+                    'type': type(orchestrator.market_data).__name__ if orchestrator.market_data else None
+                },
+                'connection_manager': {
+                    'exists': orchestrator.connection_manager is not None,
+                    'type': type(orchestrator.connection_manager).__name__ if orchestrator.connection_manager else None
+                },
+                'risk_manager': {
+                    'exists': orchestrator.risk_manager is not None,
+                    'type': type(orchestrator.risk_manager).__name__ if orchestrator.risk_manager else None
+                }
+            },
+            'initialization_issue': None
+        }
+        
+        # Diagnose the issue
+        if orchestrator.system_ready and not orchestrator.strategy_engine:
+            result['initialization_issue'] = "system_ready=True but strategy_engine=None - initialization incomplete"
+        elif orchestrator.system_ready and not orchestrator.market_data:
+            result['initialization_issue'] = "system_ready=True but market_data=None - initialization incomplete"
+        elif not orchestrator.system_ready:
+            result['initialization_issue'] = "system_ready=False - needs initialization"
+        else:
+            result['initialization_issue'] = "Components appear properly initialized"
+            
+        return {"success": True, "data": result}
+        
+    except Exception as e:
         return {"success": False, "error": str(e)} 
