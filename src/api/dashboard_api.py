@@ -138,8 +138,16 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
     try:
         logger.info("📊 Getting dashboard summary with live autonomous trading data")
         
-        # Get live autonomous trading status
-        autonomous_status = await orchestrator.get_trading_status()
+        # Get live autonomous trading status from the CORRECT source
+        try:
+            # Try to get from autonomous endpoint first (where real data lives)
+            from src.core.orchestrator import TradingOrchestrator
+            orchestrator_instance = TradingOrchestrator.get_instance()
+            autonomous_status = await orchestrator_instance.get_trading_status()
+            logger.info(f"🎯 Got autonomous status: {autonomous_status.get('total_trades', 0)} trades, ₹{autonomous_status.get('daily_pnl', 0):,.2f} P&L")
+        except Exception as e:
+            logger.error(f"Error getting autonomous status: {e}")
+            autonomous_status = await orchestrator.get_trading_status()
         
         # Calculate additional metrics
         total_trades = autonomous_status.get('total_trades', 0)

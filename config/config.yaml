@@ -42,6 +42,12 @@ brokers:
     sandbox_mode: false
     timeout_seconds: 30
 compliance:
+  # Trading Rate Limits
+  max_trades_per_second: 7
+  max_orders_per_second: 7
+  ops_monitoring_window: 1  # 1 second window for precise control
+  
+  # Existing compliance settings
   audit_trail_retention_days: 2555
   foreign_investment_limit_percent: 49.0
   max_position_value: 50000000.0

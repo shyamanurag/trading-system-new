@@ -615,4 +615,447 @@ setTimeout(quickDashboard, 1000);
 
 console.log("\n🎯 AUTONOMOUS TRADING CONSOLE READY!");
 console.log("Type 'completeTradingSetup()' to start everything!");
-console.log("Or type 'quickDashboard()' to see status"); 
+console.log("Or type 'quickDashboard()' to see status");
+
+// Comprehensive Trading System Test Suite
+// Tests singleton state persistence and signal generation pipeline
+
+console.log("🚀 COMPREHENSIVE TRADING SYSTEM TEST SUITE");
+console.log("Testing singleton fixes and signal generation pipeline...\n");
+
+async function comprehensiveSystemTest() {
+    const results = {
+        singleton_test: null,
+        signal_generation_test: null,
+        trading_loop_test: null,
+        market_data_format_test: null,
+        overall_status: null
+    };
+
+    try {
+        // Test 1: Singleton State Persistence (the original issue)
+        console.log("1️⃣ TESTING SINGLETON STATE PERSISTENCE...");
+
+        // Get initial state
+        const initialStatus = await fetch('/api/v1/autonomous/status').then(r => r.json());
+        console.log(`   Initial is_active: ${initialStatus.data.is_active}`);
+
+        // Enable trading
+        const enableResult = await fetch('/api/v1/autonomous/start', { method: 'POST' }).then(r => r.json());
+        console.log(`   Enable result: ${enableResult.success}`);
+
+        // Check state immediately 
+        const immediateStatus = await fetch('/api/v1/autonomous/status').then(r => r.json());
+        console.log(`   Immediate is_active: ${immediateStatus.data.is_active}`);
+
+        // Wait a moment then check again (different request)
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const persistedStatus = await fetch('/api/v1/autonomous/status').then(r => r.json());
+        console.log(`   Persisted is_active: ${persistedStatus.data.is_active}`);
+
+        results.singleton_test = {
+            passed: persistedStatus.data.is_active === true,
+            details: {
+                initial: initialStatus.data.is_active,
+                immediate: immediateStatus.data.is_active,
+                persisted: persistedStatus.data.is_active,
+                session_id: persistedStatus.data.session_id
+            }
+        };
+
+        if (results.singleton_test.passed) {
+            console.log("   ✅ SINGLETON STATE PERSISTENCE: WORKING!");
+        } else {
+            console.log("   ❌ SINGLETON STATE PERSISTENCE: FAILED!");
+        }
+
+        // Test 2: Market Data Format (the data format fix)
+        console.log("\n2️⃣ TESTING MARKET DATA FORMAT...");
+
+        const marketDataTest = await fetch('/api/v1/debug/test-signal-generation').then(r => r.json());
+
+        if (marketDataTest.success) {
+            const sampleData = marketDataTest.data.market_data_sample;
+            console.log(`   Symbols returned: ${sampleData.symbols_returned?.join(', ')}`);
+            console.log(`   Price history type: ${sampleData.price_history_type}`);
+            console.log(`   Price history length: ${sampleData.price_history_length}`);
+            console.log(`   Sample data keys: ${sampleData.sample_data_keys?.join(', ')}`);
+
+            results.market_data_format_test = {
+                passed: sampleData.price_history_type === 'list' && sampleData.price_history_length > 0,
+                details: sampleData
+            };
+
+            if (results.market_data_format_test.passed) {
+                console.log("   ✅ MARKET DATA FORMAT: PROPER CANDLE DATA!");
+            } else {
+                console.log("   ❌ MARKET DATA FORMAT: STILL BROKEN!");
+            }
+        } else {
+            console.log("   ❌ MARKET DATA FORMAT: TEST FAILED!");
+            results.market_data_format_test = { passed: false, error: marketDataTest.error };
+        }
+
+        // Test 3: Signal Generation (the core issue)
+        console.log("\n3️⃣ TESTING SIGNAL GENERATION...");
+
+        if (marketDataTest.success) {
+            const signalData = marketDataTest.data;
+            console.log(`   Strategy engine exists: ${signalData.strategy_engine_exists}`);
+            console.log(`   Market data exists: ${signalData.market_data_exists}`);
+            console.log(`   Signals generated: ${signalData.signals_generated}`);
+            console.log(`   Market open: ${signalData.market_open}`);
+            console.log(`   Errors: ${signalData.errors.length}`);
+
+            if (signalData.signals_generated > 0) {
+                console.log("   📊 SIGNAL DETAILS:");
+                signalData.signal_details.forEach((signal, i) => {
+                    console.log(`      ${i + 1}. ${signal.symbol} ${signal.side} (Quality: ${signal.quality_score})`);
+                });
+            }
+
+            if (signalData.errors.length > 0) {
+                console.log("   ⚠️ ERRORS:");
+                signalData.errors.forEach(error => console.log(`      - ${error}`));
+            }
+
+            results.signal_generation_test = {
+                passed: signalData.signals_generated > 0,
+                signals_count: signalData.signals_generated,
+                details: {
+                    strategy_engine: signalData.strategy_engine_exists,
+                    market_data: signalData.market_data_exists,
+                    market_open: signalData.market_open,
+                    errors: signalData.errors,
+                    signals: signalData.signal_details
+                }
+            };
+
+            if (results.signal_generation_test.passed) {
+                console.log(`   ✅ SIGNAL GENERATION: ${signalData.signals_generated} SIGNALS GENERATED!`);
+            } else {
+                console.log("   ❌ SIGNAL GENERATION: NO SIGNALS GENERATED!");
+            }
+        }
+
+        // Test 4: Trading Loop Status
+        console.log("\n4️⃣ TESTING TRADING LOOP STATUS...");
+
+        const orchestratorStatus = await fetch('/api/v1/debug/orchestrator').then(r => r.json());
+
+        if (orchestratorStatus.success) {
+            const components = orchestratorStatus.data.component_status;
+            console.log("   📊 COMPONENT STATUS:");
+            Object.entries(components).forEach(([name, status]) => {
+                const icon = status === 'SET' ? '✅' : '❌';
+                console.log(`      ${icon} ${name}: ${status}`);
+            });
+
+            results.trading_loop_test = {
+                passed: components.strategy_engine === 'SET' && components.market_data === 'SET',
+                details: components
+            };
+
+            if (results.trading_loop_test.passed) {
+                console.log("   ✅ TRADING LOOP: COMPONENTS READY!");
+            } else {
+                console.log("   ❌ TRADING LOOP: MISSING COMPONENTS!");
+            }
+        }
+
+        // Overall Assessment
+        console.log("\n🎯 OVERALL TEST RESULTS:");
+        console.log("═══════════════════════════════");
+
+        const tests = [
+            { name: "Singleton State Persistence", result: results.singleton_test },
+            { name: "Market Data Format", result: results.market_data_format_test },
+            { name: "Signal Generation", result: results.signal_generation_test },
+            { name: "Trading Loop Components", result: results.trading_loop_test }
+        ];
+
+        let passed = 0;
+        tests.forEach(test => {
+            const icon = test.result?.passed ? '✅' : '❌';
+            const status = test.result?.passed ? 'PASS' : 'FAIL';
+            console.log(`${icon} ${test.name}: ${status}`);
+            if (test.result?.passed) passed++;
+        });
+
+        const score = `${passed}/${tests.length}`;
+        console.log(`\n🏆 FINAL SCORE: ${score}`);
+
+        if (passed === tests.length) {
+            console.log("🎉 ALL SYSTEMS WORKING! AUTONOMOUS TRADING SHOULD BE FUNCTIONAL!");
+            results.overall_status = "SUCCESS";
+        } else if (passed >= 2) {
+            console.log("⚠️ PARTIAL SUCCESS - SOME ISSUES REMAIN");
+            results.overall_status = "PARTIAL";
+        } else {
+            console.log("❌ MAJOR ISSUES - NEEDS MORE DEBUGGING");
+            results.overall_status = "FAILED";
+        }
+
+        // Special check for the original issue
+        if (results.singleton_test?.passed && results.signal_generation_test?.passed) {
+            console.log("\n🎯 CRITICAL SUCCESS: Both singleton persistence AND signal generation are working!");
+            console.log("   This means autonomous trading should actually start generating and executing trades now!");
+        }
+
+        return results;
+
+    } catch (error) {
+        console.error("Test failed:", error);
+        return { error: error.message, overall_status: "ERROR" };
+    }
+}
+
+// Run the comprehensive test
+comprehensiveSystemTest().then(results => {
+    console.log("\n📋 TEST RESULTS SUMMARY:");
+    console.log(JSON.stringify(results, null, 2));
+});
+
+// Also provide a simple quick test function
+window.quickSignalTest = async function () {
+    console.log("🔍 QUICK SIGNAL GENERATION TEST");
+    const result = await fetch('/api/v1/debug/test-signal-generation').then(r => r.json());
+    if (result.success) {
+        console.log(`✅ Signals generated: ${result.data.signals_generated}`);
+        console.log(`📊 Market data: ${result.data.market_data_exists ? 'Available' : 'Missing'}`);
+        console.log(`🏭 Strategy engine: ${result.data.strategy_engine_exists ? 'Active' : 'Missing'}`);
+        if (result.data.errors.length > 0) {
+            console.log(`⚠️ Errors: ${result.data.errors.join(', ')}`);
+        }
+    } else {
+        console.log(`❌ Test failed: ${result.error}`);
+    }
+};
+
+console.log("\n💡 TIP: Run quickSignalTest() for a fast signal generation check!");
+
+// 💰 === TRADE TRANSACTION FETCHING FUNCTIONS ===
+// Copy this section to browser console to fetch today's trade data
+
+const TRADE_API = {
+    BASE_URL: 'https://algoauto-9gx56.ondigitalocean.app',
+    
+    // Helper function to make authenticated API calls
+    async fetchWithAuth(endpoint, options = {}) {
+        const token = localStorage.getItem('access_token');
+        const headers = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            ...options.headers
+        };
+        
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        try {
+            const response = await fetch(`${this.BASE_URL}${endpoint}`, {
+                ...options,
+                headers
+            });
+            
+            const data = await response.json();
+            return {
+                success: response.ok,
+                status: response.status,
+                data: data
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    },
+
+    // Fetch today's trade transactions from multiple endpoints
+    async getTodaysTrades() {
+        console.log(`%c🔍 Fetching Today's Trade Transactions...`, 'color: #2196F3; font-size: 16px; font-weight: bold');
+        
+        const today = new Date().toISOString().split('T')[0];
+        console.log(`📅 Date Filter: ${today}`);
+        
+        const results = {};
+        
+        // 1. Try Dashboard Summary (Most comprehensive)
+        console.log('%c1️⃣ Fetching Dashboard Summary...', 'color: #4CAF50; font-weight: bold');
+        const dashboardResult = await this.fetchWithAuth('/api/v1/dashboard/dashboard/summary');
+        if (dashboardResult.success) {
+            results.dashboard = dashboardResult.data;
+            console.log('%c✅ Dashboard Data:', 'color: #4CAF50', dashboardResult.data);
+            
+            // Extract trading metrics
+            if (dashboardResult.data.autonomous_trading) {
+                const trading = dashboardResult.data.autonomous_trading;
+                console.log(`%c📊 Live Trading Status:
+                🔥 Active: ${trading.is_active}
+                📈 Total Trades: ${trading.total_trades}
+                💰 Daily P&L: ₹${trading.daily_pnl}
+                📍 Active Positions: ${trading.active_positions}
+                🎯 Win Rate: ${trading.win_rate}%
+                🕐 Session: ${trading.session_id || 'N/A'}`, 'color: #FF9800; font-weight: bold');
+            }
+        } else {
+            console.error('❌ Dashboard fetch failed:', dashboardResult);
+        }
+        
+        // 2. Try Performance Trades Endpoint
+        console.log('%c2️⃣ Fetching Performance Trades...', 'color: #4CAF50; font-weight: bold');
+        const performanceResult = await this.fetchWithAuth(`/api/v1/performance/trades?start_date=${today}&end_date=${today}`);
+        if (performanceResult.success) {
+            results.performance_trades = performanceResult.data;
+            console.log('%c✅ Performance Trades:', 'color: #4CAF50', performanceResult.data);
+            
+            if (Array.isArray(performanceResult.data) && performanceResult.data.length > 0) {
+                console.log(`%c📋 Trade Details:`, 'color: #9C27B0; font-weight: bold');
+                performanceResult.data.forEach((trade, index) => {
+                    console.log(`%c  ${index + 1}. ${trade.symbol} | ${trade.side} | Qty: ${trade.quantity} | Price: ₹${trade.price} | Time: ${trade.execution_time}`, 'color: #9C27B0');
+                });
+            }
+        } else {
+            console.error('❌ Performance trades fetch failed:', performanceResult);
+        }
+        
+        // 3. Try General Trades Endpoint
+        console.log('%c3️⃣ Fetching General Trades...', 'color: #4CAF50; font-weight: bold');
+        const tradesResult = await this.fetchWithAuth('/api/v1/trades');
+        if (tradesResult.success) {
+            results.trades = tradesResult.data;
+            console.log('%c✅ General Trades:', 'color: #4CAF50', tradesResult.data);
+        } else {
+            console.error('❌ General trades fetch failed:', tradesResult);
+        }
+        
+        // 4. Try Live Trades Endpoint
+        console.log('%c4️⃣ Fetching Live Trades...', 'color: #4CAF50; font-weight: bold');
+        const liveTradesResult = await this.fetchWithAuth('/api/trades/live');
+        if (liveTradesResult.success) {
+            results.live_trades = liveTradesResult.data;
+            console.log('%c✅ Live Trades:', 'color: #4CAF50', liveTradesResult.data);
+        } else {
+            console.error('❌ Live trades fetch failed:', liveTradesResult);
+        }
+        
+        // 5. Try Trade Management Endpoint
+        console.log('%c5️⃣ Fetching Trade Management Data...', 'color: #4CAF50; font-weight: bold');
+        const tradeManagementResult = await this.fetchWithAuth('/api/v1/trade-management/');
+        if (tradeManagementResult.success) {
+            results.trade_management = tradeManagementResult.data;
+            console.log('%c✅ Trade Management:', 'color: #4CAF50', tradeManagementResult.data);
+        } else {
+            console.error('❌ Trade management fetch failed:', tradeManagementResult);
+        }
+        
+        // Summary Report
+        console.log(`%c📊 === TODAY'S TRADING SUMMARY ===`, 'color: #E91E63; font-size: 18px; font-weight: bold; background: #FFF3E0; padding: 8px');
+        
+        let totalTrades = 0;
+        let totalPnL = 0;
+        let activePositions = 0;
+        
+        if (results.dashboard?.autonomous_trading) {
+            const trading = results.dashboard.autonomous_trading;
+            totalTrades = trading.total_trades || 0;
+            totalPnL = trading.daily_pnl || 0;
+            activePositions = trading.active_positions || 0;
+        }
+        
+        console.log(`%c
+        📅 Date: ${today}
+        🎯 Total Trades: ${totalTrades}
+        💰 Daily P&L: ₹${totalPnL.toFixed(2)}
+        📍 Active Positions: ${activePositions}
+        ⏰ Last Updated: ${new Date().toLocaleString()}
+        `, 'color: #E91E63; font-size: 14px');
+        
+        return results;
+    },
+
+    // Fetch specific trade by ID
+    async getTradeById(tradeId) {
+        console.log(`%c🔍 Fetching Trade ID: ${tradeId}`, 'color: #2196F3; font-weight: bold');
+        
+        const result = await this.fetchWithAuth(`/api/v1/trades/${tradeId}`);
+        if (result.success) {
+            console.log('%c✅ Trade Details:', 'color: #4CAF50', result.data);
+            return result.data;
+        } else {
+            console.error('❌ Trade fetch failed:', result);
+            return null;
+        }
+    },
+
+    // Fetch user-specific trades
+    async getUserTrades(userId = 'AUTONOMOUS_TRADER') {
+        console.log(`%c👤 Fetching Trades for User: ${userId}`, 'color: #2196F3; font-weight: bold');
+        
+        const result = await this.fetchWithAuth(`/api/v1/trades/users/${userId}`);
+        if (result.success) {
+            console.log('%c✅ User Trades:', 'color: #4CAF50', result.data);
+            return result.data;
+        } else {
+            console.error('❌ User trades fetch failed:', result);
+            return null;
+        }
+    },
+
+    // Real-time trade monitoring
+    async startTradeMonitoring(intervalSeconds = 30) {
+        console.log(`%c🔄 Starting Real-time Trade Monitoring (${intervalSeconds}s intervals)`, 'color: #FF5722; font-weight: bold');
+        
+        const monitor = setInterval(async () => {
+            console.log(`%c⏰ [${new Date().toLocaleTimeString()}] Updating trade data...`, 'color: #757575');
+            await this.getTodaysTrades();
+        }, intervalSeconds * 1000);
+        
+        console.log('%c✅ Monitoring started! Use TRADE_API.stopMonitoring() to stop.', 'color: #4CAF50');
+        this.monitoringInterval = monitor;
+        return monitor;
+    },
+
+    // Stop monitoring
+    stopMonitoring() {
+        if (this.monitoringInterval) {
+            clearInterval(this.monitoringInterval);
+            this.monitoringInterval = null;
+            console.log('%c🛑 Trade monitoring stopped.', 'color: #FF5722; font-weight: bold');
+        }
+    }
+};
+
+// Quick access functions
+async function getTodaysTrades() {
+    return await TRADE_API.getTodaysTrades();
+}
+
+async function getTradeById(id) {
+    return await TRADE_API.getTradeById(id);
+}
+
+async function startTradeMonitoring(seconds = 30) {
+    return await TRADE_API.startTradeMonitoring(seconds);
+}
+
+function stopTradeMonitoring() {
+    TRADE_API.stopMonitoring();
+}
+
+// Auto-show instructions when this section is loaded
+console.log(`%c
+🚀 === TRADE TRANSACTION FETCHING READY ===
+
+Quick Commands:
+• getTodaysTrades()                    - Fetch all today's trades
+• getTradeById('trade_id')            - Get specific trade details  
+• startTradeMonitoring(30)            - Start real-time monitoring (30s)
+• stopTradeMonitoring()               - Stop monitoring
+• TRADE_API.getUserTrades('user_id')  - Get user-specific trades
+
+Full API Object: TRADE_API.*
+
+`, 'color: #4CAF50; font-size: 14px; font-weight: bold; background: #E8F5E8; padding: 10px'); 

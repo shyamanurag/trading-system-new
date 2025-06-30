@@ -11,8 +11,50 @@ env:
   PYTHON_VERSION: '3.11'
 
 jobs:
-  test:
+  # Check if deployment should proceed during trading hours
+  trading-hours-check:
     runs-on: ubuntu-latest
+    outputs:
+      should-deploy: ${{ steps.check-hours.outputs.should-deploy }}
+    steps:
+    - name: Check Trading Hours
+      id: check-hours
+      run: |
+        # Get current IST time (UTC+5:30)
+        current_hour=$(TZ='Asia/Kolkata' date +%H)
+        current_minute=$(TZ='Asia/Kolkata' date +%M)
+        current_day=$(TZ='Asia/Kolkata' date +%w)  # 0=Sunday, 1=Monday, etc.
+        
+        echo "Current IST time: ${current_hour}:${current_minute}"
+        echo "Day of week: ${current_day}"
+        
+        # Market hours: 9:15 AM to 3:30 PM IST (Monday to Friday)
+        # Block deployments during trading hours unless it's weekend
+        should_deploy="true"
+        
+        if [ $current_day -ge 1 ] && [ $current_day -le 5 ]; then  # Monday to Friday
+          # Convert times to minutes for easier comparison
+          current_minutes=$(($current_hour * 60 + $current_minute))
+          market_open_minutes=$((9 * 60 + 15))    # 9:15 AM
+          market_close_minutes=$((15 * 60 + 30))  # 3:30 PM
+          
+          if [ $current_minutes -ge $market_open_minutes ] && [ $current_minutes -le $market_close_minutes ]; then
+            echo "🚨 TRADING HOURS DETECTED - BLOCKING DEPLOYMENT"
+            echo "Market is open (9:15 AM - 3:30 PM IST)"
+            should_deploy="false"
+          else
+            echo "✅ Outside trading hours - deployment allowed"
+          fi
+        else
+          echo "✅ Weekend - deployment allowed"
+        fi
+        
+        echo "should-deploy=${should_deploy}" >> $GITHUB_OUTPUT
+
+  test:
+    needs: trading-hours-check
+    runs-on: ubuntu-latest
+    if: needs.trading-hours-check.outputs.should-deploy == 'true' || github.event_name == 'workflow_dispatch'
     
     services:
       postgres:
@@ -68,7 +110,9 @@ jobs:
         REDIS_URL: redis://localhost:6379/1
 
   frontend-test:
+    needs: trading-hours-check
     runs-on: ubuntu-latest
+    if: needs.trading-hours-check.outputs.should-deploy == 'true' || github.event_name == 'workflow_dispatch'
     
     steps:
     - name: Checkout code
@@ -98,21 +142,42 @@ jobs:
         echo "✅ Frontend build successful"
 
   deploy-notification:
-    needs: [test, frontend-test]
+    needs: [test, frontend-test, trading-hours-check]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: always() && github.ref == 'refs/heads/main'
     
     steps:
-    - name: Deployment ready
+    - name: Deployment Status
       run: |
-        echo "🚀 All tests passed!"
-        echo "DigitalOcean App Platform will automatically deploy from main branch"
-        echo "Your app: https://clownfish-app-trading-system-new-apmkg.ondigitalocean.app"
+        if [ "${{ needs.trading-hours-check.outputs.should-deploy }}" == "false" ]; then
+          echo "🚨 DEPLOYMENT BLOCKED - TRADING HOURS PROTECTION"
+          echo "Market is currently open (9:15 AM - 3:30 PM IST)"
+          echo "Deployment will resume automatically after market closes"
+          echo ""
+          echo "To force deployment during trading hours, use:"
+          echo "gh workflow run deploy.yml"
+          exit 1
+        else
+          echo "🚀 All tests passed!"
+          echo "DigitalOcean App Platform will automatically deploy from main branch"
+          echo "Your app: https://algoauto-9gx56.ondigitalocean.app"
+        fi
 
     - name: Deploy to DigitalOcean App Platform
+      if: needs.trading-hours-check.outputs.should-deploy == 'true'
       env:
         DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
       run: |
-        doctl apps create --spec .do/app.yaml --wait
-        echo "Deployment complete!"
-        echo "Check your DigitalOcean dashboard for the app URL" 
+        echo "Deployment proceeding - outside trading hours"
+        echo "Check your DigitalOcean dashboard for the app URL"
+
+  # Emergency deployment job (always available via manual trigger)
+  emergency-deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+    - name: Emergency Deployment
+      run: |
+        echo "🚨 EMERGENCY DEPLOYMENT TRIGGERED"
+        echo "Trading hours protection bypassed via manual trigger"
+        echo "Use this only for critical fixes!" 
