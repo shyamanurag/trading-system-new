@@ -563,4 +563,180 @@ async def check_system_ready_state(orchestrator: TradingOrchestrator = Depends(g
         return {"success": True, "data": result}
         
     except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@router.get("/debug-initialization-steps")
+async def debug_initialization_steps(orchestrator: TradingOrchestrator = Depends(get_orchestrator)):
+    """Debug each step of initialization process to find where it fails"""
+    try:
+        logger.info("🔍 DETAILED INITIALIZATION DEBUGGING")
+        
+        result = {
+            'initial_state': {
+                'system_ready': orchestrator.system_ready,
+                'connection_manager': orchestrator.connection_manager is not None,
+                'strategy_engine': orchestrator.strategy_engine is not None,
+                'market_data': orchestrator.market_data is not None
+            },
+            'steps': [],
+            'final_state': {},
+            'errors': []
+        }
+        
+        # Force reset to debug cleanly
+        logger.info("🔄 Resetting system state for clean debug")
+        orchestrator.system_ready = False
+        orchestrator.connection_manager = None
+        orchestrator.strategy_engine = None
+        orchestrator.market_data = None
+        
+        # Step 1: Basic initialization
+        try:
+            logger.info("📋 Step 1: Basic initialization")
+            orchestrator._initialize()
+            result['steps'].append({
+                'step': 1,
+                'name': 'Basic initialization',
+                'success': True,
+                'system_ready': orchestrator.system_ready,
+                'connection_manager': orchestrator.connection_manager is not None
+            })
+        except Exception as e:
+            result['steps'].append({
+                'step': 1,
+                'name': 'Basic initialization', 
+                'success': False,
+                'error': str(e)
+            })
+            result['errors'].append(f"Step 1 failed: {e}")
+        
+        # Step 2: Connection manager initialization
+        try:
+            logger.info("📋 Step 2: Connection manager initialization")
+            if orchestrator.connection_manager:
+                connections_ok = await orchestrator.connection_manager.initialize_all_connections()
+            else:
+                connections_ok = False
+                
+            result['steps'].append({
+                'step': 2,
+                'name': 'Connection manager initialization',
+                'success': connections_ok,
+                'connections_ok': connections_ok,
+                'connection_manager_exists': orchestrator.connection_manager is not None
+            })
+        except Exception as e:
+            result['steps'].append({
+                'step': 2,
+                'name': 'Connection manager initialization',
+                'success': False,
+                'error': str(e)
+            })
+            result['errors'].append(f"Step 2 failed: {e}")
+        
+        # Step 3: Trading components initialization
+        try:
+            logger.info("📋 Step 3: Trading components initialization")
+            await orchestrator._initialize_trading_components()
+            
+            result['steps'].append({
+                'step': 3,
+                'name': 'Trading components initialization',
+                'success': True,
+                'strategy_engine': orchestrator.strategy_engine is not None,
+                'market_data': orchestrator.market_data is not None,
+                'risk_manager': orchestrator.risk_manager is not None
+            })
+        except Exception as e:
+            result['steps'].append({
+                'step': 3,
+                'name': 'Trading components initialization',
+                'success': False,
+                'error': str(e)
+            })
+            result['errors'].append(f"Step 3 failed: {e}")
+        
+        # Step 4: Test market data if available
+        if orchestrator.market_data:
+            try:
+                logger.info("📋 Step 4: Market data test")
+                symbols = ['BANKNIFTY', 'NIFTY']
+                market_data = await orchestrator.market_data.get_latest_data(symbols)
+                
+                result['steps'].append({
+                    'step': 4,
+                    'name': 'Market data test',
+                    'success': len(market_data) > 0,
+                    'symbols_returned': len(market_data),
+                    'sample_data_available': len(market_data) > 0
+                })
+            except Exception as e:
+                result['steps'].append({
+                    'step': 4,
+                    'name': 'Market data test',
+                    'success': False,
+                    'error': str(e)
+                })
+                result['errors'].append(f"Step 4 failed: {e}")
+        
+        # Step 5: Test signal generation if components available
+        if orchestrator.strategy_engine and orchestrator.market_data:
+            try:
+                logger.info("📋 Step 5: Signal generation test")
+                symbols = ['BANKNIFTY', 'NIFTY']
+                market_data = await orchestrator.market_data.get_latest_data(symbols)
+                
+                if market_data:
+                    signals = await orchestrator.strategy_engine.generate_all_signals(market_data)
+                    result['steps'].append({
+                        'step': 5,
+                        'name': 'Signal generation test',
+                        'success': len(signals) > 0,
+                        'signals_generated': len(signals)
+                    })
+                else:
+                    result['steps'].append({
+                        'step': 5,
+                        'name': 'Signal generation test',
+                        'success': False,
+                        'error': 'No market data available'
+                    })
+            except Exception as e:
+                result['steps'].append({
+                    'step': 5,
+                    'name': 'Signal generation test',
+                    'success': False,
+                    'error': str(e)
+                })
+                result['errors'].append(f"Step 5 failed: {e}")
+        
+        # Final state
+        result['final_state'] = {
+            'system_ready': orchestrator.system_ready,
+            'connection_manager': orchestrator.connection_manager is not None,
+            'strategy_engine': orchestrator.strategy_engine is not None,
+            'market_data': orchestrator.market_data is not None,
+            'risk_manager': orchestrator.risk_manager is not None
+        }
+        
+        # Summary
+        successful_steps = sum(1 for step in result['steps'] if step.get('success', False))
+        total_steps = len(result['steps'])
+        
+        result['summary'] = {
+            'successful_steps': f"{successful_steps}/{total_steps}",
+            'overall_success': successful_steps == total_steps and successful_steps > 0,
+            'critical_failure_step': None
+        }
+        
+        # Find critical failure
+        for step in result['steps']:
+            if not step.get('success', False) and step['step'] <= 3:  # Steps 1-3 are critical
+                result['summary']['critical_failure_step'] = step['step']
+                break
+        
+        return {"success": True, "data": result}
+        
+    except Exception as e:
+        logger.error(f"Detailed initialization debug failed: {e}")
         return {"success": False, "error": str(e)} 
