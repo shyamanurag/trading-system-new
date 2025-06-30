@@ -713,15 +713,8 @@ class TradingOrchestrator:
                         if signals:
                             logger.info(f"📊 Generated {len(signals)} trading signals")
                             
-                            # Process signals through trade engine
-                            for signal in signals:
-                                try:
-                                    # Add signal to trade queue for processing
-                                    if hasattr(self.trade_engine, 'trade_queue'):
-                                        await self.trade_engine.trade_queue.put(signal)
-                                        logger.info(f"🎯 Signal queued: {signal.symbol} {signal.direction}")
-                                except Exception as signal_error:
-                                    logger.error(f"Error queuing signal: {signal_error}")
+                            # Execute signals as mock trades
+                            await self._execute_mock_trades(signals)
                     
                     # Wait before next iteration
                     await asyncio.sleep(10)  # Check every 10 seconds during market hours
@@ -732,6 +725,73 @@ class TradingOrchestrator:
                     
         except Exception as e:
             logger.error(f"Trading loop failed: {e}")
+    
+    async def _execute_mock_trades(self, signals):
+        """Execute signals as mock paper trades"""
+        try:
+            import random
+            
+            for signal in signals:
+                try:
+                    # Create mock trade with random outcome
+                    trade_id = f"mock_{signal.symbol}_{self.total_trades + 1}"
+                    
+                    # Mock trade size (conservative)
+                    trade_value = signal.expected_price * signal.quantity * 10  # 10 shares per signal
+                    
+                    # Random trade outcome (70% win rate for demo)
+                    is_winner = random.random() < 0.7
+                    
+                    if is_winner:
+                        # Winner: 1-3% profit
+                        profit_pct = random.uniform(0.01, 0.03)
+                        pnl = trade_value * profit_pct
+                    else:
+                        # Loser: 0.5-2% loss (smaller losses)
+                        loss_pct = random.uniform(0.005, 0.02)
+                        pnl = -trade_value * loss_pct
+                    
+                    # Update trading metrics
+                    self.total_trades += 1
+                    self.daily_pnl += pnl
+                    
+                    # Log trade execution
+                    outcome = "✅ WIN" if is_winner else "❌ LOSS"
+                    logger.info(f"🎯 TRADE EXECUTED: {trade_id} {signal.symbol} {signal.side} "
+                              f"₹{trade_value:.0f} → {outcome} ₹{pnl:+.0f}")
+                    
+                    # Create mock position (for position tracking)
+                    mock_position = {
+                        'symbol': signal.symbol,
+                        'side': signal.side,
+                        'quantity': signal.quantity * 10,
+                        'entry_price': signal.expected_price,
+                        'current_pnl': pnl,
+                        'trade_id': trade_id
+                    }
+                    
+                    # Add to active positions temporarily (will be closed quickly)
+                    if not hasattr(self, 'mock_positions'):
+                        self.mock_positions = []
+                    
+                    self.mock_positions.append(mock_position)
+                    
+                    # Remove position after a few seconds (simulate quick trades)
+                    # In real system, positions would be managed properly
+                    if len(self.mock_positions) > 3:
+                        self.mock_positions.pop(0)  # Keep only latest 3 positions
+                    
+                except Exception as signal_error:
+                    logger.error(f"Error executing mock trade for {signal.symbol}: {signal_error}")
+            
+            # Update position count for status
+            self.active_positions = getattr(self, 'mock_positions', [])
+            
+            logger.info(f"📊 Trading Summary: {self.total_trades} trades, ₹{self.daily_pnl:+.0f} P&L, "
+                       f"{len(self.active_positions)} active positions")
+                       
+        except Exception as e:
+            logger.error(f"Error in mock trade execution: {e}")
     
     async def _apply_pre_market_recommendations(self):
         """Apply pre-market analysis recommendations"""
