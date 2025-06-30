@@ -86,18 +86,53 @@ class ConnectionManager:
                 # Try alternative import path
                 from src.core.zerodha import ZerodhaIntegration
             
+            # Get access token from environment or Redis
+            access_token = os.getenv('ZERODHA_ACCESS_TOKEN')
+            user_id = os.getenv('ZERODHA_USER_ID')
+            
+            # If no access token in environment, check Redis
+            if not access_token and user_id:
+                try:
+                    import redis.asyncio as redis
+                    redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+                    redis_client = redis.from_url(redis_url)
+                    
+                    # Check for stored token in Redis
+                    stored_token = await redis_client.get(f"zerodha:token:{user_id}")
+                    if stored_token:
+                        access_token = stored_token
+                        logger.info(f"Found stored Zerodha token for user {user_id} in Redis")
+                    
+                    # Also check alternative Redis key patterns
+                    if not access_token:
+                        alt_token = await redis_client.get(f"zerodha:{user_id}:access_token")
+                        if alt_token:
+                            access_token = alt_token
+                            logger.info(f"Found alternative stored Zerodha token for user {user_id}")
+                    
+                    await redis_client.close()
+                    
+                except Exception as redis_error:
+                    logger.warning(f"Could not check Redis for stored token: {redis_error}")
+            
             # Create config with mock mode if no credentials
             zerodha_config = {
                 'api_key': os.getenv('ZERODHA_API_KEY'),
                 'api_secret': os.getenv('ZERODHA_API_SECRET'),
-                'user_id': os.getenv('ZERODHA_USER_ID'),
-                'access_token': os.getenv('ZERODHA_ACCESS_TOKEN'),
+                'user_id': user_id,
+                'access_token': access_token,
                 'mock_mode': not all([
                     os.getenv('ZERODHA_API_KEY'),
                     os.getenv('ZERODHA_API_SECRET'),
-                    os.getenv('ZERODHA_USER_ID')
+                    user_id
                 ])
             }
+            
+            # Log token status for debugging (without exposing actual token)
+            if access_token:
+                logger.info(f"Zerodha token available for user {user_id}: {access_token[:10]}...")
+            else:
+                logger.warning(f"No Zerodha token found for user {user_id} - running in mock mode")
             
             zerodha = ZerodhaIntegration(zerodha_config)
             await zerodha.initialize()
