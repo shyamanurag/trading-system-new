@@ -8,16 +8,12 @@ from datetime import datetime
 import logging
 
 from src.core.orchestrator import TradingOrchestrator
+# Use shared dependency to fix singleton issue
+from src.core.dependencies import get_orchestrator
 from models.responses import BaseResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/debug")
-
-def get_orchestrator() -> TradingOrchestrator:
-    """Get the singleton orchestrator instance"""
-    orchestrator = TradingOrchestrator.get_instance()
-    orchestrator._initialize()
-    return orchestrator
 
 @router.get("/orchestrator", response_model=Dict[str, Any])
 async def get_orchestrator_debug(
