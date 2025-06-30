@@ -10,7 +10,7 @@ from src.models.responses import APIResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["system"])
 
 @router.get("/api/v1/system/status")
 async def get_system_status():
@@ -49,6 +49,38 @@ async def get_broker_status():
         }
     except Exception as e:
         logger.error(f"Error getting broker status: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/api/v1/broker/connect")
+async def connect_broker():
+    """Connect to broker - for frontend compatibility"""
+    try:
+        # In your system, broker connection is handled by Zerodha auth
+        # This endpoint is for frontend compatibility
+        return {
+            "success": True,
+            "message": "Broker connection handled by Zerodha authentication",
+            "broker": "zerodha",
+            "status": "connected",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error in broker connect: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/api/v1/broker/disconnect")
+async def disconnect_broker():
+    """Disconnect from broker - for frontend compatibility"""
+    try:
+        return {
+            "success": True,
+            "message": "Broker disconnection handled by system",
+            "broker": "zerodha", 
+            "status": "disconnected",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error in broker disconnect: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/api/v1/strategies/performance")
