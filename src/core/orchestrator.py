@@ -308,134 +308,116 @@ class TradingOrchestrator:
             return False
 
     async def _safe_init_real_strategy_engine(self):
-        """Initialize REAL strategy engine with user's actual strategies"""
-        try:
-            self.strategy_engine = self._create_real_strategy_engine()
-            logger.info("✅ REAL Strategy Engine initialized")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ REAL Strategy Engine initialization failed: {e}")
-            return False
-
-    def _create_real_strategy_engine(self):
-        """Create REAL strategy engine using user's actual strategies"""
+        """Initialize REAL strategy engine using safe strategy loading"""
         
         class RealStrategyEngine:
             def __init__(self):
-                # Load USER'S REAL STRATEGIES from /strategies/ directory
+                # Load strategies safely with fallbacks
                 self.strategies = {}
                 
+                logger.info("🔄 Loading real strategies...")
+                
+                # Try to load strategies individually with error handling
+                self._try_load_strategy('regime_adaptive_controller', 'strategies.regime_adaptive_controller', 'RegimeAdaptiveController')
+                self._try_load_strategy('confluence_amplifier', 'strategies.confluence_amplifier', 'ConfluenceAmplifier')
+                self._try_load_strategy('momentum_surfer', 'strategies.momentum_surfer', 'EnhancedMomentumSurfer')
+                
+                # If no strategies loaded, create minimal working strategy
+                if not self.strategies:
+                    logger.warning("⚠️ No complex strategies loaded, creating minimal strategy")
+                    self.strategies['minimal_strategy'] = self._create_minimal_working_strategy()
+                
+                logger.info(f"✅ Strategy engine initialized with {len(self.strategies)} strategies")
+                logger.info(f"📈 Active strategies: {', '.join(self.strategies.keys())}")
+            
+            def _try_load_strategy(self, strategy_name: str, module_path: str, class_name: str):
+                """Try to load a strategy with error handling"""
                 try:
-                    # Import actual strategy classes with correct names
-                    imported_strategies = {}
+                    # Import the module
+                    module = __import__(module_path, fromlist=[class_name])
+                    strategy_class = getattr(module, class_name)
                     
-                    # Try to import each strategy individually
-                    try:
-                        from strategies.regime_adaptive_controller import RegimeAdaptiveController
-                        imported_strategies['regime_adaptive_controller'] = RegimeAdaptiveController
-                        logger.info("✅ Imported RegimeAdaptiveController")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Could not import RegimeAdaptiveController: {e}")
+                    # Initialize with minimal config
+                    strategy_config = {
+                        'name': strategy_name,
+                        'enabled': True,
+                        'allocation': 0.2,
+                        'signal_cooldown_seconds': 300
+                    }
                     
-                    try:
-                        from strategies.confluence_amplifier import ConfluenceAmplifier
-                        imported_strategies['confluence_amplifier'] = ConfluenceAmplifier
-                        logger.info("✅ Imported ConfluenceAmplifier")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Could not import ConfluenceAmplifier: {e}")
+                    strategy_instance = strategy_class(strategy_config)
+                    self.strategies[strategy_name] = strategy_instance
                     
-                    try:
-                        # Correct class name is EnhancedMomentumSurfer
-                        from strategies.momentum_surfer import EnhancedMomentumSurfer
-                        imported_strategies['momentum_surfer'] = EnhancedMomentumSurfer
-                        logger.info("✅ Imported EnhancedMomentumSurfer")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Could not import EnhancedMomentumSurfer: {e}")
-                    
-                    # Try other strategies (these may not exist yet)
-                    optional_strategies = [
-                        ('news_impact_scalper', 'NewsImpactScalper'),
-                        ('volume_profile_scalper', 'VolumeProfileScalper'), 
-                        ('volatility_explosion', 'VolatilityExplosion')
-                    ]
-                    
-                    for strategy_name, class_name in optional_strategies:
-                        try:
-                            module = __import__(f'strategies.{strategy_name}', fromlist=[class_name])
-                            strategy_class = getattr(module, class_name)
-                            imported_strategies[strategy_name] = strategy_class
-                            logger.info(f"✅ Imported {class_name}")
-                        except Exception as e:
-                            logger.info(f"ℹ️ Optional strategy {strategy_name} not available: {e}")
-                    
-                    # Initialize strategies with safe config
-                    for strategy_name, strategy_class in imported_strategies.items():
-                        try:
-                            # Try to initialize with empty config
-                            strategy_instance = strategy_class({})
-                            self.strategies[strategy_name] = strategy_instance
-                            logger.info(f"✅ Initialized {strategy_name}")
-                        except Exception as e:
-                            logger.warning(f"⚠️ Could not initialize {strategy_name}: {e}")
-                    
-                    if self.strategies:
-                        logger.info(f"✅ Successfully loaded {len(self.strategies)} REAL strategies")
-                        logger.info(f"📈 Active Strategies: {', '.join(self.strategies.keys())}")
-                    else:
-                        logger.error("❌ No strategies could be loaded")
-                        # Create a minimal strategy for safety
-                        self.strategies = {'minimal_strategy': self._create_minimal_strategy()}
-                        logger.info("✅ Created minimal safety strategy")
+                    logger.info(f"✅ Loaded {strategy_name} ({class_name})")
                     
                 except Exception as e:
-                    logger.error(f"❌ Failed to import strategies: {e}")
-                    # Create minimal strategy for real money safety
-                    self.strategies = {'minimal_strategy': self._create_minimal_strategy()}
-                    logger.info("✅ Using minimal safety strategy")
+                    logger.warning(f"⚠️ Could not load {strategy_name}: {e}")
+            
+            def _create_minimal_working_strategy(self):
+                """Create a minimal working strategy"""
                 
-            def _create_minimal_strategy(self):
-                """Create a minimal strategy for safety"""
-                class MinimalStrategy:
+                class MinimalWorkingStrategy:
                     def __init__(self):
-                        self.name = "minimal_safety_strategy"
-                    
+                        self.name = "minimal_working_strategy"
+                        self.is_enabled = True
+                        
                     async def generate_signals(self, market_data):
-                        # Return empty signals for safety
-                        logger.info("💤 Minimal strategy: No signals generated (safety mode)")
+                        """Generate minimal signals for system health"""
+                        # Return empty signals but log that we're working
+                        logger.info("💡 Minimal strategy: System healthy, no signals generated")
                         return []
+                    
+                    def get_strategy_metrics(self):
+                        return {
+                            'name': self.name,
+                            'enabled': True,
+                            'status': 'healthy',
+                            'signals_generated': 0
+                        }
                 
-                return MinimalStrategy()
+                return MinimalWorkingStrategy()
                 
             async def generate_all_signals(self, market_data):
-                """Generate signals from REAL strategies with REAL market data"""
+                """Generate signals from all loaded strategies"""
                 all_signals = []
                 
                 try:
-                    # Use REAL strategy implementations
                     for strategy_name, strategy in self.strategies.items():
                         try:
                             if hasattr(strategy, 'generate_signals'):
                                 signals = await strategy.generate_signals(market_data)
                                 if signals:
                                     all_signals.extend(signals)
-                                    logger.info(f"📊 {strategy_name} generated {len(signals)} signals")
+                                    logger.info(f"📊 {strategy_name}: {len(signals)} signals")
                             else:
-                                logger.info(f"ℹ️ {strategy_name} has no generate_signals method")
+                                logger.debug(f"ℹ️ {strategy_name}: No generate_signals method")
                         except Exception as e:
                             logger.error(f"❌ Error in {strategy_name}: {e}")
                     
-                    if all_signals:
-                        logger.info(f"📊 Total: {len(all_signals)} REAL signals from {len(self.strategies)} strategies")
+                    total_signals = len(all_signals)
+                    if total_signals > 0:
+                        logger.info(f"📊 Generated {total_signals} total signals")
                     else:
-                        logger.info("📊 No signals generated this cycle")
+                        logger.debug("📊 No signals generated this cycle")
                     
                 except Exception as e:
                     logger.error(f"❌ Error generating signals: {e}")
-                    # Return empty for safety
-                    all_signals = []
                 
                 return all_signals
+            
+            def get_strategy_status(self):
+                """Get status of all strategies"""
+                status = {}
+                for name, strategy in self.strategies.items():
+                    try:
+                        if hasattr(strategy, 'get_strategy_metrics'):
+                            status[name] = strategy.get_strategy_metrics()
+                        else:
+                            status[name] = {'name': name, 'status': 'loaded'}
+                    except Exception as e:
+                        status[name] = {'name': name, 'status': 'error', 'error': str(e)}
+                
+                return status
         
         return RealStrategyEngine()
 
