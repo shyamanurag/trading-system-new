@@ -65,12 +65,21 @@ async def start_trading(
 ):
     """Start autonomous trading"""
     try:
-        # Initialize system first if not ready
-        if not orchestrator.system_ready:
-            logger.info("System not ready, initializing...")
+        # Check if trading components are actually initialized (not just system_ready flag)
+        components_ready = (
+            hasattr(orchestrator, 'strategy_engine') and orchestrator.strategy_engine is not None and
+            hasattr(orchestrator, 'risk_manager') and orchestrator.risk_manager is not None and
+            hasattr(orchestrator, 'trade_engine') and orchestrator.trade_engine is not None
+        )
+        
+        # Force initialization if components are missing (regardless of system_ready flag)
+        if not components_ready:
+            logger.info("Trading components not initialized, forcing full system initialization...")
             init_success = await orchestrator.initialize_system()
             if not init_success:
                 raise HTTPException(status_code=500, detail="Failed to initialize trading system")
+        else:
+            logger.info("Trading components already initialized, proceeding with trading activation...")
         
         # Now enable trading
         trading_enabled = await orchestrator.enable_trading()
