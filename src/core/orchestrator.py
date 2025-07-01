@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, time, timedelta
 import logging
 import asyncio
+import os
 from .config import settings
 from .connection_manager import ConnectionManager
 from .pre_market_analyzer import PreMarketAnalyzer
@@ -65,7 +66,9 @@ class TradingOrchestrator:
         self.active_positions = []
         self.daily_pnl = 0.0
         self.total_pnl = 0.0
-        self.config = {}
+        
+        # Initialize config from environment and settings
+        self.config = self._load_config()
         
         # Session tracking attributes
         self.session_id = None
@@ -97,6 +100,38 @@ class TradingOrchestrator:
         
         # Mark as initialized to prevent re-initialization
         self._initialized = True
+    
+    def _load_config(self) -> Dict[str, Any]:
+        """Load configuration from environment variables and settings"""
+        config = {
+            # Zerodha configuration
+            'ZERODHA_API_KEY': os.getenv('ZERODHA_API_KEY'),
+            'ZERODHA_API_SECRET': os.getenv('ZERODHA_API_SECRET'), 
+            'ZERODHA_USER_ID': os.getenv('ZERODHA_USER_ID'),
+            'ZERODHA_ACCESS_TOKEN': os.getenv('ZERODHA_ACCESS_TOKEN'),
+            
+            # Database configuration
+            'DATABASE_URL': os.getenv('DATABASE_URL'),
+            
+            # Redis configuration  
+            'REDIS_URL': os.getenv('REDIS_URL', 'redis://localhost:6379'),
+            
+            # Trading configuration
+            'PAPER_MODE': os.getenv('PAPER_MODE', 'true').lower() == 'true',
+            'MAX_DAILY_TRADES': int(os.getenv('MAX_DAILY_TRADES', '50')),
+            'MAX_POSITION_SIZE': float(os.getenv('MAX_POSITION_SIZE', '0.05')),
+            
+            # Market configuration
+            'MARKET_TIMEZONE': os.getenv('MARKET_TIMEZONE', 'Asia/Kolkata'),
+        }
+        
+        logger.info("📋 Config loaded:")
+        logger.info(f"   Paper Mode: {config['PAPER_MODE']}")
+        logger.info(f"   Zerodha User: {config['ZERODHA_USER_ID'] or 'Not set'}")
+        logger.info(f"   Redis URL: {config['REDIS_URL'][:20]}...")
+        logger.info(f"   Max Daily Trades: {config['MAX_DAILY_TRADES']}")
+        
+        return config
     
     def _initialize(self):
         """Initialize the orchestrator with basic setup"""
@@ -134,7 +169,24 @@ class TradingOrchestrator:
             
             # Import and initialize connection manager
             from .connection_manager import ConnectionManager
-            self.connection_manager = ConnectionManager()
+            
+            # Create config for connection manager
+            connection_config = {
+                'zerodha': {
+                    'api_key': self.config.get('ZERODHA_API_KEY'),
+                    'api_secret': self.config.get('ZERODHA_API_SECRET'),
+                    'user_id': self.config.get('ZERODHA_USER_ID'),
+                    'access_token': self.config.get('ZERODHA_ACCESS_TOKEN')
+                },
+                'redis': {
+                    'url': self.config.get('REDIS_URL', 'redis://localhost:6379')
+                },
+                'database': {
+                    'url': self.config.get('DATABASE_URL')
+                }
+            }
+            
+            self.connection_manager = ConnectionManager(connection_config)
             
             if self.connection_manager is None:
                 logger.error("❌ Failed to create ConnectionManager instance")
