@@ -9,7 +9,7 @@ from typing import Dict, Optional, Any
 from datetime import datetime
 import time
 
-from core.connection_manager import ResilientConnection
+from src.core.connection_manager import ResilientConnection
 from .zerodha import ZerodhaIntegration
 
 logger = logging.getLogger(__name__)
