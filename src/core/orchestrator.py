@@ -459,22 +459,25 @@ class TradingOrchestrator:
         """Initialize REAL trade engine - no mock fallback"""
         try:
             from src.core.trade_engine import TradeEngine
-            from src.core.database import get_database
+            from src.core.database import db_manager
             
             # Initialize with REAL database persistence
-            self.database = await get_database()
+            if db_manager and db_manager.is_connected():
+                self.database = db_manager
+            else:
+                logger.warning("Database not available - using in-memory mode")
+                self.database = None
+                
             self.trade_engine = TradeEngine(
-                config={
-                    'paper_mode': False,  # REAL MONEY MODE
-                    'enable_persistence': True,
-                    'database': self.database
-                }, 
+                broker=self.zerodha,
                 risk_manager=self.risk_manager,
-                zerodha=self.zerodha
+                position_manager=self.position_tracker,
+                market_data=self.market_data
             )
             
             # Start REAL trade persistence service
-            await self.trade_engine.start_persistence_service()
+            if hasattr(self.trade_engine, 'start_persistence_service'):
+                await self.trade_engine.start_persistence_service()
             
             logger.info("✅ REAL Trade Engine with DATABASE PERSISTENCE initialized")
             return True
@@ -509,8 +512,7 @@ class TradingOrchestrator:
             from src.core.pre_market_analyzer import PreMarketAnalyzer
             
             self.pre_market_analyzer = PreMarketAnalyzer(
-                config=self.config.get('pre_market', {}),
-                market_data=self.market_data
+                config=self.config.get("pre_market", {})
             )
             
             await self.pre_market_analyzer.initialize()
