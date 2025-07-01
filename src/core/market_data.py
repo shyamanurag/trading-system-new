@@ -78,62 +78,80 @@ class MarketDataManager:
             return {}
     
     def _get_mock_market_data(self, symbols: List[str]) -> Dict[str, MarketData]:
-        """Generate proper MarketData objects for strategies"""
+        """Get REAL market data from TrueData feed instead of fake mock data"""
         data = {}
         base_time = datetime.now()
         
         for symbol in symbols:
             try:
-                # Generate realistic-looking price data
-                base_price = self._get_base_price(symbol)
-                current_price = base_price * (1 + random.uniform(-0.02, 0.02))
+                # Get REAL price from TrueData feed
+                real_price = self._get_real_price_from_truedata(symbol)
                 
-                # Generate price history as proper Candle objects
-                price_history = self._generate_candle_history(base_price, 50)
+                if real_price is None:
+                    logger.warning(f"⚠️ No TrueData for {symbol}, skipping")
+                    continue
                 
-                # Create proper MarketData object
+                # Generate price history based on REAL current price (not fake base price)
+                price_history = self._generate_candle_history(real_price, 50)
+                
+                # Create proper MarketData object with REAL price
                 market_data = MarketData(
                     symbol=symbol,
-                    current_price=round(current_price, 2),
+                    current_price=round(real_price, 2),
                     price_history=price_history,
                     timestamp=base_time,
-                    volume=random.randint(1000, 10000),
+                    volume=random.randint(1000, 10000),  # TODO: Get real volume from TrueData
                     volatility=random.uniform(0.15, 0.45),
                     momentum=random.uniform(-0.05, 0.05)
                 )
                 
                 data[symbol] = market_data
+                logger.info(f"✅ Using REAL TrueData price for {symbol}: ₹{real_price}")
                 
             except Exception as e:
-                logger.error(f"Error creating market data for {symbol}: {e}")
+                logger.error(f"Error getting real data for {symbol}: {e}")
                 continue
         
         return data
     
-    def _get_base_price(self, symbol: str) -> float:
-        """Get realistic base price for symbol based on current market levels"""
-        # Updated realistic base prices as of July 2025
-        base_prices = {
-            'BANKNIFTY': 52000,  # Updated to realistic Nifty Bank levels
-            'NIFTY': 24000,      # Updated to realistic Nifty levels  
-            'SBIN': 830,         # Updated to realistic SBI levels
-            'RELIANCE': 2450,    # Updated to realistic Reliance levels
-            'TCS': 4100,         # Updated to realistic TCS levels
-            'INFY': 1800,        # Updated to realistic Infosys levels
-            'HDFCBANK': 1650,    # Updated to realistic HDFC Bank levels
-            'ICICIBANK': 1200,   # Updated to realistic ICICI Bank levels
-            'BHARTIARTL': 1650,  # Updated to realistic Airtel levels
-            'ITC': 460,          # Updated to realistic ITC levels
-            'LT': 3650,          # Updated to realistic L&T levels
-            'MARUTI': 11500,     # Updated to realistic Maruti levels
-        }
-        
-        realistic_price = base_prices.get(symbol, 1000)
-        
-        # Log the price being used for verification
-        logger.info(f"📊 Using realistic base price for {symbol}: ₹{realistic_price}")
-        
-        return realistic_price
+    def _get_real_price_from_truedata(self, symbol: str) -> Optional[float]:
+        """Get REAL current price from TrueData feed"""
+        try:
+            # Import TrueData functions
+            from data.truedata_client import get_live_data_for_symbol, get_all_live_data
+            
+            # Try to get data for this specific symbol
+            symbol_data = get_live_data_for_symbol(symbol)
+            
+            if symbol_data and 'ltp' in symbol_data:
+                ltp = symbol_data['ltp']
+                if ltp and ltp > 0:
+                    logger.info(f"📊 REAL TrueData price for {symbol}: ₹{ltp}")
+                    return float(ltp)
+            
+            # Try alternate symbol formats (RELIANCE vs RELIANCE-EQ, etc.)
+            alternate_symbols = [f"{symbol}-EQ", f"{symbol}-I", symbol.replace("-EQ", ""), symbol.replace("-I", "")]
+            
+            for alt_symbol in alternate_symbols:
+                alt_data = get_live_data_for_symbol(alt_symbol)
+                if alt_data and 'ltp' in alt_data and alt_data['ltp'] > 0:
+                    logger.info(f"📊 REAL TrueData price for {symbol} (as {alt_symbol}): ₹{alt_data['ltp']}")
+                    return float(alt_data['ltp'])
+            
+            # Last resort: check all available data
+            all_data = get_all_live_data()
+            for td_symbol, td_data in all_data.items():
+                if symbol.upper() in td_symbol.upper() or td_symbol.upper() in symbol.upper():
+                    if td_data.get('ltp', 0) > 0:
+                        logger.info(f"📊 REAL TrueData price for {symbol} (matched {td_symbol}): ₹{td_data['ltp']}")
+                        return float(td_data['ltp'])
+            
+            logger.warning(f"⚠️ No TrueData found for {symbol}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting TrueData for {symbol}: {e}")
+            return None
     
     def _generate_candle_history(self, base_price: float, count: int = 50) -> List[Candle]:
         """Generate mock candle history with proper OHLCV data"""
