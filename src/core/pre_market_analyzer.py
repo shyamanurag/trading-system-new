@@ -33,7 +33,7 @@ class PreMarketAnalyzer:
                 return await self._run_paper_mode_analysis()
             else:
                 return await self._run_live_analysis()
-                
+               
         except Exception as e:
             logger.error(f"Error in pre-market analysis: {e}")
             # Return mock data to allow system to continue
@@ -160,10 +160,10 @@ class PreMarketAnalyzer:
             from data.truedata_client import live_market_data
             nifty_data = live_market_data.get('NIFTY', {})
             spot_price = nifty_data.get('ltp', nifty_data.get('last_price', 19850))
-            
+           
             # Continue with live analysis...
             # [Original analysis code would go here]
-            
+           
         except ImportError as e:
             logger.warning(f"TrueData import failed: {e}. Falling back to paper mode.")
             return await self._run_paper_mode_analysis()
@@ -332,12 +332,12 @@ class PreMarketAnalyzer:
             from data.truedata_client import live_market_data
             nifty_data = live_market_data.get('NIFTY', {})
             spot_price = nifty_data.get('ltp', nifty_data.get('last_price', 0.0))
-            
+           
             # Calculate pivot points
             high = 19850
             low = 19720
             close = 19800
-            
+           
             pivot = (high + low + close) / 3
             r1 = 2 * pivot - low
             r2 = pivot + (high - low)
@@ -345,7 +345,7 @@ class PreMarketAnalyzer:
             s1 = 2 * pivot - high
             s2 = pivot - (high - low)
             s3 = low - 2 * (high - pivot)
-            
+           
             return {
                 'pivot': round(pivot, 2),
                 'resistance': {
@@ -419,32 +419,32 @@ class PreMarketAnalyzer:
         """Generate overall market outlook"""
         try:
             score = 0
-            
+           
             # Global sentiment
             if global_data.get('overall_sentiment') == 'BULLISH':
                 score += 2
             elif global_data.get('overall_sentiment') == 'BEARISH':
                 score -= 2
-            
+           
             # Previous day trend
             if previous_day.get('nifty_change', 0) > 0.5:
                 score += 1
             elif previous_day.get('nifty_change', 0) < -0.5:
                 score -= 1
-            
+           
             # FII/DII activity
             fii_net = previous_day.get('fii_activity', {}).get('net_buying', 0)
             if fii_net > 1000:
                 score += 1
             elif fii_net < -1000:
                 score -= 1
-            
+           
             # Volatility
             if volatility.get('current_vix', 20) > 20:
                 score -= 1
             elif volatility.get('current_vix', 20) < 15:
                 score += 1
-            
+           
             # Determine outlook
             if score >= 3:
                 return "BULLISH"
@@ -456,7 +456,7 @@ class PreMarketAnalyzer:
                 return "CAUTIOUS_BULLISH"
             else:
                 return "CAUTIOUS_BEARISH"
-                
+               
         except Exception as e:
             logger.error(f"Error generating market outlook: {e}")
             return "NEUTRAL"
@@ -465,7 +465,7 @@ class PreMarketAnalyzer:
         """Recommend strategy adjustments based on analysis"""
         try:
             recommendations = {}
-            
+           
             # Based on market outlook
             if self.market_outlook == "BULLISH":
                 recommendations['momentum_surfer'] = {
@@ -502,14 +502,14 @@ class PreMarketAnalyzer:
                     'allocation': 0.25,
                     'risk_multiplier': 1.0
                 }
-            
+           
             # Adjust for events
             if any(event['impact'] == 'HIGH' for event in self.news_events):
                 for strategy in recommendations.values():
                     strategy['risk_multiplier'] *= 0.8  # Reduce risk
-            
+           
             return recommendations
-            
+           
         except Exception as e:
             logger.error(f"Error recommending strategies: {e}")
             return {}
@@ -518,7 +518,7 @@ class PreMarketAnalyzer:
         """Prepare system parameters for the day"""
         try:
             vix = self.analysis_results.get('volatility_analysis', {}).get('current_vix', 15)
-            
+           
             # Dynamic risk parameters based on conditions
             if vix > 20:
                 max_positions = 3
@@ -532,7 +532,7 @@ class PreMarketAnalyzer:
                 max_positions = 4
                 risk_per_trade = 0.02
                 max_daily_loss = 0.02
-            
+           
             return {
                 'max_positions': max_positions,
                 'risk_per_trade': risk_per_trade,
@@ -545,7 +545,7 @@ class PreMarketAnalyzer:
                     'end': '15:15'
                 }
             }
-            
+           
         except Exception as e:
             logger.error(f"Error preparing system parameters: {e}")
             return {}
