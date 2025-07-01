@@ -117,14 +117,13 @@ class MarketDataManager:
     def _get_real_price_from_truedata(self, symbol: str) -> Optional[float]:
         """Get REAL current price from TrueData feed"""
         try:
-            # Import TrueData functions
-            from data.truedata_client import get_live_data_for_symbol, get_all_live_data
+            # Import TrueData data directly (not API endpoints)
+            from data.truedata_client import live_market_data
             
             # Try to get data for this specific symbol
-            symbol_data = get_live_data_for_symbol(symbol)
-            
-            if symbol_data and 'ltp' in symbol_data:
-                ltp = symbol_data['ltp']
+            if symbol in live_market_data:
+                symbol_data = live_market_data[symbol]
+                ltp = symbol_data.get('ltp', 0)
                 if ltp and ltp > 0:
                     logger.info(f"📊 REAL TrueData price for {symbol}: ₹{ltp}")
                     return float(ltp)
@@ -133,18 +132,22 @@ class MarketDataManager:
             alternate_symbols = [f"{symbol}-EQ", f"{symbol}-I", symbol.replace("-EQ", ""), symbol.replace("-I", "")]
             
             for alt_symbol in alternate_symbols:
-                alt_data = get_live_data_for_symbol(alt_symbol)
-                if alt_data and 'ltp' in alt_data and alt_data['ltp'] > 0:
-                    logger.info(f"📊 REAL TrueData price for {symbol} (as {alt_symbol}): ₹{alt_data['ltp']}")
-                    return float(alt_data['ltp'])
+                if alt_symbol in live_market_data:
+                    alt_data = live_market_data[alt_symbol]
+                    ltp = alt_data.get('ltp', 0)
+                    if ltp and ltp > 0:
+                        logger.info(f"📊 REAL TrueData price for {symbol} (as {alt_symbol}): ₹{ltp}")
+                        return float(ltp)
             
-            # Last resort: check all available data
-            all_data = get_all_live_data()
-            for td_symbol, td_data in all_data.items():
-                if symbol.upper() in td_symbol.upper() or td_symbol.upper() in symbol.upper():
-                    if td_data.get('ltp', 0) > 0:
-                        logger.info(f"📊 REAL TrueData price for {symbol} (matched {td_symbol}): ₹{td_data['ltp']}")
-                        return float(td_data['ltp'])
+            # Last resort: fuzzy match symbol names
+            for td_symbol, td_data in live_market_data.items():
+                if (symbol.upper() in td_symbol.upper() or 
+                    td_symbol.upper() in symbol.upper() or
+                    symbol.replace("-", "").upper() in td_symbol.replace("-", "").upper()):
+                    ltp = td_data.get('ltp', 0)
+                    if ltp and ltp > 0:
+                        logger.info(f"📊 REAL TrueData price for {symbol} (matched {td_symbol}): ₹{ltp}")
+                        return float(ltp)
             
             logger.warning(f"⚠️ No TrueData found for {symbol}")
             return None
