@@ -3,1069 +3,511 @@ Trading Orchestrator
 Manages the overall trading system operations with enhanced features
 """
 from typing import Dict, Any, Optional, List
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 import logging
 import asyncio
 import os
 from .config import settings
 from .connection_manager import ConnectionManager
 from .pre_market_analyzer import PreMarketAnalyzer
+import uuid
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-class MockPositionTracker:
-    """Mock position tracker for demo"""
-    async def get_all_positions(self):
-        return []
-
-class MockMetrics:
-    """Mock metrics for demo"""
-    async def get_trading_metrics(self):
-        return {"total_trades": 0, "pnl": 0.0}
-
-class MockStrategyManager:
-    """Mock strategy manager for demo"""
-    async def get_active_strategies(self):
-        return []
-
-class MockRiskManager:
-    """Mock risk manager for demo"""
-    async def get_risk_metrics(self):
-        return {"exposure": 0.0, "risk_level": "low"}
+@dataclass
+class RealSignal:
+    """Real trading signal with actual market data"""
+    symbol: str
+    side: str
+    price: float
+    quantity: int
+    strategy_name: str
+    quality_score: float = 80.0
+    timestamp: str = None
+    
+    def __post_init__(self):
+        if not self.timestamp:
+            self.timestamp = datetime.now().isoformat()
 
 class TradingOrchestrator:
-    """Enhanced trading system orchestrator with pre-market analysis and connection management"""
+    """Real money trading orchestrator - NO MOCK COMPONENTS ALLOWED"""
     
     _instance = None
     
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            cls._instance = super(TradingOrchestrator, cls).__new__(cls)
             cls._instance._initialized = False
         return cls._instance
-    
+
     @classmethod
     def get_instance(cls) -> 'TradingOrchestrator':
-        """Get the singleton instance"""
-        return cls()
-    
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
     def __init__(self):
-        """Initialize the orchestrator"""
-        # Prevent re-initialization of singleton instance
         if hasattr(self, '_initialized') and self._initialized:
             return
-        
-        # Add instance tracking for debugging
-        import time
-        self._instance_id = f"orch_{int(time.time() * 1000) % 10000}"
-        logger.info(f"✅ TradingOrchestrator instance created: {self._instance_id}")
-        
+            
+        # Real trading state only
         self.is_active = False
         self.system_ready = False
-        self.active_strategies = []
-        self.active_positions = []
-        self.daily_pnl = 0.0
-        self.total_pnl = 0.0
         
-        # Initialize config from environment and settings
-        self.config = self._load_config()
+        # Real components - no mock fallbacks
+        self.zerodha = None
+        self.connection_manager = None
+        self.position_tracker = None
+        self.risk_manager = None
+        self.order_manager = None
+        self.trade_engine = None
+        self.market_data = None
+        self.strategy_engine = None
+        self.pre_market_analyzer = None
         
-        # Session tracking attributes
+        # Real trading session data
         self.session_id = None
         self.start_time = None
         self.last_heartbeat = None
         self.total_trades = 0
-        
-        # Status attributes
-        self.risk_status = {}
-        self.market_status = {}
+        self.daily_pnl = 0.0
+        self.active_positions = []
+        self.active_strategies = []
         self.pre_market_results = {}
         
-        # Initialize broker connection placeholder
-        self.zerodha = None
+        # Load real configuration
+        self.config = self._load_config()
+        self._instance_id = str(uuid.uuid4())[:8]
         
-        # Initialize other components as None (will be set during initialization)
-        self.risk_manager = None
-        self.position_tracker = None
-        self.market_data = None
-        self.strategy_engine = None
-        self.trade_engine = None
-        self.order_manager = None
+        logger.info(f"🏦 REAL MONEY Trading Orchestrator initialized (ID: {self._instance_id})")
+        logger.info("⚡ NO MOCK COMPONENTS - Real trading only!")
         
-        # Connection manager for broker initialization
-        self.connection_manager = None
-        
-        # Pre-market analyzer placeholder
-        self.pre_market_analyzer = None
-        
-        # Mark as initialized to prevent re-initialization
         self._initialized = True
-    
+
     def _load_config(self) -> Dict[str, Any]:
-        """Load configuration from environment variables and settings"""
-        config = {
-            # Zerodha configuration
-            'ZERODHA_API_KEY': os.getenv('ZERODHA_API_KEY'),
-            'ZERODHA_API_SECRET': os.getenv('ZERODHA_API_SECRET'), 
-            'ZERODHA_USER_ID': os.getenv('ZERODHA_USER_ID'),
-            'ZERODHA_ACCESS_TOKEN': os.getenv('ZERODHA_ACCESS_TOKEN'),
-            
-            # Database configuration
-            'DATABASE_URL': os.getenv('DATABASE_URL'),
-            
-            # Redis configuration  
-            'REDIS_URL': os.getenv('REDIS_URL', 'redis://localhost:6379'),
-            
-            # Trading configuration
-            'PAPER_MODE': os.getenv('PAPER_MODE', 'true').lower() == 'true',
-            'MAX_DAILY_TRADES': int(os.getenv('MAX_DAILY_TRADES', '50')),
-            'MAX_POSITION_SIZE': float(os.getenv('MAX_POSITION_SIZE', '0.05')),
-            
-            # Market configuration
-            'MARKET_TIMEZONE': os.getenv('MARKET_TIMEZONE', 'Asia/Kolkata'),
-        }
-        
-        logger.info("📋 Config loaded:")
-        logger.info(f"   Paper Mode: {config['PAPER_MODE']}")
-        logger.info(f"   Zerodha User: {config['ZERODHA_USER_ID'] or 'Not set'}")
-        logger.info(f"   Redis URL: {config['REDIS_URL'][:20]}...")
-        logger.info(f"   Max Daily Trades: {config['MAX_DAILY_TRADES']}")
-        
-        return config
-    
-    def _initialize(self):
-        """Initialize the orchestrator with basic setup"""
+        """Load real trading configuration"""
         try:
-            logger.info("🔄 Initializing TradingOrchestrator...")
+            # Load from actual config files - no test configs
+            from src.config.loader import ConfigLoader
+            config_loader = ConfigLoader()
+            config = config_loader.load_config()
             
-            # Initialize broker connection via connection manager
-            connection_success = self._initialize_broker_connection()
-            
-            if not connection_success:
-                logger.error("❌ Failed to initialize connection manager")
-                self.system_ready = False
-                return False
-            
-            # Verify connection manager was created
-            if self.connection_manager is None:
-                logger.error("❌ Connection manager is None after initialization")
-                self.system_ready = False
-                return False
-            
-            # Set initial state only if connection manager exists
-            self.system_ready = True
-            logger.info("✅ TradingOrchestrator initialized successfully")
-            return True
+            # CRITICAL: Ensure no mock/test mode enabled
+            if config.get('mock_market_data', False):
+                raise ValueError("❌ MOCK MODE DETECTED - Not allowed in real money trading!")
+            if config.get('mock_broker_apis', False):
+                raise ValueError("❌ MOCK BROKER DETECTED - Not allowed in real money trading!")
+            if config.get('skip_external_apis', False):
+                raise ValueError("❌ SKIP EXTERNAL APIs DETECTED - Not allowed in real money trading!")
+                
+            logger.info("✅ Real trading configuration loaded - no mock contamination")
+            return config
             
         except Exception as e:
-            logger.error(f"❌ TradingOrchestrator initialization failed: {e}")
-            self.system_ready = False
-            return False
-    
-    def _initialize_broker_connection(self):
-        """Initialize broker connection"""
-        try:
-            logger.info("🔄 Creating ConnectionManager...")
-            
-            # Import and initialize connection manager
-            from .connection_manager import ConnectionManager
-            
-            # Create config for connection manager
-            connection_config = {
-                'zerodha': {
-                    'api_key': self.config.get('ZERODHA_API_KEY'),
-                    'api_secret': self.config.get('ZERODHA_API_SECRET'),
-                    'user_id': self.config.get('ZERODHA_USER_ID'),
-                    'access_token': self.config.get('ZERODHA_ACCESS_TOKEN')
-                },
-                'redis': {
-                    'url': self.config.get('REDIS_URL', 'redis://localhost:6379')
-                },
-                'database': {
-                    'url': self.config.get('DATABASE_URL')
+            logger.error(f"Failed to load configuration: {e}")
+            # Return minimal safe config
+            return {
+                'trading': {
+                    'enabled': True,
+                    'paper_mode': False,  # REAL MONEY MODE
+                    'max_daily_loss': 50000,
+                    'max_position_size': 0.05
                 }
             }
+
+    def _initialize(self):
+        """Initialize real components only"""
+        try:
+            # Initialize broker connection (real Zerodha only)
+            self._initialize_broker_connection()
             
-            self.connection_manager = ConnectionManager(connection_config)
+            # Initialize connection manager (real connections only)
+            self._initialize_connection_manager()
             
-            if self.connection_manager is None:
-                logger.error("❌ Failed to create ConnectionManager instance")
-                return False
-            
-            logger.info("✅ ConnectionManager created successfully")
-            
-            # Get zerodha connection from connection manager
-            try:
-                self.zerodha = self.connection_manager.get_zerodha_connection()
-                if self.zerodha:
-                    logger.info("✅ Zerodha connection established")
-                else:
-                    logger.warning("⚠️ Zerodha connection not available, using mock")
-                    self.zerodha = self._create_mock_zerodha()
-            except Exception as zerodha_error:
-                logger.warning(f"⚠️ Zerodha connection failed: {zerodha_error}, using mock")
-                self.zerodha = self._create_mock_zerodha()
-            
-            return True
-                
-        except ImportError as import_error:
-            logger.error(f"❌ Failed to import ConnectionManager: {import_error}")
-            # Create a mock connection manager as fallback
-            self.connection_manager = self._create_mock_connection_manager()
-            self.zerodha = self._create_mock_zerodha()
-            return True  # Allow system to work with mocks
+            logger.info("✅ Real components initialized")
             
         except Exception as e:
-            logger.error(f"❌ Broker connection initialization failed: {e}")
-            # Create mock components as absolute fallback
-            self.connection_manager = self._create_mock_connection_manager()
-            self.zerodha = self._create_mock_zerodha()
-            return True  # Allow system to work with mocks
-    
-    def _create_mock_connection_manager(self):
-        """Create a mock connection manager for fallback"""
-        class MockConnectionManager:
-            def __init__(self):
-                self.connections = {}
+            logger.error(f"❌ Component initialization failed: {e}")
+            raise RuntimeError("Cannot initialize real trading components")
+
+    def _initialize_broker_connection(self):
+        """Initialize REAL Zerodha connection only"""
+        try:
+            from brokers.resilient_zerodha import ResilientZerodha
+            
+            # CRITICAL: Only use real Zerodha - no mock fallback
+            zerodha_config = self.config.get('zerodha', {})
+            if not zerodha_config:
+                raise ValueError("❌ No Zerodha configuration found - cannot trade real money without broker")
                 
-            async def initialize_all_connections(self):
-                logger.info("🔄 Mock connection manager initializing...")
-                return True
+            self.zerodha = ResilientZerodha(config=zerodha_config)
+            logger.info("✅ REAL Zerodha connection initialized - NO MOCK FALLBACK")
             
-            def get_connection(self, name):
-                if name == 'zerodha':
-                    return self._create_mock_zerodha()
-                elif name == 'database':
-                    return True  # Mock database
-                elif name == 'redis':
-                    return True  # Mock redis
-                return None
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize REAL Zerodha: {e}")
+            # DO NOT create mock - fail cleanly for real money safety
+            raise RuntimeError("Cannot initialize real Zerodha connection - aborting for safety")
+
+    def _initialize_connection_manager(self):
+        """Initialize REAL connection manager only"""
+        try:
+            from src.core.connection_manager import ConnectionManager
             
-            def get_zerodha_connection(self):
-                return self._create_mock_zerodha()
+            self.connection_manager = ConnectionManager(config=self.config)
+            logger.info("✅ REAL Connection Manager initialized")
             
-            def get_status(self, name):
-                class MockStatus:
-                    def __init__(self):
-                        self.value = 'CONNECTED'
-                return MockStatus()
-            
-            def is_all_connected(self):
-                return True
-            
-            async def shutdown(self):
-                return True
-                
-            def _create_mock_zerodha(self):
-                class MockZerodha:
-                    def __init__(self):
-                        self.is_connected = True
-                    async def start(self):
-                        return True
-                    async def stop(self):
-                        return True
-                    def get_positions(self):
-                        return []
-                    def place_order(self, **kwargs):
-                        return {"order_id": "mock_order_123"}
-                return MockZerodha()
-        
-        logger.info("✅ Mock ConnectionManager created")
-        return MockConnectionManager()
-    
-    def _create_mock_zerodha(self):
-        """Create mock zerodha connection for fallback"""
-        class MockZerodha:
-            def __init__(self):
-                self.is_connected = False
-            
-            async def start(self):
-                return True
-            
-            async def stop(self):
-                return True
-            
-            def get_positions(self):
-                return []
-            
-            def place_order(self, **kwargs):
-                return {"order_id": "mock_order_123"}
-        
-        return MockZerodha()
-    
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize connection manager: {e}")
+            # DO NOT create mock - fail cleanly
+            raise RuntimeError("Cannot initialize real connection manager")
+
     def _can_start_trading(self) -> bool:
-        """Check if trading can be started"""
+        """Check if real trading can start safely"""
         try:
-            # Basic checks for trading readiness
-            checks = {
-                'system_ready': self.system_ready,
-                'broker_connected': self.zerodha is not None,
-                'market_open': self._is_market_open(),
-                'not_already_active': not self.is_active
-            }
-            
-            # Log check results
-            for check_name, result in checks.items():
-                status = "✅" if result else "❌"
-                logger.info(f"   {status} {check_name}: {result}")
-            
-            # All checks must pass
-            can_trade = all(checks.values())
-            
-            if can_trade:
-                logger.info("✅ All trading checks passed")
-            else:
-                failed_checks = [name for name, result in checks.items() if not result]
-                logger.warning(f"⚠️ Trading checks failed: {', '.join(failed_checks)}")
-            
-            return can_trade
-            
-        except Exception as e:
-            logger.error(f"❌ Error checking trading readiness: {e}")
-            return False
-    
-    async def initialize_system(self):
-        """Initialize the complete trading system"""
-        try:
-            logger.info("Initializing trading system...")
-            
-            # Ensure initialization
-            self._initialize()
-            
-            # Step 1: Initialize all connections
-            logger.info("Establishing connections...")
-            connections_ok = await self.connection_manager.initialize_all_connections()
-            
-            if not connections_ok:
-                logger.error("Failed to establish all required connections")
-                return False
-            
-            # Step 2: Initialize trading components
-            await self._initialize_trading_components()
-            
-            # Step 3: Run pre-market analysis
-            logger.info("Running pre-market analysis...")
-            if self.pre_market_analyzer and hasattr(self.pre_market_analyzer, 'run_pre_market_analysis'):
-                try:
-                    self.pre_market_results = await self.pre_market_analyzer.run_pre_market_analysis()
-                except Exception as e:
-                    logger.warning(f"Pre-market analysis failed: {e}")
-                    self.pre_market_results = {}
-            else:
-                logger.warning("Pre-market analyzer not available, skipping analysis")
-                self.pre_market_results = {}
-            
-            # Step 4: Apply pre-market recommendations
-            await self._apply_pre_market_recommendations()
-            
-            # Step 5: System health check
-            system_healthy = await self._perform_system_health_check()
-            
-            if system_healthy:
-                self.system_ready = True
-                logger.info("Trading system initialized successfully")
-                return True
-            else:
-                logger.error("System health check failed")
+            # STRICT checks for real money safety
+            if not self.zerodha:
+                logger.error("❌ No real Zerodha connection - cannot trade")
                 return False
                 
+            if not self.connection_manager:
+                logger.error("❌ No real connection manager - cannot trade")
+                return False
+                
+            # Check market data availability
+            if not self.market_data:
+                logger.error("❌ No real market data - cannot trade")
+                return False
+                
+            # Check risk management
+            if not self.risk_manager:
+                logger.error("❌ No real risk manager - cannot trade")
+                return False
+                
+            logger.info("✅ All real components available for trading")
+            return True
+            
         except Exception as e:
-            logger.error(f"Failed to initialize trading system: {e}")
+            logger.error(f"Trading safety check failed: {e}")
             return False
-    
-    async def _initialize_trading_components(self):
-        """Initialize all trading components"""
+
+    async def initialize_system(self):
+        """Initialize REAL trading system components only"""
+        logger.info("🚀 Initializing REAL MONEY trading system...")
+        
         try:
-            # Get connections
-            zerodha = self.connection_manager.get_connection('zerodha')
-            redis_client = self.connection_manager.get_connection('redis')
-            db = self.connection_manager.get_connection('database')
-            
-            # Store connections
-            self.zerodha = zerodha
-            self.redis_client = redis_client
-            self.db = db
-            
-            # Initialize REAL trading components (not mocks)
+            # Initialize real components with strict error handling
             await self._initialize_real_trading_components()
             
-            logger.info("Trading components initialized successfully")
+            # Perform system health check
+            if not await self._perform_system_health_check():
+                raise RuntimeError("System health check failed")
+            
+            self.system_ready = True
+            logger.info("✅ REAL MONEY trading system initialized successfully")
+            return True
             
         except Exception as e:
-            logger.error(f"Failed to initialize trading components: {e}")
-            raise
-    
+            logger.error(f"❌ System initialization failed: {e}")
+            self.system_ready = False
+            return False
+
     async def _initialize_real_trading_components(self):
-        """Initialize real trading components with proper implementations"""
-        logger.info("🔧 Initializing real trading components...")
+        """Initialize REAL trading components - NO MOCK FALLBACKS"""
+        logger.info("Initializing REAL trading components...")
         
-        # Track component initialization success
+        # Track initialization success - fail hard if any critical component fails
         component_status = {}
         
-        try:
-            # Initialize Risk Manager with fallback
-            logger.info("🔄 Initializing Risk Manager...")
-            component_status['risk_manager'] = await self._safe_init_risk_manager()
-            
-            # Initialize Position Tracker with fallback
-            logger.info("🔄 Initializing Position Tracker...")
-            component_status['position_tracker'] = await self._safe_init_position_tracker()
-            
-            # Initialize Market Data Manager with fallback
-            logger.info("🔄 Initializing Market Data Manager...")
-            component_status['market_data'] = await self._safe_init_market_data()
-            
-            # Initialize Strategy Engine with fallback
-            logger.info("🔄 Initializing Strategy Engine...")
-            component_status['strategy_engine'] = await self._safe_init_strategy_engine()
-            
-            # Initialize Trade Engine with fallback
-            logger.info("🔄 Initializing Trade Engine...")
-            component_status['trade_engine'] = await self._safe_init_trade_engine()
-            
-            # Initialize Order Manager (simple for now)
-            logger.info("🔄 Initializing Order Manager...")
-            component_status['order_manager'] = self._safe_init_order_manager()
-            
-            # Log component status
-            self._log_component_status(component_status)
-            
-            # Start trading loop if we have minimum components
-            if self._check_minimum_components(component_status):
-                logger.info("✅ Minimum components available - scheduling trading loop")
-                asyncio.create_task(self._start_trading_loop())
-            else:
-                logger.warning("⚠️ Insufficient components for trading loop")
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize real trading components: {e}")
-            # Fallback to mock components
-            await self._initialize_mock_components()
-    
-    async def _safe_init_risk_manager(self):
-        """Safely initialize risk manager with fallbacks"""
-        try:
-            risk_config = {
-                'max_daily_loss': 50000,
-                'max_position_size': 0.05,
-                'max_total_exposure': 0.3,
-                'paper_mode': True
-            }
-            
-            # Try full risk manager first
-            try:
-                from .risk_manager import RiskManager
-                from .position_tracker import PositionTracker
-                from ..events import EventBus
-                
-                event_bus = EventBus()
-                position_tracker = PositionTracker(risk_config)
-                self.risk_manager = RiskManager(risk_config, position_tracker, event_bus)
-                logger.info("✅ Full Risk Manager initialized")
-                return True
-                
-            except ImportError as import_error:
-                logger.warning(f"Full risk manager unavailable: {import_error}")
-                self.risk_manager = self._create_simple_risk_manager(risk_config)
-                logger.info("✅ Simple Risk Manager initialized")
-                return True
-                
-        except Exception as e:
-            logger.warning(f"Risk manager init failed: {e}, using mock")
-            self.risk_manager = MockRiskManager()
-            return False
-    
-    async def _safe_init_position_tracker(self):
-        """Safely initialize position tracker"""
-        try:
-            # For now use mock, will be real when position tracking is implemented
-            self.position_tracker = MockPositionTracker()
-            logger.info("✅ Position Tracker initialized (mock)")
-            return True
-        except Exception as e:
-            logger.warning(f"Position tracker init failed: {e}")
-            self.position_tracker = MockPositionTracker()
-            return False
-    
-    async def _safe_init_market_data(self):
-        """Safely initialize market data manager"""
-        try:
-            from .market_data import MarketDataManager
-            market_data_config = {
-                'paper_mode': True,
-                'symbols': ['BANKNIFTY', 'NIFTY', 'SBIN', 'RELIANCE', 'TCS'],
-                'update_interval': 1
-            }
-            self.market_data = MarketDataManager(market_data_config)
-            logger.info("✅ Market Data Manager initialized")
-            return True
-        except Exception as e:
-            logger.warning(f"Market data manager init failed: {e}, using mock")
-            self.market_data = self._create_mock_market_data()
-            return False
-    
-    async def _safe_init_strategy_engine(self):
-        """Safely initialize strategy engine"""
-        try:
-            from .trading_strategies import AdvancedTradingEngine
-            self.strategy_engine = AdvancedTradingEngine(self.risk_manager)
-            self.active_strategies = list(self.strategy_engine.strategies.keys())
-            logger.info(f"✅ Strategy Engine: {len(self.active_strategies)} strategies loaded")
-            logger.info(f"   📈 Strategies: {', '.join(self.active_strategies)}")
-            return True
-        except ImportError as import_error:
-            logger.warning(f"AdvancedTradingEngine import failed: {import_error}")
-            self.strategy_engine = self._create_mock_strategy_engine()
-            self.active_strategies = list(self.strategy_engine.strategies.keys())
-            logger.info(f"✅ Mock Strategy Engine: {len(self.active_strategies)} strategies loaded")
-            return True
-        except Exception as e:
-            logger.warning(f"Strategy engine init failed: {e}")
-            self.strategy_engine = self._create_mock_strategy_engine()
-            self.active_strategies = list(self.strategy_engine.strategies.keys())
-            logger.info(f"✅ Mock Strategy Engine: {len(self.active_strategies)} strategies loaded")
-            return True
-    
-    def _create_mock_strategy_engine(self):
-        """Create a mock strategy engine for fallback"""
-        import random
+        # Initialize REAL components in order
+        component_status['risk_manager'] = await self._safe_init_real_risk_manager()
+        component_status['position_tracker'] = await self._safe_init_real_position_tracker()
+        component_status['market_data'] = await self._safe_init_real_market_data()
+        component_status['strategy_engine'] = await self._safe_init_real_strategy_engine()
+        component_status['trade_engine'] = await self._safe_init_real_trade_engine()
+        component_status['order_manager'] = await self._safe_init_real_order_manager()
+        component_status['pre_market_analyzer'] = await self._safe_init_real_pre_market_analyzer()
         
-        class MockSignal:
-            def __init__(self, symbol, side, price, quality_score):
-                self.symbol = symbol
-                self.side = side  # 'BUY' or 'SELL'
-                self.quantity = 1
-                self.expected_price = price
-                self.stop_loss = price * (0.98 if side == 'BUY' else 1.02)
-                self.take_profit = price * (1.02 if side == 'BUY' else 0.98)
-                self.strategy_name = 'mock_strategy'
-                self.quality_score = quality_score
-                self.metadata = {
-                    'signal_type': 'mock_signal',
-                    'generated_by': 'mock_strategy'
-                }
+        # Log component status
+        self._log_component_status(component_status)
         
-        class MockStrategy:
-            def __init__(self, name):
-                self.name = name
-                
-            async def generate_signals(self, market_data):
-                """Generate mock signals for testing"""
-                signals = []
-                
-                # Generate 2-3 random signals
-                for symbol_name, market_data_obj in list(market_data.items())[:2]:
-                    if hasattr(market_data_obj, 'current_price'):
-                        current_price = market_data_obj.current_price
-                    else:
-                        current_price = 100.0
-                    
-                    # Random signal direction
-                    side = 'BUY' if random.random() > 0.5 else 'SELL'
-                    
-                    signal = MockSignal(
-                        symbol=symbol_name,
-                        side=side,
-                        price=current_price,
-                        quality_score=random.uniform(70, 85)
-                    )
-                    signals.append(signal)
-                
-                return signals
+        # Check if we have minimum components for REAL trading
+        if not self._check_minimum_real_components(component_status):
+            raise RuntimeError("❌ Insufficient REAL components for safe trading")
         
-        class MockStrategyEngine:
+        logger.info("✅ REAL trading components initialized")
+
+    async def _safe_init_real_risk_manager(self):
+        """Initialize REAL risk manager - no mock fallback"""
+        try:
+            from src.core.risk_manager import RiskManager
+            
+            self.risk_manager = RiskManager(
+                config=self.config.get('risk', {}),
+                database=getattr(self, 'database', None)
+            )
+            
+            await self.risk_manager.initialize()
+            logger.info("✅ REAL Risk Manager initialized")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ REAL Risk Manager initialization failed: {e}")
+            # DO NOT create mock for real money trading
+            return False
+
+    async def _safe_init_real_position_tracker(self):
+        """Initialize REAL position tracker - no mock fallback"""
+        try:
+            from src.core.position_tracker import PositionTracker
+            
+            self.position_tracker = PositionTracker(
+                config=self.config.get('positions', {}),
+                zerodha=self.zerodha
+            )
+            
+            await self.position_tracker.initialize()
+            logger.info("✅ REAL Position Tracker initialized")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ REAL Position Tracker initialization failed: {e}")
+            return False
+
+    async def _safe_init_real_market_data(self):
+        """Initialize REAL market data - no mock fallback"""
+        try:
+            from src.core.market_data import MarketDataManager
+            
+            self.market_data = MarketDataManager(
+                config=self.config.get('market_data', {}),
+                truedata_config=self.config.get('truedata', {})
+            )
+            
+            await self.market_data.initialize()
+            logger.info("✅ REAL Market Data Manager initialized")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ REAL Market Data initialization failed: {e}")
+            return False
+
+    async def _safe_init_real_strategy_engine(self):
+        """Initialize REAL strategy engine with user's actual strategies"""
+        try:
+            self.strategy_engine = self._create_real_strategy_engine()
+            logger.info("✅ REAL Strategy Engine initialized")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ REAL Strategy Engine initialization failed: {e}")
+            return False
+
+    def _create_real_strategy_engine(self):
+        """Create REAL strategy engine using user's actual strategies"""
+        
+        class RealStrategyEngine:
             def __init__(self):
-                self.strategies = {
-                    'mock_momentum': MockStrategy('mock_momentum'),
-                    'mock_mean_reversion': MockStrategy('mock_mean_reversion'),
-                    'mock_volatility': MockStrategy('mock_volatility')
-                }
+                # Load USER'S REAL STRATEGIES from /strategies/ directory
+                self.strategies = {}
+                
+                try:
+                    # Import actual strategy classes
+                    from strategies.regime_adaptive_controller import RegimeAdaptiveController
+                    from strategies.confluence_amplifier import ConfluenceAmplifier  
+                    from strategies.momentum_surfer import MomentumSurfer
+                    from strategies.news_impact_scalper import NewsImpactScalper
+                    from strategies.volume_profile_scalper import VolumeProfileScalper
+                    from strategies.volatility_explosion import VolatilityExplosion
+                    
+                    # Initialize REAL strategies
+                    self.strategies = {
+                        'regime_adaptive_controller': RegimeAdaptiveController(),
+                        'confluence_amplifier': ConfluenceAmplifier(),
+                        'momentum_surfer': MomentumSurfer(),
+                        'news_impact_scalper': NewsImpactScalper(),
+                        'volume_profile_scalper': VolumeProfileScalper(),
+                        'volatility_explosion': VolatilityExplosion()
+                    }
+                    
+                    logger.info(f"✅ Loaded {len(self.strategies)} REAL strategies")
+                    logger.info(f"📈 Real Strategies: {', '.join(self.strategies.keys())}")
+                    
+                except ImportError as e:
+                    logger.error(f"❌ Failed to import REAL strategies: {e}")
+                    # DO NOT use mock strategies - fail cleanly
+                    raise RuntimeError("Cannot load real strategies - aborting for safety")
                 
             async def generate_all_signals(self, market_data):
-                """Generate signals from all mock strategies - ensuring no contradictions"""
+                """Generate signals from REAL strategies with REAL market data"""
                 all_signals = []
-                symbol_signals = {}  # Track signals per symbol to avoid contradictions
                 
-                for strategy_name, strategy in self.strategies.items():
-                    try:
-                        signals = await strategy.generate_signals(market_data)
-                        
-                        # Only add signals for symbols we haven't seen yet
-                        for signal in signals:
-                            if signal.symbol not in symbol_signals:
-                                symbol_signals[signal.symbol] = signal
-                                all_signals.append(signal)
-                            else:
-                                # If we already have a signal for this symbol, keep the higher quality one
-                                existing_signal = symbol_signals[signal.symbol]
-                                if signal.quality_score > existing_signal.quality_score:
-                                    # Replace with higher quality signal
-                                    all_signals.remove(existing_signal)
-                                    all_signals.append(signal)
-                                    symbol_signals[signal.symbol] = signal
-                                    
-                    except Exception as e:
-                        logger.warning(f"Mock strategy {strategy_name} failed: {e}")
-                
-                # Log signal summary for debugging
-                logger.info(f"📊 Generated {len(all_signals)} non-contradictory signals:")
-                for signal in all_signals:
-                    logger.info(f"   {signal.symbol} {signal.side} @ ₹{signal.expected_price:.2f} (Quality: {signal.quality_score:.1f})")
+                try:
+                    # Use REAL strategy implementations
+                    for strategy_name, strategy in self.strategies.items():
+                        if hasattr(strategy, 'generate_signals'):
+                            signals = await strategy.generate_signals(market_data)
+                            if signals:
+                                all_signals.extend(signals)
+                    
+                    logger.info(f"📊 Generated {len(all_signals)} REAL signals from REAL strategies")
+                    for signal in all_signals:
+                        logger.info(f"   ✅ REAL: {signal.symbol} {signal.side} @ ₹{signal.price:.2f} (Strategy: {signal.strategy_name})")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error generating real signals: {e}")
+                    # Return empty instead of fake signals
+                    all_signals = []
                 
                 return all_signals
         
-        logger.info("✅ Mock Strategy Engine created")
-        return MockStrategyEngine()
-    
-    async def _safe_init_trade_engine(self):
-        """Safely initialize trade engine"""
+        return RealStrategyEngine()
+
+    async def _safe_init_real_trade_engine(self):
+        """Initialize REAL trade engine - no mock fallback"""
         try:
-            from .trade_engine import TradeEngine
-            from .database import get_database
+            from src.core.trade_engine import TradeEngine
+            from src.core.database import get_database
             
-            # Initialize with database persistence
+            # Initialize with REAL database persistence
             self.database = await get_database()
             self.trade_engine = TradeEngine(
                 config={
-                    'paper_mode': True,
-                    'enable_persistence': True,  # ENABLE REAL PERSISTENCE
+                    'paper_mode': False,  # REAL MONEY MODE
+                    'enable_persistence': True,
                     'database': self.database
                 }, 
+                risk_manager=self.risk_manager,
+                zerodha=self.zerodha
+            )
+            
+            # Start REAL trade persistence service
+            await self.trade_engine.start_persistence_service()
+            
+            logger.info("✅ REAL Trade Engine with DATABASE PERSISTENCE initialized")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ REAL Trade Engine initialization failed: {e}")
+            # DO NOT create mock trade engine for real money
+            return False
+
+    async def _safe_init_real_order_manager(self):
+        """Initialize REAL order manager - no mock fallback"""
+        try:
+            from src.core.order_manager import OrderManager
+            
+            self.order_manager = OrderManager(
+                config=self.config.get('orders', {}),
+                zerodha=self.zerodha,
                 risk_manager=self.risk_manager
             )
             
-            # CRITICAL: Start trade persistence service
-            await self.trade_engine.start_persistence_service()
-            
-            logger.info("✅ Trade Engine with DATABASE PERSISTENCE initialized")
-            return True
-            
-        except ImportError as import_error:
-            logger.warning(f"TradeEngine import failed: {import_error}")
-            # Create a persistent mock trade engine
-            self.trade_engine = self._create_persistent_mock_trade_engine()
-            logger.info("✅ Persistent Mock Trade Engine initialized")
+            await self.order_manager.initialize()
+            logger.info("✅ REAL Order Manager initialized")
             return True
             
         except Exception as e:
-            logger.warning(f"Trade engine init failed: {e}")
-            self.trade_engine = self._create_persistent_mock_trade_engine()
-            logger.info("✅ Persistent Mock Trade Engine initialized")
-            return True
-    
-    def _create_persistent_mock_trade_engine(self):
-        """Create a mock trade engine that persists data"""
-        import json
-        from datetime import datetime
-        
-        class PersistentMockTradeEngine:
-            def __init__(self):
-                self.executed_trades = []
-                self.daily_pnl = 0.0
-                self.total_trades = 0
-                
-            async def execute_trade(self, signal):
-                """Execute trade with persistence"""
-                trade = {
-                    'trade_id': f"trade_{len(self.executed_trades) + 1}",
-                    'symbol': signal.symbol,
-                    'side': signal.side,
-                    'quantity': signal.quantity,
-                    'price': signal.expected_price,
-                    'timestamp': datetime.now().isoformat(),
-                    'strategy': signal.strategy_name,
-                    'pnl': 0.0  # Will be updated later
-                }
-                
-                # PERSIST TO REDIS
-                try:
-                    if hasattr(self, 'redis_client') and self.redis_client:
-                        trade_key = f"trade:{trade['trade_id']}"
-                        await self.redis_client.set(trade_key, json.dumps(trade))
-                        
-                        # Add to daily trades list
-                        daily_key = f"trades:{datetime.now().strftime('%Y%m%d')}"
-                        await self.redis_client.rpush(daily_key, json.dumps(trade))
-                        
-                        logger.info(f"✅ Trade {trade['trade_id']} persisted to Redis")
-                    
-                    # PERSIST TO DATABASE (if available)
-                    if hasattr(self, 'database') and self.database:
-                        await self._save_trade_to_database(trade)
-                        logger.info(f"✅ Trade {trade['trade_id']} persisted to Database")
-                        
-                except Exception as persist_error:
-                    logger.error(f"❌ Trade persistence failed: {persist_error}")
-                
-                # Update in-memory
-                self.executed_trades.append(trade)
-                self.total_trades += 1
-                
-                # Mock P&L calculation
-                pnl = signal.expected_price * signal.quantity * 0.02  # 2% mock profit
-                self.daily_pnl += pnl
-                trade['pnl'] = pnl
-                
-                logger.info(f"🚀 TRADE EXECUTED: {trade['symbol']} {trade['side']} {trade['quantity']} @ ₹{trade['price']}")
-                return trade
-            
-            async def _save_trade_to_database(self, trade):
-                """Save trade to database"""
-                try:
-                    # This would be the real database save
-                    # For now, just log that we would save it
-                    logger.info(f"📀 Would save trade to database: {trade['trade_id']}")
-                except Exception as e:
-                    logger.error(f"Database save failed: {e}")
-            
-            async def get_daily_trades(self):
-                """Get today's trades"""
-                today = datetime.now().strftime('%Y%m%d')
-                daily_trades = [t for t in self.executed_trades 
-                              if t['timestamp'].startswith(today)]
-                return daily_trades
-            
-            async def get_daily_pnl(self):
-                """Get today's P&L"""
-                return self.daily_pnl
-            
-            async def start_persistence_service(self):
-                """Start the persistence service"""
-                logger.info("✅ Mock persistence service started")
-                return True
-        
-        return PersistentMockTradeEngine()
-    
-    def _safe_init_order_manager(self):
-        """Safely initialize order manager"""
-        try:
-            self.order_manager = True  # Will be real OrderManager when implemented
-            logger.info("✅ Order Manager initialized (mock)")
-            return True
-        except Exception as e:
-            logger.warning(f"Order manager init failed: {e}")
-            self.order_manager = True
+            logger.error(f"❌ REAL Order Manager initialization failed: {e}")
             return False
-    
+
+    async def _safe_init_real_pre_market_analyzer(self):
+        """Initialize REAL pre-market analyzer"""
+        try:
+            from src.core.pre_market_analyzer import PreMarketAnalyzer
+            
+            self.pre_market_analyzer = PreMarketAnalyzer(
+                config=self.config.get('pre_market', {}),
+                market_data=self.market_data
+            )
+            
+            await self.pre_market_analyzer.initialize()
+            logger.info("✅ REAL Pre-Market Analyzer initialized")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ REAL Pre-Market Analyzer initialization failed: {e}")
+            return False
+
     def _log_component_status(self, status: Dict[str, bool]):
-        """Log the status of all components"""
-        logger.info("\n📊 COMPONENT INITIALIZATION STATUS:")
+        """Log the status of all REAL components"""
+        logger.info("\n📊 REAL COMPONENT INITIALIZATION STATUS:")
         for component, success in status.items():
             status_icon = "✅" if success else "❌"
-            logger.info(f"   {status_icon} {component}: {'SUCCESS' if success else 'FAILED/FALLBACK'}")
+            logger.info(f"   {status_icon} {component}: {'SUCCESS' if success else 'FAILED - NO MOCK FALLBACK'}")
         
         success_count = sum(status.values())
         total_count = len(status)
-        logger.info(f"\n🎯 OVERALL: {success_count}/{total_count} components initialized successfully")
-    
-    def _check_minimum_components(self, status: Dict[str, bool]) -> bool:
-        """Check if we have minimum components needed for trading"""
-        # We need at least market data and position tracker for basic trading
-        # Risk manager and order manager can be mocked
-        required = ['market_data', 'position_tracker']
-        optional = ['risk_manager', 'order_manager']  # These have good fallbacks
+        logger.info(f"\n🎯 OVERALL: {success_count}/{total_count} REAL components initialized successfully")
+
+    def _check_minimum_real_components(self, status: Dict[str, bool]) -> bool:
+        """Check if we have minimum REAL components needed for safe trading"""
+        # STRICT requirements for real money trading
+        required = ['market_data', 'position_tracker', 'risk_manager', 'trade_engine']
+        optional = ['order_manager', 'pre_market_analyzer']
         
-        # Check required components
+        # Check ALL required components must be present
         required_ok = all(status.get(component, False) for component in required)
         
-        # Log the check
-        logger.info(f"Minimum component check: Required {required_ok}, "
-                   f"Optional available: {sum(status.get(comp, False) for comp in optional)}/{len(optional)}")
+        logger.info(f"Minimum REAL component check: Required {required_ok}")
+        logger.info(f"Required components: {', '.join(required)}")
+        logger.info(f"Missing required: {[comp for comp in required if not status.get(comp, False)]}")
         
         return required_ok
-    
-    def _create_simple_risk_manager(self, config: Dict):
-        """Create a simple risk manager for basic functionality"""
-        class SimpleRiskManager:
-            def __init__(self, config):
-                self.config = config
-                self.max_daily_loss = config.get('max_daily_loss', 50000)
-                self.max_position_size = config.get('max_position_size', 0.05)
-                self.daily_pnl = 0.0
-                self.total_exposure = 0.0
-                
-            async def check_trade_allowed(self, signal):
-                """Simple trade validation"""
-                # Basic checks for demo/paper trading
-                return True
-                
-            async def get_risk_metrics(self):
-                """Get basic risk metrics"""
-                return {
-                    'daily_pnl': self.daily_pnl,
-                    'exposure': self.total_exposure,
-                    'risk_score': min(abs(self.daily_pnl / self.max_daily_loss) * 100, 100),
-                    'risk_level': 'low' if abs(self.daily_pnl) < self.max_daily_loss * 0.5 else 'medium'
-                }
-                
-            async def validate_signal(self, signal):
-                """Validate trading signal"""
-                return {'allowed': True, 'reason': 'Paper mode - all trades allowed'}
-                
-            async def calculate_position_size(self, signal, risk_score):
-                """Calculate position size"""
-                # Conservative position sizing for paper trading
-                return min(1, max(1, int(100000 / (signal.entry_price if hasattr(signal, 'entry_price') else 100))))
-        
-        return SimpleRiskManager(config)
-    
-    def _create_mock_market_data(self):
-        """Create mock market data manager"""
-        class MockMarketData:
-            async def start(self):
-                return True
-            async def stop(self):
-                return True
-            async def get_latest_data(self, symbols):
-                # Return mock data
-                return {symbol: {'price': 100, 'volume': 1000} for symbol in symbols}
-        return MockMarketData()
-    
-    async def _initialize_mock_components(self):
-        """Fallback to mock components if real ones fail"""
-        logger.info("Initializing mock trading components as fallback")
-        
-        # Ensure zerodha is available
-        if not self.zerodha:
-            self.zerodha = self._create_mock_zerodha()
-            
-        self.position_tracker = MockPositionTracker()
-        self.risk_manager = MockRiskManager()
-        self.order_manager = True
-        self.trade_engine = self.zerodha
-        self.market_data = self._create_mock_market_data()
-        self.strategy_engine = None
-        self.active_strategies = []
-    
-    async def _start_trading_loop(self):
-        """Start the main trading loop that generates and processes signals"""
-        try:
-            logger.info("🔄 Starting trading signal generation loop...")
-            
-            while self.is_active:
-                try:
-                    # Only trade during market hours
-                    if not self._is_market_open():
-                        await asyncio.sleep(60)  # Check every minute when markets closed
-                        continue
-                    
-                    # Get market data for all symbols
-                    symbols = ['BANKNIFTY', 'NIFTY', 'SBIN', 'RELIANCE', 'TCS']
-                    market_data = await self.market_data.get_latest_data(symbols)
-                    
-                    if not market_data:
-                        await asyncio.sleep(5)  # Wait 5 seconds if no data
-                        continue
-                    
-                    # Generate signals from all strategies
-                    if self.strategy_engine:
-                        signals = await self.strategy_engine.generate_all_signals(market_data)
-                        
-                        if signals:
-                            logger.info(f"📊 Generated {len(signals)} trading signals")
-                            
-                            # Execute signals using PERSISTENT trade engine
-                            await self._execute_persistent_trades(signals)
-                    
-                    # Wait before next iteration
-                    await asyncio.sleep(10)  # Check every 10 seconds during market hours
-                    
-                except Exception as loop_error:
-                    logger.error(f"Error in trading loop: {loop_error}")
-                    await asyncio.sleep(30)  # Wait 30 seconds on error
-                    
-        except Exception as e:
-            logger.error(f"Trading loop failed: {e}")
-    
-    async def _execute_persistent_trades(self, signals):
-        """Execute signals using the persistent trade engine"""
-        try:
-            if not self.trade_engine or not hasattr(self.trade_engine, 'execute_trade'):
-                logger.warning("No persistent trade engine available, falling back to mock trades")
-                await self._execute_mock_trades(signals)
-                return
-            
-            # Give trade engine access to redis for persistence
-            if hasattr(self.trade_engine, '__dict__'):
-                self.trade_engine.redis_client = getattr(self, 'redis_client', None)
-                self.trade_engine.database = getattr(self, 'database', None)
-            
-            for signal in signals:
-                try:
-                    # Execute trade using persistent engine
-                    trade_result = await self.trade_engine.execute_trade(signal)
-                    
-                    if trade_result:
-                        logger.info(f"✅ PERSISTENT TRADE: {trade_result['symbol']} {trade_result['side']} "
-                                  f"₹{trade_result['price']} → P&L: ₹{trade_result['pnl']:+.2f}")
-                        
-                        # Update in-memory counters too
-                        self.total_trades += 1
-                        self.daily_pnl += trade_result.get('pnl', 0)
-                    
-                except Exception as signal_error:
-                    logger.error(f"Error executing persistent trade for {signal.symbol}: {signal_error}")
-            
-            logger.info(f"📊 Persistent Trading Summary: {self.total_trades} trades executed")
-                       
-        except Exception as e:
-            logger.error(f"Error in persistent trade execution: {e}")
-            # Fallback to mock trades
-            await self._execute_mock_trades(signals)
-    
-    async def _execute_mock_trades(self, signals):
-        """Execute signals as mock paper trades"""
-        try:
-            import random
-            
-            for signal in signals:
-                try:
-                    # Create mock trade with random outcome
-                    trade_id = f"mock_{signal.symbol}_{self.total_trades + 1}"
-                    
-                    # Mock trade size (conservative)
-                    trade_value = signal.expected_price * signal.quantity * 10  # 10 shares per signal
-                    
-                    # Random trade outcome (70% win rate for demo)
-                    is_winner = random.random() < 0.7
-                    
-                    if is_winner:
-                        # Winner: 1-3% profit
-                        profit_pct = random.uniform(0.01, 0.03)
-                        pnl = trade_value * profit_pct
-                    else:
-                        # Loser: 0.5-2% loss (smaller losses)
-                        loss_pct = random.uniform(0.005, 0.02)
-                        pnl = -trade_value * loss_pct
-                    
-                    # Update trading metrics
-                    self.total_trades += 1
-                    self.daily_pnl += pnl
-                    
-                    # Log trade execution
-                    outcome = "✅ WIN" if is_winner else "❌ LOSS"
-                    logger.info(f"🎯 TRADE EXECUTED: {trade_id} {signal.symbol} {signal.side} "
-                              f"₹{trade_value:.0f} → {outcome} ₹{pnl:+.0f}")
-                    
-                    # Create mock position (for position tracking)
-                    mock_position = {
-                        'symbol': signal.symbol,
-                        'side': signal.side,
-                        'quantity': signal.quantity * 10,
-                        'entry_price': signal.expected_price,
-                        'current_pnl': pnl,
-                        'trade_id': trade_id
-                    }
-                    
-                    # Add to active positions temporarily (will be closed quickly)
-                    if not hasattr(self, 'mock_positions'):
-                        self.mock_positions = []
-                    
-                    self.mock_positions.append(mock_position)
-                    
-                    # Remove position after a few seconds (simulate quick trades)
-                    # In real system, positions would be managed properly
-                    if len(self.mock_positions) > 3:
-                        self.mock_positions.pop(0)  # Keep only latest 3 positions
-                    
-                except Exception as signal_error:
-                    logger.error(f"Error executing mock trade for {signal.symbol}: {signal_error}")
-            
-            # Update position count for status
-            self.active_positions = getattr(self, 'mock_positions', [])
-            
-            logger.info(f"📊 Trading Summary: {self.total_trades} trades, ₹{self.daily_pnl:+.0f} P&L, "
-                       f"{len(self.active_positions)} active positions")
-                       
-        except Exception as e:
-            logger.error(f"Error in mock trade execution: {e}")
-    
-    async def _apply_pre_market_recommendations(self):
-        """Apply pre-market analysis recommendations"""
-        try:
-            if not self.pre_market_results:
-                return
-            
-            # Apply system parameters
-            sys_params = self.pre_market_results.get('system_parameters', {})
-            if sys_params:
-                # Store parameters for when risk manager is properly initialized
-                self.system_parameters = sys_params
-                logger.info(f"System parameters stored: {sys_params}")
-            
-            # Apply strategy recommendations
-            strategy_recs = self.pre_market_results.get('strategy_recommendations', {})
-            for strategy_name, config in strategy_recs.items():
-                if config.get('enabled'):
-                    # Enable strategy with recommended parameters
-                    await self._configure_strategy(strategy_name, config)
-            
-            logger.info("Pre-market recommendations applied")
-            
-        except Exception as e:
-            logger.error(f"Failed to apply pre-market recommendations: {e}")
-    
-    async def _configure_strategy(self, strategy_name: str, config: Dict):
-        """Configure a strategy with given parameters"""
-        try:
-            # This would configure the actual strategy
-            # For now, just log it
-            logger.info(f"Configuring strategy {strategy_name}: {config}")
-            
-        except Exception as e:
-            logger.error(f"Failed to configure strategy {strategy_name}: {e}")
-    
+
     async def _perform_system_health_check(self) -> bool:
-        """Perform comprehensive system health check"""
+        """Perform comprehensive REAL system health check"""
         try:
-            # Check critical vs optional connections based on market status
             market_open = self._is_market_open()
             
-            # Core connections always required
-            core_connections_ok = True
-            try:
-                # Check essential connections (database, redis)
-                db_status = self.connection_manager.get_status('database') if self.connection_manager else None
-                redis_status = self.connection_manager.get_status('redis') if self.connection_manager else None
-                
-                # For now, be flexible with connections when markets are closed
-                if not market_open:
-                    logger.info("Markets closed - relaxed connection requirements")
-                    core_connections_ok = True  # Allow startup without all connections when markets closed
-                else:
-                    # When markets are open, require all connections
-                    core_connections_ok = self.connection_manager.is_all_connected() if self.connection_manager else False
-                    
-            except Exception as e:
-                logger.warning(f"Connection check error: {e}")
-                core_connections_ok = not market_open  # Allow when markets closed, strict when open
-            
+            # STRICT checks for real money safety
             checks = {
-                'connections': core_connections_ok,
+                'zerodha_connection': self.zerodha is not None,
+                'market_data': self.market_data is not None,
                 'risk_manager': self.risk_manager is not None,
-                'order_manager': self.order_manager is not None,
                 'position_tracker': self.position_tracker is not None,
-                'pre_market_complete': bool(self.pre_market_results) or not market_open  # Not required when markets closed
+                'trade_engine': self.trade_engine is not None,
+                'strategy_engine': self.strategy_engine is not None
             }
             
             all_healthy = all(checks.values())
             
-            logger.info("System Health Check:")
+            logger.info("REAL MONEY System Health Check:")
             logger.info(f"  Market Open: {market_open}")
             for component, status in checks.items():
-                logger.info(f"  {component}: {'✅' if status else '❌'}")
+                logger.info(f"  {component}: {'✅' if status else '❌ MISSING - TRADING UNSAFE'}")
             
             if all_healthy:
-                logger.info("✅ System health check PASSED")
+                logger.info("✅ REAL MONEY system health check PASSED")
             else:
-                logger.warning("❌ System health check FAILED")
+                logger.error("❌ REAL MONEY system health check FAILED - TRADING BLOCKED")
             
             return all_healthy
             
         except Exception as e:
-            logger.error(f"Error during health check: {e}")
+            logger.error(f"Error during REAL MONEY health check: {e}")
             return False
-    
+
+    def _is_market_open(self) -> bool:
+        """Check if market is open for trading"""
+        try:
+            from datetime import datetime, time
+            now = datetime.now()
+            
+            # Indian market hours: 9:15 AM to 3:30 PM IST, Monday to Friday
+            if now.weekday() >= 5:  # Saturday = 5, Sunday = 6
+                return False
+            
+            market_start = time(9, 15)
+            market_end = time(15, 30)
+            current_time = now.time()
+            
+            return market_start <= current_time <= market_end
+            
+        except Exception as e:
+            logger.error(f"Error checking market hours: {e}")
+            return False
+
     async def enable_trading(self):
         """Enable autonomous trading with proper signal generation"""
         logger.info(f"🚀 enable_trading called on instance: {getattr(self, '_instance_id', 'unknown')}")
@@ -1170,31 +612,6 @@ class TradingOrchestrator:
             except Exception as e:
                 logger.error(f"Error in trading monitor: {e}")
                 await asyncio.sleep(60)
-    
-    def _is_market_open(self) -> bool:
-        """Check if market is open (IST timezone)"""
-        import pytz
-        
-        # Get current time in IST (Indian Standard Time)
-        ist = pytz.timezone('Asia/Kolkata')
-        current_time_ist = datetime.now(ist).time()
-        current_date_ist = datetime.now(ist)
-        
-        market_open = time(9, 15)
-        market_close = time(15, 30)
-        
-        # Check weekday (Monday = 0, Friday = 4)
-        if current_date_ist.weekday() > 4:
-            return False
-        
-        # Check if current IST time is within market hours
-        is_open = market_open <= current_time_ist <= market_close
-        
-        # Debug logging
-        logger.debug(f"Market hours check: {current_time_ist.strftime('%H:%M')} IST, "
-                    f"Weekday: {current_date_ist.weekday()}, Open: {is_open}")
-        
-        return is_open
     
     async def _update_metrics(self):
         """Update trading metrics"""
