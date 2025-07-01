@@ -134,14 +134,29 @@ class TradingOrchestrator:
     def _initialize_broker_connection(self):
         """Initialize REAL Zerodha connection only"""
         try:
-            from brokers.resilient_zerodha import ResilientZerodha
+            from brokers.resilient_zerodha import ResilientZerodhaConnection
+            from brokers.zerodha import ZerodhaIntegration
             
             # CRITICAL: Only use real Zerodha - no mock fallback
             zerodha_config = self.config.get('zerodha', {})
             if not zerodha_config:
-                raise ValueError("❌ No Zerodha configuration found - cannot trade real money without broker")
+                # Set basic config for real money trading
+                zerodha_config = {
+                    'mock_mode': False,  # REAL MONEY MODE
+                    'order_rate_limit': 1.0,
+                    'ws_reconnect_delay': 5,
+                    'ws_max_reconnect_attempts': 10
+                }
                 
-            self.zerodha = ResilientZerodha(config=zerodha_config)
+            # Initialize base Zerodha integration
+            zerodha_integration = ZerodhaIntegration(config=zerodha_config)
+            
+            # Wrap with resilient connection
+            self.zerodha = ResilientZerodhaConnection(
+                broker=zerodha_integration,
+                config=zerodha_config
+            )
+            
             logger.info("✅ REAL Zerodha connection initialized - NO MOCK FALLBACK")
             
         except Exception as e:
