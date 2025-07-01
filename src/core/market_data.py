@@ -111,15 +111,29 @@ class MarketDataManager:
         return data
     
     def _get_base_price(self, symbol: str) -> float:
-        """Get base price for symbol"""
+        """Get realistic base price for symbol based on current market levels"""
+        # Updated realistic base prices as of July 2025
         base_prices = {
-            'BANKNIFTY': 44000,
-            'NIFTY': 19800,
-            'SBIN': 600,
-            'RELIANCE': 2500,
-            'TCS': 3600
+            'BANKNIFTY': 52000,  # Updated to realistic Nifty Bank levels
+            'NIFTY': 24000,      # Updated to realistic Nifty levels  
+            'SBIN': 830,         # Updated to realistic SBI levels
+            'RELIANCE': 2450,    # Updated to realistic Reliance levels
+            'TCS': 4100,         # Updated to realistic TCS levels
+            'INFY': 1800,        # Updated to realistic Infosys levels
+            'HDFCBANK': 1650,    # Updated to realistic HDFC Bank levels
+            'ICICIBANK': 1200,   # Updated to realistic ICICI Bank levels
+            'BHARTIARTL': 1650,  # Updated to realistic Airtel levels
+            'ITC': 460,          # Updated to realistic ITC levels
+            'LT': 3650,          # Updated to realistic L&T levels
+            'MARUTI': 11500,     # Updated to realistic Maruti levels
         }
-        return base_prices.get(symbol, 1000)
+        
+        realistic_price = base_prices.get(symbol, 1000)
+        
+        # Log the price being used for verification
+        logger.info(f"📊 Using realistic base price for {symbol}: ₹{realistic_price}")
+        
+        return realistic_price
     
     def _generate_candle_history(self, base_price: float, count: int = 50) -> List[Candle]:
         """Generate mock candle history with proper OHLCV data"""
