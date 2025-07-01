@@ -7,6 +7,7 @@ import logging
 from typing import Dict, Optional, Callable
 from datetime import datetime, timedelta
 from enum import Enum
+from abc import ABC, abstractmethod
 import os
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,142 @@ class ConnectionStatus(Enum):
     CONNECTED = "connected"
     ERROR = "error"
     RECONNECTING = "reconnecting"
+
+class ConnectionHealth:
+    """Health status of a connection"""
+    def __init__(self):
+        self.state = ConnectionStatus.DISCONNECTED
+        self.last_connected = None
+        self.last_error = None
+        self.reconnect_attempts = 0
+        self.latency_ms = 0
+        self.uptime_seconds = 0
+
+class ResilientConnection(ABC):
+    """Base class for resilient connections with automatic retry and recovery"""
+    
+    def __init__(self, name: str, config: Dict):
+        self.name = name
+        self.config = config
+        self.health = ConnectionHealth()
+        self._retry_attempts = 0
+        self._max_retry_attempts = config.get('max_retry_attempts', 3)
+        self._retry_delay = config.get('retry_delay', 1.0)
+        self._connection_timeout = config.get('connection_timeout', 30.0)
+        self._health_check_interval = config.get('health_check_interval', 30.0)
+        self._last_health_check = None
+        self._is_monitoring = False
+        
+    async def connect(self) -> bool:
+        """Connect with retry logic"""
+        self.health.state = ConnectionStatus.CONNECTING
+        self._retry_attempts = 0
+        
+        while self._retry_attempts < self._max_retry_attempts:
+            try:
+                await asyncio.wait_for(
+                    self._do_connect(), 
+                    timeout=self._connection_timeout
+                )
+                
+                self.health.state = ConnectionStatus.CONNECTED
+                self.health.last_connected = datetime.now()
+                self.health.reconnect_attempts = self._retry_attempts
+                self._retry_attempts = 0
+                
+                # Start health monitoring
+                if not self._is_monitoring:
+                    asyncio.create_task(self._health_monitor())
+                    self._is_monitoring = True
+                
+                logger.info(f"Connected to {self.name}")
+                return True
+                
+            except Exception as e:
+                self._retry_attempts += 1
+                self.health.last_error = str(e)
+                logger.error(f"Connection attempt {self._retry_attempts} failed for {self.name}: {e}")
+                
+                if self._retry_attempts < self._max_retry_attempts:
+                    await asyncio.sleep(self._retry_delay * self._retry_attempts)
+        
+        self.health.state = ConnectionStatus.ERROR
+        logger.error(f"Failed to connect to {self.name} after {self._max_retry_attempts} attempts")
+        return False
+    
+    async def disconnect(self):
+        """Disconnect from service"""
+        try:
+            self.health.state = ConnectionStatus.DISCONNECTED
+            await self._do_disconnect()
+            logger.info(f"Disconnected from {self.name}")
+        except Exception as e:
+            logger.error(f"Error disconnecting from {self.name}: {e}")
+    
+    async def ensure_connected(self):
+        """Ensure connection is established"""
+        if self.health.state != ConnectionStatus.CONNECTED:
+            await self.connect()
+    
+    async def execute(self, func, *args, **kwargs):
+        """Execute function with retry on connection failure"""
+        await self.ensure_connected()
+        
+        retry_count = 0
+        while retry_count < self._max_retry_attempts:
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                retry_count += 1
+                logger.warning(f"Execution failed for {self.name} (attempt {retry_count}): {e}")
+                
+                if retry_count < self._max_retry_attempts:
+                    # Try to reconnect
+                    await self.connect()
+                    await asyncio.sleep(self._retry_delay)
+                else:
+                    raise
+    
+    async def _health_monitor(self):
+        """Monitor connection health"""
+        while self.health.state in [ConnectionStatus.CONNECTED, ConnectionStatus.RECONNECTING]:
+            try:
+                await asyncio.sleep(self._health_check_interval)
+                
+                if await self._check_connection_alive():
+                    self._last_health_check = datetime.now()
+                    if self.health.last_connected:
+                        self.health.uptime_seconds = (datetime.now() - self.health.last_connected).total_seconds()
+                else:
+                    logger.warning(f"Health check failed for {self.name}, reconnecting...")
+                    await self._reconnect()
+                    
+            except Exception as e:
+                logger.error(f"Error in health monitor for {self.name}: {e}")
+    
+    async def _reconnect(self):
+        """Attempt to reconnect"""
+        self.health.state = ConnectionStatus.RECONNECTING
+        await self.connect()
+    
+    def get_health(self) -> ConnectionHealth:
+        """Get current health status"""
+        return self.health
+    
+    @abstractmethod
+    async def _do_connect(self):
+        """Implement actual connection logic"""
+        pass
+    
+    @abstractmethod
+    async def _do_disconnect(self):
+        """Implement actual disconnection logic"""
+        pass
+    
+    @abstractmethod
+    async def _check_connection_alive(self) -> bool:
+        """Check if connection is still alive"""
+        pass
 
 class ConnectionManager:
     """Manages all external connections with health monitoring"""
@@ -372,3 +509,146 @@ class ConnectionManager:
                 logger.info(f"Disconnected {name}")
             except Exception as e:
                 logger.error(f"Error disconnecting {name}: {e}") 
+
+# Missing ResilientConnection base class for ResilientZerodhaConnection
+from abc import ABC, abstractmethod
+
+class ConnectionHealth:
+    """Health status of a connection"""
+    def __init__(self):
+        self.state = ConnectionStatus.DISCONNECTED
+        self.last_connected = None
+        self.last_error = None
+        self.reconnect_attempts = 0
+        self.latency_ms = 0
+        self.uptime_seconds = 0
+
+class ResilientConnection(ABC):
+    """Base class for resilient connections with automatic retry and recovery"""
+    
+    def __init__(self, name: str, config: Dict):
+        self.name = name
+        self.config = config
+        self.health = ConnectionHealth()
+        self._retry_attempts = 0
+        self._max_retry_attempts = config.get("max_retry_attempts", 3)
+        self._retry_delay = config.get("retry_delay", 1.0)
+        self._connection_timeout = config.get("connection_timeout", 30.0)
+        self._health_check_interval = config.get("health_check_interval", 30.0)
+        self._last_health_check = None
+        self._is_monitoring = False
+        
+    async def connect(self) -> bool:
+        """Connect with retry logic"""
+        self.health.state = ConnectionStatus.CONNECTING
+        try:
+            await self._do_connect()
+            self.health.state = ConnectionStatus.CONNECTED
+            self.health.last_connected = datetime.now()
+            logger.info(f"Connected to {self.name}")
+            return True
+        except Exception as e:
+            self.health.state = ConnectionStatus.ERROR
+            self.health.last_error = str(e)
+            logger.error(f"Failed to connect to {self.name}: {e}")
+            return False
+    
+    async def disconnect(self):
+        """Disconnect from service"""
+        try:
+            await self._do_disconnect()
+            self.health.state = ConnectionStatus.DISCONNECTED
+            logger.info(f"Disconnected from {self.name}")
+        except Exception as e:
+            logger.error(f"Error disconnecting from {self.name}: {e}")
+    
+    async def ensure_connected(self):
+        """Ensure connection is established"""
+        if self.health.state != ConnectionStatus.CONNECTED:
+            await self.connect()
+    
+    async def execute(self, func, *args, **kwargs):
+        """Execute function with retry on connection failure"""
+        await self.ensure_connected()
+        return await func(*args, **kwargs)
+    
+    def get_health(self) -> ConnectionHealth:
+        """Get current health status"""
+        return self.health
+    
+    @abstractmethod
+    async def _do_connect(self):
+        """Implement actual connection logic"""
+        pass
+    
+    @abstractmethod
+    async def _do_disconnect(self):
+        """Implement actual disconnection logic"""
+        pass
+    
+    @abstractmethod
+    async def _check_connection_alive(self) -> bool:
+        """Check if connection is still alive"""
+        pass
+
+
+
+# Missing ResilientConnection base class
+from abc import ABC, abstractmethod
+
+class ConnectionHealth:
+    def __init__(self):
+        self.state = ConnectionStatus.DISCONNECTED
+        self.last_connected = None
+        self.last_error = None
+        self.reconnect_attempts = 0
+        self.latency_ms = 0
+        self.uptime_seconds = 0
+
+class ResilientConnection(ABC):
+    def __init__(self, name: str, config: Dict):
+        self.name = name
+        self.config = config
+        self.health = ConnectionHealth()
+        
+    async def connect(self) -> bool:
+        self.health.state = ConnectionStatus.CONNECTING
+        try:
+            await self._do_connect()
+            self.health.state = ConnectionStatus.CONNECTED
+            self.health.last_connected = datetime.now()
+            return True
+        except Exception as e:
+            self.health.state = ConnectionStatus.ERROR
+            self.health.last_error = str(e)
+            return False
+    
+    async def disconnect(self):
+        try:
+            await self._do_disconnect()
+            self.health.state = ConnectionStatus.DISCONNECTED
+        except Exception as e:
+            logger.error(f'Error disconnecting {self.name}: {e}')
+    
+    async def ensure_connected(self):
+        if self.health.state != ConnectionStatus.CONNECTED:
+            await self.connect()
+    
+    async def execute(self, func, *args, **kwargs):
+        await self.ensure_connected()
+        return await func(*args, **kwargs)
+    
+    def get_health(self) -> ConnectionHealth:
+        return self.health
+    
+    @abstractmethod
+    async def _do_connect(self):
+        pass
+    
+    @abstractmethod
+    async def _do_disconnect(self):
+        pass
+    
+    @abstractmethod
+    async def _check_connection_alive(self) -> bool:
+        pass
