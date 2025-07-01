@@ -453,7 +453,9 @@ class TradingOrchestrator:
                 
                 return status
         
-        return RealStrategyEngine()
+        self.strategy_engine = RealStrategyEngine()
+        logger.info("✅ REAL Strategy Engine initialized")
+        return True
 
     async def _safe_init_real_trade_engine(self):
         """Initialize REAL trade engine - no mock fallback"""
