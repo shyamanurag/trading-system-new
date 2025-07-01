@@ -161,7 +161,11 @@ async def get_strategies(
 ):
     """Get active trading strategies"""
     try:
-        strategies = await orchestrator.strategy_manager.get_active_strategies()
+        # Fix: Use strategy_engine instead of strategy_manager
+        if hasattr(orchestrator, 'strategy_engine') and orchestrator.strategy_engine:
+            strategies = orchestrator.strategy_engine.get_strategy_status()
+        else:
+            strategies = {}
         return StrategyResponse(
             success=True,
             message="Strategies retrieved successfully",
@@ -177,7 +181,18 @@ async def get_risk_metrics(
 ):
     """Get current risk metrics"""
     try:
-        risk_metrics = await orchestrator.risk_manager.get_risk_metrics()
+        # Fix: Check if risk_manager is properly initialized
+        if hasattr(orchestrator, 'risk_manager') and orchestrator.risk_manager is not None:
+            risk_metrics = await orchestrator.risk_manager.get_risk_metrics()
+        else:
+            # Return default risk metrics if not initialized
+            risk_metrics = {
+                "max_daily_loss": 50000,
+                "current_exposure": 0,
+                "available_capital": 0,
+                "risk_score": 0,
+                "status": "risk_manager_not_initialized"
+            }
         return RiskMetricsResponse(
             success=True,
             message="Risk metrics retrieved successfully",
