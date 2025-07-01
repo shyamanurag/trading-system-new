@@ -515,7 +515,7 @@ class TradingOrchestrator:
                 config=self.config.get("pre_market", {})
             )
             
-            await self.pre_market_analyzer.initialize()
+            # PreMarketAnalyzer ready (no initialize method needed)
             logger.info("✅ REAL Pre-Market Analyzer initialized")
             return True
             
