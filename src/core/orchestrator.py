@@ -256,13 +256,24 @@ class TradingOrchestrator:
         """Initialize REAL risk manager - no mock fallback"""
         try:
             from src.core.risk_manager import RiskManager
+            from src.events import EventBus
+            
+            # Create event bus if not exists
+            if not hasattr(self, 'event_bus'):
+                self.event_bus = EventBus()
+            
+            # Create position tracker if not exists (needed by risk manager)
+            if not hasattr(self, 'position_tracker'):
+                logger.warning("Position tracker not available for risk manager")
+                return False
             
             self.risk_manager = RiskManager(
                 config=self.config.get('risk', {}),
-                database=getattr(self, 'database', None)
+                position_tracker=self.position_tracker,
+                event_bus=self.event_bus
             )
             
-            await self.risk_manager.initialize()
+            await self.risk_manager.start_monitoring()
             logger.info("✅ REAL Risk Manager initialized")
             return True
             
@@ -275,13 +286,28 @@ class TradingOrchestrator:
         """Initialize REAL position tracker - no mock fallback"""
         try:
             from src.core.position_tracker import PositionTracker
+            from src.events import EventBus
+            import redis.asyncio as redis
             
-            self.position_tracker = PositionTracker(
-                config=self.config.get('positions', {}),
-                zerodha=self.zerodha
+            # Create event bus if not exists
+            if not hasattr(self, 'event_bus'):
+                self.event_bus = EventBus()
+            
+            # Create redis client
+            redis_config = self.config.get('redis', {
+                'host': 'localhost', 
+                'port': 6379
+            })
+            redis_client = redis.Redis(
+                host=redis_config['host'], 
+                port=redis_config['port']
             )
             
-            await self.position_tracker.initialize()
+            self.position_tracker = PositionTracker(
+                event_bus=self.event_bus,
+                redis_client=redis_client
+            )
+            
             logger.info("✅ REAL Position Tracker initialized")
             return True
             
@@ -294,12 +320,14 @@ class TradingOrchestrator:
         try:
             from src.core.market_data import MarketDataManager
             
-            self.market_data = MarketDataManager(
-                config=self.config.get('market_data', {}),
-                truedata_config=self.config.get('truedata', {})
-            )
+            # Merge market_data and truedata configs
+            market_config = self.config.get('market_data', {})
+            truedata_config = self.config.get('truedata', {})
+            merged_config = {**market_config, **truedata_config}
             
-            await self.market_data.initialize()
+            self.market_data = MarketDataManager(config=merged_config)
+            
+            await self.market_data.start()
             logger.info("✅ REAL Market Data Manager initialized")
             return True
             
