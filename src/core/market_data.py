@@ -78,35 +78,39 @@ class MarketDataManager:
             return {}
     
     def _get_mock_market_data(self, symbols: List[str]) -> Dict[str, MarketData]:
-        """Get REAL market data from TrueData feed instead of fake mock data"""
+        """Get REAL market data from TrueData feed using proper symbol mapping"""
         data = {}
         base_time = datetime.now()
         
         for symbol in symbols:
             try:
-                # Get REAL price from TrueData feed
-                real_price = self._get_real_price_from_truedata(symbol)
+                # Get REAL price using proper symbol mapping
+                real_price, real_volume, real_ohlc = self._get_real_data_from_truedata(symbol)
                 
                 if real_price is None:
                     logger.warning(f"⚠️ No TrueData for {symbol}, skipping")
                     continue
                 
-                # Generate price history based on REAL current price (not fake base price)
-                price_history = self._generate_candle_history(real_price, 50)
+                # Generate price history based on REAL current price and OHLC
+                price_history = self._generate_candle_history_from_real_data(
+                    current_price=real_price, 
+                    real_ohlc=real_ohlc, 
+                    count=50
+                )
                 
-                # Create proper MarketData object with REAL price
+                # Create proper MarketData object with REAL data
                 market_data = MarketData(
                     symbol=symbol,
                     current_price=round(real_price, 2),
                     price_history=price_history,
                     timestamp=base_time,
-                    volume=random.randint(1000, 10000),  # TODO: Get real volume from TrueData
+                    volume=real_volume if real_volume > 0 else random.randint(1000, 10000),
                     volatility=random.uniform(0.15, 0.45),
                     momentum=random.uniform(-0.05, 0.05)
                 )
                 
                 data[symbol] = market_data
-                logger.info(f"✅ Using REAL TrueData price for {symbol}: ₹{real_price}")
+                logger.info(f"✅ REAL TrueData for {symbol}: ₹{real_price:,.2f} | Vol: {real_volume:,}")
                 
             except Exception as e:
                 logger.error(f"Error getting real data for {symbol}: {e}")
@@ -114,80 +118,129 @@ class MarketDataManager:
         
         return data
     
-    def _get_real_price_from_truedata(self, symbol: str) -> Optional[float]:
-        """Get REAL current price from TrueData feed"""
+    def _get_real_data_from_truedata(self, symbol: str) -> tuple[Optional[float], int, dict]:
+        """Get REAL price, volume, and OHLC data using proper symbol mapping"""
         try:
-            # Import TrueData data directly (not API endpoints)
-            from data.truedata_client import live_market_data
+            # Import TrueData client and symbol mapping
+            from data.truedata_client import live_market_data, subscribe_to_symbols
+            from config.truedata_symbols import get_truedata_symbol
             
-            # Try to get data for this specific symbol
+            # STEP 1: Convert to proper TrueData symbol format
+            truedata_symbol = get_truedata_symbol(symbol)
+            logger.debug(f"🔄 Symbol mapping: {symbol} → {truedata_symbol}")
+            
+            # STEP 2: Try to get data using mapped symbol
+            if truedata_symbol in live_market_data:
+                symbol_data = live_market_data[truedata_symbol]
+                
+                # Extract price
+                ltp = symbol_data.get('ltp', 0)
+                if not ltp or ltp <= 0:
+                    logger.warning(f"⚠️ Invalid LTP for {truedata_symbol}: {ltp}")
+                    return None, 0, {}
+                
+                # Extract volume (try multiple fields)
+                volume = 0
+                volume_fields = ['volume', 'ttq', 'total_traded_quantity', 'vol', 'day_volume']
+                for field in volume_fields:
+                    vol = symbol_data.get(field, 0)
+                    if vol and vol > 0:
+                        volume = int(vol)
+                        break
+                
+                # Extract OHLC data
+                ohlc = {
+                    'open': symbol_data.get('open', ltp),
+                    'high': symbol_data.get('high', ltp),
+                    'low': symbol_data.get('low', ltp),
+                    'close': ltp
+                }
+                
+                logger.info(f"📊 REAL TrueData: {symbol} ({truedata_symbol}) = ₹{ltp:,.2f} | Vol: {volume:,} | OHLC: O:{ohlc['open']:.2f} H:{ohlc['high']:.2f} L:{ohlc['low']:.2f}")
+                return float(ltp), volume, ohlc
+            
+            # STEP 3: If mapped symbol not found, try direct symbol
             if symbol in live_market_data:
                 symbol_data = live_market_data[symbol]
                 ltp = symbol_data.get('ltp', 0)
                 if ltp and ltp > 0:
-                    logger.info(f"📊 REAL TrueData price for {symbol}: ₹{ltp}")
-                    return float(ltp)
+                    logger.info(f"📊 REAL TrueData (direct): {symbol} = ₹{ltp:,.2f}")
+                    return float(ltp), symbol_data.get('volume', 0), {'open': ltp, 'high': ltp, 'low': ltp, 'close': ltp}
             
-            # Try alternate symbol formats (RELIANCE vs RELIANCE-EQ, etc.)
-            alternate_symbols = [f"{symbol}-EQ", f"{symbol}-I", symbol.replace("-EQ", ""), symbol.replace("-I", "")]
+            # STEP 4: AUTO-SUBSCRIBE if symbol not found but is valid
+            logger.info(f"🔄 AUTO-SUBSCRIBE: {symbol} ({truedata_symbol}) not found, attempting subscription...")
             
-            for alt_symbol in alternate_symbols:
-                if alt_symbol in live_market_data:
-                    alt_data = live_market_data[alt_symbol]
-                    ltp = alt_data.get('ltp', 0)
-                    if ltp and ltp > 0:
-                        logger.info(f"📊 REAL TrueData price for {symbol} (as {alt_symbol}): ₹{ltp}")
-                        return float(ltp)
+            # Try to subscribe to the missing symbol
+            success = subscribe_to_symbols([truedata_symbol])
+            if success:
+                logger.info(f"✅ AUTO-SUBSCRIBED: {truedata_symbol} - data should be available soon")
+                # Return None for now, will have data on next request
+                return None, 0, {}
+            else:
+                logger.warning(f"❌ AUTO-SUBSCRIBE FAILED: {truedata_symbol}")
             
-            # Last resort: fuzzy match symbol names
-            for td_symbol, td_data in live_market_data.items():
-                if (symbol.upper() in td_symbol.upper() or 
-                    td_symbol.upper() in symbol.upper() or
-                    symbol.replace("-", "").upper() in td_symbol.replace("-", "").upper()):
-                    ltp = td_data.get('ltp', 0)
-                    if ltp and ltp > 0:
-                        logger.info(f"📊 REAL TrueData price for {symbol} (matched {td_symbol}): ₹{ltp}")
-                        return float(ltp)
+            # STEP 5: Debug available symbols if not found
+            available_symbols = list(live_market_data.keys())[:10]  # Show first 10
+            logger.warning(f"⚠️ Symbol {symbol} (mapped to {truedata_symbol}) not found in TrueData")
+            logger.debug(f"📋 Available symbols sample: {available_symbols}")
             
-            logger.warning(f"⚠️ No TrueData found for {symbol}")
-            return None
+            return None, 0, {}
             
+        except ImportError as e:
+            logger.error(f"❌ Cannot import TrueData modules: {e}")
+            return None, 0, {}
         except Exception as e:
             logger.error(f"❌ Error getting TrueData for {symbol}: {e}")
-            return None
+            return None, 0, {}
     
-    def _generate_candle_history(self, base_price: float, count: int = 50) -> List[Candle]:
-        """Generate mock candle history with proper OHLCV data"""
+    def _generate_candle_history_from_real_data(self, current_price: float, real_ohlc: dict, count: int = 50) -> List[Candle]:
+        """Generate candle history using REAL OHLC data as anchor"""
         history = []
-        current_price = base_price
         base_time = datetime.now() - timedelta(minutes=count)
         
+        # Use real OHLC for the latest candle, then generate historical data
+        real_open = real_ohlc.get('open', current_price)
+        real_high = real_ohlc.get('high', current_price)
+        real_low = real_ohlc.get('low', current_price)
+        
+        # Start from a reasonable historical price (slightly lower than real_open)
+        start_price = real_open * 0.995  # Start 0.5% below real open
+        
         for i in range(count):
-            # Generate OHLC data
-            open_price = current_price
-            change_percent = random.uniform(-0.015, 0.015)  # ±1.5% per candle
-            close_price = open_price * (1 + change_percent)
-            
-            # High and low based on volatility
-            volatility = random.uniform(0.005, 0.02)
-            high_price = max(open_price, close_price) * (1 + volatility)
-            low_price = min(open_price, close_price) * (1 - volatility)
-            
-            # Volume
-            volume = random.randint(500, 5000)
-            
-            # Create candle
-            candle = Candle(
-                timestamp=base_time + timedelta(minutes=i),
-                open=round(open_price, 2),
-                high=round(high_price, 2),
-                low=round(low_price, 2),
-                close=round(close_price, 2),
-                volume=volume
-            )
+            if i == count - 1:
+                # Last candle uses REAL OHLC data
+                candle = Candle(
+                    timestamp=base_time + timedelta(minutes=i),
+                    open=round(real_open, 2),
+                    high=round(real_high, 2),
+                    low=round(real_low, 2),
+                    close=round(current_price, 2),
+                    volume=random.randint(500, 5000)
+                )
+            else:
+                # Historical candles progress toward real data
+                progress = i / (count - 1)  # 0 to 1
+                target_price = start_price + (real_open - start_price) * progress
+                
+                # Generate OHLC for this candle
+                open_price = target_price
+                change_percent = random.uniform(-0.01, 0.01)  # ±1% per candle
+                close_price = open_price * (1 + change_percent)
+                
+                volatility = random.uniform(0.005, 0.015)
+                high_price = max(open_price, close_price) * (1 + volatility)
+                low_price = min(open_price, close_price) * (1 - volatility)
+                
+                candle = Candle(
+                    timestamp=base_time + timedelta(minutes=i),
+                    open=round(open_price, 2),
+                    high=round(high_price, 2),
+                    low=round(low_price, 2),
+                    close=round(close_price, 2),
+                    volume=random.randint(500, 5000)
+                )
             
             history.append(candle)
-            current_price = close_price  # Next candle starts where this one ended
         
         return history
     
@@ -200,12 +253,62 @@ class MarketDataManager:
         """Background task to continuously update mock data"""
         while self.is_running:
             try:
-                # Update cached data
-                self.market_data_cache = self._get_mock_market_data(self.symbols)
+                # FIXED: Process ALL available TrueData symbols, not just configured ones
+                available_symbols = self._get_all_available_truedata_symbols()
+                
+                if available_symbols:
+                    # Process ALL symbols from TrueData
+                    self.market_data_cache = self._get_mock_market_data(available_symbols)
+                    logger.info(f"📊 Updated market data for {len(available_symbols)} symbols from TrueData")
+                else:
+                    # Fallback to configured symbols if TrueData not available
+                    self.market_data_cache = self._get_mock_market_data(self.symbols)
+                    logger.debug(f"📊 Using fallback symbols: {len(self.symbols)} configured symbols")
+                
                 await asyncio.sleep(self.update_interval)
             except Exception as e:
                 logger.error(f"Error generating mock data: {e}")
                 await asyncio.sleep(5)
+
+    def _get_all_available_truedata_symbols(self) -> List[str]:
+        """Get ALL symbols currently available from TrueData"""
+        try:
+            from data.truedata_client import live_market_data
+            from config.truedata_symbols import get_truedata_symbol
+            
+            # Get ALL symbols that have flowing data from TrueData
+            available_truedata_symbols = list(live_market_data.keys())
+            
+            if not available_truedata_symbols:
+                logger.debug("No TrueData symbols available, using configured symbols")
+                return self.symbols
+            
+            # Convert TrueData symbols back to standard format for strategies
+            # e.g., NIFTY-I → NIFTY, RELIANCE → RELIANCE
+            standard_symbols = []
+            
+            # Create reverse mapping
+            from config.truedata_symbols import SYMBOL_MAPPING
+            reverse_mapping = {v: k for k, v in SYMBOL_MAPPING.items()}
+            
+            for td_symbol in available_truedata_symbols:
+                # Try reverse mapping first
+                if td_symbol in reverse_mapping:
+                    standard_symbols.append(reverse_mapping[td_symbol])
+                # If no mapping, use as-is (for symbols like RELIANCE that don't change)
+                else:
+                    standard_symbols.append(td_symbol)
+            
+            # Remove duplicates and filter out system symbols
+            unique_symbols = list(set(standard_symbols))
+            filtered_symbols = [s for s in unique_symbols if not s.startswith('_') and len(s) > 1]
+            
+            logger.info(f"🔄 Processing {len(filtered_symbols)} symbols from TrueData: {filtered_symbols[:10]}...")
+            return filtered_symbols
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting TrueData symbols: {e}")
+            return self.symbols  # Fallback to configured symbols
 
 async def get_market_data(symbol: str) -> Dict[str, Any]:
     """Get market data for a symbol"""

@@ -319,6 +319,7 @@ class TradingOrchestrator:
         """Initialize REAL market data - no mock fallback"""
         try:
             from src.core.market_data import MarketDataManager
+            from src.core.intelligent_symbol_manager import intelligent_symbol_manager
             
             # Merge market_data and truedata configs
             market_config = self.config.get('market_data', {})
@@ -327,8 +328,13 @@ class TradingOrchestrator:
             
             self.market_data = MarketDataManager(config=merged_config)
             
+            # Initialize Intelligent Symbol Manager for dynamic symbol subscription
+            logger.info("🤖 Initializing Intelligent Symbol Manager...")
+            await intelligent_symbol_manager.start()
+            self.intelligent_symbol_manager = intelligent_symbol_manager
+            
             await self.market_data.start()
-            logger.info("✅ REAL Market Data Manager initialized")
+            logger.info("✅ REAL Market Data Manager with Intelligent Symbol Management initialized")
             return True
             
         except Exception as e:
@@ -856,6 +862,11 @@ class TradingOrchestrator:
         
         # Disable trading
         await self.disable_trading()
+        
+        # Shutdown intelligent symbol manager
+        if hasattr(self, 'intelligent_symbol_manager') and self.intelligent_symbol_manager:
+            logger.info("🤖 Shutting down Intelligent Symbol Manager...")
+            await self.intelligent_symbol_manager.stop()
         
         # Shutdown connections
         if self.connection_manager:
