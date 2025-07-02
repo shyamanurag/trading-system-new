@@ -945,7 +945,7 @@ class TradingOrchestrator:
                 "session_id": getattr(self, 'session_id', None),
                 "start_time": getattr(self, 'start_time', None),
                 "last_heartbeat": getattr(self, 'last_heartbeat', None),
-                "market_open": self._is_market_open(),
+                "market_open": self._is_market_open(),  # FIX: Ensure this field is always included
                 "market_outlook": market_outlook,
                 "active_strategies": getattr(self, 'active_strategies', []),
                 "active_positions": getattr(self, 'active_positions', []),

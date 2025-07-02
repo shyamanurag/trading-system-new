@@ -53,7 +53,7 @@ DEFAULT_SYMBOLS = [
     'APOLLOHOSP', 'DIVISLAB', 'HINDUNILVR', 'BRITANNIA', 'DABUR',
     'ADANIGREEN', 'ADANITRANS', 'ADANIPOWER', 'JSWSTEEL', 'TATASTEEL',
     'HINDALCO', 'VEDL', 'GODREJCP', 'BAJAJFINSV', 'BAJAJ-AUTO',
-    'HEROMOTOCO', 'EICHERMOT', 'TVSMOTOR', 'ASHOKLEY', 'MCDOWELL-N'
+    'HEROMOTOCO', 'EICHERMOT', 'TVSMOTOR', 'INDIGO', 'SPICEJET'
 ]
 
 # TOP F&O STOCKS - Most liquid futures & options (for expansion)
@@ -66,7 +66,7 @@ TOP_FO_STOCKS = [
     'APOLLOHOSP', 'DIVISLAB', 'HINDUNILVR', 'BRITANNIA', 'DABUR',
     'ADANIGREEN', 'ADANITRANS', 'ADANIPOWER', 'JSWSTEEL', 'TATASTEEL',
     'HINDALCO', 'VEDL', 'GODREJCP', 'BAJAJFINSV', 'BAJAJ-AUTO',
-    'HEROMOTOCO', 'EICHERMOT', 'TVSMOTOR', 'ASHOKLEY', 'MCDOWELL-N'
+    'HEROMOTOCO', 'EICHERMOT', 'TVSMOTOR', 'INDIGO', 'SPICEJET'
 ]
 
 # ADDITIONAL LIQUID STOCKS (for 250-symbol expansion)
@@ -89,25 +89,74 @@ def get_display_name(truedata_symbol: str) -> str:
     """Get display name for TrueData symbol"""
     return DISPLAY_NAMES.get(truedata_symbol, truedata_symbol)
 
-def get_default_subscription_symbols() -> list[str]:
-    """Get the default symbols to subscribe to (50+ most liquid F&O)"""
-    return DEFAULT_SYMBOLS.copy()
+def get_default_subscription_symbols():
+    """Get default symbols for immediate subscription (50+ F&O symbols)"""
+    return [
+        # Core Indices (Always include)
+        'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
+        
+        # Top 10 F&O Stocks (Highest volume)
+        'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
+        'BHARTIARTL', 'KOTAKBANK', 'LT',
+        
+        # Next 20 High-volume F&O Stocks
+        'SBIN', 'WIPRO', 'AXISBANK', 'MARUTI', 'ASIANPAINT', 'HCLTECH',
+        'POWERGRID', 'NTPC', 'COALINDIA', 'TECHM', 'TATAMOTORS', 'ADANIPORTS',
+        'ULTRACEMCO', 'NESTLEIND', 'TITAN', 'BAJFINANCE', 'M&M', 'DRREDDY',
+        'SUNPHARMA', 'CIPLA',
+        
+        # Next 20 Medium-volume F&O Stocks  
+        'APOLLOHOSP', 'DIVISLAB', 'HINDUNILVR', 'BRITANNIA', 'DABUR',
+        'ADANIGREEN', 'ADANITRANS', 'ADANIPOWER', 'JSWSTEEL', 'TATASTEEL',
+        'HINDALCO', 'VEDL', 'GODREJCP', 'BAJAJFINSV', 'BAJAJ-AUTO',
+        'HEROMOTOCO', 'EICHERMOT', 'TVSMOTOR', 'INDIGO', 'SPICEJET'
+    ]
 
-def get_complete_fo_symbols() -> list[str]:
-    """Get complete F&O symbol pool for 250-symbol expansion"""
-    expanded_symbols = DEFAULT_SYMBOLS.copy()
+def get_complete_fo_symbols():
+    """Get complete F&O symbol list (up to 250 symbols)"""
+    base_symbols = get_default_subscription_symbols()
     
-    # Add additional liquid stocks
-    for symbol in LIQUID_STOCKS:
-        if symbol not in expanded_symbols:
-            expanded_symbols.append(symbol)
+    # Additional F&O symbols for expansion to 250
+    additional_symbols = [
+        'INDUSINDBK', 'FEDERALBNK', 'BANKBARODA', 'PNB', 'CANBK',
+        'YESBANK', 'BANDHANBNK', 'IDFCFIRSTB', 'AUBANK', 'RBLBANK',
+        'BHARATFORG', 'BHEL', 'BEL', 'HAL', 'SAIL',
+        'ONGC', 'IOC', 'BPCL', 'HPCL', 'GAIL',
+        'NMDC', 'JINDALSTEL', 'NATIONALUM', 'MOIL', 'RATNAMANI',
+        'ASHOKLEY', 'BALKRISIND', 'CESC', 'DLF', 'GODREJIND',
+        'HAVELLS', 'IBULHSGFIN', 'LICHSGFIN', 'MFSL', 'MOTHERSUMI',
+        'PAGEIND', 'PIDILITIND', 'RAMCOCEM', 'SHREECEM', 'SIEMENS',
+        'TORNTPHARM', 'VOLTAS', 'WHIRLPOOL', 'ZEEL', 'AUROPHARMA',
+        'BATINDIA', 'BERGEPAINT', 'CADILAHC', 'COLPAL', 'CONCOR',
+        'CUMMINSIND', 'ESCORTS', 'EXIDEIND', 'GLENMARK', 'GRASIM',
+        'GSPL', 'HINDPETRO', 'IPCALAB', 'JUBLFOOD', 'KAJARIACER',
+        'KPITTECH', 'LALPATHLAB', 'LUPIN', 'MARICO', 'MGL',
+        'MPHASIS', 'MRF', 'NAVINFLUOR', 'OFSS', 'PERSISTENT',
+        'PETRONET', 'PFIZER', 'PIIND', 'PVR', 'RELAXO',
+        'SBILIFE', 'SRTRANSFIN', 'STAR', 'SYNGENE', 'TATACHEM',
+        'TATACOMM', 'TRENT', 'TVSMOTOR', 'UBL', 'UJJIVAN',
+        'UPL', 'VOLTAS', 'WOCKPHARMA', 'ZYDUSLIFE'
+    ]
     
-    # Ensure we don't exceed 250 symbols  
-    return expanded_symbols[:250]
+    # Combine and limit to 250
+    all_symbols = base_symbols + additional_symbols
+    return all_symbols[:250]
 
-def enable_full_symbol_expansion() -> list[str]:
-    """Enable full 250-symbol expansion by including all F&O stocks"""
-    return get_complete_fo_symbols()
+# Override DEFAULT_SYMBOLS with expanded list
+DEFAULT_SYMBOLS = get_default_subscription_symbols()
+
+# Function to get symbol count for monitoring
+def get_symbol_expansion_status():
+    """Get current symbol expansion status"""
+    default_count = len(get_default_subscription_symbols())
+    complete_count = len(get_complete_fo_symbols())
+    
+    return {
+        "default_symbols": default_count,
+        "complete_symbols": complete_count,
+        "expansion_ratio": f"{default_count}→{complete_count}",
+        "target_reached": complete_count >= 250
+    }
 
 # Mapping for display names
 DISPLAY_NAMES = {

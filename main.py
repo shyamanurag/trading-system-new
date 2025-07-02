@@ -535,9 +535,9 @@ router_configs = [
     # Authentication - mounted at /auth
     ('auth', '/auth', ('authentication',)),
     
-    # Market data endpoints
+    # Market data endpoints - FIX: Correct routing
     ('market', '', ('market-data',)),  # Already has /api/market prefix
-    ('market_data', '/api/v1/market-data', ('market-data-v1',)),
+    ('market_data', '', ('market-data-v1',)),  # FIX: Mount at root, router has /api/v1 prefix
     ('truedata', '/api/v1/truedata', ('truedata',)),
     ('truedata_options', '', ('truedata-options',)),  # Already has /api/v1/truedata/options prefix
     

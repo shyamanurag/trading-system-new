@@ -50,26 +50,43 @@ class MarketDataManager:
                 logger.info(f"📊 MarketDataManager initialized with {len(self.symbols)} default symbols")
                 logger.info(f"🚀 Expansion capacity: {len(self.expansion_symbols)} symbols (target: 250)")
                 
+                # Enable expansion immediately for 250 symbols
+                if len(self.symbols) < 250:
+                    logger.info(f"🎯 Auto-expanding from {len(self.symbols)} to 250 symbols...")
+                    # Take first 250 symbols from expansion list
+                    expanded_list = self.expansion_symbols[:250]
+                    self.symbols = expanded_list
+                    logger.info(f"✅ Symbol expansion complete: {len(self.symbols)} symbols active")
+                
             except ImportError:
-                # Fallback to old 6-symbol list
-                self.symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS', 'HDFC', 'INFY']
-                self.expansion_symbols = self.symbols.copy()
-                logger.warning("⚠️ Using fallback 6-symbol list")
+                logger.warning("⚠️ truedata_symbols config not found, using fallback symbols")
+                # Enhanced fallback with more F&O symbols
+                self.symbols = [
+                    # Core Indices
+                    'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I',
+                    # Top 20 F&O Stocks
+                    'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
+                    'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
+                    'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA', 'TECHM'
+                ]
+                self.expansion_symbols = []
         else:
             self.symbols = symbols
-            self.expansion_symbols = symbols.copy()
+            self.expansion_symbols = []
         
         self.config = config or {}
-        self.data_cache = {}
-        self.last_update_time = {}
-        self.price_history = defaultdict(list)
+        self.market_data_cache = {}
+        self.subscription_manager = None
+        self.is_streaming = False
+        self.expansion_enabled = True  # Enable expansion by default
         
-        # Symbol expansion settings
-        self.enable_auto_expansion = self.config.get('enable_auto_expansion', True)
-        self.max_symbols = self.config.get('max_symbols', 250)
-        self.expansion_enabled = False
+        # Auto-subscription settings  
+        self.auto_subscribe_enabled = True
+        self.max_symbols = 250  # Set to 250 for F&O expansion
         
-        logger.info(f"💎 MarketDataManager ready: {len(self.symbols)} active symbols, {len(self.expansion_symbols)} available for expansion")
+        logger.info(f"💡 MarketDataManager: {len(self.symbols)} symbols, expansion: {self.expansion_enabled}")
+        logger.info(f"🎯 Target capacity: {self.max_symbols} symbols (F&O Focus)")
+        logger.info(f"📈 Auto-subscription: {self.auto_subscribe_enabled}")
         
     async def start(self):
         """Start market data collection"""
@@ -298,45 +315,43 @@ class MarketDataManager:
                 logger.error(f"Error generating mock data: {e}")
                 await asyncio.sleep(5)
 
-    def _get_all_available_truedata_symbols(self) -> List[str]:
-        """Get ALL symbols currently available from TrueData"""
+    async def _get_all_available_truedata_symbols(self) -> List[str]:
+        """Get expanded list of available TrueData symbols for F&O trading"""
         try:
-            from data.truedata_client import live_market_data
-            from config.truedata_symbols import get_truedata_symbol
+            # Method 1: Get from truedata symbols config
+            from config.truedata_symbols import get_complete_fo_symbols
+            available_symbols = get_complete_fo_symbols()
             
-            # Get ALL symbols that have flowing data from TrueData
-            available_truedata_symbols = list(live_market_data.keys())
+            if available_symbols:
+                logger.info(f"📊 Retrieved {len(available_symbols)} F&O symbols from config")
+                # Limit to our target
+                return available_symbols[:self.max_symbols]
             
-            if not available_truedata_symbols:
-                logger.debug("No TrueData symbols available, using configured symbols")
-                return self.symbols
+            # Method 2: Fallback to expanded hardcoded list
+            fallback_symbols = [
+                # Indices
+                'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
+                
+                # Top 50 F&O Stocks (Most liquid)
+                'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
+                'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
+                'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA',
+                'TECHM', 'TATAMOTORS', 'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND',
+                'TITAN', 'BAJFINANCE', 'M&M', 'DRREDDY', 'SUNPHARMA', 'CIPLA',
+                'APOLLOHOSP', 'DIVISLAB', 'HINDUNILVR', 'BRITANNIA', 'DABUR',
+                'ADANIGREEN', 'ADANITRANS', 'ADANIPOWER', 'JSWSTEEL', 'TATASTEEL',
+                'HINDALCO', 'VEDL', 'GODREJCP', 'BAJAJFINSV', 'BAJAJ-AUTO',
+                'HEROMOTOCO', 'EICHERMOT', 'TVSMOTOR', 'INDIGO', 'SPICEJET',
+                'INDUSINDBK', 'FEDERALBNK', 'BANKBARODA', 'PNB', 'CANBK'
+            ]
             
-            # Convert TrueData symbols back to standard format for strategies
-            # e.g., NIFTY-I → NIFTY, RELIANCE → RELIANCE
-            standard_symbols = []
-            
-            # Create reverse mapping
-            from config.truedata_symbols import SYMBOL_MAPPING
-            reverse_mapping = {v: k for k, v in SYMBOL_MAPPING.items()}
-            
-            for td_symbol in available_truedata_symbols:
-                # Try reverse mapping first
-                if td_symbol in reverse_mapping:
-                    standard_symbols.append(reverse_mapping[td_symbol])
-                # If no mapping, use as-is (for symbols like RELIANCE that don't change)
-                else:
-                    standard_symbols.append(td_symbol)
-            
-            # Remove duplicates and filter out system symbols
-            unique_symbols = list(set(standard_symbols))
-            filtered_symbols = [s for s in unique_symbols if not s.startswith('_') and len(s) > 1]
-            
-            logger.info(f"🔄 Processing {len(filtered_symbols)} symbols from TrueData: {filtered_symbols[:10]}...")
-            return filtered_symbols
+            logger.info(f"📊 Using fallback F&O symbols: {len(fallback_symbols)} symbols")
+            return fallback_symbols
             
         except Exception as e:
-            logger.error(f"❌ Error getting TrueData symbols: {e}")
-            return self.symbols  # Fallback to configured symbols
+            logger.error(f"Error getting available symbols: {e}")
+            # Minimal fallback
+            return ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS', 'HDFC', 'INFY']
 
     async def enable_symbol_expansion(self, target_symbols: int = 250) -> bool:
         """Enable expansion from current symbols to target count (up to 250)"""
@@ -412,7 +427,7 @@ class MarketDataManager:
             "expansion_enabled": self.expansion_enabled,
             "max_capacity": self.max_symbols,
             "expansion_available": len(self.expansion_symbols),
-            "auto_expansion": self.enable_auto_expansion,
+            "auto_expansion": self.auto_subscribe_enabled,
             "symbols_sample": self.symbols[:10],
             "expansion_progress": f"{len(self.symbols)}/{self.max_symbols}"
         }
