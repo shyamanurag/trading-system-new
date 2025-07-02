@@ -69,7 +69,7 @@ async def start_trading(
     try:
         # Check if trading components are actually initialized (not just system_ready flag)
         components_ready = (
-            hasattr(orchestrator, 'strategy_engine') and orchestrator.strategy_engine is not None and
+            hasattr(orchestrator, 'strategies') and orchestrator.strategies is not None and
             hasattr(orchestrator, 'risk_manager') and orchestrator.risk_manager is not None and
             hasattr(orchestrator, 'trade_engine') and orchestrator.trade_engine is not None
         )
@@ -163,9 +163,13 @@ async def get_strategies(
 ):
     """Get active trading strategies"""
     try:
-        # Fix: Use strategy_engine instead of strategy_manager
-        if hasattr(orchestrator, 'strategy_engine') and orchestrator.strategy_engine:
-            strategies = orchestrator.strategy_engine.get_strategy_status()
+        # Fix: Use strategies dictionary instead of strategy_engine
+        if hasattr(orchestrator, 'strategies') and orchestrator.strategies:
+            strategies = {key: {
+                'name': info.get('name', key),
+                'active': info.get('active', False),
+                'last_signal': info.get('last_signal', None)
+            } for key, info in orchestrator.strategies.items()}
         else:
             strategies = {}
         return StrategyResponse(
