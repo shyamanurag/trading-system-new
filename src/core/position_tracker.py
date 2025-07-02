@@ -13,9 +13,8 @@ import json
 import redis.asyncio as redis
 import pandas as pd
 
-from src.models.trading_models import Position, PositionStatus
+from src.models.trading_models import PositionModel as Position, PositionStatus
 from src.events import EventBus, EventType, TradingEvent
-from src.utils.decorators import synchronized_state
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +66,7 @@ class PositionTracker:
             self._handle_position_update
         )
 
-    @synchronized_state
+    @asyncio.Lock()
     async def add_position(self, position: Position) -> bool:
         """Add a new position"""
         async with self._lock:
@@ -101,7 +100,7 @@ class PositionTracker:
             logger.info(f"Position added: {position.position_id} - {position.symbol}")
             return True
 
-    @synchronized_state
+    @asyncio.Lock()
     async def update_position(self, position_id: str, updates: Dict) -> bool:
         """Update an existing position"""
         async with self._lock:
@@ -134,7 +133,7 @@ class PositionTracker:
 
             return True
 
-    @synchronized_state
+    @asyncio.Lock()
     async def close_position(self, position_id: str, exit_price: float, reason: str = "manual") -> bool:
         """Close a position"""
         async with self._lock:
