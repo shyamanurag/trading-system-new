@@ -289,8 +289,18 @@ class TradingOrchestrator:
             
             # 5. Zerodha Client (optional - can work without it)
             try:
-                # Create a simple config for Zerodha
+                # Create Zerodha config from environment variables
                 zerodha_config = {
+                    'api_key': os.getenv('ZERODHA_API_KEY'),
+                    'api_secret': os.getenv('ZERODHA_API_SECRET'),
+                    'user_id': os.getenv('ZERODHA_USER_ID'),
+                    'access_token': os.getenv('ZERODHA_ACCESS_TOKEN'),
+                    'pin': os.getenv('ZERODHA_PIN'),
+                    'mock_mode': os.getenv('PAPER_TRADING', 'true').lower() == 'true'  # Paper trading mode
+                }
+                
+                # Create resilient connection config
+                resilient_config = {
                     'order_rate_limit': 1.0,
                     'ws_reconnect_delay': 5,
                     'ws_max_reconnect_attempts': 10
@@ -300,9 +310,9 @@ class TradingOrchestrator:
                 from brokers.zerodha import ZerodhaIntegration
                 from brokers.resilient_zerodha import ResilientZerodhaConnection
                 
-                # Create broker instance
-                broker = ZerodhaIntegration()
-                self.zerodha_client = ResilientZerodhaConnection(broker, zerodha_config)
+                # Create broker instance with config
+                broker = ZerodhaIntegration(zerodha_config)
+                self.zerodha_client = ResilientZerodhaConnection(broker, resilient_config)
                 
                 if await self.zerodha_client.initialize():
                     self.components['zerodha_client'] = True

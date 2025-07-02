@@ -68,6 +68,7 @@ router_imports = {
     'zerodha_daily_auth': ('src.api.zerodha_daily_auth', 'router'),
     'zerodha_multi_user': ('src.api.zerodha_multi_user_auth', 'router'),
     'zerodha_manual_auth': ('src.api.zerodha_manual_auth', 'router'),
+    'zerodha_refresh': ('src.api.zerodha_refresh', 'router'),
     'daily_auth_workflow': ('src.api.simple_daily_auth', 'router'),
     'websocket': ('src.api.websocket', 'router'),
     'monitoring': ('src.api.monitoring', 'router'),
