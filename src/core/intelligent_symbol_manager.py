@@ -15,7 +15,7 @@ import json
 import os
 from dataclasses import dataclass, field
 
-from data.truedata_client import truedata_client
+from data.truedata_client import truedata_client, subscribe_to_symbols
 
 logger = logging.getLogger(__name__)
 
@@ -127,9 +127,8 @@ class IntelligentSymbolManager:
                 
             logger.info(f"📊 Subscribing to {len(new_symbols)} new symbols...")
             
-            # Note: TrueData client handles symbol subscription automatically during connection
-            # For now, just mark as successful since symbols are managed by the TrueData client
-            success = True
+            # CRITICAL FIX: Actually call TrueData client subscription
+            success = subscribe_to_symbols(new_symbols)
             
             if success:
                 # Update active symbols
@@ -144,13 +143,14 @@ class IntelligentSymbolManager:
                         'priority': self.get_symbol_priority(symbol)
                     }
                 
-                logger.info(f"✅ Subscribed to {len(new_symbols)} symbols")
+                logger.info(f"✅ Successfully subscribed to {len(new_symbols)} symbols")
                 logger.info(f"📊 Total active symbols: {len(self.active_symbols)}")
             else:
-                logger.error("❌ Failed to subscribe to symbols")
+                logger.error("❌ Failed to subscribe to symbols via TrueData client")
                 
         except Exception as e:
             logger.error(f"❌ Subscription error: {e}")
+            logger.error("💡 Make sure TrueData client is connected before symbol subscription")
 
     async def unsubscribe_symbols(self, symbols: List[str]):
         """Unsubscribe from symbols"""
