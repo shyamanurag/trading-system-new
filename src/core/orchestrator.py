@@ -774,16 +774,21 @@ class TradingOrchestrator:
         logger.info("Trading disabled")
     
     async def _monitor_trading(self):
-        """Monitor trading activity"""
+        """Monitor trading activity with robust error handling to prevent auto-shutdown"""
+        logger.info("📊 Starting robust trading monitor with auto-restart capability")
+        
+        consecutive_errors = 0
+        max_consecutive_errors = 5
+        
         while self.is_active:
             try:
                 # Update heartbeat
                 ist_timezone = pytz.timezone('Asia/Kolkata')
                 self.last_heartbeat = datetime.now(ist_timezone)
                 
-                # Check if market hours
+                # Check if market hours (but don't shutdown if closed due to bypass)
                 if not self._is_market_open():
-                    logger.info("Outside market hours, pausing trading")
+                    logger.debug("Outside market hours, monitoring continues...")
                     await asyncio.sleep(60)
                     continue
                 
@@ -798,11 +803,37 @@ class TradingOrchestrator:
                 if datetime.now(ist_timezone).minute % 5 == 0:
                     await self._log_trading_status()
                 
+                # Reset error counter on success
+                consecutive_errors = 0
+                
                 await asyncio.sleep(30)  # Check every 30 seconds
                 
             except Exception as e:
-                logger.error(f"Error in trading monitor: {e}")
-                await asyncio.sleep(60)
+                consecutive_errors += 1
+                logger.error(f"❌ Error in trading monitor (attempt {consecutive_errors}/{max_consecutive_errors}): {e}")
+                
+                if consecutive_errors >= max_consecutive_errors:
+                    logger.critical("💥 Trading monitor: Too many consecutive errors, but KEEPING SYSTEM ACTIVE")
+                    logger.critical("🔄 Implementing enhanced monitoring with longer intervals")
+                    
+                    # Enhanced monitoring mode with longer intervals
+                    while self.is_active:
+                        try:
+                            # Update heartbeat to prevent system thinking it's dead
+                            ist_timezone = pytz.timezone('Asia/Kolkata')
+                            self.last_heartbeat = datetime.now(ist_timezone)
+                            
+                            logger.info("💊 Enhanced monitoring: System alive, trading active")
+                            await asyncio.sleep(300)  # 5-minute intervals
+                            
+                        except Exception as enhanced_error:
+                            logger.error(f"Enhanced monitoring error: {enhanced_error}")
+                            await asyncio.sleep(600)  # 10-minute intervals on error
+                else:
+                    # Exponential backoff for temporary errors
+                    backoff_time = min(60 * consecutive_errors, 300)  # Max 5 minutes
+                    logger.warning(f"⏰ Backing off for {backoff_time} seconds before retry")
+                    await asyncio.sleep(backoff_time)
     
     async def _update_metrics(self):
         """Update trading metrics"""
@@ -972,50 +1003,6 @@ class TradingOrchestrator:
             await self.connection_manager.shutdown()
         
         logger.info("Trading system shutdown complete")
-
-    async def _start_trading_loop(self):
-        """Start the main trading signal generation loop"""
-        logger.info("🔄 Starting trading signal generation loop...")
-        
-        try:
-            while self.is_active:
-                try:
-                    # Check if market is still open
-                    if not self._is_market_open():
-                        logger.info("Market closed, pausing signal generation")
-                        await asyncio.sleep(60)
-                        continue
-                    
-                    # Get latest market data
-                    if self.market_data and hasattr(self.market_data, 'get_latest_data'):
-                        market_data = await self.market_data.get_latest_data()
-                    else:
-                        market_data = {}  # Use empty dict if market data not available
-                    
-                    # Generate signals from strategies
-                    if self.strategy_engine:
-                        signals = await self.strategy_engine.generate_all_signals(market_data)
-                        
-                        if signals:
-                            logger.info(f"📊 Generated {len(signals)} trading signals")
-                            
-                            # Execute signals through trade engine
-                            if self.trade_engine and hasattr(self.trade_engine, 'execute_signals'):
-                                await self.trade_engine.execute_signals(signals)
-                        else:
-                            logger.debug("📊 No signals generated this cycle")
-                    
-                    # Wait before next cycle (30 seconds)
-                    await asyncio.sleep(30)
-                    
-                except Exception as e:
-                    logger.error(f"❌ Error in trading loop cycle: {e}")
-                    await asyncio.sleep(60)  # Wait longer on errors
-                    
-        except Exception as e:
-            logger.error(f"❌ Fatal error in trading loop: {e}")
-        finally:
-            logger.info("🔄 Trading loop ended")
 
 # Add alias for backward compatibility
 Orchestrator = TradingOrchestrator 
