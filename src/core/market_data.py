@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 import random
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +36,40 @@ class MarketData:
 class MarketDataManager:
     """Market data manager that provides real-time market data"""
     
-    def __init__(self, config: Dict):
-        self.config = config
-        self.symbols = config.get('symbols', ['BANKNIFTY', 'NIFTY'])
-        self.paper_mode = config.get('paper_mode', True)
-        self.update_interval = config.get('update_interval', 1)
-        self.is_running = False
-        self.market_data_cache = {}
+    def __init__(self, symbols: Optional[List[str]] = None, config: Dict[str, Any] = None):
+        """Initialize with EXPANDED F&O symbol set (50+ symbols, expandable to 250)"""
+        # Use expanded symbol list from config
+        if symbols is None:
+            try:
+                from config.truedata_symbols import get_default_subscription_symbols, get_complete_fo_symbols
+                
+                # Start with 50+ symbols, can expand to 250
+                self.symbols = get_default_subscription_symbols()
+                self.expansion_symbols = get_complete_fo_symbols()
+                
+                logger.info(f"📊 MarketDataManager initialized with {len(self.symbols)} default symbols")
+                logger.info(f"🚀 Expansion capacity: {len(self.expansion_symbols)} symbols (target: 250)")
+                
+            except ImportError:
+                # Fallback to old 6-symbol list
+                self.symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS', 'HDFC', 'INFY']
+                self.expansion_symbols = self.symbols.copy()
+                logger.warning("⚠️ Using fallback 6-symbol list")
+        else:
+            self.symbols = symbols
+            self.expansion_symbols = symbols.copy()
+        
+        self.config = config or {}
+        self.data_cache = {}
+        self.last_update_time = {}
+        self.price_history = defaultdict(list)
+        
+        # Symbol expansion settings
+        self.enable_auto_expansion = self.config.get('enable_auto_expansion', True)
+        self.max_symbols = self.config.get('max_symbols', 250)
+        self.expansion_enabled = False
+        
+        logger.info(f"💎 MarketDataManager ready: {len(self.symbols)} active symbols, {len(self.expansion_symbols)} available for expansion")
         
     async def start(self):
         """Start market data collection"""
@@ -309,6 +337,85 @@ class MarketDataManager:
         except Exception as e:
             logger.error(f"❌ Error getting TrueData symbols: {e}")
             return self.symbols  # Fallback to configured symbols
+
+    async def enable_symbol_expansion(self, target_symbols: int = 250) -> bool:
+        """Enable expansion from current symbols to target count (up to 250)"""
+        try:
+            if len(self.symbols) >= target_symbols:
+                logger.info(f"✅ Already have {len(self.symbols)} symbols (target: {target_symbols})")
+                return True
+            
+            # Get expanded symbol list
+            from config.truedata_symbols import get_complete_fo_symbols
+            expanded_symbols = get_complete_fo_symbols()
+            
+            # Limit to target
+            expanded_symbols = expanded_symbols[:target_symbols]
+            
+            # Update symbols
+            old_count = len(self.symbols)
+            self.symbols = expanded_symbols
+            self.expansion_enabled = True
+            
+            logger.info(f"🚀 SYMBOL EXPANSION ENABLED: {old_count} → {len(self.symbols)} symbols")
+            
+            # Try to auto-subscribe new symbols if TrueData is available
+            try:
+                await self._auto_subscribe_missing_symbols()
+            except Exception as e:
+                logger.warning(f"Auto-subscription failed: {e}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Symbol expansion failed: {e}")
+            return False
+    
+    async def _auto_subscribe_missing_symbols(self):
+        """Auto-subscribe to symbols that aren't already subscribed"""
+        try:
+            from data.truedata_client import live_market_data, subscribe_to_symbols
+            from config.truedata_symbols import get_truedata_symbol
+            
+            # Find missing symbols
+            subscribed_symbols = set(live_market_data.keys())
+            missing_symbols = []
+            
+            for symbol in self.symbols:
+                truedata_symbol = get_truedata_symbol(symbol)
+                if truedata_symbol not in subscribed_symbols:
+                    missing_symbols.append(truedata_symbol)
+            
+            if missing_symbols:
+                logger.info(f"🔄 Auto-subscribing to {len(missing_symbols)} missing symbols: {missing_symbols[:10]}...")
+                
+                # Subscribe in batches to avoid overwhelming the API
+                batch_size = 10
+                for i in range(0, len(missing_symbols), batch_size):
+                    batch = missing_symbols[i:i + batch_size]
+                    try:
+                        subscribe_to_symbols(batch)
+                        logger.info(f"✅ Subscribed to batch {i//batch_size + 1}: {len(batch)} symbols")
+                        await asyncio.sleep(1)  # Small delay between batches
+                    except Exception as e:
+                        logger.warning(f"Failed to subscribe to batch {batch}: {e}")
+            else:
+                logger.info("✅ All symbols already subscribed")
+                
+        except Exception as e:
+            logger.error(f"❌ Auto-subscription error: {e}")
+    
+    def get_expansion_status(self) -> Dict[str, Any]:
+        """Get current symbol expansion status"""
+        return {
+            "current_symbols": len(self.symbols),
+            "expansion_enabled": self.expansion_enabled,
+            "max_capacity": self.max_symbols,
+            "expansion_available": len(self.expansion_symbols),
+            "auto_expansion": self.enable_auto_expansion,
+            "symbols_sample": self.symbols[:10],
+            "expansion_progress": f"{len(self.symbols)}/{self.max_symbols}"
+        }
 
 async def get_market_data(symbol: str) -> Dict[str, Any]:
     """Get market data for a symbol"""
