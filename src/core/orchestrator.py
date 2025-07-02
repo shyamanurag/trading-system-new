@@ -7,6 +7,7 @@ from datetime import datetime, time, timedelta, timezone
 import logging
 import asyncio
 import os
+import pytz
 from .config import settings
 from .connection_manager import ConnectionManager
 from .pre_market_analyzer import PreMarketAnalyzer
@@ -28,7 +29,8 @@ class RealSignal:
     
     def __post_init__(self):
         if not self.timestamp:
-            self.timestamp = datetime.now().isoformat()
+            ist_timezone = pytz.timezone('Asia/Kolkata')
+            self.timestamp = datetime.now(ist_timezone).isoformat()
 
 class TradingOrchestrator:
     """Real money trading orchestrator - NO MOCK COMPONENTS ALLOWED"""
@@ -134,6 +136,13 @@ class TradingOrchestrator:
     def _initialize_broker_connection(self):
         """Initialize REAL Zerodha connection only"""
         try:
+            # Ensure project root is in Python path for broker imports
+            import sys
+            from pathlib import Path
+            project_root = str(Path(__file__).parent.parent.parent)
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+            
             from brokers.resilient_zerodha import ResilientZerodhaConnection
             from brokers.zerodha import ZerodhaIntegration
             
@@ -588,15 +597,19 @@ class TradingOrchestrator:
         """Check if market is open for trading"""
         try:
             from datetime import datetime, time
-            now = datetime.now()
+            import pytz
+            
+            # Use IST timezone for accurate market hours
+            ist_timezone = pytz.timezone('Asia/Kolkata')
+            now_ist = datetime.now(ist_timezone)
             
             # Indian market hours: 9:15 AM to 3:30 PM IST, Monday to Friday
-            if now.weekday() >= 5:  # Saturday = 5, Sunday = 6
+            if now_ist.weekday() >= 5:  # Saturday = 5, Sunday = 6
                 return False
             
             market_start = time(9, 15)
             market_end = time(15, 30)
-            current_time = now.time()
+            current_time = now_ist.time()
             
             return market_start <= current_time <= market_end
             
@@ -626,9 +639,12 @@ class TradingOrchestrator:
         # Set core state
         logger.info("🔥 Setting core trading state")
         self.is_active = True
-        self.session_id = f"session_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
-        self.start_time = datetime.utcnow()
-        self.last_heartbeat = datetime.utcnow()
+        # Use IST timezone for session timestamps
+        ist_timezone = pytz.timezone('Asia/Kolkata')
+        now_ist = datetime.now(ist_timezone)
+        self.session_id = f"session_{now_ist.strftime('%Y%m%d_%H%M%S')}"
+        self.start_time = now_ist
+        self.last_heartbeat = now_ist
         
         # Verify state was set
         logger.info(f"✅ State set - is_active={self.is_active}, session_id={self.session_id}")
@@ -685,7 +701,8 @@ class TradingOrchestrator:
         while self.is_active:
             try:
                 # Update heartbeat
-                self.last_heartbeat = datetime.utcnow()
+                ist_timezone = pytz.timezone('Asia/Kolkata')
+                self.last_heartbeat = datetime.now(ist_timezone)
                 
                 # Check if market hours
                 if not self._is_market_open():
@@ -700,7 +717,8 @@ class TradingOrchestrator:
                 await self._check_risk_status()
                 
                 # Log status every 5 minutes
-                if datetime.utcnow().minute % 5 == 0:
+                ist_timezone = pytz.timezone('Asia/Kolkata')
+                if datetime.now(ist_timezone).minute % 5 == 0:
                     await self._log_trading_status()
                 
                 await asyncio.sleep(30)  # Check every 30 seconds
