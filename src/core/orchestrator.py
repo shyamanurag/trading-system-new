@@ -770,6 +770,18 @@ class TradingOrchestrator:
             logger.error(f"Error checking market hours: {e}")
             return False  # Conservative approach - don't trade if unsure
 
+    def _get_market_outlook(self) -> str:
+        """Get current market outlook - FIXED: Adding missing method"""
+        try:
+            # Simple market outlook based on market hours
+            if self._is_market_open():
+                return "active_trading"
+            else:
+                return "market_closed"
+        except Exception as e:
+            logger.error(f"Error getting market outlook: {e}")
+            return "unknown"
+
     async def enable_trading(self):
         """Enable autonomous trading with proper signal generation"""
         logger.info(f"🚀 enable_trading called on instance: {getattr(self, '_instance_id', 'unknown')}")
@@ -1068,11 +1080,16 @@ class TradingOrchestrator:
             # Add strategy count
             strategies_loaded = len(basic_status["active_strategies"])
             
-            # Add symbol count (safely)
+            # FIXED: Get symbol count directly from market data manager instead of HTTP calls
+            symbol_count = 0
             try:
-                symbol_count = await self._get_symbol_count_from_api() if hasattr(self, '_get_symbol_count_from_api') else 0
+                if hasattr(self, 'market_data') and self.market_data and hasattr(self.market_data, 'get_symbol_count'):
+                    symbol_count = self.market_data.get_symbol_count()
+                    logger.debug(f"📊 Got symbol count from market data manager: {symbol_count}")
+                else:
+                    logger.debug("Market data manager not available for symbol count")
             except Exception as e:
-                logger.warning(f"Symbol count check failed: {e}")
+                logger.warning(f"Direct symbol count check failed: {e}")
                 symbol_count = 0
             
             # Add component status (safely)
@@ -1082,7 +1099,11 @@ class TradingOrchestrator:
             
             try:
                 if hasattr(self, 'risk_manager') and self.risk_manager:
-                    risk_status = {"status": "active", "type": "real_risk_manager"}
+                    # Check if it's our working minimal risk manager
+                    if hasattr(self.risk_manager, 'name') and 'working_minimal' in self.risk_manager.name:
+                        risk_status = {"status": "working_minimal_risk_manager_active"}
+                    else:
+                        risk_status = {"status": "active", "type": "real_risk_manager"}
                 else:
                     risk_status = {"status": "not_initialized"}
             except Exception as e:
@@ -1110,7 +1131,7 @@ class TradingOrchestrator:
             except Exception:
                 key_levels = {}
             
-            # Return complete status
+            # Return complete status with all new fields
             return {
                 **basic_status,
                 "market_open": market_open,
@@ -1125,7 +1146,7 @@ class TradingOrchestrator:
             
         except Exception as e:
             logger.error(f"Error getting trading status: {e}")
-            # Return comprehensive safe status with all required fields
+            # CRITICAL FIX: Return new format even in error case
             return {
                 "is_active": getattr(self, 'is_active', False),
                 "system_ready": getattr(self, 'system_ready', False),

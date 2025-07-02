@@ -247,6 +247,16 @@ async def get_symbol_expansion_status():
         return {
             "success": False,
             "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+@router.get("/individual/{symbol}")
+async def get_individual_symbol_data(symbol: str):
+    """Get individual symbol data"""
+    try:
+        # Check TrueData connection
+        has_connection = is_connected()
+        
         if not has_connection:
             return {
                 "success": False,
