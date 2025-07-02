@@ -405,15 +405,16 @@ class TradingOrchestrator:
                 async def fetch_market_data(self):
                     """Fetch market data directly from API module (not HTTP localhost)"""
                     try:
-                        # CRITICAL FIX: Import and call API function directly instead of localhost HTTP
-                        from src.api.market_data import get_market_data_internal
+                        # CRITICAL FIX: Use existing function from market_data API
+                        from src.api.market_data import get_all_live_market_data
                         
                         # Get data directly from the API function
-                        data = await get_market_data_internal()
+                        live_data = get_all_live_market_data()
                         
-                        if data and data.get('success'):
-                            self.symbols = data.get('data', {})
-                            self.symbol_count = data.get('symbol_count', 0)
+                        # Format the data like the API endpoint does
+                        if live_data:
+                            self.symbols = live_data
+                            self.symbol_count = len(live_data)
                             self.last_update = datetime.now()
                             
                             logger.info(f"📊 Fetched {self.symbol_count} symbols directly from API function")
