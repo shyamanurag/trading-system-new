@@ -352,45 +352,73 @@ class TradingOrchestrator:
             return False
 
     async def _safe_init_real_market_data(self):
-        """Initialize REAL market data - USE WORKING API ENDPOINT"""
+        """Initialize REAL market data - FIXED: Direct function call instead of localhost HTTP"""
         try:
-            import aiohttp
-            
-            # Create simple market data fetcher that uses our working API
-            class APIMarketDataManager:
+            # Create market data manager that calls the API function directly  
+            class DirectAPIMarketDataManager:
                 def __init__(self):
                     self.symbols = {}
                     self.symbol_count = 0
                     self.last_update = None
                     
                 async def fetch_market_data(self):
-                    """Fetch from our working Market Data API"""
+                    """Fetch market data directly from API module (not HTTP localhost)"""
                     try:
-                        async with aiohttp.ClientSession() as session:
-                            # Use our working Market Data API endpoint
-                            async with session.get('http://localhost:8000/api/v1/market-data') as response:
-                                if response.status == 200:
-                                    data = await response.json()
-                                    self.symbols = data.get('data', {})
-                                    self.symbol_count = data.get('symbol_count', 0)
-                                    self.last_update = datetime.now()
-                                    
-                                    logger.info(f"📊 Fetched {self.symbol_count} symbols from Market Data API")
-                                    if self.symbol_count > 0:
-                                        sample_symbols = list(self.symbols.keys())[:3]
-                                        logger.info(f"📈 Sample symbols: {sample_symbols}")
-                                    
-                                    return True
-                                else:
-                                    logger.error(f"Market Data API returned {response.status}")
-                                    return False
+                        # CRITICAL FIX: Import and call API function directly instead of localhost HTTP
+                        from src.api.market_data import get_market_data_internal
+                        
+                        # Get data directly from the API function
+                        data = await get_market_data_internal()
+                        
+                        if data and data.get('success'):
+                            self.symbols = data.get('data', {})
+                            self.symbol_count = data.get('symbol_count', 0)
+                            self.last_update = datetime.now()
+                            
+                            logger.info(f"📊 Fetched {self.symbol_count} symbols directly from API function")
+                            if self.symbol_count > 0:
+                                sample_symbols = list(self.symbols.keys())[:3]
+                                logger.info(f"📈 Sample symbols: {sample_symbols}")
+                            
+                            return True
+                        else:
+                            logger.error("Market Data API function returned no data")
+                            return False
+                            
+                    except ImportError:
+                        logger.warning("Market Data API function not available, trying TrueData direct access...")
+                        
+                        # Fallback: Access TrueData directly
+                        try:
+                            from data.truedata_client import get_all_live_data
+                            truedata_symbols = get_all_live_data()
+                            
+                            if truedata_symbols:
+                                self.symbols = truedata_symbols
+                                self.symbol_count = len(truedata_symbols)
+                                self.last_update = datetime.now()
+                                
+                                logger.info(f"📊 Fetched {self.symbol_count} symbols directly from TrueData")
+                                if self.symbol_count > 0:
+                                    sample_symbols = list(self.symbols.keys())[:3]
+                                    logger.info(f"📈 Sample symbols: {sample_symbols}")
+                                
+                                return True
+                            else:
+                                logger.error("No data from TrueData client")
+                                return False
+                                
+                        except Exception as e:
+                            logger.error(f"TrueData direct access failed: {e}")
+                            return False
+                    
                     except Exception as e:
                         logger.error(f"Failed to fetch market data: {e}")
                         return False
                 
                 async def start(self):
                     """Start the market data manager"""
-                    logger.info("🚀 Starting API-based Market Data Manager...")
+                    logger.info("🚀 Starting Direct API Market Data Manager...")
                     success = await self.fetch_market_data()
                     if success and self.symbol_count > 0:
                         logger.info(f"✅ Market Data Manager started with {self.symbol_count} symbols")
@@ -406,16 +434,20 @@ class TradingOrchestrator:
                 def get_symbol_count(self):
                     """Get symbol count"""
                     return self.symbol_count
+                    
+                async def get_latest_data(self):
+                    """Get latest market data for strategies"""
+                    return self.symbols
             
-            # Use our API-based market data manager
-            self.market_data = APIMarketDataManager()
+            # Use our Direct API market data manager (no more localhost calls!)
+            self.market_data = DirectAPIMarketDataManager()
             success = await self.market_data.start()
             
             if success:
-                logger.info("✅ REAL Market Data Manager (API-based) initialized")
+                logger.info("✅ REAL Market Data Manager (Direct API) initialized")
                 return True
             else:
-                logger.error("❌ Market Data API integration failed")
+                logger.error("❌ Market Data Direct API integration failed")
                 return False
             
         except Exception as e:
