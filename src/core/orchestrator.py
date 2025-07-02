@@ -437,6 +437,10 @@ class TradingOrchestrator:
                 self._try_load_strategy('confluence_amplifier', 'strategies.confluence_amplifier', 'ConfluenceAmplifier')
                 self._try_load_strategy('momentum_surfer', 'strategies.momentum_surfer', 'EnhancedMomentumSurfer')
                 
+                # Add the missing strategies (excluding news-based strategy)
+                self._try_load_strategy('volume_profile_scalper', 'strategies.volume_profile_scalper', 'EnhancedVolumeProfileScalper')
+                self._try_load_strategy('volatility_explosion', 'strategies.volatility_explosion', 'EnhancedVolatilityExplosion')
+                
                 # If no strategies loaded, create minimal working strategy
                 if not self.strategies:
                     logger.warning("⚠️ No complex strategies loaded, creating minimal strategy")
@@ -931,16 +935,33 @@ class TradingOrchestrator:
         """Fetch symbol count from our working Market Data API"""
         try:
             import aiohttp
+            
+            # Try multiple URLs to connect to our own Market Data API
+            urls = [
+                'http://127.0.0.1:8000/api/v1/market-data',  # Local deployment
+                'http://localhost:8000/api/v1/market-data',   # Alternative localhost
+                'https://algoauto-9gx56.ondigitalocean.app/api/v1/market-data'  # External URL fallback
+            ]
+            
             async with aiohttp.ClientSession() as session:
-                async with session.get('http://localhost:8000/api/v1/market-data') as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        symbol_count = data.get('symbol_count', 0)
-                        logger.debug(f"📊 Fetched symbol count from API: {symbol_count}")
-                        return symbol_count
-                    else:
-                        logger.error(f"Market Data API returned {response.status}")
-                        return 0
+                for url in urls:
+                    try:
+                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                symbol_count = data.get('symbol_count', 0)
+                                logger.info(f"📊 Fetched symbol count from {url}: {symbol_count}")
+                                return symbol_count
+                            else:
+                                logger.debug(f"URL {url} returned status {response.status}")
+                    except Exception as url_error:
+                        logger.debug(f"Failed to connect to {url}: {url_error}")
+                        continue
+                
+                # If all URLs failed
+                logger.warning("Failed to connect to Market Data API via any URL")
+                return 0
+                
         except Exception as e:
             logger.error(f"Failed to fetch symbol count: {e}")
             return 0
