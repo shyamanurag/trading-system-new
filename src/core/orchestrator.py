@@ -365,20 +365,38 @@ class TradingOrchestrator:
             from src.core.position_tracker import PositionTracker
             from src.events import EventBus
             import redis.asyncio as redis
+            import os
             
             # Create event bus if not exists
             if not hasattr(self, 'event_bus'):
                 self.event_bus = EventBus()
             
-            # Create redis client
-            redis_config = self.config.get('redis', {
-                'host': 'localhost', 
-                'port': 6379
-            })
+            # FIXED: Create redis client with proper DigitalOcean configuration
+            redis_config = {
+                'host': os.getenv('REDIS_HOST', 'localhost'),
+                'port': int(os.getenv('REDIS_PORT', '6379')),
+                'password': os.getenv('REDIS_PASSWORD'),
+                'username': os.getenv('REDIS_USERNAME', 'default'),
+                'ssl': os.getenv('REDIS_SSL', 'false').lower() == 'true',
+                'ssl_cert_reqs': None if os.getenv('REDIS_SSL', 'false').lower() == 'true' else 'required'
+            }
+            
+            logger.info(f"🔧 Connecting to Redis: {redis_config['host']}:{redis_config['port']} (SSL: {redis_config['ssl']})")
+            
+            # Create Redis client with SSL support for DigitalOcean
             redis_client = redis.Redis(
-                host=redis_config['host'], 
-                port=redis_config['port']
+                host=redis_config['host'],
+                port=redis_config['port'],
+                password=redis_config['password'],
+                username=redis_config['username'],
+                ssl=redis_config['ssl'],
+                ssl_cert_reqs=redis_config['ssl_cert_reqs'],
+                decode_responses=True
             )
+            
+            # Test Redis connection
+            await redis_client.ping()
+            logger.info("✅ Redis connection successful")
             
             self.position_tracker = PositionTracker(
                 event_bus=self.event_bus,
