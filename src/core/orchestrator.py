@@ -279,14 +279,28 @@ class TradingOrchestrator:
                 # Create a minimal position tracker for risk manager
                 from src.core.position_tracker import PositionTracker
                 import redis.asyncio as redis
+                import os
                 
-                redis_config = self.config.get('redis', {
-                    'host': 'localhost', 
-                    'port': 6379
-                })
+                # FIXED: Use DigitalOcean Redis configuration instead of localhost
+                redis_config = {
+                    'host': os.getenv('REDIS_HOST', 'localhost'),
+                    'port': int(os.getenv('REDIS_PORT', '6379')),
+                    'password': os.getenv('REDIS_PASSWORD'),
+                    'username': os.getenv('REDIS_USERNAME', 'default'),
+                    'ssl': os.getenv('REDIS_SSL', 'false').lower() == 'true',
+                    'ssl_cert_reqs': None if os.getenv('REDIS_SSL', 'false').lower() == 'true' else 'required'
+                }
+                
+                logger.info(f"🔧 Creating fallback Redis connection: {redis_config['host']}:{redis_config['port']} (SSL: {redis_config['ssl']})")
+                
                 redis_client = redis.Redis(
-                    host=redis_config['host'], 
-                    port=redis_config['port']
+                    host=redis_config['host'],
+                    port=redis_config['port'],
+                    password=redis_config['password'],
+                    username=redis_config['username'],
+                    ssl=redis_config['ssl'],
+                    ssl_cert_reqs=redis_config['ssl_cert_reqs'],
+                    decode_responses=True
                 )
                 
                 self.position_tracker = PositionTracker(
@@ -295,12 +309,15 @@ class TradingOrchestrator:
                 )
                 logger.info("✅ Basic position tracker created for risk manager")
             
-            # Create proper risk configuration
+            # Create proper risk configuration with DigitalOcean Redis
             risk_config = self.config.get('risk', {
-                'redis': self.config.get('redis', {
-                    'host': 'localhost',
-                    'port': 6379
-                }),
+                'redis': {
+                    'host': os.getenv('REDIS_HOST', 'localhost'),
+                    'port': int(os.getenv('REDIS_PORT', '6379')),
+                    'password': os.getenv('REDIS_PASSWORD'),
+                    'username': os.getenv('REDIS_USERNAME', 'default'),
+                    'ssl': os.getenv('REDIS_SSL', 'false').lower() == 'true'
+                },
                 'max_daily_loss': 50000,
                 'max_position_size': 100000,
                 'risk_per_trade': 0.02
