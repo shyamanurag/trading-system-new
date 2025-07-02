@@ -6,6 +6,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any
 from datetime import datetime
 import logging
+import os
+import asyncio
 
 from src.core.orchestrator import TradingOrchestrator
 # Use shared dependency to fix singleton issue
@@ -760,4 +762,129 @@ async def debug_initialization_steps(orchestrator: TradingOrchestrator = Depends
         
     except Exception as e:
         logger.error(f"Detailed initialization debug failed: {e}")
-        return {"success": False, "error": str(e)} 
+        return {"success": False, "error": str(e)}
+
+@router.get("/redis-test")
+async def test_redis_connection():
+    """Test Redis connection with current environment variables"""
+    try:
+        import redis.asyncio as redis
+        
+        # Get Redis config from environment
+        redis_config = {
+            'host': os.getenv('REDIS_HOST', 'localhost'),
+            'port': int(os.getenv('REDIS_PORT', '6379')),
+            'password': os.getenv('REDIS_PASSWORD'),
+            'username': os.getenv('REDIS_USERNAME', 'default'),
+            'ssl': os.getenv('REDIS_SSL', 'false').lower() == 'true',
+            'ssl_cert_reqs': None if os.getenv('REDIS_SSL', 'false').lower() == 'true' else 'required'
+        }
+        
+        logger.info(f"Testing Redis connection: {redis_config['host']}:{redis_config['port']} (SSL: {redis_config['ssl']})")
+        
+        # Create Redis client
+        redis_client = redis.Redis(
+            host=redis_config['host'],
+            port=redis_config['port'],
+            password=redis_config['password'],
+            username=redis_config['username'],
+            ssl=redis_config['ssl'],
+            ssl_cert_reqs=redis_config['ssl_cert_reqs'],
+            decode_responses=True
+        )
+        
+        # Test connection
+        start_time = datetime.now()
+        await redis_client.ping()
+        connection_time = (datetime.now() - start_time).total_seconds()
+        
+        # Test basic operations
+        await redis_client.set("test_key", "test_value", ex=60)
+        test_value = await redis_client.get("test_key")
+        await redis_client.delete("test_key")
+        
+        return {
+            "success": True,
+            "message": "Redis connection successful",
+            "config": {
+                "host": redis_config['host'],
+                "port": redis_config['port'],
+                "ssl": redis_config['ssl'],
+                "username": redis_config['username']
+            },
+            "connection_time_seconds": connection_time,
+            "test_operations": {
+                "set_get_delete": "successful",
+                "test_value_retrieved": test_value
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Redis connection test failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "config": {
+                "host": os.getenv('REDIS_HOST', 'NOT_SET'),
+                "port": os.getenv('REDIS_PORT', 'NOT_SET'),
+                "ssl": os.getenv('REDIS_SSL', 'NOT_SET'),
+                "username": os.getenv('REDIS_USERNAME', 'NOT_SET'),
+                "password_set": bool(os.getenv('REDIS_PASSWORD'))
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+
+@router.get("/orchestrator-debug")
+async def debug_orchestrator_components():
+    """Debug orchestrator component initialization"""
+    try:
+        from src.core.dependencies import get_orchestrator
+        
+        orchestrator = get_orchestrator()
+        
+        # Check component status
+        components = {
+            "zerodha": hasattr(orchestrator, 'zerodha') and orchestrator.zerodha is not None,
+            "position_tracker": hasattr(orchestrator, 'position_tracker') and orchestrator.position_tracker is not None,
+            "risk_manager": hasattr(orchestrator, 'risk_manager') and orchestrator.risk_manager is not None,
+            "market_data": hasattr(orchestrator, 'market_data') and orchestrator.market_data is not None,
+            "strategy_engine": hasattr(orchestrator, 'strategy_engine') and orchestrator.strategy_engine is not None,
+            "trade_engine": hasattr(orchestrator, 'trade_engine') and orchestrator.trade_engine is not None,
+            "system_ready": getattr(orchestrator, 'system_ready', False),
+            "is_active": getattr(orchestrator, 'is_active', False)
+        }
+        
+        # Try to get trading status
+        try:
+            status = await orchestrator.get_trading_status()
+            status_keys = list(status.keys())
+            has_symbol_count = 'symbol_count' in status
+            has_system_ready = 'system_ready' in status
+        except Exception as e:
+            status_keys = []
+            has_symbol_count = False
+            has_system_ready = False
+            logger.error(f"Error getting trading status: {e}")
+        
+        return {
+            "success": True,
+            "components": components,
+            "components_ready_count": sum(components.values()),
+            "total_components": len(components),
+            "status_method": {
+                "status_keys": status_keys,
+                "has_symbol_count": has_symbol_count,
+                "has_system_ready": has_system_ready,
+                "using_new_handler": has_symbol_count and has_system_ready
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Orchestrator debug failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        } 
