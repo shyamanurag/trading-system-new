@@ -704,6 +704,50 @@ class TradingOrchestrator:
         logger.info(f"✅ Trading enabled! Session: {self.session_id}")
         return True
     
+    async def _start_trading_loop(self):
+        """Start the main trading signal generation loop"""
+        logger.info("🔄 Starting trading signal generation loop...")
+        
+        try:
+            while self.is_active:
+                try:
+                    # Check if market is still open
+                    if not self._is_market_open():
+                        logger.info("Market closed, pausing signal generation")
+                        await asyncio.sleep(60)
+                        continue
+                    
+                    # Get latest market data
+                    if self.market_data and hasattr(self.market_data, 'get_latest_data'):
+                        market_data = await self.market_data.get_latest_data()
+                    else:
+                        market_data = {}  # Use empty dict if market data not available
+                    
+                    # Generate signals from strategies
+                    if self.strategy_engine:
+                        signals = await self.strategy_engine.generate_all_signals(market_data)
+                        
+                        if signals:
+                            logger.info(f"📊 Generated {len(signals)} trading signals")
+                            
+                            # Execute signals through trade engine
+                            if self.trade_engine and hasattr(self.trade_engine, 'execute_signals'):
+                                await self.trade_engine.execute_signals(signals)
+                        else:
+                            logger.debug("📊 No signals generated this cycle")
+                    
+                    # Wait before next cycle (30 seconds)
+                    await asyncio.sleep(30)
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error in trading loop cycle: {e}")
+                    await asyncio.sleep(60)  # Wait longer on errors
+                    
+        except Exception as e:
+            logger.error(f"❌ Fatal error in trading loop: {e}")
+        finally:
+            logger.info("🔄 Trading loop ended")
+    
     async def disable_trading(self):
         """Disable autonomous trading"""
         if not self.is_active:
@@ -928,6 +972,50 @@ class TradingOrchestrator:
             await self.connection_manager.shutdown()
         
         logger.info("Trading system shutdown complete")
+
+    async def _start_trading_loop(self):
+        """Start the main trading signal generation loop"""
+        logger.info("🔄 Starting trading signal generation loop...")
+        
+        try:
+            while self.is_active:
+                try:
+                    # Check if market is still open
+                    if not self._is_market_open():
+                        logger.info("Market closed, pausing signal generation")
+                        await asyncio.sleep(60)
+                        continue
+                    
+                    # Get latest market data
+                    if self.market_data and hasattr(self.market_data, 'get_latest_data'):
+                        market_data = await self.market_data.get_latest_data()
+                    else:
+                        market_data = {}  # Use empty dict if market data not available
+                    
+                    # Generate signals from strategies
+                    if self.strategy_engine:
+                        signals = await self.strategy_engine.generate_all_signals(market_data)
+                        
+                        if signals:
+                            logger.info(f"📊 Generated {len(signals)} trading signals")
+                            
+                            # Execute signals through trade engine
+                            if self.trade_engine and hasattr(self.trade_engine, 'execute_signals'):
+                                await self.trade_engine.execute_signals(signals)
+                        else:
+                            logger.debug("📊 No signals generated this cycle")
+                    
+                    # Wait before next cycle (30 seconds)
+                    await asyncio.sleep(30)
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error in trading loop cycle: {e}")
+                    await asyncio.sleep(60)  # Wait longer on errors
+                    
+        except Exception as e:
+            logger.error(f"❌ Fatal error in trading loop: {e}")
+        finally:
+            logger.info("🔄 Trading loop ended")
 
 # Add alias for backward compatibility
 Orchestrator = TradingOrchestrator 
