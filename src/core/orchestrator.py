@@ -264,7 +264,7 @@ class TradingOrchestrator:
     async def _safe_init_real_risk_manager(self):
         """Initialize REAL risk manager - no mock fallback"""
         try:
-            # TEMPORARY: Create minimal risk manager for testing
+            # TEMPORARY: Create minimal risk manager for testing - FORCE DEPLOYMENT REFRESH
             # TODO: Fix proper risk manager initialization
             
             class MinimalRiskManager:
