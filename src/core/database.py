@@ -43,8 +43,9 @@ class DatabaseManager:
             )
             
             # Test the connection
+            from sqlalchemy import text
             with self.engine.connect() as conn:
-                conn.execute("SELECT 1")
+                conn.execute(text("SELECT 1"))
             
             # Create session factory
             self.SessionLocal = sessionmaker(
