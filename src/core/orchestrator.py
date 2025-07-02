@@ -352,26 +352,71 @@ class TradingOrchestrator:
             return False
 
     async def _safe_init_real_market_data(self):
-        """Initialize REAL market data - no mock fallback"""
+        """Initialize REAL market data - USE WORKING API ENDPOINT"""
         try:
-            from src.core.market_data import MarketDataManager
-            from src.core.intelligent_symbol_manager import intelligent_symbol_manager
+            import aiohttp
             
-            # Merge market_data and truedata configs
-            market_config = self.config.get('market_data', {})
-            truedata_config = self.config.get('truedata', {})
-            merged_config = {**market_config, **truedata_config}
+            # Create simple market data fetcher that uses our working API
+            class APIMarketDataManager:
+                def __init__(self):
+                    self.symbols = {}
+                    self.symbol_count = 0
+                    self.last_update = None
+                    
+                async def fetch_market_data(self):
+                    """Fetch from our working Market Data API"""
+                    try:
+                        async with aiohttp.ClientSession() as session:
+                            # Use our working Market Data API endpoint
+                            async with session.get('http://localhost:8000/api/v1/market-data') as response:
+                                if response.status == 200:
+                                    data = await response.json()
+                                    self.symbols = data.get('data', {})
+                                    self.symbol_count = data.get('symbol_count', 0)
+                                    self.last_update = datetime.now()
+                                    
+                                    logger.info(f"📊 Fetched {self.symbol_count} symbols from Market Data API")
+                                    if self.symbol_count > 0:
+                                        sample_symbols = list(self.symbols.keys())[:3]
+                                        logger.info(f"📈 Sample symbols: {sample_symbols}")
+                                    
+                                    return True
+                                else:
+                                    logger.error(f"Market Data API returned {response.status}")
+                                    return False
+                    except Exception as e:
+                        logger.error(f"Failed to fetch market data: {e}")
+                        return False
+                
+                async def start(self):
+                    """Start the market data manager"""
+                    logger.info("🚀 Starting API-based Market Data Manager...")
+                    success = await self.fetch_market_data()
+                    if success and self.symbol_count > 0:
+                        logger.info(f"✅ Market Data Manager started with {self.symbol_count} symbols")
+                        return True
+                    else:
+                        logger.error("❌ Failed to start with symbol data")
+                        return False
+                
+                def get_symbols(self):
+                    """Get available symbols"""
+                    return self.symbols
+                
+                def get_symbol_count(self):
+                    """Get symbol count"""
+                    return self.symbol_count
             
-            self.market_data = MarketDataManager(config=merged_config)
+            # Use our API-based market data manager
+            self.market_data = APIMarketDataManager()
+            success = await self.market_data.start()
             
-            # Initialize Intelligent Symbol Manager for dynamic symbol subscription
-            logger.info("🤖 Initializing Intelligent Symbol Manager...")
-            await intelligent_symbol_manager.start()
-            self.intelligent_symbol_manager = intelligent_symbol_manager
-            
-            await self.market_data.start()
-            logger.info("✅ REAL Market Data Manager with Intelligent Symbol Management initialized")
-            return True
+            if success:
+                logger.info("✅ REAL Market Data Manager (API-based) initialized")
+                return True
+            else:
+                logger.error("❌ Market Data API integration failed")
+                return False
             
         except Exception as e:
             logger.error(f"❌ REAL Market Data initialization failed: {e}")
@@ -882,8 +927,26 @@ class TradingOrchestrator:
                    f"Total Trades={self.total_trades}, "
                    f"Final P&L={self.daily_pnl:.2f}")
     
+    async def _get_symbol_count_from_api(self):
+        """Fetch symbol count from our working Market Data API"""
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get('http://localhost:8000/api/v1/market-data') as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        symbol_count = data.get('symbol_count', 0)
+                        logger.debug(f"📊 Fetched symbol count from API: {symbol_count}")
+                        return symbol_count
+                    else:
+                        logger.error(f"Market Data API returned {response.status}")
+                        return 0
+        except Exception as e:
+            logger.error(f"Failed to fetch symbol count: {e}")
+            return 0
+    
     async def get_trading_status(self) -> Dict[str, Any]:
-        """Get current trading status with PERSISTENT DATA"""
+        """Get current trading status with PERSISTENT DATA and SYMBOL COUNT"""
         logger.debug(f"📊 get_trading_status called on instance: {getattr(self, '_instance_id', 'unknown')}")
         logger.debug(f"   is_active: {self.is_active}")
         try:
@@ -904,6 +967,16 @@ class TradingOrchestrator:
                     
                 except Exception as e:
                     logger.warning(f"Failed to get persistent trade data: {e}")
+            
+            # Get symbol count from our working Market Data API
+            symbol_count = await self._get_symbol_count_from_api()
+            
+            # Get strategy status from strategy engine
+            strategy_names = []
+            strategies_loaded = 0
+            if self.strategy_engine and hasattr(self.strategy_engine, 'strategies'):
+                strategy_names = list(self.strategy_engine.strategies.keys())
+                strategies_loaded = len(strategy_names)
             
             # Use PERSISTENT data (override in-memory counters)
             final_trades = max(getattr(self, 'total_trades', 0), persistent_trades)
@@ -942,12 +1015,14 @@ class TradingOrchestrator:
                 "session_id": getattr(self, 'session_id', None),
                 "start_time": getattr(self, 'start_time', None),
                 "last_heartbeat": getattr(self, 'last_heartbeat', None),
-                "market_open": self._is_market_open(),  # FIX: Ensure this field is always included
+                "market_open": self._is_market_open(),
                 "market_outlook": market_outlook,
-                "active_strategies": getattr(self, 'active_strategies', []),
+                "active_strategies": strategy_names,  # NOW SHOWS ACTUAL STRATEGY NAMES
+                "strategies_loaded": strategies_loaded,  # COUNT OF LOADED STRATEGIES
+                "symbol_count": symbol_count,  # FIXED: Now includes symbol count from API
                 "active_positions": getattr(self, 'active_positions', []),
-                "total_trades": final_trades,  # NOW INCLUDES PERSISTENT TRADES
-                "daily_pnl": final_pnl,       # NOW INCLUDES PERSISTENT P&L
+                "total_trades": final_trades,
+                "daily_pnl": final_pnl,
                 "risk_status": getattr(self, 'risk_status', {}),
                 "market_status": getattr(self, 'market_status', {}),
                 "connections": connections,
@@ -974,6 +1049,8 @@ class TradingOrchestrator:
                 "market_open": False,
                 "market_outlook": "error",
                 "active_strategies": [],
+                "strategies_loaded": 0,
+                "symbol_count": 0,
                 "active_positions": [],
                 "total_trades": 0,
                 "daily_pnl": 0.0,
