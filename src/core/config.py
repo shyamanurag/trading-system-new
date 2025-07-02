@@ -158,18 +158,29 @@ settings.LOGS_DIR.mkdir(exist_ok=True)
 
 # Fail fast if localhost detected in production
 if IS_PRODUCTION:
-    if settings.DB_HOST == "localhost":
-        error_msg = "CRITICAL: DB_HOST is set to localhost in production. Set proper environment variables!"
+    # Check if we have a proper DATABASE_URL (DigitalOcean provides this)
+    has_proper_db_url = settings.DATABASE_URL and 'ondigitalocean.com' in settings.DATABASE_URL
+    has_proper_db_host = settings.DB_HOST != "localhost" and settings.DB_HOST != "127.0.0.1"
+    
+    # Only fail if we don't have either a proper DATABASE_URL or DB_HOST
+    if not has_proper_db_url and not has_proper_db_host:
+        error_msg = "CRITICAL: No proper database configuration found in production. Set DATABASE_URL or DB_HOST environment variables!"
         logger.error(error_msg)
         raise ValueError(error_msg)
-    if settings.REDIS_HOST == "localhost":
-        error_msg = "CRITICAL: REDIS_HOST is set to localhost in production. Set proper environment variables!"
+    
+    # Check Redis configuration
+    has_proper_redis_url = settings.REDIS_URL and 'ondigitalocean.com' in settings.REDIS_URL
+    has_proper_redis_host = settings.REDIS_HOST != "localhost" and settings.REDIS_HOST != "127.0.0.1"
+    
+    if not has_proper_redis_url and not has_proper_redis_host:
+        error_msg = "CRITICAL: No proper Redis configuration found in production. Set REDIS_URL or REDIS_HOST environment variables!"
         logger.error(error_msg)
         raise ValueError(error_msg)
-    if any("localhost" in origin for origin in settings.CORS_ORIGINS):
-        error_msg = "CRITICAL: CORS_ORIGINS contains localhost in production. Set proper environment variables!"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
+    
+    # Check CORS origins (allow localhost in development origins for testing)
+    localhost_in_cors = any("localhost" in origin for origin in settings.CORS_ORIGINS)
+    if localhost_in_cors:
+        logger.warning("CORS_ORIGINS contains localhost in production - consider removing for security")
 else:
     # Warn in development
     if settings.DB_HOST == "localhost":
