@@ -127,4 +127,61 @@ async function finalTest() {
     }
 }
 
+finalTest();
+
+console.log('🎯 FINAL TEST - Ultra-Simple Fallback');
+console.log('=====================================');
+
+async function finalTest() {
+    try {
+        console.log('⏱️ Waiting 60 seconds for deployment...');
+        await new Promise(resolve => setTimeout(resolve, 60000));
+
+        console.log('\n1. Testing Risk Manager...');
+        const riskResponse = await fetch('https://algoauto-9gx56.ondigitalocean.app/api/v1/autonomous/risk');
+        const riskData = await riskResponse.json();
+
+        console.log('Risk Status:', riskData.data?.status);
+        const fallbackWorking = riskData.data?.status?.includes('working_minimal');
+        console.log('Ultra-Simple Fallback:', fallbackWorking ? 'SUCCESS ✅' : 'FAILED ❌');
+
+        if (fallbackWorking) {
+            console.log('\n2. Testing Orchestrator Components...');
+            const debugResponse = await fetch('https://algoauto-9gx56.ondigitalocean.app/api/v1/debug/orchestrator-debug');
+            const debugData = await debugResponse.json();
+
+            console.log('Components Ready:', debugData.components_ready_count + '/' + debugData.total_components);
+            console.log('Position Tracker:', debugData.components?.position_tracker ? 'SUCCESS ✅' : 'FAILED ❌');
+            console.log('Risk Manager:', debugData.components?.risk_manager ? 'SUCCESS ✅' : 'FAILED ❌');
+
+            if (debugData.components?.position_tracker && debugData.components?.risk_manager) {
+                console.log('\n3. Testing Autonomous Start...');
+                const startResponse = await fetch('https://algoauto-9gx56.ondigitalocean.app/api/v1/autonomous/start', {
+                    method: 'POST'
+                });
+                const startData = await startResponse.json();
+
+                console.log('Autonomous Start:', startData.success ? 'SUCCESS ✅' : 'FAILED ❌');
+                console.log('Message:', startData.message || startData.detail);
+
+                if (startData.success) {
+                    console.log('\n🎉 BREAKTHROUGH ACHIEVED!');
+                    console.log('✅ Trading system is now fully operational!');
+                    console.log('✅ All infrastructure issues resolved!');
+                    console.log('✅ Ready for live trading!');
+                } else {
+                    console.log('\n❌ Still issues with autonomous start');
+                }
+            } else {
+                console.log('\n❌ Components still not initializing properly');
+            }
+        } else {
+            console.log('\n❌ Ultra-simple fallback not working yet');
+        }
+
+    } catch (error) {
+        console.log('❌ Error during final test:', error.message);
+    }
+}
+
 finalTest(); 

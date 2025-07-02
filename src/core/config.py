@@ -9,6 +9,12 @@ from pathlib import Path
 import re
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from functools import lru_cache
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Check if we're in production environment
+IS_PRODUCTION = os.getenv('ENVIRONMENT', '').lower() in ['production', 'prod', 'live']
 
 class Settings(BaseSettings):
     """Application settings"""
@@ -148,4 +154,29 @@ settings = get_settings()
 
 # Ensure directories exist
 settings.DATA_DIR.mkdir(exist_ok=True)
-settings.LOGS_DIR.mkdir(exist_ok=True) 
+settings.LOGS_DIR.mkdir(exist_ok=True)
+
+# Fail fast if localhost detected in production
+if IS_PRODUCTION:
+    if settings.DB_HOST == "localhost":
+        error_msg = "CRITICAL: DB_HOST is set to localhost in production. Set proper environment variables!"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    if settings.REDIS_HOST == "localhost":
+        error_msg = "CRITICAL: REDIS_HOST is set to localhost in production. Set proper environment variables!"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    if any("localhost" in origin for origin in settings.CORS_ORIGINS):
+        error_msg = "CRITICAL: CORS_ORIGINS contains localhost in production. Set proper environment variables!"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+else:
+    # Warn in development
+    if settings.DB_HOST == "localhost":
+        logger.warning("[DEV WARNING] DB_HOST is set to localhost. This MUST be overridden in production!")
+    if settings.REDIS_HOST == "localhost":
+        logger.warning("[DEV WARNING] REDIS_HOST is set to localhost. This MUST be overridden in production!")
+    if any("localhost" in origin for origin in settings.CORS_ORIGINS):
+        logger.warning("[DEV WARNING] CORS_ORIGINS contains localhost. This MUST be overridden in production!")
+
+# In production, set these via environment variables or config files! 

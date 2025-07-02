@@ -14,6 +14,9 @@ from sqlalchemy.pool import StaticPool
 
 logger = logging.getLogger(__name__)
 
+# Check if we're in production environment
+IS_PRODUCTION = os.getenv('ENVIRONMENT', '').lower() in ['production', 'prod', 'live']
+
 # Database Base Model
 Base = declarative_base()
 metadata = MetaData()
@@ -29,6 +32,23 @@ class DatabaseConfig:
         # Environment variables
         self.redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
         self.database_url = os.getenv('DATABASE_URL', 'sqlite:///./trading_system.db')
+        
+        # Fail fast if localhost detected in production
+        if IS_PRODUCTION:
+            if "localhost" in self.redis_url:
+                error_msg = f"CRITICAL: REDIS_URL is set to localhost in production: {self.redis_url}. Set proper environment variables!"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            if "localhost" in self.database_url and not self.database_url.startswith('sqlite'):
+                error_msg = f"CRITICAL: DATABASE_URL is set to localhost in production: {self.database_url}. Set proper environment variables!"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+        else:
+            # Warn in development
+            if "localhost" in self.redis_url:
+                logger.warning(f"[DEV WARNING] REDIS_URL is set to localhost: {self.redis_url}. This MUST be overridden in production!")
+            if "localhost" in self.database_url and not self.database_url.startswith('sqlite'):
+                logger.warning(f"[DEV WARNING] DATABASE_URL is set to localhost: {self.database_url}. This MUST be overridden in production!")
         
         # Parse Redis connection
         self._setup_redis_config()

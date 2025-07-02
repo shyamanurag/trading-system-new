@@ -15,7 +15,6 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any
 from datetime import datetime
 import logging
-from src.core.orchestrator import TradingOrchestrator
 from src.models.responses import (
     BaseResponse,
     TradingStatusResponse,
@@ -28,12 +27,15 @@ from src.models.responses import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/autonomous")
 
-# Use shared dependency to prevent singleton issues
-from src.core.dependencies import get_orchestrator
+# Lazy import to avoid circular dependency
+async def get_orchestrator():
+    """Get orchestrator instance with lazy import"""
+    from src.core.orchestrator import get_orchestrator as get_orchestrator_instance
+    return await get_orchestrator_instance()
 
 @router.get("/status", response_model=TradingStatusResponse)
 async def get_status(
-    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
+    orchestrator: Any = Depends(get_orchestrator)
 ):
     """Get current autonomous trading status"""
     try:
@@ -61,7 +63,7 @@ async def get_status(
 
 @router.post("/start", response_model=BaseResponse)
 async def start_trading(
-    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
+    orchestrator: Any = Depends(get_orchestrator)
 ):
     """Start autonomous trading"""
     try:
@@ -98,7 +100,7 @@ async def start_trading(
 
 @router.post("/stop", response_model=BaseResponse)
 async def stop_trading(
-    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
+    orchestrator: Any = Depends(get_orchestrator)
 ):
     """Stop autonomous trading"""
     try:
@@ -113,7 +115,7 @@ async def stop_trading(
 
 @router.get("/positions", response_model=PositionResponse)
 async def get_positions(
-    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
+    orchestrator: Any = Depends(get_orchestrator)
 ):
     """Get current positions"""
     try:
@@ -134,15 +136,15 @@ async def get_positions(
 
 @router.get("/performance", response_model=PerformanceMetricsResponse)
 async def get_performance(
-    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
+    orchestrator: Any = Depends(get_orchestrator)
 ):
     """Get trading performance metrics"""
     try:
         # Return basic metrics for now
         metrics = {
-            "total_trades": orchestrator.total_trades,
-            "daily_pnl": orchestrator.daily_pnl,
-            "active_positions": len(orchestrator.active_positions),
+            "total_trades": getattr(orchestrator, 'total_trades', 0),
+            "daily_pnl": getattr(orchestrator, 'daily_pnl', 0.0),
+            "active_positions": len(getattr(orchestrator, 'active_positions', [])),
             "win_rate": 0.0,
             "sharpe_ratio": 0.0
         }
@@ -157,7 +159,7 @@ async def get_performance(
 
 @router.get("/strategies", response_model=StrategyResponse)
 async def get_strategies(
-    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
+    orchestrator: Any = Depends(get_orchestrator)
 ):
     """Get active trading strategies"""
     try:
@@ -177,7 +179,7 @@ async def get_strategies(
 
 @router.get("/risk", response_model=RiskMetricsResponse)
 async def get_risk_metrics(
-    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
+    orchestrator: Any = Depends(get_orchestrator)
 ):
     """Get current risk metrics"""
     try:
@@ -200,4 +202,4 @@ async def get_risk_metrics(
         )
     except Exception as e:
         logger.error(f"Error getting risk metrics: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) 

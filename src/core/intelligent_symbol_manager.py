@@ -15,7 +15,8 @@ import json
 import os
 from dataclasses import dataclass, field
 
-from data.truedata_client import truedata_client, subscribe_to_symbols
+# Import TrueData client functions
+from data.truedata_client import subscribe_to_symbols, is_connected
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class IntelligentSymbolManager:
     def __init__(self, config: Optional[SymbolConfig] = None):
         self.config = config or SymbolConfig()
         self.active_symbols: Set[str] = set()
+        self.pending_symbols: List[str] = []  # Symbols waiting to be subscribed
         self.symbol_metadata: Dict[str, Dict] = {}
         self.is_running = False
         self.tasks = []
@@ -111,13 +113,30 @@ class IntelligentSymbolManager:
         # Respect symbol limit
         symbols_list = list(symbols_to_add)[:self.config.max_symbols]
         
-        # Subscribe to symbols
-        await self.subscribe_symbols(symbols_list)
+        # Wait for TrueData to be connected before subscribing
+        max_retries = 10
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            if is_connected():
+                logger.info("✅ TrueData connected - proceeding with symbol subscription")
+                break
+            else:
+                logger.info(f"⏳ Waiting for TrueData connection... (attempt {retry_count + 1}/{max_retries})")
+                await asyncio.sleep(5)  # Wait 5 seconds between retries
+                retry_count += 1
+        
+        if retry_count >= max_retries:
+            logger.warning("⚠️ TrueData not connected after max retries - will retry in background")
+            logger.info("💡 Symbols will be added automatically when TrueData connects")
+        else:
+            # Subscribe to symbols
+            await self.subscribe_symbols(symbols_list)
         
         logger.info(f"✅ Initial setup complete: {len(symbols_list)} symbols")
 
     async def subscribe_symbols(self, symbols: List[str]):
-        """Subscribe to symbols using existing TrueData connection"""
+        """Subscribe to symbols using existing TrueData connection with retry logic"""
         try:
             # Filter out already subscribed symbols
             new_symbols = [s for s in symbols if s not in self.active_symbols]
@@ -126,6 +145,26 @@ class IntelligentSymbolManager:
                 return
                 
             logger.info(f"📊 Subscribing to {len(new_symbols)} new symbols...")
+            
+            # Retry logic for TrueData connection
+            max_retries = 5
+            retry_count = 0
+            
+            while retry_count < max_retries:
+                if is_connected():
+                    logger.info("✅ TrueData connected - attempting symbol subscription")
+                    break
+                else:
+                    logger.info(f"⏳ Waiting for TrueData connection... (attempt {retry_count + 1}/{max_retries})")
+                    await asyncio.sleep(3)  # Wait 3 seconds between retries
+                    retry_count += 1
+            
+            if retry_count >= max_retries:
+                logger.warning("⚠️ TrueData not connected after max retries - will retry in background")
+                logger.info("💡 Symbols will be added automatically when TrueData connects")
+                # Store symbols for later retry
+                self.pending_symbols = new_symbols
+                return
             
             # CRITICAL FIX: Actually call TrueData client subscription
             success = subscribe_to_symbols(new_symbols)
@@ -147,6 +186,7 @@ class IntelligentSymbolManager:
                 logger.info(f"📊 Total active symbols: {len(self.active_symbols)}")
             else:
                 logger.error("❌ Failed to subscribe to symbols via TrueData client")
+                logger.info("🔄 Will retry subscription in next refresh cycle")
                 
         except Exception as e:
             logger.error(f"❌ Subscription error: {e}")
@@ -184,6 +224,13 @@ class IntelligentSymbolManager:
                     continue
                     
                 logger.info("🔄 Auto-refreshing symbols...")
+                
+                # Handle pending symbols first
+                if self.pending_symbols:
+                    logger.info(f"🔄 Retrying subscription for {len(self.pending_symbols)} pending symbols...")
+                    pending_copy = self.pending_symbols.copy()
+                    self.pending_symbols.clear()
+                    await self.subscribe_symbols(pending_copy)
                 
                 # Check for new contracts
                 await self.add_new_contracts()
