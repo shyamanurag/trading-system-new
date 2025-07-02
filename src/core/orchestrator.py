@@ -411,17 +411,63 @@ class TradingOrchestrator:
                 decode_responses=True
             )
             
-            # Test Redis connection
-            await redis_client.ping()
-            logger.info("✅ Redis connection successful")
-            
-            self.position_tracker = PositionTracker(
-                event_bus=self.event_bus,
-                redis_client=redis_client
-            )
-            
-            logger.info("✅ REAL Position Tracker initialized")
-            return True
+            # Test Redis connection with timeout
+            try:
+                await asyncio.wait_for(redis_client.ping(), timeout=10.0)
+                logger.info("✅ Redis connection successful")
+                
+                self.position_tracker = PositionTracker(
+                    event_bus=self.event_bus,
+                    redis_client=redis_client
+                )
+                
+                logger.info("✅ REAL Position Tracker initialized with Redis")
+                return True
+                
+            except (asyncio.TimeoutError, Exception) as redis_error:
+                logger.warning(f"⚠️ Redis connection failed: {redis_error}")
+                logger.info("🔄 Creating in-memory position tracker as fallback...")
+                
+                # FALLBACK: Create in-memory position tracker
+                class InMemoryPositionTracker:
+                    def __init__(self, event_bus):
+                        self.event_bus = event_bus
+                        self.positions = {}
+                        self.position_history = []
+                        self.total_exposure = 0.0
+                        self.daily_pnl = 0.0
+                        logger.info("💡 In-memory position tracker initialized")
+                    
+                    async def add_position(self, position):
+                        self.positions[position.position_id] = position
+                        return True
+                    
+                    async def get_all_positions(self):
+                        return list(self.positions.values())
+                    
+                    def get_position(self, position_id):
+                        return self.positions.get(position_id)
+                    
+                    async def update_position(self, position_id, updates):
+                        if position_id in self.positions:
+                            position = self.positions[position_id]
+                            for key, value in updates.items():
+                                if hasattr(position, key):
+                                    setattr(position, key, value)
+                            return True
+                        return False
+                    
+                    async def close_position(self, position_id, exit_price, reason="manual"):
+                        if position_id in self.positions:
+                            position = self.positions[position_id]
+                            self.position_history.append(position)
+                            del self.positions[position_id]
+                            return True
+                        return False
+                
+                self.position_tracker = InMemoryPositionTracker(self.event_bus)
+                logger.info("✅ In-memory Position Tracker initialized (Redis fallback)")
+                return True
             
         except Exception as e:
             logger.error(f"❌ REAL Position Tracker initialization failed: {e}")
