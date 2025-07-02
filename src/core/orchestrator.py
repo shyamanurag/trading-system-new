@@ -623,32 +623,29 @@ class TradingOrchestrator:
     def _is_market_open(self) -> bool:
         """Check if market is open for trading"""
         try:
-            # TEMPORARY BYPASS: Always return True for testing
-            # TODO: Fix timezone detection properly
-            logger.info("🚀 TEMPORARY BYPASS: Market hours check disabled for testing")
-            return True
+            from datetime import datetime, time
+            import pytz
             
-            # Original timezone logic (commented out for now)
-            # from datetime import datetime, time
-            # import pytz
-            # 
-            # # Use IST timezone for accurate market hours
-            # ist_timezone = pytz.timezone('Asia/Kolkata')
-            # now_ist = datetime.now(ist_timezone)
-            # 
-            # # Indian market hours: 9:15 AM to 3:30 PM IST, Monday to Friday
-            # if now_ist.weekday() >= 5:  # Saturday = 5, Sunday = 6
-            #     return False
-            # 
-            # market_start = time(9, 15)
-            # market_end = time(15, 30)
-            # current_time = now_ist.time()
-            # 
-            # return market_start <= current_time <= market_end
+            # Use IST timezone for accurate market hours
+            ist_timezone = pytz.timezone('Asia/Kolkata')
+            now_ist = datetime.now(ist_timezone)
+            
+            # Indian market hours: 9:15 AM to 3:30 PM IST, Monday to Friday
+            if now_ist.weekday() >= 5:  # Saturday = 5, Sunday = 6
+                logger.debug(f"Market closed - Weekend ({now_ist.strftime('%A')})")
+                return False
+            
+            market_start = time(9, 15)
+            market_end = time(15, 30)
+            current_time = now_ist.time()
+            
+            is_open = market_start <= current_time <= market_end
+            logger.debug(f"Market hours check: {now_ist.strftime('%H:%M:%S IST')} - {'OPEN' if is_open else 'CLOSED'}")
+            return is_open
             
         except Exception as e:
             logger.error(f"Error checking market hours: {e}")
-            return True  # Default to True when in doubt
+            return False  # Conservative approach - don't trade if unsure
 
     async def enable_trading(self):
         """Enable autonomous trading with proper signal generation"""

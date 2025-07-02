@@ -7,7 +7,6 @@ import logging
 from datetime import datetime
 from fastapi import APIRouter, Query, HTTPException, Depends
 from typing import Optional, List
-from ..models.responses import APIResponse
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -23,6 +22,18 @@ truedata_connection_status = {
     "symbols_subscribed": []
 }
 
+def get_truedata_status():
+    """Get TrueData connection status safely"""
+    try:
+        from data.truedata_client import get_truedata_status as get_status
+        return get_status()
+    except ImportError:
+        logger.warning("TrueData client not available")
+        return {"connected": False, "error": "TrueData client not available"}
+    except Exception as e:
+        logger.error(f"Error getting TrueData status: {e}")
+        return {"connected": False, "error": str(e)}
+
 def is_connected() -> bool:
     """Check if TrueData is connected"""
     try:
@@ -30,6 +41,10 @@ def is_connected() -> bool:
         from data.truedata_client import truedata_client
         return getattr(truedata_client, 'connected', False)
     except ImportError:
+        logger.warning("TrueData client import failed")
+        return False
+    except Exception as e:
+        logger.error(f"Error checking TrueData connection: {e}")
         return False
 
 def get_live_data_for_symbol(symbol: str) -> dict:
@@ -39,6 +54,10 @@ def get_live_data_for_symbol(symbol: str) -> dict:
         from data.truedata_client import live_market_data
         return live_market_data.get(symbol.upper(), {})
     except ImportError:
+        logger.warning("TrueData client import failed")
+        return {}
+    except Exception as e:
+        logger.error(f"Error getting live data for {symbol}: {e}")
         return {}
 
 def get_all_live_market_data() -> dict:
@@ -48,6 +67,9 @@ def get_all_live_market_data() -> dict:
         return live_market_data
     except ImportError:
         logger.warning("TrueData client not available")
+        return {}
+    except Exception as e:
+        logger.error(f"Error getting all live market data: {e}")
         return {}
 
 def get_market_data_manager_symbols() -> dict:
