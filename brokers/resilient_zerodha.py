@@ -8,6 +8,13 @@ import logging
 from typing import Dict, Optional, Any
 from datetime import datetime
 import time
+import sys
+from pathlib import Path
+
+# Ensure project root is in Python path for src imports
+project_root = str(Path(__file__).parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from src.core.connection_manager import ResilientConnection
 from .zerodha import ZerodhaIntegration
