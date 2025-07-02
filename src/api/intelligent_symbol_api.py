@@ -5,6 +5,7 @@ API endpoints for Intelligent Symbol Management
 from fastapi import APIRouter, HTTPException
 from typing import Dict, List
 import logging
+from datetime import datetime
 
 from src.core.intelligent_symbol_manager import (
     intelligent_symbol_manager,
@@ -18,46 +19,167 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.get("/intelligent-symbols/status")
-async def get_symbol_manager_status():
-    """Get intelligent symbol manager status"""
+@router.get("/intelligent-symbols")
+async def get_intelligent_symbols_status():
+    """Get IntelligentSymbolManager status and symbol expansion info"""
     try:
-        status = get_intelligent_symbol_status()
+        # Get current status
+        status = intelligent_symbol_manager.get_status()
+        
+        # Get active symbols list
+        active_symbols = list(intelligent_symbol_manager.active_symbols)
+        
+        # Categorize symbols
+        symbol_categories = {
+            'core_indices': [],
+            'priority_stocks': [],
+            'options': [],
+            'other': []
+        }
+        
+        for symbol in active_symbols:
+            if symbol in intelligent_symbol_manager.config.core_indices:
+                symbol_categories['core_indices'].append(symbol)
+            elif symbol in intelligent_symbol_manager.config.priority_stocks:
+                symbol_categories['priority_stocks'].append(symbol)
+            elif 'CE' in symbol or 'PE' in symbol:
+                symbol_categories['options'].append(symbol)
+            else:
+                symbol_categories['other'].append(symbol)
+        
         return {
             "success": True,
-            "status": status,
-            "message": "Symbol manager status retrieved"
+            "data": {
+                "status": status,
+                "symbol_breakdown": symbol_categories,
+                "expansion_progress": {
+                    "current": len(active_symbols),
+                    "target": intelligent_symbol_manager.config.max_symbols,
+                    "remaining_capacity": intelligent_symbol_manager.config.max_symbols - len(active_symbols),
+                    "percentage": round((len(active_symbols) / intelligent_symbol_manager.config.max_symbols) * 100, 1)
+                },
+                "active_symbols": active_symbols[:20],  # First 20 for display
+                "total_symbols": len(active_symbols)
+            },
+            "timestamp": datetime.now().isoformat()
         }
+        
     except Exception as e:
-        logger.error(f"Failed to get symbol manager status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting intelligent symbols status: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
 @router.post("/intelligent-symbols/start")
-async def start_symbol_manager():
-    """Start the intelligent symbol management system"""
+async def start_intelligent_symbol_management():
+    """Start the IntelligentSymbolManager to expand symbols"""
     try:
-        await start_intelligent_symbol_management()
+        if intelligent_symbol_manager.is_running:
+            return {
+                "success": True,
+                "message": "IntelligentSymbolManager is already running",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Start the symbol manager
+        await intelligent_symbol_manager.start()
+        
         return {
             "success": True,
-            "message": "Intelligent symbol management started",
-            "status": get_intelligent_symbol_status()
+            "message": "IntelligentSymbolManager started successfully",
+            "status": intelligent_symbol_manager.get_status(),
+            "timestamp": datetime.now().isoformat()
         }
+        
     except Exception as e:
-        logger.error(f"Failed to start symbol manager: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error starting intelligent symbol management: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
 @router.post("/intelligent-symbols/stop")
-async def stop_symbol_manager():
-    """Stop the intelligent symbol management system"""
+async def stop_intelligent_symbol_management():
+    """Stop the IntelligentSymbolManager"""
     try:
-        await stop_intelligent_symbol_management()
+        if not intelligent_symbol_manager.is_running:
+            return {
+                "success": True,
+                "message": "IntelligentSymbolManager is already stopped",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Stop the symbol manager
+        await intelligent_symbol_manager.stop()
+        
         return {
             "success": True,
-            "message": "Intelligent symbol management stopped"
+            "message": "IntelligentSymbolManager stopped successfully",
+            "timestamp": datetime.now().isoformat()
         }
+        
     except Exception as e:
-        logger.error(f"Failed to stop symbol manager: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error stopping intelligent symbol management: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+@router.post("/intelligent-symbols/expand-now")
+async def trigger_symbol_expansion():
+    """Manually trigger symbol expansion to reach 250 symbols"""
+    try:
+        if not intelligent_symbol_manager.is_running:
+            return {
+                "success": False,
+                "error": "IntelligentSymbolManager must be running to expand symbols",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Get current count
+        current_count = len(intelligent_symbol_manager.active_symbols)
+        target_count = intelligent_symbol_manager.config.max_symbols
+        
+        if current_count >= target_count:
+            return {
+                "success": True,
+                "message": f"Already at target symbol count: {current_count}/{target_count}",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Trigger expansion by calling setup methods
+        await intelligent_symbol_manager.initial_symbol_setup()
+        await intelligent_symbol_manager.add_new_contracts()
+        await intelligent_symbol_manager.optimize_symbol_allocation()
+        
+        # Get new count
+        new_count = len(intelligent_symbol_manager.active_symbols)
+        symbols_added = new_count - current_count
+        
+        return {
+            "success": True,
+            "message": f"Symbol expansion triggered: {symbols_added} symbols added",
+            "expansion_result": {
+                "previous_count": current_count,
+                "new_count": new_count,
+                "symbols_added": symbols_added,
+                "target_count": target_count,
+                "remaining": target_count - new_count
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error triggering symbol expansion: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
 @router.get("/intelligent-symbols/active")
 async def get_active_symbols_list():

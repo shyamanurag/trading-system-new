@@ -13,7 +13,7 @@ from ..models.responses import APIResponse
 logger = logging.getLogger(__name__)
 
 # Create router
-router = APIRouter(prefix="/api/v1/market-data", tags=["market-data"])
+router = APIRouter(prefix="/api/v1", tags=["market-data"])
 
 # Global variables for TrueData integration  
 live_market_data = {}
@@ -41,21 +41,105 @@ def get_live_data_for_symbol(symbol: str) -> dict:
     except ImportError:
         return {}
 
-def get_truedata_status() -> dict:
-    """Get TrueData connection status"""
+def get_all_live_market_data() -> dict:
+    """Get ALL live market data from TrueData"""
     try:
-        # Import here to avoid startup errors
-        from data.truedata_client import truedata_client
-        return {
-            "connected": getattr(truedata_client, 'connected', False),
-            "subscribed_symbols": getattr(truedata_client, 'subscribed_symbols', []),
-            "last_update": datetime.now().isoformat()
-        }
+        from data.truedata_client import live_market_data
+        return live_market_data
     except ImportError:
+        logger.warning("TrueData client not available")
+        return {}
+
+def get_market_data_manager_symbols() -> dict:
+    """Get symbols from MarketDataManager if available"""
+    try:
+        # Try to get symbols from the orchestrator's market data manager
+        from src.core.orchestrator import TradingOrchestrator
+        orchestrator = TradingOrchestrator.get_instance()
+        
+        if hasattr(orchestrator, 'market_data') and orchestrator.market_data:
+            # Get symbols from market data cache
+            if hasattr(orchestrator.market_data, 'market_data_cache'):
+                return orchestrator.market_data.market_data_cache
+            # Get symbols from available TrueData
+            elif hasattr(orchestrator.market_data, '_get_all_available_truedata_symbols'):
+                available_symbols = orchestrator.market_data._get_all_available_truedata_symbols()
+                # Convert to data format expected by frontend
+                symbol_data = {}
+                for symbol in available_symbols:
+                    live_data = get_live_data_for_symbol(symbol)
+                    if live_data:
+                        symbol_data[symbol] = {
+                            'current_price': live_data.get('ltp', 0),
+                            'price': live_data.get('ltp', 0),
+                            'volume': live_data.get('volume', 0),
+                            'change': live_data.get('change', 0),
+                            'change_percent': live_data.get('change_percent', 0),
+                            'high': live_data.get('high', 0),
+                            'low': live_data.get('low', 0),
+                            'open': live_data.get('open', 0),
+                            'timestamp': datetime.now().isoformat(),
+                            'symbol': symbol,
+                            'source': 'TrueData'
+                        }
+                return symbol_data
+        
+        return {}
+    except Exception as e:
+        logger.error(f"Error getting market data manager symbols: {e}")
+        return {}
+
+@router.get("/market-data")
+async def get_all_market_data():
+    """Get ALL market data symbols - Main endpoint for symbol count analysis"""
+    try:
+        logger.info("📊 Getting all market data symbols...")
+        
+        # Method 1: Get from MarketDataManager
+        market_data = get_market_data_manager_symbols()
+        
+        # Method 2: Fallback to direct TrueData
+        if not market_data:
+            live_data = get_all_live_market_data()
+            market_data = {}
+            
+            for symbol, data in live_data.items():
+                market_data[symbol] = {
+                    'current_price': data.get('ltp', 0),
+                    'price': data.get('ltp', 0),
+                    'volume': data.get('volume', 0),
+                    'change': data.get('change', 0),
+                    'change_percent': data.get('change_percent', 0),
+                    'timestamp': datetime.now().isoformat(),
+                    'symbol': symbol,
+                    'source': 'TrueData_Direct'
+                }
+        
+        symbol_count = len(market_data)
+        logger.info(f"📊 Returning {symbol_count} symbols in market data")
+        
         return {
-            "connected": False,
-            "subscribed_symbols": [],
-            "last_update": datetime.now().isoformat()
+            "success": True,
+            "data": market_data,
+            "symbol_count": symbol_count,
+            "expansion_status": {
+                "current_symbols": symbol_count,
+                "target_symbols": 250,
+                "expansion_needed": 250 - symbol_count,
+                "percentage_complete": round((symbol_count / 250) * 100, 1)
+            },
+            "timestamp": datetime.now().isoformat(),
+            "source": "market_data_manager" if market_data else "truedata_direct"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting all market data: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "data": {},
+            "symbol_count": 0,
+            "timestamp": datetime.now().isoformat()
         }
 
 @router.get("/market-data/{symbol}")
@@ -92,15 +176,55 @@ async def get_market_data(
         logger.error(f"Error fetching market data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/symbol/{symbol}")
-async def get_individual_symbol_data(symbol: str):
-    """Get individual symbol data - endpoint for browser console tests"""
+@router.get("/symbol-expansion/status")
+async def get_symbol_expansion_status():
+    """Get current symbol expansion status - for monitoring the 6->250 expansion"""
     try:
-        symbol = symbol.upper()
+        # Get current symbol count
+        market_data = get_market_data_manager_symbols()
+        current_count = len(market_data)
         
-        # Simple TrueData connection check
-        has_connection = is_connected()
+        # Get IntelligentSymbolManager status
+        try:
+            from src.core.intelligent_symbol_manager import intelligent_symbol_manager
+            ism_status = intelligent_symbol_manager.get_status()
+        except Exception as e:
+            logger.warning(f"Could not get IntelligentSymbolManager status: {e}")
+            ism_status = {"error": str(e)}
         
+        # Get TrueData status
+        truedata_symbols = get_all_live_market_data()
+        truedata_count = len(truedata_symbols)
+        
+        return {
+            "success": True,
+            "expansion_analysis": {
+                "current_symbols": current_count,
+                "target_symbols": 250,
+                "truedata_available": truedata_count,
+                "expansion_needed": 250 - current_count,
+                "percentage_complete": round((current_count / 250) * 100, 1),
+                "status": "EXPANDING" if current_count < 250 else "TARGET_REACHED"
+            },
+            "intelligent_symbol_manager": ism_status,
+            "truedata_connection": {
+                "connected": is_connected(),
+                "available_symbols": truedata_count,
+                "sample_symbols": list(truedata_symbols.keys())[:10] if truedata_symbols else []
+            },
+            "recommendations": [
+                "Enable IntelligentSymbolManager startup" if not ism_status.get('is_running') else "✅ ISM Running",
+                "Expand TrueData subscriptions" if truedata_count < 100 else "✅ TrueData Connected",
+                "Configure F&O auto-discovery" if current_count < 50 else "✅ Symbol Discovery Active"
+            ],
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting symbol expansion status: {e}")
+        return {
+            "success": False,
+            "error": str(e),
         if not has_connection:
             return {
                 "success": False,
