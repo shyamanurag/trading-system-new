@@ -966,118 +966,109 @@ class TradingOrchestrator:
             logger.error(f"Failed to fetch symbol count: {e}")
             return 0
     
-    async def get_trading_status(self) -> Dict[str, Any]:
-        """Get current trading status with PERSISTENT DATA and SYMBOL COUNT"""
-        logger.debug(f"📊 get_trading_status called on instance: {getattr(self, '_instance_id', 'unknown')}")
-        logger.debug(f"   is_active: {self.is_active}")
+    async def get_trading_status(self):
+        """Get comprehensive trading status with robust error handling"""
         try:
-            # Get PERSISTENT trade data from trade engine
-            persistent_trades = 0
-            persistent_pnl = 0.0
-            daily_trades = []
+            # Get basic trading state (always available)
+            basic_status = {
+                "is_active": getattr(self, 'is_active', False),
+                "system_ready": getattr(self, 'system_ready', False),
+                "session_id": getattr(self, 'session_id', None),
+                "start_time": getattr(self, 'start_time', None),
+                "last_heartbeat": getattr(self, 'last_heartbeat', None),
+                "active_strategies": getattr(self, 'active_strategies', []),
+                "active_positions": getattr(self, 'active_positions', []),
+                "total_trades": getattr(self, 'total_trades', 0),
+                "daily_pnl": getattr(self, 'daily_pnl', 0.0),
+            }
             
-            if self.trade_engine and hasattr(self.trade_engine, 'get_daily_trades'):
-                try:
-                    daily_trades = await self.trade_engine.get_daily_trades()
-                    persistent_trades = len(daily_trades)
-                    
-                    if hasattr(self.trade_engine, 'get_daily_pnl'):
-                        persistent_pnl = await self.trade_engine.get_daily_pnl()
-                    
-                    logger.info(f"📊 PERSISTENT DATA: {persistent_trades} trades, ₹{persistent_pnl:,.2f} P&L")
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to get persistent trade data: {e}")
+            # Add market status with safe defaults
+            try:
+                market_open = self._is_market_open()
+                market_outlook = self._get_market_outlook()
+            except Exception as e:
+                logger.warning(f"Market status check failed: {e}")
+                market_open = False
+                market_outlook = "unknown"
             
-            # Get symbol count from our working Market Data API
-            symbol_count = await self._get_symbol_count_from_api()
+            # Add strategy count
+            strategies_loaded = len(basic_status["active_strategies"])
             
-            # Get strategy status from strategy engine
-            strategy_names = []
-            strategies_loaded = 0
-            if self.strategy_engine and hasattr(self.strategy_engine, 'strategies'):
-                strategy_names = list(self.strategy_engine.strategies.keys())
-                strategies_loaded = len(strategy_names)
+            # Add symbol count (safely)
+            try:
+                symbol_count = await self._get_symbol_count_from_api() if hasattr(self, '_get_symbol_count_from_api') else 0
+            except Exception as e:
+                logger.warning(f"Symbol count check failed: {e}")
+                symbol_count = 0
             
-            # Use PERSISTENT data (override in-memory counters)
-            final_trades = max(getattr(self, 'total_trades', 0), persistent_trades)
-            final_pnl = persistent_pnl if persistent_pnl != 0 else getattr(self, 'daily_pnl', 0.0)
-            
-            # Safely get market outlook
-            market_outlook = "unknown"
-            if self.pre_market_analyzer and hasattr(self.pre_market_analyzer, 'get_market_outlook'):
-                try:
-                    market_outlook = self.pre_market_analyzer.get_market_outlook()
-                except:
-                    market_outlook = "unavailable"
-            
-            # Safely get key levels
-            key_levels = {}
-            if self.pre_market_analyzer and hasattr(self.pre_market_analyzer, 'get_key_levels'):
-                try:
-                    key_levels = self.pre_market_analyzer.get_key_levels()
-                except:
-                    key_levels = {}
-            
-            # Safely get connections status
+            # Add component status (safely)
+            risk_status = {}
+            market_status = {}
             connections = {}
-            if self.connection_manager and hasattr(self.connection_manager, 'get_status'):
-                try:
-                    connections = {
-                        name: self.connection_manager.get_status(name).value
-                        for name in ['zerodha', 'truedata', 'database', 'redis']
-                    }
-                except:
-                    connections = {}
             
+            try:
+                if hasattr(self, 'risk_manager') and self.risk_manager:
+                    risk_status = {"status": "active", "type": "real_risk_manager"}
+                else:
+                    risk_status = {"status": "not_initialized"}
+            except Exception as e:
+                risk_status = {"status": "error", "message": str(e)}
+            
+            try:
+                if hasattr(self, 'market_data') and self.market_data:
+                    market_status = {"status": "active", "symbol_count": symbol_count}
+                else:
+                    market_status = {"status": "not_initialized"}
+            except Exception as e:
+                market_status = {"status": "error", "message": str(e)}
+            
+            try:
+                connections = {
+                    "zerodha": "connected" if (hasattr(self, 'zerodha') and self.zerodha) else "not_connected",
+                    "market_data": "connected" if (hasattr(self, 'market_data') and self.market_data) else "not_connected"
+                }
+            except Exception as e:
+                connections = {"zerodha": "unknown", "market_data": "unknown"}
+            
+            # Get key levels (safely)
+            try:
+                key_levels = getattr(self, 'pre_market_results', {}).get('key_levels', {})
+            except Exception:
+                key_levels = {}
+            
+            # Return complete status
+            return {
+                **basic_status,
+                "market_open": market_open,
+                "market_outlook": market_outlook,
+                "strategies_loaded": strategies_loaded,
+                "symbol_count": symbol_count,
+                "risk_status": risk_status,
+                "market_status": market_status,
+                "connections": connections,
+                "key_levels": key_levels
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting trading status: {e}")
+            # Return comprehensive safe status with all required fields
             return {
                 "is_active": getattr(self, 'is_active', False),
                 "system_ready": getattr(self, 'system_ready', False),
                 "session_id": getattr(self, 'session_id', None),
                 "start_time": getattr(self, 'start_time', None),
                 "last_heartbeat": getattr(self, 'last_heartbeat', None),
-                "market_open": self._is_market_open(),
-                "market_outlook": market_outlook,
-                "active_strategies": strategy_names,  # NOW SHOWS ACTUAL STRATEGY NAMES
-                "strategies_loaded": strategies_loaded,  # COUNT OF LOADED STRATEGIES
-                "symbol_count": symbol_count,  # FIXED: Now includes symbol count from API
-                "active_positions": getattr(self, 'active_positions', []),
-                "total_trades": final_trades,
-                "daily_pnl": final_pnl,
-                "risk_status": getattr(self, 'risk_status', {}),
-                "market_status": getattr(self, 'market_status', {}),
-                "connections": connections,
-                "key_levels": key_levels,
-                
-                # PERSISTENT trade details
-                "trade_details": {
-                    "daily_trades": daily_trades,
-                    "persistent_count": persistent_trades,
-                    "persistent_pnl": persistent_pnl,
-                    "data_source": "trade_engine_persistence",
-                    "persistence_enabled": hasattr(self.trade_engine, 'get_daily_trades') if self.trade_engine else False
-                }
-            }
-        except Exception as e:
-            logger.error(f"Error getting trading status: {e}")
-            # Return minimal safe status
-            return {
-                "is_active": False,
-                "system_ready": False,
-                "session_id": None,
-                "start_time": None,
-                "last_heartbeat": None,
-                "market_open": False,
+                "market_open": False,  # Safe default when checking fails
                 "market_outlook": "error",
-                "active_strategies": [],
-                "strategies_loaded": 0,
-                "symbol_count": 0,
-                "active_positions": [],
-                "total_trades": 0,
-                "daily_pnl": 0.0,
-                "risk_status": {},
-                "market_status": {},
-                "connections": {},
+                "active_strategies": getattr(self, 'active_strategies', []),
+                "strategies_loaded": len(getattr(self, 'active_strategies', [])),
+                "symbol_count": 0,  # Will be populated once market data works
+                "active_positions": getattr(self, 'active_positions', []),
+                "total_trades": getattr(self, 'total_trades', 0),
+                "daily_pnl": getattr(self, 'daily_pnl', 0.0),
+                "risk_status": {"status": "error", "message": str(e)},
+                "market_status": {"status": "error", "message": str(e)},
+                "connections": {"zerodha": "unknown", "market_data": "unknown"},
                 "key_levels": {}
             }
     
