@@ -17,91 +17,57 @@ class AutonomousDashboardUpdater:
         self.ist_timezone = pytz.timezone('Asia/Kolkata')
         
     async def get_real_market_data(self) -> Dict[str, Any]:
-        """Fetch real market data for dashboard"""
-        try:
-            # In production, this would connect to TrueData/Zerodha
-            # For now, simulate real-time market behavior
-            symbols = ["RELIANCE", "TCS", "INFY", "NIFTY", "BANKNIFTY"]
-            market_data = {}
-            
-            now_ist = datetime.now(self.ist_timezone)
-            
-            for symbol in symbols:
-                # Get base price from TrueData live data instead of hardcoded values
-                from data.truedata_client import live_market_data
-                symbol_market_data = live_market_data.get(symbol, {})
-                base_price = symbol_market_data.get('ltp', symbol_market_data.get('last_price', 1000))
-                
-                # If no TrueData available, skip the symbol
-                if base_price == 0:
-                    continue
-                    
-                current_price = base_price + (base_price * 0.02 * (0.5 - hash(symbol + str(now_ist.minute)) % 100 / 100))
-                
-                market_data[symbol] = {
-                    "current_price": round(current_price, 2),
-                    "change": round(current_price - base_price, 2),
-                    "change_percent": round(((current_price - base_price) / base_price) * 100, 2),
-                    "volume": hash(symbol + str(now_ist.hour)) % 1000000,
-                    "last_updated": now_ist.isoformat()
-                }
-                
-            return market_data
-            
-        except Exception as e:
-            print(f"Error fetching market data: {e}")
-            return {}
+        """ELIMINATED: Was simulating fake real-time market behavior despite claims of 'real' data"""
+        # 
+        # ELIMINATED FAKE DATA GENERATORS:
+        # ❌ Fake price fluctuations using hash functions
+        # ❌ Fake current price calculation (base_price + fake variation)
+        # ❌ Fake volume using hash(symbol + hour)
+        # ❌ Fake change and change_percent calculations
+        # ❌ Simulated market behavior instead of real TrueData
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Connect to actual TrueData API for live market data
+        # - Fetch real current prices, volume, and changes
+        # - No simulation or fake data generation
+        
+        logger.error("CRITICAL: Market data requires real TrueData API integration")
+        logger.error("Fake market behavior simulation ELIMINATED for safety")
+        
+        # SAFETY: Return empty dict instead of fake market data
+        return {
+            'status': 'FAILED',
+            'error': 'REAL_MARKET_DATA_INTEGRATION_REQUIRED',
+            'message': 'Market data requires real TrueData integration. Fake simulation eliminated for safety.'
+        }
     
     async def calculate_autonomous_performance(self) -> Dict[str, Any]:
-        """Calculate real performance metrics from autonomous system"""
-        try:
-            # In production, this would fetch from trading database
-            # For now, simulate realistic performance based on current time
-            now_ist = datetime.now(self.ist_timezone)
-            
-            # Simulate realistic trading performance
-            daily_trades = (now_ist.hour - 9) if now_ist.hour >= 9 and now_ist.hour <= 15 else 0
-            
-            performance = {
-                "session_performance": {
-                    "total_trades": max(0, daily_trades),
-                    "success_rate": 73.3 if daily_trades > 0 else 0.0,
-                    "total_pnl": round(daily_trades * 156.3, 2) if daily_trades > 0 else 0.0,
-                    "max_drawdown": 2.8 if daily_trades > 0 else 0.0
-                },
-                "active_strategies": [
-                    {
-                        "name": "Momentum Surfer",
-                        "trades": max(0, daily_trades // 2),
-                        "pnl": round(daily_trades * 85.0, 2) if daily_trades > 0 else 0.0,
-                        "status": "ACTIVE" if 9 <= now_ist.hour <= 15 else "SCHEDULED"
-                    },
-                    {
-                        "name": "Volatility Explosion", 
-                        "trades": max(0, daily_trades // 3),
-                        "pnl": round(daily_trades * 62.5, 2) if daily_trades > 0 else 0.0,
-                        "status": "ACTIVE" if 9 <= now_ist.hour <= 15 else "SCHEDULED"
-                    },
-                    {
-                        "name": "Elite Confluence",
-                        "trades": max(0, daily_trades // 4),
-                        "pnl": round(daily_trades * 45.0, 2) if daily_trades > 0 else 0.0,
-                        "status": "ACTIVE" if 9 <= now_ist.hour <= 15 else "SCHEDULED"
-                    }
-                ],
-                "autonomous_actions": {
-                    "opened": daily_trades,
-                    "closed": max(0, daily_trades - 2),
-                    "stop_losses": max(0, daily_trades // 5),
-                    "targets_hit": max(0, daily_trades // 3)
-                }
-            }
-            
-            return performance
-            
-        except Exception as e:
-            print(f"Error calculating performance: {e}")
-            return {}
+        """ELIMINATED: Was simulating fake trading performance despite claims of 'real' metrics"""
+        # 
+        # ELIMINATED FAKE DATA GENERATORS:
+        # ❌ Fake daily trades calculation based on hour
+        # ❌ Fake success rate (73.3%)
+        # ❌ Fake total P&L (daily_trades * 156.3)
+        # ❌ Fake max drawdown (2.8%)
+        # ❌ Fake strategy performance metrics (Momentum Surfer, etc.)
+        # ❌ Fake autonomous actions (opened, closed, stop losses)
+        # ❌ Simulated realistic performance instead of real data
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Connect to actual trading database for real trades
+        # - Calculate real P&L from actual executions
+        # - Fetch real strategy performance from trade logs
+        # - Get real success rates from historical data
+        
+        logger.error("CRITICAL: Performance metrics require real trading database")
+        logger.error("Fake performance simulation ELIMINATED for safety")
+        
+        # SAFETY: Return error state instead of fake performance
+        return {
+            'status': 'FAILED',
+            'error': 'REAL_TRADING_DATABASE_REQUIRED',
+            'message': 'Performance metrics require real trading database. Fake simulation eliminated for safety.'
+        }
     
     async def get_autonomous_schedule_status(self) -> Dict[str, Any]:
         """Get current autonomous trading schedule status"""

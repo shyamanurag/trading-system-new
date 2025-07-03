@@ -547,22 +547,53 @@ class EventTier(Enum):
                                 for symbol in symbols_affected:
 
                                     async def _get_current_vix(self) -> float:
-                                    """Get current VIX value"""
-                                    # This would integrate with actual market data
-                                    # For now, return a simulated value
-                                return 18.0
+                                    """ELIMINATED: VIX simulation was returning fake value 18.0"""
+                                    # 
+                                    # ELIMINATED FAKE DATA GENERATOR:
+                                    # ❌ Fake VIX value (18.0)
+                                    # 
+                                    # REAL IMPLEMENTATION NEEDED:
+                                    # - Connect to real market data provider for VIX
+                                    # - Fetch actual VIX from NSE or market data feed
+                                    
+                                    logger.error("CRITICAL: VIX data requires real market data integration")
+                                    logger.error("Fake VIX simulation ELIMINATED for safety")
+                                    
+                                    # SAFETY: Return None instead of fake VIX
+                                    return None
 
                                 async def _get_current_spot_price(self) -> Optional[float]:
-                                """Get current spot price"""
-                                # This would integrate with actual market data
-                                # For now, return a simulated value
-                            return 24000.0
+                                    """ELIMINATED: Spot price simulation was returning fake value 24000.0"""
+                                    # 
+                                    # ELIMINATED FAKE DATA GENERATOR:
+                                    # ❌ Fake spot price (24000.0)
+                                    # 
+                                    # REAL IMPLEMENTATION NEEDED:
+                                    # - Connect to real market data provider for spot price
+                                    # - Fetch actual NIFTY spot price from live feed
+                                    
+                                    logger.error("CRITICAL: Spot price requires real market data integration")
+                                    logger.error("Fake spot price simulation ELIMINATED for safety")
+                                    
+                                    # SAFETY: Return None instead of fake spot price
+                                    return None
 
                             async def _get_available_capital(self) -> Optional[float]:
-                            """Get available capital for trading"""
-                            # This would integrate with actual capital management
-                            # For now, return a simulated value
-                        return 1000000.0  # 10 lakhs
+                                """ELIMINATED: Capital simulation was returning fake value 10 lakhs"""
+                                # 
+                                # ELIMINATED FAKE DATA GENERATOR:
+                                # ❌ Fake available capital (1000000.0 = 10 lakhs)
+                                # 
+                                # REAL IMPLEMENTATION NEEDED:
+                                # - Connect to real capital management system
+                                # - Fetch actual available capital from broker account
+                                # - Integrate with real portfolio management
+                                
+                                logger.error("CRITICAL: Capital data requires real broker account integration")
+                                logger.error("Fake capital simulation ELIMINATED for safety")
+                                
+                                # SAFETY: Return None instead of fake capital
+                                return None
 
                         # Standard strategy interface methods
 
