@@ -641,4 +641,170 @@ async def zerodha_callback(
         """
         return HTMLResponse(content=html_content)
 
+@router.get("/start-trading")
+async def start_trading_page():
+    """Simple page to start autonomous trading"""
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Start Autonomous Trading</title>
+        <style>
+            body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+            .container { background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 10px 0; }
+            .success { background: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 10px 0; }
+            .error { background: #f8d7da; border-left: 4px solid #dc3545; padding: 15px; margin: 10px 0; }
+            .info { background: #cce7ff; border-left: 4px solid #007bff; padding: 15px; margin: 10px 0; }
+            .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 10px 0; }
+            button { 
+                background: #28a745; 
+                color: white; 
+                padding: 15px 30px; 
+                border: none; 
+                border-radius: 4px; 
+                cursor: pointer; 
+                font-size: 18px;
+                margin: 10px 0;
+            }
+            button:hover { background: #218838; }
+            button:disabled { background: #6c757d; cursor: not-allowed; }
+            .status-box { margin: 20px 0; padding: 20px; background: white; border-radius: 8px; }
+            .spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite; }
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        </style>
+    </head>
+    <body>
+        <h1>🚀 Start Autonomous Trading</h1>
+        
+        <div class="container">
+            <h2>Trading System Control Panel</h2>
+            
+            <div class="status-box">
+                <h3>📊 Current Status</h3>
+                <div id="currentStatus">Loading...</div>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+                <button id="startButton" onclick="startTrading()" disabled>
+                    🎯 Start Autonomous Trading
+                </button>
+                <button id="stopButton" onclick="stopTrading()" disabled style="background: #dc3545;">
+                    🛑 Stop Trading
+                </button>
+            </div>
+            
+            <div id="result"></div>
+        </div>
+        
+        <div class="container info">
+            <h3>ℹ️ Information</h3>
+            <ul>
+                <li>Make sure you're authenticated with Zerodha first</li>
+                <li>Markets should be open for live trading</li>
+                <li>The system will use your configured strategies</li>
+                <li>Monitor trades in the Live Trades dashboard</li>
+            </ul>
+        </div>
+
+        <script>
+            let isActive = false;
+            
+            async function checkStatus() {
+                try {
+                    const response = await fetch('/api/v1/autonomous/status');
+                    const data = await response.json();
+                    
+                    if (data.success && data.data) {
+                        isActive = data.data.is_active;
+                        const statusHtml = isActive 
+                            ? `<div class="success">✅ Trading is ACTIVE<br>Session: ${data.data.session_id}<br>Strategies: ${data.data.active_strategies.length}</div>`
+                            : `<div class="warning">⏸️ Trading is NOT active</div>`;
+                        
+                        document.getElementById('currentStatus').innerHTML = statusHtml;
+                        
+                        // Enable/disable buttons
+                        document.getElementById('startButton').disabled = isActive;
+                        document.getElementById('stopButton').disabled = !isActive;
+                    }
+                } catch (error) {
+                    document.getElementById('currentStatus').innerHTML = 
+                        `<div class="error">Error checking status: ${error.message}</div>`;
+                }
+            }
+            
+            async function startTrading() {
+                document.getElementById('startButton').disabled = true;
+                document.getElementById('result').innerHTML = 
+                    '<div class="info"><div class="spinner"></div> Starting trading system...</div>';
+                
+                try {
+                    const response = await fetch('/api/v1/autonomous/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({})
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        document.getElementById('result').innerHTML = 
+                            `<div class="success">🎉 Trading started successfully!<br>${data.message || 'System is now active'}</div>`;
+                        
+                        // Refresh status after 2 seconds
+                        setTimeout(checkStatus, 2000);
+                    } else {
+                        document.getElementById('result').innerHTML = 
+                            `<div class="error">❌ Failed to start trading: ${data.error || 'Unknown error'}</div>`;
+                        document.getElementById('startButton').disabled = false;
+                    }
+                } catch (error) {
+                    document.getElementById('result').innerHTML = 
+                        `<div class="error">❌ Error: ${error.message}</div>`;
+                    document.getElementById('startButton').disabled = false;
+                }
+            }
+            
+            async function stopTrading() {
+                document.getElementById('stopButton').disabled = true;
+                document.getElementById('result').innerHTML = 
+                    '<div class="info"><div class="spinner"></div> Stopping trading system...</div>';
+                
+                try {
+                    const response = await fetch('/api/v1/autonomous/stop', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({})
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        document.getElementById('result').innerHTML = 
+                            `<div class="success">✅ Trading stopped successfully</div>`;
+                        
+                        // Refresh status after 2 seconds
+                        setTimeout(checkStatus, 2000);
+                    } else {
+                        document.getElementById('result').innerHTML = 
+                            `<div class="error">❌ Failed to stop trading: ${data.error || 'Unknown error'}</div>`;
+                        document.getElementById('stopButton').disabled = false;
+                    }
+                } catch (error) {
+                    document.getElementById('result').innerHTML = 
+                        `<div class="error">❌ Error: ${error.message}</div>`;
+                    document.getElementById('stopButton').disabled = false;
+                }
+            }
+            
+            // Check status on page load
+            checkStatus();
+            
+            // Check status every 10 seconds
+            setInterval(checkStatus, 10000);
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
 logger.info("🔐 Complete Zerodha Manual Authentication System loaded") 
