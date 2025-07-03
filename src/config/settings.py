@@ -70,7 +70,7 @@ class Settings(BaseSettings):
         )
     
     # Trading settings
-    MAX_POSITION_SIZE: float = 100000.0
+    MAX_POSITION_SIZE: float = 1000000.0
     MAX_LEVERAGE: float = 10.0
     MAX_DRAWDOWN: float = 0.1
     RISK_FREE_RATE: float = 0.02

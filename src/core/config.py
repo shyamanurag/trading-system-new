@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     # Backtesting Settings
     BACKTEST_START_DATE: str = Field(default="2023-01-01")
     BACKTEST_END_DATE: str = Field(default="2023-12-31")
-    INITIAL_CAPITAL: float = Field(default=100000.0)
+    INITIAL_CAPITAL: float = Field(default=1000000.0)
     
     # Monitoring Settings
     METRICS_INTERVAL: int = Field(default=60)  # seconds

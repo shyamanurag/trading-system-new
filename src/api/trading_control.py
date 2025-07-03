@@ -29,7 +29,7 @@ class BrokerUser(BaseModel):
     api_key: str
     api_secret: str
     client_id: str
-    initial_capital: float = 100000.0
+    initial_capital: float = 1000000.0  # 10 lakhs
     risk_tolerance: str = "medium"
     paper_trading: bool = True
 

@@ -360,7 +360,7 @@ async def get_performance_summary():
             "active_users": 0,
             "total_trades": 0,
             "win_rate": 0.0,
-            "total_aum": 100000.0,  # Starting capital
+            "total_aum": 1000000.0,  # Starting capital - 10 lakhs
             "monthly_return": 0.0,
             "status": "CLEAN_SLATE_READY_FOR_PAPER_TRADING",
             "note": "Fresh start - ready for first trading session",

@@ -190,7 +190,7 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                 "daily_pnl": round(daily_pnl, 2),
                 "active_users": 1 if is_active else 0,  # Show 1 user when trading is active
                 "total_pnl": round(daily_pnl, 2),  # Same as daily for now
-                "aum": 100000.0,  # Paper trading capital
+                "aum": 1000000.0,  # Paper trading capital
                 "daily_volume": round(abs(daily_pnl) * 10, 2),  # Estimated volume
                 "market_status": "OPEN" if market_open else "CLOSED",
                 "system_health": "HEALTHY",

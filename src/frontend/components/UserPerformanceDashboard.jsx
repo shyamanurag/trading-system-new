@@ -134,8 +134,8 @@ const UserPerformanceDashboard = ({ tradingData }) => {
                     name: 'Autonomous Trading System',
                     email: 'autonomous@trading.com',
                     avatar: '🤖',
-                    initial_capital: 100000,
-                    current_capital: 100000 + (trading.totalPnL || 0),
+                    initial_capital: 1000000,
+                    current_capital: 1000000 + (trading.totalPnL || 0),
                     total_pnl: trading.totalPnL || 0,
                     daily_pnl: trading.totalPnL || 0,
                     win_rate: trading.successRate || 0,
@@ -150,13 +150,13 @@ const UserPerformanceDashboard = ({ tradingData }) => {
                 // Set summary metrics from real data
                 setSummaryMetrics({
                     todayPnL: trading.totalPnL || 0,
-                    todayPnLPercent: ((trading.totalPnL || 0) / 100000) * 100,
+                    todayPnLPercent: ((trading.totalPnL || 0) / 1000000) * 100,
                     activeUsers: trading.activeUsers || 1,
                     newUsersThisWeek: trading.activeUsers || 1,
                     totalTrades: trading.totalTrades || 0,
                     winRate: trading.successRate || 0,
-                    totalAUM: 100000 + (trading.totalPnL || 0),
-                    aumGrowth: ((trading.totalPnL || 0) / 100000) * 100
+                    totalAUM: 1000000 + (trading.totalPnL || 0),
+                    aumGrowth: ((trading.totalPnL || 0) / 1000000) * 100
                 });
 
                 // Create mock daily P&L data

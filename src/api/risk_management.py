@@ -16,7 +16,7 @@ async def get_risk_limits():
     try:
         # Return default risk limits
         return {
-            "max_position_size": 100000,
+            "max_position_size": 1000000,
             "max_daily_loss": 5000,
             "max_open_positions": 10,
             "max_leverage": 1.0,
@@ -50,7 +50,7 @@ async def get_risk_metrics():
             "open_positions": 0,
             "risk_score": 0,
             "margin_used": 0,
-            "margin_available": 100000
+            "margin_available": 1000000
         }
     except Exception as e:
         logger.error(f"Error getting risk metrics: {str(e)}")

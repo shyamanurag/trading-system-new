@@ -888,9 +888,9 @@ async def get_margins_direct():
             content={
                 "success": True,
                 "margins": {
-                    "available_margin": 100000,
+                    "available_margin": 1000000,  # 10 lakhs
                     "used_margin": 0,
-                    "total_margin": 100000,
+                    "total_margin": 1000000,  # 10 lakhs
                     "margin_utilization": 0
                 },
                 "message": "Paper trading margins",

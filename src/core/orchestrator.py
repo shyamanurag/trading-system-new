@@ -156,7 +156,7 @@ class ProductionEventBus:
 class ProductionRiskManager:
     """Production-level risk manager"""
     
-    def __init__(self, event_bus=None, position_tracker=None, max_daily_loss=10000, max_position_size=100000):
+    def __init__(self, event_bus=None, position_tracker=None, max_daily_loss=100000, max_position_size=1000000):
         self.event_bus = event_bus
         self.position_tracker = position_tracker
         self.max_daily_loss = max_daily_loss
@@ -233,9 +233,9 @@ class TradingOrchestrator:
         self.subscribed_symbols = set()
         
         # Configuration
-        self.max_daily_trades = 50
-        self.max_position_size = 100000
-        self.max_daily_loss = 10000
+        self.max_daily_trades = 9999  # No daily trade limit
+        self.max_position_size = 1000000
+        self.max_daily_loss = 100000
         self.risk_limit = 0.02
         
     async def initialize(self) -> bool:

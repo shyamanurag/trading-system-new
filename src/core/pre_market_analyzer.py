@@ -254,7 +254,7 @@ class PreMarketAnalyzer:
                 'end': '15:15'
             },
             'paper_mode_settings': {
-                'initial_capital': 100000,  # 1 lakh virtual capital
+                'initial_capital': 1000000,  # 10 lakhs virtual capital
                 'commission_per_trade': 20,
                 'slippage_bps': 5  # 5 basis points slippage simulation
             }

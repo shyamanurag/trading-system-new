@@ -141,7 +141,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                             totalTrades: safeNumber(realTrading.total_trades),
                             successRate: safeNumber(realTrading.success_rate || 70), // Default 70%
                             activeUsers: realTrading.is_active ? 1 : 0,
-                            aum: 100000, // Paper trading capital
+                            aum: 1000000, // Paper trading capital - 10 lakhs
                             dailyVolume: safeNumber(Math.abs(realTrading.daily_pnl || 0) * 10) // Estimated volume
                         };
 
@@ -749,16 +749,16 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                         <Card sx={{ p: 2, textAlign: 'center', bgcolor: 'primary.main', color: 'white' }}>
                             <Typography variant="h6">Portfolio Value</Typography>
                             <Typography variant="h4" sx={{ my: 1 }}>
-                                {formatCurrency(100000 + (dashboardData.systemMetrics.totalPnL || 0))}
+                                {formatCurrency(1000000 + (dashboardData.systemMetrics.totalPnL || 0))}
                             </Typography>
-                            <Typography variant="body2">Initial: ₹1,00,000 + P&L</Typography>
+                            <Typography variant="body2">Initial: ₹1,000,000 + P&L</Typography>
                         </Card>
                     </Grid>
                     <Grid item xs={12} md={4}>
                         <Card sx={{ p: 2, textAlign: 'center', bgcolor: 'success.main', color: 'white' }}>
                             <Typography variant="h6">Total Returns</Typography>
                             <Typography variant="h4" sx={{ my: 1 }}>
-                                {formatPercent(((dashboardData.systemMetrics.totalPnL || 0) / 100000) * 100)}
+                                {formatPercent(((dashboardData.systemMetrics.totalPnL || 0) / 1000000) * 100)}
                             </Typography>
                             <Typography variant="body2">Since inception</Typography>
                         </Card>
@@ -812,7 +812,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 <ListItem>
                                     <ListItemText
                                         primary="Paper Trading Mode"
-                                        secondary="Risk-free testing with ₹1,00,000 virtual capital"
+                                        secondary="Risk-free testing with ₹1,000,000 virtual capital"
                                     />
                                 </ListItem>
                                 <ListItem>
@@ -919,7 +919,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 <Grid item xs={12} md={3}>
                                     <Box sx={{ textAlign: 'center', p: 2 }}>
                                         <Typography variant="h4" color="primary.main">
-                                            {((Math.abs(dashboardData.systemMetrics.totalPnL || 0) / 100000) * 100).toFixed(1)}%
+                                            {((Math.abs(dashboardData.systemMetrics.totalPnL || 0) / 1000000) * 100).toFixed(1)}%
                                         </Typography>
                                         <Typography variant="body2">Capital at Risk</Typography>
                                     </Box>

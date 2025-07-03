@@ -49,7 +49,7 @@ class EnhancedComplianceManager:
         self.pause_duration_seconds = 5  # 5 second cooldown after violation
         
         # Daily limits
-        self.daily_trade_limit = compliance_config.get('max_daily_trades', 1000)
+        self.daily_trade_limit = compliance_config.get('max_daily_trades', 9999)  # No daily trade limit
         self.daily_trades_count = 0
         
         # User and strategy tracking

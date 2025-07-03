@@ -68,7 +68,7 @@ username: trading_user
 timezone: Asia/Kolkata
 trading:
   default_stop_loss_percent: 2.0
-  max_daily_trades: 100
+  max_daily_trades: 9999  # No daily trade limit
   max_drawdown_percent: 20.0
   max_order_value: 1000000.0
   max_position_size_percent: 10.0

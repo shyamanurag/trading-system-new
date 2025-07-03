@@ -32,7 +32,7 @@ def main():
         "api_key": "sylcoq492qz6f7ej",
         "api_secret": "jm3h4iejwnxr4ngmma2qxccpkhevo8sy",
         "client_id": "QSW899",
-        "initial_capital": 100000.0,
+        "initial_capital": 1000000.0,
         "risk_tolerance": "medium",
         "paper_trading": True
     }

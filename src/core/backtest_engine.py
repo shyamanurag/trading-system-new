@@ -154,7 +154,7 @@ class BacktestEngine:
 
     def __init__(self, 
                  market_data: MarketDataManager,
-                 initial_capital: float = 100000.0,
+                 initial_capital: float = 1000000.0,  # 10 lakhs
                  commission: float = 0.001,  # 0.1% per trade
                  slippage: float = 0.001):  # 0.1% slippage
         self.market_data = market_data
