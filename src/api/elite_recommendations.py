@@ -16,8 +16,9 @@ class AutonomousEliteScanner:
     """Autonomous scanner that continuously analyzes market data for elite setups"""
     
     def __init__(self):
-        self.last_scan_time = None        self.scan_interval_minutes = 30  # Scan every 30 minutes during market hours
-        self.min_confluence_score = 7.5  # Only 7.5+ confluence scores (more realistic)
+        self.last_scan_time = None
+        self.scan_interval_minutes = 0.5  # Scan every 30 seconds for continuous options trading (was 5 minutes)
+        self.min_confluence_score = 7.5  # Keep quality threshold unchanged
         self.base_url = "https://algoauto-9gx56.ondigitalocean.app"
         
     async def get_real_market_data(self, symbol: str):
@@ -220,8 +221,8 @@ async def get_elite_recommendations():
         try:
             # Check if autonomous trading is active (better safety check)
             from src.core.orchestrator import get_orchestrator
-            orchestrator = get_orchestrator()
-            if orchestrator and hasattr(orchestrator, 'is_active') and orchestrator.is_active:
+            orchestrator = await get_orchestrator()
+            if orchestrator and hasattr(orchestrator, 'is_running') and orchestrator.is_running:
                 logger.info("✅ Autonomous trading active - proceeding with elite recommendations")
             else:
                 logger.info("⚠️ Autonomous trading not active - will generate recommendations anyway")

@@ -518,7 +518,7 @@ class TradingOrchestrator:
             return False
     
     async def _process_market_data(self):
-        """Process incoming market data and pass to strategies"""
+        """Process incoming market data and pass to strategies - CONTINUOUS for options trading"""
         while self.is_running:
             try:
                 # Get market data from API (avoiding TrueData dependency)
@@ -535,11 +535,12 @@ class TradingOrchestrator:
                 if market_data and self.strategies:
                     await self._run_strategies(market_data)
                 
-                await asyncio.sleep(5)  # Process every 5 seconds
+                # CONTINUOUS PROCESSING: 1 second for options trading (was 5 seconds)
+                await asyncio.sleep(1)  # Process every 1 second for options opportunities
                 
             except Exception as e:
                 self.logger.error(f"Error processing market data: {e}")
-                await asyncio.sleep(10)  # Wait longer on error
+                await asyncio.sleep(2)  # Wait shorter on error for continuous processing
     
     async def _run_strategies(self, market_data: Dict[str, Any]):
         """Run all active strategies with market data and collect signals"""
