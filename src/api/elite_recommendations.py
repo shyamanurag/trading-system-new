@@ -205,6 +205,66 @@ autonomous_scanner = AutonomousEliteScanner()
 async def get_elite_recommendations():
     """Get current elite trading recommendations (8.5+ confluence only)"""
     try:
+        # CRITICAL SAFETY CHECK: Verify market data API is working
+        try:
+            response = requests.get(f"https://algoauto-9gx56.ondigitalocean.app/api/v1/market-data", timeout=10)
+            if response.status_code != 200:
+                logger.error(f"Market data API failed with status {response.status_code}")
+                return {
+                    "success": False,
+                    "recommendations": [],
+                    "total_count": 0,
+                    "status": "REAL_DATA_UNAVAILABLE",
+                    "message": "SAFETY STOP: Real market data unavailable - refusing to generate fake recommendations",
+                    "data_source": "SAFETY_STOP",
+                    "error": f"Market data API returned status {response.status_code}",
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            # Try to parse JSON response
+            try:
+                market_data = response.json()
+                if not market_data.get('success') or 'data' not in market_data:
+                    logger.error("Market data API returned invalid format")
+                    return {
+                        "success": False,
+                        "recommendations": [],
+                        "total_count": 0,
+                        "status": "REAL_DATA_UNAVAILABLE",
+                        "message": "SAFETY STOP: Market data API returned invalid format - refusing to generate fake recommendations",
+                        "data_source": "SAFETY_STOP",
+                        "error": "Invalid market data format",
+                        "timestamp": datetime.now().isoformat()
+                    }
+            except Exception as json_error:
+                logger.error(f"Failed to parse market data JSON: {json_error}")
+                return {
+                    "success": False,
+                    "recommendations": [],
+                    "total_count": 0,
+                    "status": "REAL_DATA_UNAVAILABLE", 
+                    "message": "SAFETY STOP: Market data API returned invalid JSON - refusing to generate fake recommendations",
+                    "data_source": "SAFETY_STOP",
+                    "error": f"JSON parse error: {str(json_error)}",
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+        except requests.exceptions.RequestException as api_error:
+            logger.error(f"Market data API connection failed: {api_error}")
+            return {
+                "success": False,
+                "recommendations": [],
+                "total_count": 0,
+                "status": "REAL_DATA_UNAVAILABLE",
+                "message": "SAFETY STOP: Cannot connect to market data API - refusing to generate fake recommendations",
+                "data_source": "SAFETY_STOP",
+                "error": f"Connection error: {str(api_error)}",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Only proceed if we have verified real market data is available
+        logger.info("✅ Real market data API verified - proceeding with elite scan")
+        
         # Run autonomous scan if needed
         if autonomous_scanner.last_scan_time is None or \
            (datetime.now() - autonomous_scanner.last_scan_time).total_seconds() > (autonomous_scanner.scan_interval_minutes * 60):
@@ -216,29 +276,38 @@ async def get_elite_recommendations():
         # Filter only ACTIVE recommendations
         active_recommendations = [r for r in recommendations if r.get('status') == 'ACTIVE']
         
+        # Additional safety check: Verify all recommendations have real data markers
+        verified_recommendations = []
+        for rec in active_recommendations:
+            if rec.get('data_source') == 'REAL_MARKET_DATA' and rec.get('WARNING') == 'NO_FAKE_DATA':
+                verified_recommendations.append(rec)
+            else:
+                logger.warning(f"Filtering out potentially fake recommendation for {rec.get('symbol', 'unknown')}")
+        
         return {
             "success": True,
-            "recommendations": active_recommendations,
-            "total_count": len(active_recommendations),
+            "recommendations": verified_recommendations,
+            "total_count": len(verified_recommendations),
             "status": "ACTIVE",
-            "message": f"Found {len(active_recommendations)} elite trading opportunities",
-            "data_source": "autonomous_analysis",
+            "message": f"Found {len(verified_recommendations)} VERIFIED elite trading opportunities with real market data",
+            "data_source": "REAL_MARKET_DATA_VERIFIED",
             "scan_timestamp": autonomous_scanner.last_scan_time.isoformat() if autonomous_scanner.last_scan_time else datetime.now().isoformat(),
             "timestamp": datetime.now().isoformat(),
-            "next_scan": (datetime.now() + timedelta(minutes=autonomous_scanner.scan_interval_minutes)).isoformat()
+            "next_scan": (datetime.now() + timedelta(minutes=autonomous_scanner.scan_interval_minutes)).isoformat(),
+            "safety_check": "PASSED"
         }
         
     except Exception as e:
         logger.error(f"Error fetching elite recommendations: {e}")
-        # Return empty recommendations instead of error
+        # SAFETY: Return empty recommendations instead of fake data
         return {
-            "success": True,
+            "success": False,
             "recommendations": [],
             "total_count": 0,
             "status": "ERROR",
-            "message": "Unable to fetch recommendations",
-            "data_source": "Error",
-            "scan_timestamp": datetime.now().isoformat(),
+            "message": "SAFETY STOP: System error - refusing to generate fake recommendations",
+            "data_source": "SAFETY_STOP",
+            "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
 
