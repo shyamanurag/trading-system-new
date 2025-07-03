@@ -843,17 +843,23 @@ async def debug_orchestrator_components():
         
         orchestrator = get_orchestrator()
         
-        # Check component status
+        # Check component status - use actual attribute names from TradingOrchestrator
         components = {
-            "zerodha": hasattr(orchestrator, 'zerodha') and orchestrator.zerodha is not None,
+            "zerodha": hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client is not None,
             "position_tracker": hasattr(orchestrator, 'position_tracker') and orchestrator.position_tracker is not None,
             "risk_manager": hasattr(orchestrator, 'risk_manager') and orchestrator.risk_manager is not None,
-            "market_data": hasattr(orchestrator, 'market_data') and orchestrator.market_data is not None,
-            "strategy_engine": hasattr(orchestrator, 'strategy_engine') and orchestrator.strategy_engine is not None,
+            "market_data": hasattr(orchestrator, 'market_data') and orchestrator.market_data is not None and len(orchestrator.market_data) > 0,
+            "strategy_engine": hasattr(orchestrator, 'strategies') and len(orchestrator.strategies) > 0,
             "trade_engine": hasattr(orchestrator, 'trade_engine') and orchestrator.trade_engine is not None,
-            "system_ready": getattr(orchestrator, 'system_ready', False),
-            "is_active": getattr(orchestrator, 'is_active', False)
+            "system_ready": getattr(orchestrator, 'is_initialized', False),
+            "is_active": getattr(orchestrator, 'is_running', False)
         }
+        
+        # Also check the components dict if available
+        if hasattr(orchestrator, 'components') and isinstance(orchestrator.components, dict):
+            for key, value in orchestrator.components.items():
+                if key in components:
+                    components[key] = value
         
         # Try to get trading status
         try:

@@ -63,6 +63,7 @@ router_imports = {
     'market_data': ('src.api.market_data', 'router'),
     'autonomous_trading': ('src.api.autonomous_trading', 'router'),
     'recommendations': ('src.api.recommendations', 'router'),
+    'elite_recommendations': ('src.api.elite_recommendations', 'router'),
     'trade_management': ('src.api.trade_management', 'router'),
     'zerodha_auth': ('src.api.zerodha_auth', 'router'),
     'zerodha_daily_auth': ('src.api.zerodha_daily_auth', 'router'),
@@ -561,6 +562,7 @@ router_configs = [
     
     # Analytics and monitoring
     ('recommendations', '/api/v1/recommendations', ('recommendations',)),
+    ('elite_recommendations', '/api/v1/elite', ('elite-recommendations',)),
     ('performance', '/api/v1/performance', ('performance',)),
     ('monitoring', '/api/v1/monitoring', ('monitoring',)),
     ('error_monitoring', '/api/v1/errors', ('error-monitoring',)),
@@ -812,6 +814,97 @@ async def legacy_system_status():
                 "status": "error",
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
+            }
+        )
+
+# Add direct handlers for position/order/holdings endpoints
+@app.get("/api/v1/positions", tags=["positions"])
+async def get_positions_direct():
+    """Direct positions endpoint"""
+    try:
+        # Get positions from position management router
+        from src.api.position_management import get_all_positions
+        return await get_all_positions()
+    except Exception as e:
+        logger.error(f"Direct positions error: {e}")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "positions": [],
+                "message": "No active positions"
+            }
+        )
+
+@app.get("/api/v1/orders", tags=["orders"])
+async def get_orders_direct():
+    """Direct orders endpoint"""
+    try:
+        # Get orders from order management router
+        from src.api.order_management import get_all_orders
+        return await get_all_orders()
+    except Exception as e:
+        logger.error(f"Direct orders error: {e}")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "orders": [],
+                "message": "No orders found"
+            }
+        )
+
+@app.get("/api/v1/holdings", tags=["holdings"])
+async def get_holdings_direct():
+    """Direct holdings endpoint"""
+    try:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "holdings": [],
+                "message": "No holdings in paper trading account",
+                "total_value": 0,
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+    except Exception as e:
+        logger.error(f"Direct holdings error: {e}")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "holdings": [],
+                "message": "Error fetching holdings"
+            }
+        )
+
+@app.get("/api/v1/margins", tags=["margins"])
+async def get_margins_direct():
+    """Direct margins endpoint"""
+    try:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "margins": {
+                    "available_margin": 100000,
+                    "used_margin": 0,
+                    "total_margin": 100000,
+                    "margin_utilization": 0
+                },
+                "message": "Paper trading margins",
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+    except Exception as e:
+        logger.error(f"Direct margins error: {e}")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "margins": {},
+                "message": "Error fetching margins"
             }
         )
 

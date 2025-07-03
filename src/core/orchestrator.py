@@ -181,6 +181,23 @@ class ProductionRiskManager:
             'max_daily_loss': self.max_daily_loss,
             'risk_limit_used': abs(self.daily_pnl) / self.max_daily_loss if self.max_daily_loss > 0 else 0.0
         }
+    
+    async def get_risk_metrics(self) -> Dict[str, Any]:
+        """Get detailed risk metrics"""
+        return {
+            'success': True,
+            'data': {
+                'daily_pnl': self.daily_pnl,
+                'max_daily_loss': self.max_daily_loss,
+                'max_position_size': self.max_position_size,
+                'risk_limit_used': abs(self.daily_pnl) / self.max_daily_loss if self.max_daily_loss > 0 else 0.0,
+                'risk_status': 'active' if abs(self.daily_pnl) < self.max_daily_loss else 'limit_reached',
+                'positions_at_risk': 0,  # TODO: Implement position risk calculation
+                'var_95': 0.0,  # TODO: Implement Value at Risk calculation
+                'sharpe_ratio': 0.0,  # TODO: Implement Sharpe ratio calculation
+                'timestamp': datetime.now().isoformat()
+            }
+        }
 
 class TradingOrchestrator:
     """
