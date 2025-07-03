@@ -75,62 +75,69 @@ async def get_detailed_health():
 async def get_trading_metrics():
     """Get trading performance metrics"""
     try:
-        metrics = {
-            "totalPositions": random.randint(50, 200),
-            "openPositions": random.randint(5, 20),
-            "todayPnL": random.uniform(5000, 25000),
-            "totalPnL": random.uniform(50000, 200000),
-            "winRate": random.uniform(55, 75),
-            "avgReturn": random.uniform(2, 8),
-            "sharpeRatio": random.uniform(1.2, 2.5),
-            "maxDrawdown": random.uniform(5, 15),
-            "totalTrades": random.randint(100, 500),
-            "successfulTrades": random.randint(60, 350),
-            "averageHoldingPeriod": f"{random.randint(1, 5)} days",
-            "riskRewardRatio": f"1:{random.uniform(1.5, 3):.1f}"
-        }
+        # SAFETY STOP: Refuse to return fake trading metrics
+        logger.error("SAFETY STOP: Refusing to generate fake trading metrics")
         
         return {
-            "success": True,
-            "data": metrics,
+            "success": False,
+            "error": "SAFETY STOP: Fake trading metrics disabled",
+            "message": "This endpoint was generating fake P&L and trading performance data which is extremely dangerous. Use /dashboard/summary for real trading data.",
+            "data": {
+                "totalPositions": 0,
+                "openPositions": 0,
+                "todayPnL": 0.0,
+                "totalPnL": 0.0,
+                "winRate": 0.0,
+                "avgReturn": 0.0,
+                "sharpeRatio": 0.0,
+                "maxDrawdown": 0.0,
+                "totalTrades": 0,
+                "successfulTrades": 0,
+                "averageHoldingPeriod": "N/A",
+                "riskRewardRatio": "N/A",
+                "WARNING": "FAKE_DATA_ENDPOINT_DISABLED"
+            },
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
-        logger.error(f"Error fetching trading metrics: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in trading metrics endpoint: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "SAFETY STOP: This endpoint was generating fake trading metrics",
+            "timestamp": datetime.now().isoformat()
+        }
 
 @router.get("/notifications")
 async def get_system_notifications():
-    """Get system notifications"""
+    """Get system notifications - REAL notifications only"""
     try:
-        notification_types = ["info", "warning", "success", "error"]
-        notification_titles = [
-            "Market Open",
-            "Position Alert",
-            "Risk Warning",
-            "Trade Executed",
-            "System Update",
-            "Data Feed Status"
-        ]
+        # SAFETY: Return empty notifications instead of fake ones
+        # TODO: Implement real notification system
         
-        notifications = []
-        for i in range(5):
-            notifications.append({
-                "id": i + 1,
-                "type": random.choice(notification_types),
-                "title": random.choice(notification_titles),
-                "message": f"Notification message {i + 1}",
+        notifications = [
+            {
+                "id": 1,
+                "type": "info",
+                "title": "System Status",
+                "message": "Fake notification system disabled for safety. Real notifications will be implemented.",
                 "timestamp": datetime.now().isoformat(),
-                "read": random.choice([True, False])
-            })
+                "read": False
+            }
+        ]
         
         return {
             "success": True,
-            "data": notifications
+            "data": notifications,
+            "message": "SAFETY: Fake notifications disabled - showing system message only"
         }
     except Exception as e:
         logger.error(f"Error fetching notifications: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "success": False,
+            "error": str(e),
+            "data": []
+        }
 
 @router.get("/dashboard/summary")
 async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_orchestrator)):
@@ -265,26 +272,37 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
 
 @router.get("/performance/summary")
 async def get_performance_summary():
-    """Get performance summary metrics"""
+    """Get performance summary metrics - SAFETY STOP"""
     try:
+        # SAFETY STOP: Refuse to return fake financial metrics
+        logger.error("SAFETY STOP: Refusing to generate fake performance metrics including fake P&L and AUM")
+        
         return {
-            "success": True,
+            "success": False,
+            "error": "SAFETY STOP: Fake performance metrics disabled",
+            "message": "This endpoint was generating fake P&L, AUM, and trading performance data which is extremely dangerous for financial decisions.",
             "metrics": {
-                "todayPnL": random.randint(-5000, 15000),
-                "todayPnLPercent": random.uniform(-2, 5),
-                "activeUsers": random.randint(3, 8),
-                "newUsersThisWeek": random.randint(0, 3),
-                "totalTrades": random.randint(50, 200),
-                "winRate": random.uniform(50, 70),
-                "totalAUM": random.randint(500000, 2000000),
-                "aumGrowth": random.uniform(-5, 10)
+                "todayPnL": 0.0,
+                "todayPnLPercent": 0.0,
+                "activeUsers": 0,
+                "newUsersThisWeek": 0,
+                "totalTrades": 0,
+                "winRate": 0.0,
+                "totalAUM": 0.0,
+                "aumGrowth": 0.0,
+                "WARNING": "FAKE_FINANCIAL_DATA_DISABLED_FOR_SAFETY"
             },
             "timestamp": datetime.now().isoformat()
         }
         
     except Exception as e:
-        logger.error(f"Error getting performance summary: {e}")
-        raise HTTPException(status_code=500, detail="Unable to fetch performance summary")
+        logger.error(f"Error in performance summary endpoint: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "SAFETY STOP: This endpoint was generating fake financial metrics",
+            "timestamp": datetime.now().isoformat()
+        }
 
 @router.get("/data")
 async def get_dashboard_data():
