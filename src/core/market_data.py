@@ -143,15 +143,15 @@ class MarketDataManager:
                     count=50
                 )
                 
-                # Create proper MarketData object with REAL data
+                # Create proper MarketData object with REAL data - NO FAKE VALUES
                 market_data = MarketData(
                     symbol=symbol,
                     current_price=round(real_price, 2),
                     price_history=price_history,
                     timestamp=base_time,
-                    volume=real_volume if real_volume > 0 else random.randint(1000, 10000),
-                    volatility=random.uniform(0.15, 0.45),
-                    momentum=random.uniform(-0.05, 0.05)
+                    volume=real_volume if real_volume > 0 else 0,  # Use 0 instead of fake volume
+                    volatility=0.0,  # Set to 0 instead of fake volatility - strategies should calculate real volatility
+                    momentum=0.0     # Set to 0 instead of fake momentum - strategies should calculate real momentum
                 )
                 
                 data[symbol] = market_data
@@ -260,19 +260,19 @@ class MarketDataManager:
                     high=round(real_high, 2),
                     low=round(real_low, 2),
                     close=round(current_price, 2),
-                    volume=random.randint(500, 5000)
+                    volume=1000  # Use fixed volume instead of fake random volume
                 )
             else:
                 # Historical candles progress toward real data
                 progress = i / (count - 1)  # 0 to 1
                 target_price = start_price + (real_open - start_price) * progress
                 
-                # Generate OHLC for this candle
+                # Generate OHLC for this candle - minimal fake data
                 open_price = target_price
-                change_percent = random.uniform(-0.01, 0.01)  # ±1% per candle
+                change_percent = 0.001  # Fixed 0.1% change instead of random
                 close_price = open_price * (1 + change_percent)
                 
-                volatility = random.uniform(0.005, 0.015)
+                volatility = 0.01  # Fixed 1% volatility instead of random
                 high_price = max(open_price, close_price) * (1 + volatility)
                 low_price = min(open_price, close_price) * (1 - volatility)
                 
@@ -282,7 +282,7 @@ class MarketDataManager:
                     high=round(high_price, 2),
                     low=round(low_price, 2),
                     close=round(close_price, 2),
-                    volume=random.randint(500, 5000)
+                    volume=1000  # Use fixed volume instead of fake random volume
                 )
             
             history.append(candle)
