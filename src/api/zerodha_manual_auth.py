@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth/zerodha", tags=["zerodha-manual"])
 
 # Zerodha credentials from environment
-ZERODHA_API_KEY = os.getenv('ZERODHA_API_KEY', 'sylcoq492qz6f7ej')
-ZERODHA_API_SECRET = os.getenv('ZERODHA_API_SECRET', 'jm3h4iejwnxr4ngmma2qxccpkhevo8sy')
+ZERODHA_API_KEY = os.getenv('ZERODHA_API_KEY', 'vc9ft4zpknynpm3u')
+ZERODHA_API_SECRET = os.getenv('ZERODHA_API_SECRET', '0nwjb2cncw9stf3m5cre73rqc3bc5xsc')
 ZERODHA_USER_ID = os.getenv('ZERODHA_USER_ID', 'QSW899')
 
 # In-memory session storage (use Redis in production)
