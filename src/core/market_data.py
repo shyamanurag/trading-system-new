@@ -89,40 +89,41 @@ class MarketDataManager:
         logger.info(f"📈 Auto-subscription: {self.auto_subscribe_enabled}")
         
     async def start(self):
-        """Start market data collection"""
-        try:
-            self.is_running = True
-            if self.paper_mode:
-                # Start mock data generation
-                asyncio.create_task(self._generate_mock_data())
-                logger.info("Market data started in paper mode")
-            else:
-                # Connect to real data source
-                logger.warning("Real market data not implemented yet")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to start market data: {e}")
-            return False
-    
+        """Start the market data manager"""
+        logger.info("Starting market data manager...")
+        self.is_running = True
+        if self.paper_mode:
+            # Start REAL market data updates - NO FAKE DATA
+            asyncio.create_task(self._update_real_market_data())
+            logger.info("Market data started in paper mode")
+        else:
+            logger.info("Market data started in live mode")
+        
     async def stop(self):
-        """Stop market data collection"""
+        """Stop the market data manager"""
+        logger.info("Stopping market data manager...")
         self.is_running = False
-        logger.info("Market data stopped")
-        return True
-    
+        
     async def get_latest_data(self, symbols: List[str]) -> Dict[str, MarketData]:
-        """Get latest market data for symbols - returns MarketData objects"""
+        """Get latest market data for symbols - REAL DATA ONLY"""
         try:
-            if self.paper_mode:
-                return self._get_mock_market_data(symbols)
-            else:
-                # Return real data
-                return {}
+            # If cache is available and not empty, use it
+            if self.market_data_cache:
+                filtered_data = {symbol: data for symbol, data in self.market_data_cache.items() if symbol in symbols}
+                if filtered_data:
+                    logger.debug(f"📊 Returning cached REAL data for {len(filtered_data)} symbols")
+                    return filtered_data
+            
+            # Otherwise, get fresh REAL data
+            logger.info(f"📊 Getting fresh REAL market data for {len(symbols)} symbols")
+            return self._get_real_market_data(symbols)
+            
         except Exception as e:
             logger.error(f"Error getting market data: {e}")
+            # CRITICAL: Return empty dict instead of fake data
             return {}
     
-    def _get_mock_market_data(self, symbols: List[str]) -> Dict[str, MarketData]:
+    def _get_real_market_data(self, symbols: List[str]) -> Dict[str, MarketData]:
         """Get REAL market data from TrueData feed using proper symbol mapping"""
         data = {}
         base_time = datetime.now()
@@ -289,30 +290,34 @@ class MarketDataManager:
         
         return history
     
-    # Legacy method for backward compatibility
-    def _get_mock_data(self, symbols: List[str]) -> Dict[str, Any]:
-        """Legacy mock data - kept for compatibility"""
-        return {symbol: {'price': 100, 'volume': 1000} for symbol in symbols}
+    # REMOVED: Legacy mock data method completely eliminated for trading safety
     
-    async def _generate_mock_data(self):
-        """Background task to continuously update mock data"""
+    async def _update_real_market_data(self):
+        """Background task to continuously update REAL market data - NO FAKE DATA FALLBACKS"""
         while self.is_running:
             try:
-                # FIXED: Process ALL available TrueData symbols, not just configured ones
-                available_symbols = self._get_all_available_truedata_symbols()
+                # Get available TrueData symbols
+                available_symbols = await self._get_all_available_truedata_symbols()
                 
                 if available_symbols:
-                    # Process ALL symbols from TrueData
-                    self.market_data_cache = self._get_mock_market_data(available_symbols)
-                    logger.info(f"📊 Updated market data for {len(available_symbols)} symbols from TrueData")
+                    # Process ONLY real TrueData symbols - NO FALLBACKS
+                    self.market_data_cache = self._get_real_market_data(available_symbols)
+                    if self.market_data_cache:
+                        logger.info(f"📊 Updated REAL market data for {len(self.market_data_cache)} symbols")
+                    else:
+                        logger.warning("📊 No real market data available - cache empty")
+                        # DO NOT GENERATE FAKE DATA - keep cache empty
+                        self.market_data_cache = {}
                 else:
-                    # Fallback to configured symbols if TrueData not available
-                    self.market_data_cache = self._get_mock_market_data(self.symbols)
-                    logger.debug(f"📊 Using fallback symbols: {len(self.symbols)} configured symbols")
+                    logger.warning("📊 No TrueData symbols available - keeping cache empty")
+                    # DO NOT FALLBACK TO FAKE DATA
+                    self.market_data_cache = {}
                 
                 await asyncio.sleep(self.update_interval)
             except Exception as e:
-                logger.error(f"Error generating mock data: {e}")
+                logger.error(f"Error updating real market data: {e}")
+                # DO NOT GENERATE FAKE DATA ON ERROR
+                self.market_data_cache = {}
                 await asyncio.sleep(5)
 
     async def _get_all_available_truedata_symbols(self) -> List[str]:
@@ -433,23 +438,26 @@ class MarketDataManager:
         }
 
 async def get_market_data(symbol: str) -> Dict[str, Any]:
-    """Get market data for a symbol"""
-    # This should connect to TrueData in production
-    # NO MOCK DATA - Real market data connection required
-    return {
-        'symbol': symbol,
-        'last_price': 20000.0,  # Mock price
-        'bid': 19995.0,
-        'ask': 20005.0,
-        'volume': 1000000,
-        'open': 19900.0,
-        'high': 20100.0,
-        'low': 19850.0,
-        'close': 20000.0,
-        'timestamp': datetime.now().isoformat(),
-        'support_levels': [19800, 19600, 19400],
-        'resistance_levels': [20200, 20400, 20600]
-    }
+    """Get market data for a symbol - REAL DATA ONLY"""
+    # ELIMINATED MOCK DATA - Return error if real data unavailable
+    try:
+        # TODO: Connect to real TrueData API here
+        # For now, return error to prevent fake data usage
+        return {
+            'success': False,
+            'error': 'Real market data API not connected',
+            'message': 'SAFETY: Mock data eliminated - implement real TrueData connection',
+            'symbol': symbol,
+            'timestamp': datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e),
+            'message': 'SAFETY: No fake data fallback available',
+            'symbol': symbol,
+            'timestamp': datetime.now().isoformat()
+        }
 
 async def get_option_chain(symbol: str, expiry: Optional[str] = None) -> Dict[str, Any]:
     """Get option chain data"""
