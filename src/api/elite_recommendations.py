@@ -16,8 +16,7 @@ class AutonomousEliteScanner:
     """Autonomous scanner that continuously analyzes market data for elite setups"""
     
     def __init__(self):
-        self.last_scan_time = None
-        self.scan_interval_minutes = 30  # Scan every 30 minutes during market hours
+        self.last_scan_time = None        self.scan_interval_minutes = 30  # Scan every 30 minutes during market hours
         self.min_confluence_score = 7.5  # Only 7.5+ confluence scores (more realistic)
         self.base_url = "https://algoauto-9gx56.ondigitalocean.app"
         

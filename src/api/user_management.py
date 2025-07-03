@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any, List
 from pydantic import BaseModel
 import logging
+from datetime import datetime
 
 from ..core.user_tracker import UserTracker
 from ..core.risk_manager import RiskManager
@@ -137,4 +138,96 @@ async def delete_user(
         
     except Exception as e:
         logger.error(f"Error deleting user: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/users/performance")
+async def get_user_performance(
+    user_id: str,
+    user_tracker: UserTracker = Depends(),
+    system_evolution: SystemEvolution = Depends()
+):
+    """Get user performance analytics"""
+    try:
+        # Get basic user details
+        user_details = await user_tracker.get_user_details(user_id)
+        if not user_details:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Get performance metrics
+        metrics = await system_evolution.get_user_metrics(user_id)
+        
+        # Get trading history
+        try:
+            from datetime import date
+            from src.core.database import get_db_session
+            from sqlalchemy import text
+            
+            async with get_db_session() as session:
+                # Get today's trades
+                today = date.today()
+                trades_query = text("""
+                    SELECT COUNT(*) as total_trades,
+                           SUM(CASE WHEN trade_type = 'buy' THEN quantity * price ELSE 0 END) as total_bought,
+                           SUM(CASE WHEN trade_type = 'sell' THEN quantity * price ELSE 0 END) as total_sold
+                    FROM trades 
+                    WHERE user_id = :user_id AND DATE(executed_at) = :today
+                """)
+                trades_result = await session.execute(trades_query, {"user_id": user_id, "today": today})
+                trades_data = trades_result.fetchone()
+                
+                # Get positions
+                positions_query = text("""
+                    SELECT COUNT(*) as open_positions,
+                           SUM(unrealized_pnl) as unrealized_pnl
+                    FROM positions 
+                    WHERE user_id = :user_id AND status = 'open'
+                """)
+                positions_result = await session.execute(positions_query, {"user_id": user_id})
+                positions_data = positions_result.fetchone()
+                
+                performance_data = {
+                    "user_id": user_id,
+                    "total_trades_today": trades_data.total_trades if trades_data else 0,
+                    "total_bought": float(trades_data.total_bought) if trades_data and trades_data.total_bought else 0,
+                    "total_sold": float(trades_data.total_sold) if trades_data and trades_data.total_sold else 0,
+                    "open_positions": positions_data.open_positions if positions_data else 0,
+                    "unrealized_pnl": float(positions_data.unrealized_pnl) if positions_data and positions_data.unrealized_pnl else 0,
+                    "win_rate": metrics.get('win_rate', 0),
+                    "total_pnl": metrics.get('total_pnl', 0),
+                    "sharpe_ratio": metrics.get('sharpe_ratio', 0),
+                    "max_drawdown": metrics.get('max_drawdown', 0),
+                    "capital": user_details.get('capital', 0),
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                return {
+                    "success": True,
+                    "data": performance_data,
+                    "message": "Performance data retrieved successfully"
+                }
+                
+        except Exception as db_error:
+            logger.warning(f"Database query failed: {db_error}")
+            # Return default performance data if database fails
+            return {
+                "success": True,
+                "data": {
+                    "user_id": user_id,
+                    "total_trades_today": 0,
+                    "total_bought": 0,
+                    "total_sold": 0,
+                    "open_positions": 0,
+                    "unrealized_pnl": 0,
+                    "win_rate": 0,
+                    "total_pnl": 0,
+                    "sharpe_ratio": 0,
+                    "max_drawdown": 0,
+                    "capital": user_details.get('capital', 0),
+                    "timestamp": datetime.now().isoformat()
+                },
+                "message": "Default performance data (database unavailable)"
+            }
+        
+    except Exception as e:
+        logger.error(f"Error getting user performance: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 

@@ -206,4 +206,120 @@ async def get_risk_metrics(
         )
     except Exception as e:
         logger.error(f"Error getting risk metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/orders")
+async def get_orders(
+    orchestrator: Any = Depends(get_orchestrator)
+):
+    """Get today's orders"""
+    try:
+        # Get today's orders from database
+        from datetime import date
+        today = date.today()
+        
+        # Try to get orders from database
+        try:
+            from src.core.database import get_db_session
+            async with get_db_session() as session:
+                # Get orders for today
+                from sqlalchemy import text
+                query = text("""
+                    SELECT order_id, symbol, order_type, side, quantity, price, status, 
+                           strategy_name, created_at, filled_at
+                    FROM orders 
+                    WHERE DATE(created_at) = :today
+                    ORDER BY created_at DESC
+                """)
+                result = await session.execute(query, {"today": today})
+                orders = []
+                for row in result:
+                    orders.append({
+                        "order_id": row.order_id,
+                        "symbol": row.symbol,
+                        "order_type": row.order_type,
+                        "side": row.side,
+                        "quantity": row.quantity,
+                        "price": float(row.price) if row.price else None,
+                        "status": row.status,
+                        "strategy_name": row.strategy_name,
+                        "created_at": row.created_at.isoformat(),
+                        "filled_at": row.filled_at.isoformat() if row.filled_at else None
+                    })
+                
+                return {
+                    "success": True,
+                    "message": f"Found {len(orders)} orders for today",
+                    "data": orders,
+                    "timestamp": datetime.now().isoformat()
+                }
+        except Exception as db_error:
+            logger.warning(f"Database query failed: {db_error}")
+            # Return empty list if database fails
+            return {
+                "success": True,
+                "message": "No orders found (database unavailable)",
+                "data": [],
+                "timestamp": datetime.now().isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Error getting orders: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/trades")
+async def get_trades(
+    orchestrator: Any = Depends(get_orchestrator)
+):
+    """Get today's trades"""
+    try:
+        # Get today's trades from database
+        from datetime import date
+        today = date.today()
+        
+        # Try to get trades from database
+        try:
+            from src.core.database import get_db_session
+            async with get_db_session() as session:
+                # Get trades for today
+                from sqlalchemy import text
+                query = text("""
+                    SELECT trade_id, symbol, trade_type, quantity, price, 
+                           strategy, commission, executed_at
+                    FROM trades 
+                    WHERE DATE(executed_at) = :today
+                    ORDER BY executed_at DESC
+                """)
+                result = await session.execute(query, {"today": today})
+                trades = []
+                for row in result:
+                    trades.append({
+                        "trade_id": row.trade_id,
+                        "symbol": row.symbol,
+                        "trade_type": row.trade_type,
+                        "quantity": row.quantity,
+                        "price": float(row.price),
+                        "strategy": row.strategy,
+                        "commission": float(row.commission) if row.commission else 0,
+                        "executed_at": row.executed_at.isoformat()
+                    })
+                
+                return {
+                    "success": True,
+                    "message": f"Found {len(trades)} trades for today",
+                    "data": trades,
+                    "timestamp": datetime.now().isoformat()
+                }
+        except Exception as db_error:
+            logger.warning(f"Database query failed: {db_error}")
+            # Return empty list if database fails
+            return {
+                "success": True,
+                "message": "No trades found (database unavailable)",
+                "data": [],
+                "timestamp": datetime.now().isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Error getting trades: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 

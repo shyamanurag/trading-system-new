@@ -426,8 +426,12 @@ class TradingOrchestrator:
             return False
     
     async def _load_strategies(self):
-        """Load trading strategies"""
+        """Load and initialize trading strategies"""
         try:
+            # Clear existing strategies to prevent duplicates
+            self.strategies.clear()
+            self.active_strategies.clear()
+            
             strategy_configs = {
                 'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
                 'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},
@@ -436,6 +440,8 @@ class TradingOrchestrator:
                 'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}},
                 'confluence_amplifier': {'name': 'ConfluenceAmplifier', 'config': {}}
             }
+            
+            self.logger.info(f"Loading {len(strategy_configs)} trading strategies...")
             
             for strategy_key, strategy_info in strategy_configs.items():
                 try:
@@ -472,12 +478,12 @@ class TradingOrchestrator:
                         'last_signal': None
                     }
                     self.active_strategies.append(strategy_key)
-                    self.logger.info(f" Loaded and initialized strategy: {strategy_key}")
+                    self.logger.info(f"✓ Loaded and initialized strategy: {strategy_key}")
                     
                 except Exception as e:
-                    self.logger.error(f" Failed to load strategy {strategy_key}: {e}")
+                    self.logger.error(f"✗ Failed to load strategy {strategy_key}: {e}")
             
-            self.logger.info(f" Loaded {len(self.strategies)} trading strategies")
+            self.logger.info(f"✓ Successfully loaded {len(self.strategies)}/{len(strategy_configs)} trading strategies")
             
         except Exception as e:
             self.logger.error(f"Error loading strategies: {e}")
