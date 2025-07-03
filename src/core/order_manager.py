@@ -534,44 +534,130 @@ class OrderManager:
             }
     
     async def _execute_market_order(self, order: Order) -> Dict[str, Any]:
-        """Execute a market order"""
-        # In production, this would connect to the broker API
-        # For now, simulate execution
+        """Execute a market order - REQUIRES REAL BROKER API INTEGRATION"""
+        # ELIMINATED: Fake execution simulation that was returning fake 'FILLED' status
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Connect to actual broker API (Zerodha, etc.)
+        # - Place real market order
+        # - Return actual execution status from broker
+        
+        logger.error(f"CRITICAL: Real broker API integration required for order {order.order_id}")
+        logger.error(f"Order details: {order.symbol} {order.quantity} @ {order.price}")
+        
+        # SAFETY: Return REJECTED status to prevent fake execution
         return {
-            'status': 'FILLED',
-            'average_price': order.price,
-            'filled_quantity': order.quantity,
+            'status': 'REJECTED',
+            'reason': 'REAL_BROKER_API_REQUIRED',
+            'order_id': order.order_id,
+            'message': 'Order execution requires real broker API integration. Fake execution eliminated for safety.',
             'timestamp': datetime.now().isoformat()
         }
     
     async def _execute_limit_order(self, order: Order) -> Dict[str, Any]:
-        """Execute a limit order"""
-        # In production, this would place a limit order with the broker
+        """Execute a limit order - REQUIRES REAL BROKER API INTEGRATION"""
+        # ELIMINATED: Fake 'PENDING' status that was simulating limit order placement
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Connect to actual broker API (Zerodha, etc.)
+        # - Place real limit order with broker
+        # - Return actual order placement status from broker
+        
+        logger.error(f"CRITICAL: Real broker API integration required for limit order {order.order_id}")
+        logger.error(f"Order details: {order.symbol} {order.quantity} @ {order.price}")
+        
+        # SAFETY: Return REJECTED status to prevent fake order placement
         return {
-            'status': 'PENDING',
+            'status': 'REJECTED',
+            'reason': 'REAL_BROKER_API_REQUIRED',
             'order_id': order.order_id,
+            'message': 'Limit order execution requires real broker API integration. Fake execution eliminated for safety.',
             'timestamp': datetime.now().isoformat()
         }
     
     async def _execute_smart_order(self, order: Order) -> Dict[str, Any]:
-        """Execute a smart order with intelligent routing"""
-        # Smart order routing logic would go here
-        return await self._execute_market_order(order)
+        """Execute a smart order with intelligent routing - REQUIRES REAL BROKER API INTEGRATION"""
+        # ELIMINATED: Fallback to fake market order execution
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Implement smart order routing algorithm
+        # - Connect to multiple broker APIs for best execution
+        # - Route order based on liquidity, price, and execution speed
+        
+        logger.error(f"CRITICAL: Smart order routing not implemented for order {order.order_id}")
+        logger.error(f"Order details: {order.symbol} {order.quantity} @ {order.price}")
+        
+        # SAFETY: Return REJECTED status to prevent fake execution
+        return {
+            'status': 'REJECTED',
+            'reason': 'SMART_ORDER_ROUTING_NOT_IMPLEMENTED',
+            'order_id': order.order_id,
+            'message': 'Smart order routing requires real implementation. Fake execution eliminated for safety.',
+            'timestamp': datetime.now().isoformat()
+        }
     
     async def _execute_twap_order(self, order: Order) -> Dict[str, Any]:
-        """Execute a TWAP (Time Weighted Average Price) order"""
-        # TWAP execution logic would go here
-        return await self._execute_market_order(order)
+        """Execute a TWAP (Time Weighted Average Price) order - REQUIRES REAL IMPLEMENTATION"""
+        # ELIMINATED: Fallback to fake market order execution
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Implement TWAP algorithm to split large orders across time
+        # - Calculate optimal slice sizes and timing intervals
+        # - Connect to real broker API for execution
+        
+        logger.error(f"CRITICAL: TWAP order execution not implemented for order {order.order_id}")
+        logger.error(f"Order details: {order.symbol} {order.quantity} @ {order.price}")
+        
+        # SAFETY: Return REJECTED status to prevent fake execution
+        return {
+            'status': 'REJECTED',
+            'reason': 'TWAP_EXECUTION_NOT_IMPLEMENTED',
+            'order_id': order.order_id,
+            'message': 'TWAP order execution requires real implementation. Fake execution eliminated for safety.',
+            'timestamp': datetime.now().isoformat()
+        }
     
     async def _execute_vwap_order(self, order: Order) -> Dict[str, Any]:
-        """Execute a VWAP (Volume Weighted Average Price) order"""
-        # VWAP execution logic would go here
-        return await self._execute_market_order(order)
+        """Execute a VWAP (Volume Weighted Average Price) order - REQUIRES REAL IMPLEMENTATION"""
+        # ELIMINATED: Fallback to fake market order execution
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Implement VWAP algorithm to match volume-weighted average price
+        # - Calculate optimal execution based on historical volume patterns
+        # - Connect to real broker API for execution
+        
+        logger.error(f"CRITICAL: VWAP order execution not implemented for order {order.order_id}")
+        logger.error(f"Order details: {order.symbol} {order.quantity} @ {order.price}")
+        
+        # SAFETY: Return REJECTED status to prevent fake execution
+        return {
+            'status': 'REJECTED',
+            'reason': 'VWAP_EXECUTION_NOT_IMPLEMENTED',
+            'order_id': order.order_id,
+            'message': 'VWAP order execution requires real implementation. Fake execution eliminated for safety.',
+            'timestamp': datetime.now().isoformat()
+        }
     
     async def _execute_iceberg_order(self, order: Order) -> Dict[str, Any]:
-        """Execute an iceberg order"""
-        # Iceberg order logic would go here
-        return await self._execute_market_order(order)
+        """Execute an iceberg order - REQUIRES REAL IMPLEMENTATION"""
+        # ELIMINATED: Fallback to fake market order execution
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Implement iceberg order logic to hide large order sizes
+        # - Split large orders into smaller visible portions
+        # - Connect to real broker API for execution
+        
+        logger.error(f"CRITICAL: Iceberg order execution not implemented for order {order.order_id}")
+        logger.error(f"Order details: {order.symbol} {order.quantity} @ {order.price}")
+        
+        # SAFETY: Return REJECTED status to prevent fake execution
+        return {
+            'status': 'REJECTED',
+            'reason': 'ICEBERG_EXECUTION_NOT_IMPLEMENTED',
+            'order_id': order.order_id,
+            'message': 'Iceberg order execution requires real implementation. Fake execution eliminated for safety.',
+            'timestamp': datetime.now().isoformat()
+        }
     
     async def _send_order_notification(self, user_id: str, *args):
         """Send order notification to user"""

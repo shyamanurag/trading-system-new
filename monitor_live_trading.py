@@ -46,19 +46,47 @@ def monitor_live_trading():
                     data = response.json()
                     if data.get('success'):
                         recommendations = data.get('recommendations', [])
-                        print(f'   ⭐ Elite Trades: {len(recommendations)} opportunities')
+                        scan_timestamp = data.get('scan_timestamp', '')
                         
-                        # Show highest confidence trade
+                        # Format scan timestamp
+                        scan_time_str = ''
+                        if scan_timestamp:
+                            try:
+                                scan_dt = datetime.fromisoformat(scan_timestamp.replace('Z', '+00:00'))
+                                scan_time_str = f' (Last scan: {scan_dt.strftime("%H:%M:%S")})'
+                            except:
+                                scan_time_str = f' (Last scan: {scan_timestamp})'
+                        
+                        print(f'   ⭐ Elite Trades: {len(recommendations)} opportunities{scan_time_str}')
+                        
+                        # Show top 3 elite trades with timestamps
                         if recommendations:
-                            best_trade = max(recommendations, key=lambda x: x.get('confidence', 0))
-                            symbol = best_trade.get('symbol', 'N/A')
-                            confidence = best_trade.get('confidence', 0)
-                            direction = best_trade.get('direction', 'N/A')
-                            entry = best_trade.get('entry_price', 0)
-                            current = best_trade.get('current_price', 0)
+                            # Sort by confidence and show top 3
+                            sorted_trades = sorted(recommendations, key=lambda x: x.get('confidence', 0), reverse=True)
+                            top_trades = sorted_trades[:3]
                             
-                            print(f'   🎯 Best Trade: {symbol} {direction} @ ₹{entry} ({confidence}% confidence)')
-                            print(f'   📈 Current Price: ₹{current}')
+                            for i, trade in enumerate(top_trades):
+                                symbol = trade.get('symbol', 'N/A')
+                                confidence = trade.get('confidence', 0)
+                                direction = trade.get('direction', 'N/A')
+                                entry = trade.get('entry_price', 0)
+                                current = trade.get('current_price', 0)
+                                
+                                # Parse and format timestamp
+                                generated_at = trade.get('generated_at', '')
+                                time_str = ''
+                                if generated_at:
+                                    try:
+                                        # Parse ISO format timestamp
+                                        dt = datetime.fromisoformat(generated_at.replace('Z', '+00:00'))
+                                        time_str = f' [{dt.strftime("%H:%M:%S")}]'
+                                    except:
+                                        time_str = f' [{generated_at}]'
+                                
+                                prefix = '🎯' if i == 0 else '   '
+                                print(f'   {prefix} {symbol} {direction} @ ₹{entry} ({confidence}% confidence){time_str}')
+                                if i == 0:  # Only show current price for best trade
+                                    print(f'   📈 Current Price: ₹{current}')
             except Exception as e:
                 print(f'   ❌ Elite trades check failed: {e}')
             

@@ -216,7 +216,7 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
             } else {
                 // Use autonomous status as fallback for market detection
                 if (realTradingData?.systemMetrics?.is_active) {
-                    setMarketStatus({
+                setMarketStatus({
                         is_market_open: true,
                         time_to_close_seconds: 3600,
                         session_type: 'OPEN'
@@ -226,7 +226,7 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                         is_market_open: false,
                         time_to_close_seconds: 0,
                         session_type: 'CLOSED'
-                    });
+                });
                 }
             }
 

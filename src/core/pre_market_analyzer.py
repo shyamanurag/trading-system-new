@@ -40,335 +40,242 @@ class PreMarketAnalyzer:
             return await self._run_paper_mode_analysis()
     
     async def _run_paper_mode_analysis(self) -> Dict:
-        """Run analysis using mock data for paper trading"""
-        logger.info("🧪 PAPER MODE: Using simulated market data")
+        """ELIMINATED: Paper mode analysis was generating massive fake market data"""
+        # 
+        # ELIMINATED FAKE DATA GENERATORS:
+        # ❌ Fake S&P 500/NASDAQ/DOW changes (0.2%, 0.1%, 0.15%)
+        # ❌ Fake NIFTY close (19850), fake volume ("NORMAL"), fake volatility ("LOW")
+        # ❌ Fake FII/DII activity (₹500cr, ₹300cr buying)
+        # ❌ Fake VIX (13.5), fake IV percentile (40%), fake put/call ratio (0.85)
+        # ❌ Fake news events ("Mock RBI Meeting Minutes")
+        # ❌ Fake support/resistance levels and pivot points
+        # ❌ Fake market outlook generation
+        # ❌ Fake strategy recommendations
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Connect to real global markets data feeds
+        # - Fetch real previous day data from exchanges
+        # - Get real VIX and options data
+        # - Fetch real news events from news APIs
+        # - Calculate real technical levels from historical data
         
-        # Mock global markets data
-        global_analysis = {
-            'us_markets': {
-                'sp500_change': 0.2,  # Slightly positive
-                'nasdaq_change': 0.1,
-                'dow_change': 0.15,
-                'sentiment': 'NEUTRAL'
-            },
-            'asian_markets': {
-                'nikkei_change': 0.3,
-                'hang_seng_change': 0.1,
-                'sentiment': 'BULLISH'
-            },
-            'commodities': {
-                'gold_change': -0.1,
-                'oil_change': 0.5,
-                'sentiment': 'MIXED'
-            },
-            'currencies': {
-                'usd_inr': 83.20,
-                'change': -0.05
-            },
-            'overall_sentiment': 'NEUTRAL'
-        }
+        logger.error("CRITICAL: Pre-market analysis requires real market data feeds")
+        logger.error("Paper mode fake data generation ELIMINATED for safety")
         
-        # Mock previous day data
-        previous_day = {
-            'nifty_close': 19850,
-            'nifty_change': 0.2,
-            'volume': 'NORMAL',
-            'volatility': 'LOW',
-            'breadth': {
-                'advances': 850,
-                'declines': 650,
-                'unchanged': 50
-            },
-            'fii_activity': {
-                'net_buying': 500,  # Crores
-                'sentiment': 'BUYING'
-            },
-            'dii_activity': {
-                'net_buying': 300,
-                'sentiment': 'BUYING'
-            },
-            'key_movers': [
-                {'symbol': 'RELIANCE', 'change': 1.2},
-                {'symbol': 'TCS', 'change': 0.8},
-                {'symbol': 'INFY', 'change': -0.5}
+        # SAFETY: Return error state instead of fake data
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'mode': 'REAL_DATA_REQUIRED',
+            'status': 'FAILED',
+            'error': 'REAL_MARKET_DATA_FEEDS_REQUIRED',
+            'message': 'Pre-market analysis requires real market data integration. Fake data generation eliminated for safety.',
+            'required_integrations': [
+                'Global markets data feed (S&P 500, NASDAQ, DOW)',
+                'Indian markets data feed (NIFTY, previous day data)',
+                'VIX and options data feed',
+                'News API integration',
+                'Real-time FII/DII data'
             ]
         }
-        
-        # Calculate mock key levels
-        self.key_levels = await self._calculate_mock_key_levels()
-        
-        # Mock news events
-        self.news_events = [
-            {
-                'time': '11:00',
-                'event': 'Mock RBI Meeting Minutes',
-                'impact': 'MEDIUM',
-                'expected_volatility': 'NORMAL'
-            }
-        ]
-        
-        # Mock volatility analysis
-        volatility_analysis = {
-            'current_vix': 13.5,
-            'vix_change': -0.2,
-            'expected_range': {
-                'high': 19900,
-                'low': 19800
-            },
-            'iv_percentile': 40,
-            'put_call_ratio': 0.85,
-            'max_pain': 19850,
-            'volatility_forecast': 'LOW',
-            'recommended_strategies': ['momentum', 'mean_reversion']
-        }
-        
-        # Generate market outlook
-        self.market_outlook = await self._generate_market_outlook(
-            global_analysis, previous_day, volatility_analysis
-        )
-        
-        # Recommend strategies for paper mode
-        self.strategy_recommendations = await self._recommend_paper_strategies()
-        
-        # Prepare system parameters
-        system_params = await self._prepare_paper_system_parameters()
-        
-        # Compile results
-        self.analysis_results = {
-            'timestamp': datetime.now().isoformat(),
-            'mode': 'PAPER_TRADING',
-            'market_outlook': self.market_outlook,
-            'global_analysis': global_analysis,
-            'previous_day': previous_day,
-            'key_levels': self.key_levels,
-            'news_events': self.news_events,
-            'volatility_analysis': volatility_analysis,
-            'strategy_recommendations': self.strategy_recommendations,
-            'system_parameters': system_params
-        }
-        
-        logger.info(f"✅ Paper mode pre-market analysis complete. Outlook: {self.market_outlook}")
-        return self.analysis_results
     
     async def _run_live_analysis(self) -> Dict:
-        """Run analysis with live data - original logic"""
-        # Original analysis logic would go here
-        # This is only called when paper_mode = False
+        """Run analysis with live data - REQUIRES REAL MARKET DATA INTEGRATION"""
+        # ELIMINATED: Fallback to fake paper mode analysis
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Connect to real TrueData API for live market data
+        # - Fetch real global markets data
+        # - Get real previous day data from exchanges
+        # - Calculate real technical levels from historical data
+        # - Fetch real news events and economic calendar
+        # - Generate real market outlook based on actual data
         
-        try:
-            # Try to import live data - this is where it was failing
-            from data.truedata_client import live_market_data
-            nifty_data = live_market_data.get('NIFTY', {})
-            spot_price = nifty_data.get('ltp', nifty_data.get('last_price', 19850))
-           
-            # Continue with live analysis...
-            # [Original analysis code would go here]
-           
-        except ImportError as e:
-            logger.warning(f"TrueData import failed: {e}. Falling back to paper mode.")
-            return await self._run_paper_mode_analysis()
-        except Exception as e:
-            logger.error(f"Live analysis failed: {e}. Falling back to paper mode.")
-            return await self._run_paper_mode_analysis()
+        logger.error("CRITICAL: Live analysis requires real market data feeds")
+        logger.error("All fallback mechanisms to fake data have been ELIMINATED")
         
-        # Return mock data for now
-        return await self._run_paper_mode_analysis()
+        # SAFETY: Return error state instead of fake data
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'mode': 'LIVE_DATA_REQUIRED',
+            'status': 'FAILED',
+            'error': 'REAL_MARKET_DATA_INTEGRATION_REQUIRED',
+            'message': 'Live analysis requires real market data integration. All fake data fallbacks eliminated for safety.',
+            'required_integrations': [
+                'TrueData API for live Indian market data',
+                'Global markets data feed (Bloomberg, Reuters, etc.)',
+                'Real-time news API integration',
+                'Economic calendar API',
+                'Historical data for technical analysis'
+            ]
+        }
     
     async def _calculate_mock_key_levels(self) -> Dict:
-        """Calculate mock key support/resistance levels for paper trading"""
-        # Mock current price
-        spot_price = 19850
+        """ELIMINATED: Mock key levels calculation was generating fake technical analysis"""
+        # 
+        # ELIMINATED FAKE DATA GENERATORS:
+        # ❌ Fake spot price (19850)
+        # ❌ Fake previous high/low/close (19880, 19810, 19850)
+        # ❌ Fake pivot points calculation based on fake data
+        # ❌ Fake support/resistance levels (R1, R2, R3, S1, S2, S3)
+        # ❌ Fake opening range expectations
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Fetch real historical data from exchanges
+        # - Calculate real pivot points from actual previous day data
+        # - Determine real support/resistance levels from price action
+        # - Use real current market price
         
-        # Calculate pivot points based on mock data
-        high = 19880
-        low = 19810
-        close = 19850
+        logger.error("CRITICAL: Key levels calculation requires real market data")
+        logger.error("Mock key levels generation ELIMINATED for safety")
         
-        pivot = (high + low + close) / 3
-        r1 = 2 * pivot - low
-        r2 = pivot + (high - low)
-        r3 = high + 2 * (pivot - low)
-        s1 = 2 * pivot - high
-        s2 = pivot - (high - low)
-        s3 = low - 2 * (high - pivot)
-        
+        # SAFETY: Return error state instead of fake levels
         return {
-            'spot_price': spot_price,
-            'pivot': round(pivot, 2),
-            'resistance': {
-                'r1': round(r1, 2),
-                'r2': round(r2, 2),
-                'r3': round(r3, 2)
-            },
-            'support': {
-                's1': round(s1, 2),
-                's2': round(s2, 2),
-                's3': round(s3, 2)
-            },
-            'previous_high': high,
-            'previous_low': low,
-            'previous_close': close,
-            'opening_range': {
-                'expected_high': close + 30,
-                'expected_low': close - 30
-            }
+            'status': 'FAILED',
+            'error': 'REAL_MARKET_DATA_REQUIRED_FOR_TECHNICAL_ANALYSIS',
+            'message': 'Key levels calculation requires real market data. Fake technical analysis eliminated for safety.',
+            'required_data': [
+                'Real previous day high/low/close prices',
+                'Real current market price',
+                'Historical price data for support/resistance analysis',
+                'Real volume data for level confirmation'
+            ]
         }
     
     async def _recommend_paper_strategies(self) -> Dict:
-        """Recommend strategies for paper trading mode"""
-        # Conservative paper trading recommendations
-        recommendations = {
-            'momentum_surfer': {
-                'enabled': True,
-                'allocation': 0.25,
-                'bias': 'NEUTRAL',
-                'risk_multiplier': 0.8  # Reduced for paper mode
-            },
-            'mean_reversion': {
-                'enabled': True,
-                'allocation': 0.25,
-                'risk_multiplier': 0.8
-            },
-            'volatility_explosion': {
-                'enabled': True,
-                'allocation': 0.20,
-                'risk_multiplier': 0.7
-            }
-        }
+        """ELIMINATED: Paper trading strategy recommendations were generating fake allocations"""
+        # 
+        # ELIMINATED FAKE DATA GENERATORS:
+        # ❌ Fake strategy allocations (25%, 25%, 20%)
+        # ❌ Fake risk multipliers (0.8, 0.8, 0.7)
+        # ❌ Fake bias settings ('NEUTRAL')
+        # ❌ Fake enable/disable recommendations
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Generate strategy recommendations based on real market conditions
+        # - Calculate allocations based on actual volatility and risk metrics
+        # - Determine bias based on real technical and fundamental analysis
         
-        logger.info("📊 Paper mode strategy recommendations generated")
-        return recommendations
+        logger.error("CRITICAL: Strategy recommendations require real market analysis")
+        logger.error("Paper mode fake recommendations ELIMINATED for safety")
+        
+        # SAFETY: Return error state instead of fake recommendations
+        return {
+            'status': 'FAILED',
+            'error': 'REAL_MARKET_ANALYSIS_REQUIRED_FOR_STRATEGY_RECOMMENDATIONS',
+            'message': 'Strategy recommendations require real market analysis. Fake recommendations eliminated for safety.'
+        }
     
     async def _prepare_paper_system_parameters(self) -> Dict:
-        """Prepare system parameters for paper trading"""
+        """ELIMINATED: Paper system parameters were generating fake risk settings"""
+        # 
+        # ELIMINATED FAKE DATA GENERATORS:
+        # ❌ Fake risk per trade (1.5%)
+        # ❌ Fake max daily loss (2%)
+        # ❌ Fake max positions (3)
+        # ❌ Fake order size multipliers (0.5)
+        # ❌ Fake virtual capital (10 lakhs)
+        # ❌ Fake commission and slippage simulation
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Configure real risk parameters based on actual capital
+        # - Set real position limits based on portfolio size
+        # - Calculate real commission costs from broker
+        # - Determine real slippage based on historical data
+        
+        logger.error("CRITICAL: System parameters require real risk management configuration")
+        logger.error("Paper mode fake parameters ELIMINATED for safety")
+        
+        # SAFETY: Return error state instead of fake parameters
         return {
-            'mode': 'PAPER_TRADING',
-            'max_positions': 3,  # Conservative for testing
-            'risk_per_trade': 0.015,  # 1.5% risk per trade
-            'max_daily_loss': 0.02,   # 2% max daily loss
-            'order_size_multiplier': 0.5,  # Smaller sizes for paper mode
-            'stop_loss_multiplier': 1.0,
-            'take_profit_multiplier': 1.0,
-            'enabled_hours': {
-                'start': '09:15',
-                'end': '15:15'
-            },
-            'paper_mode_settings': {
-                'initial_capital': 1000000,  # 10 lakhs virtual capital
-                'commission_per_trade': 20,
-                'slippage_bps': 5  # 5 basis points slippage simulation
-            }
+            'status': 'FAILED',
+            'error': 'REAL_RISK_MANAGEMENT_CONFIGURATION_REQUIRED',
+            'message': 'System parameters require real risk management configuration. Fake parameters eliminated for safety.'
         }
     
     async def _analyze_global_markets(self) -> Dict:
-        """Analyze global market conditions"""
-        try:
-            # In production, fetch real data from APIs
-            # NO MOCK DATA - Real pre-market data required
-            return {
-                'us_markets': {
-                    'sp500_change': -0.5,
-                    'nasdaq_change': -0.8,
-                    'dow_change': -0.3,
-                    'sentiment': 'BEARISH'
-                },
-                'asian_markets': {
-                    'nikkei_change': 0.2,
-                    'hang_seng_change': -0.1,
-                    'sentiment': 'NEUTRAL'
-                },
-                'commodities': {
-                    'gold_change': 0.3,
-                    'oil_change': -1.2,
-                    'sentiment': 'MIXED'
-                },
-                'currencies': {
-                    'usd_inr': 83.25,
-                    'change': 0.1
-                },
-                'overall_sentiment': 'CAUTIOUS'
-            }
-        except Exception as e:
-            logger.error(f"Error analyzing global markets: {e}")
-            return {}
+        """ELIMINATED: Global markets analysis was still generating fake data despite claims of 'NO MOCK DATA'"""
+        # 
+        # ELIMINATED FAKE DATA GENERATORS:
+        # ❌ Fake S&P 500 change (-0.5%)
+        # ❌ Fake NASDAQ change (-0.8%)
+        # ❌ Fake DOW change (-0.3%)
+        # ❌ Fake sentiment ('BEARISH', 'NEUTRAL', 'MIXED', 'CAUTIOUS')
+        # ❌ Fake NIKKEI change (0.2%)
+        # ❌ Fake Hang Seng change (-0.1%)
+        # ❌ Fake gold/oil changes (0.3%, -1.2%)
+        # ❌ Fake USD/INR rate (83.25)
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Connect to real global markets data feed (Bloomberg, Reuters, etc.)
+        # - Fetch real pre-market futures data
+        # - Get real overnight changes in Asian markets
+        # - Calculate real sentiment from actual market movements
+        
+        logger.error("CRITICAL: Global markets analysis requires real market data feeds")
+        logger.error("Fake global markets data ELIMINATED for safety")
+        
+        # SAFETY: Return error state instead of fake data
+        return {
+            'status': 'FAILED',
+            'error': 'REAL_GLOBAL_MARKETS_DATA_FEED_REQUIRED',
+            'message': 'Global markets analysis requires real market data feeds. Fake data eliminated for safety.'
+        }
     
     async def _analyze_previous_day(self) -> Dict:
-        """Analyze previous trading day's data"""
-        try:
-            # Fetch previous day's data
-            # In production, get from database
-            return {
-                'nifty_close': 19800,
-                'nifty_change': -0.3,
-                'volume': 'ABOVE_AVERAGE',
-                'volatility': 'NORMAL',
-                'breadth': {
-                    'advances': 800,
-                    'declines': 700,
-                    'unchanged': 50
-                },
-                'fii_activity': {
-                    'net_buying': -1200,  # Crores
-                    'sentiment': 'SELLING'
-                },
-                'dii_activity': {
-                    'net_buying': 800,
-                    'sentiment': 'BUYING'
-                },
-                'key_movers': [
-                    {'symbol': 'RELIANCE', 'change': -2.1},
-                    {'symbol': 'TCS', 'change': 1.5}
-                ]
-            }
-        except Exception as e:
-            logger.error(f"Error analyzing previous day: {e}")
-            return {}
+        """ELIMINATED: Previous day analysis was generating fake market data"""
+        # 
+        # ELIMINATED FAKE DATA GENERATORS:
+        # ❌ Fake NIFTY close (19800)
+        # ❌ Fake NIFTY change (-0.3%)
+        # ❌ Fake volume ('ABOVE_AVERAGE')
+        # ❌ Fake volatility ('NORMAL')
+        # ❌ Fake breadth (800 advances, 700 declines, 50 unchanged)
+        # ❌ Fake FII activity (-1200 crores net selling)
+        # ❌ Fake DII activity (800 crores net buying)
+        # ❌ Fake key movers (RELIANCE -2.1%, TCS +1.5%)
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Fetch real previous day data from exchange database
+        # - Get real FII/DII activity from official sources
+        # - Calculate real market breadth from actual stock movements
+        # - Determine real key movers from actual price changes
+        
+        logger.error("CRITICAL: Previous day analysis requires real market data from exchange")
+        logger.error("Fake previous day data ELIMINATED for safety")
+        
+        # SAFETY: Return error state instead of fake data
+        return {
+            'status': 'FAILED',
+            'error': 'REAL_EXCHANGE_DATA_REQUIRED',
+            'message': 'Previous day analysis requires real exchange data. Fake data eliminated for safety.'
+        }
     
     async def _calculate_key_levels(self) -> Dict:
-        """Calculate key support/resistance levels"""
-        try:
-            # In production, use technical analysis
-            # Get real spot price from TrueData
-            from data.truedata_client import live_market_data
-            nifty_data = live_market_data.get('NIFTY', {})
-            spot_price = nifty_data.get('ltp', nifty_data.get('last_price', 0.0))
-           
-            # Calculate pivot points
-            high = 19850
-            low = 19720
-            close = 19800
-           
-            pivot = (high + low + close) / 3
-            r1 = 2 * pivot - low
-            r2 = pivot + (high - low)
-            r3 = high + 2 * (pivot - low)
-            s1 = 2 * pivot - high
-            s2 = pivot - (high - low)
-            s3 = low - 2 * (high - pivot)
-           
-            return {
-                'pivot': round(pivot, 2),
-                'resistance': {
-                    'r1': round(r1, 2),
-                    'r2': round(r2, 2),
-                    'r3': round(r3, 2)
-                },
-                'support': {
-                    's1': round(s1, 2),
-                    's2': round(s2, 2),
-                    's3': round(s3, 2)
-                },
-                'previous_high': high,
-                'previous_low': low,
-                'previous_close': close,
-                'opening_range': {
-                    'expected_high': close + 50,
-                    'expected_low': close - 50
-                }
-            }
-        except Exception as e:
-            logger.error(f"Error calculating key levels: {e}")
-            return {}
+        """ELIMINATED: Key levels calculation was using fake pivot points despite TrueData import attempt"""
+        # 
+        # ELIMINATED FAKE DATA GENERATORS:
+        # ❌ Fake high/low/close (19850, 19720, 19800)
+        # ❌ Fake pivot points calculation based on fake data
+        # ❌ Fake resistance levels (R1, R2, R3)
+        # ❌ Fake support levels (S1, S2, S3)
+        # ❌ Fake opening range expectations (close ± 50)
+        # ❌ Fallback to fake data when TrueData import fails
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Successfully connect to real TrueData API
+        # - Fetch real historical high/low/close data
+        # - Calculate real pivot points from actual market data
+        # - Determine real support/resistance from price action analysis
+        
+        logger.error("CRITICAL: Key levels calculation requires real TrueData integration")
+        logger.error("Fake pivot points calculation ELIMINATED for safety")
+        
+        # SAFETY: Return error state instead of fake levels
+        return {
+            'status': 'FAILED',
+            'error': 'REAL_TRUEDATA_INTEGRATION_REQUIRED',
+            'message': 'Key levels calculation requires real TrueData API integration. Fake pivot points eliminated for safety.'
+        }
     
     async def _check_news_events(self) -> List[Dict]:
         """Check for important news and events"""
