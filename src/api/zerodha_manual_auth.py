@@ -501,4 +501,144 @@ def get_session_info(user_id: str = "PAPER_TRADER_001") -> Optional[Dict]:
         return session.to_dict()
     return None
 
+@router.get("/callback")
+async def zerodha_callback(
+    request_token: str = None,
+    action: str = None,
+    status: str = None
+):
+    """Handle Zerodha callback after login"""
+    try:
+        logger.info(f"Zerodha callback received - token: {request_token[:10] if request_token else 'None'}..., action: {action}, status: {status}")
+        
+        # Check if we have a request token
+        if not request_token:
+            # Return error page
+            html_content = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Authentication Failed</title>
+                <style>
+                    body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+                    .error { background: #f8d7da; border: 1px solid #f5c6cb; padding: 20px; border-radius: 5px; color: #721c24; }
+                    .btn { background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 10px; }
+                </style>
+            </head>
+            <body>
+                <h1>❌ Authentication Failed</h1>
+                <div class="error">
+                    <p>No request token received from Zerodha.</p>
+                    <p>Please try again.</p>
+                </div>
+                <a href="/auth/zerodha/" class="btn">Try Again</a>
+            </body>
+            </html>
+            """
+            return HTMLResponse(content=html_content)
+        
+        # Success page with auto-submit
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Zerodha Authentication - Token Received</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
+                .success {{ background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 5px; color: #155724; }}
+                .token {{ background: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace; margin: 10px 0; word-break: break-all; }}
+                .loading {{ text-align: center; margin: 20px 0; }}
+                .btn {{ background: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 10px; }}
+            </style>
+        </head>
+        <body>
+            <h1>✅ Token Received!</h1>
+            <div class="success">
+                <p>Successfully received authentication token from Zerodha.</p>
+                <div class="token">Token: {request_token}</div>
+                <p class="loading">🔄 Automatically processing token...</p>
+            </div>
+            
+            <script>
+                // Auto-submit the token
+                async function autoSubmitToken() {{
+                    try {{
+                        const response = await fetch('/auth/zerodha/submit-token', {{
+                            method: 'POST',
+                            headers: {{ 'Content-Type': 'application/json' }},
+                            body: JSON.stringify({{
+                                request_token: '{request_token}',
+                                user_id: 'PAPER_TRADER_001'
+                            }})
+                        }});
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {{
+                            document.body.innerHTML = `
+                                <h1>🎉 Authentication Successful!</h1>
+                                <div class="success">
+                                    <p>Welcome ${{data.profile?.user_name || 'Trader'}}!</p>
+                                    <p>Your Zerodha account has been successfully connected.</p>
+                                    <p>Session expires at: ${{new Date(data.expires_at).toLocaleString()}}</p>
+                                </div>
+                                <a href="/" class="btn">Go to Dashboard</a>
+                            `;
+                        }} else {{
+                            document.body.innerHTML = `
+                                <h1>❌ Authentication Failed</h1>
+                                <div class="error" style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 20px; border-radius: 5px; color: #721c24;">
+                                    <p>Error: ${{data.error}}</p>
+                                    <p>${{data.help || 'Please try again with a fresh token.'}}</p>
+                                </div>
+                                <a href="/auth/zerodha/" class="btn" style="background: #007bff;">Try Again</a>
+                            `;
+                        }}
+                    }} catch (error) {{
+                        document.body.innerHTML = `
+                            <h1>❌ Error</h1>
+                            <div class="error" style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 20px; border-radius: 5px; color: #721c24;">
+                                <p>Failed to process token: ${{error.message}}</p>
+                            </div>
+                            <a href="/auth/zerodha/" class="btn" style="background: #007bff;">Try Again</a>
+                        `;
+                    }}
+                }}
+                
+                // Auto-submit after page loads
+                window.onload = () => {{
+                    setTimeout(autoSubmitToken, 1000); // Wait 1 second then submit
+                }};
+            </script>
+        </body>
+        </html>
+        """
+        
+        return HTMLResponse(content=html_content)
+        
+    except Exception as e:
+        logger.error(f"Callback error: {e}")
+        # Return error page
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Error</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
+                .error {{ background: #f8d7da; border: 1px solid #f5c6cb; padding: 20px; border-radius: 5px; color: #721c24; }}
+                .btn {{ background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 10px; }}
+            </style>
+        </head>
+        <body>
+            <h1>❌ Error</h1>
+            <div class="error">
+                <p>An error occurred: {str(e)}</p>
+            </div>
+            <a href="/auth/zerodha/" class="btn">Go Back</a>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html_content)
+
 logger.info("🔐 Complete Zerodha Manual Authentication System loaded") 
