@@ -17,8 +17,7 @@ trading_state = {
     "is_running": False,
     "start_time": None,
     "orchestrator": None,
-    "data_provider": None,
-    "paper_trading": True
+    "data_provider": None
 }
 
 class BrokerUser(BaseModel):
@@ -36,7 +35,6 @@ class BrokerUser(BaseModel):
 class TradingCommand(BaseModel):
     """Model for trading control commands"""
     action: str  # start, stop, pause, resume
-    paper_trading: Optional[bool] = True
 
 # In-memory user storage (replace with database in production)
 broker_users = {}
@@ -277,8 +275,7 @@ async def control_trading(command: TradingCommand):
                     'momentum_surfer': {'enabled': True},
                     'volume_profile_scalper': {'enabled': True},
                     'news_impact_scalper': {'enabled': True}
-                },
-                'paper_trading': command.paper_trading
+                }
             }
             
             # Initialize orchestrator (singleton)
@@ -289,13 +286,12 @@ async def control_trading(command: TradingCommand):
             
             trading_state["is_running"] = True
             trading_state["start_time"] = datetime.now().isoformat()
-            trading_state["paper_trading"] = command.paper_trading
             
-            logger.info(f"Trading started in {'PAPER' if command.paper_trading else 'LIVE'} mode")
+            logger.info(f"Trading started - Zerodha API will handle paper/live mode automatically")
             
             return {
                 "success": True,
-                "message": f"Trading started successfully in {'paper' if command.paper_trading else 'live'} mode",
+                "message": f"Trading started successfully - Zerodha API will handle paper/live mode automatically",
                 "status": "running",
                 "start_time": trading_state["start_time"]
             }

@@ -142,10 +142,10 @@ envs:
   value: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 - key: PAPER_TRADING
   scope: RUN_AND_BUILD_TIME
-  value: "true"
+  value: "false"
 - key: PAPER_TRADING_ENABLED
   scope: RUN_AND_BUILD_TIME
-  value: "true"
+  value: "false"
 - key: AUTONOMOUS_TRADING_ENABLED
   scope: RUN_AND_BUILD_TIME
   value: "true"

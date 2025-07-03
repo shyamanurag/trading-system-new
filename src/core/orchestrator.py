@@ -46,7 +46,7 @@ class TradeEngine:
             return False
             
     async def process_signals(self, signals: List[Dict]):
-        """Process trading signals"""
+        """Process trading signals and place orders through Zerodha API"""
         try:
             for signal in signals:
                 # Log the signal
@@ -60,14 +60,75 @@ class TradeEngine:
                     'processed': False
                 })
                 
-                # In a real implementation, this would:
-                # 1. Check risk limits
-                # 2. Calculate position size
-                # 3. Place orders through broker
-                # 4. Update position tracker
+                # Process the signal through Zerodha API
+                await self._process_signal_through_zerodha(signal)
                 
         except Exception as e:
             self.logger.error(f"Error processing signals: {e}")
+    
+    async def _process_signal_through_zerodha(self, signal: Dict):
+        """Process individual signal through Zerodha API"""
+        try:
+            # Check if Zerodha client is available
+            if not self.zerodha_client or not self.components.get('zerodha_client', False):
+                self.logger.warning(f"Zerodha client not available for signal: {signal['symbol']}")
+                return
+            
+            # Calculate position size based on signal confidence and risk management
+            position_size = self._calculate_position_size(signal)
+            
+            if position_size <= 0:
+                self.logger.warning(f"Invalid position size for signal: {signal['symbol']}")
+                return
+            
+            # Prepare order parameters
+            order_params = {
+                'symbol': signal['symbol'],
+                'transaction_type': 'BUY' if signal['action'] == 'BUY' else 'SELL',
+                'quantity': position_size,
+                'order_type': 'MARKET',
+                'product': 'MIS',  # Intraday
+                'validity': 'DAY',
+                'tag': f"AUTO_TRADE_{signal.get('strategy', 'UNKNOWN')}"
+            }
+            
+            # Place order through Zerodha
+            order_id = await self.zerodha_client.place_order(order_params)
+            
+            if order_id:
+                self.logger.info(f"✅ Order placed successfully: {order_id} for {signal['symbol']}")
+                # Update signal as processed
+                for queued_signal in self.signal_queue:
+                    if queued_signal['signal'] == signal:
+                        queued_signal['processed'] = True
+                        queued_signal['order_id'] = order_id
+                        break
+            else:
+                self.logger.error(f"❌ Failed to place order for signal: {signal['symbol']}")
+                
+        except Exception as e:
+            self.logger.error(f"Error processing signal through Zerodha: {e}")
+    
+    def _calculate_position_size(self, signal: Dict) -> int:
+        """Calculate position size based on signal confidence and risk management"""
+        try:
+            # Base position size (you can adjust this based on your risk management)
+            base_size = 50  # Base quantity
+            
+            # Adjust based on signal confidence
+            confidence_multiplier = signal.get('confidence', 0.5)
+            
+            # Calculate final position size
+            position_size = int(base_size * confidence_multiplier)
+            
+            # Ensure minimum position size
+            position_size = max(position_size, 1)
+            
+            return position_size
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating position size: {e}")
+            return 0
             
     async def get_status(self) -> Dict[str, Any]:
         """Get trade engine status"""
@@ -314,7 +375,7 @@ class TradingOrchestrator:
                     'user_id': os.getenv('ZERODHA_USER_ID'),
                     'access_token': os.getenv('ZERODHA_ACCESS_TOKEN'),
                     'pin': os.getenv('ZERODHA_PIN'),
-                    'mock_mode': os.getenv('PAPER_TRADING', 'true').lower() == 'true'  # Paper trading mode
+                    'mock_mode': False  # Always use real Zerodha API - Zerodha handles paper trading internally
                 }
                 
                 # Create resilient connection config

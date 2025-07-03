@@ -175,47 +175,126 @@ class PaperOrder:
         return result
 
         async def _execute_order(self, order: PaperOrder) -> Dict:
-            """ELIMINATED: Paper trading was simulating fake order execution, slippage, and P&L"""
-            # 
-            # ELIMINATED FAKE EXECUTION SIMULATION:
-            # ❌ Fake execution delay (asyncio.sleep)
-            # ❌ Fake slippage simulation (slippage_percent)
-            # ❌ Fake fill probability using random.random()
-            # ❌ Fake order execution with simulated prices
-            # ❌ Fake P&L calculations based on simulated fills
-            # ❌ Fake position management with virtual money
-            # ❌ Fake commission and STT calculations
-            # 
-            # REAL IMPLEMENTATION NEEDED:
-            # - Connect to real broker API for actual order placement
-            # - Use real market data for execution prices
-            # - Calculate real commission costs from broker
-            # - Track real positions with actual money
-            
-            logger.error(f"CRITICAL: Paper trading fake execution eliminated for order {order.order_id}")
-            logger.error(f"Order details: {order.symbol} {order.side} {order.quantity}")
-            logger.error("Paper trading requires real broker integration or should be disabled")
-            
-            # SAFETY: Mark order as rejected instead of fake execution
-            order.status = 'REJECTED'
-            order.rejection_reason = 'PAPER_TRADING_FAKE_EXECUTION_ELIMINATED'
-            order.execution_time = datetime.now()
-            
-            # Remove from pending orders
-            if order.order_id in self.account.pending_orders:
-                del self.account.pending_orders[order.order_id]
-            
-            # Add to order history with rejection
-            self.account.order_history.append(order)
-            
-            # SAFETY: Return rejection result instead of fake execution
-            return {
-                'status': 'REJECTED',
-                'order_id': order.order_id,
-                'reason': 'PAPER_TRADING_FAKE_EXECUTION_ELIMINATED',
-                'message': 'Paper trading fake execution eliminated for safety. Real broker integration required.',
-                'timestamp': order.execution_time.isoformat()
-            }
+            """Execute paper trading order using REAL market data but virtual money"""
+            try:
+                # Get REAL market price from TrueData
+                market_price = await self._get_real_market_price(order.symbol)
+                if not market_price:
+                    logger.error(f"No real market data available for {order.symbol}")
+                    order.status = 'REJECTED'
+                    order.rejection_reason = 'NO_REAL_MARKET_DATA'
+                    order.execution_time = datetime.now()
+                    return {
+                        'status': 'REJECTED',
+                        'order_id': order.order_id,
+                        'reason': 'NO_REAL_MARKET_DATA',
+                        'message': f'No real market data available for {order.symbol}',
+                        'timestamp': order.execution_time.isoformat()
+                    }
+                
+                # Use REAL price for execution (no fake slippage, just real market price)
+                execution_price = market_price['ltp']  # Last Traded Price from TrueData
+                
+                # Execute trade with REAL market data
+                order.status = 'FILLED'
+                order.execution_price = execution_price
+                order.execution_time = datetime.now()
+                order.executed_quantity = order.quantity
+                
+                # Calculate REAL costs
+                trade_value = execution_price * order.quantity
+                commission = self._calculate_commission(order)
+                stt = self._calculate_stt(trade_value)
+                total_cost = trade_value + commission + stt
+                
+                # Create position with REAL market data
+                position = PaperPosition(
+                    position_id=f"POS_{uuid.uuid4().hex[:8]}",
+                    symbol=order.symbol,
+                    option_type=order.option_type,
+                    strike=order.strike,
+                    quantity=order.quantity if order.side == 'BUY' else -order.quantity,
+                    entry_price=execution_price,
+                    entry_time=order.execution_time,
+                    current_price=execution_price,
+                    unrealized_pnl=0.0,
+                    strategy=order.strategy,
+                    tag=order.tag
+                )
+                
+                # Update virtual account with real trade
+                if order.side == 'BUY':
+                    self.account.current_capital -= total_cost
+                else:  # SELL
+                    self.account.current_capital += (trade_value - commission - stt)
+                
+                # Add to positions
+                self.account.open_positions[position.position_id] = position
+                
+                # Remove from pending orders
+                if order.order_id in self.account.pending_orders:
+                    del self.account.pending_orders[order.order_id]
+                
+                # Add to order history
+                self.account.order_history.append(order)
+                
+                # Update metrics
+                self.account.daily_trades += 1
+                
+                logger.info(f"✅ Paper trade executed: {order.symbol} {order.side} {order.quantity} @ ₹{execution_price:.2f}")
+                logger.info(f"💰 Virtual capital: ₹{self.account.current_capital:,.2f}")
+                
+                return {
+                    'status': 'FILLED',
+                    'order_id': order.order_id,
+                    'execution_price': execution_price,
+                    'executed_quantity': order.quantity,
+                    'trade_value': trade_value,
+                    'commission': commission,
+                    'stt': stt,
+                    'total_cost': total_cost,
+                    'remaining_capital': self.account.current_capital,
+                    'position_id': position.position_id,
+                    'data_source': 'REAL_TRUEDATA',
+                    'timestamp': order.execution_time.isoformat()
+                }
+                
+            except Exception as e:
+                logger.error(f"Error executing paper order {order.order_id}: {str(e)}")
+                order.status = 'REJECTED'
+                order.rejection_reason = f'EXECUTION_ERROR: {str(e)}'
+                order.execution_time = datetime.now()
+                
+                return {
+                    'status': 'REJECTED',
+                    'order_id': order.order_id,
+                    'reason': f'EXECUTION_ERROR: {str(e)}',
+                    'timestamp': order.execution_time.isoformat()
+                }
+
+        async def _get_real_market_price(self, symbol: str) -> Optional[Dict]:
+            """Get REAL market price from TrueData"""
+            try:
+                # Import TrueData client
+                from data.truedata_client import live_market_data
+                
+                # Get real market data
+                if symbol in live_market_data:
+                    market_data = live_market_data[symbol]
+                    return {
+                        'ltp': market_data.get('ltp', 0),
+                        'volume': market_data.get('volume', 0),
+                        'change': market_data.get('change', 0),
+                        'source': 'TrueData_Real',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                else:
+                    logger.warning(f"Symbol {symbol} not found in TrueData feed")
+                    return None
+                    
+            except Exception as e:
+                logger.error(f"Error getting real market price for {symbol}: {str(e)}")
+                return None
 
         def _validate_order(self, order: PaperOrder) -> Dict:
             """Validate order before execution"""
