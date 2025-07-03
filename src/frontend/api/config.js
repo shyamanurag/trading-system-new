@@ -68,7 +68,8 @@ export const API_ENDPOINTS = {
     // Dashboard endpoints - FIXED: Added /api prefix
     DASHBOARD_SUMMARY: createEndpoint('/api/v1/dashboard/dashboard/summary'),
     DAILY_PNL: createEndpoint('/api/v1/monitoring/daily-pnl'),
-    RECOMMENDATIONS: createEndpoint('/api/v1/recommendations', true),
+    RECOMMENDATIONS: createEndpoint('/api/v1/elite', true),
+    ELITE_RECOMMENDATIONS: createEndpoint('/api/v1/elite', true),
     DASHBOARD_DATA: createEndpoint('/api/v1/dashboard/data'),
 
     // Broker endpoints - FIXED: Added /api prefix

@@ -171,10 +171,10 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
 
             // Try to fetch from API first
             const results = await Promise.allSettled([
-                fetchWithAuth(API_ENDPOINTS.SYSTEM_STATUS.url),
-                fetchWithAuth(API_ENDPOINTS.AUTONOMOUS_STATUS.url),
+                fetchWithAuth('/api/market/market-status'),  // Use correct market status endpoint
+                fetchWithAuth('/api/v1/autonomous/status'),   // Use autonomous status for session stats
                 fetchWithAuth(API_ENDPOINTS.POSITIONS.url),
-                fetchWithAuth(API_ENDPOINTS.SYSTEM_STATUS.url)   // Using status endpoint for scheduler
+                fetchWithAuth('/api/v1/autonomous/status')    // Use autonomous status for scheduler
             ]);
 
             const [
@@ -204,17 +204,30 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
             if (marketStatusRes.status === 'fulfilled' && marketStatusRes.value.ok) {
                 const marketData = await marketStatusRes.value.json();
                 if (marketData.success) {
-                    setMarketStatus(marketData.data);
+                    // Market status endpoint returns different structure
+                    setMarketStatus({
+                        is_market_open: marketData.data.is_market_open || marketData.data.status === 'OPEN',
+                        time_to_close_seconds: marketData.data.time_to_close_seconds || 3600,
+                        session_type: marketData.data.session_type || marketData.data.status
+                    });
                 } else {
                     throw new Error('Failed to fetch market status');
                 }
             } else {
-                // Use trading data as fallback
-                setMarketStatus({
-                    is_market_open: realTradingData?.systemMetrics?.activeUsers > 0 || false,
-                    time_to_close_seconds: 3600, // Mock 1 hour
-                    session_type: realTradingData?.systemMetrics?.activeUsers > 0 ? 'OPEN' : 'CLOSED'
-                });
+                // Use autonomous status as fallback for market detection
+                if (realTradingData?.systemMetrics?.is_active) {
+                    setMarketStatus({
+                        is_market_open: true,
+                        time_to_close_seconds: 3600,
+                        session_type: 'OPEN'
+                    });
+                } else {
+                    setMarketStatus({
+                        is_market_open: false,
+                        time_to_close_seconds: 0,
+                        session_type: 'CLOSED'
+                    });
+                }
             }
 
             // Process session stats (use real trading data if available)
@@ -329,13 +342,25 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
 
     const fetchTradingStatus = async () => {
         try {
-            const response = await fetchWithAuth(API_ENDPOINTS.BROKER_STATUS.url);
+            const response = await fetchWithAuth('/api/v1/autonomous/status');
             const data = await response.json();
             if (data.success) {
-                setTradingStatus(data);
+                // Map autonomous status to trading status format
+                setTradingStatus({
+                    success: true,
+                    is_running: data.data.is_active,
+                    status: data.data.is_active ? 'ACTIVE' : 'STOPPED',
+                    session_id: data.data.session_id,
+                    active_strategies: data.data.active_strategies?.length || 0
+                });
             }
         } catch (err) {
             console.error('Error fetching trading status:', err);
+            setTradingStatus({
+                success: false,
+                is_running: false,
+                status: 'UNKNOWN'
+            });
         }
     };
 
