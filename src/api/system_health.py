@@ -160,47 +160,30 @@ async def get_comprehensive_health():
         raise HTTPException(status_code=500, detail=str(e))
 
 async def check_endpoint_health(endpoint: Dict) -> Dict:
-    """Check health of a specific endpoint"""
-    try:
-        # Simulate endpoint check (in production, make actual HTTP request)
-        if endpoint["url"] == "/api/v1/autonomous/status":
-            # Simulate getting orchestrator data
-            try:
-                from src.core.orchestrator import TradingOrchestrator
-                orchestrator = TradingOrchestrator.get_instance()
-                status = await orchestrator.get_trading_status()
-                
-                return {
-                    "status": "healthy",
-                    "message": "Autonomous trading endpoint responding",
-                    "data": status
-                }
-            except Exception as e:
-                return {
-                    "status": "error", 
-                    "message": f"Orchestrator error: {str(e)}"
-                }
-        
-        elif endpoint["url"] == "/api/v1/dashboard/dashboard/summary":
-            # Simulate dashboard endpoint check
-            return {
-                "status": "healthy",
-                "message": "Dashboard endpoint responding", 
-                "data": {"autonomous_trading": {"total_trades": 0, "daily_pnl": 0}}
-            }
-        
-        else:
-            # Default simulation
-            return {
-                "status": "healthy",
-                "message": "Endpoint responding"
-            }
-            
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+    """ELIMINATED: Was simulating endpoint health checks instead of making real HTTP requests"""
+    # 
+    # ELIMINATED FAKE HEALTH CHECKING:
+    # ❌ Fake endpoint health simulation that always returned "healthy"
+    # ❌ Fake dashboard data (total_trades: 0, daily_pnl: 0)
+    # ❌ Simulated HTTP responses without actual network requests
+    # ❌ Default "healthy" status that could mask real failures
+    # 
+    # REAL IMPLEMENTATION NEEDED:
+    # - Make actual HTTP requests to check endpoint availability
+    # - Verify real response codes and response times
+    # - Check actual data integrity from endpoints
+    # - Implement real timeout handling and error detection
+    
+    logger.error(f"CRITICAL: Endpoint health checking requires real HTTP requests for {endpoint['url']}")
+    logger.error("Fake endpoint simulation ELIMINATED for safety")
+    
+    # SAFETY: Return error state to indicate health checking is not functional
+    return {
+        "status": "error",
+        "message": "REAL_HTTP_HEALTH_CHECKING_REQUIRED",
+        "error": f"Endpoint health checking eliminated for {endpoint['url']}. Real HTTP requests required for safety.",
+        "fake_simulation_eliminated": True
+    }
 
 async def check_data_consistency(autonomous_data: Dict, dashboard_data: Dict) -> List[Dict]:
     """Check consistency between data sources"""

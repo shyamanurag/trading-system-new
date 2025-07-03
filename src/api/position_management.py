@@ -11,11 +11,23 @@ router = APIRouter()
 async def get_all_positions():
     """Get all positions"""
     try:
-        # Return empty list for now - no positions in paper trading yet
+        # ELIMINATED: Dangerous position hiding that could hide real trading positions
+        # ❌ # Return empty list for now - no positions in paper trading yet
+        # ❌ return {
+        # ❌     "success": True,
+        # ❌     "positions": [],
+        # ❌     "message": "No active positions"
+        # ❌ }
+        
+        # SAFETY: Return error instead of hiding real positions
+        logger.error("CRITICAL: Position hiding ELIMINATED to prevent hidden trading positions")
+        
         return {
-            "success": True,
+            "success": False,
+            "error": "SAFETY: Position data access disabled - real position tracking required",
+            "message": "Position hiding eliminated for safety - implement real position tracking",
             "positions": [],
-            "message": "No active positions"
+            "WARNING": "POSITION_HIDING_ELIMINATED_FOR_SAFETY"
         }
 
     except Exception as e:

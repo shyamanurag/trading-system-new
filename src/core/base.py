@@ -119,15 +119,30 @@ class BaseStrategy(ABC):
         pass
 
     def _is_trading_hours(self) -> bool:
-        """Check if within trading hours - TEMPORARY BYPASS for testing"""
-        # TEMPORARY BYPASS: Always return True for testing
-        # TODO: Fix timezone detection properly like orchestrator
-        logger.info("🚀 TEMPORARY BYPASS: Strategy trading hours check disabled for testing")
-        return True
+        """Check if within trading hours - SAFETY CRITICAL"""
+        # ELIMINATED: EXTREMELY DANGEROUS BYPASS - Could cause out-of-hours trading!
+        # ❌ # TEMPORARY BYPASS: Always return True for testing
+        # ❌ # TODO: Fix timezone detection properly like orchestrator
+        # ❌ logger.info("🚀 TEMPORARY BYPASS: Strategy trading hours check disabled for testing")
+        # ❌ return True
         
-        # Original logic (commented out for now)
-        # current_time = datetime.now().time()
-        # return time(9, 15) <= current_time <= time(15, 30)
+        # SAFETY: Implement proper trading hours check
+        logger.info("🛡️ SAFETY: Trading hours check ENABLED to prevent out-of-hours trading")
+        
+        # Proper trading hours logic (restored and improved)
+        from datetime import time
+        current_time = datetime.now().time()
+        
+        # NSE trading hours: 9:15 AM to 3:30 PM
+        market_open = time(9, 15)
+        market_close = time(15, 30)
+        
+        is_trading_time = market_open <= current_time <= market_close
+        
+        if not is_trading_time:
+            logger.warning(f"🚫 SAFETY: Trading blocked outside market hours. Current time: {current_time}")
+        
+        return is_trading_time
 
     def _is_cooldown_passed(self, symbol: Optional[str] = None) -> bool:
         """Check if cooldown period has passed"""

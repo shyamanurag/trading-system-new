@@ -341,46 +341,36 @@ async def debug_client_internals():
 
 @router.post("/debug/force-data")
 async def force_create_sample_data():
-    """Force create sample data to test frontend"""
+    """ELIMINATED: Force create sample data to test frontend"""
     try:
-        # Import the working client
-        try:
-            from data.truedata_client import live_market_data
-            
-            # Force inject sample data for testing
-            live_market_data.update({
-                "NIFTY": {
-                    "symbol": "NIFTY",
-                    "ltp": 23250.75,
-                    "volume": 1250000,
-                    "change": 125.50,
-                    "change_percent": 0.54,
-                    "timestamp": datetime.now().isoformat(),
-                    "data_source": "FORCED_SAMPLE"
-                },
-                "BANKNIFTY": {
-                    "symbol": "BANKNIFTY", 
-                    "ltp": 51150.25,
-                    "volume": 850000,
-                    "change": -85.75,
-                    "change_percent": -0.17,
-                    "timestamp": datetime.now().isoformat(),
-                    "data_source": "FORCED_SAMPLE"
-                }
-            })
-            
-            return {
-                "success": True,
-                "message": "Sample data injected",
-                "data_count": len(live_market_data)
-            }
-            
-        except ImportError:
-            return {
-                "success": False,
-                "error": "Cannot access live_market_data"
-            }
-            
+        # ELIMINATED: Fake sample data generation that could mislead about real market data
+        # ❌ sample_data = {
+        # ❌     'FORCED_NIFTY': {
+        # ❌         'symbol': 'FORCED_NIFTY',
+        # ❌         'ltp': 23456.78,
+        # ❌         'volume': 987654,
+        # ❌         'timestamp': datetime.now().isoformat(),
+        # ❌         'data_source': 'FORCED_SAMPLE'
+        # ❌     },
+        # ❌     'FORCED_BANKNIFTY': {
+        # ❌         'symbol': 'FORCED_BANKNIFTY',
+        # ❌         'ltp': 45678.90,
+        # ❌         'volume': 123456,
+        # ❌         'timestamp': datetime.now().isoformat(),
+        # ❌         'data_source': 'FORCED_SAMPLE'
+        # ❌     }
+        # ❌ }
+        # ❌ live_market_data.update(sample_data)
+        
+        # SAFETY: Return error instead of fake sample data
+        logger.error("CRITICAL: Force sample data creation ELIMINATED to prevent fake market data")
+        
+        return {
+            "success": False,
+            "error": "SAFETY: Force sample data creation disabled - real TrueData required",
+            "message": "Fake sample data generation eliminated for safety"
+        }
+        
     except Exception as e:
         return {
             "success": False,
@@ -456,24 +446,26 @@ async def force_callback_test():
         if not truedata_client.connected:
             return {"success": False, "error": "TrueData not connected"}
         
-        # Manually inject test data to simulate callback
-        test_data = {
-            'MANUAL_TEST_NIFTY': {
-                'symbol': 'MANUAL_TEST_NIFTY',
-                'ltp': 23456.78,
-                'volume': 987654,
-                'timestamp': datetime.now().isoformat(),
-                'data_source': 'FORCED_CALLBACK_SIMULATION'
-            }
-        }
+        # ELIMINATED: Manual fake data injection that could mislead about real market data
+        # ❌ test_data = {
+        # ❌     'MANUAL_TEST_NIFTY': {
+        # ❌         'symbol': 'MANUAL_TEST_NIFTY',
+        # ❌         'ltp': 23456.78,
+        # ❌         'volume': 987654,
+        # ❌         'timestamp': datetime.now().isoformat(),
+        # ❌         'data_source': 'FORCED_CALLBACK_SIMULATION'
+        # ❌     }
+        # ❌ }
+        # ❌ 
+        # ❌ live_market_data.update(test_data)
         
-        live_market_data.update(test_data)
+        # SAFETY: Return error instead of fake market data injection
+        logger.error("CRITICAL: Manual fake data injection ELIMINATED to prevent fake market data")
         
         return {
-            "success": True,
-            "message": "Test data injected manually",
-            "test_data": test_data,
-            "total_symbols": len(live_market_data)
+            "success": False,
+            "error": "SAFETY: Manual fake data injection disabled - real TrueData callbacks required",
+            "message": "Fake callback simulation eliminated for safety"
         }
         
     except Exception as e:

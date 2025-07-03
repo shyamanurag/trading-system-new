@@ -200,8 +200,17 @@ class ConnectionManager:
             redis_result = await self._initialize_redis_safe()
             results.append(redis_result)
         except Exception as e:
-            logger.warning(f"Redis initialization failed: {e}")
-            results.append(False)
+            logger.error(f"Failed to initialize Redis: {e}")
+            # ELIMINATED: Mock Redis connection that could mislead users
+            
+            # SAFETY: Return proper error instead of fake connection
+            logger.error("SAFETY: Mock Redis connection ELIMINATED to prevent fake data caching")
+            self.connections['redis'] = {
+                'instance': None,
+                'status': ConnectionStatus.ERROR,
+                'error': f'SAFETY: Mock Redis disabled - real Redis required: {str(e)}'
+            }
+            return False
         
         # Check results - require at least basic connectivity
         successful_connections = sum(results)
@@ -295,15 +304,25 @@ class ConnectionManager:
     async def _initialize_truedata_safe(self):
         """Safely initialize TrueData connection"""
         try:
-            # For now, create a mock TrueData connection
-            # In production, this would connect to actual TrueData
-            logger.info("TrueData connection initialized (mock mode)")
+            # ELIMINATED: Mock TrueData connection that could mislead users
+            # ❌ logger.info("TrueData connection initialized (mock mode)")
+            # ❌ self.connections['truedata'] = {
+            # ❌     'instance': None,  # Mock instance
+            # ❌     'status': ConnectionStatus.CONNECTED,
+            # ❌     'last_check': datetime.now()
+            # ❌ }
+            
+            # SAFETY: Return proper error instead of fake connection
+            logger.error("CRITICAL: TrueData connection initialization FAILED")
+            logger.error("SAFETY: Mock TrueData connection ELIMINATED to prevent fake market data")
+            
             self.connections['truedata'] = {
-                'instance': None,  # Mock instance
-                'status': ConnectionStatus.CONNECTED,
+                'instance': None,
+                'status': ConnectionStatus.ERROR,
+                'error': 'SAFETY: Mock TrueData connection disabled - real TrueData API required',
                 'last_check': datetime.now()
             }
-            return True
+            return False
             
         except Exception as e:
             logger.error(f"Failed to initialize TrueData: {e}")
@@ -370,11 +389,14 @@ class ConnectionManager:
             
         except Exception as e:
             logger.error(f"Failed to initialize Redis: {e}")
-            # Create a mock Redis for development
+            # ELIMINATED: Mock Redis connection that could mislead users
+            
+            # SAFETY: Return proper error instead of fake connection
+            logger.error("SAFETY: Mock Redis connection ELIMINATED to prevent fake data caching")
             self.connections['redis'] = {
-                'instance': None,  # Mock Redis
+                'instance': None,
                 'status': ConnectionStatus.ERROR,
-                'error': str(e)
+                'error': f'SAFETY: Mock Redis disabled - real Redis required: {str(e)}'
             }
             return False
     
@@ -545,7 +567,6 @@ class ResilientConnection(ABC):
             await self._do_connect()
             self.health.state = ConnectionStatus.CONNECTED
             self.health.last_connected = datetime.now()
-            logger.info(f"Connected to {self.name}")
             return True
         except Exception as e:
             self.health.state = ConnectionStatus.ERROR

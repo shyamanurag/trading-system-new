@@ -92,9 +92,14 @@ class EnhancedNewsImpactScalper:
             price_change = data.get('price_change', 0)
             volume_change = data.get('volume_change', 0)
             
-            # Get news sentiment (simulated for now)
-            news_sentiment = data.get('news_sentiment', 0)  # -1 to 1 scale
-            news_volume = data.get('news_volume', 0)  # Number of news items
+            # REAL NEWS SENTIMENT REQUIRED: Extract from actual news analysis
+            # 
+            # REAL IMPLEMENTATION NEEDED:
+            # - Connect to real news sentiment analysis API
+            # - Process actual news headlines and content
+            # - Generate real sentiment scores from live news data
+            news_sentiment = data.get('news_sentiment', 0)  # -1 to 1 scale (MUST be real data)
+            news_volume = data.get('news_volume', 0)  # Number of news items (MUST be real data)
             
             # News impact scoring
             news_score = 0

@@ -351,24 +351,33 @@ users_router = APIRouter(
 
 @users_router.get("/current", summary="Get current user")
 async def get_current_user():
-    """Get current user information (mocked)"""
+    """Get current user information - SAFETY PROTECTED"""
     try:
+        # ELIMINATED: Mock current user that could mislead about authentication
+        # ❌ return {
+        # ❌     "success": True,
+        # ❌     "user": {
+        # ❌         "id": "test_user_001",
+        # ❌         "username": "test_user",
+        # ❌         "email": "test@example.com",
+        # ❌         "name": "Test User",
+        # ❌         "role": "trader",
+        # ❌         "created_at": "2024-01-01T00:00:00Z",
+        # ❌         "is_active": True,
+        # ❌         "preferences": {
+        # ❌             "theme": "dark",
+        # ❌             "notifications": True,
+        # ❌             "paper_trading": True
+        # ❌         }
+        # ❌     }
+        # ❌ }
+        
+        # SAFETY: Return proper error instead of fake user
+        logger.error("SAFETY: Mock current user ELIMINATED to prevent fake authentication")
         return {
-            "success": True,
-            "user": {
-                "id": "test_user_001",
-                "username": "test_user",
-                "email": "test@example.com",
-                "name": "Test User",
-                "role": "trader",
-                "created_at": "2024-01-01T00:00:00Z",
-                "is_active": True,
-                "preferences": {
-                    "theme": "dark",
-                    "notifications": True,
-                    "paper_trading": True
-                }
-            }
+            "success": False,
+            "error": "SAFETY: Mock current user disabled - real authentication required",
+            "message": "Mock test user eliminated for safety"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

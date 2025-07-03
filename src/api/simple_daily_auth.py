@@ -274,10 +274,21 @@ async def submit_daily_token(
             logger.info(f"Real Zerodha authentication successful for user: {user_id}")
             
         except Exception as zerodha_error:
-            logger.warning(f"Real Zerodha auth failed: {zerodha_error}, falling back to mock mode")
-            # Fallback to mock for development
-            access_token = f"mock_token_{request.request_token[:10]}"
-            user_id = ZERODHA_CLIENT_ID
+            # ELIMINATED: Dangerous mock authentication fallback
+            # ❌ logger.warning(f"Real Zerodha auth failed: {zerodha_error}, falling back to mock mode")
+            # ❌ access_token = f"mock_token_{request.request_token[:10]}"
+            # ❌ user_id = ZERODHA_CLIENT_ID
+            
+            # SAFETY: Return error instead of fake tokens
+            logger.error(f"CRITICAL: Real Zerodha authentication FAILED - {zerodha_error}")
+            logger.error("SAFETY: Mock authentication fallback ELIMINATED to prevent fake tokens")
+            
+            return {
+                "success": False,
+                "message": f"Authentication failed: {str(zerodha_error)}",
+                "error": "SAFETY: Mock authentication disabled - real Zerodha API required",
+                "required_action": "Check Zerodha API credentials and network connection"
+            }
         
         # Store the token properly in Redis (not just environment variables)
         try:

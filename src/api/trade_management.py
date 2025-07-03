@@ -11,8 +11,19 @@ router = APIRouter()
 async def get_all_trades() -> List[Dict[str, Any]]:
     """Get all trades"""
     try:
-        # For now, return empty list - no trades yet
-        return []
+        # ELIMINATED: Dangerous trade hiding that could hide real trading activity
+        # ❌ # For now, return empty list - no trades yet
+        # ❌ return []
+        
+        # SAFETY: Return error instead of hiding real trades
+        logger.error("CRITICAL: Trade hiding ELIMINATED to prevent hidden trading activity")
+        
+        raise HTTPException(
+            status_code=503, 
+            detail="SAFETY: Trade data access disabled - real trade tracking required. Trade hiding eliminated for safety."
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting trades: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

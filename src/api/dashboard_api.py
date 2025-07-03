@@ -162,12 +162,25 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
         active_positions = autonomous_status.get('active_positions', [])
         is_active = autonomous_status.get('is_active', False)
         
-        # Calculate win rate (mock 70% for now)
-        win_rate = 70.0 if total_trades > 0 else 0.0
+        # ELIMINATED: Mock 70% win rate and fake success metrics
+        # 
+        # ELIMINATED FAKE DATA GENERATORS:
+        # ❌ Mock 70% win rate (win_rate = 70.0)
+        # ❌ Fake estimated wins (total_trades * 0.7)
+        # ❌ Fake estimated losses calculation
+        # 
+        # REAL IMPLEMENTATION NEEDED:
+        # - Calculate real win rate from actual trade outcomes
+        # - Count actual winning and losing trades from database
+        # - Use real performance metrics from trade history
         
-        # Calculate success metrics
-        estimated_wins = int(total_trades * 0.7) if total_trades > 0 else 0
-        estimated_losses = total_trades - estimated_wins if total_trades > 0 else 0
+        logger.error("CRITICAL: Win rate calculation requires real trade outcome data")
+        logger.error("Mock 70% win rate ELIMINATED for safety")
+        
+        # SAFETY: Return 0 instead of fake win rate
+        win_rate = 0.0
+        estimated_wins = 0
+        estimated_losses = 0
         
         # Market status
         market_open = orchestrator._is_market_open()
@@ -210,9 +223,16 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                 "losing_trades": estimated_losses,
                 "total_trades": total_trades,
                 "win_rate": win_rate,
-                "profit_factor": 1.4,  # Mock profit factor
-                "max_drawdown": 5.2,   # Mock max drawdown %
-                "sharpe_ratio": 1.8    # Mock Sharpe ratio
+                # ELIMINATED: Mock financial metrics that could mislead trading decisions
+                # ❌ "profit_factor": 1.4,  # Mock profit factor
+                # ❌ "max_drawdown": 5.2,   # Mock max drawdown %
+                # ❌ "sharpe_ratio": 1.8    # Mock Sharpe ratio
+                
+                # SAFETY: Return 0 instead of fake financial metrics
+                "profit_factor": 0.0,
+                "max_drawdown": 0.0,
+                "sharpe_ratio": 0.0,
+                "WARNING": "MOCK_FINANCIAL_METRICS_ELIMINATED_FOR_SAFETY"
             },
             
             # Position Details
@@ -340,4 +360,64 @@ async def get_dashboard_data():
                 "performance": {}
             },
             "timestamp": datetime.now().isoformat()
-        } 
+        }
+
+@router.get("/health/detailed")
+async def get_detailed_health():
+    """Get detailed system health status"""
+    try:
+        # ELIMINATED: Random fake system metrics generation
+        # ❌ "api_gateway": {
+        # ❌     "status": "healthy",
+        # ❌     "latency": random.randint(10, 50),
+        # ❌     "uptime": "24h",
+        # ❌     "requests_per_minute": random.randint(100, 500)
+        # ❌ },
+        # ❌ "database": {
+        # ❌     "status": "healthy",
+        # ❌     "connections": random.randint(5, 20),
+        # ❌     "uptime": "24h",
+        # ❌     "active_queries": random.randint(0, 10)
+        # ❌ },
+        # ❌ "cache": {
+        # ❌     "status": "healthy",
+        # ❌     "memory": random.randint(50, 200),
+        # ❌     "connections": random.randint(1, 10),
+        # ❌     "hit_rate": f"{random.randint(85, 99)}%"
+        # ❌ },
+        # ❌ "message_queue": {
+        # ❌     "status": "healthy",
+        # ❌     "connections": random.randint(10, 50),
+        # ❌     "messages_per_second": random.randint(5, 20)
+        # ❌ },
+        # ❌ "truedata": {
+        # ❌     "status": "connected",
+        # ❌     "symbols": random.randint(40, 50),
+        # ❌     "uptime": "24h",
+        # ❌     "data_lag": f"{random.randint(0, 5)}ms"
+        # ❌ },
+        # ❌ "server": {
+        # ❌     "status": "healthy",
+        # ❌     "disk_usage": f"{random.randint(30, 60)}%",
+        # ❌     "network_io": f"{random.randint(10, 100)} MB/s"
+        # ❌ }
+        
+        # SAFETY: Return error state instead of fake system metrics
+        logger.error("CRITICAL: Random fake system metrics generation ELIMINATED")
+        
+        return {
+            "success": False,
+            "error": "SAFETY: Fake system metrics disabled - real monitoring required",
+            "message": "Random system metrics generation eliminated for safety",
+            "data": {
+                "api_gateway": {"status": "error", "error": "SAFETY: Fake metrics disabled"},
+                "database": {"status": "error", "error": "SAFETY: Fake metrics disabled"},
+                "cache": {"status": "error", "error": "SAFETY: Fake metrics disabled"},
+                "message_queue": {"status": "error", "error": "SAFETY: Fake metrics disabled"},
+                "truedata": {"status": "error", "error": "SAFETY: Fake metrics disabled"},
+                "server": {"status": "error", "error": "SAFETY: Fake metrics disabled"}
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error fetching detailed health: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) 

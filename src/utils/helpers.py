@@ -10,6 +10,9 @@ import numpy as np
 from typing import Optional, Callable, Any, Dict, List
 from decimal import Decimal
 from functools import wraps
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_atm_strike(spot_price: float) -> int:
@@ -246,9 +249,27 @@ def calculate_technical_indicators(data: Dict[str, Any]) -> Dict[str, float]:
             if isinstance(prices, list):
                 prices = np.array(prices)
         else:
-            # If no historical prices, use current price
-            current_price = data.get('price', data.get('ltp', 100.0))
-            prices = np.array([current_price] * 20)  # Fake 20 periods
+            # ELIMINATED: Fake price array generation for technical analysis
+            # ❌ current_price = data.get('price', data.get('ltp', 100.0))
+            # ❌ prices = np.array([current_price] * 20)  # Fake 20 periods
+            
+            # SAFETY: Return error instead of fake price history
+            logger.error("CRITICAL: Technical analysis requires real price history data")
+            logger.error("SAFETY: Fake price array generation ELIMINATED to prevent misleading indicators")
+            
+            # Return error indicators instead of fake calculations
+            return {
+                'error': 'SAFETY: Technical analysis disabled - real price history required',
+                'sma_20': 0.0,
+                'rsi': 0.0,
+                'macd': 0.0,
+                'macd_signal': 0.0,
+                'bb_upper': 0.0,
+                'bb_lower': 0.0,
+                'bb_middle': 0.0,
+                'current_price': 0.0,
+                'WARNING': 'FAKE_PRICE_HISTORY_ELIMINATED_FOR_SAFETY'
+            }
         
         # Calculate basic indicators
         indicators = {}

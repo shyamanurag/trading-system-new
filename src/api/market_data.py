@@ -438,17 +438,25 @@ async def get_dashboard_summary():
             try:
                 from src.data.truedata_client import get_truedata_client
             except ImportError:
-                # Fallback - return mock data structure
+                # ELIMINATED: Mock data structure that could mislead about real market data
+                # ❌ return {
+                # ❌     "success": True,
+                # ❌     "data": [
+                # ❌         {"symbol": "NIFTY", "ltp": 0, "change": 0, "change_percent": 0, "volume": 0},
+                # ❌         {"symbol": "BANKNIFTY", "ltp": 0, "change": 0, "change_percent": 0, "volume": 0},
+                # ❌         {"symbol": "FINNIFTY", "ltp": 0, "change": 0, "change_percent": 0, "volume": 0}
+                # ❌     ],
+                # ❌     "timestamp": datetime.now().isoformat(),
+                # ❌     "total_symbols": 3,
+                # ❌     "note": "TrueData client import not available"
+                # ❌ }
+                
+                # SAFETY: Return proper error instead of fake market data
+                logger.error("SAFETY: Mock market data structure ELIMINATED to prevent fake trading data")
                 return {
-                    "success": True,
-                    "data": [
-                        {"symbol": "NIFTY", "ltp": 0, "change": 0, "change_percent": 0, "volume": 0},
-                        {"symbol": "BANKNIFTY", "ltp": 0, "change": 0, "change_percent": 0, "volume": 0},
-                        {"symbol": "FINNIFTY", "ltp": 0, "change": 0, "change_percent": 0, "volume": 0}
-                    ],
-                    "timestamp": datetime.now().isoformat(),
-                    "total_symbols": 3,
-                    "note": "TrueData client import not available"
+                    "success": False,
+                    "error": "SAFETY: Mock market data disabled - real TrueData client required",
+                    "message": "TrueData client import not available - implement real market data feed"
                 }
         
         client = get_truedata_client()
