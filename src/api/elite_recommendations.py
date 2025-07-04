@@ -19,6 +19,8 @@ class AutonomousEliteScanner:
         self.last_scan_time = None
         self.scan_interval_minutes = 0.5  # Scan every 30 seconds for continuous options trading (was 5 minutes)
         self.min_confluence_score = 7.5  # Keep quality threshold unchanged
+        self.cached_recommendations = []  # PERFORMANCE: Cache for instant responses
+        self.cache_duration_seconds = 30  # Cache for 30 seconds max
         self.base_url = "https://algoauto-9gx56.ondigitalocean.app"
         
     async def get_real_market_data(self, symbol: str):
@@ -249,13 +251,18 @@ async def get_elite_recommendations():
             logger.warning(f"Could not check autonomous status: {check_error}")
             # Continue anyway since the system is working
         
-        # Run autonomous scan if needed
+        # PERFORMANCE FIX: Use intelligent caching to eliminate 42-second delays
+        cache_duration_seconds = 30  # Cache for 30 seconds max
+        
         if autonomous_scanner.last_scan_time is None or \
-           (datetime.now() - autonomous_scanner.last_scan_time).total_seconds() > (autonomous_scanner.scan_interval_minutes * 60):
+           (datetime.now() - autonomous_scanner.last_scan_time).total_seconds() > cache_duration_seconds:
+            logger.info("🔄 Running fresh elite scan...")
             recommendations = await autonomous_scanner.scan_for_elite_setups()
+            autonomous_scanner.cached_recommendations = recommendations
         else:
-            # Use cached recommendations
-            recommendations = await autonomous_scanner.scan_for_elite_setups()
+            # Use cached recommendations for instant response
+            logger.info("⚡ Using cached elite recommendations for speed")
+            recommendations = autonomous_scanner.cached_recommendations
         
         # Filter only ACTIVE recommendations
         active_recommendations = [r for r in recommendations if r.get('status') == 'ACTIVE']
@@ -278,7 +285,8 @@ async def get_elite_recommendations():
             "scan_timestamp": autonomous_scanner.last_scan_time.isoformat() if autonomous_scanner.last_scan_time else datetime.now().isoformat(),
             "timestamp": datetime.now().isoformat(),
             "next_scan": (datetime.now() + timedelta(minutes=autonomous_scanner.scan_interval_minutes)).isoformat(),
-            "safety_check": "FLEXIBLE_CHECK_PASSED"
+            "safety_check": "FLEXIBLE_CHECK_PASSED",
+            "cache_status": "OPTIMIZED_FOR_SPEED"
         }
         
     except Exception as e:
