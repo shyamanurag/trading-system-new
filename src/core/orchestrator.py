@@ -315,34 +315,38 @@ class TradingOrchestrator:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.components = {
-            'event_bus': False,
-            'position_tracker': False,
-            'risk_manager': False,
-            'trade_engine': False,
-            'market_data': False
-        }
-        self.is_initialized = False
-        self.is_running = False
+        
+        # Core components
+        self.zerodha = None
+        self.market_data = {}
+        self.subscribed_symbols = set()
         self.strategies = {}
         self.active_strategies = []
         
-        # Core components
-        self.event_bus = None
-        self.position_tracker = None
-        self.risk_manager = None
-        self.trade_engine = None
-        self.zerodha_client = None
+        # System state
+        self.is_initialized = False
+        self.is_running = False
+        self.startup_time = None
+        self.max_position_size = 1000000  # 10 lakh max
         
-        # Market data and symbols
-        self.market_data = {}
-        self.subscribed_symbols = set()
+        # Component status tracking
+        self.components = {
+            'trade_engine': False,
+            'risk_manager': False,
+            'position_tracker': False,
+            'event_bus': False,
+            'zerodha': False
+        }
         
-        # Configuration
-        self.max_daily_trades = 9999  # No daily trade limit
-        self.max_position_size = 1000000
-        self.max_daily_loss = 100000
-        self.risk_limit = 0.02
+        # Initialize components
+        self.trade_engine = TradeEngine()
+        self.risk_manager = ProductionRiskManager()
+        self.position_tracker = ProductionPositionTracker()
+        self.event_bus = ProductionEventBus()
+        
+        # Historical data for change calculations - FIX FOR ZERO TRADES
+        self.historical_data = {}
+        self.last_data_update = {}
         
     async def initialize(self) -> bool:
         """Initialize all system components"""
@@ -450,17 +454,17 @@ class TradingOrchestrator:
                 
                 # Create broker instance with config
                 broker = ZerodhaIntegration(zerodha_config)
-                self.zerodha_client = ResilientZerodhaConnection(broker, resilient_config)
+                self.zerodha = ResilientZerodhaConnection(broker, resilient_config)
                 
-                if await self.zerodha_client.initialize():
-                    self.components['zerodha_client'] = True
+                if await self.zerodha.initialize():
+                    self.components['zerodha'] = True
                     success_count += 1
                     self.logger.info(" Zerodha client initialized")
                 else:
-                    self.components['zerodha_client'] = False
+                    self.components['zerodha'] = False
                     self.logger.error(" Zerodha client initialization failed")
             except Exception as e:
-                self.components['zerodha_client'] = False
+                self.components['zerodha'] = False
                 self.logger.error(f" Zerodha client initialization failed: {e}")
                 self.logger.info(" System will continue without Zerodha client")
             
@@ -604,6 +608,19 @@ class TradingOrchestrator:
     async def _run_strategies(self, market_data: Dict[str, Any]):
         """Run all active strategies with market data and collect signals"""
         try:
+            # CRITICAL FIX: Transform market data for strategies
+            transformed_data = self._transform_market_data_for_strategies(market_data)
+            
+            # Log data transformation for debugging
+            if market_data and transformed_data:
+                sample_symbol = next(iter(market_data.keys()))
+                original_data = market_data[sample_symbol]
+                transformed_sample = transformed_data.get(sample_symbol, {})
+                
+                self.logger.info(f"DATA TRANSFORMATION: {sample_symbol}")
+                self.logger.info(f"Original: ltp={original_data.get('ltp')}, volume={original_data.get('volume')}")
+                self.logger.info(f"Transformed: close={transformed_sample.get('close')}, price_change={transformed_sample.get('price_change')}, volume_change={transformed_sample.get('volume_change')}")
+            
             all_signals = []
             
             for strategy_key, strategy_info in self.strategies.items():
@@ -611,14 +628,18 @@ class TradingOrchestrator:
                     try:
                         strategy_instance = strategy_info['instance']
                         
-                        # Call strategy's on_market_data method
-                        await strategy_instance.on_market_data(market_data)
+                        # Call strategy's on_market_data method with TRANSFORMED data
+                        await strategy_instance.on_market_data(transformed_data)
                         
-                        # Get signals from strategy's current positions (temporary approach)
+                        # Get signals from strategy's current positions
                         if hasattr(strategy_instance, 'current_positions'):
                             for symbol, signal in strategy_instance.current_positions.items():
-                                if isinstance(signal, dict) and 'action' in signal:
+                                if isinstance(signal, dict) and 'action' in signal and signal.get('action') != 'HOLD':
+                                    # Add strategy info to signal
+                                    signal['strategy'] = strategy_key
                                     all_signals.append(signal)
+                                    self.logger.info(f"SIGNAL GENERATED: {strategy_key} -> {signal}")
+                                    
                                     # Clear the signal to avoid duplicates
                                     strategy_instance.current_positions[symbol] = None
                         
@@ -632,11 +653,13 @@ class TradingOrchestrator:
             if all_signals and self.trade_engine and self.components.get('trade_engine', False):
                 try:
                     await self.trade_engine.process_signals(all_signals)
-                    self.logger.info(f"Processed {len(all_signals)} signals through trade engine")
+                    self.logger.info(f"PROCESSED {len(all_signals)} signals through trade engine")
                 except Exception as e:
                     self.logger.error(f"Error processing signals through trade engine: {e}")
             elif all_signals:
-                self.logger.info(f"Generated {len(all_signals)} signals (trade engine not available)")
+                self.logger.info(f"GENERATED {len(all_signals)} signals (trade engine not available)")
+            else:
+                self.logger.debug("No signals generated from strategies")
                         
         except Exception as e:
             self.logger.error(f"Error in strategy execution: {e}")
@@ -788,6 +811,65 @@ class TradingOrchestrator:
         except Exception as e:
             self.logger.error(f"Error disabling trading: {e}")
             return False
+
+    def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform TrueData format to strategy format - FIX FOR ZERO TRADES"""
+        try:
+            transformed_data = {}
+            current_time = datetime.now()
+            
+            for symbol, data in raw_data.items():
+                if not isinstance(data, dict):
+                    continue
+                    
+                # Map TrueData fields to strategy fields
+                current_price = data.get('ltp', 0) or data.get('close', 0)
+                volume = data.get('volume', 0)
+                high = data.get('high', current_price)
+                low = data.get('low', current_price)
+                open_price = data.get('open', current_price)
+                
+                # Calculate price and volume changes
+                price_change = 0.0
+                volume_change = 0.0
+                
+                if symbol in self.historical_data:
+                    prev_data = self.historical_data[symbol]
+                    prev_price = prev_data.get('close', 0)
+                    prev_volume = prev_data.get('volume', 0)
+                    
+                    if prev_price > 0:
+                        price_change = ((current_price - prev_price) / prev_price) * 100
+                    
+                    if prev_volume > 0:
+                        volume_change = ((volume - prev_volume) / prev_volume) * 100
+                
+                # Create strategy-compatible data format
+                strategy_data = {
+                    'symbol': symbol,
+                    'close': current_price,  # Map ltp to close
+                    'ltp': current_price,    # Keep original for compatibility
+                    'high': high,
+                    'low': low,
+                    'open': open_price,
+                    'volume': volume,
+                    'price_change': round(price_change, 4),
+                    'volume_change': round(volume_change, 4),
+                    'timestamp': data.get('timestamp', current_time.isoformat())
+                }
+                
+                transformed_data[symbol] = strategy_data
+                
+                # Update historical data
+                self.historical_data[symbol] = strategy_data.copy()
+                self.last_data_update[symbol] = current_time
+            
+            self.logger.debug(f"Transformed {len(transformed_data)} symbols for strategies")
+            return transformed_data
+            
+        except Exception as e:
+            self.logger.error(f"Error transforming market data: {e}")
+            return raw_data  # Return original data if transformation fails
 
 # Global orchestrator instance
 orchestrator = TradingOrchestrator()
