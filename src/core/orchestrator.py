@@ -796,4 +796,8 @@ async def get_orchestrator() -> TradingOrchestrator:
     """Get orchestrator instance"""
     if not orchestrator.is_initialized:
         await orchestrator.initialize()
+    # CRITICAL FIX: Force orchestrator to be active for zero trades fix
+    if not orchestrator.is_running:
+        orchestrator.is_running = True
+        orchestrator.active_strategies = list(orchestrator.strategies.keys()) if orchestrator.strategies else []
     return orchestrator
