@@ -27,13 +27,13 @@ class AutonomousEliteScanner:
     async def initialize_strategies(self):
         """Initialize the same strategies used by the main system"""
         try:
-            # Import and initialize all existing strategies
+            # Import and initialize all existing strategies (CORRECTED CLASS NAMES)
             from strategies.momentum_surfer import EnhancedMomentumSurfer
             from strategies.volatility_explosion import EnhancedVolatilityExplosion
             from strategies.volume_profile_scalper import EnhancedVolumeProfileScalper
             from strategies.news_impact_scalper import EnhancedNewsImpactScalper
-            from strategies.regime_adaptive_controller import EnhancedRegimeAdaptiveController
-            from strategies.confluence_amplifier import EnhancedConfluenceAmplifier
+            from strategies.regime_adaptive_controller import RegimeAdaptiveController
+            from strategies.confluence_amplifier import ConfluenceAmplifier
             
             # Configuration for strategies
             config = {
@@ -42,14 +42,14 @@ class AutonomousEliteScanner:
                 'max_positions': 5
             }
             
-            # Initialize all strategies
+            # Initialize all strategies (CORRECTED CLASS NAMES)
             self.strategies = {
                 'momentum_surfer': EnhancedMomentumSurfer(config),
                 'volatility_explosion': EnhancedVolatilityExplosion(config),
                 'volume_profile_scalper': EnhancedVolumeProfileScalper(config),
                 'news_impact_scalper': EnhancedNewsImpactScalper(config),
-                'regime_adaptive_controller': EnhancedRegimeAdaptiveController(config),
-                'confluence_amplifier': EnhancedConfluenceAmplifier(config)
+                'regime_adaptive_controller': RegimeAdaptiveController(config),
+                'confluence_amplifier': ConfluenceAmplifier(config)
             }
             
             # Initialize all strategies
@@ -221,6 +221,93 @@ class AutonomousEliteScanner:
                             'confidence': min(volume_change / 5.0, 0.9),
                             'metadata': {
                                 'volume_change': volume_change,
+                                'volume': volume,
+                                'timestamp': datetime.now().isoformat()
+                            }
+                        }
+                
+                elif strategy.name == "EnhancedNewsImpactScalper":
+                    # Use news-based analysis
+                    price_change = symbol_data.get('change_percent', 0)
+                    # Simulate news impact score
+                    news_score = abs(price_change) * 0.5  # Simple news impact simulation
+                    
+                    if news_score > 0.3:  # News impact threshold
+                        signal = {
+                            'symbol': symbol,
+                            'action': 'BUY' if price_change > 0 else 'SELL',
+                            'quantity': 50,
+                            'entry_price': current_price,
+                            'stop_loss': current_price * (0.985 if price_change > 0 else 1.015),
+                            'target': current_price * (1.015 if price_change > 0 else 0.985),
+                            'strategy': strategy.name,
+                            'confidence': min(news_score / 0.5, 0.9),
+                            'metadata': {
+                                'news_score': news_score,
+                                'price_change': price_change,
+                                'volume': volume,
+                                'timestamp': datetime.now().isoformat()
+                            }
+                        }
+                
+                elif strategy.name == "RegimeAdaptiveController":
+                    # Use regime-based analysis
+                    price_change = symbol_data.get('change_percent', 0)
+                    high = symbol_data.get('high', current_price)
+                    low = symbol_data.get('low', current_price)
+                    
+                    # Simple regime detection - trending vs ranging
+                    volatility = (high - low) / current_price if current_price > 0 else 0
+                    is_trending = abs(price_change) > 0.5 and volatility > 0.01
+                    
+                    if is_trending:
+                        signal = {
+                            'symbol': symbol,
+                            'action': 'BUY' if price_change > 0 else 'SELL',
+                            'quantity': 50,
+                            'entry_price': current_price,
+                            'stop_loss': current_price * (0.98 if price_change > 0 else 1.02),
+                            'target': current_price * (1.02 if price_change > 0 else 0.98),
+                            'strategy': strategy.name,
+                            'confidence': min(volatility / 0.02, 0.9),
+                            'metadata': {
+                                'regime': 'trending',
+                                'volatility': volatility,
+                                'price_change': price_change,
+                                'volume': volume,
+                                'timestamp': datetime.now().isoformat()
+                            }
+                        }
+                
+                elif strategy.name == "ConfluenceAmplifier":
+                    # Use confluence-based analysis
+                    price_change = symbol_data.get('change_percent', 0)
+                    high = symbol_data.get('high', current_price)
+                    low = symbol_data.get('low', current_price)
+                    
+                    # Multiple signal confluence
+                    momentum_signal = abs(price_change) > 0.4
+                    volatility_signal = (high - low) / current_price > 0.01 if current_price > 0 else False
+                    volume_signal = volume > 50000  # Simple volume threshold
+                    
+                    confluence_score = sum([momentum_signal, volatility_signal, volume_signal])
+                    
+                    if confluence_score >= 2:  # At least 2 signals in confluence
+                        signal = {
+                            'symbol': symbol,
+                            'action': 'BUY' if price_change > 0 else 'SELL',
+                            'quantity': 50,
+                            'entry_price': current_price,
+                            'stop_loss': current_price * (0.985 if price_change > 0 else 1.015),
+                            'target': current_price * (1.015 if price_change > 0 else 0.985),
+                            'strategy': strategy.name,
+                            'confidence': min(confluence_score / 3.0, 0.9),
+                            'metadata': {
+                                'confluence_score': confluence_score,
+                                'momentum_signal': momentum_signal,
+                                'volatility_signal': volatility_signal,
+                                'volume_signal': volume_signal,
+                                'price_change': price_change,
                                 'volume': volume,
                                 'timestamp': datetime.now().isoformat()
                             }
