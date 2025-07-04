@@ -39,6 +39,48 @@ class TradingCommand(BaseModel):
 # In-memory user storage (replace with database in production)
 broker_users = {}
 
+def initialize_default_users():
+    """Initialize default master user on startup to prevent user loss on redeploy"""
+    try:
+        # Only add if master user doesn't exist (prevent duplicates)
+        if "MASTER_USER_001" not in broker_users:
+            master_user = {
+                "user_id": "MASTER_USER_001",
+                "name": "Master Trader",
+                "broker": "zerodha",
+                "api_key": "MASTER_API_KEY",
+                "api_secret": "MASTER_SECRET",
+                "client_id": "MASTER_CLIENT_001",
+                "initial_capital": 1000000.0,
+                "current_capital": 1000000.0,
+                "risk_tolerance": "medium",
+                "paper_trading": True,
+                "is_active": True,
+                "created_at": datetime.now().isoformat(),
+                "total_pnl": 0,
+                "daily_pnl": 0,
+                "total_trades": 0,
+                "win_rate": 0,
+                "open_trades": 0
+            }
+            
+            broker_users["MASTER_USER_001"] = master_user
+            
+            # Set environment variables
+            os.environ['ZERODHA_API_KEY'] = master_user["api_key"]
+            os.environ['ZERODHA_API_SECRET'] = master_user["api_secret"]
+            os.environ['ZERODHA_CLIENT_ID'] = master_user["client_id"]
+            os.environ['PAPER_TRADING'] = str(master_user["paper_trading"]).lower()
+            
+            logger.info("✅ Auto-initialized MASTER_USER_001 to prevent user loss on redeploy")
+            return True
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize default users: {e}")
+        return False
+
+# Auto-initialize default users on module import
+initialize_default_users()
+
 @router.post("/users/broker")
 async def add_broker_user(user: BrokerUser):
     """Add a broker user with credentials for paper trading"""
@@ -214,6 +256,26 @@ async def delete_broker_user(user_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting broker user: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/users/broker/initialize")
+async def initialize_users():
+    """Manual endpoint to reinitialize default users (useful for testing)"""
+    try:
+        success = initialize_default_users()
+        if success:
+            return {
+                "success": True,
+                "message": "Default users initialized successfully",
+                "users": list(broker_users.values())
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Failed to initialize default users"
+            }
+    except Exception as e:
+        logger.error(f"Error in manual user initialization: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/trading/control")
