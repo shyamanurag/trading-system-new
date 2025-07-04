@@ -44,13 +44,18 @@ def initialize_default_users():
     try:
         # Only add if master user doesn't exist (prevent duplicates)
         if "MASTER_USER_001" not in broker_users:
+            # Use REAL environment variables instead of fake ones
+            real_api_key = os.getenv('ZERODHA_API_KEY', 'vc9ft4zpknynpm3u')
+            real_api_secret = os.getenv('ZERODHA_API_SECRET', '0nwjb2cncw9stf3m5cre73rqc3bc5xsc')
+            real_client_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+            
             master_user = {
                 "user_id": "MASTER_USER_001",
                 "name": "Master Trader",
                 "broker": "zerodha",
-                "api_key": "MASTER_API_KEY",
-                "api_secret": "MASTER_SECRET",
-                "client_id": "MASTER_CLIENT_001",
+                "api_key": real_api_key,
+                "api_secret": real_api_secret,
+                "client_id": real_client_id,
                 "initial_capital": 1000000.0,
                 "current_capital": 1000000.0,
                 "risk_tolerance": "medium",
@@ -66,11 +71,10 @@ def initialize_default_users():
             
             broker_users["MASTER_USER_001"] = master_user
             
-            # Set environment variables
-            os.environ['ZERODHA_API_KEY'] = master_user["api_key"]
-            os.environ['ZERODHA_API_SECRET'] = master_user["api_secret"]
-            os.environ['ZERODHA_CLIENT_ID'] = master_user["client_id"]
-            os.environ['PAPER_TRADING'] = str(master_user["paper_trading"]).lower()
+            # DON'T overwrite environment variables - they're already set correctly!
+            # Environment variables are properly configured in DigitalOcean
+            logger.info(f"✅ Using real API key: {real_api_key[:8]}...")
+            logger.info(f"✅ Using real client ID: {real_client_id}")
             
             logger.info("✅ Auto-initialized MASTER_USER_001 to prevent user loss on redeploy")
             return True
