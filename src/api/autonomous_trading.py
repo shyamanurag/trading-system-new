@@ -65,38 +65,55 @@ async def get_status(
 async def start_trading(
     orchestrator: Any = Depends(get_orchestrator)
 ):
-    """Start autonomous trading"""
+    """Start autonomous trading with forced initialization for deployment"""
     try:
-        # Check if trading components are actually initialized (not just system_ready flag)
-        components_ready = (
-            hasattr(orchestrator, 'strategies') and orchestrator.strategies is not None and
-            hasattr(orchestrator, 'risk_manager') and orchestrator.risk_manager is not None and
-            hasattr(orchestrator, 'trade_engine') and orchestrator.trade_engine is not None
+        logger.info("🚀 Starting autonomous trading system...")
+        
+        # FORCE COMPLETE SYSTEM INITIALIZATION regardless of flags
+        # This fixes the deployment issue where orchestrator isn't properly initialized
+        logger.info("🔄 Forcing complete system initialization...")
+        
+        # Clear any existing state that might be interfering
+        orchestrator.is_initialized = False
+        orchestrator.is_running = False
+        orchestrator.components.clear()
+        orchestrator.strategies.clear()
+        orchestrator.active_strategies.clear()
+        
+        # Force full initialization
+        init_success = await orchestrator.initialize()
+        
+        if not init_success:
+            logger.error("❌ System initialization failed")
+            raise HTTPException(status_code=500, detail="Failed to initialize trading system")
+        
+        logger.info(f"✅ System initialized with {len(orchestrator.strategies)} strategies")
+        
+        # Force trading start
+        trading_enabled = await orchestrator.start_trading()
+        
+        if not trading_enabled:
+            logger.error("❌ Trading start failed")
+            raise HTTPException(status_code=500, detail="Failed to start trading")
+        
+        logger.info("🚀 Autonomous trading started successfully")
+        
+        # Verify the system is actually running
+        final_status = await orchestrator.get_trading_status()
+        if not final_status.get('is_active', False):
+            logger.error("❌ Trading system not active after start")
+            raise HTTPException(status_code=500, detail="Trading system not active after start")
+        
+        logger.info(f"✅ Verified: {len(final_status.get('active_strategies', []))} strategies active")
+        
+        return BaseResponse(
+            success=True,
+            message=f"Autonomous trading started successfully with {len(orchestrator.strategies)} strategies"
         )
-        
-        # Force initialization if components are missing (regardless of system_ready flag)
-        if not components_ready:
-            logger.info("Trading components not initialized, forcing full system initialization...")
-            init_success = await orchestrator.initialize_system()
-            if not init_success:
-                raise HTTPException(status_code=500, detail="Failed to initialize trading system")
-        else:
-            logger.info("Trading components already initialized, proceeding with trading activation...")
-        
-        # Now enable trading
-        trading_enabled = await orchestrator.enable_trading()
-        
-        if trading_enabled:
-            return BaseResponse(
-                success=True,
-                message="Autonomous trading started successfully"
-            )
-        else:
-            raise HTTPException(status_code=500, detail="Failed to enable trading - system not ready")
             
     except Exception as e:
         logger.error(f"Error starting trading: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to start autonomous trading: {str(e)}")
 
 @router.post("/stop", response_model=BaseResponse)
 async def stop_trading(

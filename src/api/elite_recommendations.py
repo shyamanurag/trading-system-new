@@ -22,16 +22,18 @@ class AutonomousEliteScanner:
         self.base_url = "https://algoauto-9gx56.ondigitalocean.app"
         
     async def get_real_market_data(self, symbol: str):
-        """Get REAL current market data from TrueData API"""
+        """Get REAL current market data from LOCAL TrueData API (no external calls)"""
         try:
-            # Get real market data from our working API
-            response = requests.get(f"{self.base_url}/api/v1/market-data", timeout=10)
+            # Use LOCAL market data API instead of external requests
+            # This avoids the 10+ second external HTTP call delay
             
-            if response.status_code == 200:
-                market_data = response.json()
+            # Try local market data first
+            try:
+                from src.api.market_data import get_all_market_data
+                local_data = await get_all_market_data()
                 
-                if market_data.get('success') and 'data' in market_data:
-                    symbol_data = market_data['data'].get(symbol)
+                if local_data and local_data.get('success') and 'data' in local_data:
+                    symbol_data = local_data['data'].get(symbol)
                     
                     if symbol_data:
                         return {
@@ -41,18 +43,34 @@ class AutonomousEliteScanner:
                             'change': symbol_data.get('change', 0),
                             'change_percent': symbol_data.get('change_percent', 0),
                             'timestamp': symbol_data.get('timestamp', datetime.now().isoformat()),
-                            'source': symbol_data.get('source', 'TrueData_Direct'),
+                            'source': 'LOCAL_TRUEDATA',
                             'real_data': True
                         }
-                    else:
-                        logger.warning(f"No real market data found for {symbol}")
-                        return None
-                else:
-                    logger.error(f"Market data API returned error for {symbol}")
-                    return None
-            else:
-                logger.error(f"Market data API request failed with status {response.status_code}")
-                return None
+            except Exception as e:
+                logger.warning(f"Local market data failed for {symbol}: {e}")
+            
+            # Fallback to TrueData client if local API fails
+            try:
+                from data.truedata_client import get_live_data_for_symbol
+                td_data = get_live_data_for_symbol(symbol)
+                
+                if td_data:
+                    return {
+                        'symbol': symbol,
+                        'current_price': td_data.get('close', td_data.get('price', 0)),
+                        'volume': td_data.get('volume', 0),
+                        'change': td_data.get('change', 0),
+                        'change_percent': td_data.get('change_percent', 0),
+                        'timestamp': td_data.get('timestamp', datetime.now().isoformat()),
+                        'source': 'TRUEDATA_CLIENT',
+                        'real_data': True
+                    }
+            except Exception as e:
+                logger.warning(f"TrueData client failed for {symbol}: {e}")
+                
+            # If all else fails, return None instead of making external calls
+            logger.warning(f"No local market data available for {symbol} - avoiding external calls")
+            return None
                 
         except Exception as e:
             logger.error(f"Error getting real market data for {symbol}: {e}")

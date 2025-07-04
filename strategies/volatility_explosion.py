@@ -21,7 +21,7 @@ class EnhancedVolatilityExplosion:
         self.current_positions = {}
         self.performance_metrics = {}
         self.last_signal_time = None
-        self.signal_cooldown = config.get('signal_cooldown_seconds', 5)  # 5 seconds - balanced for performance
+        self.signal_cooldown = config.get('signal_cooldown_seconds', 1)  # 1 second - aggressive scalping precision
         
     async def initialize(self):
         """Initialize the strategy"""

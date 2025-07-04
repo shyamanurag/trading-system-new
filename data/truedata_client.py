@@ -37,6 +37,13 @@ class TrueDataClient:
         self._max_connection_attempts = 3
         self._deployment_id = self._generate_deployment_id()
         
+        # Circuit breaker for connection attempts
+        self._circuit_breaker_active = False
+        self._circuit_breaker_timeout = 300  # 5 minutes
+        self._last_connection_failure = None
+        self._consecutive_failures = 0
+        self._max_consecutive_failures = 5
+        
         # Register cleanup handlers
         self._register_cleanup_handlers()
 
@@ -165,6 +172,17 @@ class TrueDataClient:
                 logger.info("🛑 Shutdown requested - skipping connection")
                 return False
                 
+            # Circuit breaker check
+            if self._circuit_breaker_active:
+                time_since_failure = time.time() - self._last_connection_failure
+                if time_since_failure < self._circuit_breaker_timeout:
+                    logger.warning(f"⚡ Circuit breaker ACTIVE - cooling down for {self._circuit_breaker_timeout - time_since_failure:.0f}s")
+                    return False
+                else:
+                    logger.info("⚡ Circuit breaker timeout expired - attempting connection")
+                    self._circuit_breaker_active = False
+                    self._consecutive_failures = 0
+                
             if self.connected and self.td_obj:
                 logger.info("✅ TrueData already connected")
                 return True
@@ -173,6 +191,7 @@ class TrueDataClient:
             
             if self._connection_attempts > self._max_connection_attempts:
                 logger.error(f"❌ Max connection attempts ({self._max_connection_attempts}) exceeded")
+                self._activate_circuit_breaker()
                 return False
 
             logger.info(f"🚀 TrueData connection attempt {self._connection_attempts}/{self._max_connection_attempts}")
@@ -183,6 +202,7 @@ class TrueDataClient:
                 
                 # Strategy 1: Try graceful takeover
                 if self._attempt_graceful_takeover():
+                    self._reset_circuit_breaker()
                     return True
                 
                 # Strategy 2: Wait for old connection to timeout and retry
@@ -190,16 +210,37 @@ class TrueDataClient:
                 time.sleep(15)  # Wait for old connection to timeout
                 
                 if self._direct_connect():
+                    self._reset_circuit_breaker()
                     return True
                 
-                # Strategy 3: Use environment variable to skip auto-init
-                logger.warning("⚠️ All connection attempts failed")
+                # Strategy 3: Activate circuit breaker to prevent spam
+                logger.warning("⚠️ All connection attempts failed - activating circuit breaker")
+                self._activate_circuit_breaker()
                 logger.info("💡 SOLUTION: Set SKIP_TRUEDATA_AUTO_INIT=true to break deployment overlap cycle")
                 logger.info("🔧 Then manually connect via: /api/v1/truedata/connect")
                 return False
             else:
                 # Local development - direct connect
-                return self._direct_connect()
+                if self._direct_connect():
+                    self._reset_circuit_breaker()
+                    return True
+                else:
+                    self._activate_circuit_breaker()
+                    return False
+
+    def _activate_circuit_breaker(self):
+        """Activate circuit breaker to prevent constant reconnection attempts"""
+        self._circuit_breaker_active = True
+        self._last_connection_failure = time.time()
+        self._consecutive_failures += 1
+        logger.warning(f"⚡ Circuit breaker ACTIVATED - cooldown period: {self._circuit_breaker_timeout}s")
+        
+    def _reset_circuit_breaker(self):
+        """Reset circuit breaker on successful connection"""
+        self._circuit_breaker_active = False
+        self._consecutive_failures = 0
+        self._last_connection_failure = None
+        logger.info("⚡ Circuit breaker RESET - connection successful")
 
     def force_disconnect(self):
         """Force disconnect with aggressive cleanup"""
