@@ -7,11 +7,11 @@ Updates the new API key and secret in configuration files
 import os
 import re
 
-# New credentials
+# Current active credentials (confirmed working)
 NEW_API_KEY = "vc9ft4zpknynpm3u"
 NEW_API_SECRET = "0nwjb2cncw9stf3m5cre73rqc3bc5xsc"
 
-# Old credentials to replace
+# Old credentials to replace (if any exist)
 OLD_API_KEY = "sylcoq492qz6f7ej"
 OLD_API_SECRET = "jm3h4iejwnxr4ngmma2qxccpkhevo8sy"
 

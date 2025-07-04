@@ -24,9 +24,9 @@ const LiveTradesDashboardPolling = () => {
     const [loading, setLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState(new Date());
 
-    // Use polling for real-time updates (every 3 seconds for trading data)
-    const { data: liveTradesData, error: tradesError } = usePolling('/api/trades/live', 3000);
-    const { data: metricsData, error: metricsError } = usePolling('/api/users/metrics', 5000);
+    // Use polling for real-time updates (optimized intervals for performance)
+    const { data: liveTradesData, error: tradesError } = usePolling('/api/trades/live', 10000); // 10 seconds instead of 3
+    const { data: metricsData, error: metricsError } = usePolling('/api/users/metrics', 15000); // 15 seconds instead of 5
 
     // Update trades when polling data changes
     useEffect(() => {
@@ -87,7 +87,7 @@ const LiveTradesDashboardPolling = () => {
                 <Typography variant="h4" component="h1">
                     Live Trading Dashboard
                     <Typography variant="caption" sx={{ ml: 2, color: 'text.secondary' }}>
-                        (Auto-refresh every 3s)
+                        (Auto-refresh every 10s)
                     </Typography>
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>

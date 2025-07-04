@@ -21,7 +21,7 @@ class EnhancedMomentumSurfer:
         self.current_positions = {}
         self.performance_metrics = {}
         self.last_signal_time = None
-        self.signal_cooldown = config.get('signal_cooldown_seconds', 1)  # 1 second for scalping
+        self.signal_cooldown = config.get('signal_cooldown_seconds', 5)  # 5 seconds - balanced for performance
         
     async def initialize(self):
         """Initialize the strategy"""
