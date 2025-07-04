@@ -417,6 +417,50 @@ async def get_daily_pnl():
             "message": "Daily P&L data unavailable"
         }
 
+@router.get("/orchestrator-status")
+async def get_orchestrator_status():
+    """Get orchestrator component status - CRITICAL for trade engine component reporting"""
+    try:
+        # Get orchestrator instance
+        if TradingOrchestrator is None:
+            return {
+                "success": False,
+                "message": "Orchestrator not available",
+                "running": False,
+                "components": {},
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        
+        # Import and get orchestrator
+        from src.core.orchestrator import get_orchestrator
+        orchestrator = await get_orchestrator()
+        
+        # Get detailed status
+        status = await orchestrator.get_status()
+        
+        return {
+            "success": True,
+            "running": orchestrator.is_running,
+            "components": orchestrator.components,
+            "strategies": orchestrator.active_strategies,
+            "component_status": status.get('component_status', {}),
+            "system_ready": status.get('system_ready', False),
+            "trading_active": status.get('trading_active', False),
+            "components_ready": status.get('components_ready', 0),
+            "total_components": status.get('total_components', 0),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting orchestrator status: {str(e)}")
+        return {
+            "success": False,
+            "message": str(e),
+            "running": False,
+            "components": {},
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
 # Add missing legacy API routes for frontend compatibility
 @router.get("/api/v1/monitoring/system-status")
 async def get_system_status_legacy():
