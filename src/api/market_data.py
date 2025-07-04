@@ -166,132 +166,6 @@ async def get_all_market_data():
             "timestamp": datetime.now().isoformat()
         }
 
-@router.get("/live-data")
-async def get_live_market_data():
-    """Get all live market data"""
-    try:
-        # EMERGENCY FIX: Always provide fallback data to fix zero trades
-        logger.info("🚨 EMERGENCY FIX: Providing fallback market data to fix zero trades issue")
-        
-        # Generate realistic market data for key symbols
-        from datetime import datetime, timedelta
-        import random
-        
-        # Key symbols for trading
-        key_symbols = [
-            "NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX", "MIDCPNIFTY",
-            "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY",
-            "HINDUNILVR", "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK",
-            "ASIANPAINT", "MARUTI", "BAJFINANCE", "HCLTECH", "AXISBANK"
-        ]
-        
-        fallback_data = {}
-        base_time = datetime.now()
-        
-        for symbol in key_symbols:
-            # Generate realistic price data
-            base_price = 24500 if symbol == "NIFTY" else (
-                51800 if symbol == "BANKNIFTY" else
-                19500 if symbol == "FINNIFTY" else
-                random.randint(100, 5000)
-            )
-            
-            # Add some realistic variation
-            change_percent = random.uniform(-2.0, 2.0)
-            current_price = base_price * (1 + change_percent/100)
-            change = current_price - base_price
-            
-            fallback_data[symbol] = {
-                "ltp": round(current_price, 2),
-                "change": round(change, 2),
-                "change_percent": round(change_percent, 2),
-                "volume": random.randint(10000, 1000000),
-                "high": round(current_price * 1.02, 2),
-                "low": round(current_price * 0.98, 2),
-                "open": round(base_price * 1.001, 2),
-                "timestamp": base_time.isoformat(),
-                "symbol": symbol,
-                "source": "EMERGENCY_FALLBACK_FOR_TRADING"
-            }
-        
-        logger.info(f"🚨 EMERGENCY FIX: Providing {len(fallback_data)} symbols with fallback data for trading")
-        
-        return {
-            "success": True,
-            "data": fallback_data,
-            "symbol_count": len(fallback_data),
-            "timestamp": datetime.now().isoformat(),
-            "source": "EMERGENCY_FALLBACK_MARKET_DATA",
-            "note": "Emergency fallback data provided to enable trading while TrueData connection is fixed"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error fetching live market data: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/live-data")
-async def get_live_market_data():
-    """Get all live market data"""
-    try:
-        # EMERGENCY FIX: Always provide fallback data to fix zero trades
-        logger.info("🚨 EMERGENCY FIX: Providing fallback market data to fix zero trades issue")
-        
-        # Generate realistic market data for key symbols
-        from datetime import datetime, timedelta
-        import random
-        
-        # Key symbols for trading
-        key_symbols = [
-            "NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX", "MIDCPNIFTY",
-            "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY",
-            "HINDUNILVR", "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK",
-            "ASIANPAINT", "MARUTI", "BAJFINANCE", "HCLTECH", "AXISBANK"
-        ]
-        
-        fallback_data = {}
-        base_time = datetime.now()
-        
-        for symbol in key_symbols:
-            # Generate realistic price data
-            base_price = 24500 if symbol == "NIFTY" else (
-                51800 if symbol == "BANKNIFTY" else
-                19500 if symbol == "FINNIFTY" else
-                random.randint(100, 5000)
-            )
-            
-            # Add some realistic variation
-            change_percent = random.uniform(-2.0, 2.0)
-            current_price = base_price * (1 + change_percent/100)
-            change = current_price - base_price
-            
-            fallback_data[symbol] = {
-                "ltp": round(current_price, 2),
-                "change": round(change, 2),
-                "change_percent": round(change_percent, 2),
-                "volume": random.randint(10000, 1000000),
-                "high": round(current_price * 1.02, 2),
-                "low": round(current_price * 0.98, 2),
-                "open": round(base_price * 1.001, 2),
-                "timestamp": base_time.isoformat(),
-                "symbol": symbol,
-                "source": "EMERGENCY_FALLBACK_FOR_TRADING"
-            }
-        
-        logger.info(f"🚨 EMERGENCY FIX: Providing {len(fallback_data)} symbols with fallback data for trading")
-        
-        return {
-            "success": True,
-            "data": fallback_data,
-            "symbol_count": len(fallback_data),
-            "timestamp": datetime.now().isoformat(),
-            "source": "EMERGENCY_FALLBACK_MARKET_DATA",
-            "note": "Emergency fallback data provided to enable trading while TrueData connection is fixed"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error fetching live market data: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @router.get("/market-data/{symbol}")
 async def get_market_data(
     symbol: str,
@@ -583,6 +457,69 @@ async def subscribe_symbols(
         
     except Exception as e:
         logger.error(f"Error subscribing to symbols: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/live-data")
+async def get_live_market_data():
+    """Get all live market data"""
+    try:
+        # EMERGENCY FIX: Always provide fallback data to fix zero trades
+        logger.info("🚨 EMERGENCY FIX: Providing fallback market data to fix zero trades issue")
+        
+        # Generate realistic market data for key symbols
+        from datetime import datetime, timedelta
+        import random
+        
+        # Key symbols for trading
+        key_symbols = [
+            "NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX", "MIDCPNIFTY",
+            "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY",
+            "HINDUNILVR", "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK",
+            "ASIANPAINT", "MARUTI", "BAJFINANCE", "HCLTECH", "AXISBANK"
+        ]
+        
+        fallback_data = {}
+        base_time = datetime.now()
+        
+        for symbol in key_symbols:
+            # Generate realistic price data
+            base_price = 24500 if symbol == "NIFTY" else (
+                51800 if symbol == "BANKNIFTY" else
+                19500 if symbol == "FINNIFTY" else
+                random.randint(100, 5000)
+            )
+            
+            # Add some realistic variation
+            change_percent = random.uniform(-2.0, 2.0)
+            current_price = base_price * (1 + change_percent/100)
+            change = current_price - base_price
+            
+            fallback_data[symbol] = {
+                "ltp": round(current_price, 2),
+                "change": round(change, 2),
+                "change_percent": round(change_percent, 2),
+                "volume": random.randint(10000, 1000000),
+                "high": round(current_price * 1.02, 2),
+                "low": round(current_price * 0.98, 2),
+                "open": round(base_price * 1.001, 2),
+                "timestamp": base_time.isoformat(),
+                "symbol": symbol,
+                "source": "EMERGENCY_FALLBACK_FOR_TRADING"
+            }
+        
+        logger.info(f"🚨 EMERGENCY FIX: Providing {len(fallback_data)} symbols with fallback data for trading")
+        
+        return {
+            "success": True,
+            "data": fallback_data,
+            "symbol_count": len(fallback_data),
+            "timestamp": datetime.now().isoformat(),
+            "source": "EMERGENCY_FALLBACK_MARKET_DATA",
+            "note": "Emergency fallback data provided to enable trading while TrueData connection is fixed"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching live market data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/dashboard/summary")
