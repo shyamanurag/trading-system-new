@@ -216,7 +216,7 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
             } else {
                 // Use autonomous status as fallback for market detection
                 if (realTradingData?.systemMetrics?.is_active) {
-                setMarketStatus({
+                    setMarketStatus({
                         is_market_open: true,
                         time_to_close_seconds: 3600,
                         session_type: 'OPEN'
@@ -226,7 +226,7 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                         is_market_open: false,
                         time_to_close_seconds: 0,
                         session_type: 'CLOSED'
-                });
+                    });
                 }
             }
 
@@ -379,26 +379,28 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
     const handleTradingControl = async (action) => {
         setControlLoading(true);
         try {
-            const response = await fetchWithAuth(API_ENDPOINTS.BROKER_CONNECT.url, {
+            // Use the correct autonomous trading endpoints instead of broker endpoints
+            const endpoint = action === 'start' ? API_ENDPOINTS.AUTONOMOUS_START.url : API_ENDPOINTS.AUTONOMOUS_STOP.url;
+
+            const response = await fetchWithAuth(endpoint, {
                 method: 'POST',
-                body: JSON.stringify({
-                    action: action,
-                    paper_trading: true
-                })
+                headers: {
+                    'Content-Type': 'application/json'
+                }
             });
 
             const data = await response.json();
 
             if (data.success) {
-                alert(`Trading ${action}ed successfully!`);
+                alert(`Autonomous trading ${action}ed successfully!`);
                 fetchTradingStatus();
                 fetchAutonomousData();
             } else {
-                alert(data.message || `Failed to ${action} trading`);
+                alert(data.message || `Failed to ${action} autonomous trading`);
             }
         } catch (err) {
-            console.error(`Error ${action}ing trading:`, err);
-            alert(`Failed to ${action} trading. Please try again.`);
+            console.error(`Error ${action}ing autonomous trading:`, err);
+            alert(`Failed to ${action} autonomous trading. Please try again.`);
         } finally {
             setControlLoading(false);
         }

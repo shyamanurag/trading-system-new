@@ -89,6 +89,8 @@ export const API_ENDPOINTS = {
 
     // Autonomous trading endpoints - NEW
     AUTONOMOUS_STATUS: createEndpoint('/api/v1/autonomous/status'),
+    AUTONOMOUS_START: createEndpoint('/api/v1/autonomous/start'),
+    AUTONOMOUS_STOP: createEndpoint('/api/v1/autonomous/stop'),
     AUTONOMOUS_CONTROL: createEndpoint('/api/v1/autonomous/control'),
     AUTONOMOUS_DATA: createEndpoint('/api/v1/autonomous/autonomous/status'),
 
