@@ -69,8 +69,9 @@ class TradeEngine:
     async def _process_signal_through_zerodha(self, signal: Dict):
         """Process individual signal through Zerodha API"""
         try:
-            # Check if Zerodha client is available
-            if not self.zerodha_client or not self.components.get('zerodha_client', False):
+            # Check if Zerodha client is available - access through orchestrator
+            orchestrator_instance = orchestrator
+            if not orchestrator_instance.zerodha_client or not orchestrator_instance.components.get('zerodha_client', False):
                 self.logger.warning(f"Zerodha client not available for signal: {signal['symbol']}")
                 return
             
@@ -93,7 +94,7 @@ class TradeEngine:
             }
             
             # Place order through Zerodha
-            order_id = await self.zerodha_client.place_order(order_params)
+            order_id = await orchestrator_instance.zerodha_client.place_order(order_params)
             
             if order_id:
                 self.logger.info(f"✅ Order placed successfully: {order_id} for {signal['symbol']}")

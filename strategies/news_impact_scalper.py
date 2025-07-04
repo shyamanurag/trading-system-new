@@ -21,7 +21,7 @@ class EnhancedNewsImpactScalper:
         self.current_positions = {}
         self.performance_metrics = {}
         self.last_signal_time = None
-        self.signal_cooldown = config.get('signal_cooldown_seconds', 300)  # 5 minutes
+        self.signal_cooldown = config.get('signal_cooldown_seconds', 1)  # 1 second for scalping
         
     async def initialize(self):
         """Initialize the strategy"""

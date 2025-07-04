@@ -21,7 +21,7 @@ class EnhancedVolatilityExplosion:
         self.current_positions = {}
         self.performance_metrics = {}
         self.last_signal_time = None
-        self.signal_cooldown = config.get('signal_cooldown_seconds', 300)  # 5 minutes
+        self.signal_cooldown = config.get('signal_cooldown_seconds', 1)  # 1 second for scalping
         
     async def initialize(self):
         """Initialize the strategy"""
@@ -158,18 +158,34 @@ class EnhancedVolatilityExplosion:
         return None
         
     async def _execute_trades(self, signals: List[Dict]):
-        """Execute trades based on generated signals"""
+        """Execute trades based on generated signals - PRODUCTION MODE"""
         try:
             for signal in signals:
-                logger.info(f"{self.name} generated signal: {signal['symbol']} {signal['action']} "
+                logger.info(f"🚀 {self.name} EXECUTING TRADE: {signal['symbol']} {signal['action']} "
                            f"Confidence: {signal['confidence']:.2f}")
                 
-                # In a real implementation, this would send to trade engine
-                # For now, just log the signal
+                # PRODUCTION: Send signal to trade engine for actual execution
+                await self._send_to_trade_engine(signal)
                 self.current_positions[signal['symbol']] = signal
                 
         except Exception as e:
             logger.error(f"Error executing trades: {e}")
+    
+    async def _send_to_trade_engine(self, signal: Dict):
+        """Send signal to trade engine for actual execution"""
+        try:
+            # Get orchestrator instance and send signal to trade engine
+            from src.core.orchestrator import get_orchestrator
+            orchestrator = await get_orchestrator()
+            
+            if orchestrator and hasattr(orchestrator, 'trade_engine') and orchestrator.trade_engine:
+                await orchestrator.trade_engine.process_signals([signal])
+                logger.info(f"✅ Signal sent to trade engine: {signal['symbol']}")
+            else:
+                logger.error(f"❌ Trade engine not available for signal: {signal['symbol']}")
+                
+        except Exception as e:
+            logger.error(f"Error sending signal to trade engine: {e}")
         
     async def shutdown(self):
         """Shutdown the strategy"""
