@@ -90,6 +90,41 @@ class RegimeAdaptiveController(BaseStrategy):
         logger.info(f"Initializing {self.__class__.__name__} strategy")
         self._initialize_strategy()
         return True
+    
+    async def on_market_data(self, data: Dict):
+        """Process market data and update regime - Required by orchestrator"""
+        try:
+            if not data:
+                return
+            
+            # Convert dictionary data to DataFrame for regime analysis
+            df_data = []
+            for symbol, symbol_data in data.items():
+                if isinstance(symbol_data, dict) and 'close' in symbol_data:
+                    df_data.append({
+                        'symbol': symbol,
+                        'close': symbol_data.get('close', 0),
+                        'high': symbol_data.get('high', symbol_data.get('close', 0)),
+                        'low': symbol_data.get('low', symbol_data.get('close', 0)),
+                        'volume': symbol_data.get('volume', 0),
+                        'timestamp': symbol_data.get('timestamp', datetime.now())
+                    })
+            
+            if df_data:
+                # Use NIFTY or first available symbol for regime detection
+                nifty_data = next((d for d in df_data if 'NIFTY' in d['symbol']), df_data[0])
+                
+                # Create a simple DataFrame for regime analysis
+                market_df = pd.DataFrame([nifty_data])
+                
+                # Update regime based on market data
+                await self.update_regime(market_df)
+                
+                # Log regime status
+                logger.debug(f"Regime Controller: Current regime is {self.current_regime.value}")
+                
+        except Exception as e:
+            logger.error(f"Error processing market data in regime controller: {e}")
         
     async def update_regime(self, market_data: pd.DataFrame) -> MarketRegime:
         """Update market regime based on latest market data"""
