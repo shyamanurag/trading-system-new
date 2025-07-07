@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Any, Callable, Tuple
 from dataclasses import dataclass, field
 from collections import deque
 import numpy as np
+import pytz  # Add pytz import for timezone handling
 
 from ..models import Signal
 from .models import Position, OptionType, OrderSide
@@ -119,30 +120,36 @@ class BaseStrategy(ABC):
         pass
 
     def _is_trading_hours(self) -> bool:
-        """Check if within trading hours - SAFETY CRITICAL"""
-        # ELIMINATED: EXTREMELY DANGEROUS BYPASS - Could cause out-of-hours trading!
-        # ❌ # TEMPORARY BYPASS: Always return True for testing
-        # ❌ # TODO: Fix timezone detection properly like orchestrator
-        # ❌ logger.info("🚀 TEMPORARY BYPASS: Strategy trading hours check disabled for testing")
-        # ❌ return True
-        
-        # SAFETY: Implement proper trading hours check
-        logger.info("🛡️ SAFETY: Trading hours check ENABLED to prevent out-of-hours trading")
-        
-        # Proper trading hours logic (restored and improved)
-        from datetime import time
-        current_time = datetime.now().time()
-        
-        # NSE trading hours: 9:15 AM to 3:30 PM
-        market_open = time(9, 15)
-        market_close = time(15, 30)
-        
-        is_trading_time = market_open <= current_time <= market_close
-        
-        if not is_trading_time:
-            logger.warning(f"🚫 SAFETY: Trading blocked outside market hours. Current time: {current_time}")
-        
-        return is_trading_time
+        """Check if within trading hours - FIXED: Now uses IST timezone like orchestrator"""
+        try:
+            # Get current time in IST (same as orchestrator)
+            ist = pytz.timezone('Asia/Kolkata')
+            now = datetime.now(ist)
+            current_time = now.time()
+            
+            # NSE trading hours: 9:15 AM to 3:30 PM IST
+            market_open = time(9, 15)
+            market_close = time(15, 30)
+            
+            # Check if it's a weekday (Monday=0, Sunday=6)
+            if now.weekday() >= 5:  # Saturday or Sunday
+                logger.info(f"🚫 SAFETY: Trading blocked on weekend. Current day: {now.strftime('%A')}")
+                return False
+            
+            is_trading_time = market_open <= current_time <= market_close
+            
+            if not is_trading_time:
+                logger.info(f"🚫 SAFETY: Trading blocked outside market hours. Current IST time: {current_time} "
+                           f"(Market: {market_open} - {market_close})")
+            else:
+                logger.info(f"✅ TRADING HOURS: Market open. Current IST time: {current_time}")
+            
+            return is_trading_time
+            
+        except Exception as e:
+            logger.error(f"Error checking trading hours: {e}")
+            # SAFETY: If timezone check fails, default to False (safer)
+            return False
 
     def _is_cooldown_passed(self, symbol: Optional[str] = None) -> bool:
         """Check if cooldown period has passed"""
@@ -168,20 +175,30 @@ class BaseStrategy(ABC):
         self.symbol_cooldowns[symbol] = current_time
 
     def _should_exit_intraday(self, entry_time: datetime) -> bool:
-        """Common intraday exit logic"""
-        current_time = datetime.now()
-        
-        # Force exit after 3:15 PM
-        if current_time.time() >= time(15, 15):
-            return True
+        """Common intraday exit logic - FIXED: Now uses IST timezone"""
+        try:
+            # Get current time in IST (consistent with trading hours check)
+            ist = pytz.timezone('Asia/Kolkata')
+            current_time = datetime.now(ist)
+            
+            # Force exit after 3:15 PM IST
+            if current_time.time() >= time(15, 15):
+                logger.info(f"🚫 INTRADAY EXIT: Force closing positions at {current_time.time()} IST")
+                return True
 
-        # Exit if position held too long without profit
-        time_in_position = current_time - entry_time
-        max_hold_time = timedelta(minutes=self.config.get('max_hold_time', 120))
-        if time_in_position > max_hold_time:
-            return True
+            # Exit if position held too long without profit
+            time_in_position = current_time - entry_time
+            max_hold_time = timedelta(minutes=self.config.get('max_hold_time', 120))
+            if time_in_position > max_hold_time:
+                logger.info(f"🚫 INTRADAY EXIT: Position held too long ({time_in_position})")
+                return True
 
-        return False
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error checking intraday exit: {e}")
+            # SAFETY: If timezone check fails, default to False (don't force exit)
+            return False
 
     def _calculate_quantity(self, market_data: Dict, position_multiplier: float = 1.0) -> int:
         """Common position sizing logic"""
