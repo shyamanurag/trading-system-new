@@ -1,19 +1,16 @@
 """
 Regime Adaptive Controller
-Manages market regime detection and strategy adaptation
+A meta-strategy that adapts to market regimes and controls other strategies
 """
 
-import logging
-from typing import Dict, List, Optional
-import numpy as np
-import pandas as pd
-from dataclasses import dataclass
-from enum import Enum
-from datetime import datetime
 import asyncio
-
-from src.core.base import BaseStrategy
-from src.core.models import Signal
+import logging
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Optional, Any
+from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -33,49 +30,54 @@ class RegimeMetrics:
     volume_profile: float
     regime: MarketRegime
 
-class RegimeAdaptiveController(BaseStrategy):
-    """Controls strategy adaptation based on market regime detection"""
+class RegimeAdaptiveController:
+    """Meta-strategy that adapts to market regimes"""
     
     def __init__(self, config: Dict):
-        super().__init__(config)
+        self.config = config
+        self.name = "RegimeAdaptiveController"
+        self.is_active = False
         self.current_regime = MarketRegime.RANGING
-        self.regime_metrics = RegimeMetrics(
-            volatility=0.0,
-            trend_strength=0.0,
-            momentum=0.0,
-            volume_profile=0.0,
-            regime=MarketRegime.RANGING
-        )
+        self.regime_metrics = RegimeMetrics(0.0, 0.0, 0.0, 0.0, MarketRegime.RANGING)
         self.regime_history = []
-        self.min_samples = config.get('regime_detection', {}).get('min_samples', 100)
-        self.regime_threshold = config.get('regime_detection', {}).get('threshold', 0.7)
+        self.min_samples = 3
+        self.regime_threshold = 0.6
         
-        # Regime thresholds
-        self.regime_thresholds = {
-            'ULTRA_HIGH_VOL': {'vix': 25, 'atr_ratio': 1.5},
-            'TRENDING': {'adx': 30, 'directional_movement': 0.7},
-            'RANGE_BOUND': {'adx': 20, 'atr_ratio': 0.5}
-        }
+        # CRITICAL FIX: Historical data accumulation for proper time series analysis
+        self.historical_data = []
+        self.max_history = 100  # Keep last 100 data points
         
-        # Allocation adjustments
+        # Allocation adjustments by regime
         self.allocation_adjustments = {
-            'ULTRA_HIGH_VOL': {
-                'volatility_explosion': 1.4,
-                'momentum_surfer': 0.6,
-                'volume_profile_scalper': 1.0,
+            'VOLATILE': {
+                'volatility_explosion': 1.5,
+                'momentum_surfer': 0.8,
+                'volume_profile_scalper': 1.2,
                 'news_impact_scalper': 1.0
             },
             'TRENDING': {
-                'momentum_surfer': 1.4,
-                'volume_profile_scalper': 1.2,
-                'volatility_explosion': 0.7,
-                'news_impact_scalper': 0.7
-            },
-            'RANGE_BOUND': {
-                'volume_profile_scalper': 1.5,
+                'momentum_surfer': 1.5,
                 'volatility_explosion': 1.2,
-                'momentum_surfer': 0.6,
-                'news_impact_scalper': 0.7
+                'volume_profile_scalper': 0.8,
+                'news_impact_scalper': 0.9
+            },
+            'RANGING': {
+                'volume_profile_scalper': 1.3,
+                'volatility_explosion': 0.9,
+                'momentum_surfer': 0.7,
+                'news_impact_scalper': 1.1
+            },
+            'BREAKOUT': {
+                'momentum_surfer': 1.8,
+                'volatility_explosion': 1.4,
+                'volume_profile_scalper': 1.0,
+                'news_impact_scalper': 0.8
+            },
+            'REVERSAL': {
+                'news_impact_scalper': 1.5,
+                'volume_profile_scalper': 1.3,
+                'volatility_explosion': 1.1,
+                'momentum_surfer': 0.6
             }
         }
         
@@ -92,33 +94,35 @@ class RegimeAdaptiveController(BaseStrategy):
         return True
     
     async def on_market_data(self, data: Dict):
-        """Process market data and update regime - Required by orchestrator"""
+        """Process market data and update regime - FIXED for single data points"""
         try:
             if not data:
                 return
             
-            # Convert dictionary data to DataFrame for regime analysis
-            df_data = []
+            # Convert dictionary data to list format and accumulate historical data
             for symbol, symbol_data in data.items():
                 if isinstance(symbol_data, dict) and 'close' in symbol_data:
-                    df_data.append({
+                    data_point = {
                         'symbol': symbol,
                         'close': symbol_data.get('close', 0),
                         'high': symbol_data.get('high', symbol_data.get('close', 0)),
                         'low': symbol_data.get('low', symbol_data.get('close', 0)),
                         'volume': symbol_data.get('volume', 0),
-                        'timestamp': symbol_data.get('timestamp', datetime.now())
-                    })
-            
-            if df_data:
-                # Use NIFTY or first available symbol for regime detection
-                nifty_data = next((d for d in df_data if 'NIFTY' in d['symbol']), df_data[0])
-                
-                # Create a simple DataFrame for regime analysis
-                market_df = pd.DataFrame([nifty_data])
-                
-                # Update regime based on market data
-                await self.update_regime(market_df)
+                        'timestamp': datetime.now()
+                    }
+                    
+                    # Focus on NIFTY for regime detection
+                    if 'NIFTY' in symbol:
+                        # Add to historical data
+                        self.historical_data.append(data_point)
+                        
+                        # Trim history if needed
+                        if len(self.historical_data) > self.max_history:
+                            self.historical_data.pop(0)
+                        
+                        # Update regime if we have enough data
+                        if len(self.historical_data) >= 2:  # Need at least 2 points for analysis
+                            await self.update_regime()
                 
                 # Log regime status
                 logger.debug(f"Regime Controller: Current regime is {self.current_regime.value}")
@@ -126,15 +130,18 @@ class RegimeAdaptiveController(BaseStrategy):
         except Exception as e:
             logger.error(f"Error processing market data in regime controller: {e}")
         
-    async def update_regime(self, market_data: pd.DataFrame) -> MarketRegime:
-        """Update market regime based on latest market data"""
+    async def update_regime(self) -> MarketRegime:
+        """Update market regime based on accumulated historical data - FIXED"""
         try:
             async with self._regime_lock:
-                # Calculate regime metrics
-                self.regime_metrics.volatility = self._calculate_volatility(market_data)
-                self.regime_metrics.trend_strength = self._calculate_trend_strength(market_data)
-                self.regime_metrics.momentum = self._calculate_momentum(market_data)
-                self.regime_metrics.volume_profile = self._calculate_volume_profile(market_data)
+                if len(self.historical_data) < 2:
+                    return self.current_regime
+                
+                # Calculate regime metrics using historical data
+                self.regime_metrics.volatility = self._calculate_volatility_fixed()
+                self.regime_metrics.trend_strength = self._calculate_trend_strength_fixed()
+                self.regime_metrics.momentum = self._calculate_momentum_fixed()
+                self.regime_metrics.volume_profile = self._calculate_volume_profile_fixed()
                 
                 # Detect regime
                 new_regime = self._detect_regime()
@@ -155,63 +162,117 @@ class RegimeAdaptiveController(BaseStrategy):
             logger.error(f"Error updating market regime: {str(e)}")
             return self.current_regime
     
-    def _calculate_volatility(self, data: pd.DataFrame) -> float:
-        """Calculate market volatility"""
-        returns = data['close'].pct_change()
-        return returns.std() * np.sqrt(252)  # Annualized volatility
+    def _calculate_volatility_fixed(self) -> float:
+        """Calculate market volatility - FIXED for accumulated data"""
+        try:
+            if len(self.historical_data) < 2:
+                return 0.02  # Default 2% volatility
+            
+            # Calculate returns from historical data
+            closes = [d['close'] for d in self.historical_data]
+            returns = []
+            for i in range(1, len(closes)):
+                if closes[i-1] > 0:
+                    returns.append((closes[i] - closes[i-1]) / closes[i-1])
+            
+            if len(returns) < 2:
+                return 0.02
+            
+            # Calculate volatility
+            volatility = np.std(returns) * np.sqrt(252)  # Annualized
+            return min(max(volatility, 0.01), 2.0)  # Cap between 1% and 200%
+            
+        except Exception as e:
+            logger.error(f"Error calculating volatility: {e}")
+            return 0.02
     
-    def _calculate_trend_strength(self, data: pd.DataFrame) -> float:
-        """Calculate trend strength using ADX"""
-        high = data['high']
-        low = data['low']
-        close = data['close']
-        
-        # Calculate True Range
-        tr1 = high - low
-        tr2 = abs(high - close.shift())
-        tr3 = abs(low - close.shift())
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        
-        # Calculate Directional Movement
-        up_move = high - high.shift()
-        down_move = low.shift() - low
-        
-        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
-        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
-        
-        # Calculate smoothed averages
-        period = 14
-        tr_smoothed = tr.rolling(period).mean()
-        plus_di = 100 * pd.Series(plus_dm).rolling(period).mean() / tr_smoothed
-        minus_di = 100 * pd.Series(minus_dm).rolling(period).mean() / tr_smoothed
-        
-        # Calculate ADX
-        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
-        adx = dx.rolling(period).mean()
-        
-        return adx.iloc[-1]
+    def _calculate_trend_strength_fixed(self) -> float:
+        """Calculate trend strength - FIXED for accumulated data"""
+        try:
+            if len(self.historical_data) < 10:
+                return 20.0  # Default neutral trend strength
+            
+            # Simple trend strength based on price direction consistency
+            closes = [d['close'] for d in self.historical_data[-10:]]  # Last 10 points
+            ups = 0
+            downs = 0
+            
+            for i in range(1, len(closes)):
+                if closes[i] > closes[i-1]:
+                    ups += 1
+                elif closes[i] < closes[i-1]:
+                    downs += 1
+            
+            # Calculate trend strength as directional consistency
+            total_moves = ups + downs
+            if total_moves == 0:
+                return 20.0
+            
+            trend_strength = abs(ups - downs) / total_moves * 100
+            return min(max(trend_strength, 0.0), 100.0)
+            
+        except Exception as e:
+            logger.error(f"Error calculating trend strength: {e}")
+            return 20.0
     
-    def _calculate_momentum(self, data: pd.DataFrame) -> float:
-        """Calculate market momentum"""
-        period = 14
-        return (data['close'].iloc[-1] / data['close'].iloc[-period] - 1) * 100
+    def _calculate_momentum_fixed(self) -> float:
+        """Calculate market momentum - FIXED for accumulated data"""
+        try:
+            if len(self.historical_data) < 5:
+                return 0.0  # Default neutral momentum
+            
+            # Calculate momentum as recent price change
+            current_close = self.historical_data[-1]['close']
+            past_close = self.historical_data[-5]['close']  # 5 periods ago
+            
+            if past_close <= 0:
+                return 0.0
+            
+            momentum = ((current_close - past_close) / past_close) * 100
+            return min(max(momentum, -50.0), 50.0)  # Cap between -50% and +50%
+            
+        except Exception as e:
+            logger.error(f"Error calculating momentum: {e}")
+            return 0.0
     
-    def _calculate_volume_profile(self, data: pd.DataFrame) -> float:
-        """Calculate volume profile strength"""
-        volume_ma = data['volume'].rolling(20).mean()
-        return (data['volume'].iloc[-1] / volume_ma.iloc[-1] - 1) * 100
+    def _calculate_volume_profile_fixed(self) -> float:
+        """Calculate volume profile strength - FIXED for accumulated data"""
+        try:
+            if len(self.historical_data) < 10:
+                return 0.0  # Default neutral volume profile
+            
+            # Calculate recent volume vs average volume
+            recent_volumes = [d['volume'] for d in self.historical_data[-5:]]  # Last 5 periods
+            avg_volumes = [d['volume'] for d in self.historical_data[-10:]]  # Last 10 periods
+            
+            if not recent_volumes or not avg_volumes:
+                return 0.0
+            
+            recent_avg = np.mean(recent_volumes)
+            overall_avg = np.mean(avg_volumes)
+            
+            if overall_avg <= 0:
+                return 0.0
+            
+            volume_profile = ((recent_avg - overall_avg) / overall_avg) * 100
+            return min(max(volume_profile, -100.0), 100.0)  # Cap between -100% and +100%
+            
+        except Exception as e:
+            logger.error(f"Error calculating volume profile: {e}")
+            return 0.0
     
     def _detect_regime(self) -> MarketRegime:
-        """Detect market regime based on metrics"""
+        """Detect market regime based on metrics - FIXED thresholds"""
         metrics = self.regime_metrics
         
-        if metrics.volatility > 0.3:  # High volatility
+        # Use more realistic thresholds
+        if metrics.volatility > 0.15:  # 15% volatility - high volatility
             return MarketRegime.VOLATILE
-        elif metrics.trend_strength > 25:  # Strong trend
+        elif metrics.trend_strength > 70:  # 70% trend strength - strong trend
             return MarketRegime.TRENDING
-        elif metrics.momentum > 5:  # Strong momentum
+        elif metrics.momentum > 3:  # 3% momentum - strong upward momentum
             return MarketRegime.BREAKOUT
-        elif metrics.momentum < -5:  # Negative momentum
+        elif metrics.momentum < -3:  # -3% momentum - strong downward momentum
             return MarketRegime.REVERSAL
         else:
             return MarketRegime.RANGING
@@ -222,10 +283,14 @@ class RegimeAdaptiveController(BaseStrategy):
             return False
         
         recent_regimes = self.regime_history[-self.min_samples:]
-        regime_counts = pd.Series(recent_regimes).value_counts()
-        most_common = regime_counts.max() / len(recent_regimes)
+        regime_counts = {}
+        for regime in recent_regimes:
+            regime_counts[regime] = regime_counts.get(regime, 0) + 1
         
-        return most_common >= self.regime_threshold
+        most_common_count = max(regime_counts.values()) if regime_counts else 0
+        most_common_ratio = most_common_count / len(recent_regimes)
+        
+        return most_common_ratio >= self.regime_threshold
     
     def get_strategy_weights(self) -> Dict[str, float]:
         """Get strategy weights based on current regime"""
@@ -273,9 +338,13 @@ class RegimeAdaptiveController(BaseStrategy):
         regime_name = self.current_regime.value.upper()
         return self.allocation_adjustments.get(regime_name, {}).get(strategy_name, 1.0)
     
-    async def generate_signals(self, market_data: Dict) -> List[Signal]:
+    async def generate_signals(self, market_data: Dict) -> List[Dict]:
         """Generate trading signals - meta-strategy doesn't generate direct signals"""
         # Update regime based on market data
-        if isinstance(market_data, pd.DataFrame):
-            await self.update_regime(market_data)
-        return [] 
+        await self.on_market_data(market_data)
+        return []
+    
+    async def shutdown(self):
+        """Shutdown the strategy"""
+        logger.info(f"Shutting down {self.name} strategy")
+        self.is_active = False 
