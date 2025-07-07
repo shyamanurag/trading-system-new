@@ -18,53 +18,50 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["market-data"])
 
 def get_truedata_proxy():
-    """Get TrueData proxy service for market data"""
+    """Get TrueData data directly from live cache - SIMPLE APPROACH"""
     try:
-        from src.api.truedata_proxy import get_truedata_proxy
-        return get_truedata_proxy()
+        # SIMPLE FIX: Direct access to existing TrueData cache
+        from data.truedata_client import live_market_data
+        return {
+            'connected': len(live_market_data) > 0,
+            'data': live_market_data,
+            'symbols_count': len(live_market_data)
+        }
     except ImportError:
-        logger.error("TrueData proxy service not available")
+        logger.error("TrueData client not available")
         return None
     except Exception as e:
-        logger.error(f"Error getting TrueData proxy: {e}")
+        logger.error(f"Error getting TrueData data: {e}")
         return None
 
 def is_connected() -> bool:
-    """Check if TrueData is connected via proxy service"""
+    """Check if TrueData is connected via direct cache access"""
     try:
-        proxy = get_truedata_proxy()
-        if not proxy:
-            logger.warning("TrueData proxy not available")
-            return False
+        from data.truedata_client import live_market_data
+        connected = len(live_market_data) > 0
         
-        status = proxy.get_status()
-        connected = status.get('connected', False)
-        
-        logger.info(f"🔧 TrueData proxy connection check: {connected}")
+        logger.info(f"🔧 TrueData direct connection check: {connected}")
         if connected:
-            logger.info(f"   Data source: {status.get('data_source', 'unknown')}")
-            logger.info(f"   Symbols available: {status.get('symbols_count', 0)}")
+            logger.info(f"   Data source: live_market_data cache")
+            logger.info(f"   Symbols available: {len(live_market_data)}")
         
         return connected
         
     except Exception as e:
-        logger.error(f"Error checking TrueData proxy connection: {e}")
+        logger.error(f"Error checking TrueData connection: {e}")
         return False
 
 def get_live_data_for_symbol(symbol: str) -> dict:
-    """Get live data for a specific symbol via proxy"""
+    """Get live data for a specific symbol via direct cache access"""
     try:
-        proxy = get_truedata_proxy()
-        if not proxy:
-            logger.warning("TrueData proxy not available")
-            return {}
+        from data.truedata_client import live_market_data
         
         # Use symbol mapping to convert NIFTY -> NIFTY-I
         mapped_symbol = get_truedata_symbol(symbol.upper())
         logger.debug(f"🔧 Symbol mapping: {symbol} -> {mapped_symbol}")
         
-        # Get data from proxy
-        symbol_data = proxy.get_market_data(mapped_symbol)
+        # Get data from live cache
+        symbol_data = live_market_data.get(mapped_symbol, {})
         
         if symbol_data:
             logger.debug(f"📊 Retrieved data for {symbol}: LTP={symbol_data.get('ltp', 'N/A')}")
@@ -76,17 +73,12 @@ def get_live_data_for_symbol(symbol: str) -> dict:
         return {}
 
 def get_all_live_market_data() -> dict:
-    """Get ALL live market data from proxy"""
+    """Get ALL live market data from direct cache access"""
     try:
-        proxy = get_truedata_proxy()
-        if not proxy:
-            logger.warning("TrueData proxy not available")
-            return {}
+        from data.truedata_client import live_market_data
         
-        all_data = proxy.get_market_data()
-        
-        logger.debug(f"📊 Retrieved all market data: {len(all_data)} symbols")
-        return all_data
+        logger.debug(f"📊 Retrieved all market data: {len(live_market_data)} symbols")
+        return live_market_data
         
     except Exception as e:
         logger.error(f"Error getting all live market data: {e}")
