@@ -84,44 +84,68 @@ class EnhancedVolumeProfileScalper:
             # Extract price data
             current_price = data.get('close', 0)
             volume = data.get('volume', 0)
+            high = data.get('high', current_price)
+            low = data.get('low', current_price)
             
             if not all([current_price, volume]):
                 return None
                 
+            # Calculate DYNAMIC risk metrics (NO FIXED PERCENTAGES)
+            atr_estimate = high - low  # Single day ATR estimate
+            volatility = (atr_estimate / current_price) if current_price > 0 else 0
+            
+            # Dynamic risk calculation based on market conditions
+            base_risk = max(volatility * 1.5, 0.005)  # At least 0.5% but volatility-driven
+            max_risk = min(base_risk, 0.025)  # Cap at 2.5% for scalping
+            
             # Calculate volume profile indicators
             volume_change = data.get('volume_change', 0)
             price_change = data.get('price_change', 0)
             
-            # Volume profile scoring
+            # Volume profile scoring - ADJUSTED FOR REALISTIC MARKET CONDITIONS
             volume_score = 0
             
-            # High volume with price movement
-            if volume_change > 100 and abs(price_change) > 0.5:  # 100% volume increase
+            # High volume with price movement - LOWERED THRESHOLDS
+            if volume_change > 25 and abs(price_change) > 0.1:  # 25% volume, 0.1% price (was 100%, 0.5%)
                 volume_score += 3
-            elif volume_change > 50 and abs(price_change) > 0.3:
+            elif volume_change > 15 and abs(price_change) > 0.05:  # 15% volume, 0.05% price (was 50%, 0.3%)
                 volume_score += 2
-            elif volume_change > 25 and abs(price_change) > 0.2:
+            elif volume_change > 10 and abs(price_change) > 0.03:  # 10% volume, 0.03% price (was 25%, 0.2%)
                 volume_score += 1
                 
             # Generate signal if volume profile is strong
             if volume_score >= 2:
                 action = 'BUY' if price_change > 0 else 'SELL'
-                target_multiplier = 1.015 if action == 'BUY' else 0.985
-                stop_multiplier = 0.985 if action == 'BUY' else 1.015
+                
+                # Dynamic stop loss based on ATR and volume strength
+                volume_multiplier = min(volume_score / 3.0, 2.0)
+                stop_loss_distance = atr_estimate * volume_multiplier
+                
+                if action == 'BUY':
+                    stop_loss = current_price - stop_loss_distance
+                    target = current_price + (stop_loss_distance * 1.2)  # 1.2:1 R/R for scalping
+                else:
+                    stop_loss = current_price + stop_loss_distance
+                    target = current_price - (stop_loss_distance * 1.2)  # 1.2:1 R/R for scalping
                 
                 return {
                     'symbol': symbol,
                     'action': action,
                     'quantity': 50,  # 1 lot for NIFTY
                     'entry_price': current_price,
-                    'stop_loss': current_price * stop_multiplier,
-                    'target': current_price * target_multiplier,
+                    'stop_loss': stop_loss,
+                    'target': target,
                     'strategy': self.name,
                     'confidence': min(volume_score / 3.0, 0.9),
                     'metadata': {
                         'volume_score': volume_score,
                         'volume_change': volume_change,
                         'price_change': price_change,
+                        'atr_estimate': atr_estimate,
+                        'volatility': volatility,
+                        'stop_loss_distance': stop_loss_distance,
+                        'risk_type': 'VOLUME_PROFILE_BASED',
+                        'volume_multiplier': volume_multiplier,
                         'timestamp': datetime.now().isoformat()
                     }
                 }

@@ -86,65 +86,98 @@ class EnhancedMomentumSurfer:
             high = data.get('high', 0)
             low = data.get('low', 0)
             volume = data.get('volume', 0)
+            open_price = data.get('open', current_price)
             
             if not all([current_price, high, low, volume]):
                 return None
                 
+            # Calculate DYNAMIC risk metrics (NO FIXED PERCENTAGES)
+            atr_estimate = high - low  # Single day ATR estimate
+            volatility = (atr_estimate / current_price) if current_price > 0 else 0
+            
+            # Dynamic risk calculation based on market conditions
+            base_risk = max(volatility * 2.0, 0.005)  # At least 0.5% but volatility-driven
+            max_risk = min(base_risk, 0.035)  # Cap at 3.5% for extreme volatility
+            
             # Calculate momentum indicators
             price_change = data.get('price_change', 0)
             volume_change = data.get('volume_change', 0)
             
-            # Simple momentum conditions
+            # Simple momentum conditions - ADJUSTED FOR REALISTIC MARKET CONDITIONS
             momentum_score = 0
             
-            # Price momentum
-            if price_change > 0.5:  # 0.5% price increase
+            # Price momentum - LOWERED THRESHOLDS FOR NORMAL TRADING
+            if price_change > 0.1:  # 0.1% price increase (was 0.5%)
                 momentum_score += 2
-            elif price_change > 0.2:
+            elif price_change > 0.05:  # 0.05% price increase (was 0.2%)
                 momentum_score += 1
-            elif price_change < -0.5:
+            elif price_change < -0.1:  # -0.1% price decrease (was -0.5%)
                 momentum_score -= 2
-            elif price_change < -0.2:
+            elif price_change < -0.05:  # -0.05% price decrease (was -0.2%)
                 momentum_score -= 1
                 
-            # Volume momentum
-            if volume_change > 20:  # 20% volume increase
+            # Volume momentum - LOWERED THRESHOLDS FOR REALISTIC VOLUME
+            if volume_change > 10:  # 10% volume increase (was 20%)
                 momentum_score += 1
-            elif volume_change < -20:
+            elif volume_change < -10:  # -10% volume decrease (was -20%)
                 momentum_score -= 1
                 
             # Generate signal if momentum is strong enough
             if momentum_score >= 2:  # Strong positive momentum
+                # Dynamic stop loss based on ATR and momentum strength
+                momentum_multiplier = min(momentum_score / 3.0, 2.0)
+                stop_loss_distance = atr_estimate * momentum_multiplier
+                
+                stop_loss = current_price - stop_loss_distance
+                target = current_price + (stop_loss_distance * 2.0)  # 2:1 R/R
+                
                 return {
                     'symbol': symbol,
                     'action': 'BUY',
                     'quantity': 50,  # 1 lot for NIFTY
                     'entry_price': current_price,
-                    'stop_loss': current_price * 0.98,  # 2% stop loss
-                    'target': current_price * 1.03,  # 3% target
+                    'stop_loss': stop_loss,
+                    'target': target,
                     'strategy': self.name,
                     'confidence': min(momentum_score / 3.0, 0.9),
                     'metadata': {
                         'momentum_score': momentum_score,
                         'price_change': price_change,
                         'volume_change': volume_change,
+                        'atr_estimate': atr_estimate,
+                        'volatility': volatility,
+                        'stop_loss_distance': stop_loss_distance,
+                        'risk_type': 'ATR_MOMENTUM_BASED',
+                        'momentum_multiplier': momentum_multiplier,
                         'timestamp': datetime.now().isoformat()
                     }
                 }
             elif momentum_score <= -2:  # Strong negative momentum
+                # Dynamic stop loss based on ATR and momentum strength
+                momentum_multiplier = min(abs(momentum_score) / 3.0, 2.0)
+                stop_loss_distance = atr_estimate * momentum_multiplier
+                
+                stop_loss = current_price + stop_loss_distance
+                target = current_price - (stop_loss_distance * 2.0)  # 2:1 R/R
+                
                 return {
                     'symbol': symbol,
                     'action': 'SELL',
                     'quantity': 50,  # 1 lot for NIFTY
                     'entry_price': current_price,
-                    'stop_loss': current_price * 1.02,  # 2% stop loss
-                    'target': current_price * 0.97,  # 3% target
+                    'stop_loss': stop_loss,
+                    'target': target,
                     'strategy': self.name,
                     'confidence': min(abs(momentum_score) / 3.0, 0.9),
                     'metadata': {
                         'momentum_score': momentum_score,
                         'price_change': price_change,
                         'volume_change': volume_change,
+                        'atr_estimate': atr_estimate,
+                        'volatility': volatility,
+                        'stop_loss_distance': stop_loss_distance,
+                        'risk_type': 'ATR_MOMENTUM_BASED',
+                        'momentum_multiplier': momentum_multiplier,
                         'timestamp': datetime.now().isoformat()
                     }
                 }

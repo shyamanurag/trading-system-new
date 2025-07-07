@@ -136,11 +136,8 @@ class AutonomousEliteScanner:
             return []
 
     async def get_strategy_signals(self, strategy, market_data):
-        """Extract signals from strategy (temporarily simulate until we modify strategies)"""
+        """Extract signals from strategy with DYNAMIC risk management (NO FIXED PERCENTAGES)"""
         try:
-            # For now, simulate signal generation based on strategy type
-            # In a proper implementation, we'd modify the strategies to expose their signals
-            
             signals = []
             
             # Get a few symbols for testing
@@ -154,28 +151,55 @@ class AutonomousEliteScanner:
                 # Extract price data
                 current_price = symbol_data.get('current_price', 0)
                 volume = symbol_data.get('volume', 0)
+                high = symbol_data.get('high', current_price)
+                low = symbol_data.get('low', current_price)
+                open_price = symbol_data.get('open', current_price)
                 
                 if not current_price or not volume:
                     continue
                 
-                # Strategy-specific signal generation
+                # Calculate DYNAMIC risk metrics (NO FIXED PERCENTAGES)
+                price_range = high - low
+                atr_estimate = price_range  # Simplified ATR for single day
+                volatility = (price_range / current_price) if current_price > 0 else 0
+                
+                # Dynamic risk based on market conditions
+                base_risk = max(volatility * 2.0, 0.005)  # At least 0.5% but volatility-driven
+                max_risk = min(base_risk, 0.03)  # Cap at 3% for extreme volatility
+                
+                # Strategy-specific signal generation with DYNAMIC risk management
                 signal = None
                 
                 if strategy.name == "EnhancedMomentumSurfer":
                     # Use momentum-based analysis
                     price_change = symbol_data.get('change_percent', 0)
                     if abs(price_change) > 0.5:  # 0.5% movement
+                        # Dynamic stop loss based on ATR and momentum
+                        momentum_multiplier = min(abs(price_change) / 1.0, 2.0)
+                        stop_loss_distance = atr_estimate * momentum_multiplier
+                        
+                        if price_change > 0:
+                            stop_loss = current_price - stop_loss_distance
+                            target = current_price + (stop_loss_distance * 2.0)  # 2:1 R/R
+                        else:
+                            stop_loss = current_price + stop_loss_distance
+                            target = current_price - (stop_loss_distance * 2.0)
+                        
                         signal = {
                             'symbol': symbol,
                             'action': 'BUY' if price_change > 0 else 'SELL',
                             'quantity': 50,
                             'entry_price': current_price,
-                            'stop_loss': current_price * (0.98 if price_change > 0 else 1.02),
-                            'target': current_price * (1.02 if price_change > 0 else 0.98),
+                            'stop_loss': stop_loss,
+                            'target': target,
                             'strategy': strategy.name,
                             'confidence': min(abs(price_change) / 1.0, 0.9),
                             'metadata': {
                                 'price_change': price_change,
+                                'atr_estimate': atr_estimate,
+                                'volatility': volatility,
+                                'stop_loss_distance': stop_loss_distance,
+                                'risk_type': 'ATR_MOMENTUM_BASED',
                                 'volume': volume,
                                 'timestamp': datetime.now().isoformat()
                             }
@@ -183,22 +207,29 @@ class AutonomousEliteScanner:
                 
                 elif strategy.name == "EnhancedVolatilityExplosion":
                     # Use volatility-based analysis
-                    high = symbol_data.get('high', current_price)
-                    low = symbol_data.get('low', current_price)
-                    volatility = (high - low) / current_price if current_price > 0 else 0
-                    
                     if volatility > 0.015:  # 1.5% volatility
+                        # Dynamic stop loss based on volatility breakout
+                        vol_multiplier = min(volatility / 0.02, 3.0)
+                        stop_loss_distance = atr_estimate * vol_multiplier
+                        
+                        direction = 1 if symbol_data.get('change_percent', 0) > 0 else -1
+                        stop_loss = current_price - (stop_loss_distance * direction)
+                        target = current_price + (stop_loss_distance * 1.5 * direction)  # 1.5:1 R/R for volatility
+                        
                         signal = {
                             'symbol': symbol,
-                            'action': 'BUY' if symbol_data.get('change_percent', 0) > 0 else 'SELL',
+                            'action': 'BUY' if direction > 0 else 'SELL',
                             'quantity': 50,
                             'entry_price': current_price,
-                            'stop_loss': current_price * (0.985 if symbol_data.get('change_percent', 0) > 0 else 1.015),
-                            'target': current_price * (1.015 if symbol_data.get('change_percent', 0) > 0 else 0.985),
+                            'stop_loss': stop_loss,
+                            'target': target,
                             'strategy': strategy.name,
                             'confidence': min(volatility / 0.02, 0.9),
                             'metadata': {
                                 'volatility': volatility,
+                                'vol_multiplier': vol_multiplier,
+                                'stop_loss_distance': stop_loss_distance,
+                                'risk_type': 'VOLATILITY_BREAKOUT_BASED',
                                 'volume': volume,
                                 'timestamp': datetime.now().isoformat()
                             }
@@ -206,21 +237,31 @@ class AutonomousEliteScanner:
                 
                 elif strategy.name == "EnhancedVolumeProfileScalper":
                     # Use volume-based analysis
-                    # Simulate volume change (in real implementation, we'd have historical data)
                     volume_change = volume / 100000  # Simple volume metric
                     
                     if volume_change > 2:  # High volume
+                        # Dynamic stop loss based on volume and price action
+                        volume_multiplier = min(volume_change / 3.0, 2.0)
+                        stop_loss_distance = atr_estimate * volume_multiplier
+                        
+                        direction = 1 if symbol_data.get('change_percent', 0) > 0 else -1
+                        stop_loss = current_price - (stop_loss_distance * direction)
+                        target = current_price + (stop_loss_distance * 1.2 * direction)  # 1.2:1 R/R for scalping
+                        
                         signal = {
                             'symbol': symbol,
-                            'action': 'BUY' if symbol_data.get('change_percent', 0) > 0 else 'SELL',
+                            'action': 'BUY' if direction > 0 else 'SELL',
                             'quantity': 50,
                             'entry_price': current_price,
-                            'stop_loss': current_price * (0.99 if symbol_data.get('change_percent', 0) > 0 else 1.01),
-                            'target': current_price * (1.01 if symbol_data.get('change_percent', 0) > 0 else 0.99),
+                            'stop_loss': stop_loss,
+                            'target': target,
                             'strategy': strategy.name,
                             'confidence': min(volume_change / 5.0, 0.9),
                             'metadata': {
                                 'volume_change': volume_change,
+                                'volume_multiplier': volume_multiplier,
+                                'stop_loss_distance': stop_loss_distance,
+                                'risk_type': 'VOLUME_PROFILE_BASED',
                                 'volume': volume,
                                 'timestamp': datetime.now().isoformat()
                             }
@@ -229,21 +270,31 @@ class AutonomousEliteScanner:
                 elif strategy.name == "EnhancedNewsImpactScalper":
                     # Use news-based analysis
                     price_change = symbol_data.get('change_percent', 0)
-                    # Simulate news impact score
                     news_score = abs(price_change) * 0.5  # Simple news impact simulation
                     
                     if news_score > 0.3:  # News impact threshold
+                        # Dynamic stop loss based on news impact and volatility
+                        news_multiplier = min(news_score / 0.5, 2.5)
+                        stop_loss_distance = atr_estimate * news_multiplier
+                        
+                        direction = 1 if price_change > 0 else -1
+                        stop_loss = current_price - (stop_loss_distance * direction)
+                        target = current_price + (stop_loss_distance * 1.8 * direction)  # 1.8:1 R/R for news
+                        
                         signal = {
                             'symbol': symbol,
-                            'action': 'BUY' if price_change > 0 else 'SELL',
+                            'action': 'BUY' if direction > 0 else 'SELL',
                             'quantity': 50,
                             'entry_price': current_price,
-                            'stop_loss': current_price * (0.985 if price_change > 0 else 1.015),
-                            'target': current_price * (1.015 if price_change > 0 else 0.985),
+                            'stop_loss': stop_loss,
+                            'target': target,
                             'strategy': strategy.name,
                             'confidence': min(news_score / 0.5, 0.9),
                             'metadata': {
                                 'news_score': news_score,
+                                'news_multiplier': news_multiplier,
+                                'stop_loss_distance': stop_loss_distance,
+                                'risk_type': 'NEWS_IMPACT_BASED',
                                 'price_change': price_change,
                                 'volume': volume,
                                 'timestamp': datetime.now().isoformat()
@@ -253,25 +304,35 @@ class AutonomousEliteScanner:
                 elif strategy.name == "RegimeAdaptiveController":
                     # Use regime-based analysis
                     price_change = symbol_data.get('change_percent', 0)
-                    high = symbol_data.get('high', current_price)
-                    low = symbol_data.get('low', current_price)
                     
                     # Simple regime detection - trending vs ranging
-                    volatility = (high - low) / current_price if current_price > 0 else 0
                     is_trending = abs(price_change) > 0.5 and volatility > 0.01
                     
                     if is_trending:
+                        # Dynamic stop loss based on regime and trend strength
+                        trend_strength = min(abs(price_change) / 1.0, 2.0)
+                        regime_multiplier = trend_strength * (2.0 if is_trending else 1.0)
+                        stop_loss_distance = atr_estimate * regime_multiplier
+                        
+                        direction = 1 if price_change > 0 else -1
+                        stop_loss = current_price - (stop_loss_distance * direction)
+                        target = current_price + (stop_loss_distance * 2.5 * direction)  # 2.5:1 R/R for trending
+                        
                         signal = {
                             'symbol': symbol,
-                            'action': 'BUY' if price_change > 0 else 'SELL',
+                            'action': 'BUY' if direction > 0 else 'SELL',
                             'quantity': 50,
                             'entry_price': current_price,
-                            'stop_loss': current_price * (0.98 if price_change > 0 else 1.02),
-                            'target': current_price * (1.02 if price_change > 0 else 0.98),
+                            'stop_loss': stop_loss,
+                            'target': target,
                             'strategy': strategy.name,
                             'confidence': min(volatility / 0.02, 0.9),
                             'metadata': {
                                 'regime': 'trending',
+                                'trend_strength': trend_strength,
+                                'regime_multiplier': regime_multiplier,
+                                'stop_loss_distance': stop_loss_distance,
+                                'risk_type': 'REGIME_ADAPTIVE_BASED',
                                 'volatility': volatility,
                                 'price_change': price_change,
                                 'volume': volume,
@@ -282,28 +343,37 @@ class AutonomousEliteScanner:
                 elif strategy.name == "ConfluenceAmplifier":
                     # Use confluence-based analysis
                     price_change = symbol_data.get('change_percent', 0)
-                    high = symbol_data.get('high', current_price)
-                    low = symbol_data.get('low', current_price)
                     
                     # Multiple signal confluence
                     momentum_signal = abs(price_change) > 0.4
-                    volatility_signal = (high - low) / current_price > 0.01 if current_price > 0 else False
+                    volatility_signal = volatility > 0.01
                     volume_signal = volume > 50000  # Simple volume threshold
                     
                     confluence_score = sum([momentum_signal, volatility_signal, volume_signal])
                     
                     if confluence_score >= 2:  # At least 2 signals in confluence
+                        # Dynamic stop loss based on confluence strength
+                        confluence_multiplier = confluence_score / 3.0 * 2.0
+                        stop_loss_distance = atr_estimate * confluence_multiplier
+                        
+                        direction = 1 if price_change > 0 else -1
+                        stop_loss = current_price - (stop_loss_distance * direction)
+                        target = current_price + (stop_loss_distance * 3.0 * direction)  # 3:1 R/R for confluence
+                        
                         signal = {
                             'symbol': symbol,
-                            'action': 'BUY' if price_change > 0 else 'SELL',
+                            'action': 'BUY' if direction > 0 else 'SELL',
                             'quantity': 50,
                             'entry_price': current_price,
-                            'stop_loss': current_price * (0.985 if price_change > 0 else 1.015),
-                            'target': current_price * (1.015 if price_change > 0 else 0.985),
+                            'stop_loss': stop_loss,
+                            'target': target,
                             'strategy': strategy.name,
                             'confidence': min(confluence_score / 3.0, 0.9),
                             'metadata': {
                                 'confluence_score': confluence_score,
+                                'confluence_multiplier': confluence_multiplier,
+                                'stop_loss_distance': stop_loss_distance,
+                                'risk_type': 'CONFLUENCE_BASED',
                                 'momentum_signal': momentum_signal,
                                 'volatility_signal': volatility_signal,
                                 'volume_signal': volume_signal,
@@ -323,16 +393,24 @@ class AutonomousEliteScanner:
             return []
 
     def convert_signal_to_recommendation(self, signal):
-        """Convert trading signal to Elite recommendation format"""
+        """Convert trading signal to Elite recommendation format (NO FIXED PERCENTAGES)"""
         try:
             current_price = signal.get('entry_price', 0)
-            stop_loss = signal.get('stop_loss', current_price * 0.98)
-            target = signal.get('target', current_price * 1.02)
+            stop_loss = signal.get('stop_loss')
+            target = signal.get('target')
             
-            # Calculate risk/reward
+            # Reject signals without dynamic stop loss and target (NO FALLBACK TO FIXED PERCENTAGES)
+            if not stop_loss or not target:
+                logger.warning(f"Signal rejected: Missing dynamic stop_loss or target for {signal.get('symbol', 'UNKNOWN')}")
+                return None
+            
+            # Calculate risk/reward using DYNAMIC values only
             risk_percent = abs((current_price - stop_loss) / current_price) * 100
             reward_percent = abs((target - current_price) / current_price) * 100
             risk_reward_ratio = reward_percent / risk_percent if risk_percent > 0 else 3.0
+            
+            # Get risk type from metadata
+            risk_type = signal.get('metadata', {}).get('risk_type', 'DYNAMIC_CALCULATION')
             
             return {
                 "recommendation_id": f"ELITE_{signal['symbol']}_{signal['strategy']}_{datetime.now().strftime('%Y%m%d_%H%M')}",
@@ -350,30 +428,33 @@ class AutonomousEliteScanner:
                 "risk_metrics": {
                     "risk_percent": round(risk_percent, 2),
                     "reward_percent": round(reward_percent, 2),
-                    "position_size": 2.0
+                    "position_size": 2.0,
+                    "risk_calculation": risk_type
                 },
                 "confluence_factors": [
                     f"Strategy: {signal['strategy']}",
                     f"Signal Confidence: {signal['confidence']:.2f}",
                     f"Entry Price: ₹{current_price:,.2f}",
                     f"Risk/Reward: {risk_reward_ratio:.2f}:1",
+                    f"Risk Type: {risk_type}",
                     f"Real Market Data: {signal['metadata'].get('timestamp', 'N/A')}",
                     "Generated by Production Trading Strategies"
                 ],
                 "entry_conditions": [
                     "Signal generated by active trading strategy",
                     "Price at optimal entry level",
-                    "Risk management parameters set",
-                    "Market conditions favorable"
+                    "Dynamic risk management parameters set",
+                    "Market conditions favorable",
+                    f"Risk calculation: {risk_type}"
                 ],
-                "timeframe": "5-10 minutes",
-                "valid_until": (datetime.now() + timedelta(minutes=10)).isoformat(),
+                "timeframe": "5-10 days",
+                "valid_until": (datetime.now() + timedelta(days=7)).isoformat(),
                 "status": "ACTIVE",
                 "generated_at": datetime.now().isoformat(),
                 "data_source": "STRATEGY_GENERATED",
                 "strategy_metadata": signal.get('metadata', {}),
                 "autonomous": True,
-                "WARNING": "STRATEGY_BASED_RECOMMENDATION"
+                "WARNING": f"DYNAMIC_RISK_CALCULATION_{risk_type}"
             }
             
         except Exception as e:

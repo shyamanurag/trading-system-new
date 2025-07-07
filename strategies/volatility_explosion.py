@@ -90,6 +90,10 @@ class EnhancedVolatilityExplosion:
             if not all([current_price, high, low, volume]):
                 return None
                 
+            # Calculate DYNAMIC risk metrics (NO FIXED PERCENTAGES)
+            atr_estimate = high - low  # Single day ATR estimate
+            volatility = (atr_estimate / current_price) if current_price > 0 else 0
+            
             # Calculate volatility indicators
             price_range = high - low
             avg_price = (high + low) / 2
@@ -98,48 +102,52 @@ class EnhancedVolatilityExplosion:
             # Get historical volatility context
             historical_vol = data.get('historical_volatility', 0.02)  # Default 2%
             
-            # Volatility explosion detection
+            # Volatility explosion detection - ADJUSTED FOR REALISTIC MARKET CONDITIONS
             volatility_score = 0
             
-            # Check if current volatility is significantly higher than historical
-            if volatility_ratio > historical_vol * 2:  # 2x historical volatility
+            # Check if current volatility is significantly higher than historical - LOWERED THRESHOLDS
+            if volatility_ratio > historical_vol * 1.5:  # 1.5x historical volatility (was 2x)
                 volatility_score += 3
-            elif volatility_ratio > historical_vol * 1.5:  # 1.5x historical volatility
+            elif volatility_ratio > historical_vol * 1.2:  # 1.2x historical volatility (was 1.5x)
                 volatility_score += 2
-            elif volatility_ratio > historical_vol * 1.2:  # 1.2x historical volatility
+            elif volatility_ratio > historical_vol * 1.1:  # 1.1x historical volatility (was 1.2x)
                 volatility_score += 1
                 
-            # Check for volume confirmation
+            # Check for volume confirmation - LOWERED THRESHOLDS
             volume_change = data.get('volume_change', 0)
-            if volume_change > 50:  # 50% volume increase
+            if volume_change > 25:  # 25% volume increase (was 50%)
                 volatility_score += 2
-            elif volume_change > 25:
+            elif volume_change > 15:  # 15% volume increase (was 25%)
                 volatility_score += 1
                 
-            # Check for price gap
+            # Check for price gap - LOWERED THRESHOLDS
             price_change = data.get('price_change', 0)
-            if abs(price_change) > 1.0:  # 1% price change
+            if abs(price_change) > 0.25:  # 0.25% price change (was 1.0%)
                 volatility_score += 1
                 
             # Generate signal if volatility explosion is detected
             if volatility_score >= 3:  # Strong volatility explosion
+                # Dynamic stop loss based on ATR and volatility strength
+                vol_multiplier = min(volatility_score / 5.0, 2.5)
+                stop_loss_distance = atr_estimate * vol_multiplier
+                
                 # Determine direction based on price action
                 if price_change > 0:
                     action = 'BUY'
-                    target_multiplier = 1.02
-                    stop_multiplier = 0.98
+                    stop_loss = current_price - stop_loss_distance
+                    target = current_price + (stop_loss_distance * 1.5)  # 1.5:1 R/R for volatility
                 else:
                     action = 'SELL'
-                    target_multiplier = 0.98
-                    stop_multiplier = 1.02
+                    stop_loss = current_price + stop_loss_distance
+                    target = current_price - (stop_loss_distance * 1.5)  # 1.5:1 R/R for volatility
                     
                 return {
                     'symbol': symbol,
                     'action': action,
                     'quantity': 50,  # 1 lot for NIFTY
                     'entry_price': current_price,
-                    'stop_loss': current_price * stop_multiplier,
-                    'target': current_price * target_multiplier,
+                    'stop_loss': stop_loss,
+                    'target': target,
                     'strategy': self.name,
                     'confidence': min(volatility_score / 5.0, 0.9),
                     'metadata': {
@@ -148,6 +156,11 @@ class EnhancedVolatilityExplosion:
                         'historical_vol': historical_vol,
                         'volume_change': volume_change,
                         'price_change': price_change,
+                        'atr_estimate': atr_estimate,
+                        'volatility': volatility,
+                        'stop_loss_distance': stop_loss_distance,
+                        'risk_type': 'VOLATILITY_EXPLOSION_BASED',
+                        'vol_multiplier': vol_multiplier,
                         'timestamp': datetime.now().isoformat()
                     }
                 }
