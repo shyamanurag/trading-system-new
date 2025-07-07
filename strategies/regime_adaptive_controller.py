@@ -84,6 +84,12 @@ class RegimeAdaptiveController(BaseStrategy):
     def _initialize_strategy(self):
         """Initialize strategy-specific components"""
         pass
+    
+    async def initialize(self):
+        """Initialize the strategy"""
+        logger.info(f"Initializing {self.__class__.__name__} strategy")
+        self._initialize_strategy()
+        return True
         
     async def update_regime(self, market_data: pd.DataFrame) -> MarketRegime:
         """Update market regime based on latest market data"""

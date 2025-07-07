@@ -328,6 +328,7 @@ class TradingOrchestrator:
         self.is_running = False
         self.startup_time = None
         self.max_position_size = 1000000  # 10 lakh max
+        self.max_daily_loss = 100000  # 1 lakh max daily loss
         
         # Component status tracking
         self.components = {

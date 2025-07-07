@@ -31,11 +31,39 @@ class ConfluenceAmplifier:
     
     def __init__(self, config: Dict):
         self.config = config
+        self.name = "ConfluenceAmplifier"
+        self.is_active = False
+        self.current_positions = {}
+        self.performance_metrics = {}
         self.signal_history = []
         self.confluence_threshold = config.get('confluence', {}).get('threshold', 0.7)
         self.signal_decay = config.get('confluence', {}).get('decay', 0.1)
         self.max_history = config.get('confluence', {}).get('max_history', 100)
         
+    async def initialize(self):
+        """Initialize the strategy"""
+        logger.info(f"Initializing {self.name} strategy")
+        self.is_active = True
+        
+    async def on_market_data(self, data: Dict):
+        """Handle incoming market data and generate signals"""
+        if not self.is_active:
+            return
+            
+        try:
+            # Process market data with confluence amplification
+            # This strategy amplifies signals from other strategies
+            # rather than generating its own signals directly
+            pass
+            
+        except Exception as e:
+            logger.error(f"Error in {self.name} strategy: {str(e)}")
+    
+    async def shutdown(self):
+        """Shutdown the strategy"""
+        logger.info(f"Shutting down {self.name} strategy")
+        self.is_active = False
+    
     async def process_signals(self, signals: List[Signal]) -> Optional[Signal]:
         """Process and amplify signals based on confluence"""
         try:
