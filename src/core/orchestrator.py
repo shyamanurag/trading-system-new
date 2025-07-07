@@ -318,7 +318,7 @@ class TradingOrchestrator:
         self.is_running = False
         self.components = {}
         self.strategies = {}
-        self.active_strategies = {}
+        self.active_strategies = []
         self.market_data = None
         self.trade_engine = None
         self.event_bus = None
@@ -333,8 +333,8 @@ class TradingOrchestrator:
         # Strategy last run tracking
         self.strategy_last_run = {}
         
-        # Historical data for market analysis
-        self.historical_data = {}
+        # Historical data for market analysis - renamed to avoid conflict with strategy historical_data
+        self.market_data_history = {}
         self.last_data_update = {}
         
         # Trading loop task
@@ -530,57 +530,40 @@ class TradingOrchestrator:
             traceback.print_exc()
     
     def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Transform TrueData format to strategy format - FIX FOR ZERO TRADES"""
+        """Transform raw market data into format expected by strategies - ENHANCED DEBUG"""
         try:
             transformed_data = {}
-            current_time = datetime.now()
+            current_time = datetime.now(self.ist_timezone)
             
             for symbol, data in raw_data.items():
-                if not isinstance(data, dict):
-                    continue
-                    
-                # Map TrueData fields to strategy fields
-                current_price = data.get('ltp', 0) or data.get('close', 0)
+                # Use current price from different possible fields
+                current_price = data.get('ltp', data.get('close', data.get('price', 0)))
                 volume = data.get('volume', 0)
+                
+                # Extract OHLC data
                 high = data.get('high', current_price)
                 low = data.get('low', current_price)
                 open_price = data.get('open', current_price)
                 
-                # CRITICAL FIX: Calculate price and volume changes properly
-                price_change = 0.0
-                volume_change = 0.0
+                # Calculate price and volume changes
+                price_change = 0
+                volume_change = 0
                 
-                # Check if we have historical data for comparison
-                if symbol in self.historical_data:
-                    prev_data = self.historical_data[symbol]
-                    prev_price = prev_data.get('close', 0)
-                    prev_volume = prev_data.get('volume', 0)
+                if symbol in self.market_data_history:
+                    prev_data = self.market_data_history[symbol]
+                    prev_price = prev_data.get('close', current_price)
+                    prev_volume = prev_data.get('volume', volume)
                     
                     if prev_price > 0:
                         price_change = ((current_price - prev_price) / prev_price) * 100
-                    
                     if prev_volume > 0:
                         volume_change = ((volume - prev_volume) / prev_volume) * 100
                 else:
-                    # FIRST TIME: Seed historical data with realistic values for comparison
-                    # Use market data's change_percent if available
-                    price_change = data.get('change_percent', 0.0)
-                    
-                    # If no change_percent, calculate from open vs current
-                    if price_change == 0.0 and open_price > 0 and current_price != open_price:
-                        price_change = ((current_price - open_price) / open_price) * 100
-                    
-                    # Simulate volume change based on high/low range as volatility indicator
-                    if high > 0 and low > 0 and current_price > 0:
-                        volatility = (high - low) / current_price
-                        # Higher volatility suggests higher volume change
-                        volume_change = volatility * 50  # Scale volatility to volume change %
-                    
-                    # Seed historical data with slightly different values for next comparison
+                    # First time seeing this symbol - create seeded historical data for comparison
                     historical_price = current_price * 0.995  # 0.5% lower for comparison
                     historical_volume = volume * 0.8  # 20% lower volume for comparison
                     
-                    self.historical_data[symbol] = {
+                    self.market_data_history[symbol] = {
                         'close': historical_price,
                         'volume': historical_volume,
                         'timestamp': (current_time - timedelta(minutes=1)).isoformat()
@@ -605,7 +588,7 @@ class TradingOrchestrator:
                 transformed_data[symbol] = strategy_data
                 
                 # Update historical data for next comparison
-                self.historical_data[symbol] = {
+                self.market_data_history[symbol] = {
                     'close': current_price,
                     'volume': volume,
                     'timestamp': current_time.isoformat()
