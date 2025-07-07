@@ -333,6 +333,13 @@ class TradingOrchestrator:
         # Strategy last run tracking
         self.strategy_last_run = {}
         
+        # Historical data for market analysis
+        self.historical_data = {}
+        self.last_data_update = {}
+        
+        # Trading loop task
+        self._trading_task = None
+        
     async def initialize(self) -> bool:
         """Initialize the trading orchestrator with simple TrueData access"""
         try:
@@ -698,6 +705,193 @@ class TradingOrchestrator:
             
         except Exception as e:
             self.logger.error(f"Error loading strategies: {e}")
+
+    async def start_trading(self) -> bool:
+        """Start autonomous trading system"""
+        try:
+            self.logger.info("🚀 Starting autonomous trading...")
+            
+            # Ensure system is initialized
+            if not self.is_initialized:
+                self.logger.info("🔄 Initializing system first...")
+                init_success = await self.initialize()
+                if not init_success:
+                    self.logger.error("❌ Failed to initialize system")
+                    return False
+            
+            # Start the trading loop
+            self.is_running = True
+            
+            # Activate all loaded strategies
+            for strategy_key, strategy_info in self.strategies.items():
+                strategy_info['active'] = True
+                self.logger.info(f"✅ Activated strategy: {strategy_key}")
+            
+            # Start market data processing
+            if not hasattr(self, '_trading_task') or self._trading_task is None:
+                self._trading_task = asyncio.create_task(self._trading_loop())
+                self.logger.info("🔄 Started trading loop")
+            
+            self.logger.info(f"✅ Autonomous trading started with {len(self.strategies)} strategies")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to start trading: {e}")
+            return False
+    
+    async def disable_trading(self) -> bool:
+        """Stop autonomous trading system"""
+        try:
+            self.logger.info("🛑 Stopping autonomous trading...")
+            
+            # Stop the trading loop
+            self.is_running = False
+            
+            # Deactivate all strategies
+            for strategy_key, strategy_info in self.strategies.items():
+                strategy_info['active'] = False
+                self.logger.info(f"🔴 Deactivated strategy: {strategy_key}")
+            
+            # Cancel trading task if running
+            if hasattr(self, '_trading_task') and self._trading_task is not None:
+                self._trading_task.cancel()
+                self._trading_task = None
+                self.logger.info("🛑 Cancelled trading loop")
+            
+            self.logger.info("✅ Autonomous trading stopped")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to stop trading: {e}")
+            return False
+    
+    async def get_trading_status(self) -> Dict[str, Any]:
+        """Get comprehensive trading system status"""
+        try:
+            # Get market data status
+            market_data = await self._get_market_data_from_api()
+            market_data_available = len(market_data) > 0
+            
+            # Get active strategies
+            active_strategies = [
+                {
+                    'name': strategy_info.get('name', key),
+                    'key': key,
+                    'active': strategy_info.get('active', False),
+                    'last_signal': strategy_info.get('last_signal'),
+                    'initialized': 'instance' in strategy_info
+                }
+                for key, strategy_info in self.strategies.items()
+            ]
+            
+            # Get component status
+            component_status = {}
+            for component, status in self.components.items():
+                component_status[component] = {
+                    'status': 'healthy' if status else 'failed',
+                    'active': status
+                }
+            
+            # Calculate system readiness
+            critical_components = ['event_bus', 'position_tracker', 'trade_engine', 'risk_manager']
+            system_ready = all(self.components.get(comp, False) for comp in critical_components)
+            
+            # Get position and trade info
+            active_positions = []
+            if hasattr(self, 'position_tracker') and self.position_tracker:
+                try:
+                    positions = await self.position_tracker.get_all_positions()
+                    active_positions = positions if isinstance(positions, list) else []
+                except:
+                    active_positions = []
+            
+            # Get trade count
+            total_trades = 0
+            if hasattr(self, 'trade_engine') and self.trade_engine:
+                try:
+                    trade_status = await self.trade_engine.get_status()
+                    total_trades = trade_status.get('signals_processed', 0)
+                except:
+                    total_trades = 0
+            
+            # Calculate daily P&L (placeholder - needs real implementation)
+            daily_pnl = 0.0  # TODO: Implement real P&L calculation
+            
+            return {
+                'is_active': self.is_running,
+                'system_ready': system_ready,
+                'is_initialized': self.is_initialized,
+                'market_status': 'open' if self._is_market_open() else 'closed',
+                'market_data_available': market_data_available,
+                'market_symbols_count': len(market_data),
+                'active_strategies': active_strategies,
+                'total_strategies': len(self.strategies),
+                'component_status': component_status,
+                'active_positions': active_positions,
+                'total_trades': total_trades,
+                'daily_pnl': daily_pnl,
+                'risk_status': {
+                    'status': 'healthy' if self.components.get('risk_manager', False) else 'not_ready',
+                    'max_daily_loss': 100000,
+                    'current_exposure': len(active_positions)
+                },
+                'timestamp': datetime.now(self.ist_timezone).isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error getting trading status: {e}")
+            return {
+                'is_active': False,
+                'system_ready': False,
+                'error': str(e),
+                'timestamp': datetime.now(self.ist_timezone).isoformat()
+            }
+    
+    async def _trading_loop(self):
+        """Main autonomous trading loop"""
+        try:
+            self.logger.info("🔄 Starting autonomous trading loop...")
+            
+            while self.is_running:
+                try:
+                    # Process market data and run strategies
+                    await self._process_market_data()
+                    
+                    # Wait before next iteration (process every 30 seconds)
+                    await asyncio.sleep(30)
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Error in trading loop iteration: {e}")
+                    # Continue loop even if one iteration fails
+                    await asyncio.sleep(5)
+                    
+        except asyncio.CancelledError:
+            self.logger.info("🛑 Trading loop cancelled")
+        except Exception as e:
+            self.logger.error(f"❌ Trading loop failed: {e}")
+            self.is_running = False
+    
+    def _is_market_open(self) -> bool:
+        """Check if market is currently open (IST timezone)"""
+        try:
+            now = datetime.now(self.ist_timezone)
+            current_time = now.time()
+            
+            # Market hours: 9:15 AM to 3:30 PM IST
+            market_open = time(9, 15)
+            market_close = time(15, 30)
+            
+            # Check if it's a weekday (Monday=0, Sunday=6)
+            is_weekday = now.weekday() < 5
+            
+            # Check if current time is within market hours
+            is_market_hours = market_open <= current_time <= market_close
+            
+            return is_weekday and is_market_hours
+            
+        except Exception as e:
+            self.logger.error(f"Error checking market hours: {e}")
+            return True  # Default to open to avoid blocking trading
 
 # Global orchestrator instance
 orchestrator = TradingOrchestrator()
