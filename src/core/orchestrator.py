@@ -411,38 +411,31 @@ class TradingOrchestrator:
             self.logger.error(f"❌ Orchestrator initialization failed: {e}")
             return False
     
-    async def _get_market_data_from_shared_connection(self) -> Dict[str, Any]:
-        """Get market data from shared TrueData connection"""
+    async def _get_market_data_from_api(self) -> Dict[str, Any]:
+        """Get market data from existing TrueData cache - SIMPLE APPROACH"""
         try:
-            if not self.shared_truedata_manager:
-                self.logger.warning("⚠️ Shared TrueData manager not available")
-                return {}
+            # SIMPLE FIX: Access existing TrueData cache directly instead of creating new connection
+            from data.truedata_client import live_market_data
             
-            # Get connection status
-            status = self.shared_truedata_manager.get_connection_status()
-            if not status.get('connected', False):
-                self.logger.warning("⚠️ Shared TrueData connection not available")
-                return {}
-            
-            # Get all market data
-            market_data = self.shared_truedata_manager.get_market_data()
-            
-            if market_data:
-                self.logger.debug(f"📊 Retrieved {len(market_data)} symbols from shared TrueData")
-                return market_data
+            if live_market_data:
+                self.logger.info(f"📊 Using existing TrueData cache: {len(live_market_data)} symbols")
+                return live_market_data
             else:
-                self.logger.warning("⚠️ No market data available from shared connection")
+                self.logger.warning("⚠️ TrueData cache is empty")
                 return {}
                 
+        except ImportError:
+            self.logger.warning("⚠️ TrueData client not available")
+            return {}
         except Exception as e:
-            self.logger.error(f"❌ Error getting market data from shared connection: {e}")
+            self.logger.error(f"❌ Error accessing TrueData cache: {e}")
             return {}
     
     async def _process_market_data(self):
         """Process market data from shared connection and run strategies"""
         try:
             # Get market data from shared connection instead of creating new TrueData connection
-            market_data = await self._get_market_data_from_shared_connection()
+            market_data = await self._get_market_data_from_api()
             
             if not market_data:
                 self.logger.warning("⚠️ No market data available for strategy processing")
