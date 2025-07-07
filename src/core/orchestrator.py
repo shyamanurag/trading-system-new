@@ -22,9 +22,6 @@ if project_root not in sys.path:
 from src.config.database import get_redis
 from brokers.resilient_zerodha import ResilientZerodhaConnection
 
-# Import shared TrueData manager
-from src.core.shared_truedata_manager import get_shared_truedata_manager, initialize_shared_truedata
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -330,9 +327,6 @@ class TradingOrchestrator:
         self.zerodha_client = None
         self.logger = logging.getLogger(__name__)
         
-        # Shared TrueData manager
-        self.shared_truedata_manager = None
-        
         # Initialize IST timezone (CRITICAL FIX)
         self.ist_timezone = pytz.timezone('Asia/Kolkata')
         
@@ -340,22 +334,26 @@ class TradingOrchestrator:
         self.strategy_last_run = {}
         
     async def initialize(self) -> bool:
-        """Initialize the trading orchestrator with shared TrueData connection"""
+        """Initialize the trading orchestrator with simple TrueData access"""
         try:
-            self.logger.info("🚀 Initializing Trading Orchestrator with shared TrueData...")
+            self.logger.info("🚀 Initializing Trading Orchestrator with simple TrueData access...")
             
-            # CRITICAL FIX: Initialize shared TrueData connection first
-            self.logger.info("🔄 Initializing shared TrueData connection...")
-            self.shared_truedata_manager = get_shared_truedata_manager()
-            
-            # Try to connect to existing TrueData
-            truedata_success = initialize_shared_truedata()
-            if truedata_success:
-                self.logger.info("✅ Shared TrueData connection established")
-                self.components['shared_truedata'] = True
-            else:
-                self.logger.warning("⚠️ Shared TrueData connection not established - will retry later")
-                self.components['shared_truedata'] = False
+            # SIMPLE FIX: Test access to existing TrueData cache
+            self.logger.info("🔄 Testing access to existing TrueData cache...")
+            try:
+                from data.truedata_client import live_market_data
+                if live_market_data:
+                    self.logger.info(f"✅ TrueData cache accessible: {len(live_market_data)} symbols")
+                    self.components['truedata_cache'] = True
+                else:
+                    self.logger.warning("⚠️ TrueData cache is empty - will retry later")
+                    self.components['truedata_cache'] = False
+            except ImportError:
+                self.logger.warning("⚠️ TrueData client not available")
+                self.components['truedata_cache'] = False
+            except Exception as e:
+                self.logger.error(f"❌ Error accessing TrueData cache: {e}")
+                self.components['truedata_cache'] = False
             
             # Initialize event bus
             self.event_bus = ProductionEventBus()
