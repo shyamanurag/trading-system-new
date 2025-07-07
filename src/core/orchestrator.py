@@ -456,9 +456,11 @@ class TradingOrchestrator:
             self.logger.error(f"❌ Error processing market data: {e}")
     
     async def _run_strategies(self, market_data: Dict[str, Any]):
-        """Run all active strategies with market data and collect signals"""
+        """Run all active strategies with market data and collect signals - ENHANCED DEBUG"""
         try:
-            # CRITICAL FIX: Transform market data for strategies
+            self.logger.info(f"🎯 Running {len(self.strategies)} strategies with {len(market_data)} symbols")
+            
+            # Transform market data for strategies
             transformed_data = self._transform_market_data_for_strategies(market_data)
             
             # Log data transformation for debugging
@@ -467,9 +469,9 @@ class TradingOrchestrator:
                 original_data = market_data[sample_symbol]
                 transformed_sample = transformed_data.get(sample_symbol, {})
                 
-                self.logger.info(f"DATA TRANSFORMATION: {sample_symbol}")
-                self.logger.info(f"Original: ltp={original_data.get('ltp')}, volume={original_data.get('volume')}")
-                self.logger.info(f"Transformed: close={transformed_sample.get('close')}, price_change={transformed_sample.get('price_change')}, volume_change={transformed_sample.get('volume_change')}")
+                self.logger.info(f"📊 DATA SAMPLE: {sample_symbol}")
+                self.logger.info(f"   Original: ltp={original_data.get('ltp')}, volume={original_data.get('volume')}")
+                self.logger.info(f"   Transformed: close={transformed_sample.get('close')}, price_change={transformed_sample.get('price_change')}%")
             
             all_signals = []
             
@@ -477,42 +479,55 @@ class TradingOrchestrator:
                 if strategy_info.get('active', False) and 'instance' in strategy_info:
                     try:
                         strategy_instance = strategy_info['instance']
+                        self.logger.info(f"🔍 Processing strategy: {strategy_key}")
                         
                         # Call strategy's on_market_data method with TRANSFORMED data
                         await strategy_instance.on_market_data(transformed_data)
                         
                         # Get signals from strategy's current positions
+                        signals_generated = 0
                         if hasattr(strategy_instance, 'current_positions'):
                             for symbol, signal in strategy_instance.current_positions.items():
                                 if isinstance(signal, dict) and 'action' in signal and signal.get('action') != 'HOLD':
                                     # Add strategy info to signal
                                     signal['strategy'] = strategy_key
                                     all_signals.append(signal)
-                                    self.logger.info(f"SIGNAL GENERATED: {strategy_key} -> {signal}")
+                                    signals_generated += 1
+                                    self.logger.info(f"🚨 SIGNAL GENERATED: {strategy_key} -> {signal}")
                                     
                                     # Clear the signal to avoid duplicates
                                     strategy_instance.current_positions[symbol] = None
+                        
+                        if signals_generated == 0:
+                            self.logger.info(f"📝 {strategy_key}: No signals generated (normal operation)")
                         
                         # Update last signal time
                         strategy_info['last_signal'] = datetime.now().isoformat()
                         
                     except Exception as e:
-                        self.logger.error(f"Error running strategy {strategy_key}: {e}")
+                        self.logger.error(f"❌ Error running strategy {strategy_key}: {e}")
+                else:
+                    if not strategy_info.get('active', False):
+                        self.logger.warning(f"⚠️ Strategy {strategy_key} is not active")
+                    if 'instance' not in strategy_info:
+                        self.logger.warning(f"⚠️ Strategy {strategy_key} has no instance")
             
             # Process collected signals through trade engine
             if all_signals and self.trade_engine and self.components.get('trade_engine', False):
                 try:
                     await self.trade_engine.process_signals(all_signals)
-                    self.logger.info(f"PROCESSED {len(all_signals)} signals through trade engine")
+                    self.logger.info(f"🎯 PROCESSED {len(all_signals)} signals through trade engine")
                 except Exception as e:
-                    self.logger.error(f"Error processing signals through trade engine: {e}")
+                    self.logger.error(f"❌ Error processing signals through trade engine: {e}")
             elif all_signals:
-                self.logger.info(f"GENERATED {len(all_signals)} signals (trade engine not available)")
+                self.logger.warning(f"⚠️ GENERATED {len(all_signals)} signals but trade engine not available")
             else:
-                self.logger.debug("No signals generated from strategies")
+                self.logger.info("📝 No signals generated from any strategy")
                         
         except Exception as e:
-            self.logger.error(f"Error in strategy execution: {e}")
+            self.logger.error(f"❌ Error in strategy execution: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """Transform TrueData format to strategy format - FIX FOR ZERO TRADES"""
@@ -859,20 +874,30 @@ class TradingOrchestrator:
             }
     
     async def _trading_loop(self):
-        """Main autonomous trading loop"""
+        """Main autonomous trading loop - ENHANCED FOR ZERO TRADES FIX"""
         try:
             self.logger.info("🔄 Starting autonomous trading loop...")
+            loop_iteration = 0
             
             while self.is_running:
                 try:
+                    loop_iteration += 1
+                    self.logger.info(f"🔄 Trading loop iteration #{loop_iteration}")
+                    
+                    # Log current system state
+                    self.logger.info(f"📊 System state: {len(self.strategies)} strategies loaded, is_running={self.is_running}")
+                    
                     # Process market data and run strategies
                     await self._process_market_data()
+                    
+                    # Log completion
+                    self.logger.info(f"✅ Trading loop iteration #{loop_iteration} completed")
                     
                     # Wait before next iteration (process every 30 seconds)
                     await asyncio.sleep(30)
                     
                 except Exception as e:
-                    self.logger.error(f"❌ Error in trading loop iteration: {e}")
+                    self.logger.error(f"❌ Error in trading loop iteration #{loop_iteration}: {e}")
                     # Continue loop even if one iteration fails
                     await asyncio.sleep(5)
                     
