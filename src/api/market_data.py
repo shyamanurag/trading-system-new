@@ -17,134 +17,105 @@ logger = logging.getLogger(__name__)
 # Create router
 router = APIRouter(prefix="/api/v1", tags=["market-data"])
 
-# Global variables for TrueData integration  
-live_market_data = {}
-truedata_connection_status = {
-    "connected": False,
-    "last_heartbeat": None,
-    "symbols_subscribed": []
-}
-
-def get_truedata_status():
-    """Get TrueData connection status safely"""
+def get_truedata_proxy():
+    """Get TrueData proxy service for market data"""
     try:
-        from data.truedata_client import get_truedata_status as get_status
-        return get_status()
+        from src.api.truedata_proxy import get_truedata_proxy
+        return get_truedata_proxy()
     except ImportError:
-        logger.warning("TrueData client not available")
-        return {"connected": False, "error": "TrueData client not available"}
+        logger.error("TrueData proxy service not available")
+        return None
     except Exception as e:
-        logger.error(f"Error getting TrueData status: {e}")
-        return {"connected": False, "error": str(e)}
+        logger.error(f"Error getting TrueData proxy: {e}")
+        return None
 
 def is_connected() -> bool:
-    """Check if TrueData is connected"""
+    """Check if TrueData is connected via proxy service"""
     try:
-        # Import here to avoid startup errors
-        from data.truedata_client import truedata_client
-        connected = getattr(truedata_client, 'connected', False)
-        logger.info(f"🔧 TrueData connection check: {connected}")
+        proxy = get_truedata_proxy()
+        if not proxy:
+            logger.warning("TrueData proxy not available")
+            return False
+        
+        status = proxy.get_status()
+        connected = status.get('connected', False)
+        
+        logger.info(f"🔧 TrueData proxy connection check: {connected}")
+        if connected:
+            logger.info(f"   Data source: {status.get('data_source', 'unknown')}")
+            logger.info(f"   Symbols available: {status.get('symbols_count', 0)}")
+        
         return connected
-    except ImportError:
-        logger.warning("TrueData client import failed - using fallback")
-        return False
+        
     except Exception as e:
-        logger.error(f"Error checking TrueData connection: {e} - using fallback")
+        logger.error(f"Error checking TrueData proxy connection: {e}")
         return False
 
 def get_live_data_for_symbol(symbol: str) -> dict:
-    """Get live data for a specific symbol with proper symbol mapping"""
+    """Get live data for a specific symbol via proxy"""
     try:
-        # CRITICAL FIX: Use symbol mapping to convert NIFTY -> NIFTY-I
-        mapped_symbol = get_truedata_symbol(symbol.upper())
-        logger.info(f"🔧 Symbol mapping: {symbol} -> {mapped_symbol}")
+        proxy = get_truedata_proxy()
+        if not proxy:
+            logger.warning("TrueData proxy not available")
+            return {}
         
-        # Import here to avoid startup errors
-        from data.truedata_client import live_market_data
-        return live_market_data.get(mapped_symbol, {})
-    except ImportError:
-        logger.warning("TrueData client import failed")
-        return {}
+        # Use symbol mapping to convert NIFTY -> NIFTY-I
+        mapped_symbol = get_truedata_symbol(symbol.upper())
+        logger.debug(f"🔧 Symbol mapping: {symbol} -> {mapped_symbol}")
+        
+        # Get data from proxy
+        symbol_data = proxy.get_market_data(mapped_symbol)
+        
+        if symbol_data:
+            logger.debug(f"📊 Retrieved data for {symbol}: LTP={symbol_data.get('ltp', 'N/A')}")
+        
+        return symbol_data
+        
     except Exception as e:
         logger.error(f"Error getting live data for {symbol}: {e}")
         return {}
 
 def get_all_live_market_data() -> dict:
-    """Get ALL live market data from TrueData"""
+    """Get ALL live market data from proxy"""
     try:
-        from data.truedata_client import live_market_data
-        return live_market_data
-    except ImportError:
-        logger.warning("TrueData client not available")
-        return {}
+        proxy = get_truedata_proxy()
+        if not proxy:
+            logger.warning("TrueData proxy not available")
+            return {}
+        
+        all_data = proxy.get_market_data()
+        
+        logger.debug(f"📊 Retrieved all market data: {len(all_data)} symbols")
+        return all_data
+        
     except Exception as e:
         logger.error(f"Error getting all live market data: {e}")
-        return {}
-
-def get_market_data_manager_symbols() -> dict:
-    """Get symbols from MarketDataManager if available"""
-    try:
-        # Try to get symbols from the orchestrator's market data manager
-        from src.core.orchestrator import TradingOrchestrator
-        orchestrator = TradingOrchestrator.get_instance()
-        
-        if hasattr(orchestrator, 'market_data') and orchestrator.market_data:
-            # Get symbols from market data cache
-            if hasattr(orchestrator.market_data, 'market_data_cache'):
-                return orchestrator.market_data.market_data_cache
-            # Get symbols from available TrueData
-            elif hasattr(orchestrator.market_data, '_get_all_available_truedata_symbols'):
-                available_symbols = orchestrator.market_data._get_all_available_truedata_symbols()
-                # Convert to data format expected by frontend
-                symbol_data = {}
-                for symbol in available_symbols:
-                    live_data = get_live_data_for_symbol(symbol)
-                    if live_data:
-                        symbol_data[symbol] = {
-                            'current_price': live_data.get('ltp', 0),
-                            'price': live_data.get('ltp', 0),
-                            'volume': live_data.get('volume', 0),
-                            'change': live_data.get('change', 0),
-                            'change_percent': live_data.get('change_percent', 0),
-                            'high': live_data.get('high', 0),
-                            'low': live_data.get('low', 0),
-                            'open': live_data.get('open', 0),
-                            'timestamp': datetime.now().isoformat(),
-                            'symbol': symbol,
-                            'source': 'TrueData'
-                        }
-                return symbol_data
-        
-        return {}
-    except Exception as e:
-        logger.error(f"Error getting market data manager symbols: {e}")
         return {}
 
 @router.get("/market-data")
 async def get_all_market_data():
     """Get ALL market data symbols - Main endpoint for symbol count analysis"""
     try:
-        logger.info("📊 Getting all market data symbols...")
+        logger.info("📊 Getting all market data symbols via proxy...")
         
-        # Method 1: Get from MarketDataManager
-        market_data = get_market_data_manager_symbols()
+        # Get data from TrueData proxy
+        live_data = get_all_live_market_data()
+        market_data = {}
         
-        # Method 2: Fallback to direct TrueData
-        if not market_data:
-            live_data = get_all_live_market_data()
-            market_data = {}
-            
-            for symbol, data in live_data.items():
-                market_data[symbol] = {
-                    'current_price': data.get('ltp', 0),
-                    'price': data.get('ltp', 0),
-                    'volume': data.get('volume', 0),
-                    'change': data.get('change', 0),
-                    'change_percent': data.get('change_percent', 0),
-                    'timestamp': datetime.now().isoformat(),
-                    'symbol': symbol,
-                    'source': 'TrueData_Direct'
-                }
+        for symbol, data in live_data.items():
+            market_data[symbol] = {
+                'current_price': data.get('ltp', 0),
+                'price': data.get('ltp', 0),
+                'volume': data.get('volume', 0),
+                'change': data.get('change', 0),
+                'change_percent': data.get('change_percent', 0),
+                'high': data.get('high', 0),
+                'low': data.get('low', 0),
+                'open': data.get('open', 0),
+                'timestamp': datetime.now().isoformat(),
+                'symbol': symbol,
+                'source': 'TrueDataProxy'
+            }
         
         symbol_count = len(market_data)
         logger.info(f"📊 Returning {symbol_count} symbols in market data")
@@ -160,7 +131,7 @@ async def get_all_market_data():
                 "percentage_complete": round((symbol_count / 250) * 100, 1)
             },
             "timestamp": datetime.now().isoformat(),
-            "source": "market_data_manager" if market_data else "truedata_direct"
+            "source": "truedata_proxy"
         }
         
     except Exception as e:
@@ -190,25 +161,114 @@ async def get_market_data(
                 "timeframe": timeframe,
                 "data": live_data,
                 "timestamp": datetime.now().isoformat(),
-                "source": "live_data"
+                "source": "truedata_proxy"
             }
         else:
-            # NO MOCK DATA - Fail properly when real data unavailable
+            # Check if proxy is connected
+            if not is_connected():
+                raise HTTPException(
+                    status_code=503, 
+                    detail=f"TrueData proxy not connected. Market data not available for {symbol}."
+                )
+            else:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"No data available for symbol {symbol}. Symbol may not be subscribed."
+                )
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting market data for {symbol}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal error getting market data for {symbol}: {str(e)}"
+        )
+
+@router.get("/live")
+async def get_live_market_data():
+    """Get live market data for autonomous trading system"""
+    try:
+        logger.info("📊 Getting live market data for autonomous trading...")
+        
+        # Check if proxy is connected
+        if not is_connected():
             raise HTTPException(
-                status_code=503, 
-                detail=f"No live data available for {symbol}. TrueData connection required."
+                status_code=503,
+                detail="TrueData proxy not connected. No live data available."
             )
         
+        # Get all live market data
+        market_data = get_all_live_market_data()
+        
+        if not market_data:
+            raise HTTPException(
+                status_code=503,
+                detail="No live market data available from proxy."
+            )
+        
+        # Format for autonomous trading system
+        formatted_data = {
+            "symbols": list(market_data.keys()),
+            "data": market_data,
+            "timestamp": datetime.now().isoformat(),
+            "source": "truedata_proxy"
+        }
+        
+        logger.info(f"📊 Returning live data for {len(market_data)} symbols")
+        
+        return {
+            "success": True,
+            "data": formatted_data,
+            "symbol_count": len(market_data),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching market data: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting live market data: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal error getting live market data: {str(e)}"
+        )
+
+@router.get("/status")
+async def get_market_data_status():
+    """Get market data service status"""
+    try:
+        proxy = get_truedata_proxy()
+        if not proxy:
+            return {
+                "success": False,
+                "error": "TrueData proxy not available",
+                "status": "disconnected",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        status = proxy.get_status()
+        
+        return {
+            "success": True,
+            "status": status,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting market data status: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "status": "error",
+            "timestamp": datetime.now().isoformat()
+        }
 
 @router.get("/symbol-expansion/status")
 async def get_symbol_expansion_status():
     """Get current symbol expansion status - for monitoring the 6->250 expansion"""
     try:
         # Get current symbol count
-        market_data = get_market_data_manager_symbols()
+        market_data = get_all_live_market_data()
         current_count = len(market_data)
         
         # Get IntelligentSymbolManager status
@@ -313,24 +373,6 @@ async def get_individual_symbol_data(symbol: str):
             "timestamp": datetime.now().isoformat()
         }
 
-@router.get("/status")
-async def get_market_data_status():
-    """Get TrueData connection status"""
-    try:
-        status = get_truedata_status()
-        
-        return {
-            "success": True,
-            "truedata_status": status,
-            "connection_status": truedata_connection_status,
-            "live_symbols": list(live_market_data.keys()),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting market data status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @router.get("/realtime/{symbol}")
 async def get_realtime_data(symbol: str):
     """Get real-time market data for dashboard"""
@@ -411,94 +453,6 @@ async def subscribe_symbols(
         
     except Exception as e:
         logger.error(f"Error subscribing to symbols: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/live-data")
-async def get_live_market_data():
-    """Get all live market data from TrueData - NO MOCK DATA"""
-    try:
-        # Get data from TrueData client - NO FALLBACK DATA
-        try:
-            from data.truedata_client import get_truedata_client
-        except ImportError:
-            try:
-                from src.data.truedata_client import get_truedata_client
-            except ImportError:
-                logger.error("TrueData client import not available - NO MOCK DATA ALLOWED")
-                raise HTTPException(
-                    status_code=503,
-                    detail="TrueData client not available - real market data required for trading"
-                )
-        
-        client = get_truedata_client()
-        if not client:
-            logger.error("TrueData client not connected - NO MOCK DATA ALLOWED") 
-            raise HTTPException(
-                status_code=503,
-                detail="TrueData not connected - real market data required for trading"
-            )
-        
-        # Get real market data from TrueData
-        try:
-            # Key symbols for trading
-            key_symbols = [
-                "NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX", "MIDCPNIFTY",
-                "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY",
-                "HINDUNILVR", "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK",
-                "ASIANPAINT", "MARUTI", "BAJFINANCE", "HCLTECH", "AXISBANK"
-            ]
-            
-            real_data = {}
-            
-            for symbol in key_symbols:
-                try:
-                    market_data = client.get_market_data(symbol)
-                    if market_data:
-                        real_data[symbol] = {
-                            "ltp": market_data.get("ltp", 0),
-                            "change": market_data.get("change", 0),
-                            "change_percent": market_data.get("change_percent", 0),
-                            "volume": market_data.get("volume", 0),
-                            "high": market_data.get("high", 0),
-                            "low": market_data.get("low", 0),
-                            "open": market_data.get("open", 0),
-                            "timestamp": datetime.now().isoformat(),
-                            "symbol": symbol,
-                            "source": "TRUEDATA_REAL_MARKET_DATA"
-                        }
-                except Exception as e:
-                    logger.warning(f"Could not get TrueData for {symbol}: {e}")
-                    continue
-            
-            if not real_data:
-                logger.error("No real market data available from TrueData")
-                raise HTTPException(
-                    status_code=503,
-                    detail="No real market data available - check TrueData connection"
-                )
-            
-            logger.info(f"✅ Providing {len(real_data)} symbols with REAL TrueData market data")
-            
-            return {
-                "success": True,
-                "data": real_data,
-                "symbol_count": len(real_data),
-                "timestamp": datetime.now().isoformat(),
-                "source": "TRUEDATA_REAL_MARKET_DATA",
-                "note": "Real market data from TrueData - NO MOCK DATA"
-            }
-            
-        except Exception as e:
-            logger.error(f"Error getting real market data from TrueData: {e}")
-            raise HTTPException(
-                status_code=503,
-                detail=f"Error getting real market data: {str(e)}"
-            )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in get_live_market_data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/dashboard/summary")

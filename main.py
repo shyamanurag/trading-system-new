@@ -60,6 +60,7 @@ router_imports = {
     'trading_control': ('src.api.trading_control', 'router'),
     'truedata': ('src.api.truedata_integration', 'router'),
     'truedata_options': ('src.api.truedata_options', 'router'),
+    'truedata_proxy': ('src.api.truedata_proxy', 'router'),  # NEW: TrueData proxy for autonomous trading
     'market_data': ('src.api.market_data', 'router'),
     'autonomous_trading': ('src.api.autonomous_trading', 'router'),
     'recommendations': ('src.api.recommendations', 'router'),
@@ -542,6 +543,9 @@ router_configs = [
     ('market_data', '', ('market-data-v1',)),  # FIX: Mount at root, router has /api/v1 prefix
     ('truedata', '/api/v1/truedata', ('truedata',)),
     ('truedata_options', '', ('truedata-options',)),  # Already has /api/v1/truedata/options prefix
+    
+    # TrueData Proxy - NEW ADDITION for autonomous trading
+    ('truedata_proxy', '', ('truedata-proxy',)),  # Router has /api/v1/truedata-proxy prefix
     
     # User management
     ('users', '', ('users',)),  # Already has /api/v1/users prefix

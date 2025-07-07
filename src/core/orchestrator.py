@@ -1,7 +1,7 @@
 ﻿"""
 Production-Level Trading Orchestrator
 ====================================
-Coordinates all trading system components without TrueData dependencies.
+Coordinates all trading system components with shared TrueData connection.
 Implements proper initialization, error handling, and component management.
 """
 
@@ -21,6 +21,9 @@ if project_root not in sys.path:
 
 from src.config.database import get_redis
 from brokers.resilient_zerodha import ResilientZerodhaConnection
+
+# Import shared TrueData manager
+from src.core.shared_truedata_manager import get_shared_truedata_manager, initialize_shared_truedata
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -307,304 +310,152 @@ class ProductionRiskManager:
 
 class TradingOrchestrator:
     """
-    Production-Level Trading Orchestrator
-    ===================================
-    Manages all trading system components without external dependencies.
-    Implements proper initialization, health monitoring, and error recovery.
+    Production-level trading orchestrator with shared TrueData connection
     """
     
+    _instance = None
+    _lock = asyncio.Lock()
+    
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
-        
-        # Core components
-        self.zerodha = None
-        self.market_data = {}
-        self.subscribed_symbols = set()
-        self.strategies = {}
-        self.active_strategies = []
-        
-        # System state
         self.is_initialized = False
         self.is_running = False
-        self.startup_time = None
-        self.max_position_size = 1000000  # 10 lakh max
-        self.max_daily_loss = 100000  # 1 lakh max daily loss
+        self.components = {}
+        self.strategies = {}
+        self.active_strategies = {}
+        self.market_data = None
+        self.trade_engine = None
+        self.event_bus = None
+        self.position_tracker = None
+        self.risk_manager = None
+        self.zerodha_client = None
+        self.logger = logging.getLogger(__name__)
         
-        # Component status tracking
-        self.components = {
-            'trade_engine': False,
-            'risk_manager': False,
-            'position_tracker': False,
-            'event_bus': False,
-            'zerodha': False
-        }
+        # Shared TrueData manager
+        self.shared_truedata_manager = None
         
-        # Initialize components
-        self.trade_engine = TradeEngine()
-        self.risk_manager = ProductionRiskManager()
-        self.position_tracker = ProductionPositionTracker()
-        self.event_bus = ProductionEventBus()
+        # Initialize IST timezone (CRITICAL FIX)
+        self.ist_timezone = pytz.timezone('Asia/Kolkata')
         
-        # Historical data for change calculations - FIX FOR ZERO TRADES
-        self.historical_data = {}
-        self.last_data_update = {}
+        # Strategy last run tracking
+        self.strategy_last_run = {}
         
     async def initialize(self) -> bool:
-        """Initialize all system components"""
+        """Initialize the trading orchestrator with shared TrueData connection"""
         try:
-            self.logger.info(" Initializing Production Trading Orchestrator...")
+            self.logger.info("🚀 Initializing Trading Orchestrator with shared TrueData...")
             
-            success_count = 0
-            total_components = 5
+            # CRITICAL FIX: Initialize shared TrueData connection first
+            self.logger.info("🔄 Initializing shared TrueData connection...")
+            self.shared_truedata_manager = get_shared_truedata_manager()
             
-            # 1. Event Bus
-            self.event_bus = ProductionEventBus()
-            if await self.event_bus.initialize():
-                self.components['event_bus'] = True
-                success_count += 1
-                self.logger.info(" Event bus initialized")
+            # Try to connect to existing TrueData
+            truedata_success = initialize_shared_truedata()
+            if truedata_success:
+                self.logger.info("✅ Shared TrueData connection established")
+                self.components['shared_truedata'] = True
             else:
-                self.components['event_bus'] = False
-                self.logger.error(" Event bus initialization failed")
+                self.logger.warning("⚠️ Shared TrueData connection not established - will retry later")
+                self.components['shared_truedata'] = False
             
-            # 2. Position Tracker
+            # Initialize event bus
+            self.event_bus = ProductionEventBus()
+            await self.event_bus.initialize()
+            self.components['event_bus'] = True
+            
+            # Initialize position tracker with Redis
             try:
                 redis_client = await get_redis()
                 self.position_tracker = ProductionPositionTracker(redis_client)
-            except:
-                self.position_tracker = ProductionPositionTracker()
-                
-            if await self.position_tracker.initialize():
+                await self.position_tracker.initialize()
                 self.components['position_tracker'] = True
-                success_count += 1
-                self.logger.info(" Position tracker initialized")
-            else:
-                self.components['position_tracker'] = False
-                self.logger.error(" Position tracker initialization failed")
-            
-            # 3. Risk Manager
-            try:
-                self.risk_manager = ProductionRiskManager(
-                    event_bus=self.event_bus,
-                    position_tracker=self.position_tracker,
-                    max_daily_loss=self.max_daily_loss,
-                    max_position_size=self.max_position_size
-                )
-                if await self.risk_manager.initialize():
-                    self.components['risk_manager'] = True
-                    success_count += 1
-                    self.logger.info(" Risk manager initialized")
-                else:
-                    self.components['risk_manager'] = False
-                    self.logger.error(" Risk manager initialization failed")
+                self.logger.info("✅ Position tracker initialized with Redis")
             except Exception as e:
-                self.components['risk_manager'] = False
-                self.logger.error(f" Risk manager initialization failed: {e}")
+                self.logger.warning(f"Redis not available, using in-memory position tracker: {e}")
+                self.position_tracker = ProductionPositionTracker()
+                await self.position_tracker.initialize()
+                self.components['position_tracker'] = True
             
-            # 4. Trade Engine - FIXED: Force component to be active
-            try:
-                self.trade_engine = TradeEngine()
-                # Always try to initialize
-                engine_init_result = await self.trade_engine.initialize()
-                
-                # CRITICAL FIX: Force trade engine component to be active
-                # The trade engine is essential for signal processing
-                if self.trade_engine:
-                    self.components['trade_engine'] = True
-                    success_count += 1
-                    self.logger.info("✅ Trade engine initialized and component marked as ACTIVE")
-                else:
-                    # Even if init fails, create a basic trade engine for signal processing
-                    self.trade_engine = TradeEngine()
-                    self.trade_engine.is_initialized = True
-                    self.components['trade_engine'] = True
-                    success_count += 1
-                    self.logger.info("✅ Trade engine FORCED ACTIVE for signal processing")
-                    
-            except Exception as e:
-                # CRITICAL: Even on exception, create trade engine for signal processing
-                self.trade_engine = TradeEngine()
-                self.trade_engine.is_initialized = True
-                self.components['trade_engine'] = True
-                success_count += 1
-                self.logger.warning(f"⚠️ Trade engine exception but FORCED ACTIVE: {e}")
-                self.logger.info("✅ Trade engine component set to ACTIVE for signal processing")
+            # Initialize risk manager
+            self.risk_manager = ProductionRiskManager(
+                event_bus=self.event_bus,
+                position_tracker=self.position_tracker,
+                max_daily_loss=100000,
+                max_position_size=1000000
+            )
+            await self.risk_manager.initialize()
+            self.components['risk_manager'] = True
             
-            # 5. Zerodha Client (optional - can work without it)
-            try:
-                # Create Zerodha config from environment variables
-                zerodha_config = {
-                    'api_key': os.getenv('ZERODHA_API_KEY'),
-                    'api_secret': os.getenv('ZERODHA_API_SECRET'),
-                    'user_id': os.getenv('ZERODHA_USER_ID'),
-                    'access_token': os.getenv('ZERODHA_ACCESS_TOKEN'),
-                    'pin': os.getenv('ZERODHA_PIN'),
-                    'mock_mode': False  # Always use real Zerodha API - Zerodha handles paper trading internally
-                }
-                
-                # Create resilient connection config
-                resilient_config = {
-                    'order_rate_limit': 1.0,
-                    'ws_reconnect_delay': 5,
-                    'ws_max_reconnect_attempts': 10
-                }
-                
-                # Import ZerodhaIntegration
-                from brokers.zerodha import ZerodhaIntegration
-                from brokers.resilient_zerodha import ResilientZerodhaConnection
-                
-                # Create broker instance with config
-                broker = ZerodhaIntegration(zerodha_config)
-                self.zerodha = ResilientZerodhaConnection(broker, resilient_config)
-                
-                if await self.zerodha.initialize():
-                    self.components['zerodha'] = True
-                    success_count += 1
-                    self.logger.info(" Zerodha client initialized")
-                else:
-                    self.components['zerodha'] = False
-                    self.logger.error(" Zerodha client initialization failed")
-            except Exception as e:
-                self.components['zerodha'] = False
-                self.logger.error(f" Zerodha client initialization failed: {e}")
-                self.logger.info(" System will continue without Zerodha client")
+            # Initialize trade engine
+            self.trade_engine = TradeEngine()
+            await self.trade_engine.initialize()
+            self.components['trade_engine'] = True
+            
+            # Initialize Zerodha client (non-blocking)
+            await self._initialize_zerodha_client()
             
             # Load strategies
             await self._load_strategies()
             
-            # Check initialization success - require at least 4 out of 5 components (Zerodha can be optional)
-            self.is_initialized = success_count >= 4
+            self.is_initialized = True
+            self.logger.info("✅ Trading orchestrator initialized successfully")
             
-            if self.is_initialized:
-                self.logger.info(f" Orchestrator initialized successfully ({success_count}/{total_components} components)")
-                if success_count < 5:
-                    self.logger.info(" Note: Some components failed but system is operational")
+            # Log component status
+            self.logger.info("📊 Component Status:")
+            for component, status in self.components.items():
+                status_icon = "✅" if status else "❌"
+                self.logger.info(f"   {status_icon} {component}: {status}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Orchestrator initialization failed: {e}")
+            return False
+    
+    async def _get_market_data_from_shared_connection(self) -> Dict[str, Any]:
+        """Get market data from shared TrueData connection"""
+        try:
+            if not self.shared_truedata_manager:
+                self.logger.warning("⚠️ Shared TrueData manager not available")
+                return {}
+            
+            # Get connection status
+            status = self.shared_truedata_manager.get_connection_status()
+            if not status.get('connected', False):
+                self.logger.warning("⚠️ Shared TrueData connection not available")
+                return {}
+            
+            # Get all market data
+            market_data = self.shared_truedata_manager.get_market_data()
+            
+            if market_data:
+                self.logger.debug(f"📊 Retrieved {len(market_data)} symbols from shared TrueData")
+                return market_data
             else:
-                self.logger.error(f" Orchestrator initialization failed ({success_count}/{total_components} components)")
-            
-            return self.is_initialized
-            
+                self.logger.warning("⚠️ No market data available from shared connection")
+                return {}
+                
         except Exception as e:
-            self.logger.error(f"Critical error during orchestrator initialization: {e}")
-            self.is_initialized = False
-            return False
-    
-    async def _load_strategies(self):
-        """Load and initialize trading strategies"""
-        try:
-            # Clear existing strategies to prevent duplicates
-            self.strategies.clear()
-            self.active_strategies.clear()
-            
-            strategy_configs = {
-                'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
-                'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},
-                'volume_profile_scalper': {'name': 'EnhancedVolumeProfileScalper', 'config': {}},
-                'news_impact_scalper': {'name': 'EnhancedNewsImpactScalper', 'config': {}},
-                'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}},
-                'confluence_amplifier': {'name': 'ConfluenceAmplifier', 'config': {}}
-            }
-            
-            self.logger.info(f"Loading {len(strategy_configs)} trading strategies...")
-            
-            for strategy_key, strategy_info in strategy_configs.items():
-                try:
-                    # Import strategy class
-                    if strategy_key == 'momentum_surfer':
-                        from strategies.momentum_surfer import EnhancedMomentumSurfer
-                        strategy_instance = EnhancedMomentumSurfer(strategy_info['config'])
-                    elif strategy_key == 'volatility_explosion':
-                        from strategies.volatility_explosion import EnhancedVolatilityExplosion
-                        strategy_instance = EnhancedVolatilityExplosion(strategy_info['config'])
-                    elif strategy_key == 'volume_profile_scalper':
-                        from strategies.volume_profile_scalper import EnhancedVolumeProfileScalper
-                        strategy_instance = EnhancedVolumeProfileScalper(strategy_info['config'])
-                    elif strategy_key == 'news_impact_scalper':
-                        from strategies.news_impact_scalper import EnhancedNewsImpactScalper
-                        strategy_instance = EnhancedNewsImpactScalper(strategy_info['config'])
-                    elif strategy_key == 'regime_adaptive_controller':
-                        from strategies.regime_adaptive_controller import RegimeAdaptiveController
-                        strategy_instance = RegimeAdaptiveController(strategy_info['config'])
-                    elif strategy_key == 'confluence_amplifier':
-                        from strategies.confluence_amplifier import ConfluenceAmplifier
-                        strategy_instance = ConfluenceAmplifier(strategy_info['config'])
-                    else:
-                        continue
-                    
-                    # Initialize strategy
-                    await strategy_instance.initialize()
-                    
-                    # Store strategy instance
-                    self.strategies[strategy_key] = {
-                        'name': strategy_key,
-                        'instance': strategy_instance,
-                        'active': True,
-                        'last_signal': None
-                    }
-                    self.active_strategies.append(strategy_key)
-                    self.logger.info(f"✓ Loaded and initialized strategy: {strategy_key}")
-                    
-                except Exception as e:
-                    self.logger.error(f"✗ Failed to load strategy {strategy_key}: {e}")
-            
-            self.logger.info(f"✓ Successfully loaded {len(self.strategies)}/{len(strategy_configs)} trading strategies")
-            
-        except Exception as e:
-            self.logger.error(f"Error loading strategies: {e}")
-    
-    async def start_trading(self) -> bool:
-        """Start autonomous trading"""
-        try:
-            if not self.is_initialized:
-                self.logger.error("Cannot start trading - orchestrator not initialized")
-                return False
-            
-            self.is_running = True
-            self.logger.info(" Autonomous trading started")
-            
-            # Start market data processing
-            asyncio.create_task(self._process_market_data())
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Failed to start trading: {e}")
-            return False
-    
-    async def stop_trading(self) -> bool:
-        """Stop autonomous trading"""
-        try:
-            self.is_running = False
-            self.logger.info(" Autonomous trading stopped")
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to stop trading: {e}")
-            return False
+            self.logger.error(f"❌ Error getting market data from shared connection: {e}")
+            return {}
     
     async def _process_market_data(self):
-        """Process incoming market data and pass to strategies - CONTINUOUS for options trading"""
-        while self.is_running:
-            try:
-                # Get market data from API (avoiding TrueData dependency)
-                market_data = await self._get_market_data_from_api()
+        """Process market data from shared connection and run strategies"""
+        try:
+            # Get market data from shared connection instead of creating new TrueData connection
+            market_data = await self._get_market_data_from_shared_connection()
+            
+            if not market_data:
+                self.logger.warning("⚠️ No market data available for strategy processing")
+                return
                 
-                # Update internal market data
-                self.market_data.update(market_data)
-                
-                # Publish market data event
-                if self.event_bus:
-                    await self.event_bus.publish('market_data_update', market_data)
-                
-                # Pass market data to strategies for signal generation
-                if market_data and self.strategies:
-                    await self._run_strategies(market_data)
-                
-                # CONTINUOUS PROCESSING: 1 second for options trading (was 5 seconds)
-                await asyncio.sleep(1)  # Process every 1 second for options opportunities
-                
-            except Exception as e:
-                self.logger.error(f"Error processing market data: {e}")
-                await asyncio.sleep(2)  # Wait shorter on error for continuous processing
+            # Transform market data for strategies
+            transformed_data = self._transform_market_data_for_strategies(market_data)
+            
+            # Run strategies with market data
+            await self._run_strategies(transformed_data)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error processing market data: {e}")
     
     async def _run_strategies(self, market_data: Dict[str, Any]):
         """Run all active strategies with market data and collect signals"""
@@ -665,154 +516,6 @@ class TradingOrchestrator:
         except Exception as e:
             self.logger.error(f"Error in strategy execution: {e}")
     
-    async def _get_market_data_from_api(self) -> Dict[str, Any]:
-        """Get market data from internal API instead of TrueData directly"""
-        try:
-            # Import here to avoid circular imports
-            from src.api.market_data import get_live_market_data
-            
-            # Get market data from our internal API
-            market_data_response = await get_live_market_data()
-            
-            if market_data_response and 'data' in market_data_response:
-                return market_data_response['data']
-            else:
-                return {}
-                
-        except Exception as e:
-            self.logger.error(f"Failed to get market data from API: {e}")
-            return {}
-    
-    def _is_market_open(self) -> bool:
-        """Check if market is open"""
-        try:
-            # Get current time in IST
-            ist = pytz.timezone('Asia/Kolkata')
-            now = datetime.now(ist)
-            current_time = now.time()
-            
-            # Market hours: 9:15 AM to 3:30 PM IST
-            market_open = time(9, 15)
-            market_close = time(15, 30)
-            
-            # Check if it's a weekday (Monday=0, Sunday=6)
-            if now.weekday() >= 5:  # Saturday or Sunday
-                return False
-            
-            return market_open <= current_time <= market_close
-            
-        except Exception as e:
-            self.logger.error(f"Error checking market hours: {e}")
-            return True  # Default to True if check fails
-    
-    def _get_market_outlook(self) -> str:
-        """Get current market outlook"""
-        try:
-            if self._is_market_open():
-                return "MARKET_OPEN"
-            else:
-                return "MARKET_CLOSED"
-        except Exception as e:
-            self.logger.error(f"Error getting market outlook: {e}")
-            return "UNKNOWN"
-    
-    async def get_status(self) -> Dict[str, Any]:
-        """Get orchestrator status"""
-        try:
-            component_count = sum(1 for status in self.components.values() if status)
-            total_components = len(self.components)
-            
-            return {
-                'system_ready': self.is_initialized,
-                'trading_active': self.is_running,
-                'market_open': self._is_market_open(),
-                'market_outlook': self._get_market_outlook(),
-                'components_ready': component_count,
-                'total_components': total_components,
-                'component_status': self.components,
-                'strategies_loaded': len(self.strategies),
-                'active_strategies': self.active_strategies,
-                'symbol_count': len(self.market_data),
-                'subscribed_symbols': len(self.subscribed_symbols),
-                'last_updated': datetime.now().isoformat()
-            }
-        except Exception as e:
-            self.logger.error(f"Error getting status: {e}")
-            return {
-                'system_ready': False,
-                'error': str(e)
-            }
-    
-    async def get_risk_status(self) -> Dict[str, Any]:
-        """Get risk manager status"""
-        try:
-            if self.risk_manager and self.components.get('risk_manager', False):
-                return await self.risk_manager.get_status()
-            else:
-                return {
-                    'status': 'risk_manager_not_initialized',
-                    'daily_pnl': 0.0,
-                    'max_daily_loss': self.max_position_size,
-                    'risk_limit_used': 0.0
-                }
-        except Exception as e:
-            self.logger.error(f"Error getting risk status: {e}")
-            return {
-                'status': 'risk_manager_error',
-                'error': str(e)
-            }
-
-    async def get_trading_status(self) -> Dict[str, Any]:
-        """Get comprehensive trading status for autonomous trading API"""
-        try:
-            return {
-                'is_active': self.is_running,
-                'session_id': f"session_{int(datetime.now().timestamp())}",
-                'start_time': datetime.now().isoformat() if self.is_running else None,
-                'last_heartbeat': datetime.now().isoformat(),
-                'active_strategies': self.active_strategies,
-                'active_positions': len(self.market_data),
-                'total_trades': 0,  # TODO: Implement trade counting
-                'daily_pnl': 0.0,   # TODO: Implement PnL tracking
-                'risk_status': await self.get_risk_status(),
-                'market_status': self._get_market_outlook(),
-                'system_ready': self.is_initialized,
-                'components_status': self.components
-            }
-        except Exception as e:
-            self.logger.error(f"Error getting trading status: {e}")
-            return {
-                'is_active': False,
-                'error': str(e)
-            }
-
-    async def initialize_system(self) -> bool:
-        """Initialize the complete trading system"""
-        try:
-            self.logger.info("🔄 Initializing complete trading system...")
-            return await self.initialize()
-        except Exception as e:
-            self.logger.error(f"Error initializing system: {e}")
-            return False
-
-    async def enable_trading(self) -> bool:
-        """Enable autonomous trading"""
-        try:
-            self.logger.info("🚀 Enabling autonomous trading...")
-            return await self.start_trading()
-        except Exception as e:
-            self.logger.error(f"Error enabling trading: {e}")
-            return False
-
-    async def disable_trading(self) -> bool:
-        """Disable autonomous trading"""
-        try:
-            self.logger.info("🛑 Disabling autonomous trading...")
-            return await self.stop_trading()
-        except Exception as e:
-            self.logger.error(f"Error disabling trading: {e}")
-            return False
-
     def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """Transform TrueData format to strategy format - FIX FOR ZERO TRADES"""
         try:
@@ -902,6 +605,108 @@ class TradingOrchestrator:
         except Exception as e:
             self.logger.error(f"Error transforming market data: {e}")
             return raw_data  # Return original data if transformation fails
+
+    async def _initialize_zerodha_client(self):
+        """Initialize Zerodha client (non-blocking)"""
+        try:
+            # Create Zerodha config from environment variables
+            zerodha_config = {
+                'api_key': os.getenv('ZERODHA_API_KEY'),
+                'api_secret': os.getenv('ZERODHA_API_SECRET'),
+                'user_id': os.getenv('ZERODHA_USER_ID'),
+                'access_token': os.getenv('ZERODHA_ACCESS_TOKEN'),
+                'pin': os.getenv('ZERODHA_PIN'),
+                'mock_mode': False  # Always use real Zerodha API - Zerodha handles paper trading internally
+            }
+            
+            # Create resilient connection config
+            resilient_config = {
+                'order_rate_limit': 1.0,
+                'ws_reconnect_delay': 5,
+                'ws_max_reconnect_attempts': 10
+            }
+            
+            # Import ZerodhaIntegration
+            from brokers.zerodha import ZerodhaIntegration
+            from brokers.resilient_zerodha import ResilientZerodhaConnection
+            
+            # Create broker instance with config
+            broker = ZerodhaIntegration(zerodha_config)
+            self.zerodha_client = ResilientZerodhaConnection(broker, resilient_config)
+            
+            if await self.zerodha_client.initialize():
+                self.components['zerodha'] = True
+                self.logger.info(" Zerodha client initialized")
+            else:
+                self.components['zerodha'] = False
+                self.logger.error(" Zerodha client initialization failed")
+        except Exception as e:
+            self.components['zerodha'] = False
+            self.logger.error(f" Zerodha client initialization failed: {e}")
+            self.logger.info(" System will continue without Zerodha client")
+    
+    async def _load_strategies(self):
+        """Load and initialize trading strategies"""
+        try:
+            # Clear existing strategies to prevent duplicates
+            self.strategies.clear()
+            self.active_strategies.clear()
+            
+            strategy_configs = {
+                'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
+                'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},
+                'volume_profile_scalper': {'name': 'EnhancedVolumeProfileScalper', 'config': {}},
+                'news_impact_scalper': {'name': 'EnhancedNewsImpactScalper', 'config': {}},
+                'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}},
+                'confluence_amplifier': {'name': 'ConfluenceAmplifier', 'config': {}}
+            }
+            
+            self.logger.info(f"Loading {len(strategy_configs)} trading strategies...")
+            
+            for strategy_key, strategy_info in strategy_configs.items():
+                try:
+                    # Import strategy class
+                    if strategy_key == 'momentum_surfer':
+                        from strategies.momentum_surfer import EnhancedMomentumSurfer
+                        strategy_instance = EnhancedMomentumSurfer(strategy_info['config'])
+                    elif strategy_key == 'volatility_explosion':
+                        from strategies.volatility_explosion import EnhancedVolatilityExplosion
+                        strategy_instance = EnhancedVolatilityExplosion(strategy_info['config'])
+                    elif strategy_key == 'volume_profile_scalper':
+                        from strategies.volume_profile_scalper import EnhancedVolumeProfileScalper
+                        strategy_instance = EnhancedVolumeProfileScalper(strategy_info['config'])
+                    elif strategy_key == 'news_impact_scalper':
+                        from strategies.news_impact_scalper import EnhancedNewsImpactScalper
+                        strategy_instance = EnhancedNewsImpactScalper(strategy_info['config'])
+                    elif strategy_key == 'regime_adaptive_controller':
+                        from strategies.regime_adaptive_controller import RegimeAdaptiveController
+                        strategy_instance = RegimeAdaptiveController(strategy_info['config'])
+                    elif strategy_key == 'confluence_amplifier':
+                        from strategies.confluence_amplifier import ConfluenceAmplifier
+                        strategy_instance = ConfluenceAmplifier(strategy_info['config'])
+                    else:
+                        continue
+                    
+                    # Initialize strategy
+                    await strategy_instance.initialize()
+                    
+                    # Store strategy instance
+                    self.strategies[strategy_key] = {
+                        'name': strategy_key,
+                        'instance': strategy_instance,
+                        'active': True,
+                        'last_signal': None
+                    }
+                    self.active_strategies.append(strategy_key)
+                    self.logger.info(f"✓ Loaded and initialized strategy: {strategy_key}")
+                    
+                except Exception as e:
+                    self.logger.error(f"✗ Failed to load strategy {strategy_key}: {e}")
+            
+            self.logger.info(f"✓ Successfully loaded {len(self.strategies)}/{len(strategy_configs)} trading strategies")
+            
+        except Exception as e:
+            self.logger.error(f"Error loading strategies: {e}")
 
 # Global orchestrator instance
 orchestrator = TradingOrchestrator()
