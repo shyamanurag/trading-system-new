@@ -314,6 +314,28 @@ class AutonomousEliteScanner:
             logger.error(f"Error generating fallback signal: {e}")
             return None
 
+    def _calculate_secondary_target(self, primary_target, entry_price, action):
+        """Calculate secondary target based on position direction"""
+        if action == 'SELL':  # SHORT position
+            # For SHORT: secondary target should be HIGHER than primary (less profit)
+            distance = abs(entry_price - primary_target)
+            return round(primary_target + (distance * 0.5), 2)
+        else:  # LONG position
+            # For LONG: secondary target should be HIGHER than primary (more profit)
+            distance = abs(primary_target - entry_price)
+            return round(primary_target + (distance * 0.5), 2)
+    
+    def _calculate_tertiary_target(self, primary_target, entry_price, action):
+        """Calculate tertiary target based on position direction"""
+        if action == 'SELL':  # SHORT position
+            # For SHORT: tertiary target should be HIGHER than secondary (least profit)
+            distance = abs(entry_price - primary_target)
+            return round(primary_target + (distance * 0.75), 2)
+        else:  # LONG position
+            # For LONG: tertiary target should be HIGHER than secondary (most profit)
+            distance = abs(primary_target - entry_price)
+            return round(primary_target + (distance * 0.75), 2)
+
     def convert_signal_to_recommendation(self, signal):
         """Convert trading signal to Elite recommendation format (NO FIXED PERCENTAGES)"""
         try:
@@ -344,8 +366,8 @@ class AutonomousEliteScanner:
                 "current_price": round(current_price, 2),
                 "stop_loss": round(stop_loss, 2),
                 "primary_target": round(target, 2),
-                "secondary_target": round(target * 1.01, 2),
-                "tertiary_target": round(target * 1.02, 2),
+                "secondary_target": self._calculate_secondary_target(target, current_price, signal['action']),
+                "tertiary_target": self._calculate_tertiary_target(target, current_price, signal['action']),
                 "risk_reward_ratio": round(risk_reward_ratio, 2),
                 "risk_metrics": {
                     "risk_percent": round(risk_percent, 2),
