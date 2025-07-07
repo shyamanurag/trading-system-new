@@ -38,7 +38,7 @@ const SystemHealthDashboard = () => {
     // Critical endpoints to monitor
     const criticalEndpoints = [
         { name: 'Autonomous Trading', url: '/api/v1/autonomous/status', critical: true },
-        { name: 'Dashboard Summary', url: '/api/v1/dashboard/dashboard/summary', critical: true },
+        { name: 'Dashboard Summary', url: '/api/v1/dashboard/summary', critical: true },
         { name: 'Trading Control', url: '/api/v1/control/trading/status', critical: false },
         { name: 'System Status', url: '/api/v1/system/status', critical: false },
         { name: 'Performance API', url: '/api/v1/performance/trades', critical: false },

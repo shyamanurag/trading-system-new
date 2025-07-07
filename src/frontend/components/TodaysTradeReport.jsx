@@ -120,7 +120,7 @@ const TodaysTradeReport = () => {
 
         try {
             const recovery_sources = [
-                '/api/v1/dashboard/dashboard/summary',
+                '/api/v1/dashboard/summary',
                 '/api/v1/system/status',
                 '/api/v1/monitoring/daily-pnl'
             ];

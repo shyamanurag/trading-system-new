@@ -66,7 +66,7 @@ export const API_ENDPOINTS = {
     STRATEGY_PERFORMANCE: createEndpoint('/api/v1/strategies/performance'),
 
     // Dashboard endpoints - FIXED: Added /api prefix
-    DASHBOARD_SUMMARY: createEndpoint('/api/v1/dashboard/dashboard/summary'),
+    DASHBOARD_SUMMARY: createEndpoint('/api/v1/dashboard/summary'),
     DAILY_PNL: createEndpoint('/api/v1/monitoring/daily-pnl'),
     RECOMMENDATIONS: createEndpoint('/api/v1/elite', true),
     ELITE_RECOMMENDATIONS: createEndpoint('/api/v1/elite', true),
@@ -92,7 +92,7 @@ export const API_ENDPOINTS = {
     AUTONOMOUS_START: createEndpoint('/api/v1/autonomous/start'),
     AUTONOMOUS_STOP: createEndpoint('/api/v1/autonomous/stop'),
     AUTONOMOUS_CONTROL: createEndpoint('/api/v1/autonomous/control'),
-    AUTONOMOUS_DATA: createEndpoint('/api/v1/autonomous/autonomous/status'),
+    AUTONOMOUS_DATA: createEndpoint('/api/v1/autonomous/status'),
 
     // WebSocket endpoints - FIXED: Using single /ws endpoint
     WS_ENDPOINT: `${WS_BASE_URL}/ws`,
