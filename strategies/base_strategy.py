@@ -5,8 +5,9 @@ Common functionality for all trading strategies with proper ATR calculation and 
 
 import logging
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, time
 import numpy as np
+import pytz  # Add timezone support
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,38 @@ class BaseStrategy:
         self.historical_data = {}  # symbol -> list of price data
         self.max_history = 50  # Keep last 50 data points per symbol
         
+    def _is_trading_hours(self) -> bool:
+        """Check if within trading hours - FIXED: Now uses IST timezone"""
+        try:
+            # Get current time in IST (same as orchestrator)
+            ist = pytz.timezone('Asia/Kolkata')
+            now = datetime.now(ist)
+            current_time = now.time()
+            
+            # NSE trading hours: 9:15 AM to 3:30 PM IST
+            market_open = time(9, 15)
+            market_close = time(15, 30)
+            
+            # Check if it's a weekday (Monday=0, Sunday=6)
+            if now.weekday() >= 5:  # Saturday or Sunday
+                logger.info(f"🚫 SAFETY: Trading blocked on weekend. Current day: {now.strftime('%A')}")
+                return False
+            
+            is_trading_time = market_open <= current_time <= market_close
+            
+            if not is_trading_time:
+                logger.info(f"🚫 SAFETY: Trading blocked outside market hours. Current IST time: {current_time} "
+                           f"(Market: {market_open} - {market_close})")
+            else:
+                logger.info(f"✅ TRADING HOURS: Market open. Current IST time: {current_time}")
+            
+            return is_trading_time
+            
+        except Exception as e:
+            logger.error(f"Error checking trading hours: {e}")
+            # SAFETY: If timezone check fails, default to False (safer)
+            return False
+    
     def calculate_true_range(self, high: float, low: float, prev_close: float) -> float:
         """Calculate True Range - the foundation of proper ATR calculation"""
         try:
