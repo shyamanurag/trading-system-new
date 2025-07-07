@@ -158,10 +158,22 @@ class AutonomousEliteScanner:
                 if not current_price or not volume:
                     continue
                 
-                # Calculate DYNAMIC risk metrics (NO FIXED PERCENTAGES)
+                # Calculate DYNAMIC risk metrics (NO FIXED PERCENTAGES) - FIXED: Prevent zero ATR
                 price_range = high - low
-                atr_estimate = price_range  # Simplified ATR for single day
-                volatility = (price_range / current_price) if current_price > 0 else 0
+                
+                # CRITICAL FIX: Ensure minimum ATR to prevent zero stop loss
+                if price_range <= 0:
+                    # Fallback to percentage-based ATR when no intraday range available
+                    atr_estimate = current_price * 0.01  # 1% of current price as minimum ATR
+                    logger.info(f"🔧 ATR FIX: Using 1% fallback ATR for {symbol} (price_range was {price_range})")
+                else:
+                    atr_estimate = price_range
+                
+                # Ensure minimum ATR is at least 0.1% of price
+                min_atr = current_price * 0.001  # 0.1% minimum
+                atr_estimate = max(atr_estimate, min_atr)
+                
+                volatility = (atr_estimate / current_price) if current_price > 0 else 0.01
                 
                 # Dynamic risk based on market conditions
                 base_risk = max(volatility * 2.0, 0.005)  # At least 0.5% but volatility-driven
