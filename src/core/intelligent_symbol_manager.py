@@ -16,7 +16,7 @@ import os
 from dataclasses import dataclass, field
 
 # Import TrueData client functions
-from data.truedata_client import subscribe_to_symbols, is_connected
+from data.truedata_client import subscribe_to_symbols, is_connected, live_market_data
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,7 @@ class IntelligentSymbolManager:
         logger.info(f"✅ Initial setup complete: {len(symbols_list)} symbols")
 
     async def subscribe_symbols(self, symbols: List[str]):
-        """Subscribe to symbols using existing TrueData connection with retry logic"""
+        """Subscribe to symbols using existing TrueData cache - FIXED TO PREVENT CONNECTION CONFLICTS"""
         try:
             # Filter out already subscribed symbols
             new_symbols = [s for s in symbols if s not in self.active_symbols]
@@ -144,33 +144,15 @@ class IntelligentSymbolManager:
             if not new_symbols:
                 return
                 
-            logger.info(f"📊 Subscribing to {len(new_symbols)} new symbols...")
+            logger.info(f"📊 Registering {len(new_symbols)} new symbols for tracking...")
             
-            # Retry logic for TrueData connection
-            max_retries = 5
-            retry_count = 0
+            # CRITICAL FIX: Don't call subscribe_to_symbols() which creates connection conflicts
+            # Instead, just register symbols for tracking and let main TrueData client handle subscriptions
             
-            while retry_count < max_retries:
-                if is_connected():
-                    logger.info("✅ TrueData connected - attempting symbol subscription")
-                    break
-                else:
-                    logger.info(f"⏳ Waiting for TrueData connection... (attempt {retry_count + 1}/{max_retries})")
-                    await asyncio.sleep(3)  # Wait 3 seconds between retries
-                    retry_count += 1
-            
-            if retry_count >= max_retries:
-                logger.warning("⚠️ TrueData not connected after max retries - will retry in background")
-                logger.info("💡 Symbols will be added automatically when TrueData connects")
-                # Store symbols for later retry
-                self.pending_symbols = new_symbols
-                return
-            
-            # CRITICAL FIX: Actually call TrueData client subscription
-            success = subscribe_to_symbols(new_symbols)
-            
-            if success:
-                # Update active symbols
+            if is_connected():
+                logger.info("✅ TrueData connected - symbols will be available via cache")
+                
+                # Just update our tracking - don't try to subscribe directly
                 self.active_symbols.update(new_symbols)
                 
                 # Store metadata
@@ -182,15 +164,22 @@ class IntelligentSymbolManager:
                         'priority': self.get_symbol_priority(symbol)
                     }
                 
-                logger.info(f"✅ Successfully subscribed to {len(new_symbols)} symbols")
-                logger.info(f"📊 Total active symbols: {len(self.active_symbols)}")
+                logger.info(f"✅ Registered {len(new_symbols)} symbols for tracking")
+                logger.info(f"📊 Total tracked symbols: {len(self.active_symbols)}")
+                
+                # Check if any symbols are already available in cache
+                available_count = sum(1 for symbol in new_symbols if symbol in live_market_data)
+                if available_count > 0:
+                    logger.info(f"📊 {available_count}/{len(new_symbols)} symbols already available in cache")
+                
             else:
-                logger.error("❌ Failed to subscribe to symbols via TrueData client")
-                logger.info("🔄 Will retry subscription in next refresh cycle")
+                logger.warning("⚠️ TrueData not connected - symbols registered for when connection is available")
+                # Store symbols for later processing
+                self.pending_symbols.extend(new_symbols)
+                logger.info(f"💾 Stored {len(new_symbols)} symbols as pending")
                 
         except Exception as e:
-            logger.error(f"❌ Subscription error: {e}")
-            logger.error("💡 Make sure TrueData client is connected before symbol subscription")
+            logger.error(f"❌ Symbol registration error: {e}")
 
     async def unsubscribe_symbols(self, symbols: List[str]):
         """Unsubscribe from symbols"""

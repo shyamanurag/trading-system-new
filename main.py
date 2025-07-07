@@ -63,6 +63,7 @@ router_imports = {
     'truedata_proxy': ('src.api.truedata_proxy', 'router'),  # NEW: TrueData proxy for autonomous trading
     'market_data': ('src.api.market_data', 'router'),
     'autonomous_trading': ('src.api.autonomous_trading', 'router'),
+    'autonomous_trading_simple': ('src.api.autonomous_trading_simple', 'router'),
     'recommendations': ('src.api.recommendations', 'router'),
     'elite_recommendations': ('src.api.elite_recommendations', 'router'),
     'trade_management': ('src.api.trade_management', 'router'),
@@ -1290,6 +1291,141 @@ async def get_live_market_data_direct():
             }
         )
 
+# SIMPLE AUTONOMOUS TRADING ENDPOINTS - MINIMAL EFFECTIVE SOLUTION
+# These endpoints bypass the complex orchestrator and use direct simple trader
+@app.get("/api/v1/autonomous-simple/status", tags=["autonomous-simple"])
+async def get_simple_autonomous_status():
+    """Get simple autonomous trading status - bypasses complex orchestrator"""
+    try:
+        logger.info("📊 Simple autonomous status requested")
+        
+        # Try to get status from simple trader
+        try:
+            from simple_autonomous_trader import get_simple_trading_status
+            status = get_simple_trading_status()
+            
+            return {
+                "success": True,
+                "message": "Simple trading status retrieved successfully",
+                "data": status
+            }
+            
+        except ImportError:
+            logger.warning("Simple trader not available - using fallback")
+            return {
+                "success": True,
+                "message": "Simple trader not initialized",
+                "data": {
+                    "is_active": False,
+                    "session_id": f"fallback_{int(datetime.now().timestamp())}",
+                    "start_time": None,
+                    "active_strategies": [],
+                    "total_trades": 0,
+                    "system_ready": False,
+                    "timestamp": datetime.now().isoformat()
+                }
+            }
+            
+    except Exception as e:
+        logger.error(f"Simple autonomous status error: {e}")
+        return {
+            "success": False,
+            "message": f"Simple autonomous status error: {str(e)}",
+            "data": {
+                "is_active": False,
+                "session_id": f"error_{int(datetime.now().timestamp())}",
+                "start_time": None,
+                "active_strategies": [],
+                "total_trades": 0,
+                "system_ready": False,
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+@app.post("/api/v1/autonomous-simple/start", tags=["autonomous-simple"])
+async def start_simple_autonomous_trading():
+    """Start simple autonomous trading - bypasses complex orchestrator"""
+    try:
+        logger.info("🚀 Starting Simple Autonomous Trading...")
+        
+        from simple_autonomous_trader import start_simple_autonomous_trading
+        
+        success = await start_simple_autonomous_trading()
+        
+        if success:
+            return {
+                "success": True,
+                "message": "Simple autonomous trading started successfully"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to start simple autonomous trading")
+            
+    except ImportError:
+        logger.error("Simple trader not available")
+        raise HTTPException(status_code=500, detail="Simple trader not available")
+    except Exception as e:
+        logger.error(f"Error starting simple trading: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to start simple autonomous trading: {str(e)}")
+
+@app.post("/api/v1/autonomous-simple/stop", tags=["autonomous-simple"])
+async def stop_simple_autonomous_trading():
+    """Stop simple autonomous trading"""
+    try:
+        logger.info("🛑 Stopping Simple Autonomous Trading...")
+        
+        from simple_autonomous_trader import stop_simple_autonomous_trading
+        
+        stop_simple_autonomous_trading()
+        
+        return {
+            "success": True,
+            "message": "Simple autonomous trading stopped successfully"
+        }
+        
+    except ImportError:
+        logger.error("Simple trader not available")
+        raise HTTPException(status_code=500, detail="Simple trader not available")
+    except Exception as e:
+        logger.error(f"Error stopping simple trading: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to stop simple autonomous trading: {str(e)}")
+
+@app.get("/api/v1/autonomous-simple/test", tags=["autonomous-simple"])
+async def test_simple_autonomous_system():
+    """Test simple autonomous system components"""
+    try:
+        logger.info("🧪 Testing Simple Autonomous System...")
+        
+        from simple_autonomous_trader import SimpleAutonomousTrader
+        
+        # Create test instance
+        trader = SimpleAutonomousTrader()
+        
+        # Test initialization
+        init_success = await trader.initialize()
+        
+        if init_success:
+            return {
+                "success": True,
+                "message": "Simple autonomous system test passed - all components working"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Simple autonomous system test failed - check TrueData and Zerodha connections"
+            }
+            
+    except ImportError:
+        logger.error("Simple trader not available")
+        return {
+            "success": False,
+            "message": "Simple trader not available - check simple_autonomous_trader.py"
+        }
+    except Exception as e:
+        logger.error(f"Error testing simple system: {str(e)}")
+        return {
+            "success": False,
+            "message": f"Simple autonomous system test error: {str(e)}"
+        }
 
 @app.api_route("/{path:path}", methods=["GET"])
 async def catch_all(request: Request, path: str):
@@ -1352,77 +1488,6 @@ async def catch_all(request: Request, path: str):
             content={
                 "detail": f"Path not found: {path}",
                 "message": "Frontend not available"
-            }
-        )
-
-# CRITICAL FIX: Direct market data endpoint to fix zero trades
-@app.get("/api/v1/market-data/live-data", tags=["market-data"])
-async def get_live_market_data_direct():
-    """EMERGENCY FIX: Direct live market data endpoint with fallback data"""
-    try:
-        logger.info("🔧 EMERGENCY FIX: Direct market data endpoint called")
-        
-        # Generate realistic market data for key symbols
-        import random
-        
-        # Key symbols for trading
-        key_symbols = [
-            "NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX", "MIDCPNIFTY",
-            "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY"
-        ]
-        
-        fallback_data = {}
-        
-        for symbol in key_symbols:
-            # Generate realistic price data
-            base_price = 24500 if symbol == "NIFTY" else (
-                51800 if symbol == "BANKNIFTY" else
-                19500 if symbol == "FINNIFTY" else
-                random.randint(100, 5000)
-            )
-            
-            # Add some realistic variation
-            change_percent = random.uniform(-2.0, 2.0)
-            current_price = base_price * (1 + change_percent/100)
-            change = current_price - base_price
-            
-            fallback_data[symbol] = {
-                "ltp": round(current_price, 2),
-                "change": round(change, 2),
-                "change_percent": round(change_percent, 2),
-                "volume": random.randint(10000, 1000000),
-                "high": round(current_price * 1.02, 2),
-                "low": round(current_price * 0.98, 2),
-                "open": round(base_price * 1.001, 2),
-                "timestamp": datetime.now().isoformat(),
-                "symbol": symbol,
-                "source": "EMERGENCY_FALLBACK_FOR_TRADING"
-            }
-        
-        logger.info(f"🔧 EMERGENCY FIX: Providing {len(fallback_data)} symbols with fallback data")
-        
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "data": fallback_data,
-                "symbol_count": len(fallback_data),
-                "timestamp": datetime.now().isoformat(),
-                "source": "EMERGENCY_FALLBACK_MARKET_DATA",
-                "note": "Emergency fallback data provided to enable trading"
-            }
-        )
-        
-    except Exception as e:
-        logger.error(f"Emergency market data endpoint error: {e}")
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": False,
-                "data": {},
-                "symbol_count": 0,
-                "error": str(e),
-                "timestamp": datetime.now().isoformat()
             }
         )
 

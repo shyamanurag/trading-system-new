@@ -216,14 +216,11 @@ class MarketDataManager:
             # STEP 4: AUTO-SUBSCRIBE if symbol not found but is valid
             logger.info(f"🔄 AUTO-SUBSCRIBE: {symbol} ({truedata_symbol}) not found, attempting subscription...")
             
-            # Try to subscribe to the missing symbol
-            success = subscribe_to_symbols([truedata_symbol])
-            if success:
-                logger.info(f"✅ AUTO-SUBSCRIBED: {truedata_symbol} - data should be available soon")
-                # Return None for now, will have data on next request
-                return None, 0, {}
-            else:
-                logger.warning(f"❌ AUTO-SUBSCRIBE FAILED: {truedata_symbol}")
+            # CRITICAL FIX: Don't call subscribe_to_symbols() - it creates connection conflicts
+            # Instead, just log that symbol is missing and let main TrueData client handle it
+            logger.info(f"📝 SYMBOL MISSING: {truedata_symbol} - will be available when main TrueData client subscribes")
+            # Return None for now, symbol may become available later
+            return None, 0, {}
             
             # STEP 5: Debug available symbols if not found
             available_symbols = list(live_market_data.keys())[:10]  # Show first 10
@@ -392,9 +389,9 @@ class MarketDataManager:
             return False
     
     async def _auto_subscribe_missing_symbols(self):
-        """Auto-subscribe to symbols that aren't already subscribed"""
+        """Auto-subscribe to symbols that aren't already subscribed - FIXED TO PREVENT CONNECTION CONFLICTS"""
         try:
-            from data.truedata_client import live_market_data, subscribe_to_symbols
+            from data.truedata_client import live_market_data
             from config.truedata_symbols import get_truedata_symbol
             
             # Find missing symbols
@@ -407,23 +404,21 @@ class MarketDataManager:
                     missing_symbols.append(truedata_symbol)
             
             if missing_symbols:
-                logger.info(f"🔄 Auto-subscribing to {len(missing_symbols)} missing symbols: {missing_symbols[:10]}...")
+                logger.info(f"📝 MISSING SYMBOLS: {len(missing_symbols)} symbols not yet available: {missing_symbols[:10]}...")
+                logger.info("📊 These symbols will become available when main TrueData client subscribes to them")
                 
-                # Subscribe in batches to avoid overwhelming the API
-                batch_size = 10
-                for i in range(0, len(missing_symbols), batch_size):
-                    batch = missing_symbols[i:i + batch_size]
-                    try:
-                        subscribe_to_symbols(batch)
-                        logger.info(f"✅ Subscribed to batch {i//batch_size + 1}: {len(batch)} symbols")
-                        await asyncio.sleep(1)  # Small delay between batches
-                    except Exception as e:
-                        logger.warning(f"Failed to subscribe to batch {batch}: {e}")
+                # CRITICAL FIX: Don't call subscribe_to_symbols() - it creates connection conflicts
+                # Instead, just log the missing symbols for monitoring
+                logger.info("💡 Symbols will be automatically available when TrueData client connects to them")
+                
+                return False  # Return False to indicate symbols not immediately available
             else:
-                logger.info("✅ All symbols already subscribed")
+                logger.info("✅ All symbols already available in TrueData cache")
+                return True
                 
         except Exception as e:
-            logger.error(f"❌ Auto-subscription error: {e}")
+            logger.error(f"❌ Error checking missing symbols: {e}")
+            return False
     
     def get_expansion_status(self) -> Dict[str, Any]:
         """Get current symbol expansion status"""

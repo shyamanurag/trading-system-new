@@ -47,7 +47,6 @@ from src.events import EventBus, EventType, TradingEvent
 from security.auth_manager import SecurityManager
 from core.connection_manager import ResilientConnection
 from brokers.resilient_zerodha import ResilientZerodhaConnection
-from data.resilient_truedata import ResilientTrueDataConnection
 from monitoring.data_quality_monitor import DataQualityMonitor
 from compliance.enhanced_compliance_manager import (
     PostTradeSurveillance, 
@@ -127,7 +126,19 @@ class TradingOrchestrator:
         
         # Initialize data provider with resilient connection
         self.data_provider = TrueDataProvider(config['data_provider'])
-        self.data_connection = ResilientTrueDataConnection(self.data_provider, config['connection'])
+        
+        # CRITICAL FIX: Don't create ResilientTrueDataConnection - use shared cache instead
+        logger.info("🔄 Using shared TrueData cache instead of creating new connection...")
+        try:
+            if live_market_data:
+                logger.info(f"✅ Shared TrueData cache accessible: {len(live_market_data)} symbols")
+                self.data_connection_available = True
+            else:
+                logger.warning("⚠️ Shared TrueData cache is empty")
+                self.data_connection_available = False
+        except ImportError:
+            logger.warning("⚠️ TrueData client not available")
+            self.data_connection_available = False
 
     def _initialize_strategies(self):
         """Initialize trading strategies"""

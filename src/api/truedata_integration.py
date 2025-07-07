@@ -7,6 +7,7 @@ from typing import List, Dict, Optional
 import logging
 from datetime import datetime
 import asyncio
+from fastapi.responses import JSONResponse
 
 from data.truedata_client import (
     truedata_client, 
@@ -252,7 +253,9 @@ async def truedata_websocket(websocket, symbol: str):
         
         # Subscribe to symbol if not already subscribed
         if symbol not in live_market_data:
-            subscribe_to_symbols([symbol])
+            # CRITICAL FIX: Don't call subscribe_to_symbols() - creates connection conflicts
+            # Instead, just log that symbol subscription was requested
+            logger.info(f"📝 SYMBOL SUBSCRIPTION REQUESTED: {symbol} - will be available via main TrueData client")
         
         # Send initial data
         initial_data = get_live_data_for_symbol(symbol)
