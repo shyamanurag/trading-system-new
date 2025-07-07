@@ -772,17 +772,27 @@ class TradingOrchestrator:
             market_data = await self._get_market_data_from_api()
             market_data_available = len(market_data) > 0
             
-            # Get active strategies
-            active_strategies = [
-                {
-                    'name': strategy_info.get('name', key),
+            # Get active strategies - REACT-FRIENDLY FORMAT
+            active_strategies = []
+            strategy_details = []
+            
+            for key, strategy_info in self.strategies.items():
+                strategy_name = strategy_info.get('name', key)
+                is_active = strategy_info.get('active', False)
+                
+                # For React-friendly rendering: simple strings for display
+                if is_active:
+                    active_strategies.append(strategy_name)  # Simple string array for React
+                
+                # Detailed info for dashboard tables
+                strategy_details.append({
+                    'name': strategy_name,
                     'key': key,
-                    'active': strategy_info.get('active', False),
-                    'last_signal': strategy_info.get('last_signal'),
+                    'active': is_active,
+                    'status': 'running' if is_active else 'stopped',
+                    'last_signal': strategy_info.get('last_signal', 'never'),
                     'initialized': 'instance' in strategy_info
-                }
-                for key, strategy_info in self.strategies.items()
-            ]
+                })
             
             # Get component status
             component_status = {}
@@ -824,7 +834,8 @@ class TradingOrchestrator:
                 'market_status': 'open' if self._is_market_open() else 'closed',
                 'market_data_available': market_data_available,
                 'market_symbols_count': len(market_data),
-                'active_strategies': active_strategies,
+                'active_strategies': active_strategies,  # FIXED: Simple string array for React
+                'strategy_details': strategy_details,    # NEW: Detailed objects for tables
                 'total_strategies': len(self.strategies),
                 'component_status': component_status,
                 'active_positions': active_positions,
