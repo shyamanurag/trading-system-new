@@ -14,12 +14,46 @@ import atexit
 from datetime import datetime
 from typing import Dict, Optional
 import json
+import redis
 
 # Setup basic logging
 logger = logging.getLogger(__name__)
 
 # Global data storage
 live_market_data: Dict[str, Dict] = {}
+
+# Add Redis client initialization after other imports
+redis_client = None
+
+# Add Redis setup after logger initialization
+def setup_redis():
+    """Setup Redis client for cross-process data sharing"""
+    global redis_client
+    try:
+        redis_host = os.environ.get('REDIS_HOST', 'localhost')
+        redis_port = int(os.environ.get('REDIS_PORT', 6379))
+        redis_password = os.environ.get('REDIS_PASSWORD')
+        
+        redis_client = redis.Redis(
+            host=redis_host,
+            port=redis_port,
+            password=redis_password,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5
+        )
+        
+        # Test connection
+        redis_client.ping()
+        logger.info(f"✅ Redis connected: {redis_host}:{redis_port}")
+        return True
+    except Exception as e:
+        logger.warning(f"⚠️ Redis connection failed: {e}")
+        redis_client = None
+        return False
+
+# Call setup at module level
+setup_redis()
 
 class TrueDataClient:
     """Advanced TrueData client with deployment overlap handling"""
@@ -283,78 +317,66 @@ class TrueDataClient:
             return symbols
 
     def _setup_callback(self):
-        """Setup data callback with enhanced error handling and cross-process sharing"""
+        """Setup callback for live data processing"""
         @self.td_obj.trade_callback
         def on_tick_data(tick_data):
+            """Process tick data from TrueData with Redis caching"""
             try:
-                if self._shutdown_requested:
-                    return
-                    
+                # Extract symbol and data
                 symbol = getattr(tick_data, 'symbol', 'UNKNOWN')
                 ltp = getattr(tick_data, 'ltp', 0)
-
-                # Enhanced volume parsing
-                volume = 0
-                volume_fields = ['ttq', 'volume', 'total_traded_quantity', 'vol', 'day_volume', 'traded_quantity']
-
-                for field in volume_fields:
-                    try:
-                        vol = getattr(tick_data, field, 0)
-                        if vol and vol > 0:
-                            volume = vol
-                            break
-                    except:
-                        continue
-
-                # Get OHLC data with fallbacks
-                high = getattr(tick_data, 'day_high', ltp) or ltp
-                low = getattr(tick_data, 'day_low', ltp) or ltp
-                open_price = getattr(tick_data, 'day_open', ltp) or ltp
-
-                # Store clean data with deployment ID
-                symbol_data = {
+                volume = getattr(tick_data, 'volume', 0) or getattr(tick_data, 'ttq', 0)
+                
+                # Enhanced data structure for strategies
+                market_data = {
                     'symbol': symbol,
-                    'ltp': float(ltp) if ltp else 0.0,
-                    'volume': int(volume) if volume else 0,
-                    'high': float(high) if high else 0.0,
-                    'low': float(low) if low else 0.0,
-                    'open': float(open_price) if open_price else 0.0,
+                    'ltp': ltp,
+                    'volume': volume,
                     'timestamp': datetime.now().isoformat(),
+                    'open': getattr(tick_data, 'open', ltp),
+                    'high': getattr(tick_data, 'high', ltp),
+                    'low': getattr(tick_data, 'low', ltp),
+                    'close': ltp,
+                    'change': getattr(tick_data, 'change', 0),
+                    'changeper': getattr(tick_data, 'changeper', 0),
+                    'bid': getattr(tick_data, 'bid', 0),
+                    'ask': getattr(tick_data, 'ask', 0),
+                    'source': 'TrueData_Live',
                     'deployment_id': self._deployment_id
                 }
                 
-                live_market_data[symbol] = symbol_data
-
-                # CRITICAL FIX: Export to file for cross-process access
-                try:
-                    cache_file = "/tmp/truedata_cache.json" if os.name != 'nt' else "C:/temp/truedata_cache.json"
-                    os.makedirs(os.path.dirname(cache_file), exist_ok=True)
-                    
-                    # Write cache every 10 symbols to avoid excessive I/O
-                    if len(live_market_data) % 10 == 0:
-                        with open(cache_file, 'w') as f:
-                            import json
-                            json.dump(live_market_data, f)
-                except Exception as e:
-                    pass  # Don't let file I/O break the main callback
-
-                # Export to Redis if available
-                try:
-                    import redis
-                    r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
-                    import json
-                    r.setex('truedata_live_cache', 300, json.dumps(live_market_data))  # 5 min expiry
-                except Exception as e:
-                    pass  # Don't let Redis break the main callback
-
-                # Selective logging to avoid spam
-                if symbol in ['NIFTY-I', 'BANKNIFTY-I'] or volume > 0:
-                    logger.info(f"📊 {symbol}: ₹{ltp:,.2f} | Vol: {volume:,} | Deploy: {self._deployment_id[:8]}")
-
+                # Store in local cache (existing behavior)
+                live_market_data[symbol] = market_data
+                
+                # CRITICAL: Also store in Redis for cross-process access
+                if redis_client:
+                    try:
+                        # Store individual symbol data
+                        redis_client.hset(f"truedata:symbol:{symbol}", mapping=market_data)
+                        redis_client.expire(f"truedata:symbol:{symbol}", 300)  # 5 minutes
+                        
+                        # Store in combined cache
+                        redis_client.hset("truedata:live_cache", symbol, json.dumps(market_data))
+                        redis_client.expire("truedata:live_cache", 300)  # 5 minutes
+                        
+                        # Update symbol count
+                        redis_client.set("truedata:symbol_count", len(live_market_data))
+                        
+                        # Store raw tick data for analysis
+                        redis_client.lpush(f"truedata:ticks:{symbol}", json.dumps(market_data))
+                        redis_client.ltrim(f"truedata:ticks:{symbol}", 0, 100)  # Keep last 100 ticks
+                        
+                    except Exception as redis_error:
+                        logger.error(f"Redis storage error for {symbol}: {redis_error}")
+                
+                # Log with deployment ID for debugging
+                if volume > 0:
+                    print(f"📊 {symbol}: ₹{ltp:,.2f} | Vol: {volume:,} | Deploy: {self._deployment_id}")
+                
             except Exception as e:
-                logger.error(f"❌ Tick callback error: {e}")
-
-        logger.info("✅ Data callback setup completed with cross-process sharing")
+                logger.error(f"Error processing tick data: {e}")
+                
+        logger.info("✅ TrueData callback setup complete with Redis caching")
 
     def get_status(self):
         """Get comprehensive status including deployment info"""

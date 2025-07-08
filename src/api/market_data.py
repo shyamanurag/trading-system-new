@@ -6,10 +6,11 @@ Real-time and historical market data endpoints
 import logging
 from datetime import datetime
 from fastapi import APIRouter, Query, HTTPException, Depends
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import sys
 import os
 import json
+import redis
 sys.path.insert(0, os.path.abspath('.'))
 
 # Import symbol mapping for TrueData
@@ -21,44 +22,141 @@ logger = logging.getLogger(__name__)
 # Create router
 router = APIRouter(prefix="/api/v1", tags=["market-data"])
 
-# CRITICAL FIX: Direct bridge to populated TrueData cache
-# Import at module level to ensure access to the same cache instance
-try:
-    from data.truedata_client import live_market_data as truedata_cache
-    from data.truedata_client import truedata_client, get_truedata_status
-    TRUEDATA_BRIDGE_AVAILABLE = True
-    logger.info("✅ TrueData cache bridge established")
-except ImportError as e:
-    logger.error(f"❌ TrueData cache bridge failed: {e}")
-    truedata_cache = {}
-    TRUEDATA_BRIDGE_AVAILABLE = False
+# Setup Redis client for cross-process data access
+redis_client = None
+
+def setup_redis():
+    """Setup Redis client for cross-process data sharing"""
+    global redis_client
+    try:
+        redis_host = os.environ.get('REDIS_HOST', 'localhost')
+        redis_port = int(os.environ.get('REDIS_PORT', 6379))
+        redis_password = os.environ.get('REDIS_PASSWORD')
+        
+        redis_client = redis.Redis(
+            host=redis_host,
+            port=redis_port,
+            password=redis_password,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5
+        )
+        
+        # Test connection
+        redis_client.ping()
+        logger.info(f"✅ Redis connected for market data: {redis_host}:{redis_port}")
+        return True
+    except Exception as e:
+        logger.warning(f"⚠️ Redis connection failed: {e}")
+        redis_client = None
+        return False
+
+# Initialize Redis at module level
+setup_redis()
+
+def get_truedata_from_redis():
+    """Get TrueData from Redis cache - SOLVES PROCESS ISOLATION"""
+    try:
+        if not redis_client:
+            logger.warning("⚠️ Redis not available - trying to reconnect...")
+            if not setup_redis():
+                return {}
+        
+        # Get all market data from Redis
+        cached_data = redis_client.hgetall("truedata:live_cache")
+        
+        if not cached_data:
+            logger.warning("⚠️ No data in Redis cache - TrueData may not be connected")
+            return {}
+        
+        # Parse JSON data
+        parsed_data = {}
+        for symbol, data_json in cached_data.items():
+            try:
+                parsed_data[symbol] = json.loads(data_json)
+            except json.JSONDecodeError:
+                logger.warning(f"⚠️ Invalid JSON for symbol {symbol}")
+                continue
+        
+        logger.info(f"✅ Retrieved {len(parsed_data)} symbols from Redis cache")
+        return parsed_data
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting TrueData from Redis: {e}")
+        return {}
 
 def get_truedata_proxy():
-    """Get TrueData data directly from live cache - SIMPLE APPROACH"""
+    """Get TrueData data from Redis cache - CROSS-PROCESS SOLUTION"""
     try:
-        # SIMPLE FIX: Direct access to existing TrueData cache
+        # STRATEGY 1: Redis cache (PRIMARY - fixes process isolation)
+        redis_data = get_truedata_from_redis()
+        if redis_data:
+            logger.info(f"📊 Redis cache strategy SUCCESS: {len(redis_data)} symbols")
+            return {
+                'connected': True,
+                'data': redis_data,
+                'symbols_count': len(redis_data),
+                'source': 'Redis_Cache'
+            }
+        
+        # STRATEGY 2: Direct cache access (FALLBACK)
+        from data.truedata_client import live_market_data
+        if live_market_data:
+            logger.info(f"📊 Direct cache strategy SUCCESS: {len(live_market_data)} symbols")
+            return {
+                'connected': True,
+                'data': live_market_data,
+                'symbols_count': len(live_market_data),
+                'source': 'Direct_Cache'
+            }
+        
+        # STRATEGY 3: File cache (FALLBACK)
+        cache_file = "/tmp/truedata_cache.json" if os.name != 'nt' else "C:/temp/truedata_cache.json"
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r') as f:
+                file_data = json.load(f)
+            if file_data:
+                logger.info(f"📊 File cache strategy SUCCESS: {len(file_data)} symbols")
+                return {
+                    'connected': True,
+                    'data': file_data,
+                    'symbols_count': len(file_data),
+                    'source': 'File_Cache'
+                }
+        
+        # All strategies failed
+        logger.error("🚨 ALL STRATEGIES FAILED - No TrueData cache accessible")
         return {
-            'connected': len(truedata_cache) > 0,
-            'data': truedata_cache,
-            'symbols_count': len(truedata_cache)
+            'connected': False,
+            'data': {},
+            'symbols_count': 0,
+            'source': 'None',
+            'error': 'Process isolation - TrueData cache not accessible'
         }
-    except ImportError:
-        logger.error("TrueData client not available")
-        return None
+        
     except Exception as e:
-        logger.error(f"Error getting TrueData data: {e}")
-        return None
+        logger.error(f"❌ Error in get_truedata_proxy: {e}")
+        return {
+            'connected': False,
+            'data': {},
+            'symbols_count': 0,
+            'source': 'Error',
+            'error': str(e)
+        }
 
-def is_connected() -> bool:
-    """Check if TrueData is connected via direct cache access"""
+def is_truedata_connected():
+    """Check if TrueData is connected via Redis cache"""
     try:
-        connected = len(truedata_cache) > 0
-        
-        logger.info(f"🔧 TrueData direct connection check: {connected}")
-        if connected:
-            logger.info(f"   Data source: truedata_cache")
-            logger.info(f"   Symbols available: {len(truedata_cache)}")
-        
+        # Check Redis cache first
+        redis_data = get_truedata_from_redis()
+        if redis_data:
+            logger.info(f"🔧 TrueData connected via Redis: {len(redis_data)} symbols")
+            return True
+            
+        # Fallback to direct cache check
+        from data.truedata_client import live_market_data
+        connected = len(live_market_data) > 0
+        logger.info(f"🔧 TrueData fallback check: {connected}")
         return connected
         
     except Exception as e:
@@ -73,7 +171,7 @@ def get_live_data_for_symbol(symbol: str) -> dict:
         logger.debug(f"🔧 Symbol mapping: {symbol} -> {mapped_symbol}")
         
         # Get data from live cache
-        symbol_data = truedata_cache.get(mapped_symbol, {})
+        symbol_data = get_truedata_from_redis().get(mapped_symbol, {})
         
         if symbol_data:
             logger.debug(f"📊 Retrieved data for {symbol}: LTP={symbol_data.get('ltp', 'N/A')}")
@@ -84,104 +182,56 @@ def get_live_data_for_symbol(symbol: str) -> dict:
         logger.error(f"Error getting live data for {symbol}: {e}")
         return {}
 
-def get_all_live_market_data() -> dict:
-    """Get ALL live market data from direct cache access"""
+def get_all_live_market_data():
+    """Get all live market data from Redis cache"""
     try:
-        logger.debug(f"📊 Retrieved all market data: {len(truedata_cache)} symbols")
-        return truedata_cache
+        # PRIMARY: Get from Redis cache
+        redis_data = get_truedata_from_redis()
+        if redis_data:
+            logger.debug(f"📊 Retrieved all market data from Redis: {len(redis_data)} symbols")
+            return redis_data
+            
+        # FALLBACK: Direct cache access
+        from data.truedata_client import live_market_data
+        logger.debug(f"📊 Retrieved all market data from direct cache: {len(live_market_data)} symbols")
+        return live_market_data
         
     except Exception as e:
         logger.error(f"Error getting all live market data: {e}")
         return {}
 
-@router.get("")
-async def get_market_data():
-    """Get all market data with multiple bridge strategies"""
+@router.get("/", response_model=Dict[str, Any])
+async def get_all_market_data():
+    """Get all available market data from Redis cache"""
     try:
-        # Strategy 1: Direct cache bridge (already tried)
-        if TRUEDATA_BRIDGE_AVAILABLE and truedata_cache:
-            logger.info(f"📊 Strategy 1 - Direct cache: {len(truedata_cache)} symbols")
-            if len(truedata_cache) > 0:
-                return {
-                    "success": True,
-                    "symbols_count": len(truedata_cache),
-                    "data": truedata_cache,
-                    "source": "direct_cache_bridge",
-                    "timestamp": datetime.now().isoformat()
-                }
+        # Get data from Redis cache (fixes process isolation)
+        proxy = get_truedata_proxy()
         
-        # Strategy 2: File-based cache bridge (new)
-        cache_file = "/tmp/truedata_cache.json" if os.name != 'nt' else "C:/temp/truedata_cache.json"
-        try:
-            if os.path.exists(cache_file):
-                with open(cache_file, 'r') as f:
-                    file_cache = json.loads(f.read())
-                    logger.info(f"📊 Strategy 2 - File cache: {len(file_cache)} symbols")
-                    if len(file_cache) > 0:
-                        return {
-                            "success": True,
-                            "symbols_count": len(file_cache),
-                            "data": file_cache,
-                            "source": "file_cache_bridge",
-                            "timestamp": datetime.now().isoformat()
-                        }
-        except Exception as e:
-            logger.warning(f"File cache failed: {e}")
-        
-        # Strategy 3: Redis cache bridge (if available)
-        try:
-            import redis
-            r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
-            redis_data = r.get('truedata_live_cache')
-            if redis_data:
-                redis_cache = json.loads(redis_data)
-                logger.info(f"📊 Strategy 3 - Redis cache: {len(redis_cache)} symbols")
-                if len(redis_cache) > 0:
-                    return {
-                        "success": True,
-                        "symbols_count": len(redis_cache),
-                        "data": redis_cache,
-                        "source": "redis_cache_bridge",
-                        "timestamp": datetime.now().isoformat()
-                    }
-        except Exception as e:
-            logger.warning(f"Redis cache failed: {e}")
-        
-        # Strategy 4: HTTP bridge to TrueData process (if running separately)
-        try:
-            import requests
-            bridge_response = requests.get('http://localhost:8001/truedata-bridge', timeout=2)
-            if bridge_response.status_code == 200:
-                http_cache = bridge_response.json()
-                logger.info(f"📊 Strategy 4 - HTTP bridge: {len(http_cache)} symbols")
-                if len(http_cache) > 0:
-                    return {
-                        "success": True,
-                        "symbols_count": len(http_cache),
-                        "data": http_cache,
-                        "source": "http_bridge",
-                        "timestamp": datetime.now().isoformat()
-                    }
-        except Exception as e:
-            logger.warning(f"HTTP bridge failed: {e}")
-        
-        # All strategies failed
-        logger.error("🚨 ALL BRIDGE STRATEGIES FAILED - TrueData cache not accessible")
-        return {
-            "success": False,
-            "symbols_count": 0,
-            "data": {},
-            "source": "all_bridges_failed",
-            "timestamp": datetime.now().isoformat(),
-            "error": "Cannot access TrueData cache - process isolation issue"
-        }
-        
+        if proxy['connected']:
+            return {
+                "success": True,
+                "data": proxy['data'],
+                "symbols_count": proxy['symbols_count'],
+                "source": proxy['source'],
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "data": {},
+                "symbols_count": 0,
+                "source": "redis_cache",
+                "error": proxy.get('error', 'TrueData not connected'),
+                "timestamp": datetime.now().isoformat()
+            }
+            
     except Exception as e:
-        logger.error(f"Market data endpoint error: {e}")
+        logger.error(f"Error getting all market data: {e}")
         return {
             "success": False,
-            "symbols_count": 0,
             "data": {},
+            "symbols_count": 0,
+            "source": "api_error",
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
@@ -207,7 +257,7 @@ async def get_market_data(
             }
         else:
             # Check if proxy is connected
-            if not is_connected():
+            if not is_truedata_connected():
                 raise HTTPException(
                     status_code=503, 
                     detail=f"TrueData proxy not connected. Market data not available for {symbol}."
@@ -234,7 +284,7 @@ async def get_live_market_data():
         logger.info("📊 Getting live market data for autonomous trading...")
         
         # Check if proxy is connected
-        if not is_connected():
+        if not is_truedata_connected():
             raise HTTPException(
                 status_code=503,
                 detail="TrueData proxy not connected. No live data available."
@@ -337,7 +387,7 @@ async def get_symbol_expansion_status():
             },
             "intelligent_symbol_manager": ism_status,
             "truedata_connection": {
-                "connected": is_connected(),
+                "connected": is_truedata_connected(),
                 "available_symbols": truedata_count,
                 "sample_symbols": list(truedata_symbols.keys())[:10] if truedata_symbols else []
             },
@@ -362,7 +412,7 @@ async def get_individual_symbol_data(symbol: str):
     """Get individual symbol data"""
     try:
         # Check TrueData connection
-        has_connection = is_connected()
+        has_connection = is_truedata_connected()
         
         if not has_connection:
             return {
@@ -455,7 +505,7 @@ async def get_realtime_data(symbol: str):
 @router.get("/option-chain/{symbol}")
 async def get_option_chain(
     symbol: str,
-    _: bool = Depends(is_connected)
+    _: bool = Depends(is_truedata_connected)
 ):
     """Get option chain for a symbol"""
     try:
@@ -472,7 +522,7 @@ async def get_option_chain(
 @router.post("/subscribe")
 async def subscribe_symbols(
     symbols: List[str],
-    _: bool = Depends(is_connected)
+    _: bool = Depends(is_truedata_connected)
 ):
     """Subscribe to market data for symbols"""
     try:

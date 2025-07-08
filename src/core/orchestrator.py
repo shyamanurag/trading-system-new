@@ -562,9 +562,102 @@ class TradingOrchestrator:
             return False
     
     async def _get_market_data_from_api(self) -> Dict[str, Any]:
-        """Get market data from existing TrueData cache - FIXED TO ACCESS WORKING CACHE"""
+        """Get market data from Redis cache - SOLVES PROCESS ISOLATION"""
         try:
-            # CRITICAL FIX: Access TrueData cache directly where data is actually flowing
+            # STRATEGY 1: Redis cache (PRIMARY - fixes process isolation)
+            if not hasattr(self, 'redis_client') or not self.redis_client:
+                import redis
+                import json
+                
+                redis_host = os.environ.get('REDIS_HOST', 'localhost')
+                redis_port = int(os.environ.get('REDIS_PORT', 6379))
+                redis_password = os.environ.get('REDIS_PASSWORD')
+                
+                try:
+                    self.redis_client = redis.Redis(
+                        host=redis_host,
+                        port=redis_port,
+                        password=redis_password,
+                        decode_responses=True,
+                        socket_connect_timeout=5,
+                        socket_timeout=5
+                    )
+                    
+                    # Test connection
+                    self.redis_client.ping()
+                    self.logger.info(f"✅ Orchestrator Redis connected: {redis_host}:{redis_port}")
+                except Exception as redis_error:
+                    self.logger.warning(f"⚠️ Redis connection failed: {redis_error}")
+                    self.redis_client = None
+            
+            # Try to get data from Redis first
+            if self.redis_client:
+                try:
+                    cached_data = self.redis_client.hgetall("truedata:live_cache")
+                    
+                    if cached_data:
+                        # Parse JSON data
+                        parsed_data = {}
+                        for symbol, data_json in cached_data.items():
+                            try:
+                                parsed_data[symbol] = json.loads(data_json)
+                            except json.JSONDecodeError:
+                                continue
+                        
+                        if parsed_data:
+                            self.logger.info(f"📊 Using Redis cache: {len(parsed_data)} symbols")
+                            return parsed_data
+                except Exception as redis_error:
+                    self.logger.warning(f"⚠️ Redis cache read failed: {redis_error}")
+            
+            # STRATEGY 2: Direct TrueData cache access (FALLBACK)
+            # STRATEGY 1: Redis cache (PRIMARY - fixes process isolation)
+            if not hasattr(self, 'redis_client') or not self.redis_client:
+                import redis
+                import json
+                
+                redis_host = os.environ.get('REDIS_HOST', 'localhost')
+                redis_port = int(os.environ.get('REDIS_PORT', 6379))
+                redis_password = os.environ.get('REDIS_PASSWORD')
+                
+                try:
+                    self.redis_client = redis.Redis(
+                        host=redis_host,
+                        port=redis_port,
+                        password=redis_password,
+                        decode_responses=True,
+                        socket_connect_timeout=5,
+                        socket_timeout=5
+                    )
+                    
+                    # Test connection
+                    self.redis_client.ping()
+                    self.logger.info(f"✅ Orchestrator Redis connected: {redis_host}:{redis_port}")
+                except Exception as redis_error:
+                    self.logger.warning(f"⚠️ Redis connection failed: {redis_error}")
+                    self.redis_client = None
+            
+            # Try to get data from Redis first
+            if self.redis_client:
+                try:
+                    cached_data = self.redis_client.hgetall("truedata:live_cache")
+                    
+                    if cached_data:
+                        # Parse JSON data
+                        parsed_data = {}
+                        for symbol, data_json in cached_data.items():
+                            try:
+                                parsed_data[symbol] = json.loads(data_json)
+                            except json.JSONDecodeError:
+                                continue
+                        
+                        if parsed_data:
+                            self.logger.info(f"📊 Using Redis cache: {len(parsed_data)} symbols")
+                            return parsed_data
+                except Exception as redis_error:
+                    self.logger.warning(f"⚠️ Redis cache read failed: {redis_error}")
+            
+            # STRATEGY 2: Direct TrueData cache access (FALLBACK)
             from data.truedata_client import live_market_data, get_all_live_data
             
             # Try direct access first (most reliable)
@@ -578,7 +671,7 @@ class TradingOrchestrator:
                 self.logger.info(f"📊 Using TrueData get_all_live_data(): {len(all_data)} symbols")
                 return all_data
             
-            # If direct access fails, try API call to market data endpoint
+            # STRATEGY 3: API call to market data endpoint (FINAL FALLBACK)
             try:
                 import aiohttp
                 async with aiohttp.ClientSession() as session:
