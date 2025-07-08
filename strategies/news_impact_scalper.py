@@ -1,7 +1,7 @@
 """
-Enhanced News Impact Scalper Strategy (Momentum-Based)
+Enhanced News Impact Scalper Strategy - SCALPING OPTIMIZED
 A sophisticated momentum-based trading strategy that identifies rapid price movements
-similar to news-driven events, with proper ATR-based risk management
+with SCALPING-OPTIMIZED parameters and timing
 """
 
 import logging
@@ -12,34 +12,38 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class EnhancedNewsImpactScalper(BaseStrategy):
-    """Enhanced momentum-based strategy that captures rapid price movements similar to news events"""
+    """Enhanced momentum-based strategy with SCALPING-OPTIMIZED parameters"""
     
     def __init__(self, config: Dict):
         super().__init__(config)
         self.name = "EnhancedNewsImpactScalper"
         
-        # Strategy-specific parameters for detecting rapid momentum (news-like behavior)
+        # SCALPING-OPTIMIZED momentum thresholds (more sensitive)
         self.momentum_thresholds = {
             'extreme_momentum': {
-                'price_change': 0.25,    # 0.25% rapid price change
-                'volume_spike': 50       # 50% volume spike
+                'price_change': 0.18,    # 0.18% rapid price change (tighter)
+                'volume_spike': 35       # 35% volume spike (more sensitive)
             },
             'strong_momentum': {
-                'price_change': 0.18,    # 0.18% rapid price change
-                'volume_spike': 35       # 35% volume spike
+                'price_change': 0.12,    # 0.12% rapid price change (tighter)
+                'volume_spike': 25       # 25% volume spike (more sensitive)
             },
             'moderate_momentum': {
-                'price_change': 0.12,    # 0.12% rapid price change
-                'volume_spike': 25       # 25% volume spike
+                'price_change': 0.08,    # 0.08% rapid price change (tighter)
+                'volume_spike': 18       # 18% volume spike (more sensitive)
             }
         }
         
-        # ATR multipliers for different momentum levels
+        # SCALPING-OPTIMIZED ATR multipliers (tighter stops)
         self.atr_multipliers = {
-            'extreme_momentum': 2.8,    # 2.8x ATR for extreme momentum
-            'strong_momentum': 2.2,     # 2.2x ATR for strong momentum
-            'moderate_momentum': 1.8    # 1.8x ATR for moderate momentum
+            'extreme_momentum': 1.8,    # 1.8x ATR for extreme momentum (tighter)
+            'strong_momentum': 1.5,     # 1.5x ATR for strong momentum (tighter)
+            'moderate_momentum': 1.2    # 1.2x ATR for moderate momentum (tighter)
         }
+        
+        # SCALPING cooldown control (fastest for news events)
+        self.scalping_cooldown = 10  # 10 seconds between signals
+        self.symbol_cooldowns = {}   # Symbol-specific cooldowns
         
     async def on_market_data(self, data: Dict):
         """Handle incoming market data and generate signals"""
@@ -47,8 +51,8 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             return
             
         try:
-            # Check cooldown
-            if not self._is_cooldown_passed():
+            # Check SCALPING cooldown (fastest for news)
+            if not self._is_scalping_cooldown_passed():
                 return
                 
             # Process market data and generate signals
@@ -62,6 +66,14 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         except Exception as e:
             logger.error(f"Error in {self.name} strategy: {str(e)}")
     
+    def _is_scalping_cooldown_passed(self) -> bool:
+        """Check if SCALPING cooldown period has passed"""
+        if not self.last_signal_time:
+            return True
+        
+        time_since_last = (datetime.now() - self.last_signal_time).total_seconds()
+        return time_since_last >= self.scalping_cooldown
+    
     def _generate_signals(self, data: Dict) -> List[Dict]:
         """Generate trading signals based on market data"""
         signals = []
@@ -74,19 +86,34 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 symbol_data = data.get(symbol, {})
                 if not symbol_data:
                     continue
+                
+                # Check symbol-specific cooldown for scalping
+                if not self._is_symbol_scalping_cooldown_passed(symbol):
+                    continue
                     
                 # Generate signal for this symbol
                 signal = self._analyze_rapid_momentum(symbol, symbol_data)
                 if signal:
                     signals.append(signal)
+                    # Update symbol cooldown
+                    self.symbol_cooldowns[symbol] = datetime.now()
                     
         except Exception as e:
             logger.error(f"Error generating signals: {e}")
             
         return signals
     
+    def _is_symbol_scalping_cooldown_passed(self, symbol: str) -> bool:
+        """Check if symbol-specific scalping cooldown has passed"""
+        if symbol not in self.symbol_cooldowns:
+            return True
+        
+        last_signal = self.symbol_cooldowns[symbol]
+        time_since = (datetime.now() - last_signal).total_seconds()
+        return time_since >= 20  # 20 seconds per symbol (fastest for news)
+    
     def _analyze_rapid_momentum(self, symbol: str, data: Dict) -> Optional[Dict]:
-        """Analyze rapid momentum movements that might indicate news impact"""
+        """Analyze rapid momentum movements with SCALPING optimization"""
         try:
             # Extract price data
             current_price = data.get('close', 0)
@@ -104,7 +131,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             price_change = data.get('price_change', 0)
             volume_change = data.get('volume_change', 0)
             
-            # Analyze rapid momentum (news-like behavior)
+            # Analyze rapid momentum with SCALPING thresholds
             momentum_analysis = self._analyze_momentum_strength(price_change, volume_change)
             
             if momentum_analysis['signal_strength'] == 'none':
@@ -114,14 +141,14 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             action = 'BUY' if price_change > 0 else 'SELL'
             atr_multiplier = self.atr_multipliers[momentum_analysis['signal_strength']]
             
-            # Calculate dynamic stop loss and target (optimized for rapid movements)
+            # Calculate SCALPING-OPTIMIZED stop loss and target
             stop_loss = self.calculate_dynamic_stop_loss(
                 current_price, atr, action, atr_multiplier, 
-                min_percent=0.6, max_percent=4.5  # Moderate bounds for news-like movements
+                min_percent=0.3, max_percent=0.8  # TIGHT bounds for news scalping
             )
             
             target = self.calculate_dynamic_target(
-                current_price, stop_loss, risk_reward_ratio=2.2  # 2.2:1 for rapid momentum
+                current_price, stop_loss, risk_reward_ratio=1.8  # 1.8:1 for news scalping
             )
             
             # Calculate confidence based on momentum analysis
@@ -136,6 +163,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 target=target,
                 confidence=confidence,
                 metadata={
+                    'scalping_optimized': True,
                     'momentum_score': momentum_analysis['score'],
                     'momentum_strength': momentum_analysis['signal_strength'],
                     'price_change': price_change,
@@ -143,9 +171,9 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                     'rapid_momentum_detected': True,
                     'atr': atr,
                     'atr_multiplier': atr_multiplier,
-                    'risk_type': 'RAPID_MOMENTUM_BASED',
-                    'strategy_type': 'momentum_scalper',  # Renamed from news_impact
-                    'strategy_version': '2.0_FIXED'
+                    'risk_type': 'SCALPING_NEWS_MOMENTUM',
+                    'strategy_type': 'news_scalper',
+                    'strategy_version': '2.0_SCALPING_OPTIMIZED'
                 }
             )
             

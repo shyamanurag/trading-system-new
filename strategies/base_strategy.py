@@ -1,6 +1,6 @@
 """
-Base Strategy Class
-Common functionality for all trading strategies with proper ATR calculation and risk management
+Base Strategy Class - SCALPING OPTIMIZED
+Common functionality for all trading strategies with proper ATR calculation and SCALPING risk management
 """
 
 import logging
@@ -12,7 +12,7 @@ import pytz  # Add timezone support
 logger = logging.getLogger(__name__)
 
 class BaseStrategy:
-    """Base class for all trading strategies with proper ATR and risk management"""
+    """Base class for all trading strategies with SCALPING-OPTIMIZED timing and risk management"""
     
     def __init__(self, config: Dict):
         self.config = config
@@ -23,9 +23,36 @@ class BaseStrategy:
         self.last_signal_time = None
         self.signal_cooldown = config.get('signal_cooldown_seconds', 1)
         
+        # SCALPING-OPTIMIZED cooldown controls
+        self.scalping_cooldown = config.get('scalping_cooldown_seconds', 15)  # Default 15 seconds
+        self.symbol_cooldowns = {}  # Symbol-specific cooldowns
+        
         # Historical data for proper ATR calculation
         self.historical_data = {}  # symbol -> list of price data
         self.max_history = 50  # Keep last 50 data points per symbol
+        
+    def _is_scalping_cooldown_passed(self) -> bool:
+        """Check if SCALPING cooldown period has passed"""
+        if not self.last_signal_time:
+            return True
+        
+        time_since_last = (datetime.now() - self.last_signal_time).total_seconds()
+        return time_since_last >= self.scalping_cooldown
+    
+    def _is_symbol_scalping_cooldown_passed(self, symbol: str, cooldown_seconds: int = 30) -> bool:
+        """Check if symbol-specific SCALPING cooldown has passed"""
+        if symbol not in self.symbol_cooldowns:
+            return True
+        
+        last_signal = self.symbol_cooldowns[symbol]
+        time_since = (datetime.now() - last_signal).total_seconds()
+        return time_since >= cooldown_seconds
+    
+    def _update_symbol_cooldown(self, symbol: str):
+        """Update symbol-specific cooldown timestamp"""
+        if not hasattr(self, 'symbol_cooldowns'):
+            self.symbol_cooldowns = {}
+        self.symbol_cooldowns[symbol] = datetime.now()
         
     def _is_trading_hours(self) -> bool:
         """Check if within trading hours - FIXED: Now uses IST timezone"""
@@ -140,7 +167,7 @@ class BaseStrategy:
     def calculate_dynamic_stop_loss(self, entry_price: float, atr: float, action: str, 
                                    multiplier: float = 2.0, min_percent: float = 0.5, 
                                    max_percent: float = 5.0) -> float:
-        """Calculate dynamic stop loss based on ATR with proper bounds"""
+        """Calculate dynamic stop loss based on ATR with SCALPING-OPTIMIZED bounds"""
         try:
             # Calculate ATR-based stop loss distance
             atr_distance = atr * multiplier
@@ -148,7 +175,7 @@ class BaseStrategy:
             # Convert to percentage
             atr_percent = (atr_distance / entry_price) * 100
             
-            # Apply bounds
+            # Apply SCALPING-OPTIMIZED bounds (tighter than original)
             bounded_percent = max(min_percent, min(atr_percent, max_percent))
             bounded_distance = (bounded_percent / 100) * entry_price
             
@@ -163,15 +190,15 @@ class BaseStrategy:
         except Exception as e:
             logger.error(f"Error calculating dynamic stop loss: {e}")
             # Fallback to percentage-based stop loss
-            fallback_percent = 1.0  # 1% fallback
+            fallback_percent = 0.5  # 0.5% fallback for scalping
             if action.upper() == 'BUY':
                 return entry_price * (1 - fallback_percent / 100)
             else:
                 return entry_price * (1 + fallback_percent / 100)
     
     def calculate_dynamic_target(self, entry_price: float, stop_loss: float, 
-                                risk_reward_ratio: float = 2.0) -> float:
-        """Calculate dynamic target based on stop loss and risk/reward ratio"""
+                                risk_reward_ratio: float = 1.5) -> float:
+        """Calculate dynamic target with SCALPING-OPTIMIZED risk/reward ratio"""
         try:
             # Calculate risk distance
             risk_distance = abs(entry_price - stop_loss)
@@ -191,9 +218,9 @@ class BaseStrategy:
             logger.error(f"Error calculating dynamic target: {e}")
             # Fallback to simple percentage target
             if stop_loss < entry_price:  # BUY trade
-                return entry_price * 1.02  # 2% target
+                return entry_price * 1.015  # 1.5% target for scalping
             else:  # SELL trade
-                return entry_price * 0.98  # 2% target
+                return entry_price * 0.985  # 1.5% target for scalping
     
     def validate_signal_levels(self, entry_price: float, stop_loss: float, 
                               target: float, action: str) -> bool:

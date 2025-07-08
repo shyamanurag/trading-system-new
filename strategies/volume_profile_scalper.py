@@ -1,5 +1,5 @@
 """
-Enhanced Volume Profile Scalper Strategy
+Enhanced Volume Profile Scalper Strategy - SCALPING OPTIMIZED
 A sophisticated volume-based trading strategy with proper ATR-based risk management
 """
 
@@ -11,30 +11,34 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class EnhancedVolumeProfileScalper(BaseStrategy):
-    """Enhanced volume-based trading strategy with proper ATR risk management"""
+    """Enhanced volume-based trading strategy with SCALPING-OPTIMIZED parameters"""
     
     def __init__(self, config: Dict):
         super().__init__(config)
         self.name = "EnhancedVolumeProfileScalper"
         
-        # Strategy-specific parameters
+        # SCALPING-OPTIMIZED parameters
         self.volume_thresholds = {
-            'high_volume': 30,      # 30% volume increase
-            'moderate_volume': 20,   # 20% volume increase
-            'low_volume': 12,       # 12% volume increase
+            'high_volume': 25,      # 25% volume increase (more sensitive)
+            'moderate_volume': 15,   # 15% volume increase (more sensitive)
+            'low_volume': 8,        # 8% volume increase (more sensitive)
             'price_confirmation': {
-                'strong': 0.12,     # 0.12% price movement
-                'moderate': 0.08,   # 0.08% price movement
-                'weak': 0.05        # 0.05% price movement
+                'strong': 0.08,     # 0.08% price movement (tighter)
+                'moderate': 0.05,   # 0.05% price movement (tighter)
+                'weak': 0.03        # 0.03% price movement (tighter)
             }
         }
         
-        # ATR multipliers for different volume strengths
+        # SCALPING-OPTIMIZED ATR multipliers (tighter stops)
         self.atr_multipliers = {
-            'high_volume': 2.0,     # 2.0x ATR for high volume
-            'moderate_volume': 1.5,  # 1.5x ATR for moderate volume
-            'low_volume': 1.2       # 1.2x ATR for low volume
+            'high_volume': 1.5,     # 1.5x ATR for high volume (tighter)
+            'moderate_volume': 1.2,  # 1.2x ATR for moderate volume (tighter)
+            'low_volume': 1.0       # 1.0x ATR for low volume (tighter)
         }
+        
+        # SCALPING cooldown control
+        self.scalping_cooldown = 15  # 15 seconds between signals
+        self.symbol_cooldowns = {}   # Symbol-specific cooldowns
         
     async def on_market_data(self, data: Dict):
         """Handle incoming market data and generate signals"""
@@ -42,8 +46,8 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
             return
             
         try:
-            # Check cooldown
-            if not self._is_cooldown_passed():
+            # Check SCALPING cooldown
+            if not self._is_scalping_cooldown_passed():
                 return
                 
             # Process market data and generate signals
@@ -57,6 +61,14 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
         except Exception as e:
             logger.error(f"Error in {self.name} strategy: {str(e)}")
     
+    def _is_scalping_cooldown_passed(self) -> bool:
+        """Check if SCALPING cooldown period has passed"""
+        if not self.last_signal_time:
+            return True
+        
+        time_since_last = (datetime.now() - self.last_signal_time).total_seconds()
+        return time_since_last >= self.scalping_cooldown
+    
     def _generate_signals(self, data: Dict) -> List[Dict]:
         """Generate trading signals based on market data"""
         signals = []
@@ -69,16 +81,31 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
                 symbol_data = data.get(symbol, {})
                 if not symbol_data:
                     continue
+                
+                # Check symbol-specific cooldown for scalping
+                if not self._is_symbol_scalping_cooldown_passed(symbol):
+                    continue
                     
                 # Generate signal for this symbol
                 signal = self._analyze_volume_profile(symbol, symbol_data)
                 if signal:
                     signals.append(signal)
+                    # Update symbol cooldown
+                    self.symbol_cooldowns[symbol] = datetime.now()
                     
         except Exception as e:
             logger.error(f"Error generating signals: {e}")
             
         return signals
+    
+    def _is_symbol_scalping_cooldown_passed(self, symbol: str) -> bool:
+        """Check if symbol-specific scalping cooldown has passed"""
+        if symbol not in self.symbol_cooldowns:
+            return True
+        
+        last_signal = self.symbol_cooldowns[symbol]
+        time_since = (datetime.now() - last_signal).total_seconds()
+        return time_since >= 30  # 30 seconds per symbol
     
     def _analyze_volume_profile(self, symbol: str, data: Dict) -> Optional[Dict]:
         """Analyze volume profile and generate signal if conditions are met"""
@@ -109,14 +136,14 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
             action = 'BUY' if price_change > 0 else 'SELL'
             atr_multiplier = self.atr_multipliers[volume_analysis['signal_strength']]
             
-            # Calculate dynamic stop loss and target (tighter for scalping)
+            # Calculate SCALPING-OPTIMIZED stop loss and target
             stop_loss = self.calculate_dynamic_stop_loss(
                 current_price, atr, action, atr_multiplier, 
-                min_percent=0.3, max_percent=2.5  # Tighter bounds for scalping
+                min_percent=0.2, max_percent=0.6  # ULTRA-TIGHT bounds for scalping
             )
             
             target = self.calculate_dynamic_target(
-                current_price, stop_loss, risk_reward_ratio=1.5  # 1.5:1 for scalping
+                current_price, stop_loss, risk_reward_ratio=1.5  # 1.5:1 optimal for scalping
             )
             
             # Calculate confidence based on volume analysis
@@ -131,14 +158,15 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
                 target=target,
                 confidence=confidence,
                 metadata={
+                    'scalping_optimized': True,
                     'volume_score': volume_analysis['score'],
                     'volume_strength': volume_analysis['signal_strength'],
                     'volume_change': volume_change,
                     'price_change': price_change,
                     'atr': atr,
                     'atr_multiplier': atr_multiplier,
-                    'risk_type': 'VOLUME_PROFILE_BASED',
-                    'strategy_version': '2.0_FIXED'
+                    'risk_type': 'SCALPING_VOLUME_PROFILE',
+                    'strategy_version': '2.0_SCALPING_OPTIMIZED'
                 }
             )
             

@@ -1,6 +1,6 @@
 """
-Enhanced Momentum Surfer Strategy
-A sophisticated momentum-based trading strategy with proper ATR-based risk management
+Enhanced Momentum Surfer Strategy - SCALPING OPTIMIZED
+A sophisticated momentum-based trading strategy with SCALPING-OPTIMIZED risk management
 """
 
 import logging
@@ -11,27 +11,31 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class EnhancedMomentumSurfer(BaseStrategy):
-    """Enhanced momentum-based trading strategy with proper ATR risk management"""
+    """Enhanced momentum-based trading strategy with SCALPING-OPTIMIZED parameters"""
     
     def __init__(self, config: Dict):
         super().__init__(config)
         self.name = "EnhancedMomentumSurfer"
         
-        # Strategy-specific parameters
+        # SCALPING-OPTIMIZED momentum thresholds (more sensitive)
         self.momentum_thresholds = {
-            'strong_positive': 0.15,  # 0.15% price increase
-            'moderate_positive': 0.08,  # 0.08% price increase
-            'strong_negative': -0.15,  # 0.15% price decrease
-            'moderate_negative': -0.08,  # 0.08% price decrease
-            'volume_threshold': 15  # 15% volume increase
+            'strong_positive': 0.10,  # 0.10% price increase (more sensitive)
+            'moderate_positive': 0.06,  # 0.06% price increase (more sensitive)
+            'strong_negative': -0.10,  # 0.10% price decrease (more sensitive)
+            'moderate_negative': -0.06,  # 0.06% price decrease (more sensitive)
+            'volume_threshold': 12  # 12% volume increase (more sensitive)
         }
         
-        # ATR multipliers for different momentum strengths
+        # SCALPING-OPTIMIZED ATR multipliers (tighter stops)
         self.atr_multipliers = {
-            'strong_momentum': 2.5,  # 2.5x ATR for strong momentum
-            'moderate_momentum': 1.8,  # 1.8x ATR for moderate momentum
-            'weak_momentum': 1.2   # 1.2x ATR for weak momentum
+            'strong_momentum': 1.8,  # 1.8x ATR for strong momentum (tighter)
+            'moderate_momentum': 1.4,  # 1.4x ATR for moderate momentum (tighter)
+            'weak_momentum': 1.1   # 1.1x ATR for weak momentum (tighter)
         }
+        
+        # SCALPING cooldown control
+        self.scalping_cooldown = 25  # 25 seconds between signals
+        self.symbol_cooldowns = {}   # Symbol-specific cooldowns
         
     async def on_market_data(self, data: Dict):
         """Handle incoming market data and generate signals"""
@@ -39,8 +43,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
             return
             
         try:
-            # Check cooldown
-            if not self._is_cooldown_passed():
+            # Check SCALPING cooldown
+            if not self._is_scalping_cooldown_passed():
                 return
                 
             # Process market data and generate signals
@@ -54,6 +58,14 @@ class EnhancedMomentumSurfer(BaseStrategy):
         except Exception as e:
             logger.error(f"Error in {self.name} strategy: {str(e)}")
     
+    def _is_scalping_cooldown_passed(self) -> bool:
+        """Check if SCALPING cooldown period has passed"""
+        if not self.last_signal_time:
+            return True
+        
+        time_since_last = (datetime.now() - self.last_signal_time).total_seconds()
+        return time_since_last >= self.scalping_cooldown
+    
     def _generate_signals(self, data: Dict) -> List[Dict]:
         """Generate trading signals based on market data"""
         signals = []
@@ -66,19 +78,34 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 symbol_data = data.get(symbol, {})
                 if not symbol_data:
                     continue
+                
+                # Check symbol-specific cooldown for scalping
+                if not self._is_symbol_scalping_cooldown_passed(symbol):
+                    continue
                     
                 # Generate signal for this symbol
                 signal = self._analyze_momentum(symbol, symbol_data)
                 if signal:
                     signals.append(signal)
+                    # Update symbol cooldown
+                    self.symbol_cooldowns[symbol] = datetime.now()
                     
         except Exception as e:
             logger.error(f"Error generating signals: {e}")
             
         return signals
     
+    def _is_symbol_scalping_cooldown_passed(self, symbol: str) -> bool:
+        """Check if symbol-specific scalping cooldown has passed"""
+        if symbol not in self.symbol_cooldowns:
+            return True
+        
+        last_signal = self.symbol_cooldowns[symbol]
+        time_since = (datetime.now() - last_signal).total_seconds()
+        return time_since >= 60  # 60 seconds per symbol for momentum
+    
     def _analyze_momentum(self, symbol: str, data: Dict) -> Optional[Dict]:
-        """Analyze momentum and generate signal if conditions are met"""
+        """Analyze momentum with SCALPING optimization"""
         try:
             # Extract price data
             current_price = data.get('close', 0)
@@ -96,7 +123,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             price_change = data.get('price_change', 0)
             volume_change = data.get('volume_change', 0)
             
-            # Analyze momentum strength and direction
+            # Analyze momentum strength with SCALPING thresholds
             momentum_analysis = self._analyze_momentum_strength(price_change, volume_change)
             
             if momentum_analysis['signal_strength'] == 'none':
@@ -106,14 +133,14 @@ class EnhancedMomentumSurfer(BaseStrategy):
             action = momentum_analysis['action']
             atr_multiplier = self.atr_multipliers[momentum_analysis['signal_strength']]
             
-            # Calculate dynamic stop loss and target
+            # Calculate SCALPING-OPTIMIZED stop loss and target
             stop_loss = self.calculate_dynamic_stop_loss(
                 current_price, atr, action, atr_multiplier, 
-                min_percent=0.5, max_percent=4.0
+                min_percent=0.3, max_percent=0.7  # TIGHT bounds for momentum scalping
             )
             
             target = self.calculate_dynamic_target(
-                current_price, stop_loss, risk_reward_ratio=2.0
+                current_price, stop_loss, risk_reward_ratio=1.4  # 1.4:1 for momentum scalping
             )
             
             # Calculate confidence based on momentum strength
@@ -128,14 +155,15 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 target=target,
                 confidence=confidence,
                 metadata={
+                    'scalping_optimized': True,
                     'momentum_score': momentum_analysis['score'],
                     'momentum_strength': momentum_analysis['signal_strength'],
                     'price_change': price_change,
                     'volume_change': volume_change,
                     'atr': atr,
                     'atr_multiplier': atr_multiplier,
-                    'risk_type': 'ATR_MOMENTUM_BASED',
-                    'strategy_version': '2.0_FIXED'
+                    'risk_type': 'SCALPING_MOMENTUM',
+                    'strategy_version': '2.0_SCALPING_OPTIMIZED'
                 }
             )
             

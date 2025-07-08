@@ -1,6 +1,6 @@
 """
-Enhanced Volatility Explosion Strategy
-A sophisticated volatility-based trading strategy with proper ATR-based risk management
+Enhanced Volatility Explosion Strategy - SCALPING OPTIMIZED
+A sophisticated volatility-based trading strategy with SCALPING-OPTIMIZED risk management
 """
 
 import logging
@@ -11,31 +11,35 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class EnhancedVolatilityExplosion(BaseStrategy):
-    """Enhanced volatility-based trading strategy with proper ATR risk management"""
+    """Enhanced volatility-based trading strategy with SCALPING-OPTIMIZED parameters"""
     
     def __init__(self, config: Dict):
         super().__init__(config)
         self.name = "EnhancedVolatilityExplosion"
         
-        # Strategy-specific parameters
+        # SCALPING-OPTIMIZED volatility thresholds
         self.volatility_thresholds = {
-            'extreme_volatility': 2.0,   # 2.0x historical volatility
-            'high_volatility': 1.6,      # 1.6x historical volatility  
-            'moderate_volatility': 1.3,  # 1.3x historical volatility
+            'extreme_volatility': 1.8,   # 1.8x historical volatility (more sensitive)
+            'high_volatility': 1.4,      # 1.4x historical volatility (more sensitive)
+            'moderate_volatility': 1.2,  # 1.2x historical volatility (more sensitive)
             'volume_confirmation': {
-                'strong': 35,            # 35% volume increase
-                'moderate': 25,          # 25% volume increase
-                'weak': 18              # 18% volume increase
+                'strong': 25,            # 25% volume increase (more sensitive)
+                'moderate': 18,          # 18% volume increase (more sensitive)
+                'weak': 12              # 12% volume increase (more sensitive)
             },
-            'price_gap_threshold': 0.3   # 0.3% price gap
+            'price_gap_threshold': 0.2   # 0.2% price gap (tighter)
         }
         
-        # ATR multipliers for different volatility levels
+        # SCALPING-OPTIMIZED ATR multipliers (tighter stops)
         self.atr_multipliers = {
-            'extreme_volatility': 3.0,   # 3.0x ATR for extreme volatility
-            'high_volatility': 2.5,      # 2.5x ATR for high volatility
-            'moderate_volatility': 2.0   # 2.0x ATR for moderate volatility
+            'extreme_volatility': 2.0,   # 2.0x ATR for extreme volatility (tighter)
+            'high_volatility': 1.6,      # 1.6x ATR for high volatility (tighter)
+            'moderate_volatility': 1.3   # 1.3x ATR for moderate volatility (tighter)
         }
+        
+        # SCALPING cooldown control
+        self.scalping_cooldown = 20  # 20 seconds between signals
+        self.symbol_cooldowns = {}   # Symbol-specific cooldowns
         
         # Historical volatility tracking per symbol
         self.volatility_history = {}
@@ -46,8 +50,8 @@ class EnhancedVolatilityExplosion(BaseStrategy):
             return
             
         try:
-            # Check cooldown
-            if not self._is_cooldown_passed():
+            # Check SCALPING cooldown
+            if not self._is_scalping_cooldown_passed():
                 return
                 
             # Process market data and generate signals
@@ -61,6 +65,14 @@ class EnhancedVolatilityExplosion(BaseStrategy):
         except Exception as e:
             logger.error(f"Error in {self.name} strategy: {str(e)}")
     
+    def _is_scalping_cooldown_passed(self) -> bool:
+        """Check if SCALPING cooldown period has passed"""
+        if not self.last_signal_time:
+            return True
+        
+        time_since_last = (datetime.now() - self.last_signal_time).total_seconds()
+        return time_since_last >= self.scalping_cooldown
+    
     def _generate_signals(self, data: Dict) -> List[Dict]:
         """Generate trading signals based on market data"""
         signals = []
@@ -73,19 +85,34 @@ class EnhancedVolatilityExplosion(BaseStrategy):
                 symbol_data = data.get(symbol, {})
                 if not symbol_data:
                     continue
+                
+                # Check symbol-specific cooldown for scalping
+                if not self._is_symbol_scalping_cooldown_passed(symbol):
+                    continue
                     
                 # Generate signal for this symbol
                 signal = self._analyze_volatility(symbol, symbol_data)
                 if signal:
                     signals.append(signal)
+                    # Update symbol cooldown
+                    self.symbol_cooldowns[symbol] = datetime.now()
                     
         except Exception as e:
             logger.error(f"Error generating signals: {e}")
             
         return signals
     
+    def _is_symbol_scalping_cooldown_passed(self, symbol: str) -> bool:
+        """Check if symbol-specific scalping cooldown has passed"""
+        if symbol not in self.symbol_cooldowns:
+            return True
+        
+        last_signal = self.symbol_cooldowns[symbol]
+        time_since = (datetime.now() - last_signal).total_seconds()
+        return time_since >= 45  # 45 seconds per symbol for volatility
+    
     def _analyze_volatility(self, symbol: str, data: Dict) -> Optional[Dict]:
-        """Analyze volatility patterns and generate signal if conditions are met"""
+        """Analyze volatility patterns with SCALPING optimization"""
         try:
             # Extract price data
             current_price = data.get('close', 0)
@@ -105,7 +132,7 @@ class EnhancedVolatilityExplosion(BaseStrategy):
             # Get or calculate historical volatility for this symbol
             historical_volatility = self._get_historical_volatility(symbol, current_volatility_ratio)
             
-            # Analyze volatility explosion
+            # Analyze volatility explosion with SCALPING thresholds
             volatility_analysis = self._analyze_volatility_explosion(
                 current_volatility_ratio, historical_volatility, data
             )
@@ -118,14 +145,14 @@ class EnhancedVolatilityExplosion(BaseStrategy):
             action = 'BUY' if price_change > 0 else 'SELL'
             atr_multiplier = self.atr_multipliers[volatility_analysis['signal_strength']]
             
-            # Calculate dynamic stop loss and target
+            # Calculate SCALPING-OPTIMIZED stop loss and target
             stop_loss = self.calculate_dynamic_stop_loss(
                 current_price, atr, action, atr_multiplier, 
-                min_percent=0.8, max_percent=6.0  # Wider bounds for volatility trading
+                min_percent=0.4, max_percent=1.0  # TIGHT bounds for volatility scalping
             )
             
             target = self.calculate_dynamic_target(
-                current_price, stop_loss, risk_reward_ratio=1.8  # 1.8:1 for volatility
+                current_price, stop_loss, risk_reward_ratio=1.6  # 1.6:1 for volatility scalping
             )
             
             # Calculate confidence based on volatility analysis
@@ -140,6 +167,7 @@ class EnhancedVolatilityExplosion(BaseStrategy):
                 target=target,
                 confidence=confidence,
                 metadata={
+                    'scalping_optimized': True,
                     'volatility_score': volatility_analysis['score'],
                     'volatility_strength': volatility_analysis['signal_strength'],
                     'current_volatility': current_volatility_ratio,
@@ -149,8 +177,8 @@ class EnhancedVolatilityExplosion(BaseStrategy):
                     'price_change': price_change,
                     'atr': atr,
                     'atr_multiplier': atr_multiplier,
-                    'risk_type': 'VOLATILITY_EXPLOSION_BASED',
-                    'strategy_version': '2.0_FIXED'
+                    'risk_type': 'SCALPING_VOLATILITY_EXPLOSION',
+                    'strategy_version': '2.0_SCALPING_OPTIMIZED'
                 }
             )
             
