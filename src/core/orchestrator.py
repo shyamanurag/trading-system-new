@@ -562,17 +562,40 @@ class TradingOrchestrator:
             return False
     
     async def _get_market_data_from_api(self) -> Dict[str, Any]:
-        """Get market data from existing TrueData cache - SIMPLE APPROACH"""
+        """Get market data from existing TrueData cache - FIXED TO ACCESS WORKING CACHE"""
         try:
-            # SIMPLE FIX: Access existing TrueData cache directly instead of creating new connection
-            from data.truedata_client import live_market_data
+            # CRITICAL FIX: Access TrueData cache directly where data is actually flowing
+            from data.truedata_client import live_market_data, get_all_live_data
             
+            # Try direct access first (most reliable)
             if live_market_data:
-                self.logger.info(f"📊 Using existing TrueData cache: {len(live_market_data)} symbols")
-                return live_market_data
-            else:
-                self.logger.warning("⚠️ TrueData cache is empty")
-                return {}
+                self.logger.info(f"📊 Using direct TrueData cache: {len(live_market_data)} symbols")
+                return live_market_data.copy()  # Return copy to avoid modification issues
+            
+            # Fallback to get_all_live_data() function
+            all_data = get_all_live_data()
+            if all_data:
+                self.logger.info(f"📊 Using TrueData get_all_live_data(): {len(all_data)} symbols")
+                return all_data
+            
+            # If direct access fails, try API call to market data endpoint
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    # Call the working market data API endpoint
+                    api_url = "http://localhost:8000/api/v1/market-data"
+                    async with session.get(api_url, timeout=5) as response:
+                        if response.status == 200:
+                            api_data = await response.json()
+                            if api_data.get('success') and api_data.get('data'):
+                                market_data = api_data['data']
+                                self.logger.info(f"📊 Using market data API: {len(market_data)} symbols")
+                                return market_data
+            except Exception as api_error:
+                self.logger.warning(f"API fallback failed: {api_error}")
+            
+            self.logger.warning("⚠️ All TrueData access methods failed")
+            return {}
                 
         except ImportError:
             self.logger.warning("⚠️ TrueData client not available")
