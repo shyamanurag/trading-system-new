@@ -7,7 +7,7 @@ from collections import deque
 from ..models.schema import Order, OrderStatus, OrderType
 from ..core.order_manager import OrderManager
 from ..core.risk_manager import RiskManager
-from ..core.position_tracker import PositionTracker
+from ..core.position_tracker import ProductionPositionTracker
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class TradeExecutionQueue:
         self,
         order_manager: OrderManager,
         risk_manager: RiskManager,
-        position_tracker: PositionTracker,
+        position_tracker: ProductionPositionTracker,
         max_queue_size: int = 1000
     ):
         self.order_manager = order_manager

@@ -18,7 +18,7 @@ import redis.asyncio as redis
 from ..models import Signal
 from .models import Position, OptionType
 from ..events import EventBus, EventType, TradingEvent
-from .position_tracker import PositionTracker
+from .position_tracker import ProductionPositionTracker
 from .greeks_risk_manager import GreeksRiskManager
 
 logger = logging.getLogger(__name__)
@@ -291,7 +291,7 @@ class RiskManager:
     Implements portfolio risk management, position sizing, and risk monitoring
     """
 
-    def __init__(self, config: Dict, position_tracker: PositionTracker, event_bus: EventBus):
+    def __init__(self, config: Dict, position_tracker: ProductionPositionTracker, event_bus: EventBus):
         self.config = config
         self.position_tracker = position_tracker
         self.event_bus = event_bus

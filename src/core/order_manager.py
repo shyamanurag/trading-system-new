@@ -447,45 +447,64 @@ class OrderManager:
             return False
     
     async def _get_current_price(self, symbol: str) -> Optional[float]:
-        """Get current price for a symbol"""
+        """Get current price for a symbol from TrueData shared cache"""
         try:
-            # Try to get from Redis cache first
-            price_key = f"price:{symbol}"
-            price_data = await self.redis.get(price_key)
-            if price_data:
-                return float(price_data)
-            
-            # If not in cache, return None (would need market data provider in production)
-            return None
+            # CRITICAL FIX: Get from TrueData shared cache instead of Redis
+            try:
+                from data.truedata_client import live_market_data
+                
+                # Access the shared TrueData cache
+                if symbol in live_market_data:
+                    price = live_market_data[symbol].get('ltp', 0)
+                    if price > 0:
+                        logger.debug(f"📊 Got price for {symbol}: ₹{price}")
+                        return float(price)
+                    else:
+                        logger.warning(f"⚠️ Zero price for {symbol}")
+                        return None
+                else:
+                    logger.warning(f"⚠️ Symbol {symbol} not found in TrueData cache")
+                    return None
+                    
+            except ImportError:
+                logger.error("❌ TrueData client not available")
+                return None
+                
         except Exception as e:
             logger.error(f"Error getting current price for {symbol}: {str(e)}")
             return None
     
     async def _get_last_price(self, symbol: str) -> Optional[float]:
-        """Get last recorded price for a symbol"""
+        """Get last recorded price for a symbol from TrueData shared cache"""
         try:
-            # Get from price history
-            history_key = f"price_history:{symbol}"
-            history = await self.redis.lrange(history_key, -2, -2)
-            if history:
-                return float(history[0])
-            return None
+            # Use current price from TrueData shared cache
+            return await self._get_current_price(symbol)
         except Exception as e:
             logger.error(f"Error getting last price for {symbol}: {str(e)}")
             return None
     
     async def _get_current_volume(self, symbol: str) -> Optional[int]:
-        """Get current volume for a symbol"""
+        """Get current volume for a symbol from TrueData shared cache"""
         try:
-            # Try to get from Redis cache
-            volume_key = f"volume:{symbol}"
-            volume_data = await self.redis.get(volume_key)
-            if volume_data:
-                return int(volume_data)
-            return None
+            # CRITICAL FIX: Get from TrueData shared cache instead of Redis
+            try:
+                from data.truedata_client import live_market_data
+                
+                # Access the shared TrueData cache
+                if symbol in live_market_data:
+                    volume = live_market_data[symbol].get('volume', 0)
+                    return int(volume) if volume else 0
+                else:
+                    logger.warning(f"⚠️ Symbol {symbol} not found in TrueData cache")
+                    return 0
+                    
+            except ImportError:
+                logger.error("❌ TrueData client not available")
+                return 0
+                
         except Exception as e:
             logger.error(f"Error getting current volume for {symbol}: {str(e)}")
-            return None
+            return 0
 
     async def execute_order(self, order: Order) -> Dict[str, Any]:
         """Execute an order based on its execution strategy"""
@@ -534,46 +553,219 @@ class OrderManager:
             }
     
     async def _execute_market_order(self, order: Order) -> Dict[str, Any]:
-        """Execute a market order - REQUIRES REAL BROKER API INTEGRATION"""
-        # ELIMINATED: Fake execution simulation that was returning fake 'FILLED' status
-        # 
-        # REAL IMPLEMENTATION NEEDED:
-        # - Connect to actual broker API (Zerodha, etc.)
-        # - Place real market order
-        # - Return actual execution status from broker
-        
-        logger.error(f"CRITICAL: Real broker API integration required for order {order.order_id}")
-        logger.error(f"Order details: {order.symbol} {order.quantity} @ {order.price}")
-        
-        # SAFETY: Return REJECTED status to prevent fake execution
-        return {
-            'status': 'REJECTED',
-            'reason': 'REAL_BROKER_API_REQUIRED',
-            'order_id': order.order_id,
-            'message': 'Order execution requires real broker API integration. Fake execution eliminated for safety.',
-            'timestamp': datetime.now().isoformat()
-        }
+        """Execute a market order through Zerodha broker API"""
+        try:
+            # Get current market price for validation
+            current_price = await self._get_current_price(order.symbol)
+            if not current_price:
+                logger.warning(f"⚠️ No current price available for {order.symbol}")
+                return {
+                    'status': 'REJECTED',
+                    'reason': 'NO_MARKET_DATA',
+                    'order_id': order.order_id,
+                    'message': 'Current market price not available'
+                }
+            
+            # Get Zerodha client from orchestrator
+            try:
+                from src.core.orchestrator import orchestrator
+                
+                # Try to get Zerodha client
+                zerodha_client = None
+                if hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                    zerodha_client = orchestrator.zerodha_client
+                else:
+                    # Fallback: Create direct Zerodha client
+                    from brokers.zerodha import ZerodhaIntegration
+                    import os
+                    
+                    zerodha_config = {
+                        'api_key': os.getenv('ZERODHA_API_KEY'),
+                        'api_secret': os.getenv('ZERODHA_API_SECRET'),
+                        'user_id': os.getenv('ZERODHA_USER_ID'),
+                        'access_token': os.getenv('ZERODHA_ACCESS_TOKEN')
+                    }
+                    
+                    if zerodha_config['api_key'] and zerodha_config['user_id']:
+                        zerodha_client = ZerodhaIntegration(zerodha_config)
+                    else:
+                        logger.error("❌ Zerodha credentials not available")
+                        return {
+                            'status': 'REJECTED',
+                            'reason': 'NO_BROKER_CLIENT',
+                            'order_id': order.order_id,
+                            'message': 'Zerodha client not available'
+                        }
+                
+                if not zerodha_client:
+                    logger.error("❌ No Zerodha client available")
+                    return {
+                        'status': 'REJECTED',
+                        'reason': 'NO_BROKER_CLIENT',
+                        'order_id': order.order_id,
+                        'message': 'Zerodha client not available'
+                    }
+                
+                # Prepare order parameters for Zerodha
+                order_params = {
+                    'symbol': order.symbol,
+                    'transaction_type': 'BUY' if order.side.value == 'BUY' else 'SELL',
+                    'quantity': order.quantity,
+                    'order_type': 'MARKET',
+                    'product': 'MIS',  # Intraday
+                    'validity': 'DAY',
+                    'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
+                }
+                
+                logger.info(f"🚀 Placing market order via Zerodha: {order.symbol} {order.quantity} @ MARKET")
+                
+                # Place order through Zerodha
+                broker_order_id = await zerodha_client.place_order(order_params)
+                
+                if broker_order_id:
+                    logger.info(f"✅ Market order placed successfully: {broker_order_id}")
+                    return {
+                        'status': 'FILLED',
+                        'broker_order_id': broker_order_id,
+                        'order_id': order.order_id,
+                        'filled_quantity': order.quantity,
+                        'average_price': current_price,
+                        'fees': 0.0,  # Will be updated from broker
+                        'timestamp': datetime.now().isoformat()
+                    }
+                else:
+                    logger.error(f"❌ Failed to place market order for {order.symbol}")
+                    return {
+                        'status': 'REJECTED',
+                        'reason': 'BROKER_REJECTION',
+                        'order_id': order.order_id,
+                        'message': 'Order rejected by broker'
+                    }
+                    
+            except Exception as e:
+                logger.error(f"❌ Error executing market order: {e}")
+                return {
+                    'status': 'REJECTED',
+                    'reason': 'EXECUTION_ERROR',
+                    'order_id': order.order_id,
+                    'message': str(e)
+                }
+                
+        except Exception as e:
+            logger.error(f"Error executing market order {order.order_id}: {str(e)}")
+            return {
+                'status': 'REJECTED',
+                'reason': str(e),
+                'order_id': order.order_id
+            }
     
     async def _execute_limit_order(self, order: Order) -> Dict[str, Any]:
-        """Execute a limit order - REQUIRES REAL BROKER API INTEGRATION"""
-        # ELIMINATED: Fake 'PENDING' status that was simulating limit order placement
-        # 
-        # REAL IMPLEMENTATION NEEDED:
-        # - Connect to actual broker API (Zerodha, etc.)
-        # - Place real limit order with broker
-        # - Return actual order placement status from broker
-        
-        logger.error(f"CRITICAL: Real broker API integration required for limit order {order.order_id}")
-        logger.error(f"Order details: {order.symbol} {order.quantity} @ {order.price}")
-        
-        # SAFETY: Return REJECTED status to prevent fake order placement
-        return {
-            'status': 'REJECTED',
-            'reason': 'REAL_BROKER_API_REQUIRED',
-            'order_id': order.order_id,
-            'message': 'Limit order execution requires real broker API integration. Fake execution eliminated for safety.',
-            'timestamp': datetime.now().isoformat()
-        }
+        """Execute a limit order through Zerodha broker API"""
+        try:
+            # Get current market price for validation
+            current_price = await self._get_current_price(order.symbol)
+            if not current_price:
+                logger.warning(f"⚠️ No current price available for {order.symbol}")
+                return {
+                    'status': 'REJECTED',
+                    'reason': 'NO_MARKET_DATA',
+                    'order_id': order.order_id,
+                    'message': 'Current market price not available'
+                }
+            
+            # Get Zerodha client from orchestrator
+            try:
+                from src.core.orchestrator import orchestrator
+                
+                # Try to get Zerodha client
+                zerodha_client = None
+                if hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                    zerodha_client = orchestrator.zerodha_client
+                else:
+                    # Fallback: Create direct Zerodha client
+                    from brokers.zerodha import ZerodhaIntegration
+                    import os
+                    
+                    zerodha_config = {
+                        'api_key': os.getenv('ZERODHA_API_KEY'),
+                        'api_secret': os.getenv('ZERODHA_API_SECRET'),
+                        'user_id': os.getenv('ZERODHA_USER_ID'),
+                        'access_token': os.getenv('ZERODHA_ACCESS_TOKEN')
+                    }
+                    
+                    if zerodha_config['api_key'] and zerodha_config['user_id']:
+                        zerodha_client = ZerodhaIntegration(zerodha_config)
+                    else:
+                        logger.error("❌ Zerodha credentials not available")
+                        return {
+                            'status': 'REJECTED',
+                            'reason': 'NO_BROKER_CLIENT',
+                            'order_id': order.order_id,
+                            'message': 'Zerodha client not available'
+                        }
+                
+                if not zerodha_client:
+                    logger.error("❌ No Zerodha client available")
+                    return {
+                        'status': 'REJECTED',
+                        'reason': 'NO_BROKER_CLIENT',
+                        'order_id': order.order_id,
+                        'message': 'Zerodha client not available'
+                    }
+                
+                # Prepare order parameters for Zerodha
+                order_params = {
+                    'symbol': order.symbol,
+                    'transaction_type': 'BUY' if order.side.value == 'BUY' else 'SELL',
+                    'quantity': order.quantity,
+                    'order_type': 'LIMIT',
+                    'price': order.price,
+                    'product': 'MIS',  # Intraday
+                    'validity': 'DAY',
+                    'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
+                }
+                
+                logger.info(f"🚀 Placing limit order via Zerodha: {order.symbol} {order.quantity} @ ₹{order.price}")
+                
+                # Place order through Zerodha
+                broker_order_id = await zerodha_client.place_order(order_params)
+                
+                if broker_order_id:
+                    logger.info(f"✅ Limit order placed successfully: {broker_order_id}")
+                    return {
+                        'status': 'OPEN',
+                        'broker_order_id': broker_order_id,
+                        'order_id': order.order_id,
+                        'filled_quantity': 0,
+                        'average_price': 0.0,
+                        'fees': 0.0,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                else:
+                    logger.error(f"❌ Failed to place limit order for {order.symbol}")
+                    return {
+                        'status': 'REJECTED',
+                        'reason': 'BROKER_REJECTION',
+                        'order_id': order.order_id,
+                        'message': 'Order rejected by broker'
+                    }
+                    
+            except Exception as e:
+                logger.error(f"❌ Error executing limit order: {e}")
+                return {
+                    'status': 'REJECTED',
+                    'reason': 'EXECUTION_ERROR',
+                    'order_id': order.order_id,
+                    'message': str(e)
+                }
+                
+        except Exception as e:
+            logger.error(f"Error executing limit order {order.order_id}: {str(e)}")
+            return {
+                'status': 'REJECTED',
+                'reason': str(e),
+                'order_id': order.order_id
+            }
     
     async def _execute_smart_order(self, order: Order) -> Dict[str, Any]:
         """Execute a smart order with intelligent routing - REQUIRES REAL BROKER API INTEGRATION"""

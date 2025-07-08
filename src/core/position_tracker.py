@@ -1,8 +1,8 @@
-﻿\"\"\"
+﻿"""
 Production-Level Position Tracker
 =================================
 Tracks trading positions with Redis persistence and proper error handling.
-\"\"\"
+"""
 
 import asyncio
 import logging
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Position:
-    \"\"\"Trading position data structure\"\"\"
+    """Trading position data structure"""
     symbol: str
     quantity: int
     average_price: float
@@ -27,7 +27,7 @@ class Position:
     last_updated: datetime
     
     def to_dict(self) -> Dict[str, Any]:
-        \"\"\"Convert position to dictionary\"\"\"
+        """Convert position to dictionary"""
         return {
             'symbol': self.symbol,
             'quantity': self.quantity,
@@ -41,11 +41,11 @@ class Position:
         }
 
 class ProductionPositionTracker:
-    \"\"\"
+    """
     Production-Level Position Tracker
     ================================
     Tracks trading positions with proper error handling and performance tracking.
-    \"\"\"
+    """
     
     def __init__(self, redis_client=None, event_bus=None):
         self.redis_client = redis_client
@@ -63,30 +63,30 @@ class ProductionPositionTracker:
         self.winning_trades = 0
         
     async def initialize(self) -> bool:
-        \"\"\"Initialize position tracker\"\"\"
+        """Initialize position tracker"""
         try:
             # Initialize Redis client if available
             if self.redis_client:
                 try:
                     await self.redis_client.ping()
-                    self.logger.info(\"Position tracker initialized with Redis\")
+                    self.logger.info("Position tracker initialized with Redis")
                 except:
-                    self.logger.warning(\"Redis not available, using memory-only mode\")
+                    self.logger.warning("Redis not available, using memory-only mode")
                     self.redis_client = None
             else:
-                self.logger.info(\"Position tracker initialized in memory-only mode\")
+                self.logger.info("Position tracker initialized in memory-only mode")
             
             self.is_initialized = True
-            self.logger.info(f\"Position tracker initialized with {len(self.positions)} positions\")
+            self.logger.info(f"Position tracker initialized with {len(self.positions)} positions")
             return True
             
         except Exception as e:
-            self.logger.error(f\"Failed to initialize position tracker: {e}\")
+            self.logger.error(f"Failed to initialize position tracker: {e}")
             return False
     
     async def update_position(self, symbol: str, quantity: int, price: float, 
                             side: str = 'long') -> bool:
-        \"\"\"Update position for a symbol\"\"\"
+        """Update position for a symbol"""
         try:
             now = datetime.now()
             
@@ -137,18 +137,18 @@ class ProductionPositionTracker:
                     'position': position.to_dict()
                 })
             
-            self.logger.info(f\"Updated position for {symbol}: {quantity} @ {price}\")
+            self.logger.info(f"Updated position for {symbol}: {quantity} @ {price}")
             return True
             
         except Exception as e:
-            self.logger.error(f\"Failed to update position for {symbol}: {e}\")
+            self.logger.error(f"Failed to update position for {symbol}: {e}")
             return False
     
     async def close_position(self, symbol: str, exit_price: float) -> Optional[float]:
-        \"\"\"Close a position and calculate realized PnL\"\"\"
+        """Close a position and calculate realized PnL"""
         try:
             if symbol not in self.positions:
-                self.logger.warning(f\"No position found for {symbol}\")
+                self.logger.warning(f"No position found for {symbol}")
                 return None
             
             position = self.positions[symbol]
@@ -182,15 +182,15 @@ class ProductionPositionTracker:
                     'exit_price': exit_price
                 })
             
-            self.logger.info(f\"Closed position for {symbol}: PnL = {realized_pnl:.2f}\")
+            self.logger.info(f"Closed position for {symbol}: PnL = {realized_pnl:.2f}")
             return realized_pnl
             
         except Exception as e:
-            self.logger.error(f\"Failed to close position for {symbol}: {e}\")
+            self.logger.error(f"Failed to close position for {symbol}: {e}")
             return None
     
     async def update_market_prices(self, market_data: Dict[str, float]):
-        \"\"\"Update current market prices for all positions\"\"\"
+        """Update current market prices for all positions"""
         try:
             for symbol, position in self.positions.items():
                 if symbol in market_data:
@@ -205,18 +205,18 @@ class ProductionPositionTracker:
                         position.unrealized_pnl = (position.average_price - new_price) * position.quantity
                 
         except Exception as e:
-            self.logger.error(f\"Failed to update market prices: {e}\")
+            self.logger.error(f"Failed to update market prices: {e}")
     
     async def get_position(self, symbol: str) -> Optional[Position]:
-        \"\"\"Get position for a specific symbol\"\"\"
+        """Get position for a specific symbol"""
         return self.positions.get(symbol)
     
     async def get_all_positions(self) -> Dict[str, Position]:
-        \"\"\"Get all current positions\"\"\"
+        """Get all current positions"""
         return self.positions.copy()
     
     async def get_positions_summary(self) -> Dict[str, Any]:
-        \"\"\"Get summary of all positions\"\"\"
+        """Get summary of all positions"""
         try:
             total_unrealized_pnl = sum(pos.unrealized_pnl for pos in self.positions.values())
             total_invested = sum(abs(pos.average_price * pos.quantity) for pos in self.positions.values())
@@ -235,11 +235,11 @@ class ProductionPositionTracker:
             }
             
         except Exception as e:
-            self.logger.error(f\"Failed to get positions summary: {e}\")
+            self.logger.error(f"Failed to get positions summary: {e}")
             return {}
     
     async def get_risk_exposure(self) -> Dict[str, Any]:
-        \"\"\"Get current risk exposure\"\"\"
+        """Get current risk exposure"""
         try:
             total_long_exposure = sum(
                 pos.current_price * pos.quantity 
@@ -266,14 +266,14 @@ class ProductionPositionTracker:
             }
             
         except Exception as e:
-            self.logger.error(f\"Failed to calculate risk exposure: {e}\")
+            self.logger.error(f"Failed to calculate risk exposure: {e}")
             return {}
 
 # Global position tracker instance
 position_tracker = ProductionPositionTracker()
 
 async def get_position_tracker() -> ProductionPositionTracker:
-    \"\"\"Get position tracker instance\"\"\"
+    """Get position tracker instance"""
     if not position_tracker.is_initialized:
         await position_tracker.initialize()
     return position_tracker
