@@ -46,14 +46,36 @@ class TradeEngine:
                 import os
                 
                 # Create proper production config for OrderManager
-                redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+                # PRODUCTION FIX: Use proper Redis service discovery
+                redis_host = os.getenv('REDIS_HOST', 'localhost')
+                redis_port = int(os.getenv('REDIS_PORT', '6379'))
+                redis_password = os.getenv('REDIS_PASSWORD')
+                
+                # Check if we're in production environment
+                is_production = os.getenv('ENVIRONMENT', 'development') == 'production'
+                
+                if is_production:
+                    # Production Redis configuration
+                    if redis_host == 'localhost':
+                        # Try common production Redis services
+                        redis_host = 'trading-redis'  # Kubernetes service name
+                        self.logger.info(f"Production mode: Using Redis service: {redis_host}")
+                    
+                    # Build Redis URL for production
+                    if redis_password:
+                        redis_url = f"redis://:{redis_password}@{redis_host}:{redis_port}/0"
+                    else:
+                        redis_url = f"redis://{redis_host}:{redis_port}/0"
+                else:
+                    # Development fallback
+                    redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
                 
                 config = {
                     'redis': {
-                        'host': os.getenv('REDIS_HOST', 'localhost'),
-                        'port': int(os.getenv('REDIS_PORT', '6379')),
+                        'host': redis_host,
+                        'port': redis_port,
                         'db': int(os.getenv('REDIS_DB', '0')),
-                        'password': os.getenv('REDIS_PASSWORD'),
+                        'password': redis_password,
                         'ssl': os.getenv('REDIS_SSL', 'false').lower() == 'true'
                     },
                     'redis_url': redis_url,  # For UserTracker compatibility
@@ -73,13 +95,43 @@ class TradeEngine:
                 }
                 
                 # Log the config being used (without sensitive data)
-                self.logger.info(f"OrderManager config - Redis URL: {redis_url.split('@')[0] if '@' in redis_url else redis_url}")
+                self.logger.info(f"OrderManager config - Redis: {redis_host}:{redis_port}")
                 self.logger.info(f"OrderManager config - Database: {config['database']['url'].split('@')[0] if '@' in config['database']['url'] else 'local'}")
                 
-                # Initialize OrderManager with proper production config
-                self.order_manager = OrderManager(config)
-                self.logger.info("OrderManager initialized successfully with production config")
-                
+                # Test Redis connection before initializing OrderManager
+                try:
+                    import redis.asyncio as redis
+                    redis_client = redis.Redis(
+                        host=redis_host,
+                        port=redis_port,
+                        db=config['redis']['db'],
+                        password=redis_password,
+                        socket_connect_timeout=5,
+                        socket_timeout=5
+                    )
+                    await redis_client.ping()
+                    self.logger.info("✅ Redis connection successful")
+                    
+                    # Initialize OrderManager with working Redis
+                    self.order_manager = OrderManager(config)
+                    self.logger.info("OrderManager initialized successfully with production config")
+                    
+                except Exception as redis_error:
+                    self.logger.warning(f"Redis connection failed: {redis_error}")
+                    self.logger.info("🔄 Initializing OrderManager without Redis (using in-memory fallback)")
+                    
+                    # Create Redis-less config for OrderManager
+                    config_no_redis = config.copy()
+                    config_no_redis['redis'] = None
+                    config_no_redis['redis_url'] = None
+                    
+                    try:
+                        self.order_manager = OrderManager(config_no_redis)
+                        self.logger.info("OrderManager initialized with in-memory fallback")
+                    except Exception as e:
+                        self.logger.error(f"OrderManager initialization failed even without Redis: {e}")
+                        self.order_manager = None
+            
             except Exception as e:
                 self.logger.error(f"OrderManager initialization failed: {e}")
                 self.logger.info("Continuing without OrderManager - will use fallback method")
