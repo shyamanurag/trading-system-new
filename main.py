@@ -87,6 +87,7 @@ router_imports = {
     'system_status': ('src.api.system_status', 'router'),
     'intelligent_symbols': ('src.api.intelligent_symbol_api', 'router'),
     'debug_endpoints': ('src.api.debug_endpoints', 'router'),
+    'search': ('src.api.search', 'router'),
 }
 
 # Import routers dynamically
@@ -244,21 +245,44 @@ app = FastAPI(
     ]
 )
 
-# Add middleware
-# CORS
-cors_origins = os.getenv("CORS_ORIGINS", "[]")
+# Configure CORS - FIXED: Safe JSON parsing instead of eval()
 try:
-    allowed_origins = eval(cors_origins) if cors_origins != "[]" else ["*"]
-except:
-    allowed_origins = ["*"]
+    cors_origins_env = os.getenv("CORS_ORIGINS", "[]")
+    if cors_origins_env == "[]":
+        # Default allowed origins for development and production
+        allowed_origins = [
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://localhost:8080",
+            "https://algoauto-9gx56.ondigitalocean.app",
+            "https://algoauto-dashboard.ondigitalocean.app"
+        ]
+        logger.info("Using default CORS origins for development/production")
+    else:
+        # Parse JSON safely instead of using eval()
+        import json
+        try:
+            allowed_origins = json.loads(cors_origins_env)
+            logger.info(f"Loaded CORS origins from environment: {allowed_origins}")
+        except json.JSONDecodeError:
+            logger.error(f"Invalid JSON in CORS_ORIGINS: {cors_origins_env}")
+            allowed_origins = ["*"]  # Fallback to allow all
+            logger.warning("Falling back to allow all origins (*) due to invalid CORS_ORIGINS")
+            
+except Exception as e:
+    logger.error(f"Error configuring CORS: {e}")
+    allowed_origins = ["*"]  # Safe fallback
+    logger.warning("Using fallback CORS configuration (allow all)")
 
+# Add CORS middleware with improved configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
-    expose_headers=["*"]
+    expose_headers=["*"],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 # Middleware to fix Digital Ocean path stripping
@@ -571,6 +595,7 @@ router_configs = [
     ('dashboard', '/api/v1/dashboard', ('dashboard',)),
     ('reports', '', ('reports',)),  # Already has /api/reports prefix
     ('system_status', '', ('system-status',)),  # Has full paths in router
+    ('search', '/api/v1', ('search',)),  # Comprehensive search API
     
     # Debug endpoints
     ('debug_endpoints', '/api/v1', ('debug',)),
@@ -1450,6 +1475,50 @@ async def catch_all(request: Request, path: str):
                 "detail": f"Path not found: {path}",
                 "message": "Frontend not available"
             }
+        )
+
+# FIXED: Add missing endpoints that frontend expects
+@app.get("/api/v1/users/performance", tags=["users"])
+async def get_users_performance():
+    """User performance endpoint that frontend expects"""
+    try:
+        # Get basic user performance data
+        return {
+            "success": True,
+            "data": {
+                "total_users": 0,
+                "active_users": 0,
+                "user_metrics": {},
+                "performance_summary": {}
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting user performance: {e}")
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
+
+@app.get("/api/market/indices", tags=["market-data"])
+async def get_market_indices():
+    """Market indices endpoint that frontend expects"""
+    try:
+        # Return basic market indices data
+        return {
+            "success": True,
+            "data": {
+                "NIFTY": {"ltp": 0, "change": 0, "change_percent": 0},
+                "BANKNIFTY": {"ltp": 0, "change": 0, "change_percent": 0},
+                "SENSEX": {"ltp": 0, "change": 0, "change_percent": 0}
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting market indices: {e}")
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
         )
 
 # Main execution

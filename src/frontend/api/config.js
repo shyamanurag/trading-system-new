@@ -119,6 +119,15 @@ export const API_ENDPOINTS = {
 
     // New endpoints
     ZERODHA_LOGIN: createEndpoint('/api/zerodha/login'),
+
+    // Search endpoints
+    SEARCH_SYMBOLS: createEndpoint('/api/v1/search/symbols'),
+    SEARCH_TRADES: createEndpoint('/api/v1/search/trades'),
+    SEARCH_STRATEGIES: createEndpoint('/api/v1/search/strategies'),
+    SEARCH_USERS: createEndpoint('/api/v1/search/users'),
+    SEARCH_RECOMMENDATIONS: createEndpoint('/api/v1/search/recommendations'),
+    SEARCH_GLOBAL: createEndpoint('/api/v1/search/global'),
+    SEARCH_AUTOCOMPLETE: createEndpoint('/api/v1/search/autocomplete'),
 };
 
 // Debug logging

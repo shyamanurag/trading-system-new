@@ -717,24 +717,10 @@ class TradingOrchestrator:
             self.logger.error(f"❌ Error processing market data: {e}")
     
     async def _run_strategies(self, market_data: Dict[str, Any]):
-        """Run all active strategies with market data and collect signals - ENHANCED DEBUG"""
+        """Run all active strategies with transformed data and collect signals"""
         try:
-            self.logger.info(f"🎯 Running {len(self.strategies)} strategies with {len(market_data)} symbols")
-            
-            # Transform market data for strategies
-            transformed_data = self._transform_market_data_for_strategies(market_data)
-            
-            # Log data transformation for debugging
-            if market_data and transformed_data:
-                sample_symbol = next(iter(market_data.keys()))
-                original_data = market_data[sample_symbol]
-                transformed_sample = transformed_data.get(sample_symbol, {})
-                
-                self.logger.info(f"📊 DATA SAMPLE: {sample_symbol}")
-                self.logger.info(f"   Original: ltp={original_data.get('ltp')}, volume={original_data.get('volume')}")
-                self.logger.info(f"   Transformed: close={transformed_sample.get('close')}, price_change={transformed_sample.get('price_change')}%")
-            
             all_signals = []
+            transformed_data = self._transform_market_data_for_strategies(market_data)
             
             for strategy_key, strategy_info in self.strategies.items():
                 if strategy_info.get('active', False) and 'instance' in strategy_info:
@@ -745,53 +731,49 @@ class TradingOrchestrator:
                         # Call strategy's on_market_data method with TRANSFORMED data
                         await strategy_instance.on_market_data(transformed_data)
                         
-                        # Get signals from strategy's current positions
+                        # FIXED: Collect signals without clearing them immediately
                         signals_generated = 0
                         if hasattr(strategy_instance, 'current_positions'):
                             for symbol, signal in strategy_instance.current_positions.items():
                                 if isinstance(signal, dict) and 'action' in signal and signal.get('action') != 'HOLD':
                                     # Add strategy info to signal
                                     signal['strategy'] = strategy_key
-                                    all_signals.append(signal)
+                                    signal['signal_id'] = f"{strategy_key}_{symbol}_{int(datetime.now().timestamp())}"
+                                    all_signals.append(signal.copy())  # Copy signal to avoid reference issues
                                     signals_generated += 1
-                                    self.logger.info(f"🚨 SIGNAL GENERATED: {strategy_key} -> {signal}")
-                                    
-                                    # Clear the signal to avoid duplicates
-                                    strategy_instance.current_positions[symbol] = None
+                                    self.logger.info(f"🚨 SIGNAL COLLECTED: {strategy_key} -> {signal}")
                         
                         if signals_generated == 0:
                             self.logger.info(f"📝 {strategy_key}: No signals generated (normal operation)")
+                        else:
+                            # FIXED: Only clear processed signals, keep strategy active for next tick
+                            # Clear signals after successful collection to prevent duplicates
+                            for symbol in list(strategy_instance.current_positions.keys()):
+                                if (isinstance(strategy_instance.current_positions[symbol], dict) and 
+                                    strategy_instance.current_positions[symbol].get('action') != 'HOLD'):
+                                    strategy_instance.current_positions[symbol] = None
                         
                         # Update last signal time
                         strategy_info['last_signal'] = datetime.now().isoformat()
                         
                     except Exception as e:
-                        self.logger.error(f"❌ Error running strategy {strategy_key}: {e}")
-                else:
-                    if not strategy_info.get('active', False):
-                        self.logger.warning(f"⚠️ Strategy {strategy_key} is not active")
-                    if 'instance' not in strategy_info:
-                        self.logger.warning(f"⚠️ Strategy {strategy_key} has no instance")
+                        self.logger.error(f"Error running strategy {strategy_key}: {e}")
             
-            # Process collected signals through trade engine
-            if all_signals and self.trade_engine and self.components.get('trade_engine', False):
-                try:
+            # Process all collected signals through trade engine
+            if all_signals:
+                if self.trade_engine:
+                    self.logger.info(f"🚀 Processing {len(all_signals)} signals through trade engine")
                     await self.trade_engine.process_signals(all_signals)
-                    self.logger.info(f"🎯 PROCESSED {len(all_signals)} signals through trade engine")
-                except Exception as e:
-                    self.logger.error(f"❌ Error processing signals through trade engine: {e}")
-            elif all_signals:
-                self.logger.warning(f"⚠️ GENERATED {len(all_signals)} signals but trade engine not available")
+                else:
+                    self.logger.error("❌ Trade engine not available - signals cannot be processed")
             else:
-                self.logger.info("📝 No signals generated from any strategy")
-                        
+                self.logger.debug("📭 No signals generated this cycle")
+                
         except Exception as e:
-            self.logger.error(f"❌ Error in strategy execution: {e}")
-            import traceback
-            traceback.print_exc()
+            self.logger.error(f"Error running strategies: {e}")
     
     def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Transform raw market data into format expected by strategies - ENHANCED DEBUG"""
+        """Transform raw market data into format expected by strategies - FIXED to use TrueData changeper"""
         try:
             transformed_data = {}
             current_time = datetime.now(self.ist_timezone)
@@ -801,54 +783,62 @@ class TradingOrchestrator:
                 current_price = data.get('ltp', data.get('close', data.get('price', 0)))
                 volume = data.get('volume', 0)
                 
-                # Extract OHLC data
+                # Extract OHLC data - FIXED: Use TrueData's actual OHLC
                 high = data.get('high', current_price)
                 low = data.get('low', current_price)
                 open_price = data.get('open', current_price)
                 
-                # Calculate price and volume changes
-                price_change = 0
-                volume_change = 0
+                # FIXED: Use TrueData's changeper directly (more accurate than recalculation)
+                price_change = data.get('changeper', data.get('change_percent', 0))
                 
+                # Calculate volume change (still useful for volume analysis)
+                volume_change = 0
                 if symbol in self.market_data_history:
                     prev_data = self.market_data_history[symbol]
-                    prev_price = prev_data.get('close', current_price)
                     prev_volume = prev_data.get('volume', volume)
                     
-                    if prev_price > 0:
-                        price_change = ((current_price - prev_price) / prev_price) * 100
                     if prev_volume > 0:
                         volume_change = ((volume - prev_volume) / prev_volume) * 100
                 else:
                     # First time seeing this symbol - create seeded historical data for comparison
-                    historical_price = current_price * 0.995  # 0.5% lower for comparison
                     historical_volume = volume * 0.8  # 20% lower volume for comparison
                     
                     self.market_data_history[symbol] = {
-                        'close': historical_price,
+                        'close': current_price,
                         'volume': historical_volume,
                         'timestamp': (current_time - timedelta(minutes=1)).isoformat()
                     }
                     
-                    self.logger.info(f"🔧 SEEDED historical data for {symbol}: price_change={price_change:.2f}%, volume_change={volume_change:.2f}%")
+                    # For first time, calculate volume change from seeded data
+                    if historical_volume > 0:
+                        volume_change = ((volume - historical_volume) / historical_volume) * 100
+                    
+                    self.logger.info(f"🔧 SEEDED historical data for {symbol}: volume_change={volume_change:.2f}%")
                 
-                # Create strategy-compatible data format
+                # FIXED: Create strategy-compatible data format with proper TrueData fields
                 strategy_data = {
                     'symbol': symbol,
-                    'close': current_price,  # Map ltp to close
+                    'close': current_price,  # Map ltp to close for strategy compatibility
                     'ltp': current_price,    # Keep original for compatibility
                     'high': high,
                     'low': low,
                     'open': open_price,
                     'volume': volume,
-                    'price_change': round(price_change, 4),
+                    'price_change': round(price_change, 4),  # Use TrueData's changeper
                     'volume_change': round(volume_change, 4),
-                    'timestamp': data.get('timestamp', current_time.isoformat())
+                    'timestamp': data.get('timestamp', current_time.isoformat()),
+                    # Additional TrueData fields for strategies
+                    'change': data.get('change', 0),
+                    'changeper': price_change,  # Duplicate for compatibility
+                    'bid': data.get('bid', 0),
+                    'ask': data.get('ask', 0),
+                    'data_quality': data.get('data_quality', {}),
+                    'source': data.get('source', 'TrueData')
                 }
                 
                 transformed_data[symbol] = strategy_data
                 
-                # Update historical data for next comparison
+                # Update historical data for next comparison (only volume, price_change comes from TrueData)
                 self.market_data_history[symbol] = {
                     'close': current_price,
                     'volume': volume,
@@ -856,7 +846,7 @@ class TradingOrchestrator:
                 }
                 self.last_data_update[symbol] = current_time
             
-            self.logger.info(f"🔧 Transformed {len(transformed_data)} symbols with price/volume changes for strategy analysis")
+            self.logger.info(f"🔧 Transformed {len(transformed_data)} symbols using TrueData changeper (no recalculation)")
             return transformed_data
             
         except Exception as e:
@@ -909,16 +899,16 @@ class TradingOrchestrator:
             self.strategies.clear()
             self.active_strategies.clear()
             
+            # FIXED: Removed news_impact_scalper for debugging simplicity
             strategy_configs = {
                 'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
                 'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},
                 'volume_profile_scalper': {'name': 'EnhancedVolumeProfileScalper', 'config': {}},
-                'news_impact_scalper': {'name': 'EnhancedNewsImpactScalper', 'config': {}},
                 'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}},
                 'confluence_amplifier': {'name': 'ConfluenceAmplifier', 'config': {}}
             }
             
-            self.logger.info(f"Loading {len(strategy_configs)} trading strategies...")
+            self.logger.info(f"Loading {len(strategy_configs)} trading strategies (news_impact_scalper removed for debugging)...")
             
             for strategy_key, strategy_info in strategy_configs.items():
                 try:
@@ -932,9 +922,6 @@ class TradingOrchestrator:
                     elif strategy_key == 'volume_profile_scalper':
                         from strategies.volume_profile_scalper import EnhancedVolumeProfileScalper
                         strategy_instance = EnhancedVolumeProfileScalper(strategy_info['config'])
-                    elif strategy_key == 'news_impact_scalper':
-                        from strategies.news_impact_scalper import EnhancedNewsImpactScalper
-                        strategy_instance = EnhancedNewsImpactScalper(strategy_info['config'])
                     elif strategy_key == 'regime_adaptive_controller':
                         from strategies.regime_adaptive_controller import RegimeAdaptiveController
                         strategy_instance = RegimeAdaptiveController(strategy_info['config'])

@@ -45,15 +45,14 @@ class ConfluenceAmplifier(BaseStrategy):
             # Process market data and generate signals
             signals = self._generate_signals(data)
             
-            # CRITICAL FIX: Store signals in current_positions IMMEDIATELY for orchestrator
+            # FIXED: Only store signals for orchestrator collection - no direct execution
             for signal in signals:
                 self.current_positions[signal['symbol']] = signal
                 logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
                            f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
             
-            # Execute trades based on signals (backup method)
+            # Update last signal time if signals generated
             if signals:
-                await self._execute_trades(signals)
                 self.last_signal_time = datetime.now()
                 
         except Exception as e:

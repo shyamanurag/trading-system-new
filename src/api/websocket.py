@@ -1,9 +1,9 @@
 """
 WebSocket API endpoints for real-time data streaming
 """
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
-from typing import Set, AsyncGenerator
+from typing import Set, AsyncGenerator, Dict, Any
 import json
 import asyncio
 import logging
@@ -13,81 +13,162 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Store active connections
-active_connections: Set[WebSocket] = set()
+# Store active connections with user context
+active_connections: Dict[str, Set[WebSocket]] = {}
 sse_clients: Set[asyncio.Queue] = set()
+connection_stats = {
+    'total_connections': 0,
+    'active_connections': 0,
+    'failed_connections': 0,
+    'last_connection_time': None
+}
 
 @router.websocket("")
 async def websocket_endpoint(websocket: WebSocket):
-    """Main WebSocket endpoint for real-time updates"""
-    # Log the connection attempt
-    logger.info(f"WebSocket connection attempt from {websocket.client}")
-    logger.info(f"Headers: {websocket.headers}")
+    """Main WebSocket endpoint for real-time updates - IMPROVED"""
+    client_id = f"{websocket.client.host}:{websocket.client.port}"
+    logger.info(f"WebSocket connection attempt from {client_id}")
     
     try:
-        # Accept the connection without any conditions
+        # Accept connection with proper error handling
         await websocket.accept()
-        active_connections.add(websocket)
-        logger.info(f"WebSocket client connected from {websocket.client}. Total connections: {len(active_connections)}")
         
-        # Send initial connection message
+        # Add to active connections
+        if 'all' not in active_connections:
+            active_connections['all'] = set()
+        active_connections['all'].add(websocket)
+        
+        # Update connection stats
+        connection_stats['total_connections'] += 1
+        connection_stats['active_connections'] = len(active_connections['all'])
+        connection_stats['last_connection_time'] = datetime.now().isoformat()
+        
+        logger.info(f"✅ WebSocket connected: {client_id}. Active: {connection_stats['active_connections']}")
+        
+        # Send connection confirmation with server info
         await websocket.send_json({
-            "type": "connection",
+            "type": "connection_established",
             "status": "connected",
-            "message": "WebSocket connection established",
-            "timestamp": datetime.utcnow().isoformat()
+            "client_id": client_id,
+            "server_time": datetime.now().isoformat(),
+            "message": "Real-time connection established",
+            "features": ["trades", "positions", "orders", "market_data", "signals"]
         })
         
-        # Keep connection alive with ping/pong
+        # Main connection loop with improved error handling
+        ping_interval = 30.0  # Send ping every 30 seconds
+        last_ping = datetime.now()
+        
         while True:
             try:
-                # Set a timeout for receiving messages
-                message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                # Check if ping is needed
+                if (datetime.now() - last_ping).total_seconds() > ping_interval:
+                    await websocket.send_json({
+                        "type": "ping",
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    last_ping = datetime.now()
+                
+                # Wait for message with timeout
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
                 
                 # Handle different message types
                 if message == "ping":
-                    await websocket.send_text("pong")
+                    await websocket.send_json({
+                        "type": "pong",
+                        "timestamp": datetime.now().isoformat()
+                    })
                 elif message == "heartbeat":
                     await websocket.send_json({
-                        "type": "heartbeat", 
-                        "timestamp": datetime.utcnow().isoformat()
+                        "type": "heartbeat_response",
+                        "server_time": datetime.now().isoformat(),
+                        "status": "healthy"
                     })
+                elif message.startswith("subscribe:"):
+                    # Handle subscription requests
+                    topic = message.split(":", 1)[1]
+                    await websocket.send_json({
+                        "type": "subscription_confirmed",
+                        "topic": topic,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    logger.info(f"Client {client_id} subscribed to {topic}")
                 else:
-                    # Echo back any other message
+                    # Handle JSON messages
                     try:
                         json_data = json.loads(message)
-                        await websocket.send_json({
-                            "type": "message",
-                            "data": json_data,
-                            "timestamp": datetime.utcnow().isoformat()
-                        })
+                        await handle_websocket_message(websocket, json_data, client_id)
                     except json.JSONDecodeError:
                         await websocket.send_json({
-                            "type": "message",
-                            "data": message,
-                            "timestamp": datetime.utcnow().isoformat()
+                            "type": "error",
+                            "message": "Invalid JSON format",
+                            "timestamp": datetime.now().isoformat()
                         })
                         
             except asyncio.TimeoutError:
-                # Send a ping to keep connection alive
-                try:
-                    await websocket.send_json({"type": "ping"})
-                except:
-                    break
+                # Timeout is normal - just continue the loop
+                continue
             except WebSocketDisconnect:
-                logger.info("WebSocket client disconnected normally")
+                logger.info(f"Client {client_id} disconnected normally")
                 break
             except Exception as e:
-                logger.error(f"WebSocket error: {e}")
-                break
+                logger.error(f"WebSocket error for {client_id}: {e}")
+                try:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Server error: {str(e)}",
+                        "timestamp": datetime.now().isoformat()
+                    })
+                except:
+                    break
                 
     except Exception as e:
-        logger.error(f"WebSocket connection error: {e}")
-        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"WebSocket connection error for {client_id}: {e}")
+        connection_stats['failed_connections'] += 1
     finally:
-        # Remove from active connections
-        active_connections.discard(websocket)
-        logger.info(f"WebSocket client disconnected. Total connections: {len(active_connections)}")
+        # Clean up connection
+        if 'all' in active_connections:
+            active_connections['all'].discard(websocket)
+        connection_stats['active_connections'] = len(active_connections.get('all', set()))
+        logger.info(f"WebSocket {client_id} disconnected. Active: {connection_stats['active_connections']}")
+
+async def handle_websocket_message(websocket: WebSocket, data: Dict[str, Any], client_id: str):
+    """Handle incoming WebSocket messages"""
+    try:
+        message_type = data.get("type", "unknown")
+        
+        if message_type == "subscribe":
+            # Handle subscription
+            topics = data.get("topics", [])
+            await websocket.send_json({
+                "type": "subscription_success",
+                "topics": topics,
+                "timestamp": datetime.now().isoformat()
+            })
+        elif message_type == "get_status":
+            # Return current status
+            await websocket.send_json({
+                "type": "status_response",
+                "data": {
+                    "connection_stats": connection_stats,
+                    "server_time": datetime.now().isoformat(),
+                    "client_id": client_id
+                }
+            })
+        else:
+            # Echo back unknown messages
+            await websocket.send_json({
+                "type": "echo",
+                "original_message": data,
+                "timestamp": datetime.now().isoformat()
+            })
+    except Exception as e:
+        logger.error(f"Error handling WebSocket message: {e}")
+        await websocket.send_json({
+            "type": "error",
+            "message": f"Error processing message: {str(e)}",
+            "timestamp": datetime.now().isoformat()
+        })
 
 # Server-Sent Events as fallback
 @router.get("/sse")

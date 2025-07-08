@@ -326,7 +326,7 @@ async def get_performance_summary():
 
 @router.get("/data")
 async def get_dashboard_data():
-    """Get comprehensive dashboard data - main endpoint for frontend"""
+    """Get comprehensive dashboard data - STANDARDIZED FORMAT for frontend"""
     try:
         # Get all the data from other endpoints
         health_data = await get_detailed_health()
@@ -334,32 +334,78 @@ async def get_dashboard_data():
         summary_data = await get_dashboard_summary()
         performance_data = await get_performance_summary()
         
-        # Combine all data
-        return {
+        # STANDARDIZED RESPONSE FORMAT for frontend compatibility
+        standardized_response = {
             "success": True,
             "data": {
-                "health": health_data.get("data", {}),
-                "trading": trading_metrics.get("data", {}),
+                # Health information
+                "health": {
+                    "overall_status": health_data.get("data", {}).get("overall_status", "unknown"),
+                    "services": health_data.get("data", {}).get("services", {}),
+                    "last_check": health_data.get("data", {}).get("last_check", None)
+                },
+                
+                # Trading metrics
+                "trading": {
+                    "status": trading_metrics.get("data", {}).get("status", "unknown"),
+                    "trades_today": trading_metrics.get("data", {}).get("trades_today", 0),
+                    "pnl_today": trading_metrics.get("data", {}).get("pnl_today", 0),
+                    "active_positions": trading_metrics.get("data", {}).get("active_positions", 0),
+                    "pending_orders": trading_metrics.get("data", {}).get("pending_orders", 0)
+                },
+                
+                # Users (standardized array format)
                 "users": summary_data.get("users", []),
-                "system_metrics": summary_data.get("system_metrics", {}),
-                "performance": performance_data.get("metrics", {})
+                
+                # System metrics
+                "system_metrics": {
+                    "cpu_usage": summary_data.get("system_metrics", {}).get("cpu_usage", 0),
+                    "memory_usage": summary_data.get("system_metrics", {}).get("memory_usage", 0),
+                    "disk_usage": summary_data.get("system_metrics", {}).get("disk_usage", 0),
+                    "uptime": summary_data.get("system_metrics", {}).get("uptime", 0)
+                },
+                
+                # Performance metrics
+                "performance": {
+                    "win_rate": performance_data.get("metrics", {}).get("win_rate", 0),
+                    "avg_return": performance_data.get("metrics", {}).get("avg_return", 0),
+                    "max_drawdown": performance_data.get("metrics", {}).get("max_drawdown", 0),
+                    "sharpe_ratio": performance_data.get("metrics", {}).get("sharpe_ratio", 0)
+                },
+                
+                # Additional data for frontend
+                "metadata": {
+                    "last_updated": datetime.now().isoformat(),
+                    "data_sources": ["health", "trading", "users", "system", "performance"],
+                    "version": "1.0"
+                }
             },
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "status_code": 200
         }
+        
+        return standardized_response
         
     except Exception as e:
         logger.error(f"Error getting dashboard data: {e}")
+        # STANDARDIZED ERROR FORMAT
         return {
             "success": False,
-            "error": str(e),
+            "error": {
+                "message": str(e),
+                "type": "dashboard_data_error",
+                "timestamp": datetime.now().isoformat()
+            },
             "data": {
-                "health": {},
-                "trading": {},
+                "health": {"overall_status": "error"},
+                "trading": {"status": "error"},
                 "users": [],
                 "system_metrics": {},
-                "performance": {}
+                "performance": {},
+                "metadata": {"last_updated": datetime.now().isoformat()}
             },
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "status_code": 500
         }
 
 @router.get("/health/detailed")

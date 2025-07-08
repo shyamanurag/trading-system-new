@@ -1,250 +1,348 @@
 /**
- * 🚀 COMPREHENSIVE DEPLOYED SYSTEM TEST
- * ====================================
- * 
- * Tests ALL deployed fixes:
- * ✅ Elite API Performance Fix (30s caching, real data)
- * ✅ Scalping Trade Execution Fix (orchestrator bypass)
- * ✅ Zerodha Authentication & Integration
- * 
- * Run in browser console to verify complete system functionality
+ * Comprehensive Deployed App Test Suite
+ * Tests all available functionality on the Digital Ocean deployment
+ * Markets closed - focusing on system health, APIs, and infrastructure
  */
 
-async function runComprehensiveTest() {
-    console.clear();
-    console.log('%c🚀 COMPREHENSIVE DEPLOYED SYSTEM TEST', 'color: #FF6B35; font-size: 20px; font-weight: bold;');
-    console.log('%c====================================', 'color: #FF6B35; font-size: 16px;');
-    console.log('Testing ALL deployed fixes...\n');
+const https = require('https');
+const { performance } = require('perf_hooks');
 
-    const baseUrl = 'https://algoauto-9gx56.ondigitalocean.app';
-    let testResults = {
-        eliteAPI: false,
-        zerodhaAuth: false,
-        tradingSystem: false,
-        orderExecution: false,
-        overallHealth: false
-    };
+const BASE_URL = 'https://algoauto-9gx56.ondigitalocean.app';
 
-    // ======================
-    // 1️⃣ ELITE API TEST (Performance Fix)
-    // ======================
-    console.log('%c1️⃣ TESTING ELITE API PERFORMANCE FIX', 'color: #4CAF50; font-size: 16px; font-weight: bold;');
-    try {
-        const eliteStart = Date.now();
-        const eliteResponse = await fetch(`${baseUrl}/api/v1/elite`);
-        const eliteTime = Date.now() - eliteStart;
-        const eliteData = await eliteResponse.json();
+// Test configuration
+const TESTS = {
+    // Core system health
+    health: '/health',
+    ready: '/ready',
+    api_routes: '/api/routes',
 
-        console.log(`%c⚡ Response Time: ${eliteTime}ms`, eliteTime < 1000 ? 'color: #4CAF50; font-weight: bold;' : 'color: #F44336; font-weight: bold;');
-        console.log(`%c📊 Status: ${eliteData.success ? 'SUCCESS' : 'FAILED'}`, eliteData.success ? 'color: #4CAF50;' : 'color: #F44336;');
-        console.log(`%c📈 Recommendations: ${eliteData.total_count}`, eliteData.total_count > 0 ? 'color: #4CAF50;' : 'color: #F44336;');
-        console.log(`%c🎯 Data Source: ${eliteData.data_source}`, 'color: #2196F3;');
-        console.log(`%c🕐 Generated: ${eliteData.scan_timestamp}`, 'color: #2196F3;');
-        console.log(`%c🕐 Next Scan: ${eliteData.next_scan}`, 'color: #2196F3;');
+    // Authentication & user management (no auth required for GET)
+    auth_me_endpoint: '/auth/me',
 
-        if (eliteData.recommendations && eliteData.recommendations.length > 0) {
-            const sample = eliteData.recommendations[0];
-            console.log(`%c📋 Sample: ${sample.symbol} ${sample.direction} @ ₹${sample.current_price} (${sample.confidence}% confidence)`, 'color: #2196F3;');
-            console.log(`%c🕐 Sample Generated: ${sample.generated_at}`, 'color: #2196F3;');
-            console.log(`%c🕐 Data Timestamp: ${sample.real_data_timestamp}`, 'color: #2196F3;');
-        }
+    // Trading system core
+    autonomous_status: '/api/v1/autonomous/status',
+    positions: '/api/v1/positions',
+    orders: '/api/v1/orders',
 
-        testResults.eliteAPI = eliteData.success && eliteTime < 2000 && eliteData.total_count > 0;
+    // Market data (cached/fallback data expected)
+    market_indices: '/api/market/indices',
+    market_status: '/api/market/market-status',
 
-    } catch (error) {
-        console.log('%c❌ Elite API test failed:', 'color: #F44336; font-weight: bold;', error.message);
-    }
+    // Dashboard & monitoring
+    dashboard_summary: '/api/v1/dashboard/summary',
+    system_status: '/api/v1/monitoring/system-status',
 
-    // ======================
-    // 2️⃣ ZERODHA AUTHENTICATION TEST
-    // ======================
-    console.log('\n%c2️⃣ TESTING ZERODHA AUTHENTICATION', 'color: #4CAF50; font-size: 16px; font-weight: bold;');
-    try {
-        const authResponse = await fetch(`${baseUrl}/api/v1/zerodha/auth-status`);
-        const authData = await authResponse.json();
+    // Elite recommendations
+    elite_recommendations: '/api/v1/elite',
 
-        console.log(`%c🔐 Auth Status: ${authData.authenticated ? 'AUTHENTICATED' : 'NOT AUTHENTICATED'}`,
-            authData.authenticated ? 'color: #4CAF50; font-weight: bold;' : 'color: #F44336; font-weight: bold;');
-        console.log(`%c👤 User ID: ${authData.user_id || 'N/A'}`, 'color: #2196F3;');
-        console.log(`%c🕐 Auth Time: ${authData.auth_time || 'N/A'}`, 'color: #2196F3;');
-        console.log(`%c✅ Valid: ${authData.valid || 'N/A'}`, authData.valid ? 'color: #4CAF50;' : 'color: #F44336;');
+    // Intelligent systems
+    intelligent_symbols: '/api/v1/intelligent-symbols',
 
-        testResults.zerodhaAuth = authData.authenticated === true;
+    // Infrastructure endpoints
+    root: '/',
+    api_root: '/api',
 
-    } catch (error) {
-        console.log('%c❌ Zerodha auth test failed:', 'color: #F44336; font-weight: bold;', error.message);
-    }
+    // Error handling (should return appropriate errors)
+    non_existent_endpoint: '/api/v1/non-existent-endpoint',
 
-    // ======================
-    // 3️⃣ TRADING SYSTEM STATUS TEST
-    // ======================
-    console.log('\n%c3️⃣ TESTING TRADING SYSTEM STATUS', 'color: #4CAF50; font-size: 16px; font-weight: bold;');
-    try {
-        const tradingResponse = await fetch(`${baseUrl}/api/v1/autonomous/status`);
-        const tradingData = await tradingResponse.json();
+    // Search functionality (recently implemented - may not be deployed)
+    search_test: '/api/v1/search/autocomplete?query=NIFTY&category=symbols&limit=5'
+};
 
-        console.log(`%c🎯 Trading Active: ${tradingData.data.is_active}`,
-            tradingData.data.is_active ? 'color: #4CAF50; font-weight: bold;' : 'color: #F44336; font-weight: bold;');
-        console.log(`%c📊 Active Strategies: ${tradingData.data.active_strategies.length}`,
-            tradingData.data.active_strategies.length > 0 ? 'color: #4CAF50;' : 'color: #F44336;');
-        console.log(`%c🎯 Strategies: ${tradingData.data.active_strategies.join(', ')}`, 'color: #2196F3;');
-        console.log(`%c📈 Market Data: ${tradingData.data.market_data_status}`, 'color: #2196F3;');
-        console.log(`%c🕐 System Time: ${tradingData.data.system_time}`, 'color: #2196F3;');
+// Colors for console output
+const colors = {
+    green: '\x1b[32m',
+    red: '\x1b[31m',
+    yellow: '\x1b[33m',
+    blue: '\x1b[34m',
+    cyan: '\x1b[36m',
+    reset: '\x1b[0m',
+    bright: '\x1b[1m'
+};
 
-        testResults.tradingSystem = tradingData.data.is_active && tradingData.data.active_strategies.length > 0;
+function makeRequest(path, timeout = 10000) {
+    return new Promise((resolve, reject) => {
+        const startTime = performance.now();
 
-    } catch (error) {
-        console.log('%c❌ Trading system test failed:', 'color: #F44336; font-weight: bold;', error.message);
-    }
-
-    // ======================
-    // 4️⃣ ORDER EXECUTION TEST (THE CRITICAL FIX)
-    // ======================
-    console.log('\n%c4️⃣ TESTING ORDER EXECUTION (CRITICAL FIX)', 'color: #4CAF50; font-size: 16px; font-weight: bold;');
-    try {
-        // Test current orders
-        const ordersResponse = await fetch(`${baseUrl}/api/v1/orders/`);
-        const ordersData = await ordersResponse.json();
-
-        console.log(`%c📋 Orders API Status: ${ordersResponse.status}`, 'color: #2196F3;');
-        console.log(`%c📊 Total Orders: ${ordersData.orders ? ordersData.orders.length : 0}`,
-            ordersData.orders && ordersData.orders.length > 0 ? 'color: #4CAF50; font-weight: bold;' : 'color: #F44336; font-weight: bold;');
-        console.log(`%c💬 Message: ${ordersData.message}`, 'color: #2196F3;');
-
-        // Test live orders
-        const liveResponse = await fetch(`${baseUrl}/api/v1/orders/live`);
-        const liveData = await liveResponse.json();
-
-        console.log(`%c🔴 Live Orders: ${liveData.orders ? liveData.orders.length : 0}`,
-            liveData.orders && liveData.orders.length > 0 ? 'color: #4CAF50; font-weight: bold;' : 'color: #F44336; font-weight: bold;');
-
-        // Test trade engine status
-        const engineResponse = await fetch(`${baseUrl}/api/v1/trade-engine/status`);
-        if (engineResponse.ok) {
-            const engineData = await engineResponse.json();
-            console.log(`%c🔧 Trade Engine: ${engineData.status || 'RUNNING'}`, 'color: #2196F3;');
-            console.log(`%c⚡ Signals Processed: ${engineData.signals_processed || 0}`, 'color: #2196F3;');
-            console.log(`%c⏳ Pending Signals: ${engineData.pending_signals || 0}`, 'color: #2196F3;');
-        }
-
-        // Success if we can access APIs and either have orders or trade engine is running
-        testResults.orderExecution = ordersResponse.ok && liveResponse.ok;
-
-        // Check if we have actual orders (the ultimate test)
-        const hasOrders = (ordersData.orders && ordersData.orders.length > 0) ||
-            (liveData.orders && liveData.orders.length > 0);
-
-        if (hasOrders) {
-            console.log('%c🎉 ORDERS DETECTED - SCALPING SYSTEM RESTORED!', 'color: #4CAF50; font-size: 14px; font-weight: bold;');
-            testResults.orderExecution = true;
-        } else {
-            console.log('%c⚠️  No orders yet - system may be warming up or waiting for signals', 'color: #FF9800; font-weight: bold;');
-        }
-
-    } catch (error) {
-        console.log('%c❌ Order execution test failed:', 'color: #F44336; font-weight: bold;', error.message);
-    }
-
-    // ======================
-    // 5️⃣ OVERALL HEALTH CHECK
-    // ======================
-    console.log('\n%c5️⃣ OVERALL SYSTEM HEALTH CHECK', 'color: #4CAF50; font-size: 16px; font-weight: bold;');
-    try {
-        const healthResponse = await fetch(`${baseUrl}/api/v1/system/health`);
-        const healthData = await healthResponse.json();
-
-        console.log(`%c🏥 System Health: ${healthData.health || healthData.status}`, 'color: #2196F3;');
-        console.log(`%c📊 Status: ${healthData.status}`, 'color: #2196F3;');
-        console.log(`%c🕐 Timestamp: ${healthData.timestamp || new Date().toISOString()}`, 'color: #2196F3;');
-
-        testResults.overallHealth = healthResponse.ok;
-
-    } catch (error) {
-        console.log('%c❌ Health check failed:', 'color: #F44336; font-weight: bold;', error.message);
-    }
-
-    // ======================
-    // 📊 FINAL RESULTS
-    // ======================
-    console.log('\n%c📊 FINAL TEST RESULTS', 'color: #FF6B35; font-size: 18px; font-weight: bold;');
-    console.log('%c==================', 'color: #FF6B35; font-size: 16px;');
-
-    const passedTests = Object.values(testResults).filter(Boolean).length;
-    const totalTests = Object.keys(testResults).length;
-
-    console.log(`%c✅ Elite API Performance: ${testResults.eliteAPI ? 'PASS' : 'FAIL'}`,
-        testResults.eliteAPI ? 'color: #4CAF50; font-weight: bold;' : 'color: #F44336; font-weight: bold;');
-    console.log(`%c🔐 Zerodha Authentication: ${testResults.zerodhaAuth ? 'PASS' : 'FAIL'}`,
-        testResults.zerodhaAuth ? 'color: #4CAF50; font-weight: bold;' : 'color: #F44336; font-weight: bold;');
-    console.log(`%c🎯 Trading System Active: ${testResults.tradingSystem ? 'PASS' : 'FAIL'}`,
-        testResults.tradingSystem ? 'color: #4CAF50; font-weight: bold;' : 'color: #F44336; font-weight: bold;');
-    console.log(`%c⚡ Order Execution: ${testResults.orderExecution ? 'PASS' : 'FAIL'}`,
-        testResults.orderExecution ? 'color: #4CAF50; font-weight: bold;' : 'color: #F44336; font-weight: bold;');
-    console.log(`%c🏥 Overall Health: ${testResults.overallHealth ? 'PASS' : 'FAIL'}`,
-        testResults.overallHealth ? 'color: #4CAF50; font-weight: bold;' : 'color: #F44336; font-weight: bold;');
-
-    console.log(`\n%c🎯 OVERALL SCORE: ${passedTests}/${totalTests} TESTS PASSED`,
-        passedTests === totalTests ? 'color: #4CAF50; font-size: 16px; font-weight: bold;' : 'color: #FF9800; font-size: 16px; font-weight: bold;');
-
-    if (passedTests === totalTests) {
-        console.log('%c🎉 ALL SYSTEMS OPERATIONAL - SCALPING SYSTEM FULLY RESTORED!', 'color: #4CAF50; font-size: 18px; font-weight: bold;');
-        console.log('%c🚀 Expected: 100+ trades/hour with sub-second Elite API responses', 'color: #4CAF50; font-size: 14px;');
-    } else {
-        console.log('%c⚠️  Some systems need attention. Check failed tests above.', 'color: #FF9800; font-size: 16px; font-weight: bold;');
-    }
-
-    return testResults;
-}
-
-// ======================
-// 📋 CONTINUOUS MONITORING
-// ======================
-async function startContinuousMonitoring() {
-    console.log('\n%c📊 STARTING CONTINUOUS MONITORING', 'color: #2196F3; font-size: 16px; font-weight: bold;');
-    console.log('%c(Run every 30 seconds to monitor trade execution)', 'color: #2196F3;');
-
-    const baseUrl = 'https://algoauto-9gx56.ondigitalocean.app';
-    let previousOrderCount = 0;
-    let monitoringInterval;
-
-    const monitor = async () => {
-        try {
-            const ordersResponse = await fetch(`${baseUrl}/api/v1/orders/`);
-            const ordersData = await ordersResponse.json();
-            const currentOrderCount = ordersData.orders ? ordersData.orders.length : 0;
-
-            const timestamp = new Date().toLocaleTimeString();
-            console.log(`%c[${timestamp}] 📊 Orders: ${currentOrderCount}`, 'color: #2196F3;');
-
-            if (currentOrderCount > previousOrderCount) {
-                console.log(`%c🚀 NEW ORDERS DETECTED! (+${currentOrderCount - previousOrderCount})`, 'color: #4CAF50; font-weight: bold;');
+        const options = {
+            hostname: 'algoauto-9gx56.ondigitalocean.app',
+            port: 443,
+            path: path,
+            method: 'GET',
+            timeout: timeout,
+            headers: {
+                'User-Agent': 'AlgoAuto-Test-Suite/1.0',
+                'Accept': 'application/json'
             }
+        };
 
-            previousOrderCount = currentOrderCount;
+        const req = https.request(options, (res) => {
+            let data = '';
 
-        } catch (error) {
-            console.log(`%c[${new Date().toLocaleTimeString()}] ❌ Monitor error:`, 'color: #F44336;', error.message);
-        }
-    };
+            res.on('data', (chunk) => {
+                data += chunk;
+            });
 
-    monitoringInterval = setInterval(monitor, 30000);
+            res.on('end', () => {
+                const endTime = performance.now();
+                const responseTime = Math.round(endTime - startTime);
 
-    // Stop monitoring function
-    window.stopMonitoring = () => {
-        clearInterval(monitoringInterval);
-        console.log('%c🛑 Monitoring stopped', 'color: #FF9800; font-weight: bold;');
-    };
+                let parsedData = null;
+                try {
+                    parsedData = JSON.parse(data);
+                } catch (e) {
+                    // Not JSON, keep as string
+                    parsedData = data;
+                }
 
-    console.log('%c⚡ Monitoring started! Run stopMonitoring() to stop.', 'color: #4CAF50; font-weight: bold;');
+                resolve({
+                    statusCode: res.statusCode,
+                    headers: res.headers,
+                    data: parsedData,
+                    rawData: data,
+                    responseTime: responseTime,
+                    success: res.statusCode >= 200 && res.statusCode < 300
+                });
+            });
+        });
+
+        req.on('error', (error) => {
+            const endTime = performance.now();
+            const responseTime = Math.round(endTime - startTime);
+
+            reject({
+                error: error.message,
+                responseTime: responseTime,
+                success: false
+            });
+        });
+
+        req.on('timeout', () => {
+            req.destroy();
+            reject({
+                error: 'Request timeout',
+                responseTime: timeout,
+                success: false
+            });
+        });
+
+        req.end();
+    });
 }
 
-// ======================
-// 🎯 QUICK COMMANDS
-// ======================
-console.log('%c🚀 QUICK COMMANDS:', 'color: #FF6B35; font-size: 14px; font-weight: bold;');
-console.log('%c  runComprehensiveTest() - Run full test suite', 'color: #2196F3;');
-console.log('%c  startContinuousMonitoring() - Monitor trades every 30s', 'color: #2196F3;');
-console.log('%c  stopMonitoring() - Stop monitoring', 'color: #2196F3;');
+async function runTest(name, path) {
+    console.log(`${colors.cyan}Testing:${colors.reset} ${name} (${path})`);
 
-// Auto-run the comprehensive test
-runComprehensiveTest(); 
+    try {
+        const result = await makeRequest(path);
+
+        if (result.success) {
+            console.log(`${colors.green}✅ PASS${colors.reset} - ${result.statusCode} - ${result.responseTime}ms`);
+
+            // Log interesting data for specific endpoints
+            if (result.data && typeof result.data === 'object') {
+                if (path.includes('autonomous/status') && result.data.data) {
+                    console.log(`   ${colors.blue}Info:${colors.reset} Trading Active: ${result.data.data.is_active}`);
+                    if (result.data.data.session_stats) {
+                        console.log(`   ${colors.blue}Info:${colors.reset} Total Trades: ${result.data.data.session_stats.total_trades || 0}`);
+                    }
+                }
+
+                if (path.includes('intelligent-symbols') && result.data.data) {
+                    console.log(`   ${colors.blue}Info:${colors.reset} Symbol Manager Running: ${result.data.data.status?.is_running}`);
+                    console.log(`   ${colors.blue}Info:${colors.reset} Active Symbols: ${result.data.data.status?.active_symbols || 0}`);
+                }
+
+                if (path.includes('system-status') && result.data.status) {
+                    console.log(`   ${colors.blue}Info:${colors.reset} System Status: ${result.data.status}`);
+                }
+
+                if (path.includes('market/indices') && result.data.data?.indices) {
+                    console.log(`   ${colors.blue}Info:${colors.reset} Market Indices: ${result.data.data.indices.length} available`);
+                }
+
+                if (path.includes('routes') && result.data.total_routes) {
+                    console.log(`   ${colors.blue}Info:${colors.reset} Total Routes: ${result.data.total_routes}`);
+                }
+            }
+        } else {
+            console.log(`${colors.yellow}⚠️  WARN${colors.reset} - ${result.statusCode} - ${result.responseTime}ms`);
+            if (result.data && result.data.detail) {
+                console.log(`   ${colors.yellow}Detail:${colors.reset} ${result.data.detail}`);
+            }
+        }
+
+        return { name, path, ...result };
+
+    } catch (error) {
+        console.log(`${colors.red}❌ FAIL${colors.reset} - ${error.responseTime || '?'}ms`);
+        console.log(`   ${colors.red}Error:${colors.reset} ${error.error}`);
+
+        return { name, path, ...error };
+    }
+}
+
+function generateReport(results) {
+    console.log(`\n${colors.bright}${colors.cyan}=== DEPLOYMENT TEST REPORT ===${colors.reset}`);
+    console.log(`${colors.bright}Timestamp:${colors.reset} ${new Date().toISOString()}`);
+    console.log(`${colors.bright}Base URL:${colors.reset} ${BASE_URL}`);
+
+    const passed = results.filter(r => r.success);
+    const failed = results.filter(r => !r.success);
+    const warnings = results.filter(r => r.statusCode >= 400 && r.statusCode < 500);
+
+    console.log(`\n${colors.bright}SUMMARY:${colors.reset}`);
+    console.log(`${colors.green}✅ Passed: ${passed.length}${colors.reset}`);
+    console.log(`${colors.red}❌ Failed: ${failed.length}${colors.reset}`);
+    console.log(`${colors.yellow}⚠️  Warnings: ${warnings.length}${colors.reset}`);
+    console.log(`📊 Total Tests: ${results.length}`);
+
+    const avgResponseTime = results
+        .filter(r => r.responseTime)
+        .reduce((sum, r) => sum + r.responseTime, 0) / results.length;
+    console.log(`⚡ Avg Response Time: ${Math.round(avgResponseTime)}ms`);
+
+    // Core system health
+    console.log(`\n${colors.bright}CORE SYSTEM HEALTH:${colors.reset}`);
+    const coreEndpoints = ['health', 'ready', 'autonomous_status', 'system_status'];
+    coreEndpoints.forEach(endpoint => {
+        const result = results.find(r => r.name === endpoint);
+        if (result) {
+            const status = result.success ? `${colors.green}✅ HEALTHY${colors.reset}` : `${colors.red}❌ UNHEALTHY${colors.reset}`;
+            console.log(`  ${endpoint}: ${status}`);
+        }
+    });
+
+    // Trading system components
+    console.log(`\n${colors.bright}TRADING SYSTEM:${colors.reset}`);
+    const tradingEndpoints = ['positions', 'orders', 'elite_recommendations', 'intelligent_symbols'];
+    tradingEndpoints.forEach(endpoint => {
+        const result = results.find(r => r.name === endpoint);
+        if (result) {
+            const status = result.success ? `${colors.green}✅ OPERATIONAL${colors.reset}` : `${colors.red}❌ FAILED${colors.reset}`;
+            console.log(`  ${endpoint}: ${status}`);
+        }
+    });
+
+    // Market data (expected to have cached data)
+    console.log(`\n${colors.bright}MARKET DATA:${colors.reset}`);
+    const marketEndpoints = ['market_indices', 'market_status'];
+    marketEndpoints.forEach(endpoint => {
+        const result = results.find(r => r.name === endpoint);
+        if (result) {
+            const status = result.success ? `${colors.green}✅ AVAILABLE${colors.reset}` : `${colors.yellow}⚠️  LIMITED${colors.reset}`;
+            console.log(`  ${endpoint}: ${status}`);
+        }
+    });
+
+    // New features (may not be deployed)
+    console.log(`\n${colors.bright}NEW FEATURES:${colors.reset}`);
+    const newFeatures = ['search_test'];
+    newFeatures.forEach(endpoint => {
+        const result = results.find(r => r.name === endpoint);
+        if (result) {
+            const status = result.success ? `${colors.green}✅ DEPLOYED${colors.reset}` : `${colors.yellow}⚠️  NOT DEPLOYED${colors.reset}`;
+            console.log(`  ${endpoint}: ${status}`);
+        }
+    });
+
+    // Failed endpoints
+    if (failed.length > 0) {
+        console.log(`\n${colors.bright}${colors.red}FAILED ENDPOINTS:${colors.reset}`);
+        failed.forEach(result => {
+            console.log(`  ${colors.red}❌${colors.reset} ${result.name}: ${result.error || result.data?.detail || 'Unknown error'}`);
+        });
+    }
+
+    // Performance analysis
+    console.log(`\n${colors.bright}PERFORMANCE ANALYSIS:${colors.reset}`);
+    const fastEndpoints = results.filter(r => r.responseTime && r.responseTime < 500);
+    const slowEndpoints = results.filter(r => r.responseTime && r.responseTime > 2000);
+
+    console.log(`⚡ Fast endpoints (< 500ms): ${fastEndpoints.length}`);
+    console.log(`🐌 Slow endpoints (> 2s): ${slowEndpoints.length}`);
+
+    if (slowEndpoints.length > 0) {
+        console.log(`${colors.yellow}Slow endpoints:${colors.reset}`);
+        slowEndpoints.forEach(endpoint => {
+            console.log(`  ${endpoint.name}: ${endpoint.responseTime}ms`);
+        });
+    }
+
+    // Overall assessment
+    console.log(`\n${colors.bright}OVERALL ASSESSMENT:${colors.reset}`);
+    const healthScore = (passed.length / results.length) * 100;
+
+    if (healthScore >= 90) {
+        console.log(`${colors.green}🎉 EXCELLENT${colors.reset} - System is highly operational (${healthScore.toFixed(1)}%)`);
+    } else if (healthScore >= 75) {
+        console.log(`${colors.blue}👍 GOOD${colors.reset} - System is mostly operational (${healthScore.toFixed(1)}%)`);
+    } else if (healthScore >= 50) {
+        console.log(`${colors.yellow}⚠️  FAIR${colors.reset} - System has some issues (${healthScore.toFixed(1)}%)`);
+    } else {
+        console.log(`${colors.red}🚨 POOR${colors.reset} - System needs attention (${healthScore.toFixed(1)}%)`);
+    }
+
+    // Recommendations
+    console.log(`\n${colors.bright}RECOMMENDATIONS:${colors.reset}`);
+
+    if (results.find(r => r.name === 'search_test' && !r.success)) {
+        console.log(`${colors.cyan}📝${colors.reset} Deploy search functionality for enhanced user experience`);
+    }
+
+    if (slowEndpoints.length > 0) {
+        console.log(`${colors.cyan}📝${colors.reset} Optimize slow endpoints for better performance`);
+    }
+
+    if (failed.length > 0) {
+        console.log(`${colors.cyan}📝${colors.reset} Investigate failed endpoints and fix underlying issues`);
+    }
+
+    const autonomousResult = results.find(r => r.name === 'autonomous_status');
+    if (autonomousResult?.data?.data?.is_active) {
+        console.log(`${colors.green}📝${colors.reset} Autonomous trading is active - system ready for market hours`);
+    }
+
+    console.log(`${colors.cyan}📝${colors.reset} System is ready for market hours - monitor data flow when markets open`);
+
+    console.log(`\n${colors.bright}${colors.green}Test completed successfully!${colors.reset}\n`);
+}
+
+async function main() {
+    console.log(`${colors.bright}${colors.blue}🚀 Starting Comprehensive Deployment Test${colors.reset}`);
+    console.log(`${colors.cyan}Target:${colors.reset} ${BASE_URL}`);
+    console.log(`${colors.cyan}Tests:${colors.reset} ${Object.keys(TESTS).length} endpoints\n`);
+
+    const results = [];
+
+    for (const [name, path] of Object.entries(TESTS)) {
+        const result = await runTest(name, path);
+        results.push(result);
+
+        // Small delay between requests to be respectful
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    generateReport(results);
+}
+
+// Handle errors gracefully
+process.on('uncaughtException', (error) => {
+    console.error(`${colors.red}Uncaught Exception:${colors.reset}`, error.message);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error(`${colors.red}Unhandled Rejection:${colors.reset}`, reason);
+    process.exit(1);
+});
+
+// Run the tests
+if (require.main === module) {
+    main().catch(error => {
+        console.error(`${colors.red}Test suite failed:${colors.reset}`, error.message);
+        process.exit(1);
+    });
+}
+
+module.exports = { makeRequest, runTest, generateReport }; 

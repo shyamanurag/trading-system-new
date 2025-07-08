@@ -50,15 +50,14 @@ class EnhancedMomentumSurfer(BaseStrategy):
             # Process market data and generate signals
             signals = self._generate_signals(data)
             
-            # CRITICAL FIX: Store signals in current_positions IMMEDIATELY for orchestrator
+            # FIXED: Only store signals for orchestrator collection - no direct execution
             for signal in signals:
                 self.current_positions[signal['symbol']] = signal
                 logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
                            f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
             
-            # Execute trades based on signals (backup method)
+            # Update last signal time if signals generated
             if signals:
-                await self._execute_trades(signals)
                 self.last_signal_time = datetime.now()
                 
         except Exception as e:
@@ -252,26 +251,4 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         final_confidence = base_confidence + price_boost + volume_boost
         
-        return min(final_confidence, 0.9)  # Cap at 90%
-    
-    async def _execute_trades(self, signals: List[Dict]):
-        """Execute trades based on generated signals"""
-        try:
-            for signal in signals:
-                logger.info(f"🚀 {self.name} EXECUTING TRADE: {signal['symbol']} {signal['action']} "
-                           f"Entry: ₹{signal['entry_price']:.2f}, "
-                           f"SL: ₹{signal['stop_loss']:.2f}, "
-                           f"Target: ₹{signal['target']:.2f}, "
-                           f"Confidence: {signal['confidence']:.2f}")
-                
-                # Send signal to trade engine
-                success = await self.send_to_trade_engine(signal)
-                
-                if success:
-                    self.current_positions[signal['symbol']] = signal
-                    logger.info(f"✅ {self.name} trade executed successfully")
-                else:
-                    logger.error(f"❌ {self.name} trade execution failed")
-                
-        except Exception as e:
-            logger.error(f"Error executing trades: {e}") 
+        return min(final_confidence, 0.9)  # Cap at 90% 

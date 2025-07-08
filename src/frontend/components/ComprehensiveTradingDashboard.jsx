@@ -6,6 +6,7 @@ import {
     Notifications,
     People,
     Refresh,
+    Search as SearchIcon,
     Security,
     SmartToy,
     Star,
@@ -13,14 +14,15 @@ import {
 } from '@mui/icons-material';
 import {
     Alert,
+    AppBar,
     Avatar,
     Box,
-    Button,
     Card,
     CardContent,
     Chip,
     CircularProgress,
     Container,
+    Drawer,
     Grid,
     IconButton,
     List,
@@ -32,6 +34,7 @@ import {
     Paper,
     Tab,
     Tabs,
+    Toolbar,
     Typography
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
@@ -58,8 +61,8 @@ import UserManagementDashboard from './UserManagementDashboard';
 import UserPerformanceDashboard from './UserPerformanceDashboard';
 
 import MarketIndicesWidget from './MarketIndicesWidget';
+import SearchComponent from './SearchComponent';
 import SystemHealthMonitor from './SystemHealthMonitor';
-import WebSocketStatus from './WebSocketStatus';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app';
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
@@ -78,6 +81,8 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
     const [error, setError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
     const [anchorEl, setAnchorEl] = useState(null);
+    const [showSearch, setShowSearch] = useState(false);
+    const [searchDrawerOpen, setSearchDrawerOpen] = useState(false);
 
     // Helper function to safely extract numeric values
     const safeNumber = (value, fallback = 0) => {
@@ -308,6 +313,47 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
         // Remove automatic refresh - user can manually refresh when needed
     }, []);
 
+    const handleSearchResultSelect = (result) => {
+        console.log('Search result selected:', result);
+
+        // Handle different result types
+        switch (result.category) {
+            case 'symbol':
+                // Navigate to symbol analysis or market data
+                console.log('Navigate to symbol:', result.symbol);
+                break;
+            case 'trade':
+                // Navigate to trade details
+                console.log('Navigate to trade:', result.trade_id);
+                setSelectedTab(3); // Switch to trades tab
+                break;
+            case 'strategy':
+                // Navigate to strategy details
+                console.log('Navigate to strategy:', result.strategy_id);
+                setSelectedTab(4); // Switch to strategies tab
+                break;
+            case 'recommendation':
+                // Navigate to recommendation details
+                console.log('Navigate to recommendation:', result.recommendation_id);
+                setSelectedTab(5); // Switch to recommendations tab
+                break;
+            case 'user':
+                // Navigate to user management (if admin)
+                console.log('Navigate to user:', result.id);
+                setSelectedTab(1); // Switch to user management tab
+                break;
+            default:
+                console.log('Unknown result type:', result);
+        }
+
+        // Close search drawer on mobile
+        setSearchDrawerOpen(false);
+    };
+
+    const toggleSearchDrawer = () => {
+        setSearchDrawerOpen(!searchDrawerOpen);
+    };
+
     const handleUserMenuOpen = (event) => {
         setAnchorEl(event.currentTarget);
     };
@@ -347,6 +393,108 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
         </div>
     );
 
+    const renderHeader = () => (
+        <AppBar position="static" color="default" elevation={1}>
+            <Toolbar>
+                <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+                    AlgoAuto Trading Dashboard
+                </Typography>
+
+                {/* Search Component */}
+                <Box sx={{ flexGrow: 1, maxWidth: 400, mx: 2, display: { xs: 'none', md: 'block' } }}>
+                    <SearchComponent
+                        onResultSelect={handleSearchResultSelect}
+                        placeholder="Search symbols, trades, strategies..."
+                        showFilters={true}
+                        showCategories={false}
+                    />
+                </Box>
+
+                {/* Mobile Search Button */}
+                <IconButton
+                    color="inherit"
+                    onClick={toggleSearchDrawer}
+                    sx={{ display: { xs: 'block', md: 'none' } }}
+                >
+                    <SearchIcon />
+                </IconButton>
+
+                {/* Refresh Button */}
+                <IconButton
+                    color="inherit"
+                    onClick={fetchDashboardData}
+                    disabled={refreshing}
+                >
+                    {refreshing ? <CircularProgress size={20} /> : <Refresh />}
+                </IconButton>
+
+                {/* User Menu */}
+                <IconButton
+                    color="inherit"
+                    onClick={handleUserMenuOpen}
+                    sx={{ ml: 1 }}
+                >
+                    <Avatar sx={{ width: 32, height: 32 }}>
+                        {userInfo?.username?.charAt(0).toUpperCase() || 'U'}
+                    </Avatar>
+                </IconButton>
+
+                <Menu
+                    anchorEl={anchorEl}
+                    open={Boolean(anchorEl)}
+                    onClose={handleUserMenuClose}
+                    anchorOrigin={{
+                        vertical: 'bottom',
+                        horizontal: 'right',
+                    }}
+                    transformOrigin={{
+                        vertical: 'top',
+                        horizontal: 'right',
+                    }}
+                >
+                    <MenuItem onClick={handleUserMenuClose}>
+                        <AccountCircle sx={{ mr: 1 }} />
+                        Profile
+                    </MenuItem>
+                    <MenuItem onClick={handleUserMenuClose}>
+                        <Security sx={{ mr: 1 }} />
+                        Settings
+                    </MenuItem>
+                    <MenuItem onClick={handleLogout}>
+                        <Logout sx={{ mr: 1 }} />
+                        Logout
+                    </MenuItem>
+                </Menu>
+            </Toolbar>
+        </AppBar>
+    );
+
+    const renderMobileSearchDrawer = () => (
+        <Drawer
+            anchor="top"
+            open={searchDrawerOpen}
+            onClose={() => setSearchDrawerOpen(false)}
+            sx={{
+                '& .MuiDrawer-paper': {
+                    width: '100%',
+                    maxHeight: '80vh',
+                    p: 2
+                }
+            }}
+        >
+            <Box sx={{ width: '100%' }}>
+                <SearchComponent
+                    onResultSelect={handleSearchResultSelect}
+                    placeholder="Search symbols, trades, strategies..."
+                    showFilters={true}
+                    showCategories={true}
+                    autoFocus={true}
+                    fullScreen={true}
+                />
+            </Box>
+        </Drawer>
+    );
+
     return (
         <Container maxWidth="xl" sx={{ mt: 2, mb: 2 }}>
             {error && (
@@ -356,73 +504,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
             )}
 
             {/* Header */}
-            <Paper sx={{ p: 3, mb: 3, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Box>
-                        <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
-                            🚀 PRODUCTION READY! 🚀 Elite Trading System
-                        </Typography>
-                        <Typography variant="h6" sx={{ opacity: 0.9 }}>
-                            Production-Grade Trading Platform • Redis Connected • Real Infrastructure
-                        </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Box sx={{ textAlign: 'right', mr: 2 }}>
-                            <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
-                                <Chip
-                                    label={systemStatus ? `System ${safeString(systemStatus.status, 'Unknown')}` : 'Loading...'}
-                                    color="success"
-                                    variant="filled"
-                                />
-                                <IconButton
-                                    onClick={fetchDashboardData}
-                                    disabled={refreshing}
-                                    sx={{ color: 'white' }}
-                                >
-                                    <Refresh />
-                                </IconButton>
-                            </Box>
-                            <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                                {safeNumber(systemStatus?.activeTrades)} Active Trades • {safeNumber(systemStatus?.connectedUsers)} Users Online
-                            </Typography>
-                        </Box>
-
-                        {/* WebSocket Status */}
-                        <WebSocketStatus userId={safeString(userInfo?.id || userInfo?.user_id || userInfo?.username, 'anonymous')} />
-
-                        {/* User Menu */}
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Button
-                                startIcon={<AccountCircle />}
-                                onClick={handleUserMenuOpen}
-                                sx={{ color: 'white', textTransform: 'none' }}
-                            >
-                                {safeString(userInfo?.name || userInfo?.username, 'User')}
-                            </Button>
-                            <Menu
-                                anchorEl={anchorEl}
-                                open={Boolean(anchorEl)}
-                                onClose={handleUserMenuClose}
-                            >
-                                <MenuItem disabled>
-                                    <Box>
-                                        <Typography variant="body2" color="text.secondary">
-                                            Logged in as:
-                                        </Typography>
-                                        <Typography variant="body1">
-                                            {safeString(userInfo?.name, 'Unknown')} ({safeString(userInfo?.role, 'User')})
-                                        </Typography>
-                                    </Box>
-                                </MenuItem>
-                                <MenuItem onClick={handleLogout}>
-                                    <Logout sx={{ mr: 1 }} />
-                                    Logout
-                                </MenuItem>
-                            </Menu>
-                        </Box>
-                    </Box>
-                </Box>
-            </Paper>
+            {renderHeader()}
 
             {/* Navigation Tabs */}
             <Paper sx={{ mb: 3 }}>
@@ -968,6 +1050,9 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
             <TabPanel value={selectedTab} index={7}>
                 <TodaysTradeReport tradingData={dashboardData} />
             </TabPanel>
+
+            {/* Mobile Search Drawer */}
+            {renderMobileSearchDrawer()}
         </Container>
     );
 };
