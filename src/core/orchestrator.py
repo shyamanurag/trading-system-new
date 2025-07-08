@@ -34,10 +34,32 @@ class TradeEngine:
         self.is_running = False
         self.signal_queue = []
         self.logger = logging.getLogger(__name__)
+        self.order_manager = None  # Will be set during initialization
         
     async def initialize(self) -> bool:
         """Initialize the trade engine"""
         try:
+            # Initialize OrderManager for proper order processing
+            try:
+                from src.core.order_manager import OrderManager
+                from database_manager import get_database_operations
+                
+                # Create minimal config for OrderManager
+                config = {
+                    'redis': {
+                        'host': 'localhost',
+                        'port': 6379,
+                        'db': 0
+                    }
+                }
+                
+                self.order_manager = OrderManager(config)
+                self.logger.info("✅ OrderManager initialized for trade engine")
+                
+            except Exception as e:
+                self.logger.warning(f"⚠️ OrderManager initialization failed: {e}")
+                self.order_manager = None
+            
             self.is_initialized = True
             self.logger.info("Trade engine initialized")
             return True
@@ -46,7 +68,7 @@ class TradeEngine:
             return False
             
     async def process_signals(self, signals: List[Dict]):
-        """Process trading signals and place orders through Zerodha API"""
+        """Process trading signals through proper OrderManager pipeline"""
         try:
             for signal in signals:
                 # Log the signal
@@ -60,14 +82,59 @@ class TradeEngine:
                     'processed': False
                 })
                 
-                # Process the signal through Zerodha API
-                await self._process_signal_through_zerodha(signal)
+                # Process the signal through proper order management
+                await self._process_signal_through_order_manager(signal)
                 
         except Exception as e:
             self.logger.error(f"Error processing signals: {e}")
     
+    async def _process_signal_through_order_manager(self, signal: Dict):
+        """Process signal through proper OrderManager instead of direct Zerodha API"""
+        try:
+            if not self.order_manager:
+                self.logger.error(f"🚨 No OrderManager available for {signal['symbol']} - falling back to direct API")
+                # Fallback to original method if OrderManager not available
+                await self._process_signal_through_zerodha(signal)
+                return
+            
+            # Use proper OrderManager workflow
+            strategy_name = signal.get('strategy', 'UNKNOWN')
+            
+            self.logger.info(f"🚀 PLACING ORDER via OrderManager: {signal['symbol']} {signal['action']}")
+            
+            try:
+                # Place order through proper OrderManager
+                placed_orders = await self.order_manager.place_strategy_order(strategy_name, signal)
+                
+                if placed_orders:
+                    # Update signal as processed
+                    for queued_signal in self.signal_queue:
+                        if queued_signal['signal'] == signal:
+                            queued_signal['processed'] = True
+                            queued_signal['order_ids'] = [order[1].order_id for order in placed_orders]
+                            queued_signal['status'] = 'ORDER_PLACED_VIA_MANAGER'
+                            break
+                    
+                    self.logger.info(f"✅ ORDER PLACED via OrderManager: {len(placed_orders)} orders for {signal['symbol']}")
+                else:
+                    self.logger.error(f"❌ OrderManager returned no orders for {signal['symbol']}")
+                    
+            except Exception as e:
+                self.logger.error(f"❌ OrderManager failed for {signal['symbol']}: {e}")
+                # Mark signal as failed but processed
+                for queued_signal in self.signal_queue:
+                    if queued_signal['signal'] == signal:
+                        queued_signal['processed'] = True
+                        queued_signal['status'] = 'ORDER_MANAGER_FAILED'
+                        break
+                
+        except Exception as e:
+            self.logger.error(f"Error processing signal through OrderManager: {e}")
+            # Log the signal even if there's an error (for debugging)
+            self.logger.info(f"📊 SIGNAL (ERROR): {signal['symbol']} {signal['action']} - {str(e)}")
+
     async def _process_signal_through_zerodha(self, signal: Dict):
-        """Process individual signal through Zerodha API - FIXED VERSION"""
+        """Process individual signal through Zerodha API - FALLBACK METHOD"""
         try:
             zerodha_client = None
             orchestrator_instance = orchestrator
@@ -132,12 +199,12 @@ class TradeEngine:
             }
             
             # Place order through Zerodha
-            self.logger.info(f"🚀 PLACING ORDER: {signal['symbol']} {signal['action']} Qty: {position_size}")
+            self.logger.info(f"🚀 PLACING ORDER (FALLBACK): {signal['symbol']} {signal['action']} Qty: {position_size}")
             
             order_id = await zerodha_client.place_order(order_params)
             
             if order_id:
-                self.logger.info(f"✅ ORDER PLACED SUCCESSFULLY: {order_id} for {signal['symbol']} {signal['action']}")
+                self.logger.info(f"✅ ORDER PLACED SUCCESSFULLY (FALLBACK): {order_id} for {signal['symbol']} {signal['action']}")
                 # Update signal as processed
                 for queued_signal in self.signal_queue:
                     if queued_signal['signal'] == signal:
@@ -180,7 +247,8 @@ class TradeEngine:
             'initialized': self.is_initialized,
             'running': self.is_running,
             'signals_processed': len(self.signal_queue),
-            'pending_signals': len([s for s in self.signal_queue if not s['processed']])
+            'pending_signals': len([s for s in self.signal_queue if not s['processed']]),
+            'order_manager_available': self.order_manager is not None
         }
 
 class ProductionPositionTracker:
