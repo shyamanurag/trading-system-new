@@ -1420,6 +1420,68 @@ async def test_simple_autonomous_system():
             "message": f"Simple autonomous system test error: {str(e)}"
         }
 
+# FIXED: Move user performance endpoint BEFORE catch-all route to fix routing
+@app.get("/api/v1/users/performance", tags=["users"])
+async def get_users_performance(user_id: Optional[str] = None):
+    """User performance endpoint that frontend expects - MOVED BEFORE CATCH-ALL"""
+    try:
+        logger.info(f"🔧 Getting user performance for user_id: {user_id}")
+        
+        # If user_id is provided, return specific user data
+        if user_id:
+            logger.info(f"✅ Returning performance data for user: {user_id}")
+            return {
+                "success": True,
+                "data": {
+                    "user_id": user_id,
+                    "total_trades": 0,
+                    "winning_trades": 0,
+                    "losing_trades": 0,
+                    "total_pnl": 0.0,
+                    "win_rate": 0.0,
+                    "avg_profit": 0.0,
+                    "avg_loss": 0.0,
+                    "max_drawdown": 0.0,
+                    "sharpe_ratio": 0.0,
+                    "performance_summary": {
+                        "today": {"trades": 0, "pnl": 0.0},
+                        "week": {"trades": 0, "pnl": 0.0},
+                        "month": {"trades": 0, "pnl": 0.0}
+                    }
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            # Return overall system performance
+            logger.info("✅ Returning overall system performance")
+            return {
+                "success": True,
+                "data": {
+                    "total_users": 1,
+                    "active_users": 1,
+                    "user_metrics": {
+                        "MASTER_USER_001": {
+                            "total_trades": 0,
+                            "total_pnl": 0.0,
+                            "win_rate": 0.0
+                        }
+                    },
+                    "performance_summary": {
+                        "total_trades": 0,
+                        "total_pnl": 0.0,
+                        "avg_win_rate": 0.0
+                    }
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+    except Exception as e:
+        logger.error(f"❌ Error getting user performance: {e}")
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )
+
+# CATCH-ALL ROUTE - MUST BE LAST
 @app.api_route("/{path:path}", methods=["GET"])
 async def catch_all(request: Request, path: str):
     """Serve frontend for non-API routes, return 404 for API routes"""
@@ -1485,64 +1547,6 @@ async def catch_all(request: Request, path: str):
         )
 
 # FIXED: Add missing endpoints that frontend expects
-@app.get("/api/v1/users/performance", tags=["users"])
-async def get_users_performance(user_id: Optional[str] = None):
-    """User performance endpoint that frontend expects"""
-    try:
-        logger.info(f"Getting user performance for user_id: {user_id}")
-        
-        # If user_id is provided, return specific user data
-        if user_id:
-            return {
-                "success": True,
-                "data": {
-                    "user_id": user_id,
-                    "total_trades": 0,
-                    "winning_trades": 0,
-                    "losing_trades": 0,
-                    "total_pnl": 0.0,
-                    "win_rate": 0.0,
-                    "avg_profit": 0.0,
-                    "avg_loss": 0.0,
-                    "max_drawdown": 0.0,
-                    "sharpe_ratio": 0.0,
-                    "performance_summary": {
-                        "today": {"trades": 0, "pnl": 0.0},
-                        "week": {"trades": 0, "pnl": 0.0},
-                        "month": {"trades": 0, "pnl": 0.0}
-                    }
-                },
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            # Return overall system performance
-            return {
-                "success": True,
-                "data": {
-                    "total_users": 1,
-                    "active_users": 1,
-                    "user_metrics": {
-                        "MASTER_USER_001": {
-                            "total_trades": 0,
-                            "total_pnl": 0.0,
-                            "win_rate": 0.0
-                        }
-                    },
-                    "performance_summary": {
-                        "total_trades": 0,
-                        "total_pnl": 0.0,
-                        "avg_win_rate": 0.0
-                    }
-                },
-                "timestamp": datetime.now().isoformat()
-            }
-    except Exception as e:
-        logger.error(f"Error getting user performance: {e}")
-        return JSONResponse(
-            content={"success": False, "error": str(e)},
-            status_code=500
-        )
-
 @app.get("/api/market/indices", tags=["market-data"])
 async def get_market_indices():
     """Market indices endpoint that frontend expects"""
