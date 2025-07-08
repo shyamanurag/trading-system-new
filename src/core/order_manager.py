@@ -27,11 +27,18 @@ class OrderManager:
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        self.redis = redis.Redis(
-            host=config['redis']['host'],
-            port=config['redis']['port'],
-            db=config['redis']['db']
-        )
+        
+        # FIXED: Handle None redis config properly
+        if config.get('redis') is not None:
+            self.redis = redis.Redis(
+                host=config['redis']['host'],
+                port=config['redis']['port'],
+                db=config['redis']['db']
+            )
+        else:
+            # Use in-memory fallback when Redis is not available
+            self.redis = None
+            logger.warning("⚠️ OrderManager using in-memory fallback (no Redis)")
         
         # Initialize dependencies for RiskManager
         from src.events import EventBus

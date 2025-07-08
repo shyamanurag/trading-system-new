@@ -194,6 +194,18 @@ class ResilientZerodhaConnection(ResilientConnection):
         await self.ensure_connected()
         return await func(*args, **kwargs)
 
+    # FIXED: Add missing initialize method that orchestrator expects
+    async def initialize(self) -> bool:
+        """Initialize the resilient Zerodha connection"""
+        try:
+            logger.info("🔄 Initializing ResilientZerodhaConnection...")
+            await self.connect()
+            logger.info("✅ ResilientZerodhaConnection initialized successfully")
+            return True
+        except Exception as e:
+            logger.error(f"❌ ResilientZerodhaConnection initialization failed: {e}")
+            return False
+
     # Implement abstract methods from parent class
     async def _do_connect(self):
         """Actual connection logic"""
