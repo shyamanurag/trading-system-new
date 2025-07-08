@@ -8,6 +8,8 @@ import logging
 from datetime import datetime
 import asyncio
 from fastapi.responses import JSONResponse
+import sys
+import os
 
 from data.truedata_client import (
     truedata_client, 
@@ -16,6 +18,19 @@ from data.truedata_client import (
     get_live_data_for_symbol,
     get_truedata_status
 )
+
+# CRITICAL FIX: Direct bridge to populated TrueData cache at module level
+sys.path.insert(0, os.path.abspath('.'))
+
+try:
+    from data.truedata_client import live_market_data as truedata_cache_direct
+    from data.truedata_client import truedata_client as truedata_client_direct
+    DIRECT_BRIDGE_AVAILABLE = True
+    logger.info("✅ TrueData direct bridge established in integration API")
+except ImportError as e:
+    logger.error(f"❌ TrueData direct bridge failed in integration API: {e}")
+    truedata_cache_direct = {}
+    DIRECT_BRIDGE_AVAILABLE = False
 
 def smart_auto_retry():
     """Smart autonomous retry for TrueData - FIXED to check cache instead of connecting"""

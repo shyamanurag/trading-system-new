@@ -7,6 +7,9 @@ import logging
 from datetime import datetime
 from fastapi import APIRouter, Query, HTTPException, Depends
 from typing import Optional, List
+import sys
+import os
+sys.path.insert(0, os.path.abspath('.'))
 
 # Import symbol mapping for TrueData
 from config.truedata_symbols import get_truedata_symbol
@@ -17,15 +20,26 @@ logger = logging.getLogger(__name__)
 # Create router
 router = APIRouter(prefix="/api/v1", tags=["market-data"])
 
+# CRITICAL FIX: Direct bridge to populated TrueData cache
+# Import at module level to ensure access to the same cache instance
+try:
+    from data.truedata_client import live_market_data as truedata_cache
+    from data.truedata_client import truedata_client, get_truedata_status
+    TRUEDATA_BRIDGE_AVAILABLE = True
+    logger.info("✅ TrueData cache bridge established")
+except ImportError as e:
+    logger.error(f"❌ TrueData cache bridge failed: {e}")
+    truedata_cache = {}
+    TRUEDATA_BRIDGE_AVAILABLE = False
+
 def get_truedata_proxy():
     """Get TrueData data directly from live cache - SIMPLE APPROACH"""
     try:
         # SIMPLE FIX: Direct access to existing TrueData cache
-        from data.truedata_client import live_market_data
         return {
-            'connected': len(live_market_data) > 0,
-            'data': live_market_data,
-            'symbols_count': len(live_market_data)
+            'connected': len(truedata_cache) > 0,
+            'data': truedata_cache,
+            'symbols_count': len(truedata_cache)
         }
     except ImportError:
         logger.error("TrueData client not available")
@@ -37,13 +51,12 @@ def get_truedata_proxy():
 def is_connected() -> bool:
     """Check if TrueData is connected via direct cache access"""
     try:
-        from data.truedata_client import live_market_data
-        connected = len(live_market_data) > 0
+        connected = len(truedata_cache) > 0
         
         logger.info(f"🔧 TrueData direct connection check: {connected}")
         if connected:
-            logger.info(f"   Data source: live_market_data cache")
-            logger.info(f"   Symbols available: {len(live_market_data)}")
+            logger.info(f"   Data source: truedata_cache")
+            logger.info(f"   Symbols available: {len(truedata_cache)}")
         
         return connected
         
@@ -54,26 +67,17 @@ def is_connected() -> bool:
 def get_live_data_for_symbol(symbol: str) -> dict:
     """Get live data for a specific symbol via direct cache access"""
     try:
-        # FIXED: Use correct import path - no src/data directory exists
-        # The working TrueData client is in data/truedata_client.py
-        try:
-            from data.truedata_client import live_market_data
-            data = live_market_data.get(symbol)
-            if data:
-                return data
-        except ImportError as e:
-            logger.error(f"Failed to import TrueData client: {e}")
-            
-        # Fallback: try alternative import paths
-        try:
-            from src.data.truedata_client import get_truedata_client
-            client = get_truedata_client()
-            if client and hasattr(client, 'market_data'):
-                return client.market_data.get(symbol)
-        except ImportError:
-            pass
-            
-        return None
+        # Use symbol mapping to convert NIFTY -> NIFTY-I
+        mapped_symbol = get_truedata_symbol(symbol.upper())
+        logger.debug(f"🔧 Symbol mapping: {symbol} -> {mapped_symbol}")
+        
+        # Get data from live cache
+        symbol_data = truedata_cache.get(mapped_symbol, {})
+        
+        if symbol_data:
+            logger.debug(f"📊 Retrieved data for {symbol}: LTP={symbol_data.get('ltp', 'N/A')}")
+        
+        return symbol_data
         
     except Exception as e:
         logger.error(f"Error getting live data for {symbol}: {e}")
@@ -82,64 +86,48 @@ def get_live_data_for_symbol(symbol: str) -> dict:
 def get_all_live_market_data() -> dict:
     """Get ALL live market data from direct cache access"""
     try:
-        from data.truedata_client import live_market_data
-        
-        logger.debug(f"📊 Retrieved all market data: {len(live_market_data)} symbols")
-        return live_market_data
+        logger.debug(f"📊 Retrieved all market data: {len(truedata_cache)} symbols")
+        return truedata_cache
         
     except Exception as e:
         logger.error(f"Error getting all live market data: {e}")
         return {}
 
-@router.get("/market-data")
-async def get_all_market_data():
-    """Get ALL market data symbols - Main endpoint for symbol count analysis"""
+@router.get("")
+async def get_market_data():
+    """Get all market data with direct cache bridge"""
     try:
-        logger.info("📊 Getting all market data symbols via proxy...")
-        
-        # Get data from TrueData proxy
-        live_data = get_all_live_market_data()
-        market_data = {}
-        
-        for symbol, data in live_data.items():
-            market_data[symbol] = {
-                'current_price': data.get('ltp', 0),
-                'price': data.get('ltp', 0),
-                'volume': data.get('volume', 0),
-                'change': data.get('change', 0),
-                'change_percent': data.get('change_percent', 0),
-                'high': data.get('high', 0),
-                'low': data.get('low', 0),
-                'open': data.get('open', 0),
-                'timestamp': datetime.now().isoformat(),
-                'symbol': symbol,
-                'source': 'TrueDataProxy'
+        # CRITICAL FIX: Use direct bridge to populated TrueData cache
+        if TRUEDATA_BRIDGE_AVAILABLE and truedata_cache:
+            logger.info(f"📊 Direct cache access: {len(truedata_cache)} symbols available")
+            
+            return {
+                "success": True,
+                "symbols_count": len(truedata_cache),
+                "data": truedata_cache,
+                "source": "direct_truedata_cache_bridge",
+                "timestamp": datetime.now().isoformat(),
+                "note": "Using direct bridge to populated TrueData cache"
             }
         
-        symbol_count = len(market_data)
-        logger.info(f"📊 Returning {symbol_count} symbols in market data")
-        
+        # Fallback to original method if bridge fails
+        logger.warning("⚠️ Direct cache bridge not available, using fallback")
         return {
-            "success": True,
-            "data": market_data,
-            "symbol_count": symbol_count,
-            "expansion_status": {
-                "current_symbols": symbol_count,
-                "target_symbols": 250,
-                "expansion_needed": 250 - symbol_count,
-                "percentage_complete": round((symbol_count / 250) * 100, 1)
-            },
+            "success": False,
+            "symbols_count": 0,
+            "data": {},
+            "source": "fallback_no_cache",
             "timestamp": datetime.now().isoformat(),
-            "source": "truedata_proxy"
+            "error": "TrueData cache bridge not available"
         }
         
     except Exception as e:
-        logger.error(f"Error getting all market data: {e}")
+        logger.error(f"Market data endpoint error: {e}")
         return {
             "success": False,
-            "error": str(e),
+            "symbols_count": 0,
             "data": {},
-            "symbol_count": 0,
+            "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
 
