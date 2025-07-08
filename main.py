@@ -1564,6 +1564,203 @@ async def get_market_indices():
             status_code=500
         )
 
+# CRITICAL FIX: Add orchestrator management endpoints to fix zero trades issue
+@app.post("/api/v1/orchestrator/start", tags=["orchestrator"])
+async def start_orchestrator():
+    """Start the trading orchestrator - CRITICAL for trade execution"""
+    try:
+        logger.info("🚀 Starting trading orchestrator...")
+        
+        from src.core.orchestrator import get_orchestrator
+        orchestrator = await get_orchestrator()
+        
+        if not orchestrator:
+            raise HTTPException(status_code=500, detail="Failed to get orchestrator instance")
+        
+        # Force initialization if not already done
+        if not orchestrator.is_initialized:
+            logger.info("🔄 Initializing orchestrator...")
+            init_success = await orchestrator.initialize()
+            if not init_success:
+                raise HTTPException(status_code=500, detail="Failed to initialize orchestrator")
+        
+        # Start trading
+        logger.info("🚀 Starting trading...")
+        start_success = await orchestrator.start_trading()
+        
+        if start_success:
+            logger.info("✅ Trading orchestrator started successfully")
+            return {
+                "success": True,
+                "message": "Trading orchestrator started successfully",
+                "is_running": orchestrator.is_running,
+                "strategies_loaded": len(orchestrator.strategies),
+                "active_strategies": len(orchestrator.active_strategies),
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to start trading orchestrator")
+    
+    except Exception as e:
+        logger.error(f"Error starting orchestrator: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to start orchestrator: {str(e)}")
+
+@app.get("/api/v1/orchestrator/status", tags=["orchestrator"])
+async def get_orchestrator_status():
+    """Get orchestrator status - check if it's running and executing trades"""
+    try:
+        from src.core.orchestrator import get_orchestrator
+        orchestrator = await get_orchestrator()
+        
+        if not orchestrator:
+            return {
+                "success": False,
+                "message": "Orchestrator not available",
+                "is_running": False,
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Get comprehensive status
+        status = await orchestrator.get_status()
+        trading_status = await orchestrator.get_trading_status()
+        
+        return {
+            "success": True,
+            "orchestrator_status": status,
+            "trading_status": trading_status,
+            "critical_info": {
+                "is_initialized": orchestrator.is_initialized,
+                "is_running": orchestrator.is_running,
+                "strategies_loaded": len(orchestrator.strategies),
+                "active_strategies": len(orchestrator.active_strategies),
+                "has_trade_engine": hasattr(orchestrator, 'trade_engine') and orchestrator.trade_engine is not None,
+                "market_data_available": orchestrator.components.get('market_data', False)
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Error getting orchestrator status: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+@app.post("/api/v1/orchestrator/force-start", tags=["orchestrator"])
+async def force_start_orchestrator():
+    """Force start the orchestrator - bypass all checks for zero trades fix"""
+    try:
+        logger.info("🔥 FORCE STARTING orchestrator to fix zero trades issue...")
+        
+        from src.core.orchestrator import get_orchestrator
+        orchestrator = await get_orchestrator()
+        
+        if not orchestrator:
+            raise HTTPException(status_code=500, detail="Failed to get orchestrator instance")
+        
+        # Force reset state
+        orchestrator.is_initialized = False
+        orchestrator.is_running = False
+        
+        # Force initialize
+        logger.info("🔄 Force initializing system...")
+        init_result = await orchestrator.initialize_system()
+        
+        if not init_result.get('success'):
+            raise HTTPException(status_code=500, detail=f"Force initialization failed: {init_result.get('error')}")
+        
+        # Force start trading
+        logger.info("🚀 Force starting trading...")
+        start_success = await orchestrator.start_trading()
+        
+        if not start_success:
+            raise HTTPException(status_code=500, detail="Failed to force start trading")
+        
+        logger.info("✅ Orchestrator force started successfully")
+        
+        return {
+            "success": True,
+            "message": "Orchestrator force started successfully",
+            "initialization_result": init_result,
+            "is_running": orchestrator.is_running,
+            "strategies_loaded": len(orchestrator.strategies),
+            "active_strategies": len(orchestrator.active_strategies),
+            "components_ready": len([c for c in orchestrator.components.values() if c]),
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Error force starting orchestrator: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to force start orchestrator: {str(e)}")
+
+@app.get("/api/v1/orchestrator/test-signals", tags=["orchestrator"])
+async def test_signal_generation():
+    """Test signal generation from strategies - debugging zero trades"""
+    try:
+        logger.info("🧪 Testing signal generation...")
+        
+        from src.core.orchestrator import get_orchestrator
+        orchestrator = await get_orchestrator()
+        
+        if not orchestrator:
+            raise HTTPException(status_code=500, detail="Orchestrator not available")
+        
+        if not orchestrator.is_running:
+            raise HTTPException(status_code=400, detail="Orchestrator is not running. Start it first.")
+        
+        # Get market data
+        market_data = await orchestrator._get_market_data_from_api()
+        
+        if not market_data:
+            raise HTTPException(status_code=500, detail="No market data available")
+        
+        # Test signal generation
+        logger.info("🔍 Running strategies to test signal generation...")
+        
+        # Store original current_positions to check for signals
+        original_positions = {}
+        for strategy_name, strategy_info in orchestrator.strategies.items():
+            if 'instance' in strategy_info:
+                strategy = strategy_info['instance']
+                if hasattr(strategy, 'current_positions'):
+                    original_positions[strategy_name] = dict(strategy.current_positions)
+        
+        # Run strategies
+        await orchestrator._run_strategies(market_data)
+        
+        # Check for new signals
+        new_signals = {}
+        for strategy_name, strategy_info in orchestrator.strategies.items():
+            if 'instance' in strategy_info:
+                strategy = strategy_info['instance']
+                if hasattr(strategy, 'current_positions'):
+                    for symbol, signal in strategy.current_positions.items():
+                        if (isinstance(signal, dict) and signal.get('action') != 'HOLD' and 
+                            signal != original_positions.get(strategy_name, {}).get(symbol)):
+                            if strategy_name not in new_signals:
+                                new_signals[strategy_name] = []
+                            new_signals[strategy_name].append({
+                                'symbol': symbol,
+                                'action': signal.get('action'),
+                                'entry_price': signal.get('entry_price'),
+                                'confidence': signal.get('confidence')
+                            })
+        
+        return {
+            "success": True,
+            "message": "Signal generation test completed",
+            "market_data_symbols": len(market_data),
+            "strategies_tested": len(orchestrator.strategies),
+            "signals_generated": new_signals,
+            "total_signals": sum(len(signals) for signals in new_signals.values()),
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Error testing signal generation: {e}")
+        raise HTTPException(status_code=500, detail=f"Signal generation test failed: {str(e)}")
+
 # Main execution
 if __name__ == "__main__":
     # Get configuration from environment
