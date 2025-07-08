@@ -11,6 +11,9 @@ from fastapi.responses import JSONResponse
 import sys
 import os
 
+# Define logger early to avoid undefined errors
+logger = logging.getLogger(__name__)
+
 from data.truedata_client import (
     truedata_client, 
     live_market_data, 
@@ -48,9 +51,8 @@ def smart_auto_retry():
     except Exception as e:
         logger.error(f"Auto-retry cache check error: {e}")
         return False
+        
 from src.models.responses import TrueDataResponse, APIResponse
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/truedata", tags=["truedata"])
 

@@ -54,13 +54,12 @@ logger = logging.getLogger(__name__)
 # Import all routers with error handling
 routers_loaded = {}
 router_imports = {
-    'auth': ('src.api.auth', 'router_v1'),
+    'auth': ('src.api.auth', 'router'),
     'market': ('src.api.market', 'router'),
     'users': ('src.api.users', 'router'),
     'trading_control': ('src.api.trading_control', 'router'),
     'truedata': ('src.api.truedata_integration', 'router'),
     'truedata_options': ('src.api.truedata_options', 'router'),
-    'truedata_proxy': ('src.api.truedata_proxy', 'router'),  # NEW: TrueData proxy for autonomous trading
     'market_data': ('src.api.market_data', 'router'),
     'autonomous_trading': ('src.api.autonomous_trading', 'router'),
     'autonomous_trading_simple': ('src.api.autonomous_trading_simple', 'router'),
@@ -72,7 +71,7 @@ router_imports = {
     'zerodha_multi_user': ('src.api.zerodha_multi_user_auth', 'router'),
     'zerodha_manual_auth': ('src.api.zerodha_manual_auth', 'router'),
     'zerodha_refresh': ('src.api.zerodha_refresh', 'router'),
-    'daily_auth_workflow': ('src.api.simple_daily_auth', 'router'),
+    'daily_auth_workflow': ('src.api.daily_auth_workflow', 'router'),
     'websocket': ('src.api.websocket', 'router'),
     'monitoring': ('src.api.monitoring', 'router'),
     'webhooks': ('src.api.webhooks', 'router'),
@@ -544,9 +543,6 @@ router_configs = [
     ('market_data', '', ('market-data-v1',)),  # FIX: Mount at root, router has /api/v1 prefix
     ('truedata', '/api/v1/truedata', ('truedata',)),
     ('truedata_options', '', ('truedata-options',)),  # Already has /api/v1/truedata/options prefix
-    
-    # TrueData Proxy - NEW ADDITION for autonomous trading
-    ('truedata_proxy', '', ('truedata-proxy',)),  # Router has /api/v1/truedata-proxy prefix
     
     # User management
     ('users', '', ('users',)),  # Already has /api/v1/users prefix

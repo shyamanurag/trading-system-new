@@ -26,26 +26,45 @@ live_market_data: Dict[str, Dict] = {}
 redis_client = None
 
 # Add Redis setup after logger initialization
-def setup_redis():
-    """Setup Redis client for cross-process data sharing"""
+def setup_redis_client():
+    """Setup Redis client for cross-process data sharing with SSL support"""
     global redis_client
+    
     try:
-        redis_host = os.environ.get('REDIS_HOST', 'localhost')
-        redis_port = int(os.environ.get('REDIS_PORT', 6379))
-        redis_password = os.environ.get('REDIS_PASSWORD')
+        redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379')
+        
+        # Parse Redis URL to extract components
+        from urllib.parse import urlparse
+        import ssl
+        
+        parsed = urlparse(redis_url)
+        
+        redis_host = parsed.hostname or 'localhost'
+        redis_port = parsed.port or 6379
+        redis_password = parsed.password
+        redis_db = int(parsed.path[1:]) if parsed.path and len(parsed.path) > 1 else 0
+        
+        # Check if SSL is required (DigitalOcean Redis)
+        ssl_required = 'ondigitalocean.com' in redis_host or redis_url.startswith('rediss://')
         
         redis_client = redis.Redis(
             host=redis_host,
             port=redis_port,
             password=redis_password,
+            db=redis_db,
             decode_responses=True,
             socket_connect_timeout=5,
-            socket_timeout=5
+            socket_timeout=5,
+            ssl=ssl_required,
+            ssl_cert_reqs=ssl.CERT_NONE if ssl_required else ssl.CERT_REQUIRED,
+            ssl_check_hostname=False if ssl_required else True,
+            retry_on_timeout=True,
+            health_check_interval=30
         )
         
         # Test connection
         redis_client.ping()
-        logger.info(f"✅ Redis connected: {redis_host}:{redis_port}")
+        logger.info(f"✅ TrueData Redis connected: {redis_host}:{redis_port} (SSL: {ssl_required})")
         return True
     except Exception as e:
         logger.warning(f"⚠️ Redis connection failed: {e}")
@@ -53,7 +72,7 @@ def setup_redis():
         return False
 
 # Call setup at module level
-setup_redis()
+setup_redis_client()
 
 class TrueDataClient:
     """Advanced TrueData client with deployment overlap handling"""
