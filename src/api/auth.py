@@ -84,10 +84,22 @@ async def get_current_user_v1(credentials: HTTPAuthorizationCredentials = Depend
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
 
+# Add get_current_user as a dependency function for other modules
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get current user for dependency injection"""
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if not username or not (user := DEFAULT_USERS.get(username)):
+            raise HTTPException(status_code=401, detail="Invalid token or user not found")
+        return user
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+
 @router_v1.get("/test")
 async def test_auth_v1():
     """Test endpoint to verify auth router is working"""
     return {"message": "Simplified Auth router is working!", "endpoint": "/api/v1/auth/test"}
 
-# Export only the v1 router
-__all__ = ["router_v1"] 
+# Export router and dependency function
+__all__ = ["router_v1", "get_current_user"] 
