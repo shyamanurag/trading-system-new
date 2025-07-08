@@ -53,15 +53,14 @@ class GreeksData(BaseModel):
 async def subscribe_options(request: SymbolSubscription):
     """Subscribe to options symbols with Greeks"""
     try:
-        if not truedata_client.connected:
-            # Try to connect first
-            logger.info("TrueData not connected, attempting connection...")
-            success = truedata_client.connect()
-            if not success:
-                raise HTTPException(
-                    status_code=503,
-                    detail="TrueData connection failed. Check credentials and connection status."
-                )
+        # FIXED: Read from existing TrueData cache instead of trying to connect
+        # TrueData is already connected and flowing data - just check cache availability
+        if not live_market_data:
+            # Cache is empty - this indicates real connection issue, not missing connection
+            raise HTTPException(
+                status_code=503,
+                detail="TrueData cache is empty. Market data not available."
+            )
         
         # Note: TrueData subscription is handled automatically during connection
         return {
@@ -72,7 +71,8 @@ async def subscribe_options(request: SymbolSubscription):
                 "greeks": request.include_greeks,
                 "bidask": request.include_bidask
             },
-            "note": "TrueData client subscribes to default symbols automatically"
+            "note": "TrueData client subscribes to default symbols automatically",
+            "cache_symbols": len(live_market_data)  # Show how many symbols are available
         }
             
     except Exception as e:

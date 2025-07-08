@@ -973,60 +973,25 @@ async def get_all_market_data_direct():
     try:
         logger.info("📊 Direct market data endpoint called - fixing 404 error")
         
-        # Try to get market data from TrueData
-        market_data = {}
-        symbol_count = 0
-        
-        try:
-            from data.truedata_client import live_market_data
-            market_data = live_market_data or {}
-            symbol_count = len(market_data)
-            logger.info(f"📊 Retrieved {symbol_count} symbols from TrueData")
-        except ImportError:
-            logger.warning("TrueData client not available - trying orchestrator")
-        except Exception as e:
-            logger.error(f"Error accessing TrueData: {e}")
-        
-        # If no data from TrueData, try orchestrator
-        if not market_data:
-            try:
-                from src.core.orchestrator import TradingOrchestrator
-                orchestrator = TradingOrchestrator.get_instance()
-                if hasattr(orchestrator, 'market_data') and orchestrator.market_data:
-                    if hasattr(orchestrator.market_data, 'market_data_cache'):
-                        market_data = orchestrator.market_data.market_data_cache or {}
-                        symbol_count = len(market_data)
-                        logger.info(f"📊 Retrieved {symbol_count} symbols from orchestrator cache")
-                    elif hasattr(orchestrator.market_data, '_get_all_available_truedata_symbols'):
-                        available_symbols = orchestrator.market_data._get_all_available_truedata_symbols()
-                        # Convert to data format expected by frontend
-                        for symbol in available_symbols:
-                            market_data[symbol] = {
-                                'current_price': 0,
-                                'price': 0,
-                                'volume': 0,
-                                'change': 0,
-                                'change_percent': 0,
-                                'timestamp': datetime.now().isoformat(),
-                                'symbol': symbol,
-                                'source': 'orchestrator_symbols'
-                            }
-                        symbol_count = len(market_data)
-                        logger.info(f"📊 Generated {symbol_count} symbols from orchestrator")
-            except Exception as e:
-                logger.error(f"Error accessing orchestrator market data: {e}")
+        # Check TrueData cache availability instead of initializing
+        from data.truedata_client import live_market_data
+        truedata_success = len(live_market_data) > 0
+        if truedata_success:
+            logger.info(f"✅ TrueData cache available: {len(live_market_data)} symbols")
+        else:
+            logger.warning("⚠️ TrueData cache empty - market data not available")
         
         return JSONResponse(
             status_code=200,
             content={
                 "success": True,
-                "data": market_data,
-                "symbol_count": symbol_count,
+                "data": live_market_data,
+                "symbol_count": len(live_market_data),
                 "expansion_status": {
-                    "current_symbols": symbol_count,
+                    "current_symbols": len(live_market_data),
                     "target_symbols": 250,
-                    "expansion_needed": max(0, 250 - symbol_count),
-                    "percentage_complete": round((symbol_count / 250) * 100, 1) if symbol_count > 0 else 0
+                    "expansion_needed": max(0, 250 - len(live_market_data)),
+                    "percentage_complete": round((len(live_market_data) / 250) * 100, 1) if len(live_market_data) > 0 else 0
                 },
                 "timestamp": datetime.now().isoformat(),
                 "source": "direct_fix_endpoint",

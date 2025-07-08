@@ -302,30 +302,39 @@ class ConnectionManager:
             return False
     
     async def _initialize_truedata_safe(self):
-        """Safely initialize TrueData connection"""
+        """Check TrueData cache availability instead of connecting - FIXED"""
         try:
-            # ELIMINATED: Mock TrueData connection that could mislead users
-            # ❌ logger.info("TrueData connection initialized (mock mode)")
-            # ❌ self.connections['truedata'] = {
-            # ❌     'instance': None,  # Mock instance
-            # ❌     'status': ConnectionStatus.CONNECTED,
-            # ❌     'last_check': datetime.now()
-            # ❌ }
+            # FIXED: Check existing TrueData cache instead of trying to connect
+            # TrueData is already connected and flowing data in the main app
+            from data.truedata_client import live_market_data, is_connected
             
-            # SAFETY: Return proper error instead of fake connection
-            logger.error("CRITICAL: TrueData connection initialization FAILED")
-            logger.error("SAFETY: Mock TrueData connection ELIMINATED to prevent fake market data")
+            if live_market_data and len(live_market_data) > 0:
+                logger.info(f"✅ TrueData cache available: {len(live_market_data)} symbols")
+                self.connections['truedata'] = {
+                    'instance': None,  # No direct instance - using cache
+                    'status': ConnectionStatus.CONNECTED,
+                    'cache_size': len(live_market_data),
+                    'last_check': datetime.now()
+                }
+                return True
+            else:
+                logger.warning("⚠️ TrueData cache is empty - market data not available")
+                self.connections['truedata'] = {
+                    'instance': None,
+                    'status': ConnectionStatus.ERROR,
+                    'error': 'TrueData cache empty - check main app connection',
+                    'last_check': datetime.now()
+                }
+                return False
             
+        except Exception as e:
+            logger.error(f"Failed to check TrueData cache: {e}")
             self.connections['truedata'] = {
                 'instance': None,
                 'status': ConnectionStatus.ERROR,
-                'error': 'SAFETY: Mock TrueData connection disabled - real TrueData API required',
+                'error': f'TrueData cache check failed: {str(e)}',
                 'last_check': datetime.now()
             }
-            return False
-            
-        except Exception as e:
-            logger.error(f"Failed to initialize TrueData: {e}")
             return False
     
     async def _initialize_database_safe(self):

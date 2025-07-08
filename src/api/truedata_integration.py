@@ -18,18 +18,20 @@ from data.truedata_client import (
 )
 
 def smart_auto_retry():
-    """Smart autonomous retry for TrueData - called by other APIs when needed"""
+    """Smart autonomous retry for TrueData - FIXED to check cache instead of connecting"""
     try:
-        # Only retry if not connected and enough time has passed
-        if not truedata_client.connected and truedata_client.should_retry():
-            logger.info("🤖 AUTONOMOUS: Auto-retrying TrueData connection")
-            success = initialize_truedata()
-            if success:
-                logger.info("✅ AUTONOMOUS: TrueData auto-retry successful")
-            return success
-        return truedata_client.connected
+        # FIXED: Check cache availability instead of trying to connect
+        from data.truedata_client import live_market_data, is_connected
+        
+        if len(live_market_data) > 0:
+            logger.info(f"✅ AUTONOMOUS: TrueData cache available: {len(live_market_data)} symbols")
+            return True
+        else:
+            logger.warning("⚠️ AUTONOMOUS: TrueData cache is empty")
+            return False
+            
     except Exception as e:
-        logger.error(f"Auto-retry error: {e}")
+        logger.error(f"Auto-retry cache check error: {e}")
         return False
 from src.models.responses import TrueDataResponse, APIResponse
 
@@ -39,7 +41,7 @@ router = APIRouter(prefix="/truedata", tags=["truedata"])
 
 @router.post("/connect")
 async def connect_truedata(credentials: Dict):
-    """Connect to TrueData live feed"""
+    """Connect to TrueData live feed - FIXED to check cache instead of connecting"""
     try:
         username = credentials.get("username")
         password = credentials.get("password")
@@ -47,27 +49,24 @@ async def connect_truedata(credentials: Dict):
         if not username or not password:
             raise HTTPException(status_code=400, detail="Username and password required")
         
-        # Set credentials in environment for singleton client
-        import os
-        os.environ['TRUEDATA_USERNAME'] = username
-        os.environ['TRUEDATA_PASSWORD'] = password
+        # FIXED: Check existing TrueData cache instead of trying to connect
+        from data.truedata_client import live_market_data, is_connected
         
-        # Initialize TrueData singleton client
-        success = initialize_truedata()
-        
-        if success:
+        if len(live_market_data) > 0:
             return {
                 "success": True,
-                "message": "TrueData connected successfully",
+                "message": f"TrueData cache available: {len(live_market_data)} symbols",
+                "cache_size": len(live_market_data),
+                "note": "Using existing TrueData connection - no new connection needed",
                 "timestamp": datetime.now().isoformat()
             }
         else:
-            raise HTTPException(status_code=500, detail="Failed to connect to TrueData")
+            raise HTTPException(status_code=503, detail="TrueData cache is empty - main connection required")
             
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error connecting to TrueData: {e}")
+        logger.error(f"Error checking TrueData cache: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/subscribe")
@@ -140,39 +139,32 @@ async def get_truedata_status_endpoint():
 
 @router.post("/reconnect")
 async def reconnect_truedata():
-    """Attempt to reconnect to TrueData (autonomous system)"""
+    """Attempt to reconnect to TrueData - FIXED to check cache instead of connecting"""
     try:
-        # Check if enough time has passed for autonomous retry
+        # FIXED: Check cache availability instead of trying to reconnect
+        from data.truedata_client import live_market_data, get_truedata_status
+        
         status = get_truedata_status()
-        if not status.get('can_retry', True):
-            return {
-                "success": False,
-                "message": "Please wait before retrying - autonomous system will handle this",
-                "data": status,
-                "retry_in_seconds": 30 - int((datetime.now() - truedata_client.last_attempt_time).total_seconds()) if truedata_client.last_attempt_time else 0,
-                "timestamp": datetime.now().isoformat()
-            }
         
-        # Try to initialize again
-        success = initialize_truedata()
-        
-        if success:
+        if len(live_market_data) > 0:
             return {
                 "success": True,
-                "message": "TrueData reconnection successful",
-                "data": get_truedata_status(),
+                "message": f"TrueData cache available: {len(live_market_data)} symbols",
+                "cache_size": len(live_market_data),
+                "note": "Using existing TrueData connection - no reconnection needed",
+                "data": status,
                 "timestamp": datetime.now().isoformat()
             }
         else:
             return {
                 "success": False,
-                "message": "TrueData reconnection failed - system will retry autonomously",
-                "data": get_truedata_status(),
+                "message": "TrueData cache is empty - main app connection required",
+                "data": status,
                 "timestamp": datetime.now().isoformat()
             }
             
     except Exception as e:
-        logger.error(f"Error reconnecting to TrueData: {e}")
+        logger.error(f"Error checking TrueData cache: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/data/{symbol}")

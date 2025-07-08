@@ -31,8 +31,18 @@ class MarketDataAggregator:
     async def initialize(self, zerodha_integration: Optional[ZerodhaIntegration] = None):
         """Initialize the aggregator"""
         try:
-            # Initialize TrueData connection
-            await self.truedata_feed.connect()
+            # FIXED: Use existing TrueData cache instead of trying to connect
+            # TrueData is already connected and flowing data in the main app
+            from data.truedata_client import live_market_data, is_connected
+            
+            if live_market_data and len(live_market_data) > 0:
+                logger.info(f"✅ TrueData cache available: {len(live_market_data)} symbols")
+                # Set up cache monitoring instead of direct connection
+                self.truedata_feed.cache_data = live_market_data
+                self.truedata_feed.connected = True
+            else:
+                logger.warning("⚠️ TrueData cache is empty - market data not available")
+                self.truedata_feed.connected = False
             
             # Initialize Zerodha if provided
             if zerodha_integration:

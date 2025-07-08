@@ -61,29 +61,19 @@ class SimpleAutonomousTrader:
         try:
             from data.truedata_client import live_market_data, get_truedata_status, is_connected
             
-            # First check connection status
-            if not is_connected():
-                logger.warning("⚠️ TrueData not connected - attempting to connect...")
-                from data.truedata_client import initialize_truedata
-                if not initialize_truedata():
-                    logger.error("❌ Failed to connect to TrueData")
-                    return False
+            # Check if TrueData cache has data instead of trying to connect
+            if not is_connected() or len(live_market_data) == 0:
+                logger.warning("⚠️ TrueData cache is empty - checking cache availability...")
                 
-                # Wait a bit for connection
+                # Wait a bit for cache to populate instead of trying to connect
                 await asyncio.sleep(5)
-            
-            # Check if we have market data
-            if len(live_market_data) == 0:
-                logger.warning("⚠️ No market data available - waiting for data...")
-                # Wait up to 30 seconds for data
-                for i in range(30):
-                    await asyncio.sleep(1)
-                    if len(live_market_data) > 0:
-                        break
                 
+                # Check again after waiting
                 if len(live_market_data) == 0:
-                    logger.error("❌ No market data received after 30 seconds")
+                    logger.error("❌ TrueData cache still empty after waiting")
                     return False
+                else:
+                    logger.info(f"✅ TrueData cache now available: {len(live_market_data)} symbols")
             
             logger.info(f"✅ TrueData working: {len(live_market_data)} symbols")
             return True
