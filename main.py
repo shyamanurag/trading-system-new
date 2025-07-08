@@ -249,15 +249,22 @@ app = FastAPI(
 try:
     cors_origins_env = os.getenv("CORS_ORIGINS", "[]")
     if cors_origins_env == "[]":
-        # Default allowed origins for development and production
+        # Default allowed origins - localhost only in development
         allowed_origins = [
-            "http://localhost:3000",
-            "http://localhost:3001",
-            "http://localhost:8080",
             "https://algoauto-9gx56.ondigitalocean.app",
             "https://algoauto-dashboard.ondigitalocean.app"
         ]
-        logger.info("Using default CORS origins for development/production")
+        
+        # Add localhost URLs only in development
+        if os.getenv("ENVIRONMENT", "development").lower() in ["development", "dev", "local"]:
+            allowed_origins.extend([
+                "http://localhost:3000",
+                "http://localhost:3001", 
+                "http://localhost:8080"
+            ])
+            logger.info("Using development CORS origins (includes localhost)")
+        else:
+            logger.info("Using production CORS origins (no localhost)")
     else:
         # Parse JSON safely instead of using eval()
         import json
