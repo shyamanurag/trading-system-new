@@ -54,19 +54,26 @@ def is_connected() -> bool:
 def get_live_data_for_symbol(symbol: str) -> dict:
     """Get live data for a specific symbol via direct cache access"""
     try:
-        from data.truedata_client import live_market_data
-        
-        # Use symbol mapping to convert NIFTY -> NIFTY-I
-        mapped_symbol = get_truedata_symbol(symbol.upper())
-        logger.debug(f"🔧 Symbol mapping: {symbol} -> {mapped_symbol}")
-        
-        # Get data from live cache
-        symbol_data = live_market_data.get(mapped_symbol, {})
-        
-        if symbol_data:
-            logger.debug(f"📊 Retrieved data for {symbol}: LTP={symbol_data.get('ltp', 'N/A')}")
-        
-        return symbol_data
+        # FIXED: Use correct import path - no src/data directory exists
+        # The working TrueData client is in data/truedata_client.py
+        try:
+            from data.truedata_client import live_market_data
+            data = live_market_data.get(symbol)
+            if data:
+                return data
+        except ImportError as e:
+            logger.error(f"Failed to import TrueData client: {e}")
+            
+        # Fallback: try alternative import paths
+        try:
+            from src.data.truedata_client import get_truedata_client
+            client = get_truedata_client()
+            if client and hasattr(client, 'market_data'):
+                return client.market_data.get(symbol)
+        except ImportError:
+            pass
+            
+        return None
         
     except Exception as e:
         logger.error(f"Error getting live data for {symbol}: {e}")
