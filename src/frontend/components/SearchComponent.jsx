@@ -69,7 +69,7 @@ const SearchComponent = ({
         strategy: '',
         user: ''
     });
-    const [showFilters, setShowFiltersDialog] = useState(false);
+    const [showFilterDialog, setShowFiltersDialog] = useState(false);
     const [selectedTab, setSelectedTab] = useState(0);
     const [showResults, setShowResults] = useState(false);
     const [recentSearches, setRecentSearches] = useState([]);
@@ -576,7 +576,7 @@ const SearchComponent = ({
     const renderFilters = () => {
         return (
             <Dialog
-                open={showFilters}
+                open={showFilterDialog}
                 onClose={() => setShowFiltersDialog(false)}
                 maxWidth="md"
                 fullWidth
