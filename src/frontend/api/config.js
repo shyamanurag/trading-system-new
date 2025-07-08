@@ -31,12 +31,12 @@ const createEndpoint = (path, requiresTrailingSlash = false) => {
 };
 
 export const API_ENDPOINTS = {
-    // Auth endpoints - mounted at /auth, not /api/v1/auth
-    LOGIN: createEndpoint('/auth/login'),
-    REGISTER: createEndpoint('/auth/register'),
-    LOGOUT: createEndpoint('/auth/logout'),
-    REFRESH_TOKEN: createEndpoint('/auth/refresh-token'),
-    USER_PROFILE: createEndpoint('/auth/me'),
+    // Auth endpoints - FIXED: Use /api/auth path to match backend
+    LOGIN: createEndpoint('/api/auth/login'),
+    REGISTER: createEndpoint('/api/auth/register'),
+    LOGOUT: createEndpoint('/api/auth/logout'),
+    REFRESH_TOKEN: createEndpoint('/api/auth/refresh-token'),
+    USER_PROFILE: createEndpoint('/api/auth/me'),
 
     // User endpoints - These use /api/v1/users prefix - FIXED: Added trailing slash
     USERS: createEndpoint('/api/v1/users/', true),
