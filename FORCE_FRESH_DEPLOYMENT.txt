@@ -1,0 +1,12 @@
+CRITICAL: DigitalOcean deployment sync issue detected
+
+Latest local commit: 1e1cc05
+Deployed version appears to be running older code
+
+Evidence:
+- Risk manager returns: risk_manager_not_initialized  
+- Expected: working_minimal_risk_manager_active
+- Missing orchestrator fields: symbol_count, system_ready, strategies_loaded
+
+Required: Fresh deployment to sync latest code with production
+Timestamp: 2025-07-02T07:52:00Z 

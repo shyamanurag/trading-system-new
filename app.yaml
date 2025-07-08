@@ -1,0 +1,403 @@
+name: algoauto
+region: blr
+
+envs:
+- key: VITE_API_URL
+  scope: RUN_AND_BUILD_TIME
+  value: https://algoauto-9gx56.ondigitalocean.app
+- key: VITE_WS_URL
+  scope: RUN_AND_BUILD_TIME
+  value: wss://algoauto-9gx56.ondigitalocean.app/ws
+- key: VITE_APP_NAME
+  scope: RUN_AND_BUILD_TIME
+  value: AlgoAuto Trading
+- key: VITE_APP_VERSION
+  scope: RUN_AND_BUILD_TIME
+  value: 1.0.0
+- key: VITE_APP_ENV
+  scope: RUN_AND_BUILD_TIME
+  value: production
+- key: DATABASE_URL
+  scope: RUN_AND_BUILD_TIME
+  value: postgresql://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb?sslmode=require
+- key: DATABASE_HOST
+  scope: RUN_AND_BUILD_TIME
+  value: app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com
+- key: DATABASE_PORT
+  scope: RUN_AND_BUILD_TIME
+  value: "25060"
+- key: DATABASE_NAME
+  scope: RUN_AND_BUILD_TIME
+  value: defaultdb
+- key: DATABASE_USER
+  scope: RUN_AND_BUILD_TIME
+  value: doadmin
+- key: DATABASE_PASSWORD
+  scope: RUN_AND_BUILD_TIME
+  value: AVNS_LpaPpsdL4CtOii03MnN
+- key: DATABASE_SSL
+  scope: RUN_AND_BUILD_TIME
+  value: require
+- key: REDIS_URL
+  scope: RUN_AND_BUILD_TIME
+  value: rediss://default:AVNS_TSCy17L6f9z0CdWgcvW@redis-cache-do-user-23093341-0.k.db.ondigitalocean.com:25061
+- key: REDIS_HOST
+  scope: RUN_AND_BUILD_TIME
+  value: redis-cache-do-user-23093341-0.k.db.ondigitalocean.com
+- key: REDIS_PORT
+  scope: RUN_AND_BUILD_TIME
+  value: "25061"
+- key: REDIS_PASSWORD
+  scope: RUN_AND_BUILD_TIME
+  value: AVNS_TSCy17L6f9z0CdWgcvW
+- key: REDIS_USERNAME
+  scope: RUN_AND_BUILD_TIME
+  value: default
+- key: REDIS_SSL
+  scope: RUN_AND_BUILD_TIME
+  value: "true"
+- key: REDIS_DB
+  scope: RUN_AND_BUILD_TIME
+  value: "0"
+- key: TRUEDATA_USERNAME
+  scope: RUN_AND_BUILD_TIME
+  value: tdwsp697
+- key: TRUEDATA_PASSWORD
+  scope: RUN_AND_BUILD_TIME
+  value: shyam@697
+- key: TRUEDATA_LIVE_PORT
+  scope: RUN_AND_BUILD_TIME
+  value: "8084"
+- key: TRUEDATA_URL
+  scope: RUN_AND_BUILD_TIME
+  value: push.truedata.in
+- key: TRUEDATA_LOG_LEVEL
+  scope: RUN_AND_BUILD_TIME
+  value: INFO
+- key: TRUEDATA_IS_SANDBOX
+  scope: RUN_AND_BUILD_TIME
+  value: "false"
+- key: TRUEDATA_DATA_TIMEOUT
+  scope: RUN_AND_BUILD_TIME
+  value: "60"
+- key: TRUEDATA_RETRY_ATTEMPTS
+  scope: RUN_AND_BUILD_TIME
+  value: "3"
+- key: TRUEDATA_RETRY_DELAY
+  scope: RUN_AND_BUILD_TIME
+  value: "5"
+- key: TRUEDATA_MAX_CONNECTION_ATTEMPTS
+  scope: RUN_AND_BUILD_TIME
+  value: "3"
+- key: ZERODHA_CLIENT_ID
+  scope: RUN_AND_BUILD_TIME
+  value: QSW899
+- key: ZERODHA_API_KEY
+  scope: RUN_AND_BUILD_TIME
+  value: sylcoq492qz6f7ej
+- key: ZERODHA_API_SECRET
+  scope: RUN_AND_BUILD_TIME
+  value: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
+- key: ZERODHA_USER_ID
+  scope: RUN_AND_BUILD_TIME
+  value: QSW899
+- key: JWT_SECRET
+  scope: RUN_AND_BUILD_TIME
+  value: K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A
+- key: ENCRYPTION_KEY
+  scope: RUN_AND_BUILD_TIME
+  value: lulCrXu3nDX6I18WYuPpWcIrgf2IUGAGLS93ZDwczpQ
+- key: WEBHOOK_SECRET
+  scope: RUN_AND_BUILD_TIME
+  value: wh_sec_K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A_live
+- key: APP_URL
+  scope: RUN_AND_BUILD_TIME
+  value: https://algoauto-9gx56.ondigitalocean.app
+- key: FRONTEND_URL
+  scope: RUN_AND_BUILD_TIME
+  value: https://algoauto-9gx56.ondigitalocean.app
+- key: NODE_ENV
+  scope: RUN_AND_BUILD_TIME
+  value: production
+- key: ENVIRONMENT
+  scope: RUN_AND_BUILD_TIME
+  value: production
+- key: DEBUG
+  scope: RUN_AND_BUILD_TIME
+  value: "false"
+- key: PYTHONPATH
+  scope: RUN_AND_BUILD_TIME
+  value: /app
+- key: CORS_ORIGINS
+  scope: RUN_AND_BUILD_TIME
+  value: '["https://algoauto-9gx56.ondigitalocean.app", "http://localhost:3000", "http://localhost:5173"]'
+- key: ENABLE_CORS
+  scope: RUN_AND_BUILD_TIME
+  value: "true"
+- key: LOG_LEVEL
+  scope: RUN_AND_BUILD_TIME
+  value: DEBUG
+- key: LOG_FORMAT
+  scope: RUN_AND_BUILD_TIME
+  value: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+- key: PAPER_TRADING
+  scope: RUN_AND_BUILD_TIME
+  value: "false"
+- key: PAPER_TRADING_ENABLED
+  scope: RUN_AND_BUILD_TIME
+  value: "false"
+- key: AUTONOMOUS_TRADING_ENABLED
+  scope: RUN_AND_BUILD_TIME
+  value: "true"
+- key: MAX_CONNECTIONS
+  scope: RUN_AND_BUILD_TIME
+  value: "20"
+- key: POOL_SIZE
+  scope: RUN_AND_BUILD_TIME
+  value: "10"
+- key: CACHE_TTL
+  scope: RUN_AND_BUILD_TIME
+  value: "300"
+- key: API_HOST
+  scope: RUN_AND_BUILD_TIME
+  value: 0.0.0.0
+- key: API_PORT
+  scope: RUN_AND_BUILD_TIME
+  value: "8000"
+- key: API_DEBUG
+  scope: RUN_AND_BUILD_TIME
+  value: "true"
+- key: WS_MAX_CONNECTIONS
+  scope: RUN_AND_BUILD_TIME
+  value: "1000"
+- key: WS_HEARTBEAT_INTERVAL
+  scope: RUN_AND_BUILD_TIME
+  value: "30"
+- key: WS_CONNECTION_TIMEOUT
+  scope: RUN_AND_BUILD_TIME
+  value: "60"
+- key: ENABLE_METRICS
+  scope: RUN_AND_BUILD_TIME
+  value: "true"
+- key: ENABLE_HEALTH_CHECKS
+  scope: RUN_AND_BUILD_TIME
+  value: "true"
+- key: HEALTH_CHECK_INTERVAL
+  scope: RUN_AND_BUILD_TIME
+  value: "30"
+- key: ROOT_PATH
+  scope: RUN_AND_BUILD_TIME
+  value: ""
+
+ingress:
+  rules:
+  # API routes - EXPLICIT HIGH PRIORITY
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /api/v1
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /api/market
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /api/websocket
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /api/test
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /api/debug
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /api
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /v1
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /auth
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /docs
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /health
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /webhook
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /control
+  - component:
+      name: api
+    match:
+      path:
+        prefix: /ws
+  # Frontend catch-all - MUST BE LAST
+  - component:
+      name: frontend
+    match:
+      path:
+        prefix: /
+
+services:
+- environment_slug: python
+  envs:
+  - key: PYTHON_VERSION
+    scope: RUN_AND_BUILD_TIME
+    value: 3.11.2
+  - key: PIP_REQUIREMENTS
+    scope: RUN_AND_BUILD_TIME
+    value: |-
+      fastapi>=0.104.1
+      uvicorn[standard]>=0.24.0
+      gunicorn==21.2.0
+      pydantic>=2.11.7
+      pydantic-settings>=2.0.0
+      python-jose>=3.3.0
+      python-multipart==0.0.6
+      passlib[bcrypt]==1.7.4
+      PyJWT>=2.3.0
+      jinja2>=3.0.0
+      redis>=5.0.1
+      psycopg2-binary>=2.9.9
+      sqlalchemy>=2.0.23
+      alembic>=1.13.1
+      asyncpg>=0.27.0
+      httpx>=0.25.2
+      aiohttp>=3.9.1
+      websockets>=12.0
+      aiofiles==23.2.1
+      requests==2.31.0
+      truedata>=7.0.0
+      pandas>=2.1.4
+      numpy>=1.24.3
+      scikit-learn==1.3.2
+      scipy==1.11.4
+      prometheus-client>=0.19.0
+      psutil>=5.9.6
+      python-dotenv>=1.0.0
+      structlog>=23.2.0
+      rich>=13.7.0
+      pyyaml>=6.0.1
+      bcrypt>=4.0.1
+      cryptography>=41.0.7
+      pytest>=7.0.0
+      pytest-asyncio>=0.21.0
+      black==23.11.0
+      flake8==6.1.0
+      aiosmtplib==3.0.1
+      twilio==8.11.0
+      kiteconnect>=4.2.0
+      yfinance>=0.2.28
+      python-slugify==8.0.1
+      pillow==10.1.0
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: shyamanurag/trading-system-new
+  health_check:
+    failure_threshold: 3
+    http_path: /ready
+    initial_delay_seconds: 40
+    period_seconds: 10
+    success_threshold: 2
+    timeout_seconds: 5
+  http_port: 8000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-1gb
+  name: api
+  run_command: |
+    gunicorn main:app \
+      --workers 1 \
+      --worker-class uvicorn.workers.UvicornWorker \
+      --bind 0.0.0.0:${PORT:-8000} \
+      --timeout 120 \
+      --access-logfile - \
+      --error-logfile -
+  source_dir: /
+
+static_sites:
+- build_command: |
+    npm ci && npm run build
+  catchall_document: index.html
+  environment_slug: node-js
+  envs:
+  - key: VITE_API_URL
+    scope: BUILD_TIME
+    value: https://algoauto-9gx56.ondigitalocean.app
+  - key: VITE_APP_NAME
+    scope: BUILD_TIME
+    value: AlgoAuto Trading
+  - key: VITE_APP_VERSION
+    scope: BUILD_TIME
+    value: 1.0.0
+  - key: VITE_APP_ENV
+    scope: BUILD_TIME
+    value: production
+  - key: VITE_WS_URL
+    scope: BUILD_TIME
+    value: wss://algoauto-9gx56.ondigitalocean.app/ws
+  - key: VITE_ZERODHA_API_KEY
+    scope: BUILD_TIME
+    value: sylcoq492qz6f7ej
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: shyamanurag/trading-system-new
+  name: frontend
+  output_dir: dist
+  source_dir: /src/frontend
+
+env_variables:
+  # Database Configuration
+  DATABASE_URL: postgresql://algoauto:XXXX@db-postgresql-sgp1-23093341-do-user-23093341-0.k.db.ondigitalocean.com:25060/algoauto
+  REDIS_URL: redis://default:XXXX@redis-cache-do-user-23093341-0.k.db.ondigitalocean.com:25061
+
+  # Zerodha Configuration
+  ZERODHA_API_KEY: sylcoq492qz6f7ej
+  ZERODHA_API_SECRET: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
+  ZERODHA_USER_ID: QSW899
+
+  # TrueData Configuration
+  TRUEDATA_USERNAME: tdwsp697
+  TRUEDATA_PASSWORD: shyam@697
+  
+  # DEPLOYMENT OVERLAP SOLUTION - Prevents "User Already Connected" errors
+  # Set to 'true' if experiencing TrueData connection issues during deployments
+  # This skips auto-initialization and allows manual connection via API
+  SKIP_TRUEDATA_AUTO_INIT: 'false'
+
+  # Application Configuration
+  ENVIRONMENT: production
+  APP_URL: https://algoauto-9gx56.ondigitalocean.app
+  DEBUG: false
+  LOG_LEVEL: INFO
+
+  # Security
+  JWT_SECRET: your-super-secret-jwt-key-change-in-production
+  API_RATE_LIMIT: 1000 

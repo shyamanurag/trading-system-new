@@ -1,0 +1,31 @@
+DEPLOYMENT TRIGGER: Backend Fixes
+==================================
+
+Date: 2025-07-03
+Time: 02:45 UTC
+
+Changes Committed:
+------------------
+1. All backend fixes are already in the codebase
+2. ProductionRiskManager has get_risk_metrics method
+3. Orchestrator-debug uses correct attribute names (zerodha_client, is_running)
+4. Elite recommendations router mounted at /api/v1/elite
+5. Direct endpoints for positions, orders, holdings, margins exist
+6. Market data endpoint fixed
+
+Expected Results After Deployment:
+---------------------------------
+- /api/system/orchestrator-debug should show true values
+- /api/risk/metrics should return 200 (not 500)
+- /api/elite/recommendations should return 200 with recommendations
+- /api/positions, /api/orders, /api/holdings, /api/margins should return 200
+- All 5 strategies should load
+
+Deployment Status:
+-----------------
+- Commit: 1264c1a
+- Push completed successfully
+- Deployment should be in progress
+
+Test after deployment completes with:
+node verify_backend_fixes.js 
