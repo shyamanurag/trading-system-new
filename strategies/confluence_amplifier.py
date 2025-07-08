@@ -33,21 +33,29 @@ class ConfluenceAmplifier(BaseStrategy):
         }
         
     async def on_market_data(self, data: Dict):
-        """Handle incoming market data and process confluence - FIXED"""
+        """Handle incoming market data and generate signals"""
         if not self.is_active:
             return
             
         try:
-            # Clean up old signals
-            self._cleanup_old_signals()
-            
-            # Check for signal confluence if we have enough recent signals
-            if len(self.signal_history) >= 2:
-                confluent_signals = self._analyze_confluence(data)
+            # Check SCALPING cooldown
+            if not self._is_scalping_cooldown_passed():
+                return
                 
-                if confluent_signals:
-                    await self._execute_confluent_trades(confluent_signals)
-                    
+            # Process market data and generate signals
+            signals = self._generate_signals(data)
+            
+            # CRITICAL FIX: Store signals in current_positions IMMEDIATELY for orchestrator
+            for signal in signals:
+                self.current_positions[signal['symbol']] = signal
+                logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
+                           f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
+            
+            # Execute trades based on signals (backup method)
+            if signals:
+                await self._execute_trades(signals)
+                self.last_signal_time = datetime.now()
+                
         except Exception as e:
             logger.error(f"Error in {self.name} strategy: {str(e)}")
     

@@ -94,41 +94,31 @@ class RegimeAdaptiveController:
         return True
     
     async def on_market_data(self, data: Dict):
-        """Process market data and update regime - FIXED for single data points"""
-        try:
-            if not data:
-                return
+        """Handle incoming market data and generate signals"""
+        if not self.is_active:
+            return
             
-            # Convert dictionary data to list format and accumulate historical data
-            for symbol, symbol_data in data.items():
-                if isinstance(symbol_data, dict) and 'close' in symbol_data:
-                    data_point = {
-                        'symbol': symbol,
-                        'close': symbol_data.get('close', 0),
-                        'high': symbol_data.get('high', symbol_data.get('close', 0)),
-                        'low': symbol_data.get('low', symbol_data.get('close', 0)),
-                        'volume': symbol_data.get('volume', 0),
-                        'timestamp': datetime.now()
-                    }
-                    
-                    # Focus on NIFTY for regime detection
-                    if 'NIFTY' in symbol:
-                        # Add to historical data
-                        self.historical_data.append(data_point)
-                        
-                        # Trim history if needed
-                        if len(self.historical_data) > self.max_history:
-                            self.historical_data.pop(0)
-                        
-                        # Update regime if we have enough data
-                        if len(self.historical_data) >= 2:  # Need at least 2 points for analysis
-                            await self.update_regime()
+        try:
+            # Check SCALPING cooldown
+            if not self._is_scalping_cooldown_passed():
+                return
                 
-                # Log regime status
-                logger.debug(f"Regime Controller: Current regime is {self.current_regime.value}")
+            # Process market data and generate signals
+            signals = self._generate_signals(data)
+            
+            # CRITICAL FIX: Store signals in current_positions IMMEDIATELY for orchestrator
+            for signal in signals:
+                self.current_positions[signal['symbol']] = signal
+                logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
+                           f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
+            
+            # Execute trades based on signals (backup method)
+            if signals:
+                await self._execute_trades(signals)
+                self.last_signal_time = datetime.now()
                 
         except Exception as e:
-            logger.error(f"Error processing market data in regime controller: {e}")
+            logger.error(f"Error in {self.name} strategy: {str(e)}")
         
     async def update_regime(self) -> MarketRegime:
         """Update market regime based on accumulated historical data - FIXED"""

@@ -50,7 +50,13 @@ class EnhancedMomentumSurfer(BaseStrategy):
             # Process market data and generate signals
             signals = self._generate_signals(data)
             
-            # Execute trades based on signals
+            # CRITICAL FIX: Store signals in current_positions IMMEDIATELY for orchestrator
+            for signal in signals:
+                self.current_positions[signal['symbol']] = signal
+                logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
+                           f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
+            
+            # Execute trades based on signals (backup method)
             if signals:
                 await self._execute_trades(signals)
                 self.last_signal_time = datetime.now()
