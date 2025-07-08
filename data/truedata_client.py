@@ -341,10 +341,28 @@ class TrueDataClient:
         def on_tick_data(tick_data):
             """Process tick data from TrueData with Redis caching"""
             try:
+                # DEBUG: Log all available attributes to find correct change percent field
+                if hasattr(tick_data, '__dict__'):
+                    attrs = {k: v for k, v in tick_data.__dict__.items() if not k.startswith('_')}
+                    logger.debug(f"📊 Tick data attributes: {attrs}")
+                else:
+                    attrs = dir(tick_data)
+                    logger.debug(f"📊 Tick data dir: {[attr for attr in attrs if not attr.startswith('_')]}")
+                
                 # Extract symbol and data
                 symbol = getattr(tick_data, 'symbol', 'UNKNOWN')
                 ltp = getattr(tick_data, 'ltp', 0)
                 volume = getattr(tick_data, 'volume', 0) or getattr(tick_data, 'ttq', 0)
+                
+                # Try different possible names for change percentage
+                change_percent = (
+                    getattr(tick_data, 'changeper', None) or
+                    getattr(tick_data, 'change_percent', None) or
+                    getattr(tick_data, 'changepercent', None) or
+                    getattr(tick_data, 'pchange', None) or
+                    getattr(tick_data, 'percent_change', None) or
+                    0
+                )
                 
                 # Enhanced data structure for strategies
                 market_data = {
@@ -357,8 +375,8 @@ class TrueDataClient:
                     'low': getattr(tick_data, 'low', ltp),
                     'close': ltp,
                     'change': getattr(tick_data, 'change', 0),
-                    'changeper': getattr(tick_data, 'changeper', 0),
-                    'change_percent': getattr(tick_data, 'changeper', 0),
+                    'changeper': change_percent,
+                    'change_percent': change_percent,  # FIX: Use discovered change percent
                     'bid': getattr(tick_data, 'bid', 0),
                     'ask': getattr(tick_data, 'ask', 0),
                     'source': 'TrueData_Live',

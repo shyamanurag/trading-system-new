@@ -57,21 +57,32 @@ class DatabaseConfig:
         self._setup_postgres_config()
     
     def _setup_redis_config(self):
-        """Setup Redis connection configuration"""
+        """Setup Redis connection configuration with SSL support"""
         try:
             parsed = urlparse(self.redis_url)
+            
+            # Check if SSL is required (DigitalOcean Redis)
+            ssl_required = 'ondigitalocean.com' in self.redis_url or self.redis_url.startswith('rediss://')
+            
             self.redis_config = {
                 'host': parsed.hostname or 'localhost',
                 'port': parsed.port or 6379,
                 'password': parsed.password,
                 'db': int(parsed.path[1:]) if parsed.path and len(parsed.path) > 1 else 0,
                 'decode_responses': True,
-                'socket_timeout': 5,
-                'socket_connect_timeout': 5,
+                'socket_timeout': 10,
+                'socket_connect_timeout': 10,
                 'retry_on_timeout': True,
-                'health_check_interval': 30
+                'health_check_interval': 30,
+                'ssl': ssl_required,
+                'ssl_cert_reqs': None if ssl_required else 'required',
+                'ssl_check_hostname': False if ssl_required else True,
+                'ssl_ca_certs': None,
+                'ssl_keyfile': None,
+                'ssl_certfile': None
             }
-            logger.info(f"Redis configured for: {self.redis_config['host']}:{self.redis_config['port']}")
+            
+            logger.info(f"Redis configured for: {self.redis_config['host']}:{self.redis_config['port']} (SSL: {ssl_required})")
         except Exception as e:
             logger.error(f"Error parsing Redis URL: {e}")
             self.redis_config = {
