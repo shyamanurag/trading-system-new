@@ -32,8 +32,17 @@ class OrderManager:
             port=config['redis']['port'],
             db=config['redis']['db']
         )
+        
+        # Initialize dependencies for RiskManager
+        from src.events import EventBus
+        from src.core.position_tracker import ProductionPositionTracker
+        
+        self.event_bus = EventBus()
+        self.position_tracker = ProductionPositionTracker()
+        
+        # Initialize components with proper dependencies
         self.user_tracker = UserTracker(config)
-        self.risk_manager = RiskManager(config)
+        self.risk_manager = RiskManager(config, self.position_tracker, self.event_bus)
         self.notification_manager = NotificationManager(config)
         self.trade_allocator = TradeAllocator(config)
         self.system_evolution = SystemEvolution(config)

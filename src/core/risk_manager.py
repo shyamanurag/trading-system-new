@@ -497,7 +497,7 @@ class RiskManager:
 
     def _setup_event_handlers(self):
         """Setup event subscriptions"""
-        self.event_bus.subscribe(EventType.POSITION_OPENED, self._handle_position_opened)
+        self.event_bus.subscribe(EventType.POSITION_ADDED, self._handle_position_opened)
         self.event_bus.subscribe(EventType.POSITION_CLOSED, self._handle_position_closed)
         self.event_bus.subscribe(EventType.POSITION_UPDATED, self._handle_position_updated)
 
