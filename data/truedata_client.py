@@ -353,6 +353,7 @@ class TrueDataClient:
                 symbol = getattr(tick_data, 'symbol', 'UNKNOWN')
                 ltp = getattr(tick_data, 'ltp', 0)
                 volume = getattr(tick_data, 'volume', 0) or getattr(tick_data, 'ttq', 0)
+                change = getattr(tick_data, 'change', 0)
                 
                 # Try different possible names for change percentage
                 change_percent = (
@@ -360,9 +361,20 @@ class TrueDataClient:
                     getattr(tick_data, 'change_percent', None) or
                     getattr(tick_data, 'changepercent', None) or
                     getattr(tick_data, 'pchange', None) or
-                    getattr(tick_data, 'percent_change', None) or
-                    0
+                    getattr(tick_data, 'percent_change', None)
                 )
+                
+                # CRITICAL FIX: Calculate change_percent manually if not available or zero
+                if not change_percent or change_percent == 0:
+                    if ltp > 0 and change != 0:
+                        previous_price = ltp - change
+                        if previous_price > 0:
+                            change_percent = (change / previous_price) * 100
+                            logger.debug(f"📊 Calculated {symbol}: {change_percent:.2f}% from change={change}, ltp={ltp}")
+                        else:
+                            change_percent = 0
+                    else:
+                        change_percent = 0
                 
                 # Enhanced data structure for strategies
                 market_data = {
@@ -374,7 +386,7 @@ class TrueDataClient:
                     'high': getattr(tick_data, 'high', ltp),
                     'low': getattr(tick_data, 'low', ltp),
                     'close': ltp,
-                    'change': getattr(tick_data, 'change', 0),
+                    'change': change,
                     'changeper': change_percent,
                     'change_percent': change_percent,  # FIX: Use discovered change percent
                     'bid': getattr(tick_data, 'bid', 0),
