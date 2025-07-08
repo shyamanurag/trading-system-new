@@ -1226,6 +1226,31 @@ class TradingOrchestrator:
             self.logger.error(f"Error checking market hours: {e}")
             return True  # Default to open to avoid blocking trading
 
+    def _can_start_trading(self) -> bool:
+        """Check if trading can be started - MISSING METHOD FIX"""
+        try:
+            # Check if system is initialized
+            if not self.is_initialized:
+                return False
+            
+            # Check if market is open
+            if not self._is_market_open():
+                return False
+            
+            # Check if required components are available
+            if not self.strategies:
+                return False
+            
+            # Check if market data is available
+            if not self.components.get('market_data', False):
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error checking if can start trading: {e}")
+            return False
+
 # Global orchestrator instance
 orchestrator = TradingOrchestrator()
 
