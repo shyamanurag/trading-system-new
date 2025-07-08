@@ -43,21 +43,46 @@ class TradeEngine:
             try:
                 from src.core.order_manager import OrderManager
                 from database_manager import get_database_operations
+                import os
                 
-                # Create minimal config for OrderManager
+                # Create proper production config for OrderManager
+                redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+                
                 config = {
                     'redis': {
-                        'host': 'localhost',
-                        'port': 6379,
-                        'db': 0
+                        'host': os.getenv('REDIS_HOST', 'localhost'),
+                        'port': int(os.getenv('REDIS_PORT', '6379')),
+                        'db': int(os.getenv('REDIS_DB', '0')),
+                        'password': os.getenv('REDIS_PASSWORD'),
+                        'ssl': os.getenv('REDIS_SSL', 'false').lower() == 'true'
+                    },
+                    'redis_url': redis_url,  # For UserTracker compatibility
+                    'database': {
+                        'url': os.getenv('DATABASE_URL', 'sqlite:///trading.db')
+                    },
+                    'trading': {
+                        'max_daily_loss': 100000,
+                        'max_position_size': 1000000,
+                        'risk_per_trade': 0.02
+                    },
+                    'notifications': {
+                        'enabled': True,
+                        'email_alerts': False,
+                        'sms_alerts': False
                     }
                 }
                 
+                # Log the config being used (without sensitive data)
+                self.logger.info(f"OrderManager config - Redis URL: {redis_url.split('@')[0] if '@' in redis_url else redis_url}")
+                self.logger.info(f"OrderManager config - Database: {config['database']['url'].split('@')[0] if '@' in config['database']['url'] else 'local'}")
+                
+                # Initialize OrderManager with proper production config
                 self.order_manager = OrderManager(config)
-                self.logger.info("✅ OrderManager initialized for trade engine")
+                self.logger.info("OrderManager initialized successfully with production config")
                 
             except Exception as e:
-                self.logger.warning(f"⚠️ OrderManager initialization failed: {e}")
+                self.logger.error(f"OrderManager initialization failed: {e}")
+                self.logger.info("Continuing without OrderManager - will use fallback method")
                 self.order_manager = None
             
             self.is_initialized = True
