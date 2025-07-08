@@ -283,7 +283,7 @@ class TrueDataClient:
             return symbols
 
     def _setup_callback(self):
-        """Setup data callback with enhanced error handling"""
+        """Setup data callback with enhanced error handling and cross-process sharing"""
         @self.td_obj.trade_callback
         def on_tick_data(tick_data):
             try:
@@ -312,7 +312,7 @@ class TrueDataClient:
                 open_price = getattr(tick_data, 'day_open', ltp) or ltp
 
                 # Store clean data with deployment ID
-                live_market_data[symbol] = {
+                symbol_data = {
                     'symbol': symbol,
                     'ltp': float(ltp) if ltp else 0.0,
                     'volume': int(volume) if volume else 0,
@@ -322,6 +322,30 @@ class TrueDataClient:
                     'timestamp': datetime.now().isoformat(),
                     'deployment_id': self._deployment_id
                 }
+                
+                live_market_data[symbol] = symbol_data
+
+                # CRITICAL FIX: Export to file for cross-process access
+                try:
+                    cache_file = "/tmp/truedata_cache.json" if os.name != 'nt' else "C:/temp/truedata_cache.json"
+                    os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+                    
+                    # Write cache every 10 symbols to avoid excessive I/O
+                    if len(live_market_data) % 10 == 0:
+                        with open(cache_file, 'w') as f:
+                            import json
+                            json.dump(live_market_data, f)
+                except Exception as e:
+                    pass  # Don't let file I/O break the main callback
+
+                # Export to Redis if available
+                try:
+                    import redis
+                    r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+                    import json
+                    r.setex('truedata_live_cache', 300, json.dumps(live_market_data))  # 5 min expiry
+                except Exception as e:
+                    pass  # Don't let Redis break the main callback
 
                 # Selective logging to avoid spam
                 if symbol in ['NIFTY-I', 'BANKNIFTY-I'] or volume > 0:
@@ -330,7 +354,7 @@ class TrueDataClient:
             except Exception as e:
                 logger.error(f"❌ Tick callback error: {e}")
 
-        logger.info("✅ Data callback setup completed")
+        logger.info("✅ Data callback setup completed with cross-process sharing")
 
     def get_status(self):
         """Get comprehensive status including deployment info"""

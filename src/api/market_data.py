@@ -9,6 +9,7 @@ from fastapi import APIRouter, Query, HTTPException, Depends
 from typing import Optional, List
 import sys
 import os
+import json
 sys.path.insert(0, os.path.abspath('.'))
 
 # Import symbol mapping for TrueData
@@ -95,30 +96,84 @@ def get_all_live_market_data() -> dict:
 
 @router.get("")
 async def get_market_data():
-    """Get all market data with direct cache bridge"""
+    """Get all market data with multiple bridge strategies"""
     try:
-        # CRITICAL FIX: Use direct bridge to populated TrueData cache
+        # Strategy 1: Direct cache bridge (already tried)
         if TRUEDATA_BRIDGE_AVAILABLE and truedata_cache:
-            logger.info(f"📊 Direct cache access: {len(truedata_cache)} symbols available")
-            
-            return {
-                "success": True,
-                "symbols_count": len(truedata_cache),
-                "data": truedata_cache,
-                "source": "direct_truedata_cache_bridge",
-                "timestamp": datetime.now().isoformat(),
-                "note": "Using direct bridge to populated TrueData cache"
-            }
+            logger.info(f"📊 Strategy 1 - Direct cache: {len(truedata_cache)} symbols")
+            if len(truedata_cache) > 0:
+                return {
+                    "success": True,
+                    "symbols_count": len(truedata_cache),
+                    "data": truedata_cache,
+                    "source": "direct_cache_bridge",
+                    "timestamp": datetime.now().isoformat()
+                }
         
-        # Fallback to original method if bridge fails
-        logger.warning("⚠️ Direct cache bridge not available, using fallback")
+        # Strategy 2: File-based cache bridge (new)
+        cache_file = "/tmp/truedata_cache.json" if os.name != 'nt' else "C:/temp/truedata_cache.json"
+        try:
+            if os.path.exists(cache_file):
+                with open(cache_file, 'r') as f:
+                    file_cache = json.loads(f.read())
+                    logger.info(f"📊 Strategy 2 - File cache: {len(file_cache)} symbols")
+                    if len(file_cache) > 0:
+                        return {
+                            "success": True,
+                            "symbols_count": len(file_cache),
+                            "data": file_cache,
+                            "source": "file_cache_bridge",
+                            "timestamp": datetime.now().isoformat()
+                        }
+        except Exception as e:
+            logger.warning(f"File cache failed: {e}")
+        
+        # Strategy 3: Redis cache bridge (if available)
+        try:
+            import redis
+            r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+            redis_data = r.get('truedata_live_cache')
+            if redis_data:
+                redis_cache = json.loads(redis_data)
+                logger.info(f"📊 Strategy 3 - Redis cache: {len(redis_cache)} symbols")
+                if len(redis_cache) > 0:
+                    return {
+                        "success": True,
+                        "symbols_count": len(redis_cache),
+                        "data": redis_cache,
+                        "source": "redis_cache_bridge",
+                        "timestamp": datetime.now().isoformat()
+                    }
+        except Exception as e:
+            logger.warning(f"Redis cache failed: {e}")
+        
+        # Strategy 4: HTTP bridge to TrueData process (if running separately)
+        try:
+            import requests
+            bridge_response = requests.get('http://localhost:8001/truedata-bridge', timeout=2)
+            if bridge_response.status_code == 200:
+                http_cache = bridge_response.json()
+                logger.info(f"📊 Strategy 4 - HTTP bridge: {len(http_cache)} symbols")
+                if len(http_cache) > 0:
+                    return {
+                        "success": True,
+                        "symbols_count": len(http_cache),
+                        "data": http_cache,
+                        "source": "http_bridge",
+                        "timestamp": datetime.now().isoformat()
+                    }
+        except Exception as e:
+            logger.warning(f"HTTP bridge failed: {e}")
+        
+        # All strategies failed
+        logger.error("🚨 ALL BRIDGE STRATEGIES FAILED - TrueData cache not accessible")
         return {
             "success": False,
             "symbols_count": 0,
             "data": {},
-            "source": "fallback_no_cache",
+            "source": "all_bridges_failed",
             "timestamp": datetime.now().isoformat(),
-            "error": "TrueData cache bridge not available"
+            "error": "Cannot access TrueData cache - process isolation issue"
         }
         
     except Exception as e:
