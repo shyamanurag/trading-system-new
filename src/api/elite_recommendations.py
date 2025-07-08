@@ -80,13 +80,31 @@ class AutonomousEliteScanner:
             return {}
 
     async def scan_for_elite_setups(self):
-        """Scan using the ACTUAL 6 strategies - exactly like the orchestrator"""
+        """Scan using the ACTUAL 6 strategies - FIXED: Don't consume signals from main orchestrator"""
         try:
-            # Initialize strategies if not already done
-            if not self.strategies:
-                await self.initialize_strategies()
+            # CRITICAL FIX: Use shared strategies from orchestrator instead of separate instances
+            try:
+                from src.core.orchestrator import get_orchestrator
+                orchestrator = await get_orchestrator()
                 
-            if not self.strategies:
+                if orchestrator and hasattr(orchestrator, 'strategies') and orchestrator.strategies:
+                    # Use the SAME strategy instances as the main orchestrator
+                    shared_strategies = orchestrator.strategies
+                    logger.info(f"🔗 Using shared strategies from orchestrator: {len(shared_strategies)} strategies")
+                else:
+                    # Fallback to separate instances if orchestrator not available
+                    if not self.strategies:
+                        await self.initialize_strategies()
+                    shared_strategies = self.strategies
+                    logger.info(f"⚠️ Using separate strategy instances: {len(shared_strategies)} strategies")
+                    
+            except Exception as e:
+                logger.error(f"Error accessing orchestrator strategies: {e}")
+                if not self.strategies:
+                    await self.initialize_strategies()
+                shared_strategies = self.strategies
+                
+            if not shared_strategies:
                 logger.error("No strategies available for elite recommendations")
                 return []
             
@@ -96,20 +114,24 @@ class AutonomousEliteScanner:
                 logger.warning("No market data available for elite scan")
                 return []
             
-            logger.info(f"🔍 Elite scan using {len(self.strategies)} REAL strategies on {len(market_data)} symbols")
+            logger.info(f"🔍 Elite scan using {len(shared_strategies)} REAL strategies on {len(market_data)} symbols")
             
             # Transform market data for strategies (same as orchestrator)
             transformed_data = self._transform_market_data_for_strategies(market_data)
             
-            # Collect all signals from all strategies (EXACTLY like orchestrator)
+            # Collect all signals from all strategies - FIXED: Don't clear signals
             all_signals = []
             
-            for strategy_name, strategy in self.strategies.items():
+            for strategy_name, strategy_info in shared_strategies.items():
                 try:
-                    # Call strategy's on_market_data method with transformed data
-                    await strategy.on_market_data(transformed_data)
+                    # Get strategy instance
+                    strategy = strategy_info.get('instance') if isinstance(strategy_info, dict) else strategy_info
                     
-                    # Get signals from strategy's current_positions (EXACTLY like orchestrator)
+                    if not strategy:
+                        logger.warning(f"No strategy instance for {strategy_name}")
+                        continue
+                    
+                    # FIXED: Read signals WITHOUT clearing them (let orchestrator handle clearing)
                     signals_generated = 0
                     if hasattr(strategy, 'current_positions'):
                         for symbol, signal in strategy.current_positions.items():
@@ -119,12 +141,13 @@ class AutonomousEliteScanner:
                                 
                                 # Filter by confidence
                                 if signal.get('confidence', 0) >= self.min_confidence:
-                                    all_signals.append(signal)
+                                    # CRITICAL FIX: Copy signal instead of consuming it
+                                    all_signals.append(signal.copy())
                                     signals_generated += 1
-                                    logger.info(f"✅ ELITE SIGNAL: {strategy_name} -> {signal['symbol']} {signal['action']}")
+                                    logger.info(f"✅ ELITE SIGNAL COPIED: {strategy_name} -> {signal['symbol']} {signal['action']}")
                                 
-                                # Clear the signal to avoid duplicates (same as orchestrator)
-                                strategy.current_positions[symbol] = None
+                                # FIXED: DON'T clear the signal - let orchestrator handle it
+                                # strategy.current_positions[symbol] = None  # REMOVED THIS LINE
                     
                     if signals_generated == 0:
                         logger.info(f"📝 {strategy_name}: No elite signals generated")
@@ -142,6 +165,7 @@ class AutonomousEliteScanner:
             
             self.last_scan_time = datetime.now()
             logger.info(f"🎯 Elite scan completed: {len(elite_recommendations)} recommendations from {len(all_signals)} real strategy signals")
+            logger.info(f"🔄 Signals preserved for main orchestrator to execute trades")
             
             return elite_recommendations
             
