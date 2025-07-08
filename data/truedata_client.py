@@ -358,6 +358,7 @@ class TrueDataClient:
                     'close': ltp,
                     'change': getattr(tick_data, 'change', 0),
                     'changeper': getattr(tick_data, 'changeper', 0),
+                    'change_percent': getattr(tick_data, 'changeper', 0),
                     'bid': getattr(tick_data, 'bid', 0),
                     'ask': getattr(tick_data, 'ask', 0),
                     'source': 'TrueData_Live',
