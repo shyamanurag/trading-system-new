@@ -450,8 +450,8 @@ class TrueDataClient:
                 # CRITICAL: Also store in Redis for cross-process access
                 if redis_client:
                     try:
-                        # Store individual symbol data
-                        redis_client.hset(f"truedata:symbol:{symbol}", mapping=market_data)
+                        # Store individual symbol data (JSON serialized to handle nested dicts)
+                        redis_client.set(f"truedata:symbol:{symbol}", json.dumps(market_data))
                         redis_client.expire(f"truedata:symbol:{symbol}", 300)  # 5 minutes
                         
                         # Store in combined cache

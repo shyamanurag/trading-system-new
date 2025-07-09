@@ -1,12 +1,45 @@
-CRITICAL: DigitalOcean deployment sync issue detected
+🚨 CRITICAL: FORCE REDEPLOY WITH CACHE CLEARING REQUIRED
+=======================================================
 
-Latest local commit: 1e1cc05
-Deployed version appears to be running older code
+Timestamp: 2025-07-09 10:10:00 IST
+Issue: REDIS STORAGE ERROR blocking all market data flow
+Priority: EMERGENCY - IMMEDIATE ACTION REQUIRED
 
-Evidence:
-- Risk manager returns: risk_manager_not_initialized  
-- Expected: working_minimal_risk_manager_active
-- Missing orchestrator fields: symbol_count, system_ready, strategies_loaded
+🔥 DEPLOYED SYSTEM STILL SHOWING OLD CODE:
+==========================================
+❌ Redis storage error: Invalid input of type: 'dict'. Convert to a bytes, string, int or float first.
+❌ This error affects ALL 51 symbols in deployment logs
+❌ Market data pipeline completely blocked
+❌ Zero trades because strategies get no data
 
-Required: Fresh deployment to sync latest code with production
-Timestamp: 2025-07-02T07:52:00Z 
+🎯 ROOT CAUSE:
+==============
+- Deployed code still has old Redis storage method: `hset(mapping=market_data)`
+- Fixed code uses JSON serialization: `set(json.dumps(market_data))`
+- Caching preventing latest commits from deploying
+- Need FORCE REDEPLOY WITH CACHE CLEARING
+
+✅ FIXES READY IN LATEST COMMITS:
+=================================
+1. Transformation bug fix (orchestrator.py) - Commit: fd2802e
+2. Redis serialization fix needed (pending deployment)
+3. Strategy optimization analysis completed
+
+🚀 DEPLOYMENT INSTRUCTIONS:
+============================
+1. CLEAR ALL DEPLOYMENT CACHES
+2. FORCE REBUILD FROM LATEST MAIN BRANCH
+3. ENSURE COMMIT fd2802e IS DEPLOYED
+4. VERIFY Redis errors are eliminated
+
+📋 POST-DEPLOYMENT VERIFICATION:
+===============================
+1. Check logs for "Redis storage error" - should be ZERO
+2. Verify /api/v1/market-data returns 200 (not 404)
+3. Check /api/v1/autonomous/status shows total_trades > 0
+4. Confirm 51 symbols flowing without Redis errors
+
+DEPLOYMENT COMMAND: FORCE REDEPLOY WITH CACHE CLEAR
+BRANCH: main
+COMMIT: fd2802e (transformation fix) + Redis serialization fix
+STATUS: EMERGENCY - CLEAR CACHE AND REDEPLOY NOW 
