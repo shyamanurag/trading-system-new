@@ -1184,7 +1184,10 @@ async def force_activate_autonomous_trading():
         logger.info("🚨 EMERGENCY FIX: Force activating autonomous trading...")
         
         # Get orchestrator instance and force it to be active
-        from src.core.orchestrator import orchestrator
+        from src.core.orchestrator import get_orchestrator
+        
+        # Get the orchestrator instance
+        orchestrator = await get_orchestrator()
         
         # Force all required flags to be active
         orchestrator.is_running = True
