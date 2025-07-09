@@ -201,16 +201,20 @@ async def lifespan(app: FastAPI):
         logger.info("🚀 Initializing Trading Orchestrator...")
         from src.core.orchestrator import TradingOrchestrator, set_orchestrator_instance
         
-        # Create and initialize the orchestrator singleton
-        orchestrator = await TradingOrchestrator.get_instance()
+        # Create orchestrator instance directly (bypass get_instance method)
+        logger.info("🔧 Creating orchestrator instance directly...")
+        orchestrator = TradingOrchestrator()
         
-        if orchestrator:
+        # Initialize the orchestrator
+        init_success = await orchestrator.initialize()
+        
+        if init_success and orchestrator:
             # Store the instance globally for API access
             set_orchestrator_instance(orchestrator)
             logger.info("✅ Trading Orchestrator initialized successfully!")
             logger.info("🎯 Autonomous trading endpoints should now work")
         else:
-            logger.error("❌ Failed to create orchestrator instance")
+            logger.error("❌ Failed to initialize orchestrator instance")
             logger.info("🔄 API will use fallback mode")
             
     except Exception as e:
