@@ -367,90 +367,14 @@ class TradeEngine:
             'order_manager_available': self.order_manager is not None
         }
 
-class ProductionPositionTracker:
-    """Production-level position tracker with proper error handling"""
-    
-    def __init__(self, redis_client=None):
-        self.redis_client = redis_client
-        self.positions = {}
-        self.logger = logging.getLogger(__name__)
-        
-    async def initialize(self) -> bool:
-        """Initialize position tracker"""
-        try:
-            if self.redis_client:
-                await self.redis_client.ping()
-                self.logger.info("Position tracker initialized with Redis")
-            else:
-                self.logger.info("Position tracker initialized without Redis")
-            return True
-        except Exception as e:
-            self.logger.error(f"Position tracker initialization failed: {e}")
-            return False
-    
-    async def update_position(self, symbol: str, quantity: int, price: float) -> bool:
-        """Update position for symbol"""
-        try:
-            self.positions[symbol] = {
-                'quantity': quantity,
-                'price': price,
-                'timestamp': datetime.now()
-            }
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to update position for {symbol}: {e}")
-            return False
-    
-    async def get_position(self, symbol: str) -> Dict[str, Any]:
-        """Get position for symbol"""
-        return self.positions.get(symbol, {'quantity': 0, 'price': 0.0})
-    
-    async def get_all_positions(self) -> Dict[str, Any]:
-        """Get all positions"""
-        return self.positions.copy()
-
-class ProductionEventBus:
-    """Production-level event bus for component communication"""
-    
-    def __init__(self):
-        self.subscribers = {}
-        self.logger = logging.getLogger(__name__)
-        
-    async def initialize(self) -> bool:
-        """Initialize event bus"""
-        try:
-            self.logger.info("Event bus initialized")
-            return True
-        except Exception as e:
-            self.logger.error(f"Event bus initialization failed: {e}")
-            return False
-    
-    async def publish(self, event_type: str, data: Any) -> bool:
-        """Publish event to subscribers"""
-        try:
-            if event_type in self.subscribers:
-                for callback in self.subscribers[event_type]:
-                    await callback(data)
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to publish event {event_type}: {e}")
-            return False
-    
-    def subscribe(self, event_type: str, callback):
-        """Subscribe to event type"""
-        if event_type not in self.subscribers:
-            self.subscribers[event_type] = []
-        self.subscribers[event_type].append(callback)
-
 class ProductionRiskManager:
-    """Production-level risk manager"""
+    """Production-level risk manager with proper error handling"""
     
     def __init__(self, event_bus=None, position_tracker=None, max_daily_loss=100000, max_position_size=1000000):
         self.event_bus = event_bus
         self.position_tracker = position_tracker
         self.max_daily_loss = max_daily_loss
         self.max_position_size = max_position_size
-        self.daily_pnl = 0.0
         self.logger = logging.getLogger(__name__)
         
     async def initialize(self) -> bool:
