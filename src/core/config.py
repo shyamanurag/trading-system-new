@@ -1,15 +1,41 @@
 """
 Configuration settings for the trading system
 """
-from typing import List, Optional
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from typing import List, Optional, Dict, Any
 import os
 from pathlib import Path
 import re
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from functools import lru_cache
 import logging
+
+# Graceful import handling for pydantic_settings
+try:
+    from pydantic_settings import BaseSettings, SettingsConfigDict
+    PYDANTIC_SETTINGS_AVAILABLE = True
+except ImportError:
+    # Fallback if pydantic_settings is not available
+    try:
+        from pydantic import BaseSettings
+        # Create a dummy SettingsConfigDict for compatibility
+        class SettingsConfigDict(dict):
+            pass
+        PYDANTIC_SETTINGS_AVAILABLE = False
+        logging.warning("pydantic_settings not available, using pydantic BaseSettings fallback")
+    except ImportError:
+        # Final fallback - create minimal BaseSettings
+        class BaseSettings:
+            def __init__(self, **kwargs):
+                for key, value in kwargs.items():
+                    setattr(self, key, value)
+        
+        class SettingsConfigDict(dict):
+            pass
+        
+        PYDANTIC_SETTINGS_AVAILABLE = False
+        logging.warning("Both pydantic_settings and pydantic not available, using minimal fallback")
+
+from pydantic import Field
 
 logger = logging.getLogger(__name__)
 

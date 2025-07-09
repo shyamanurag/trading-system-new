@@ -2,13 +2,14 @@
 # This is the primary requirements file used for all deployments
 # DigitalOcean App Platform uses PIP_REQUIREMENTS in app.yaml (synced with this file)
 # Local development uses this file directly
+# Updated: 2025-07-09 - Force fresh install of pydantic-settings
 # 
 # Core API Framework
 fastapi>=0.104.1
 uvicorn[standard]>=0.24.0
 gunicorn==21.2.0
 pydantic>=2.11.7
-pydantic-settings>=2.0.0
+pydantic-settings>=2.6.0
 python-jose>=3.3.0
 python-multipart==0.0.6
 passlib[bcrypt]==1.7.4
