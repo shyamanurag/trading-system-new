@@ -255,7 +255,13 @@ class TradeEngine:
         """Process individual signal through Zerodha API - FALLBACK METHOD"""
         try:
             zerodha_client = None
-            orchestrator_instance = orchestrator
+            
+            # CRITICAL FIX: Use proper singleton orchestrator instance
+            try:
+                orchestrator_instance = await get_orchestrator()
+            except RuntimeError:
+                self.logger.error("No orchestrator instance available")
+                return
             
             # Method 1: Try orchestrator's Zerodha client (if available)
             if orchestrator_instance.zerodha_client and orchestrator_instance.components.get('zerodha_client', False):
@@ -1432,15 +1438,21 @@ class SimpleOrderProcessor:
             self.logger.error(f"❌ SimpleOrderProcessor error: {e}")
             return []
 
-# Global orchestrator instance
-orchestrator = TradingOrchestrator()
+# CRITICAL FIX: Proper singleton orchestrator pattern
+_orchestrator_instance = None
 
 async def get_orchestrator() -> TradingOrchestrator:
-    """Get orchestrator instance"""
-    if not orchestrator.is_initialized:
-        await orchestrator.initialize()
-    # CRITICAL FIX: Force orchestrator to be active for zero trades fix
-    if not orchestrator.is_running:
-        orchestrator.is_running = True
-        orchestrator.active_strategies = list(orchestrator.strategies.keys()) if orchestrator.strategies else []
-    return orchestrator
+    """Get the SAME orchestrator instance used by the main application"""
+    global _orchestrator_instance
+    
+    # If no instance exists, this is likely called before main app initialization
+    # Return None to force proper initialization through the main app
+    if _orchestrator_instance is None:
+        raise RuntimeError("Orchestrator not initialized - must be set by main application")
+    
+    return _orchestrator_instance
+
+def set_orchestrator_instance(instance: TradingOrchestrator):
+    """Set the main orchestrator instance (called by main application)"""
+    global _orchestrator_instance
+    _orchestrator_instance = instance
