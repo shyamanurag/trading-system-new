@@ -32,6 +32,11 @@ class EventBus:
         self._subscribers: Dict[EventType, List[Callable]] = {}
         self._lock = asyncio.Lock()
 
+    async def initialize(self):
+        """Initialize the event bus"""
+        # EventBus doesn't need special initialization, but orchestrator expects this method
+        pass
+
     async def subscribe(self, event_type: EventType, callback: Callable):
         """Subscribe to an event type"""
         async with self._lock:
