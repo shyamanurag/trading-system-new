@@ -125,10 +125,26 @@ async def start_trading(
     try:
         logger.info("🚀 Starting autonomous trading system...")
         
-        # CRITICAL FIX: Ensure orchestrator exists
+        # CRITICAL FIX: Create orchestrator on-demand if not available
         if not orchestrator:
-            logger.error("❌ Orchestrator not available")
-            raise HTTPException(status_code=500, detail="Orchestrator not available")
+            logger.warning("❌ Orchestrator not available - creating new instance...")
+            try:
+                from src.core.orchestrator import TradingOrchestrator, set_orchestrator_instance
+                
+                # Create and initialize new orchestrator instance
+                orchestrator = await TradingOrchestrator.get_instance()
+                
+                if orchestrator:
+                    # Store globally for future access
+                    set_orchestrator_instance(orchestrator)
+                    logger.info("✅ Successfully created orchestrator instance on-demand")
+                else:
+                    logger.error("❌ Failed to create orchestrator instance")
+                    raise HTTPException(status_code=500, detail="Failed to create orchestrator instance")
+                    
+            except Exception as create_error:
+                logger.error(f"❌ Failed to create orchestrator: {create_error}")
+                raise HTTPException(status_code=500, detail=f"Failed to create orchestrator: {str(create_error)}")
         
         # FORCE COMPLETE SYSTEM INITIALIZATION regardless of flags
         # This fixes the deployment issue where orchestrator isn't properly initialized
