@@ -29,9 +29,17 @@ router = APIRouter(prefix="/autonomous")
 
 # Lazy import to avoid circular dependency
 async def get_orchestrator():
-    """Get orchestrator instance with lazy import"""
-    from src.core.orchestrator import get_orchestrator as get_orchestrator_instance
-    return await get_orchestrator_instance()
+    """Get orchestrator instance with lazy import and comprehensive error handling"""
+    try:
+        from src.core.orchestrator import get_orchestrator as get_orchestrator_instance
+        orchestrator = await get_orchestrator_instance()
+        return orchestrator
+    except ImportError as import_error:
+        logger.error(f"Cannot import orchestrator: {import_error}")
+        return None
+    except Exception as e:
+        logger.error(f"Error getting orchestrator: {e}")
+        return None
 
 @router.get("/status", response_model=TradingStatusResponse)
 async def get_status(
