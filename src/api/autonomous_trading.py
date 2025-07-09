@@ -131,16 +131,20 @@ async def start_trading(
             try:
                 from src.core.orchestrator import TradingOrchestrator, set_orchestrator_instance
                 
-                # Create and initialize new orchestrator instance
-                orchestrator = await TradingOrchestrator.get_instance()
+                # Create orchestrator instance directly (bypass get_instance method)
+                logger.info("🔧 Creating orchestrator instance directly...")
+                orchestrator = TradingOrchestrator()
                 
-                if orchestrator:
+                # Initialize the orchestrator
+                init_success = await orchestrator.initialize()
+                
+                if init_success and orchestrator:
                     # Store globally for future access
                     set_orchestrator_instance(orchestrator)
-                    logger.info("✅ Successfully created orchestrator instance on-demand")
+                    logger.info("✅ Successfully created and initialized orchestrator instance")
                 else:
-                    logger.error("❌ Failed to create orchestrator instance")
-                    raise HTTPException(status_code=500, detail="Failed to create orchestrator instance")
+                    logger.error("❌ Failed to initialize orchestrator instance")
+                    raise HTTPException(status_code=500, detail="Failed to initialize orchestrator instance")
                     
             except Exception as create_error:
                 logger.error(f"❌ Failed to create orchestrator: {create_error}")
