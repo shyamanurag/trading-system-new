@@ -196,6 +196,27 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Intelligent Symbol Manager startup failed: {e}")
         logger.info("🔄 Will continue with basic symbol management")
 
+    # Initialize Trading Orchestrator - CRITICAL FIX for 500 errors
+    try:
+        logger.info("🚀 Initializing Trading Orchestrator...")
+        from src.core.orchestrator import TradingOrchestrator, set_orchestrator_instance
+        
+        # Create and initialize the orchestrator singleton
+        orchestrator = await TradingOrchestrator.get_instance()
+        
+        if orchestrator:
+            # Store the instance globally for API access
+            set_orchestrator_instance(orchestrator)
+            logger.info("✅ Trading Orchestrator initialized successfully!")
+            logger.info("🎯 Autonomous trading endpoints should now work")
+        else:
+            logger.error("❌ Failed to create orchestrator instance")
+            logger.info("🔄 API will use fallback mode")
+            
+    except Exception as e:
+        logger.error(f"❌ Trading Orchestrator initialization failed: {e}")
+        logger.info("🔄 API will use fallback mode")
+
     # Mark startup as complete for health checks
     global app_startup_complete
     app_startup_complete = True
