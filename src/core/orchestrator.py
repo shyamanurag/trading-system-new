@@ -998,17 +998,32 @@ class TradingOrchestrator:
             # Start the trading loop
             self.is_running = True
             
-            # Activate all loaded strategies
+            # CRITICAL FIX: Ensure active_strategies list is properly populated
+            self.active_strategies.clear()
+            
+            # Activate all loaded strategies and add to active_strategies list
             for strategy_key, strategy_info in self.strategies.items():
                 strategy_info['active'] = True
+                self.active_strategies.append(strategy_key)
                 self.logger.info(f"✅ Activated strategy: {strategy_key}")
+            
+            # CRITICAL FIX: Verify active_strategies is populated
+            if not self.active_strategies:
+                self.logger.error("❌ No strategies in active_strategies list - forcing reload")
+                # Force reload strategies if active_strategies is empty
+                await self._load_strategies()
+                for strategy_key in self.strategies.keys():
+                    if strategy_key not in self.active_strategies:
+                        self.active_strategies.append(strategy_key)
+            
+            self.logger.info(f"✅ Active strategies list: {self.active_strategies}")
             
             # Start market data processing
             if not hasattr(self, '_trading_task') or self._trading_task is None:
                 self._trading_task = asyncio.create_task(self._trading_loop())
                 self.logger.info("🔄 Started trading loop")
             
-            self.logger.info(f"✅ Autonomous trading started with {len(self.strategies)} strategies")
+            self.logger.info(f"✅ Autonomous trading started with {len(self.active_strategies)} active strategies")
             return True
             
         except Exception as e:
