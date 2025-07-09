@@ -137,6 +137,18 @@ class TradeEngine:
                 self.logger.info("Continuing without OrderManager - will use fallback method")
                 self.order_manager = None
             
+            # CRITICAL FIX: If OrderManager failed, create SimpleOrderProcessor fallback
+            if not self.order_manager:
+                try:
+                    self.logger.info("🔧 Creating SimpleOrderProcessor fallback...")
+                    self.simple_order_processor = SimpleOrderProcessor()
+                    self.logger.info("✅ SimpleOrderProcessor created successfully")
+                except Exception as e:
+                    self.logger.error(f"SimpleOrderProcessor creation failed: {e}")
+                    self.simple_order_processor = None
+            else:
+                self.simple_order_processor = None
+            
             self.is_initialized = True
             self.logger.info("Trade engine initialized")
             return True
@@ -169,8 +181,34 @@ class TradeEngine:
         """Process signal through proper OrderManager instead of direct Zerodha API"""
         try:
             if not self.order_manager:
-                self.logger.error(f"🚨 No OrderManager available for {signal['symbol']} - falling back to direct API")
-                # Fallback to original method if OrderManager not available
+                self.logger.error(f"🚨 No OrderManager available for {signal['symbol']} - checking SimpleOrderProcessor fallback")
+                
+                # CRITICAL FIX: Try SimpleOrderProcessor fallback first
+                if hasattr(self, 'simple_order_processor') and self.simple_order_processor:
+                    self.logger.info(f"🔧 Using SimpleOrderProcessor for {signal['symbol']} {signal['action']}")
+                    
+                    try:
+                        strategy_name = signal.get('strategy', 'UNKNOWN')
+                        placed_orders = await self.simple_order_processor.place_strategy_order(strategy_name, signal)
+                        
+                        if placed_orders:
+                            # Update signal as processed
+                            for queued_signal in self.signal_queue:
+                                if queued_signal['signal'] == signal:
+                                    queued_signal['processed'] = True
+                                    queued_signal['order_ids'] = [order[1].order_id for order in placed_orders]
+                                    queued_signal['status'] = 'ORDER_PLACED_VIA_SIMPLE_PROCESSOR'
+                                    break
+                            
+                            self.logger.info(f"✅ ORDER PLACED via SimpleOrderProcessor: {len(placed_orders)} orders for {signal['symbol']}")
+                            return  # Successfully processed, no need for further fallback
+                        else:
+                            self.logger.warning(f"⚠️ SimpleOrderProcessor returned no orders for {signal['symbol']}")
+                    except Exception as e:
+                        self.logger.error(f"❌ SimpleOrderProcessor failed for {signal['symbol']}: {e}")
+                
+                # If SimpleOrderProcessor also failed, fall back to direct Zerodha API
+                self.logger.info(f"🔄 Falling back to direct Zerodha API for {signal['symbol']}")
                 await self._process_signal_through_zerodha(signal)
                 return
             
@@ -1282,6 +1320,115 @@ class TradingOrchestrator:
         except Exception as e:
             self.logger.error(f"Error checking if can start trading: {e}")
             return False
+
+# CRITICAL FIX: Simple Order Processor to bypass OrderManager complexity
+class SimpleOrderProcessor:
+    """Simplified order processor that bypasses complex OrderManager dependencies"""
+    
+    def __init__(self, zerodha_client=None):
+        self.zerodha_client = zerodha_client
+        self.processed_signals = []
+        self.logger = logging.getLogger(__name__)
+    
+    async def place_strategy_order(self, strategy_name: str, signal: Dict[str, Any]) -> List[tuple]:
+        """Simplified order placement that directly uses Zerodha client"""
+        try:
+            self.logger.info(f"🚀 SimpleOrderProcessor: Processing {signal['symbol']} {signal['action']}")
+            
+            # If no Zerodha client, try to create one
+            if not self.zerodha_client:
+                self.logger.warning("🔧 No Zerodha client - attempting direct initialization")
+                
+                try:
+                    from brokers.zerodha import ZerodhaIntegration
+                    from brokers.resilient_zerodha import ResilientZerodhaConnection
+                    
+                    # Use environment variables
+                    zerodha_config = {
+                        'api_key': os.getenv('ZERODHA_API_KEY'),
+                        'api_secret': os.getenv('ZERODHA_API_SECRET'),
+                        'user_id': os.getenv('ZERODHA_USER_ID'),
+                        'access_token': os.getenv('ZERODHA_ACCESS_TOKEN'),
+                        'mock_mode': False
+                    }
+                    
+                    if zerodha_config['api_key'] and zerodha_config['user_id']:
+                        broker = ZerodhaIntegration(zerodha_config)
+                        if await broker.initialize():
+                            resilient_config = {
+                                'order_rate_limit': 1.0,
+                                'ws_reconnect_delay': 5,
+                                'ws_max_reconnect_attempts': 10
+                            }
+                            self.zerodha_client = ResilientZerodhaConnection(broker, resilient_config)
+                            self.logger.info("✅ SimpleOrderProcessor: Zerodha client initialized")
+                        else:
+                            self.logger.error("❌ SimpleOrderProcessor: Failed to initialize Zerodha")
+                            return []
+                    else:
+                        self.logger.error("❌ SimpleOrderProcessor: Missing Zerodha credentials")
+                        return []
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ SimpleOrderProcessor: Zerodha init failed: {e}")
+                    return []
+            
+            # Calculate position size (simplified)
+            position_size = 50  # Base position size
+            confidence_multiplier = signal.get('confidence', 0.5)
+            position_size = int(position_size * confidence_multiplier)
+            
+            if position_size <= 0:
+                position_size = 25  # Minimum position size
+            
+            # Prepare order parameters
+            order_params = {
+                'symbol': signal['symbol'],
+                'transaction_type': 'BUY' if signal['action'] == 'BUY' else 'SELL',
+                'quantity': position_size,
+                'order_type': 'MARKET',
+                'product': 'MIS',  # Intraday
+                'validity': 'DAY',
+                'tag': f"SIMPLE_AUTO_{strategy_name}"
+            }
+            
+            # Place order through Zerodha
+            self.logger.info(f"🚀 PLACING ORDER: {signal['symbol']} {signal['action']} Qty: {position_size}")
+            
+            try:
+                order_id = await self.zerodha_client.place_order(order_params)
+                
+                if order_id:
+                    self.logger.info(f"✅ ORDER PLACED: {order_id} for {signal['symbol']} {signal['action']}")
+                    
+                    # Create mock order object for return
+                    mock_order = type('Order', (), {
+                        'order_id': order_id,
+                        'symbol': signal['symbol'],
+                        'action': signal['action'],
+                        'quantity': position_size
+                    })()
+                    
+                    # Track processed signal
+                    self.processed_signals.append({
+                        'signal': signal,
+                        'order_id': order_id,
+                        'timestamp': datetime.now().isoformat(),
+                        'status': 'ORDER_PLACED'
+                    })
+                    
+                    return [("default_user", mock_order)]
+                else:
+                    self.logger.error(f"❌ Failed to place order for {signal['symbol']}")
+                    return []
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Order placement failed for {signal['symbol']}: {e}")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"❌ SimpleOrderProcessor error: {e}")
+            return []
 
 # Global orchestrator instance
 orchestrator = TradingOrchestrator()
