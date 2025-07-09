@@ -1081,7 +1081,7 @@ async def get_recent_signals_direct():
         # Try to get recent signals from orchestrator
         try:
             from src.core.orchestrator import TradingOrchestrator
-            orchestrator = TradingOrchestrator.get_instance()
+            orchestrator = None  # TODO: Fix async orchestrator call - was TradingOrchestrator.get_instance()
             
             if orchestrator and hasattr(orchestrator, 'strategies'):
                 # Get recent signals from all strategies
