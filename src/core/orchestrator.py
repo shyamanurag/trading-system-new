@@ -768,98 +768,99 @@ class TradingOrchestrator:
         except Exception as e:
             self.logger.error(f"Error running strategies: {e}")
 
-def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Transform raw market data into format expected by strategies - FIXED transformation bug"""
-    current_time = datetime.now(self.ist_timezone)
-    
-    try:
-        for symbol, data in raw_data.items():
-            try:
-                # Extract price data with fallbacks
-                current_price = data.get('ltp', data.get('close', data.get('price', 0)))
-                volume = data.get('volume', 0)
-                
-                # Skip if no valid price data
-                if not current_price or current_price <= 0:
-                    continue
-                
-                # Extract OHLC data
-                high = data.get('high', current_price)
-                low = data.get('low', current_price)
-                open_price = data.get('open', current_price)
-                
-                # CRITICAL FIX: Use TrueData's changeper directly for price_change
-                price_change = data.get('changeper', 0)
-                
-                # CRITICAL FIX: Safe volume change calculation with proper error handling
-                volume_change = 0
+    def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform raw market data into format expected by strategies - FIXED transformation bug"""
+        current_time = datetime.now(self.ist_timezone)
+        transformed_data = {}
+        
+        try:
+            for symbol, data in raw_data.items():
                 try:
-                    if symbol in self.market_data_history:
-                        prev_data = self.market_data_history[symbol]
-                        prev_volume = prev_data.get('volume', 0)
-                        
-                        if prev_volume > 0 and volume > 0:
-                            volume_change = ((volume - prev_volume) / prev_volume) * 100
-                    else:
-                        # First time seeing symbol - create reasonable volume change
-                        if volume > 0:
-                            # Use a 20% increase as baseline for first-time volume change
-                            historical_volume = volume * 0.8
-                            volume_change = ((volume - historical_volume) / historical_volume) * 100
-                            
-                            # Initialize history for next comparison
-                            self.market_data_history[symbol] = {
-                                'close': current_price,
-                                'volume': historical_volume,
-                                'timestamp': (current_time - timedelta(minutes=1)).isoformat()
-                            }
-                except Exception as ve:
-                    # If volume calculation fails, set to 0 but don't fail entire transformation
+                    # Extract price data with fallbacks
+                    current_price = data.get('ltp', data.get('close', data.get('price', 0)))
+                    volume = data.get('volume', 0)
+                    
+                    # Skip if no valid price data
+                    if not current_price or current_price <= 0:
+                        continue
+                    
+                    # Extract OHLC data
+                    high = data.get('high', current_price)
+                    low = data.get('low', current_price)
+                    open_price = data.get('open', current_price)
+                    
+                    # CRITICAL FIX: Use TrueData's changeper directly for price_change
+                    price_change = data.get('changeper', 0)
+                    
+                    # CRITICAL FIX: Safe volume change calculation with proper error handling
                     volume_change = 0
-                    self.logger.warning(f"Volume calculation failed for {symbol}: {ve}")
+                    try:
+                        if symbol in self.market_data_history:
+                            prev_data = self.market_data_history[symbol]
+                            prev_volume = prev_data.get('volume', 0)
+                            
+                            if prev_volume > 0 and volume > 0:
+                                volume_change = ((volume - prev_volume) / prev_volume) * 100
+                        else:
+                            # First time seeing symbol - create reasonable volume change
+                            if volume > 0:
+                                # Use a 20% increase as baseline for first-time volume change
+                                historical_volume = volume * 0.8
+                                volume_change = ((volume - historical_volume) / historical_volume) * 100
+                                
+                                # Initialize history for next comparison
+                                self.market_data_history[symbol] = {
+                                    'close': current_price,
+                                    'volume': historical_volume,
+                                    'timestamp': (current_time - timedelta(minutes=1)).isoformat()
+                                }
+                    except Exception as ve:
+                        # If volume calculation fails, set to 0 but don't fail entire transformation
+                        volume_change = 0
+                        self.logger.warning(f"Volume calculation failed for {symbol}: {ve}")
+                    
+                    # Create strategy-compatible data format
+                    strategy_data = {
+                        'symbol': symbol,
+                        'close': current_price,
+                        'ltp': current_price,
+                        'high': high,
+                        'low': low,
+                        'open': open_price,
+                        'volume': volume,
+                        'price_change': round(float(price_change), 4),  # CRITICAL: Ensure float conversion
+                        'volume_change': round(float(volume_change), 4),  # CRITICAL: Ensure float conversion
+                        'timestamp': data.get('timestamp', current_time.isoformat()),
+                        'change': data.get('change', 0),
+                        'changeper': float(price_change),
+                        'bid': data.get('bid', 0),
+                        'ask': data.get('ask', 0),
+                        'data_quality': data.get('data_quality', {}),
+                        'source': data.get('source', 'TrueData')
+                    }
+                    
+                    transformed_data[symbol] = strategy_data
+                    
+                    # Update historical data for next comparison
+                    self.market_data_history[symbol] = {
+                        'close': current_price,
+                        'volume': volume,
+                        'timestamp': current_time.isoformat()
+                    }
+                    self.last_data_update[symbol] = current_time
                 
-                # Create strategy-compatible data format
-                strategy_data = {
-                    'symbol': symbol,
-                    'close': current_price,
-                    'ltp': current_price,
-                    'high': high,
-                    'low': low,
-                    'open': open_price,
-                    'volume': volume,
-                    'price_change': round(float(price_change), 4),  # CRITICAL: Ensure float conversion
-                    'volume_change': round(float(volume_change), 4),  # CRITICAL: Ensure float conversion
-                    'timestamp': data.get('timestamp', current_time.isoformat()),
-                    'change': data.get('change', 0),
-                    'changeper': float(price_change),
-                    'bid': data.get('bid', 0),
-                    'ask': data.get('ask', 0),
-                    'data_quality': data.get('data_quality', {}),
-                    'source': data.get('source', 'TrueData')
-                }
-                
-                transformed_data[symbol] = strategy_data
-                
-                # Update historical data for next comparison
-                self.market_data_history[symbol] = {
-                    'close': current_price,
-                    'volume': volume,
-                    'timestamp': current_time.isoformat()
-                }
-                self.last_data_update[symbol] = current_time
+                except Exception as se:
+                    # Log symbol-specific errors but continue with other symbols
+                    self.logger.warning(f"Failed to transform data for {symbol}: {se}")
+                    continue
             
-            except Exception as se:
-                # Log symbol-specific errors but continue with other symbols
-                self.logger.warning(f"Failed to transform data for {symbol}: {se}")
-                continue
-        
-        self.logger.info(f"🔧 Successfully transformed {len(transformed_data)} symbols with price_change and volume_change")
-        return transformed_data
-        
-    except Exception as e:
-        self.logger.error(f"Critical error in data transformation: {e}")
-        # CRITICAL FIX: Instead of returning raw_data, return empty dict to force retry
-        return {}
+            self.logger.info(f"🔧 Successfully transformed {len(transformed_data)} symbols with price_change and volume_change")
+            return transformed_data
+            
+        except Exception as e:
+            self.logger.error(f"Critical error in data transformation: {e}")
+            # CRITICAL FIX: Instead of returning raw_data, return empty dict to force retry
+            return {}
 
     async def _initialize_zerodha_client(self):
         """Initialize Zerodha client (non-blocking)"""
@@ -891,14 +892,14 @@ def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dic
             
             if await self.zerodha_client.initialize():
                 self.components['zerodha'] = True
-                self.logger.info(" Zerodha client initialized")
+                self.logger.info("✅ Zerodha client initialized")
             else:
                 self.components['zerodha'] = False
-                self.logger.error(" Zerodha client initialization failed")
+                self.logger.error("❌ Zerodha client initialization failed")
         except Exception as e:
             self.components['zerodha'] = False
-            self.logger.error(f" Zerodha client initialization failed: {e}")
-            self.logger.info(" System will continue without Zerodha client")
+            self.logger.error(f"❌ Zerodha client initialization failed: {e}")
+            self.logger.info("⚠️ System will continue without Zerodha client")
     
     async def _load_strategies(self):
         """Load and initialize trading strategies"""
@@ -1057,163 +1058,124 @@ def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dic
             
             # Get risk status
             risk_status = {
-                'status': 'healthy',
                 'max_daily_loss': 100000,
-                'current_exposure': 0
+                'max_position_size': 1000000,
+                'current_positions': len(self.position_tracker.positions) if self.position_tracker else 0,
+                'daily_pnl': 0.0
             }
-            
-            if self.risk_manager:
-                try:
-                    risk_metrics = await self.risk_manager.get_risk_metrics()
-                    risk_status.update(risk_metrics)
-                except Exception as e:
-                    self.logger.warning(f"Risk manager error: {e}")
             
             return {
-                'is_active': self.is_running,
-                'session_id': f"session_{int(datetime.now().timestamp())}",
-                'start_time': None,
-                'last_heartbeat': datetime.now().isoformat(),
-                'active_strategies': self.active_strategies,
-                'active_positions': [],
-                'total_trades': 0,
-                'daily_pnl': 0.0,
-                'risk_status': risk_status,
-                'market_status': 'open' if self._is_market_open() else 'closed',
+                'is_running': self.is_running,
                 'system_ready': system_ready,
-                'total_strategies': len(self.strategies),
+                'active_strategies': len(self.active_strategies),
                 'strategy_details': strategy_details,
+                'risk_status': risk_status,
+                'components': self.components.copy(),
                 'timestamp': datetime.now().isoformat()
             }
+            
         except Exception as e:
             self.logger.error(f"Error getting trading status: {e}")
             return {
-                'is_active': False,
+                'is_running': False,
                 'system_ready': False,
                 'error': str(e),
                 'timestamp': datetime.now().isoformat()
             }
-    
+
     async def get_status(self) -> Dict[str, Any]:
-        """Get orchestrator status - MISSING METHOD FIX"""
+        """Get comprehensive orchestrator status"""
         try:
-            components_status = {
-                'zerodha': self.components.get('zerodha', False),
-                'position_tracker': self.components.get('position_tracker', False),
-                'risk_manager': self.components.get('risk_manager', False),
-                'market_data': self.components.get('market_data', False),
-                'strategy_engine': len(self.active_strategies) > 0,
-                'trade_engine': self.components.get('trade_engine', False),
-                'system_ready': self.is_initialized and self.is_running,
-                'is_active': self.is_running
+            # Get trading status
+            trading_status = await self.get_trading_status()
+            
+            # Get component status
+            component_status = self.components.copy()
+            
+            # Get market data status
+            market_data_status = {
+                'connected': self.components.get('truedata_cache', False),
+                'symbols_active': 0,
+                'last_update': None
             }
             
-            components_ready = sum(1 for status in components_status.values() if status)
+            # Get strategy status
+            strategy_status = {
+                'total_strategies': len(self.strategies),
+                'active_strategies': len(self.active_strategies),
+                'strategy_list': list(self.strategies.keys())
+            }
             
             return {
-                'success': True,
-                'running': self.is_running,
-                'components': components_status,
-                'components_ready_count': components_ready,
-                'total_components': len(components_status),
-                'active_strategies': self.active_strategies,
-                'total_strategies': len(self.strategies),
+                'initialized': self.is_initialized,
+                'trading_status': trading_status,
+                'component_status': component_status,
+                'market_data_status': market_data_status,
+                'strategy_status': strategy_status,
                 'timestamp': datetime.now().isoformat()
             }
             
         except Exception as e:
             self.logger.error(f"Error getting orchestrator status: {e}")
             return {
-                'success': False,
+                'initialized': False,
                 'error': str(e),
-                'running': False,
-                'components': {},
                 'timestamp': datetime.now().isoformat()
             }
-    
+
     async def initialize_system(self) -> Dict[str, Any]:
-        """Initialize system - MISSING METHOD FIX"""
+        """Initialize the entire trading system"""
         try:
-            self.logger.info("🔧 Force initializing system...")
+            self.logger.info("🚀 Initializing complete trading system...")
             
-            # Force initialization
-            if not self.is_initialized:
-                await self.initialize()
+            # Initialize orchestrator
+            success = await self.initialize()
             
-            # Force running state
-            self.is_running = True
-            
-            # Force load strategies if not loaded
-            if not self.strategies:
-                await self._load_strategies()
-            
-            # Force active strategies
-            self.active_strategies = list(self.strategies.keys())
-            
-            # Force component states
-            self.components.update({
-                'event_bus': True,
-                'position_tracker': True,
-                'risk_manager': True,
-                'trade_engine': True,
-                'market_data': True,
-                'zerodha': True
-            })
-            
-            self.logger.info(f"✅ System initialized: {len(self.active_strategies)} strategies active")
-            
-            return {
-                'success': True,
-                'message': 'System initialized successfully',
-                'active_strategies': self.active_strategies,
-                'components_ready': len([c for c in self.components.values() if c]),
-                'total_components': len(self.components),
-                'timestamp': datetime.now().isoformat()
-            }
-            
+            if success:
+                return {
+                    'success': True,
+                    'message': 'Trading system initialized successfully',
+                    'components': self.components.copy(),
+                    'strategies': len(self.strategies),
+                    'timestamp': datetime.now().isoformat()
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': 'Trading system initialization failed',
+                    'components': self.components.copy(),
+                    'timestamp': datetime.now().isoformat()
+                }
+                
         except Exception as e:
-            self.logger.error(f"Error initializing system: {e}")
+            self.logger.error(f"System initialization failed: {e}")
             return {
                 'success': False,
-                'error': str(e),
-                'message': f'System initialization failed: {str(e)}',
+                'message': f'System initialization failed: {e}',
                 'timestamp': datetime.now().isoformat()
             }
-    
+
     async def _trading_loop(self):
-        """Main autonomous trading loop - ENHANCED FOR ZERO TRADES FIX"""
-        try:
-            self.logger.info("🔄 Starting autonomous trading loop...")
-            loop_iteration = 0
-            
-            while self.is_running:
-                try:
-                    loop_iteration += 1
-                    self.logger.info(f"🔄 Trading loop iteration #{loop_iteration}")
-                    
-                    # Log current system state
-                    self.logger.info(f"📊 System state: {len(self.strategies)} strategies loaded, is_running={self.is_running}")
-                    
-                    # Process market data and run strategies
-                    await self._process_market_data()
-                    
-                    # Log completion
-                    self.logger.info(f"✅ Trading loop iteration #{loop_iteration} completed")
-                    
-                    # Wait before next iteration (process every 30 seconds)
-                    await asyncio.sleep(30)
-                    
-                except Exception as e:
-                    self.logger.error(f"❌ Error in trading loop iteration #{loop_iteration}: {e}")
-                    # Continue loop even if one iteration fails
-                    await asyncio.sleep(5)
-                    
-        except asyncio.CancelledError:
-            self.logger.info("🛑 Trading loop cancelled")
-        except Exception as e:
-            self.logger.error(f"❌ Trading loop failed: {e}")
-            self.is_running = False
-    
+        """Main trading loop - processes market data and generates signals"""
+        self.logger.info("🔄 Starting trading loop...")
+        
+        while self.is_running:
+            try:
+                # Process market data
+                await self._process_market_data()
+                
+                # Small delay to prevent overwhelming the system
+                await asyncio.sleep(1)
+                
+            except asyncio.CancelledError:
+                self.logger.info("🛑 Trading loop cancelled")
+                break
+            except Exception as e:
+                self.logger.error(f"Error in trading loop: {e}")
+                await asyncio.sleep(5)  # Wait before retrying
+        
+        self.logger.info("🛑 Trading loop stopped")
+
     def _is_market_open(self) -> bool:
         """Check if market is currently open (IST timezone)"""
         try:
@@ -1263,58 +1225,41 @@ def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dic
 
     @classmethod
     async def get_instance(cls):
-        """
-        Get singleton instance of TradingOrchestrator
-        CRITICAL: This ensures the same instance is used throughout the application
-        Enhanced with robust error handling
-        """
-        try:
+        """Get singleton instance of TradingOrchestrator"""
+        if cls._instance is None:
             async with cls._lock:
                 if cls._instance is None:
                     cls._instance = cls()
-                    # CRITICAL: Register this instance as the global singleton
-                    set_orchestrator_instance(cls._instance)
-                    
-                    # Try to initialize the instance
-                    try:
-                        await cls._instance.initialize()
-                        logger.info("Successfully initialized orchestrator singleton")
-                    except Exception as init_error:
-                        logger.error(f"Failed to initialize orchestrator: {init_error}")
-                        # Don't fail completely - let the instance exist but log the error
-                        
-                return cls._instance
-        except Exception as e:
-            logger.error(f"Critical error in get_instance: {e}")
-            # Return None to prevent complete system failure
-            return None
+                    await cls._instance.initialize()
+        return cls._instance
 
-# CRITICAL FIX: Proper singleton orchestrator pattern
+    @classmethod
+    def reset_instance(cls):
+        """Reset singleton instance (for testing)"""
+        cls._instance = None
+
+    def __del__(self):
+        """Cleanup when orchestrator is destroyed"""
+        if hasattr(self, '_trading_task') and self._trading_task is not None:
+            self._trading_task.cancel()
+
+
+# Global function to get orchestrator instance
+async def get_orchestrator() -> TradingOrchestrator:
+    """Get the singleton TradingOrchestrator instance"""
+    return await TradingOrchestrator.get_instance()
+
+
+# Global variable to store orchestrator instance
 _orchestrator_instance = None
 
-async def get_orchestrator() -> TradingOrchestrator:
-    """Get the SAME orchestrator instance used by the main application"""
-    global _orchestrator_instance
-    
-    # If no instance exists, try to create one gracefully
-    if _orchestrator_instance is None:
-        # First try to get instance via TradingOrchestrator.get_instance()
-        try:
-            _orchestrator_instance = await TradingOrchestrator.get_instance()
-            return _orchestrator_instance
-        except Exception as e:
-            # If that fails, log warning but don't crash the whole system
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Orchestrator not yet initialized: {e}")
-            
-            # Return None to let API endpoints handle gracefully
-            # This prevents 500 errors during system startup
-            return None
-    
-    return _orchestrator_instance
 
 def set_orchestrator_instance(instance: TradingOrchestrator):
-    """Set the main orchestrator instance (called by main application)"""
+    """Set the global orchestrator instance"""
     global _orchestrator_instance
     _orchestrator_instance = instance
+
+
+def get_orchestrator_instance() -> Optional[TradingOrchestrator]:
+    """Get the global orchestrator instance"""
+    return _orchestrator_instance
