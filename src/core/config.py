@@ -178,9 +178,14 @@ def get_settings() -> Settings:
 # Create settings instance
 settings = get_settings()
 
-# Ensure directories exist
-settings.DATA_DIR.mkdir(exist_ok=True)
-settings.LOGS_DIR.mkdir(exist_ok=True)
+# Ensure directories exist (only if they are Path objects)
+try:
+    if hasattr(settings.DATA_DIR, 'mkdir') and callable(settings.DATA_DIR.mkdir):
+        settings.DATA_DIR.mkdir(exist_ok=True)
+    if hasattr(settings.LOGS_DIR, 'mkdir') and callable(settings.LOGS_DIR.mkdir):
+        settings.LOGS_DIR.mkdir(exist_ok=True)
+except Exception as e:
+    logger.warning(f"Could not create directories: {e}")
 
 # Fail fast if localhost detected in production
 if IS_PRODUCTION:
@@ -204,16 +209,25 @@ if IS_PRODUCTION:
         raise ValueError(error_msg)
     
     # Check CORS origins (allow localhost in development origins for testing)
-    localhost_in_cors = any("localhost" in origin for origin in settings.CORS_ORIGINS)
-    if localhost_in_cors:
-        logger.warning("CORS_ORIGINS contains localhost in production - consider removing for security")
+    try:
+        cors_origins = settings.CORS_ORIGINS if hasattr(settings.CORS_ORIGINS, '__iter__') and not isinstance(settings.CORS_ORIGINS, str) else []
+        localhost_in_cors = any("localhost" in origin for origin in cors_origins)
+        if localhost_in_cors:
+            logger.warning("CORS_ORIGINS contains localhost in production - consider removing for security")
+    except Exception as e:
+        logger.warning(f"Could not check CORS origins: {e}")
 else:
     # Warn in development
     if settings.DB_HOST == "localhost":
         logger.warning("[DEV WARNING] DB_HOST is set to localhost. This MUST be overridden in production!")
     if settings.REDIS_HOST == "localhost":
         logger.warning("[DEV WARNING] REDIS_HOST is set to localhost. This MUST be overridden in production!")
-    if any("localhost" in origin for origin in settings.CORS_ORIGINS):
-        logger.warning("[DEV WARNING] CORS_ORIGINS contains localhost. This MUST be overridden in production!")
+    try:
+        cors_origins = settings.CORS_ORIGINS if hasattr(settings.CORS_ORIGINS, '__iter__') and not isinstance(settings.CORS_ORIGINS, str) else []
+        localhost_in_cors = any("localhost" in origin for origin in cors_origins)
+        if localhost_in_cors:
+            logger.warning("[DEV WARNING] CORS_ORIGINS contains localhost. This MUST be overridden in production!")
+    except Exception as e:
+        logger.warning(f"Could not check CORS origins: {e}")
 
 # In production, set these via environment variables or config files! 
