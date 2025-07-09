@@ -1456,3 +1456,16 @@ def set_orchestrator_instance(instance: TradingOrchestrator):
     """Set the main orchestrator instance (called by main application)"""
     global _orchestrator_instance
     _orchestrator_instance = instance
+
+    @classmethod
+    async def get_instance(cls):
+        """
+        Get singleton instance of TradingOrchestrator
+        CRITICAL: This ensures the same instance is used throughout the application
+        """
+        async with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls()
+                # CRITICAL: Register this instance as the global singleton
+                set_orchestrator_instance(cls._instance)
+            return cls._instance
