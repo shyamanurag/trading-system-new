@@ -26,6 +26,26 @@ except ImportError:
     # Fallback if Redis config is not available
     def get_redis():
         return None
+
+try:
+    from src.events import EventBus
+except ImportError:
+    # Fallback EventBus if not available
+    class EventBus:
+        def __init__(self):
+            pass
+        async def initialize(self):
+            pass
+
+try:
+    from src.core.position_tracker import ProductionPositionTracker
+except ImportError:
+    # Fallback PositionTracker if not available  
+    class ProductionPositionTracker:
+        def __init__(self, *args, **kwargs):
+            pass
+        async def initialize(self):
+            pass
     
 try:
     from brokers.resilient_zerodha import ResilientZerodhaConnection
@@ -487,7 +507,7 @@ class TradingOrchestrator:
                 self.components['truedata_cache'] = False
             
             # Initialize event bus
-            self.event_bus = ProductionEventBus()
+            self.event_bus = EventBus()
             await self.event_bus.initialize()
             self.components['event_bus'] = True
             
