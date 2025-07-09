@@ -742,9 +742,7 @@ class TradingOrchestrator:
                 if self.trade_engine:
                     self.logger.info(f"🚀 Processing {len(all_signals)} signals through trade engine")
                     await self.trade_engine.process_signals(all_signals)
-                else:
                     self.logger.error("❌ Trade engine not available - signals cannot be processed")
-            else:
                 self.logger.debug("📭 No signals generated this cycle")
                     
         except Exception as e:
@@ -752,7 +750,6 @@ class TradingOrchestrator:
 
 def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
     """Transform raw market data into format expected by strategies - FIXED transformation bug"""
-    transformed_data = {}
     current_time = datetime.now(self.ist_timezone)
     
     try:
