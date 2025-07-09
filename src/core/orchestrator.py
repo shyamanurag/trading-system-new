@@ -29,12 +29,13 @@ logger = logging.getLogger(__name__)
 class TradeEngine:
     """Simple trade engine for signal processing"""
     
-    def __init__(self):
+    def __init__(self, zerodha_client=None):
         self.is_initialized = False
         self.is_running = False
         self.signal_queue = []
         self.logger = logging.getLogger(__name__)
         self.order_manager = None  # Will be set during initialization
+        self.zerodha_client = zerodha_client  # Store Zerodha client for OrderManager
         
     async def initialize(self) -> bool:
         """Initialize the trade engine"""
@@ -91,12 +92,14 @@ class TradeEngine:
                         'enabled': True,
                         'email_alerts': False,
                         'sms_alerts': False
-                    }
+                    },
+                    'zerodha_client': self.zerodha_client  # CRITICAL FIX: Pass Zerodha client to OrderManager
                 }
                 
                 # Log the config being used (without sensitive data)
                 self.logger.info(f"OrderManager config - Redis: {redis_host}:{redis_port}")
                 self.logger.info(f"OrderManager config - Database: {config['database']['url'].split('@')[0] if '@' in config['database']['url'] else 'local'}")
+                self.logger.info(f"OrderManager config - Zerodha client: {'Available' if self.zerodha_client else 'Not available'}")
                 
                 # Test Redis connection before initializing OrderManager
                 try:
@@ -137,12 +140,12 @@ class TradeEngine:
                 self.logger.info("Continuing without OrderManager - will use fallback method")
                 self.order_manager = None
             
-            # CRITICAL FIX: If OrderManager failed, create SimpleOrderProcessor fallback
+            # CRITICAL FIX: If OrderManager failed, create SimpleOrderProcessor fallback WITH Zerodha client
             if not self.order_manager:
                 try:
-                    self.logger.info("🔧 Creating SimpleOrderProcessor fallback...")
-                    self.simple_order_processor = SimpleOrderProcessor()
-                    self.logger.info("✅ SimpleOrderProcessor created successfully")
+                    self.logger.info("🔧 Creating SimpleOrderProcessor fallback with Zerodha client...")
+                    self.simple_order_processor = SimpleOrderProcessor(self.zerodha_client)
+                    self.logger.info("✅ SimpleOrderProcessor created successfully with Zerodha client")
                 except Exception as e:
                     self.logger.error(f"SimpleOrderProcessor creation failed: {e}")
                     self.simple_order_processor = None
@@ -578,7 +581,6 @@ class TradingOrchestrator:
                 self.logger.warning(f"Redis not available, using in-memory position tracker: {e}")
                 self.position_tracker = ProductionPositionTracker()
                 await self.position_tracker.initialize()
-                self.components['position_tracker'] = True
             
             # Initialize risk manager
             self.risk_manager = ProductionRiskManager(
@@ -590,13 +592,13 @@ class TradingOrchestrator:
             await self.risk_manager.initialize()
             self.components['risk_manager'] = True
             
-            # Initialize trade engine
-            self.trade_engine = TradeEngine()
+            # Initialize Zerodha client FIRST (before trade engine)
+            await self._initialize_zerodha_client()
+            
+            # Initialize trade engine WITH Zerodha client
+            self.trade_engine = TradeEngine(self.zerodha_client)
             await self.trade_engine.initialize()
             self.components['trade_engine'] = True
-            
-            # Initialize Zerodha client (non-blocking)
-            await self._initialize_zerodha_client()
             
             # Load strategies
             await self._load_strategies()

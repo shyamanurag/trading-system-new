@@ -28,6 +28,13 @@ class OrderManager:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         
+        # CRITICAL FIX: Store Zerodha client from config
+        self.zerodha_client = config.get('zerodha_client')
+        if self.zerodha_client:
+            logger.info("✅ OrderManager initialized with Zerodha client")
+        else:
+            logger.warning("⚠️ OrderManager initialized without Zerodha client")
+        
         # FIXED: Handle None redis config properly
         if config.get('redis') is not None:
             self.redis = redis.Redis(
@@ -582,30 +589,20 @@ class OrderManager:
                     'message': 'Current market price not available'
                 }
             
-            # Get Zerodha client from orchestrator
+            # Get Zerodha client from OrderManager config (CRITICAL FIX)
             try:
-                from src.core.orchestrator import orchestrator
+                zerodha_client = self.zerodha_client  # Use the client passed during initialization
                 
-                # Try to get Zerodha client
-                zerodha_client = None
-                if hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
-                    zerodha_client = orchestrator.zerodha_client
-                else:
-                    # Fallback: Create direct Zerodha client
-                    from brokers.zerodha import ZerodhaIntegration
-                    import os
+                if not zerodha_client:
+                    # Fallback: Try to get from orchestrator singleton
+                    from src.core.orchestrator import get_orchestrator
+                    orchestrator = await get_orchestrator()
                     
-                    zerodha_config = {
-                        'api_key': os.getenv('ZERODHA_API_KEY'),
-                        'api_secret': os.getenv('ZERODHA_API_SECRET'),
-                        'user_id': os.getenv('ZERODHA_USER_ID'),
-                        'access_token': os.getenv('ZERODHA_ACCESS_TOKEN')
-                    }
-                    
-                    if zerodha_config['api_key'] and zerodha_config['user_id']:
-                        zerodha_client = ZerodhaIntegration(zerodha_config)
+                    if hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                        zerodha_client = orchestrator.zerodha_client
+                        logger.info("🔄 Using Zerodha client from orchestrator fallback")
                     else:
-                        logger.error("❌ Zerodha credentials not available")
+                        logger.error("❌ No Zerodha client available in OrderManager or orchestrator")
                         return {
                             'status': 'REJECTED',
                             'reason': 'NO_BROKER_CLIENT',
@@ -689,30 +686,20 @@ class OrderManager:
                     'message': 'Current market price not available'
                 }
             
-            # Get Zerodha client from orchestrator
+            # Get Zerodha client from OrderManager config (CRITICAL FIX)
             try:
-                from src.core.orchestrator import orchestrator
+                zerodha_client = self.zerodha_client  # Use the client passed during initialization
                 
-                # Try to get Zerodha client
-                zerodha_client = None
-                if hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
-                    zerodha_client = orchestrator.zerodha_client
-                else:
-                    # Fallback: Create direct Zerodha client
-                    from brokers.zerodha import ZerodhaIntegration
-                    import os
+                if not zerodha_client:
+                    # Fallback: Try to get from orchestrator singleton
+                    from src.core.orchestrator import get_orchestrator
+                    orchestrator = await get_orchestrator()
                     
-                    zerodha_config = {
-                        'api_key': os.getenv('ZERODHA_API_KEY'),
-                        'api_secret': os.getenv('ZERODHA_API_SECRET'),
-                        'user_id': os.getenv('ZERODHA_USER_ID'),
-                        'access_token': os.getenv('ZERODHA_ACCESS_TOKEN')
-                    }
-                    
-                    if zerodha_config['api_key'] and zerodha_config['user_id']:
-                        zerodha_client = ZerodhaIntegration(zerodha_config)
+                    if hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                        zerodha_client = orchestrator.zerodha_client
+                        logger.info("🔄 Using Zerodha client from orchestrator fallback")
                     else:
-                        logger.error("❌ Zerodha credentials not available")
+                        logger.error("❌ No Zerodha client available in OrderManager or orchestrator")
                         return {
                             'status': 'REJECTED',
                             'reason': 'NO_BROKER_CLIENT',
