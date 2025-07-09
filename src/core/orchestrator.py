@@ -773,85 +773,98 @@ class TradingOrchestrator:
             self.logger.error(f"Error running strategies: {e}")
     
     def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Transform raw market data into format expected by strategies - FIXED to use TrueData changeper"""
+        """Transform raw market data into format expected by strategies - FIXED transformation bug"""
+        transformed_data = {}
+        current_time = datetime.now(self.ist_timezone)
+        
         try:
-            transformed_data = {}
-            current_time = datetime.now(self.ist_timezone)
-            
             for symbol, data in raw_data.items():
-                # Use current price from different possible fields
-                current_price = data.get('ltp', data.get('close', data.get('price', 0)))
-                volume = data.get('volume', 0)
-                
-                # Extract OHLC data - FIXED: Use TrueData's actual OHLC
-                high = data.get('high', current_price)
-                low = data.get('low', current_price)
-                open_price = data.get('open', current_price)
-                
-                # FIXED: Use TrueData's changeper directly (more accurate than recalculation)
-                price_change = data.get('changeper', data.get('change_percent', 0))
-                
-                # Calculate volume change (still useful for volume analysis)
-                volume_change = 0
-                if symbol in self.market_data_history:
-                    prev_data = self.market_data_history[symbol]
-                    prev_volume = prev_data.get('volume', volume)
+                try:
+                    # Extract price data with fallbacks
+                    current_price = data.get('ltp', data.get('close', data.get('price', 0)))
+                    volume = data.get('volume', 0)
                     
-                    if prev_volume > 0:
-                        volume_change = ((volume - prev_volume) / prev_volume) * 100
-                else:
-                    # First time seeing this symbol - create seeded historical data for comparison
-                    historical_volume = volume * 0.8  # 20% lower volume for comparison
+                    # Skip if no valid price data
+                    if not current_price or current_price <= 0:
+                        continue
                     
-                    self.market_data_history[symbol] = {
+                    # Extract OHLC data
+                    high = data.get('high', current_price)
+                    low = data.get('low', current_price)
+                    open_price = data.get('open', current_price)
+                    
+                    # CRITICAL FIX: Use TrueData's changeper directly for price_change
+                    price_change = data.get('changeper', 0)
+                    
+                    # CRITICAL FIX: Safe volume change calculation with proper error handling
+                    volume_change = 0
+                    try:
+                        if symbol in self.market_data_history:
+                            prev_data = self.market_data_history[symbol]
+                            prev_volume = prev_data.get('volume', 0)
+                            
+                            if prev_volume > 0 and volume > 0:
+                                volume_change = ((volume - prev_volume) / prev_volume) * 100
+                        else:
+                            # First time seeing symbol - create reasonable volume change
+                            if volume > 0:
+                                # Use a 20% increase as baseline for first-time volume change
+                                historical_volume = volume * 0.8
+                                volume_change = ((volume - historical_volume) / historical_volume) * 100
+                                
+                                # Initialize history for next comparison
+                                self.market_data_history[symbol] = {
+                                    'close': current_price,
+                                    'volume': historical_volume,
+                                    'timestamp': (current_time - timedelta(minutes=1)).isoformat()
+                                }
+                    except Exception as ve:
+                        # If volume calculation fails, set to 0 but don't fail entire transformation
+                        volume_change = 0
+                        self.logger.warning(f"Volume calculation failed for {symbol}: {ve}")
+                    
+                    # Create strategy-compatible data format
+                    strategy_data = {
+                        'symbol': symbol,
                         'close': current_price,
-                        'volume': historical_volume,
-                        'timestamp': (current_time - timedelta(minutes=1)).isoformat()
+                        'ltp': current_price,
+                        'high': high,
+                        'low': low,
+                        'open': open_price,
+                        'volume': volume,
+                        'price_change': round(float(price_change), 4),  # CRITICAL: Ensure float conversion
+                        'volume_change': round(float(volume_change), 4),  # CRITICAL: Ensure float conversion
+                        'timestamp': data.get('timestamp', current_time.isoformat()),
+                        'change': data.get('change', 0),
+                        'changeper': float(price_change),
+                        'bid': data.get('bid', 0),
+                        'ask': data.get('ask', 0),
+                        'data_quality': data.get('data_quality', {}),
+                        'source': data.get('source', 'TrueData')
                     }
                     
-                    # For first time, calculate volume change from seeded data
-                    if historical_volume > 0:
-                        volume_change = ((volume - historical_volume) / historical_volume) * 100
+                    transformed_data[symbol] = strategy_data
                     
-                    self.logger.info(f"🔧 SEEDED historical data for {symbol}: volume_change={volume_change:.2f}%")
-                
-                # FIXED: Create strategy-compatible data format with proper TrueData fields
-                strategy_data = {
-                    'symbol': symbol,
-                    'close': current_price,  # Map ltp to close for strategy compatibility
-                    'ltp': current_price,    # Keep original for compatibility
-                    'high': high,
-                    'low': low,
-                    'open': open_price,
-                    'volume': volume,
-                    'price_change': round(price_change, 4),  # Use TrueData's changeper
-                    'volume_change': round(volume_change, 4),
-                    'timestamp': data.get('timestamp', current_time.isoformat()),
-                    # Additional TrueData fields for strategies
-                    'change': data.get('change', 0),
-                    'changeper': price_change,  # Duplicate for compatibility
-                    'bid': data.get('bid', 0),
-                    'ask': data.get('ask', 0),
-                    'data_quality': data.get('data_quality', {}),
-                    'source': data.get('source', 'TrueData')
-                }
-                
-                transformed_data[symbol] = strategy_data
-                
-                # Update historical data for next comparison (only volume, price_change comes from TrueData)
-                self.market_data_history[symbol] = {
-                    'close': current_price,
-                    'volume': volume,
-                    'timestamp': current_time.isoformat()
-                }
-                self.last_data_update[symbol] = current_time
+                    # Update historical data for next comparison
+                    self.market_data_history[symbol] = {
+                        'close': current_price,
+                        'volume': volume,
+                        'timestamp': current_time.isoformat()
+                    }
+                    self.last_data_update[symbol] = current_time
+                    
+                except Exception as se:
+                    # Log symbol-specific errors but continue with other symbols
+                    self.logger.warning(f"Failed to transform data for {symbol}: {se}")
+                    continue
             
-            self.logger.info(f"🔧 Transformed {len(transformed_data)} symbols using TrueData changeper (no recalculation)")
+            self.logger.info(f"🔧 Successfully transformed {len(transformed_data)} symbols with price_change and volume_change")
             return transformed_data
             
         except Exception as e:
-            self.logger.error(f"Error transforming market data: {e}")
-            return raw_data  # Return original data if transformation fails
+            self.logger.error(f"Critical error in data transformation: {e}")
+            # CRITICAL FIX: Instead of returning raw_data, return empty dict to force retry
+            return {}
 
     async def _initialize_zerodha_client(self):
         """Initialize Zerodha client (non-blocking)"""
@@ -899,7 +912,7 @@ class TradingOrchestrator:
             self.strategies.clear()
             self.active_strategies.clear()
             
-            # FIXED: Removed news_impact_scalper for debugging simplicity
+            # FIXED: Original strategies only - no emergency systems
             strategy_configs = {
                 'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
                 'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},

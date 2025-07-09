@@ -6,7 +6,7 @@ Quick Deployed System Check
 import requests
 import json
 
-DEPLOYED_URL = "https://trading-system-new-production.onrender.com"
+DEPLOYED_URL = "https://algoauto-9gx56.ondigitalocean.app"
 
 def check_deployed_status():
     """Check deployed system trading status"""
@@ -15,30 +15,25 @@ def check_deployed_status():
     
     try:
         # Test trading status endpoint
-        response = requests.get(f"{DEPLOYED_URL}/api/v1/trading/status", timeout=15)
+        response = requests.get(f"{DEPLOYED_URL}/api/v1/autonomous/status", timeout=15)
         
         if response.status_code == 200:
             data = response.json()
-            print(f"✅ API Response: {response.status_code}")
-            print(f"📊 Active Strategies: {data.get('active_strategies', [])}")
-            print(f"📊 Total Strategies: {data.get('total_strategies', 0)}")
-            print(f"📊 System Ready: {data.get('system_ready', False)}")
-            print(f"📊 Is Active: {data.get('is_active', False)}")
-            print(f"📊 Market Status: {data.get('market_status', 'Unknown')}")
-            
-            # Show strategy details if available
-            if 'strategy_details' in data and data['strategy_details']:
-                print(f"\n📋 Strategy Details:")
-                for strategy in data['strategy_details']:
-                    name = strategy.get('name', 'Unknown')
-                    active = strategy.get('active', False)
-                    status = strategy.get('status', 'Unknown')
-                    initialized = strategy.get('initialized', False)
-                    print(f"   {name}: {status} (Active: {active}, Init: {initialized})")
-            else:
-                print(f"\n❌ No strategy details found")
+            if 'data' in data:
+                trading_data = data['data']
+                print(f"✅ API Response: {response.status_code}")
+                print(f"📊 Active Strategies: {len(trading_data.get('active_strategies', []))}")
+                print(f"📊 Strategy Names: {trading_data.get('active_strategies', [])}")
+                print(f"📊 System Ready: {trading_data.get('system_ready', False)}")
+                print(f"📊 Is Active: {trading_data.get('is_active', False)}")
+                print(f"📊 Market Status: {trading_data.get('market_status', 'Unknown')}")
+                print(f"📊 Total Trades: {trading_data.get('total_trades', 0)}")
+                print(f"📊 Daily PNL: {trading_data.get('daily_pnl', 0.0)}")
                 
-            return data
+                return trading_data
+            else:
+                print(f"❌ Unexpected response format: {data}")
+                return None
         else:
             print(f"❌ API Error: {response.status_code}")
             print(f"Response: {response.text[:300]}")
@@ -54,7 +49,7 @@ def check_market_data():
     print("-" * 30)
     
     try:
-        response = requests.get(f"{DEPLOYED_URL}/api/v1/market-data", timeout=15)
+        response = requests.get(f"{DEPLOYED_URL}/api/v1/market-data/symbols", timeout=15)
         
         if response.status_code == 200:
             data = response.json()
@@ -87,9 +82,10 @@ def main():
     
     if trading_status:
         active_strategies = len(trading_status.get('active_strategies', []))
-        total_strategies = trading_status.get('total_strategies', 0)
+        total_trades = trading_status.get('total_trades', 0)
         
-        print(f"📊 Strategies: {active_strategies}/{total_strategies} active")
+        print(f"📊 Strategies: {active_strategies} active")
+        print(f"📊 Trades: {total_trades} executed")
         
         if active_strategies == 0:
             print(f"🚨 CRITICAL: No active strategies")
@@ -99,6 +95,12 @@ def main():
             print(f"   3. Test strategy loading manually")
         else:
             print(f"✅ Strategies are active")
+            
+        if total_trades == 0:
+            print(f"⚠️ No trades executed yet")
+            print(f"💡 Check signal generation and market conditions")
+        else:
+            print(f"✅ Trading is active")
             
     else:
         print(f"❌ Could not get trading status")
