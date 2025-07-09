@@ -87,6 +87,7 @@ router_imports = {
     'system_status': ('src.api.system_status', 'router'),
     'intelligent_symbols': ('src.api.intelligent_symbol_api', 'router'),
     'debug_endpoints': ('src.api.debug_endpoints', 'router'),
+    'orchestrator_debug': ('src.api.orchestrator_debug', 'router'),
     'search': ('src.api.search', 'router'),
 }
 
@@ -631,6 +632,7 @@ router_configs = [
     
     # Debug endpoints
     ('debug_endpoints', '/api/v1', ('debug',)),
+    ('orchestrator_debug', '/api/v1', ('orchestrator-debug',)),
     
     # External integrations
     ('zerodha_auth', '', ('zerodha',)),  # Already has /api/zerodha prefix
