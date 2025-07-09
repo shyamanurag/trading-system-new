@@ -1235,10 +1235,21 @@ async def get_orchestrator() -> TradingOrchestrator:
     """Get the SAME orchestrator instance used by the main application"""
     global _orchestrator_instance
     
-    # If no instance exists, this is likely called before main app initialization
-    # Return None to force proper initialization through the main app
+    # If no instance exists, try to create one gracefully
     if _orchestrator_instance is None:
-        raise RuntimeError("Orchestrator not initialized - must be set by main application")
+        # First try to get instance via TradingOrchestrator.get_instance()
+        try:
+            _orchestrator_instance = await TradingOrchestrator.get_instance()
+            return _orchestrator_instance
+        except Exception as e:
+            # If that fails, log warning but don't crash the whole system
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Orchestrator not yet initialized: {e}")
+            
+            # Return None to let API endpoints handle gracefully
+            # This prevents 500 errors during system startup
+            return None
     
     return _orchestrator_instance
 
