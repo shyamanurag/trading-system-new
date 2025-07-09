@@ -385,3 +385,137 @@ class UserTracker:
             
         except Exception as e:
             logger.error(f"Failed to cleanup data for user {user_id}: {e}") 
+        except Exception as e:
+            logger.error(f"Failed to get orders for user {user_id}: {e}")
+            return []
+            
+    async def get_user_positions(self, user_id: str, active_only: bool = False) -> List[Dict]:
+        """Get user's positions"""
+        try:
+            if self.redis_available and self.redis:
+                # Redis storage
+                if active_only:
+                    active_symbols = await self.redis.smembers(f"user:{user_id}:active_positions")
+                    positions = []
+                    for symbol in active_symbols:
+                        position_data = await self.redis.hget(f"user:{user_id}:positions", symbol)
+                        if position_data:
+                            positions.append(json.loads(position_data))
+                    return positions
+                else:
+                    positions = await self.redis.hgetall(f"user:{user_id}:positions")
+                    return [json.loads(position_data) for position_data in positions.values()]
+            else:
+                # In-memory storage
+                user_positions_key = f"user:{user_id}:positions"
+                if user_positions_key not in self.memory_store['positions']:
+                    return []
+                
+                if active_only:
+                    active_key = f"user:{user_id}:active_positions"
+                    if active_key not in self.memory_store['active_positions']:
+                        return []
+                    
+                    active_symbols = self.memory_store['active_positions'][active_key]
+                    positions = []
+                    for symbol in active_symbols:
+                        if symbol in self.memory_store['positions'][user_positions_key]:
+                            positions.append(self.memory_store['positions'][user_positions_key][symbol])
+                    return positions
+                else:
+                    return list(self.memory_store['positions'][user_positions_key].values())
+            
+        except Exception as e:
+            logger.error(f"Failed to get positions for user {user_id}: {e}")
+            return []
+            
+    async def get_user_daily_summary(self, user_id: str, date: Optional[str] = None) -> Dict:
+        """Get user's daily trading summary"""
+        try:
+            date_key = date or datetime.now().strftime('%Y%m%d')
+            
+            if self.redis_available and self.redis:
+                # Redis storage
+                order_ids = await self.redis.smembers(f"user:{user_id}:orders:{date_key}")
+                orders = []
+                for order_id in order_ids:
+                    order_data = await self.redis.hget(f"user:{user_id}:orders", order_id)
+                    if order_data:
+                        orders.append(json.loads(order_data))
+                        
+                position_symbols = await self.redis.smembers(f"user:{user_id}:positions:{date_key}")
+                positions = []
+                for symbol in position_symbols:
+                    position_data = await self.redis.hget(f"user:{user_id}:positions", symbol)
+                    if position_data:
+                        positions.append(json.loads(position_data))
+            else:
+                # In-memory storage
+                daily_orders_key = f"user:{user_id}:orders:{date_key}"
+                daily_positions_key = f"user:{user_id}:positions:{date_key}"
+                
+                orders = []
+                if daily_orders_key in self.memory_store['daily_orders']:
+                    user_orders_key = f"user:{user_id}:orders"
+                    if user_orders_key in self.memory_store['orders']:
+                        for order_id in self.memory_store['daily_orders'][daily_orders_key]:
+                            if order_id in self.memory_store['orders'][user_orders_key]:
+                                orders.append(self.memory_store['orders'][user_orders_key][order_id])
+                
+                positions = []
+                if daily_positions_key in self.memory_store['daily_positions']:
+                    user_positions_key = f"user:{user_id}:positions"
+                    if user_positions_key in self.memory_store['positions']:
+                        for symbol in self.memory_store['daily_positions'][daily_positions_key]:
+                            if symbol in self.memory_store['positions'][user_positions_key]:
+                                positions.append(self.memory_store['positions'][user_positions_key][symbol])
+                    
+            # Calculate summary
+            total_trades = len(orders)
+            filled_trades = len([o for o in orders if o['status'] == 'FILLED'])
+            total_volume = sum(o['quantity'] for o in orders if o['status'] == 'FILLED')
+            total_pnl = sum(p.get('pnl', 0) for p in positions)
+            
+            return {
+                'date': date_key,
+                'total_trades': total_trades,
+                'filled_trades': filled_trades,
+                'total_volume': total_volume,
+                'total_pnl': total_pnl,
+                'orders': orders,
+                'positions': positions
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get daily summary for user {user_id}: {e}")
+            return {
+                'date': date_key,
+                'total_trades': 0,
+                'filled_trades': 0,
+                'total_volume': 0,
+                'total_pnl': 0,
+                'orders': [],
+                'positions': []
+            }
+            
+    async def cleanup_old_data(self, user_id: str, days_to_keep: int = 30):
+        """Clean up old data - simplified for in-memory fallback"""
+        try:
+            if self.redis_available and self.redis:
+                # Redis cleanup (existing logic)
+                current_date = datetime.now()
+                for i in range(days_to_keep, days_to_keep + 30):
+                    old_date = current_date - timedelta(days=i)
+                    date_key = old_date.strftime('%Y%m%d')
+                    
+                    # Clean up old daily data
+                    await self.redis.delete(f"user:{user_id}:orders:{date_key}")
+                    await self.redis.delete(f"user:{user_id}:positions:{date_key}")
+            else:
+                # In-memory cleanup - just clear old entries
+                logger.info(f"In-memory cleanup for user {user_id} - clearing old data")
+                # For in-memory, we'll just keep recent data and clear old references
+                pass
+            
+        except Exception as e:
+            logger.error(f"Failed to cleanup data for user {user_id}: {e}") 

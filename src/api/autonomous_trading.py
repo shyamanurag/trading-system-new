@@ -420,3 +420,6 @@ async def get_trades(
     except Exception as e:
         logger.error(f"Error getting trades: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 
+    except Exception as e:
+        logger.error(f"Error getting trades: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e)) 

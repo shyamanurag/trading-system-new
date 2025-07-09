@@ -140,17 +140,12 @@ class TradeEngine:
                 self.logger.info("Continuing without OrderManager - will use fallback method")
                 self.order_manager = None
             
-            # CRITICAL FIX: If OrderManager failed, create SimpleOrderProcessor fallback WITH Zerodha client
+            # CRITICAL FIX: Force proper OrderManager initialization - NO FALLBACKS FOR REAL MONEY
             if not self.order_manager:
-                try:
-                    self.logger.info("🔧 Creating SimpleOrderProcessor fallback with Zerodha client...")
-                    self.simple_order_processor = SimpleOrderProcessor(self.zerodha_client)
-                    self.logger.info("✅ SimpleOrderProcessor created successfully with Zerodha client")
-                except Exception as e:
-                    self.logger.error(f"SimpleOrderProcessor creation failed: {e}")
-                    self.simple_order_processor = None
-            else:
-                self.simple_order_processor = None
+                self.logger.error("❌ OrderManager initialization failed - this is CRITICAL for real money trading")
+                self.logger.error("❌ System will NOT use simplified components for real money")
+                # System should fail fast rather than use simplified components
+                return False  # Fail initialization if OrderManager is not available
             
             self.is_initialized = True
             self.logger.info("Trade engine initialized")
@@ -181,41 +176,21 @@ class TradeEngine:
             self.logger.error(f"Error processing signals: {e}")
     
     async def _process_signal_through_order_manager(self, signal: Dict):
-        """Process signal through proper OrderManager instead of direct Zerodha API"""
+        """Process signal through proper OrderManager ONLY - NO FALLBACKS FOR REAL MONEY"""
         try:
             if not self.order_manager:
-                self.logger.error(f"🚨 No OrderManager available for {signal['symbol']} - checking SimpleOrderProcessor fallback")
+                self.logger.error(f"🚨 CRITICAL: No OrderManager available for {signal['symbol']} - CANNOT PROCESS REAL MONEY TRADES")
+                self.logger.error("❌ System configured for real money trading - simplified fallbacks are DISABLED")
                 
-                # CRITICAL FIX: Try SimpleOrderProcessor fallback first
-                if hasattr(self, 'simple_order_processor') and self.simple_order_processor:
-                    self.logger.info(f"🔧 Using SimpleOrderProcessor for {signal['symbol']} {signal['action']}")
-                    
-                    try:
-                        strategy_name = signal.get('strategy', 'UNKNOWN')
-                        placed_orders = await self.simple_order_processor.place_strategy_order(strategy_name, signal)
-                        
-                        if placed_orders:
-                            # Update signal as processed
-                            for queued_signal in self.signal_queue:
-                                if queued_signal['signal'] == signal:
-                                    queued_signal['processed'] = True
-                                    queued_signal['order_ids'] = [order[1].order_id for order in placed_orders]
-                                    queued_signal['status'] = 'ORDER_PLACED_VIA_SIMPLE_PROCESSOR'
-                                    break
-                            
-                            self.logger.info(f"✅ ORDER PLACED via SimpleOrderProcessor: {len(placed_orders)} orders for {signal['symbol']}")
-                            return  # Successfully processed, no need for further fallback
-                        else:
-                            self.logger.warning(f"⚠️ SimpleOrderProcessor returned no orders for {signal['symbol']}")
-                    except Exception as e:
-                        self.logger.error(f"❌ SimpleOrderProcessor failed for {signal['symbol']}: {e}")
-                
-                # If SimpleOrderProcessor also failed, fall back to direct Zerodha API
-                self.logger.info(f"🔄 Falling back to direct Zerodha API for {signal['symbol']}")
-                await self._process_signal_through_zerodha(signal)
+                # Mark signal as failed
+                for queued_signal in self.signal_queue:
+                    if queued_signal['signal'] == signal:
+                        queued_signal['processed'] = True
+                        queued_signal['status'] = 'CRITICAL_NO_ORDER_MANAGER'
+                        break
                 return
             
-            # Use proper OrderManager workflow
+            # Use proper OrderManager workflow ONLY
             strategy_name = signal.get('strategy', 'UNKNOWN')
             
             self.logger.info(f"🚀 PLACING ORDER via OrderManager: {signal['symbol']} {signal['action']}")
@@ -297,9 +272,9 @@ class TradeEngine:
                                 'ws_max_reconnect_attempts': 10
                             }
                             zerodha_client = ResilientZerodhaConnection(broker, resilient_config)
-                            # Override the failed orchestrator client with working one
-                            orchestrator_instance.zerodha_client = zerodha_client
-                            self.logger.info(f"🔧 BYPASSED failed component - using direct Zerodha API for {signal['symbol']}")
+                        # Override the failed orchestrator client with working one
+                        orchestrator_instance.zerodha_client = zerodha_client
+                        self.logger.info(f"🔧 BYPASSED failed component - using direct Zerodha API for {signal['symbol']}")
                         else:
                             self.logger.error(f"Failed to connect direct Zerodha client for {signal['symbol']}")
                             zerodha_client = None
@@ -827,48 +802,48 @@ class TradingOrchestrator:
                 if self.trade_engine:
                     self.logger.info(f"🚀 Processing {len(all_signals)} signals through trade engine")
                     await self.trade_engine.process_signals(all_signals)
-                else:
+            else:
                     self.logger.error("❌ Trade engine not available - signals cannot be processed")
             else:
                 self.logger.debug("📭 No signals generated this cycle")
-                
+                        
         except Exception as e:
             self.logger.error(f"Error running strategies: {e}")
     
     def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """Transform raw market data into format expected by strategies - FIXED transformation bug"""
-        transformed_data = {}
-        current_time = datetime.now(self.ist_timezone)
-        
+            transformed_data = {}
+            current_time = datetime.now(self.ist_timezone)
+            
         try:
             for symbol, data in raw_data.items():
                 try:
                     # Extract price data with fallbacks
-                    current_price = data.get('ltp', data.get('close', data.get('price', 0)))
-                    volume = data.get('volume', 0)
-                    
+                current_price = data.get('ltp', data.get('close', data.get('price', 0)))
+                volume = data.get('volume', 0)
+                
                     # Skip if no valid price data
                     if not current_price or current_price <= 0:
                         continue
                     
-                    # Extract OHLC data
-                    high = data.get('high', current_price)
-                    low = data.get('low', current_price)
-                    open_price = data.get('open', current_price)
-                    
+                # Extract OHLC data
+                high = data.get('high', current_price)
+                low = data.get('low', current_price)
+                open_price = data.get('open', current_price)
+                
                     # CRITICAL FIX: Use TrueData's changeper directly for price_change
                     price_change = data.get('changeper', 0)
-                    
+                
                     # CRITICAL FIX: Safe volume change calculation with proper error handling
                     volume_change = 0
                     try:
-                        if symbol in self.market_data_history:
-                            prev_data = self.market_data_history[symbol]
+                if symbol in self.market_data_history:
+                    prev_data = self.market_data_history[symbol]
                             prev_volume = prev_data.get('volume', 0)
-                            
+                    
                             if prev_volume > 0 and volume > 0:
-                                volume_change = ((volume - prev_volume) / prev_volume) * 100
-                        else:
+                        volume_change = ((volume - prev_volume) / prev_volume) * 100
+                else:
                             # First time seeing symbol - create reasonable volume change
                             if volume > 0:
                                 # Use a 20% increase as baseline for first-time volume change
@@ -876,25 +851,25 @@ class TradingOrchestrator:
                                 volume_change = ((volume - historical_volume) / historical_volume) * 100
                                 
                                 # Initialize history for next comparison
-                                self.market_data_history[symbol] = {
+                    self.market_data_history[symbol] = {
                                     'close': current_price,
-                                    'volume': historical_volume,
-                                    'timestamp': (current_time - timedelta(minutes=1)).isoformat()
-                                }
+                        'volume': historical_volume,
+                        'timestamp': (current_time - timedelta(minutes=1)).isoformat()
+                    }
                     except Exception as ve:
                         # If volume calculation fails, set to 0 but don't fail entire transformation
                         volume_change = 0
                         self.logger.warning(f"Volume calculation failed for {symbol}: {ve}")
-                    
-                    # Create strategy-compatible data format
-                    strategy_data = {
-                        'symbol': symbol,
+                
+                # Create strategy-compatible data format
+                strategy_data = {
+                    'symbol': symbol,
                         'close': current_price,
                         'ltp': current_price,
-                        'high': high,
-                        'low': low,
-                        'open': open_price,
-                        'volume': volume,
+                    'high': high,
+                    'low': low,
+                    'open': open_price,
+                    'volume': volume,
                         'price_change': round(float(price_change), 4),  # CRITICAL: Ensure float conversion
                         'volume_change': round(float(volume_change), 4),  # CRITICAL: Ensure float conversion
                         'timestamp': data.get('timestamp', current_time.isoformat()),
@@ -904,18 +879,18 @@ class TradingOrchestrator:
                         'ask': data.get('ask', 0),
                         'data_quality': data.get('data_quality', {}),
                         'source': data.get('source', 'TrueData')
-                    }
-                    
-                    transformed_data[symbol] = strategy_data
-                    
-                    # Update historical data for next comparison
-                    self.market_data_history[symbol] = {
-                        'close': current_price,
-                        'volume': volume,
-                        'timestamp': current_time.isoformat()
-                    }
-                    self.last_data_update[symbol] = current_time
-                    
+                }
+                
+                transformed_data[symbol] = strategy_data
+                
+                # Update historical data for next comparison
+                self.market_data_history[symbol] = {
+                    'close': current_price,
+                    'volume': volume,
+                    'timestamp': current_time.isoformat()
+                }
+                self.last_data_update[symbol] = current_time
+            
                 except Exception as se:
                     # Log symbol-specific errors but continue with other symbols
                     self.logger.warning(f"Failed to transform data for {symbol}: {se}")
@@ -1328,115 +1303,6 @@ class TradingOrchestrator:
         except Exception as e:
             self.logger.error(f"Error checking if can start trading: {e}")
             return False
-
-# CRITICAL FIX: Simple Order Processor to bypass OrderManager complexity
-class SimpleOrderProcessor:
-    """Simplified order processor that bypasses complex OrderManager dependencies"""
-    
-    def __init__(self, zerodha_client=None):
-        self.zerodha_client = zerodha_client
-        self.processed_signals = []
-        self.logger = logging.getLogger(__name__)
-    
-    async def place_strategy_order(self, strategy_name: str, signal: Dict[str, Any]) -> List[tuple]:
-        """Simplified order placement that directly uses Zerodha client"""
-        try:
-            self.logger.info(f"🚀 SimpleOrderProcessor: Processing {signal['symbol']} {signal['action']}")
-            
-            # If no Zerodha client, try to create one
-            if not self.zerodha_client:
-                self.logger.warning("🔧 No Zerodha client - attempting direct initialization")
-                
-                try:
-                    from brokers.zerodha import ZerodhaIntegration
-                    from brokers.resilient_zerodha import ResilientZerodhaConnection
-                    
-                    # Use environment variables
-                    zerodha_config = {
-                        'api_key': os.getenv('ZERODHA_API_KEY'),
-                        'api_secret': os.getenv('ZERODHA_API_SECRET'),
-                        'user_id': os.getenv('ZERODHA_USER_ID'),
-                        'access_token': os.getenv('ZERODHA_ACCESS_TOKEN'),
-                        'mock_mode': False
-                    }
-                    
-                    if zerodha_config['api_key'] and zerodha_config['user_id']:
-                        broker = ZerodhaIntegration(zerodha_config)
-                        if await broker.initialize():
-                            resilient_config = {
-                                'order_rate_limit': 1.0,
-                                'ws_reconnect_delay': 5,
-                                'ws_max_reconnect_attempts': 10
-                            }
-                            self.zerodha_client = ResilientZerodhaConnection(broker, resilient_config)
-                            self.logger.info("✅ SimpleOrderProcessor: Zerodha client initialized")
-                        else:
-                            self.logger.error("❌ SimpleOrderProcessor: Failed to initialize Zerodha")
-                            return []
-                    else:
-                        self.logger.error("❌ SimpleOrderProcessor: Missing Zerodha credentials")
-                        return []
-                        
-                except Exception as e:
-                    self.logger.error(f"❌ SimpleOrderProcessor: Zerodha init failed: {e}")
-                    return []
-            
-            # Calculate position size (simplified)
-            position_size = 50  # Base position size
-            confidence_multiplier = signal.get('confidence', 0.5)
-            position_size = int(position_size * confidence_multiplier)
-            
-            if position_size <= 0:
-                position_size = 25  # Minimum position size
-            
-            # Prepare order parameters
-            order_params = {
-                'symbol': signal['symbol'],
-                'transaction_type': 'BUY' if signal['action'] == 'BUY' else 'SELL',
-                'quantity': position_size,
-                'order_type': 'MARKET',
-                'product': 'MIS',  # Intraday
-                'validity': 'DAY',
-                'tag': f"SIMPLE_AUTO_{strategy_name}"
-            }
-            
-            # Place order through Zerodha
-            self.logger.info(f"🚀 PLACING ORDER: {signal['symbol']} {signal['action']} Qty: {position_size}")
-            
-            try:
-                order_id = await self.zerodha_client.place_order(order_params)
-                
-                if order_id:
-                    self.logger.info(f"✅ ORDER PLACED: {order_id} for {signal['symbol']} {signal['action']}")
-                    
-                    # Create mock order object for return
-                    mock_order = type('Order', (), {
-                        'order_id': order_id,
-                        'symbol': signal['symbol'],
-                        'action': signal['action'],
-                        'quantity': position_size
-                    })()
-                    
-                    # Track processed signal
-                    self.processed_signals.append({
-                        'signal': signal,
-                        'order_id': order_id,
-                        'timestamp': datetime.now().isoformat(),
-                        'status': 'ORDER_PLACED'
-                    })
-                    
-                    return [("default_user", mock_order)]
-                else:
-                    self.logger.error(f"❌ Failed to place order for {signal['symbol']}")
-                    return []
-                    
-            except Exception as e:
-                self.logger.error(f"❌ Order placement failed for {signal['symbol']}: {e}")
-                return []
-                
-        except Exception as e:
-            self.logger.error(f"❌ SimpleOrderProcessor error: {e}")
-            return []
 
 # CRITICAL FIX: Proper singleton orchestrator pattern
 _orchestrator_instance = None
