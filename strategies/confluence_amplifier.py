@@ -58,6 +58,25 @@ class ConfluenceAmplifier(BaseStrategy):
         except Exception as e:
             logger.error(f"Error in {self.name} strategy: {str(e)}")
     
+    def _generate_signals(self, data: Dict) -> List[Dict]:
+        """Generate signals based on confluence analysis"""
+        try:
+            # Clean up old signals first
+            self._cleanup_old_signals()
+            
+            # Check if we have enough signals for confluence analysis
+            if len(self.signal_history) < 2:
+                return []
+            
+            # Analyze confluence and generate amplified signals
+            confluent_signals = self._analyze_confluence(data)
+            
+            return confluent_signals
+            
+        except Exception as e:
+            logger.error(f"Error generating confluence signals: {e}")
+            return []
+    
     async def process_external_signal(self, signal: Dict):
         """Process a signal from another strategy and check for confluence"""
         try:

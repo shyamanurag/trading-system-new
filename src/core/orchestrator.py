@@ -225,6 +225,7 @@ class TradeEngine:
             if not zerodha_client:
                 try:
                     from brokers.zerodha import ZerodhaIntegration
+                    from brokers.resilient_zerodha import ResilientZerodhaConnection
                     import os
                     
                     # Use environment variables (your authenticated credentials)
@@ -232,19 +233,35 @@ class TradeEngine:
                         'api_key': os.getenv('ZERODHA_API_KEY'),
                         'api_secret': os.getenv('ZERODHA_API_SECRET'),
                         'user_id': os.getenv('ZERODHA_USER_ID'),
-                        'access_token': os.getenv('ZERODHA_ACCESS_TOKEN')
+                        'access_token': os.getenv('ZERODHA_ACCESS_TOKEN'),
+                        'mock_mode': False  # Always use real API for production
                     }
                     
                     if zerodha_config['api_key'] and zerodha_config['user_id']:
-                        zerodha_client = ZerodhaIntegration(zerodha_config)
-                        # Override the failed orchestrator client with working one
-                        orchestrator_instance.zerodha_client = zerodha_client
-                        self.logger.info(f"🔧 BYPASSED failed component - using direct Zerodha API for {signal['symbol']}")
+                        # Create broker instance
+                        broker = ZerodhaIntegration(zerodha_config)
+                        # CRITICAL FIX: Initialize and connect the client
+                        connection_success = await broker.initialize()
+                        if connection_success:
+                            # Wrap with ResilientZerodhaConnection as expected by orchestrator
+                            resilient_config = {
+                                'order_rate_limit': 1.0,
+                                'ws_reconnect_delay': 5,
+                                'ws_max_reconnect_attempts': 10
+                            }
+                            zerodha_client = ResilientZerodhaConnection(broker, resilient_config)
+                            # Override the failed orchestrator client with working one
+                            orchestrator_instance.zerodha_client = zerodha_client
+                            self.logger.info(f"🔧 BYPASSED failed component - using direct Zerodha API for {signal['symbol']}")
+                        else:
+                            self.logger.error(f"Failed to connect direct Zerodha client for {signal['symbol']}")
+                            zerodha_client = None
                     else:
                         self.logger.warning(f"Zerodha environment variables not available")
                         
                 except Exception as e:
                     self.logger.warning(f"Direct Zerodha access failed: {e}")
+                    zerodha_client = None
             
             # Method 3: If all else fails, log but don't block (important for debugging)
             if not zerodha_client:
