@@ -208,7 +208,7 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                 "total_trades": total_trades,  # Feed from autonomous trading
                 "success_rate": win_rate,
                 "daily_pnl": round(daily_pnl, 2),
-                "active_users": 1 if is_active else 0,  # Show 1 user when trading is active
+                "active_users": 1 if autonomous_status.get('system_ready') else 0,  # Show 1 user when system is ready
                 "total_pnl": round(daily_pnl, 2),  # Same as daily for now
                 "aum": 1000000.0,  # Paper trading capital
                 "daily_volume": round(abs(daily_pnl) * 10, 2),  # Estimated volume
@@ -251,7 +251,7 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                 "system_uptime": "Active" if is_active else "Stopped"
             },
             
-            # Users data (for compatibility)
+            # Users data (for compatibility) - ALWAYS show master user
             "users": [
                 {
                     "user_id": "AUTONOMOUS_TRADER",
@@ -260,9 +260,10 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                     "daily_pnl": round(daily_pnl, 2),
                     "win_rate": win_rate,
                     "active": is_active,
-                    "last_trade": autonomous_status.get('last_heartbeat')
+                    "last_trade": autonomous_status.get('last_heartbeat'),
+                    "status": "Ready" if autonomous_status.get('system_ready') else "Initializing"
                 }
-            ] if total_trades > 0 else []
+            ]
         }
         
         logger.info(f"📊 Dashboard summary: {total_trades} trades, ₹{daily_pnl:,.2f} P&L, {len(active_positions)} positions")
