@@ -29,6 +29,9 @@ envs:
 - key: ENVIRONMENT
   scope: RUN_AND_BUILD_TIME
   value: production
+- key: DEPLOYMENT_MODE
+  scope: RUN_AND_BUILD_TIME
+  value: "true"
 - key: DATABASE_URL
   scope: RUN_AND_BUILD_TIME
   value: postgresql://doadmin:AVNS_LpaPpsdL4CtOii03MnN@app-81cd3b75-f46c-49f9-8f76-09040fd8fc68-do-user-23093341-0.k.db.ondigitalocean.com:25060/defaultdb?sslmode=require
