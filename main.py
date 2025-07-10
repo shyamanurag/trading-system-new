@@ -123,14 +123,36 @@ async def lifespan(app: FastAPI):
         from data.truedata_client import initialize_truedata
         import os
         
-        # Check if TrueData auto-init should be skipped
+        # DEPLOYMENT FIX: Check if we're in deployment mode 
+        is_deployment = os.getenv('DEPLOYMENT_MODE', 'false').lower() == 'true'
         skip_truedata = os.getenv('SKIP_TRUEDATA_AUTO_INIT', 'false').lower() == 'true'
         
         if skip_truedata:
             logger.info("⏭️ TrueData auto-init SKIPPED (SKIP_TRUEDATA_AUTO_INIT=true)")
+        elif is_deployment:
+            logger.info("🚀 DEPLOYMENT MODE: TrueData will initialize in background after health checks")
+            # Start TrueData initialization in background thread to not block health checks
+            import threading
+            def background_init():
+                import time
+                time.sleep(5)  # Wait for health checks to pass first
+                logger.info("🔄 Starting background TrueData initialization...")
+                try:
+                    truedata_success = initialize_truedata()
+                    if truedata_success:
+                        logger.info("✅ Background TrueData initialization successful!")
+                    else:
+                        logger.warning("⚠️ Background TrueData initialization failed")
+                except Exception as e:
+                    logger.error(f"❌ Background TrueData error: {e}")
+            
+            # Start in background thread
+            init_thread = threading.Thread(target=background_init, daemon=True)
+            init_thread.start()
+            logger.info("✅ Background TrueData initialization started")
         else:
-            # CRITICAL FIX: Initialize TrueData synchronously to populate cache BEFORE other components
-            logger.info("🎯 Initializing TrueData synchronously to fix loading sequence...")
+            # PRODUCTION: Initialize TrueData synchronously (normal operation)
+            logger.info("🎯 PRODUCTION MODE: Initializing TrueData synchronously...")
             
             # Initialize immediately - no background thread, no delay
             truedata_success = initialize_truedata()
