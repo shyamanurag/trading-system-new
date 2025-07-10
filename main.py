@@ -125,11 +125,13 @@ async def lifespan(app: FastAPI):
         
         # DEPLOYMENT FIX: Check if we're in deployment mode 
         is_deployment = os.getenv('DEPLOYMENT_MODE', 'false').lower() == 'true'
+        # ALTERNATIVE: Use production environment as deployment indicator
+        is_production = os.getenv('ENVIRONMENT', 'development').lower() == 'production'
         skip_truedata = os.getenv('SKIP_TRUEDATA_AUTO_INIT', 'false').lower() == 'true'
         
         if skip_truedata:
             logger.info("⏭️ TrueData auto-init SKIPPED (SKIP_TRUEDATA_AUTO_INIT=true)")
-        elif is_deployment:
+        elif is_deployment or is_production:
             logger.info("🚀 DEPLOYMENT MODE: TrueData will initialize in background after health checks")
             # Start TrueData initialization in background thread to not block health checks
             import threading
