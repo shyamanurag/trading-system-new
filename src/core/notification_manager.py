@@ -137,11 +137,17 @@ class NotificationManager:
     async def mark_notification_read(self, user_id: str, notification_id: str) -> bool:
         """Mark a notification as read"""
         try:
-            await self.redis.hset(
-                f"user:{user_id}:notifications:{notification_id}",
-                'read',
-                'True'
-            )
+            if self.redis_available and self.redis:
+                await self.redis.hset(
+                    f"user:{user_id}:notifications:{notification_id}",
+                    'read',
+                    'True'
+                )
+            else:
+                # In-memory fallback
+                if user_id in self.memory_store['notifications']:
+                    if notification_id in self.memory_store['notifications'][user_id]:
+                        self.memory_store['notifications'][user_id][notification_id]['read'] = 'True'
             return True
             
         except Exception as e:
@@ -151,7 +157,13 @@ class NotificationManager:
     async def delete_notification(self, user_id: str, notification_id: str) -> bool:
         """Delete a notification"""
         try:
-            await self.redis.delete(f"user:{user_id}:notifications:{notification_id}")
+            if self.redis_available and self.redis:
+                await self.redis.delete(f"user:{user_id}:notifications:{notification_id}")
+            else:
+                # In-memory fallback
+                if user_id in self.memory_store['notifications']:
+                    if notification_id in self.memory_store['notifications'][user_id]:
+                        del self.memory_store['notifications'][user_id][notification_id]
             return True
             
         except Exception as e:
@@ -207,8 +219,12 @@ class NotificationManager:
                 return
                 
             # Get user's Slack channel
-            user_data = await self.redis.hgetall(f"user:{user_id}")
-            slack_channel = user_data.get('slack_channel')
+            if self.redis_available and self.redis:
+                user_data = await self.redis.hgetall(f"user:{user_id}")
+                slack_channel = user_data.get('slack_channel')
+            else:
+                # In-memory fallback - no user data stored
+                slack_channel = None
             
             if not slack_channel:
                 return
@@ -251,8 +267,12 @@ class NotificationManager:
                 return
                 
             # Get user's email
-            user_data = await self.redis.hgetall(f"user:{user_id}")
-            email = user_data.get('email')
+            if self.redis_available and self.redis:
+                user_data = await self.redis.hgetall(f"user:{user_id}")
+                email = user_data.get('email')
+            else:
+                # In-memory fallback - no user data stored
+                email = None
             
             if not email:
                 return
@@ -278,17 +298,21 @@ class NotificationManager:
         """Send in-app notification"""
         try:
             # Store in Redis for real-time delivery
-            await self.redis.publish(
-                f"user:{user_id}:notifications",
-                json.dumps({
-                    'type': notification.type,
-                    'title': notification.title,
-                    'message': notification.message,
-                    'priority': notification.priority,
-                    'timestamp': notification.timestamp.isoformat(),
-                    'data': notification.data
-                })
-            )
+            if self.redis_available and self.redis:
+                await self.redis.publish(
+                    f"user:{user_id}:notifications",
+                    json.dumps({
+                        'type': notification.type,
+                        'title': notification.title,
+                        'message': notification.message,
+                        'priority': notification.priority,
+                        'timestamp': notification.timestamp.isoformat(),
+                        'data': notification.data
+                    })
+                )
+            else:
+                # In-memory fallback - log the notification
+                logger.info(f"In-app notification for user {user_id}: {notification.title}")
             
         except Exception as e:
             logger.error(f"Failed to send in-app notification for user {user_id}: {e}")
