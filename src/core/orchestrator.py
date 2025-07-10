@@ -158,16 +158,40 @@ class TradeEngine:
                     self.logger.warning(f"Redis connection failed: {redis_error}")
                     self.logger.info("🔄 Initializing OrderManager without Redis (using in-memory fallback)")
                     
-                    # Create Redis-less config for OrderManager
-                    config_no_redis = config.copy()
-                    config_no_redis['redis'] = None
-                    config_no_redis['redis_url'] = None
+                    # Create Redis-less config for OrderManager with proper structure
+                    config_no_redis = {
+                        'redis': None,
+                        'redis_url': None,
+                        'database': config.get('database', {'url': os.getenv('DATABASE_URL', 'sqlite:///trading.db')}),
+                        'trading': config.get('trading', {
+                            'max_daily_loss': 100000,
+                            'max_position_size': 1000000,
+                            'risk_per_trade': 0.02
+                        }),
+                        'notifications': config.get('notifications', {
+                            'enabled': True,
+                            'email_alerts': False,
+                            'sms_alerts': False
+                        }),
+                        'strategies': config.get('strategies', {}),  # CRITICAL: Include strategies
+                        'trade_rotation': config.get('trade_rotation', {
+                            'min_interval_seconds': 300,
+                            'max_position_size_percent': 0.1
+                        }),
+                        'evolution': config.get('evolution', {
+                            'learning_window_days': 30,
+                            'min_samples_for_learning': 100,
+                            'retraining_interval_hours': 24
+                        }),
+                        'zerodha_client': self.zerodha_client  # CRITICAL FIX: Pass Zerodha client to OrderManager
+                    }
                     
                     try:
                         self.order_manager = OrderManager(config_no_redis)
                         self.logger.info("OrderManager initialized with in-memory fallback")
                     except Exception as e:
                         self.logger.error(f"OrderManager initialization failed even without Redis: {e}")
+                        self.logger.error(f"Config structure: {list(config_no_redis.keys())}")
                         self.order_manager = None
             
             except Exception as e:
