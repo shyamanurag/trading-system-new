@@ -102,4 +102,5 @@ async def test_auth_v1():
     return {"message": "Simplified Auth router is working!", "endpoint": "/api/v1/auth/test"}
 
 # Export router and dependency function
-__all__ = ["router_v1", "get_current_user"] 
+router = router_v1  # Add alias for main.py compatibility
+__all__ = ["router", "router_v1", "get_current_user"] 
