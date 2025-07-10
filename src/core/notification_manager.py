@@ -31,10 +31,33 @@ class NotificationManager:
     
     def __init__(self, config: Dict):
         self.config = config
-        self.redis = redis.from_url(config['redis_url'])
+        
+        # CRITICAL FIX: Handle None redis_url properly
+        redis_url = config.get('redis_url')
+        if redis_url:
+            try:
+                self.redis = redis.from_url(redis_url)
+                self.redis_available = True
+                logger.info("✅ NotificationManager: Redis connection configured")
+            except Exception as e:
+                logger.warning(f"NotificationManager: Redis connection failed: {e}")
+                self.redis = None
+                self.redis_available = False
+        else:
+            self.redis = None
+            self.redis_available = False
+            logger.info("⚠️ NotificationManager: Using in-memory fallback (no Redis)")
+        
         self.slack_webhook = config.get('slack_webhook_url')
         self.email_config = config.get('email')
         
+        # In-memory fallback storage
+        if not self.redis_available:
+            self.memory_store = {
+                'notifications': {},  # user_id -> List[notification_data]
+                'preferences': {}     # user_id -> preferences_dict
+            }
+            
     async def send_notification(self, user_id: str, notification: Notification) -> bool:
         """Send a notification to a user"""
         try:
@@ -65,11 +88,30 @@ class NotificationManager:
                                    limit: int = 50) -> List[Notification]:
         """Get user's notifications"""
         try:
-            # Get notifications from Redis
             notifications = []
-            async for key in self.redis.scan_iter(f"user:{user_id}:notifications:*"):
-                notification_data = await self.redis.hgetall(key)
-                if notification_data:
+            
+            if self.redis_available and self.redis:
+                # Redis storage
+                async for key in self.redis.scan_iter(f"user:{user_id}:notifications:*"):
+                    notification_data = await self.redis.hgetall(key)
+                    if notification_data:
+                        notification = Notification(
+                            user_id=user_id,
+                            type=notification_data['type'],
+                            title=notification_data['title'],
+                            message=notification_data['message'],
+                            priority=notification_data['priority'],
+                            timestamp=datetime.fromisoformat(notification_data['timestamp']),
+                            read=notification_data['read'] == 'True',
+                            data=json.loads(notification_data['data'])
+                        )
+                        
+                        if not unread_only or not notification.read:
+                            notifications.append(notification)
+            else:
+                # In-memory fallback
+                user_notifications = self.memory_store['notifications'].get(user_id, {})
+                for notification_id, notification_data in user_notifications.items():
                     notification = Notification(
                         user_id=user_id,
                         type=notification_data['type'],
@@ -83,7 +125,7 @@ class NotificationManager:
                     
                     if not unread_only or not notification.read:
                         notifications.append(notification)
-                        
+            
             # Sort by timestamp and limit
             notifications.sort(key=lambda x: x.timestamp, reverse=True)
             return notifications[:limit]
@@ -117,21 +159,29 @@ class NotificationManager:
             return False
             
     async def _store_notification(self, user_id: str, notification: Notification):
-        """Store notification in Redis"""
+        """Store notification in Redis or memory"""
         try:
             notification_id = f"{datetime.now().timestamp()}"
-            await self.redis.hset(
-                f"user:{user_id}:notifications:{notification_id}",
-                mapping={
-                    'type': notification.type,
-                    'title': notification.title,
-                    'message': notification.message,
-                    'priority': notification.priority,
-                    'timestamp': notification.timestamp.isoformat(),
-                    'read': str(notification.read),
-                    'data': json.dumps(notification.data)
-                }
-            )
+            notification_data = {
+                'type': notification.type,
+                'title': notification.title,
+                'message': notification.message,
+                'priority': notification.priority,
+                'timestamp': notification.timestamp.isoformat(),
+                'read': str(notification.read),
+                'data': json.dumps(notification.data)
+            }
+            
+            if self.redis_available and self.redis:
+                await self.redis.hset(
+                    f"user:{user_id}:notifications:{notification_id}",
+                    mapping=notification_data
+                )
+            else:
+                # In-memory fallback
+                if user_id not in self.memory_store['notifications']:
+                    self.memory_store['notifications'][user_id] = {}
+                self.memory_store['notifications'][user_id][notification_id] = notification_data
             
         except Exception as e:
             logger.error(f"Failed to store notification for user {user_id}: {e}")
@@ -139,8 +189,12 @@ class NotificationManager:
     async def _get_user_preferences(self, user_id: str) -> Dict:
         """Get user's notification preferences"""
         try:
-            preferences = await self.redis.hgetall(f"user:{user_id}:preferences")
-            return json.loads(preferences.get('notifications', '{}'))
+            if self.redis_available and self.redis:
+                preferences = await self.redis.hgetall(f"user:{user_id}:preferences")
+                return json.loads(preferences.get('notifications', '{}'))
+            else:
+                # In-memory fallback
+                return self.memory_store['preferences'].get(user_id, {})
             
         except Exception as e:
             logger.error(f"Failed to get preferences for user {user_id}: {e}")
