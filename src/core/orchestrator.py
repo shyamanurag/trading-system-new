@@ -1067,7 +1067,8 @@ class TradingOrchestrator:
             return {
                 'is_running': self.is_running,
                 'system_ready': system_ready,
-                'active_strategies': len(self.active_strategies),
+                'active_strategies': self.active_strategies,  # Return list not count
+                'active_strategies_count': len(self.active_strategies),  # Add count separately
                 'strategy_details': strategy_details,
                 'risk_status': risk_status,
                 'components': self.components.copy(),

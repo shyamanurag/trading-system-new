@@ -79,7 +79,7 @@ async def get_status(
             "start_time": status.get("start_time"),
             "last_heartbeat": status.get("last_heartbeat", datetime.now().isoformat()),
             "active_strategies": status.get("active_strategies", []),
-            "active_strategies_count": len(status.get("active_strategies", [])),  # CRITICAL FIX: Add count
+            "active_strategies_count": status.get("active_strategies_count", len(status.get("active_strategies", []))),  # Use count from orchestrator
             "active_positions": status.get("active_positions", 0),
             "total_trades": status.get("total_trades", 0),
             "daily_pnl": status.get("daily_pnl", 0.0),
