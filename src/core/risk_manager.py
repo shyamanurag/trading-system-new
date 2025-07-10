@@ -295,7 +295,14 @@ class RiskManager:
         self.config = config
         self.position_tracker = position_tracker
         self.event_bus = event_bus
-        self.redis_client = redis.Redis(host=config['redis']['host'], port=config['redis']['port'])
+        
+        # CRITICAL FIX: Handle None redis config properly
+        if config.get('redis') is not None:
+            self.redis_client = redis.Redis(host=config['redis']['host'], port=config['redis']['port'])
+        else:
+            # Use None when Redis is not available
+            self.redis_client = None
+            logger.warning("⚠️ RiskManager using fallback mode (no Redis)")
         
         # Risk components
         self.var_calculator = ValueAtRiskCalculator()
@@ -487,9 +494,10 @@ class RiskManager:
     async def _get_current_vix(self) -> float:
         """Get current VIX value"""
         try:
-            vix_data = await self.redis_client.get('market:vix')
-            if vix_data:
-                return float(vix_data)
+            if self.redis_client is not None:
+                vix_data = await self.redis_client.get('market:vix')
+                if vix_data:
+                    return float(vix_data)
             return 0.0
         except Exception as e:
             logger.error(f"Error getting VIX: {str(e)}")

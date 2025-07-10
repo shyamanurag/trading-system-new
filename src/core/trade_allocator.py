@@ -4,6 +4,7 @@ from typing import Dict, Any, List, Optional, Tuple
 import numpy as np
 import asyncio
 import time
+import uuid
 
 from .models import Order, OrderType, OrderSide
 from .exceptions import OrderError
@@ -52,8 +53,22 @@ class TradeAllocator:
             'user_shares': 300          # 5 minutes
         }
         
-        # Start background cache update task
-        asyncio.create_task(self._background_cache_updater())
+        # Initialize background task tracker
+        self._background_task = None
+        
+        # CRITICAL FIX: Don't create async task during __init__ - defer until needed
+        # This prevents "no running event loop" error during OrderManager initialization
+        # The background task will be started when the first trade allocation is requested
+        
+    async def _ensure_background_task_running(self):
+        """Ensure background cache updater is running"""
+        if self._background_task is None or self._background_task.done():
+            try:
+                self._background_task = asyncio.create_task(self._background_cache_updater())
+                logger.info("Started background cache updater task")
+            except RuntimeError as e:
+                logger.warning(f"Could not start background task: {e}")
+                # Continue without background task - will update caches on-demand
     
     async def _background_cache_updater(self):
         """Background task to keep caches fresh"""
@@ -310,13 +325,41 @@ class TradeAllocator:
     
     # Keep original method as fallback
     async def allocate_trade(self, strategy_name: str, signal: Dict[str, Any]) -> List[Tuple[str, Order]]:
-        """Original allocation method - used as fallback"""
+        """Main allocation method - starts background task and uses optimized version"""
         try:
-            # Use optimized version by default
+            # CRITICAL FIX: Ensure background task is running
+            await self._ensure_background_task_running()
+            
+            # Use optimized version
             return await self.allocate_trade_optimized(strategy_name, signal)
         except Exception as e:
-            logger.error(f"Optimized allocation failed, using original: {e}")
-            return await self.allocate_trade_original(strategy_name, signal)
+            logger.error(f"Optimized allocation failed: {e}")
+            # Fallback to basic allocation without background caching
+            return await self._allocate_trade_fallback(strategy_name, signal)
+    
+    async def _allocate_trade_fallback(self, strategy_name: str, signal: Dict[str, Any]) -> List[Tuple[str, Order]]:
+        """Fallback allocation method without caching"""
+        try:
+            # Get eligible users
+            eligible_users = await self._get_eligible_users(strategy_name)
+            if not eligible_users:
+                raise OrderError("No eligible users found for trade allocation")
+            
+            # Simple allocation to first eligible user
+            user_id = eligible_users[0]
+            quantity = signal.get('quantity', 1)
+            
+            # Create order
+            order = await self._create_user_order(user_id, signal, quantity)
+            
+            # Update last trade time
+            self.last_trade_time[user_id] = datetime.now()
+            
+            return [(user_id, order)]
+            
+        except Exception as e:
+            logger.error(f"Fallback allocation failed: {e}")
+            raise OrderError(f"Failed to allocate trade: {e}")
     
     def _extract_trade_features(self, signal: Dict[str, Any]) -> Dict[str, Any]:
         """Extract features for trade prediction"""

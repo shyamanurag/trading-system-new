@@ -366,16 +366,26 @@ class OrderManager:
 
     async def _store_bracket_order(self, bracket_order: BracketOrder):
         """Store bracket order for monitoring"""
-        key = f"bracket_orders:{bracket_order.user_id}:{bracket_order.order_id}"
-        await self.redis.set(key, json.dumps(bracket_order.__dict__))
+        if self.redis is not None:
+            key = f"bracket_orders:{bracket_order.user_id}:{bracket_order.order_id}"
+            await self.redis.set(key, json.dumps(bracket_order.__dict__))
+        else:
+            logger.warning("Redis not available - bracket order not stored for monitoring")
 
     async def _store_conditional_order(self, conditional_order: ConditionalOrder):
         """Store conditional order for monitoring"""
-        key = f"conditional_orders:{conditional_order.user_id}:{conditional_order.order_id}"
-        await self.redis.set(key, json.dumps(conditional_order.__dict__))
+        if self.redis is not None:
+            key = f"conditional_orders:{conditional_order.user_id}:{conditional_order.order_id}"
+            await self.redis.set(key, json.dumps(conditional_order.__dict__))
+        else:
+            logger.warning("Redis not available - conditional order not stored for monitoring")
 
     async def _monitor_bracket_orders(self):
         """Monitor and manage bracket orders"""
+        if self.redis is None:
+            logger.warning("Redis not available - bracket order monitoring disabled")
+            return
+            
         while True:
             try:
                 # Get all bracket orders
@@ -402,6 +412,10 @@ class OrderManager:
 
     async def _monitor_conditional_orders(self):
         """Monitor and manage conditional orders"""
+        if self.redis is None:
+            logger.warning("Redis not available - conditional order monitoring disabled")
+            return
+            
         while True:
             try:
                 # Get all conditional orders
@@ -880,8 +894,39 @@ class OrderManager:
             logger.error(f"Error sending order notification: {str(e)}")
 
     def _start_background_tasks(self):
-        """Start background monitoring tasks"""
-        asyncio.create_task(self._monitor_bracket_orders())
-        asyncio.create_task(self._monitor_conditional_orders())
-        asyncio.create_task(self.capital_manager.end_of_day_update())
-        # Start other background tasks... 
+        """Initialize background task tracking - tasks will be started when needed"""
+        # CRITICAL FIX: Don't create async tasks during __init__ - defer until needed
+        # This prevents "no running event loop" error during OrderManager initialization
+        self._background_tasks = {
+            'bracket_monitor': None,
+            'conditional_monitor': None,
+            'eod_update': None
+        }
+        
+        # Tasks will be started when first needed by _ensure_background_tasks_running()
+        logger.info("Background task tracking initialized - tasks will start when needed")
+        
+    async def _ensure_background_tasks_running(self):
+        """Ensure background monitoring tasks are running"""
+        try:
+            # Start bracket order monitoring if not running
+            if (self._background_tasks['bracket_monitor'] is None or 
+                self._background_tasks['bracket_monitor'].done()):
+                self._background_tasks['bracket_monitor'] = asyncio.create_task(self._monitor_bracket_orders())
+                logger.info("Started bracket order monitoring task")
+            
+            # Start conditional order monitoring if not running
+            if (self._background_tasks['conditional_monitor'] is None or 
+                self._background_tasks['conditional_monitor'].done()):
+                self._background_tasks['conditional_monitor'] = asyncio.create_task(self._monitor_conditional_orders())
+                logger.info("Started conditional order monitoring task")
+            
+            # Start end of day update if not running
+            if (self._background_tasks['eod_update'] is None or 
+                self._background_tasks['eod_update'].done()):
+                self._background_tasks['eod_update'] = asyncio.create_task(self.capital_manager.end_of_day_update())
+                logger.info("Started end of day update task")
+                
+        except RuntimeError as e:
+            logger.warning(f"Could not start background tasks: {e}")
+            # Continue without background tasks - they're not critical for basic operation 
