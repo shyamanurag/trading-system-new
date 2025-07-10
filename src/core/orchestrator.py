@@ -1060,7 +1060,7 @@ class TradingOrchestrator:
             risk_status = {
                 'max_daily_loss': 100000,
                 'max_position_size': 1000000,
-                'current_positions': len(self.position_tracker.positions) if self.position_tracker else 0,
+                'current_positions': len(getattr(self.position_tracker, 'positions', [])) if self.position_tracker else 0,
                 'daily_pnl': 0.0
             }
             
