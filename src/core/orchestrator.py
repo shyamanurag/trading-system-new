@@ -598,65 +598,26 @@ class TradingOrchestrator:
                 redis_password = os.environ.get('REDIS_PASSWORD')
                 
                 try:
-                    self.redis_client = redis.Redis(
+                    # CRITICAL FIX: Use connection pooling to prevent "Connection closed by server"
+                    connection_pool = redis.ConnectionPool(
                         host=redis_host,
                         port=redis_port,
                         password=redis_password,
                         decode_responses=True,
-                        socket_connect_timeout=5,
-                        socket_timeout=5
+                        socket_connect_timeout=10,
+                        socket_timeout=10,
+                        socket_keepalive=True,
+                        socket_keepalive_options={},
+                        health_check_interval=30,
+                        max_connections=3,  # Limit connections to prevent server overload
+                        retry_on_timeout=True
                     )
+                    
+                    self.redis_client = redis.Redis(connection_pool=connection_pool)
                     
                     # Test connection
                     self.redis_client.ping()
-                    self.logger.info(f"✅ Orchestrator Redis connected: {redis_host}:{redis_port}")
-                except Exception as redis_error:
-                    self.logger.warning(f"⚠️ Redis connection failed: {redis_error}")
-                    self.redis_client = None
-            
-            # Try to get data from Redis first
-            if self.redis_client:
-                try:
-                    cached_data = self.redis_client.hgetall("truedata:live_cache")
-                    
-                    if cached_data:
-                        # Parse JSON data
-                        parsed_data = {}
-                        for symbol, data_json in cached_data.items():
-                            try:
-                                parsed_data[symbol] = json.loads(data_json)
-                            except json.JSONDecodeError:
-                                continue
-                        
-                        if parsed_data:
-                            self.logger.info(f"📊 Using Redis cache: {len(parsed_data)} symbols")
-                            return parsed_data
-                except Exception as redis_error:
-                    self.logger.warning(f"⚠️ Redis cache read failed: {redis_error}")
-            
-            # STRATEGY 2: Direct TrueData cache access (FALLBACK)
-            # STRATEGY 1: Redis cache (PRIMARY - fixes process isolation)
-            if not hasattr(self, 'redis_client') or not self.redis_client:
-                import redis
-                import json
-                
-                redis_host = os.environ.get('REDIS_HOST', 'localhost')
-                redis_port = int(os.environ.get('REDIS_PORT', 6379))
-                redis_password = os.environ.get('REDIS_PASSWORD')
-                
-                try:
-                    self.redis_client = redis.Redis(
-                        host=redis_host,
-                        port=redis_port,
-                        password=redis_password,
-                        decode_responses=True,
-                        socket_connect_timeout=5,
-                        socket_timeout=5
-                    )
-                    
-                    # Test connection
-                    self.redis_client.ping()
-                    self.logger.info(f"✅ Orchestrator Redis connected: {redis_host}:{redis_port}")
+                    self.logger.info(f"✅ Orchestrator Redis connected with pool: {redis_host}:{redis_port}")
                 except Exception as redis_error:
                     self.logger.warning(f"⚠️ Redis connection failed: {redis_error}")
                     self.redis_client = None
