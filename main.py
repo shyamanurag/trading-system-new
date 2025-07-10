@@ -115,98 +115,73 @@ async def global_exception_handler(request, exc):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager"""
+    """Application lifespan manager - FIXED LOADING SEQUENCE"""
     logger.info("Starting AlgoAuto Trading System...")
     
-    # Initialize any required services here
-    # For example: database connections, cache, message queues, etc.
-    
-    # TrueData initialization - Smart deployment overlap handling
+    # STEP 1: Initialize TrueData FIRST (synchronously) - CRITICAL FIX
     try:
-        logger.info("🚀 Initializing TrueData (deployment-aware)...")
+        logger.info("🚀 STEP 1: Initializing TrueData (SYNCHRONOUS - highest priority)...")
         from data.truedata_client import initialize_truedata
-        import asyncio
         import os
         
-        # Check if TrueData auto-init should be skipped (break persistent connection cycle)
+        # Check if TrueData auto-init should be skipped
         skip_truedata = os.getenv('SKIP_TRUEDATA_AUTO_INIT', 'false').lower() == 'true'
         
         if skip_truedata:
             logger.info("⏭️ TrueData auto-init SKIPPED (SKIP_TRUEDATA_AUTO_INIT=true)")
-            logger.info("💡 This breaks persistent connection cycles during deployments")
-            logger.info("📊 TrueData available via manual API connection: /api/v1/truedata/truedata/reconnect")
-            logger.info("🔄 Remove environment variable to re-enable auto-initialization")
-            # Continue with app startup, just skip TrueData initialization
         else:
-            # Non-blocking TrueData initialization to prevent deployment timeouts
-            logger.info("🚀 Starting non-blocking TrueData initialization...")
+            # CRITICAL FIX: Initialize TrueData synchronously to populate cache BEFORE other components
+            logger.info("🎯 Initializing TrueData synchronously to fix loading sequence...")
             
-            def init_truedata_background():
-                """Initialize TrueData in background to prevent blocking startup"""
-                try:
-                    # Check for deployment scenarios
-                    is_production = os.getenv('ENVIRONMENT') == 'production'
-                    is_deployment = 'ondigitalocean.app' in os.getenv('APP_URL', '') or is_production
-                    
-                    if is_deployment:
-                        logger.info("🏭 Deployment environment detected - using graceful connection")
-                        # Small delay to let old container finish, but don't block health checks
-                        import time
-                        time.sleep(10)
-                    
-                    truedata_success = initialize_truedata()
-                    
-                    if truedata_success:
-                        logger.info("✅ TrueData initialized successfully!")
-                        logger.info("📊 Live market data is now available")
-                    else:
-                        logger.warning("⚠️ TrueData initialization failed - will retry automatically")
-                        logger.info("💡 Normal during deployment overlaps - system remains autonomous")
-                except Exception as e:
-                    logger.error(f"❌ Background TrueData init error: {e}")
+            # Initialize immediately - no background thread, no delay
+            truedata_success = initialize_truedata()
             
-            # Start TrueData initialization in background thread (non-blocking)
-            import threading
-            truedata_thread = threading.Thread(target=init_truedata_background, daemon=True)
-            truedata_thread.start()
-            logger.info("⚡ TrueData initialization started in background - app startup continues")
-            
+            if truedata_success:
+                logger.info("✅ TrueData initialized successfully! Cache will be populated.")
+                logger.info("📊 Market data is now available for cache system")
+                
+                # Give TrueData a moment to establish connection and populate cache
+                import time
+                time.sleep(3)
+                
+                # Verify cache is populated
+                from data.truedata_client import live_market_data
+                if live_market_data and len(live_market_data) > 0:
+                    logger.info(f"✅ Cache populated: {len(live_market_data)} symbols available")
+                else:
+                    logger.warning("⚠️ Cache still empty after initialization")
+                    
+            else:
+                logger.warning("⚠️ TrueData initialization failed")
+                
     except Exception as e:
         logger.error(f"❌ TrueData initialization error: {e}")
-        logger.info("📊 App continues autonomously - TrueData will retry automatically")
+        logger.info("📊 App continues - cache will be empty initially")
     
-    # App state for debugging
-    app.state.build_timestamp = datetime.now().isoformat()
-    app.state.truedata_auto_init = False  # Disabled to prevent crashes
+    # STEP 2: Load routers (cache system will now find populated data)
+    logger.info("🚀 STEP 2: Loading API routers (cache system will find populated data)...")
     
-    # Store successfully loaded routers count
-    loaded_count = sum(1 for r in routers_loaded.values() if r is not None)
-    app.state.routers_loaded = loaded_count
-    app.state.total_routers = len(router_imports)
-    
-    logger.info(f"Loaded {loaded_count}/{len(router_imports)} routers successfully")
-    
-    # Initialize Intelligent Symbol Management System
+    # STEP 3: Initialize Symbol Management System (after TrueData is ready)
     try:
-        logger.info("🤖 Starting Intelligent Symbol Management System...")
+        logger.info("🤖 STEP 3: Starting Intelligent Symbol Management System...")
         from src.core.intelligent_symbol_manager import start_intelligent_symbol_management
         await start_intelligent_symbol_management()
         logger.info("✅ Intelligent Symbol Manager started successfully!")
-        logger.info("📊 Now managing up to 250 NSE F&O symbols dynamically")
+        logger.info("📊 Now managing symbols with populated cache")
     except Exception as e:
         logger.error(f"❌ Intelligent Symbol Manager startup failed: {e}")
         logger.info("🔄 Will continue with basic symbol management")
 
-    # Initialize Trading Orchestrator - CRITICAL FIX for 500 errors
+    # STEP 4: Initialize Trading Orchestrator (after cache is populated)
     try:
-        logger.info("🚀 Initializing Trading Orchestrator...")
+        logger.info("🚀 STEP 4: Initializing Trading Orchestrator...")
         from src.core.orchestrator import TradingOrchestrator, set_orchestrator_instance
         
-        # Create orchestrator instance directly (bypass get_instance method)
-        logger.info("🔧 Creating orchestrator instance directly...")
+        # Create orchestrator instance
+        logger.info("🔧 Creating orchestrator instance...")
         orchestrator = TradingOrchestrator()
         
-        # Initialize the orchestrator
+        # Initialize the orchestrator (cache should be populated now)
         init_success = await orchestrator.initialize()
         
         if init_success and orchestrator:
@@ -222,10 +197,21 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Trading Orchestrator initialization failed: {e}")
         logger.info("🔄 API will use fallback mode")
 
+    # App state for debugging
+    app.state.build_timestamp = datetime.now().isoformat()
+    app.state.truedata_auto_init = True  # Re-enabled with fixed sequence
+    
+    # Store successfully loaded routers count
+    loaded_count = sum(1 for r in routers_loaded.values() if r is not None)
+    app.state.routers_loaded = loaded_count
+    app.state.total_routers = len(router_imports)
+    
+    logger.info(f"Loaded {loaded_count}/{len(router_imports)} routers successfully")
+
     # Mark startup as complete for health checks
     global app_startup_complete
     app_startup_complete = True
-    logger.info("✅ Application startup complete - ready for traffic")
+    logger.info("✅ Application startup complete - FIXED LOADING SEQUENCE")
     
     yield
     
