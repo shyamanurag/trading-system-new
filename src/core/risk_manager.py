@@ -297,8 +297,17 @@ class RiskManager:
         self.event_bus = event_bus
         
         # CRITICAL FIX: Handle None redis config properly
-        if config.get('redis') is not None:
-            self.redis_client = redis.Redis(host=config['redis']['host'], port=config['redis']['port'])
+        redis_config = config.get('redis')
+        if redis_config is not None and isinstance(redis_config, dict):
+            try:
+                self.redis_client = redis.Redis(
+                    host=redis_config.get('host', 'localhost'), 
+                    port=redis_config.get('port', 6379)
+                )
+                logger.info("✅ RiskManager: Redis client configured")
+            except Exception as e:
+                logger.warning(f"⚠️ RiskManager: Redis initialization failed: {e}")
+                self.redis_client = None
         else:
             # Use None when Redis is not available
             self.redis_client = None
@@ -325,8 +334,9 @@ class RiskManager:
         self.user_daily_risk = {}
         self.user_hard_stops = set()
 
-        # Setup event handlers
-        self._setup_event_handlers()
+        # CRITICAL FIX: Setup event handlers will be called during initialization, not in constructor
+        # Store for later async initialization
+        self._event_handlers_setup = False
 
     async def initialize_user_risk(self, user_id: str, capital: float) -> bool:
         """Initialize risk tracking for a new user"""
@@ -495,19 +505,33 @@ class RiskManager:
         """Get current VIX value"""
         try:
             if self.redis_client is not None:
-                vix_data = await self.redis_client.get('market:vix')
-                if vix_data:
-                    return float(vix_data)
+            vix_data = await self.redis_client.get('market:vix')
+            if vix_data:
+                return float(vix_data)
             return 0.0
         except Exception as e:
             logger.error(f"Error getting VIX: {str(e)}")
             return 0.0
 
     def _setup_event_handlers(self):
-        """Setup event subscriptions"""
-        self.event_bus.subscribe(EventType.POSITION_ADDED, self._handle_position_opened)
-        self.event_bus.subscribe(EventType.POSITION_CLOSED, self._handle_position_closed)
-        self.event_bus.subscribe(EventType.POSITION_UPDATED, self._handle_position_updated)
+        """Setup event subscriptions - DEPRECATED: Use async_initialize_event_handlers instead"""
+        # This method is kept for compatibility but should not be called
+        # as it causes RuntimeWarning about unawaited coroutines
+        logger.warning("⚠️ _setup_event_handlers called - should use async_initialize_event_handlers instead")
+
+    async def async_initialize_event_handlers(self):
+        """CRITICAL FIX: Properly setup event subscriptions asynchronously"""
+        if not self._event_handlers_setup:
+            try:
+                await self.event_bus.subscribe(EventType.POSITION_ADDED, self._handle_position_opened)
+                await self.event_bus.subscribe(EventType.POSITION_CLOSED, self._handle_position_closed)
+                await self.event_bus.subscribe(EventType.POSITION_UPDATED, self._handle_position_updated)
+                self._event_handlers_setup = True
+                logger.info("✅ RiskManager: Event handlers initialized successfully")
+            except Exception as e:
+                logger.error(f"❌ RiskManager: Failed to setup event handlers: {e}")
+                # Continue without event handlers rather than failing completely
+                self._event_handlers_setup = False
 
     async def start_monitoring(self):
         """Start risk monitoring task"""

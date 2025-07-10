@@ -82,6 +82,15 @@ class Settings(BaseSettings):
         """Get connection arguments for SQLAlchemy"""
         connect_args = {}
         
+        # CRITICAL FIX: Only apply SSL settings to PostgreSQL databases, not SQLite
+        database_url = self.database_url
+        
+        # Check if this is a SQLite database
+        if database_url.startswith('sqlite:'):
+            # SQLite doesn't support SSL - return empty connect_args
+            return connect_args
+        
+        # Only apply SSL settings for PostgreSQL/other databases
         # If using DigitalOcean DATABASE_URL or SSL is required
         if self.DATABASE_URL or self.DATABASE_SSL == 'require':
             connect_args['sslmode'] = 'require'

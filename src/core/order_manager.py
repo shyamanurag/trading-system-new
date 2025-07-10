@@ -62,6 +62,9 @@ class OrderManager:
         self.system_evolution = SystemEvolution(config)
         self.capital_manager = CapitalManager(config)
         
+        # CRITICAL FIX: Mark that async initialization is needed
+        self._async_components_initialized = False
+        
         # Initialize order queues and locks
         self.order_queues = {}
         self.order_locks = {}
@@ -81,6 +84,24 @@ class OrderManager:
         
         # Start background tasks
         self._start_background_tasks()
+
+    async def async_initialize_components(self):
+        """CRITICAL FIX: Async initialization for components that need it"""
+        if not self._async_components_initialized:
+            try:
+                # Initialize RiskManager event handlers properly
+                if hasattr(self.risk_manager, 'async_initialize_event_handlers'):
+                    await self.risk_manager.async_initialize_event_handlers()
+                    logger.info("✅ OrderManager: RiskManager event handlers initialized")
+                else:
+                    logger.warning("⚠️ OrderManager: RiskManager doesn't have async_initialize_event_handlers")
+                
+                self._async_components_initialized = True
+                logger.info("✅ OrderManager: All async components initialized")
+            except Exception as e:
+                logger.error(f"❌ OrderManager: Failed to initialize async components: {e}")
+                # Continue without async components rather than failing completely
+                self._async_components_initialized = False
 
     async def place_strategy_order(self, strategy_name: str, signal: Dict[str, Any]) -> List[Tuple[str, Order]]:
         """Place an order based on a strategy signal with trade allocation and system evolution"""
@@ -367,16 +388,16 @@ class OrderManager:
     async def _store_bracket_order(self, bracket_order: BracketOrder):
         """Store bracket order for monitoring"""
         if self.redis is not None:
-            key = f"bracket_orders:{bracket_order.user_id}:{bracket_order.order_id}"
-            await self.redis.set(key, json.dumps(bracket_order.__dict__))
+        key = f"bracket_orders:{bracket_order.user_id}:{bracket_order.order_id}"
+        await self.redis.set(key, json.dumps(bracket_order.__dict__))
         else:
             logger.warning("Redis not available - bracket order not stored for monitoring")
 
     async def _store_conditional_order(self, conditional_order: ConditionalOrder):
         """Store conditional order for monitoring"""
         if self.redis is not None:
-            key = f"conditional_orders:{conditional_order.user_id}:{conditional_order.order_id}"
-            await self.redis.set(key, json.dumps(conditional_order.__dict__))
+        key = f"conditional_orders:{conditional_order.user_id}:{conditional_order.order_id}"
+        await self.redis.set(key, json.dumps(conditional_order.__dict__))
         else:
             logger.warning("Redis not available - conditional order not stored for monitoring")
 

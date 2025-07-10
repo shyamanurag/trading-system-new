@@ -138,11 +138,11 @@ class NotificationManager:
         """Mark a notification as read"""
         try:
             if self.redis_available and self.redis:
-                await self.redis.hset(
-                    f"user:{user_id}:notifications:{notification_id}",
-                    'read',
-                    'True'
-                )
+            await self.redis.hset(
+                f"user:{user_id}:notifications:{notification_id}",
+                'read',
+                'True'
+            )
             else:
                 # In-memory fallback
                 if user_id in self.memory_store['notifications']:
@@ -158,7 +158,7 @@ class NotificationManager:
         """Delete a notification"""
         try:
             if self.redis_available and self.redis:
-                await self.redis.delete(f"user:{user_id}:notifications:{notification_id}")
+            await self.redis.delete(f"user:{user_id}:notifications:{notification_id}")
             else:
                 # In-memory fallback
                 if user_id in self.memory_store['notifications']:
@@ -220,8 +220,8 @@ class NotificationManager:
                 
             # Get user's Slack channel
             if self.redis_available and self.redis:
-                user_data = await self.redis.hgetall(f"user:{user_id}")
-                slack_channel = user_data.get('slack_channel')
+            user_data = await self.redis.hgetall(f"user:{user_id}")
+            slack_channel = user_data.get('slack_channel')
             else:
                 # In-memory fallback - no user data stored
                 slack_channel = None
@@ -268,8 +268,8 @@ class NotificationManager:
                 
             # Get user's email
             if self.redis_available and self.redis:
-                user_data = await self.redis.hgetall(f"user:{user_id}")
-                email = user_data.get('email')
+            user_data = await self.redis.hgetall(f"user:{user_id}")
+            email = user_data.get('email')
             else:
                 # In-memory fallback - no user data stored
                 email = None
@@ -299,17 +299,17 @@ class NotificationManager:
         try:
             # Store in Redis for real-time delivery
             if self.redis_available and self.redis:
-                await self.redis.publish(
-                    f"user:{user_id}:notifications",
-                    json.dumps({
-                        'type': notification.type,
-                        'title': notification.title,
-                        'message': notification.message,
-                        'priority': notification.priority,
-                        'timestamp': notification.timestamp.isoformat(),
-                        'data': notification.data
-                    })
-                )
+            await self.redis.publish(
+                f"user:{user_id}:notifications",
+                json.dumps({
+                    'type': notification.type,
+                    'title': notification.title,
+                    'message': notification.message,
+                    'priority': notification.priority,
+                    'timestamp': notification.timestamp.isoformat(),
+                    'data': notification.data
+                })
+            )
             else:
                 # In-memory fallback - log the notification
                 logger.info(f"In-app notification for user {user_id}: {notification.title}")

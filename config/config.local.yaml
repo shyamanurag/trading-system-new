@@ -1,0 +1,131 @@
+# config/config.local.yaml
+# LOCAL DEVELOPMENT CONFIGURATION
+# This configuration is for LOCAL DEVELOPMENT ONLY
+# Completely isolated from production environment
+
+# Redis Configuration - Local Development
+redis:
+  host: localhost
+  port: 6379
+  password: null
+  ssl: false
+  db: 0
+
+# Database Configuration - Local SQLite (Safe for Development)
+database:
+  host: localhost
+  port: 5432
+  name: local_trading_db
+  user: local_user
+  password: local_password
+  url: sqlite:///./local_trading.db  # Local SQLite database
+
+# Security Settings - Development Only
+security:
+  jwt_secret: "local-development-jwt-secret-not-for-production"
+  encryption_key: "local-dev-encryption-key-32-bytes"
+  webhook_secret: "local-webhook-secret-for-dev"
+
+# Application Settings - Development Mode
+app:
+  environment: "development"
+  log_level: "DEBUG"
+  debug: true
+  hot_reload: true
+
+# Broker Configuration - SAFE MOCK MODE
+brokers:
+  zerodha:
+    api_key: "local_test_key"
+    api_secret: "local_test_secret"
+    base_url: "https://api.kite.trade"  # Can be mocked locally
+    name: "zerodha_local"
+    rate_limit_per_minute: 60
+    sandbox_mode: true
+    mock_mode: true
+    timeout_seconds: 30
+
+# Trading Configuration - SAFE PAPER TRADING
+trading:
+  paper_trading: true
+  mock_trading: true
+  simulation_mode: true
+  default_stop_loss_percent: 2.0
+  max_daily_trades: 10  # Limited for local testing
+  max_drawdown_percent: 5.0  # Conservative for testing
+  max_order_value: 10000.0  # Small amounts for testing
+  max_position_size_percent: 1.0  # Very small positions
+  min_order_value: 100.0
+  risk_per_trade_percent: 0.1  # Very low risk for testing
+
+# Compliance - Development Settings
+compliance:
+  max_trades_per_second: 1  # Slow for local testing
+  max_orders_per_second: 1
+  ops_monitoring_window: 5
+  audit_trail_retention_days: 7  # Short retention for local
+  max_position_value: 10000.0  # Small for testing
+
+# Development Settings
+development:
+  enable_dev_tools: true
+  enable_debug_routes: true
+  mock_market_data: true
+  simulate_broker_responses: true
+  skip_authentication: false  # Keep auth for realistic testing
+  verbose_logging: true
+
+# Local Ports (Different from Production)
+ports:
+  api: 8000
+  frontend: 3000
+  websocket: 8002
+  prometheus: 8001
+
+# Monitoring - Local Development
+monitoring:
+  health_check_interval_seconds: 10  # More frequent for local testing
+  log_format: "json"
+  log_level: "DEBUG"
+  metrics_retention_days: 1  # Short retention
+  prometheus_enabled: true
+  prometheus_port: 8001
+
+# WebSocket Configuration
+websocket:
+  compression_enabled: false  # Disabled for easier debugging
+  max_connections: 10  # Small for local testing
+  ping_interval: 10
+  port: 8002
+
+# Database Pool Settings - Local
+db_pool:
+  size: 2  # Small pool for local
+  max_workers: 2
+  ssl_mode: "disable"
+
+# Local Safety Features
+safety:
+  local_development: true
+  production_override: false
+  force_local_mode: true
+  prevent_real_trading: true
+  mock_all_external_apis: true
+
+# TrueData Configuration - Local Mock
+truedata:
+  username: "local_test_user"
+  password: "local_test_pass"
+  port: 8084
+  url: "localhost"
+  sandbox: true
+  mock_mode: true
+  generate_mock_data: true
+
+# Local Development Features
+features:
+  auto_restart: true
+  live_reload: true
+  debug_toolbar: true
+  api_documentation: true
+  test_endpoints: true 

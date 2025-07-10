@@ -1,0 +1,64 @@
+# Local Development Requirements
+# Install with: pip install -r requirements.local.txt
+
+# Core Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Database
+sqlalchemy==2.0.23
+sqlite3  # Built-in Python module
+
+# Redis (optional for local)
+redis==5.0.1
+
+# HTTP Requests
+aiohttp==3.9.1
+requests==2.31.0
+
+# Data Processing
+pandas==2.1.4
+numpy==1.24.3
+
+# Machine Learning (for strategies)
+scikit-learn==1.3.2
+
+# Async Programming
+asyncio  # Built-in Python module
+aiofiles==23.2.1
+
+# Configuration
+pyyaml==6.0.1
+python-dotenv==1.0.0
+
+# Logging and Monitoring
+structlog==23.2.0
+
+# Development Tools
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.12.0
+isort==5.13.2
+
+# Trading Libraries (mock versions for local)
+yfinance==0.2.28  # For mock market data
+
+# WebSocket Support
+websockets==12.0
+
+# Date/Time Handling
+pytz==2023.3
+
+# JSON and Data Validation
+pydantic==2.5.2
+
+# Environment Variable Loading
+python-decouple==3.8
+
+# Development Utilities
+rich==13.7.0  # For better console output
+click==8.1.7  # For CLI tools
+
+# Optional: If you want to use Jupyter for analysis
+# jupyter==1.0.0
+# notebook==7.0.6 

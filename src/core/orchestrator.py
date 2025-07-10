@@ -24,7 +24,7 @@ try:
     from src.config.database import get_redis
 except ImportError:
     # Fallback if Redis config is not available
-    def get_redis():
+    async def get_redis():
         return None
 
 try:
@@ -35,6 +35,8 @@ except ImportError:
         def __init__(self):
             pass
         async def initialize(self):
+            pass
+        async def subscribe(self, event_type, handler):
             pass
 
 try:
@@ -54,6 +56,8 @@ except ImportError:
     class ResilientZerodhaConnection:
         def __init__(self, *args, **kwargs):
             pass
+        async def initialize(self):
+            return False
         async def connect(self):
             return False
 
@@ -139,16 +143,25 @@ class TradeEngine:
                 # Test Redis connection before initializing OrderManager
                 try:
                     import redis.asyncio as redis
-                    redis_client = redis.Redis(
-                        host=redis_host,
-                        port=redis_port,
-                        db=config['redis']['db'],
-                        password=redis_password,
-                        socket_connect_timeout=5,
-                        socket_timeout=5
-                    )
-                    await redis_client.ping()
-                    self.logger.info("✅ Redis connection successful")
+                except ImportError:
+                    # Fallback for environments without redis
+                    self.logger.warning("Redis package not available - using fallback")
+                    redis = None
+                
+                try:
+                    if redis:
+                        redis_client = redis.Redis(
+                            host=redis_host,
+                            port=redis_port,
+                            db=config['redis']['db'],
+                            password=redis_password,
+                            socket_connect_timeout=5,
+                            socket_timeout=5
+                        )
+                        await redis_client.ping()
+                        self.logger.info("Redis connection successful")
+                    else:
+                        raise ImportError("Redis not available")
                     
                     # Initialize OrderManager with working Redis
                     self.order_manager = OrderManager(config)
@@ -198,6 +211,15 @@ class TradeEngine:
                 self.logger.error(f"OrderManager initialization failed: {e}")
                 self.logger.info("Continuing without OrderManager - will use fallback method")
                 self.order_manager = None
+            
+            # CRITICAL FIX: Initialize OrderManager async components if it was created successfully
+            if self.order_manager and hasattr(self.order_manager, 'async_initialize_components'):
+                try:
+                    await self.order_manager.async_initialize_components()
+                    self.logger.info("✅ OrderManager async components initialized successfully")
+                except Exception as e:
+                    self.logger.error(f"❌ OrderManager async initialization failed: {e}")
+                    # Continue - don't fail the entire system due to async component issues
             
             # DEPLOYMENT FIX: Allow system to start without OrderManager during deployment
             if not self.order_manager:
@@ -590,36 +612,44 @@ class TradingOrchestrator:
         try:
             # STRATEGY 1: Redis cache (PRIMARY - fixes process isolation)
             if not hasattr(self, 'redis_client') or not self.redis_client:
-                import redis
-                import json
-                
-                redis_host = os.environ.get('REDIS_HOST', 'localhost')
-                redis_port = int(os.environ.get('REDIS_PORT', 6379))
-                redis_password = os.environ.get('REDIS_PASSWORD')
-                
                 try:
-                    # CRITICAL FIX: Use connection pooling to prevent "Connection closed by server"
-                    connection_pool = redis.ConnectionPool(
-                        host=redis_host,
-                        port=redis_port,
-                        password=redis_password,
-                        decode_responses=True,
-                        socket_connect_timeout=10,
-                        socket_timeout=10,
-                        socket_keepalive=True,
-                        socket_keepalive_options={},
-                        health_check_interval=30,
-                        max_connections=3,  # Limit connections to prevent server overload
-                        retry_on_timeout=True
-                    )
+                    import redis
+                except ImportError:
+                    self.logger.warning("Redis package not available - using fallback")
+                    redis = None
+                
+                if redis:
+                    import json
                     
-                    self.redis_client = redis.Redis(connection_pool=connection_pool)
+                    redis_host = os.environ.get('REDIS_HOST', 'localhost')
+                    redis_port = int(os.environ.get('REDIS_PORT', 6379))
+                    redis_password = os.environ.get('REDIS_PASSWORD')
                     
-                    # Test connection
-                    self.redis_client.ping()
-                    self.logger.info(f"✅ Orchestrator Redis connected with pool: {redis_host}:{redis_port}")
-                except Exception as redis_error:
-                    self.logger.warning(f"⚠️ Redis connection failed: {redis_error}")
+                    try:
+                        # CRITICAL FIX: Use connection pooling to prevent "Connection closed by server"
+                        connection_pool = redis.ConnectionPool(
+                            host=redis_host,
+                            port=redis_port,
+                            password=redis_password,
+                            decode_responses=True,
+                            socket_connect_timeout=10,
+                            socket_timeout=10,
+                            socket_keepalive=True,
+                            socket_keepalive_options={},
+                            health_check_interval=30,
+                            max_connections=3,  # Limit connections to prevent server overload
+                            retry_on_timeout=True
+                        )
+                        
+                        self.redis_client = redis.Redis(connection_pool=connection_pool)
+                        
+                        # Test connection
+                        self.redis_client.ping()
+                        self.logger.info(f"✅ Orchestrator Redis connected with pool: {redis_host}:{redis_port}")
+                    except Exception as redis_error:
+                        self.logger.warning(f"⚠️ Redis connection failed: {redis_error}")
+                        self.redis_client = None
+                else:
                     self.redis_client = None
             
             # Try to get data from Redis first
@@ -658,17 +688,23 @@ class TradingOrchestrator:
             
             # STRATEGY 3: API call to market data endpoint (FINAL FALLBACK)
             try:
-                import aiohttp
-                async with aiohttp.ClientSession() as session:
-                    # Call the working market data API endpoint
-                    api_url = "http://localhost:8000/api/v1/market-data"
-                    async with session.get(api_url, timeout=5) as response:
-                        if response.status == 200:
-                            api_data = await response.json()
-                            if api_data.get('success') and api_data.get('data'):
-                                market_data = api_data['data']
-                                self.logger.info(f"📊 Using market data API: {len(market_data)} symbols")
-                                return market_data
+                try:
+                    import aiohttp
+                except ImportError:
+                    self.logger.warning("aiohttp package not available - skipping API fallback")
+                    aiohttp = None
+                
+                if aiohttp:
+                    async with aiohttp.ClientSession() as session:
+                        # Call the working market data API endpoint
+                        api_url = "http://localhost:8000/api/v1/market-data"
+                        async with session.get(api_url, timeout=5) as response:
+                            if response.status == 200:
+                                api_data = await response.json()
+                                if api_data.get('success') and api_data.get('data'):
+                                    market_data = api_data['data']
+                                    self.logger.info(f"📊 Using market data API: {len(market_data)} symbols")
+                                    return market_data
             except Exception as api_error:
                 self.logger.warning(f"API fallback failed: {api_error}")
             
@@ -749,7 +785,9 @@ class TradingOrchestrator:
                 if self.trade_engine:
                     self.logger.info(f"🚀 Processing {len(all_signals)} signals through trade engine")
                     await self.trade_engine.process_signals(all_signals)
+                else:
                     self.logger.error("❌ Trade engine not available - signals cannot be processed")
+            else:
                 self.logger.debug("📭 No signals generated this cycle")
                     
         except Exception as e:
@@ -1200,7 +1238,7 @@ class TradingOrchestrator:
             if paper_trading_enabled:
                 logger.info("🎯 Paper trading mode enabled - bypassing market data checks")
                 # In paper trading mode, only check basic requirements
-                if not self.order_manager:
+                if not self.trade_engine or not self.trade_engine.order_manager:
                     logger.warning("❌ OrderManager not initialized - cannot start trading")
                     return False
                 
@@ -1216,7 +1254,7 @@ class TradingOrchestrator:
                 logger.info("❌ Market is closed - cannot start trading")
                 return False
             
-            if not self.order_manager:
+            if not self.trade_engine or not self.trade_engine.order_manager:
                 logger.warning("❌ OrderManager not initialized - cannot start trading")
                 return False
             

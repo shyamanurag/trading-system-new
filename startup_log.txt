@@ -1,0 +1,20 @@
+============================================================
+Traceback (most recent call last):
+  File "C:\trading-system-new\run_local_completely_isolated.py", line 173, in <module>
+    main()
+  File "C:\trading-system-new\run_local_completely_isolated.py", line 147, in main
+    print("\U0001f512 COMPLETELY ISOLATED LOCAL DEVELOPMENT")
+  File "C:\Users\MICROSOFT SURFACE\AppData\Local\Programs\Python\Python311\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f512' in position 0: character maps to <undefined>
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\trading-system-new\run_local_completely_isolated.py", line 178, in <module>
+    print(f"\n\U0001f4a5 Unexpected error: {e}")
+  File "C:\Users\MICROSOFT SURFACE\AppData\Local\Programs\Python\Python311\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f4a5' in position 2: character maps to <undefined>
