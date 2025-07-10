@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 import time
 
-from fastapi import FastAPI, APIRouter, Request
+from fastapi import FastAPI, APIRouter, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -1358,6 +1358,57 @@ async def get_users_performance(user_id: Optional[str] = None):
         return JSONResponse(
             content={"success": False, "error": str(e)},
             status_code=500
+        )
+
+# Add missing API endpoints before catch-all handler
+@app.get("/api/v1/search", tags=["search"])
+async def search_endpoint(
+    q: str = Query(..., description="Search query"),
+    limit: int = Query(10, description="Number of results")
+):
+    """Search endpoint that matches frontend expectations"""
+    try:
+        # Redirect to proper search endpoint
+        from src.api.search import search_symbols
+        from fastapi import Depends
+        from src.config.database import get_db
+        
+        # Get database session
+        db = next(get_db())
+        
+        # Call the actual search function
+        result = await search_symbols(query=q, limit=limit, db=db)
+        return result
+    except Exception as e:
+        logger.error(f"Search endpoint error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Search failed: {str(e)}"}
+        )
+
+@app.get("/api/v1/trading/status", tags=["trading"])
+async def trading_status_endpoint():
+    """Trading status endpoint"""
+    try:
+        # Get orchestrator instance
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        if orchestrator:
+            status = await orchestrator.get_trading_status()
+            return JSONResponse(content=status)
+        else:
+            return JSONResponse(content={
+                "is_running": False,
+                "system_ready": False,
+                "message": "Orchestrator not initialized",
+                "timestamp": datetime.now().isoformat()
+            })
+    except Exception as e:
+        logger.error(f"Trading status error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Trading status failed: {str(e)}"}
         )
 
 # CATCH-ALL ROUTE - MUST BE LAST
