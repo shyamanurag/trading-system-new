@@ -1224,28 +1224,59 @@ class TradingOrchestrator:
             return True  # Default to open to avoid blocking trading
 
     def _can_start_trading(self) -> bool:
-        """Check if trading can be started - MISSING METHOD FIX"""
+        """
+        Check if autonomous trading can start
+        
+        Returns:
+            bool: True if trading can start, False otherwise
+        """
         try:
-            # Check if system is initialized
-            if not self.is_initialized:
-                return False
+            # Check if paper trading is enabled - bypass market data checks
+            paper_trading_enabled = os.getenv('PAPER_TRADING', 'false').lower() == 'true'
             
-            # Check if market is open
+            if paper_trading_enabled:
+                logger.info("🎯 Paper trading mode enabled - bypassing market data checks")
+                # In paper trading mode, only check basic requirements
+                if not self.order_manager:
+                    logger.warning("❌ OrderManager not initialized - cannot start trading")
+                    return False
+                
+                if not self.strategies:
+                    logger.warning("❌ No strategies loaded - cannot start trading")
+                    return False
+                
+                logger.info("✅ Paper trading mode - all conditions met")
+                return True
+            
+            # Original checks for live trading
             if not self._is_market_open():
+                logger.info("❌ Market is closed - cannot start trading")
                 return False
             
-            # Check if required components are available
+            if not self.order_manager:
+                logger.warning("❌ OrderManager not initialized - cannot start trading")
+                return False
+            
             if not self.strategies:
+                logger.warning("❌ No strategies loaded - cannot start trading")
                 return False
             
-            # Check if market data is available
-            if not self.components.get('market_data', False):
+            # Check if market data is flowing (for live trading)
+            try:
+                from data.truedata_client import get_truedata_status
+                td_status = get_truedata_status()
+                if not td_status.get('data_flowing', False):
+                    logger.warning("❌ Market data not flowing - cannot start live trading")
+                    return False
+            except Exception as e:
+                logger.warning(f"❌ Cannot check market data status: {e}")
                 return False
             
+            logger.info("✅ All conditions met for live trading")
             return True
             
         except Exception as e:
-            self.logger.error(f"Error checking if can start trading: {e}")
+            logger.error(f"Error checking trading conditions: {e}")
             return False
 
     @classmethod
