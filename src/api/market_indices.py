@@ -32,7 +32,7 @@ async def get_market_indices():
         indices_data = {
             "success": True,
             "timestamp": now_ist.isoformat(),
-            "market_status": "OPEN" if 9 <= now_ist.hour < 15 or (now_ist.hour == 15 and now_ist.minute < 30) else "CLOSED",
+            "market_status": "OPEN" if ((now_ist.hour == 9 and now_ist.minute >= 15) or (9 < now_ist.hour < 15) or (now_ist.hour == 15 and now_ist.minute < 30)) else "CLOSED",
             "indices": [],  # Real market index data required
             "message": "Waiting for live market data..." if truedata_configured else "TrueData not configured"
         }
