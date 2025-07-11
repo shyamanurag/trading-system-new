@@ -544,7 +544,9 @@ class TradingOrchestrator:
         """Initialize orchestrator with TrueData cache and proper fallback system"""
         self.config = config or {}
         self.strategies: Dict[str, Any] = {}
+        self.active_strategies = []  # Add missing active_strategies list
         self.running = False
+        self.is_running = False  # Add missing is_running attribute
         self.is_initialized = False
         self.logger = logging.getLogger(__name__)
         
