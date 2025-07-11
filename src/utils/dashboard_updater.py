@@ -89,7 +89,7 @@ class AutonomousDashboardUpdater:
                 "auto_stop_enabled": True,
                 "current_time": current_time,
                 "today_schedule": schedule_items,
-                "market_status": "OPEN" if 9 <= now_ist.hour < 15 or (now_ist.hour == 15 and now_ist.minute < 30) else "CLOSED"
+                "market_status": "OPEN" if ((now_ist.hour == 9 and now_ist.minute >= 15) or (9 < now_ist.hour < 15) or (now_ist.hour == 15 and now_ist.minute < 30)) else "CLOSED"
             }
             
         except Exception as e:
