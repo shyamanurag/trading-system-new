@@ -262,7 +262,7 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                 setSessionStats(null);
             }
 
-            // Process active positions (create mock positions from real data)
+            // Process active positions (get real positions from API)
             if (positionsRes.status === 'fulfilled' && positionsRes.value.ok) {
                 const positionsData = await positionsRes.value.json();
                 if (positionsData.success) {
@@ -270,26 +270,8 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                 } else {
                     throw new Error('Failed to fetch positions');
                 }
-            } else if (realTradingData?.systemMetrics?.activeUsers > 0) {
-                // Create mock active positions
-                const mockPositions = [
-                    {
-                        symbol: 'RELIANCE',
-                        entry_price: 2450.75,
-                        current_price: 2465.20,
-                        unrealized_pnl: 723.50,
-                        trailing_stop: true
-                    },
-                    {
-                        symbol: 'TCS',
-                        entry_price: 3850.30,
-                        current_price: 3820.15,
-                        unrealized_pnl: -904.50,
-                        trailing_stop: false
-                    }
-                ];
-                setActivePositions(mockPositions);
             } else {
+                // No mock positions - only show real positions
                 setActivePositions([]);
             }
 
@@ -342,24 +324,50 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
 
     const fetchTradingStatus = async () => {
         try {
+            // FIXED: Use autonomous status endpoint as primary source
             const response = await fetchWithAuth('/api/v1/autonomous/status');
-            const data = await response.json();
-            if (data.success) {
-                // Map autonomous status to trading status format
-                setTradingStatus({
-                    success: true,
-                    is_running: data.data.is_active,
-                    status: data.data.is_active ? 'ACTIVE' : 'STOPPED',
-                    session_id: data.data.session_id,
-                    active_strategies: data.data.active_strategies?.length || 0
-                });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.data) {
+                    // CRITICAL FIX: Properly parse autonomous trading status
+                    setTradingStatus({
+                        is_running: data.data.is_active || false,
+                        paper_trading: true, // Always paper trading mode
+                        system_ready: data.data.system_ready || false,
+                        total_trades: data.data.total_trades || 0,
+                        daily_pnl: data.data.daily_pnl || 0,
+                        last_updated: new Date().toISOString()
+                    });
+
+                    console.log('🎯 Trading Status Updated:', {
+                        is_running: data.data.is_active,
+                        system_ready: data.data.system_ready,
+                        total_trades: data.data.total_trades
+                    });
+                }
+            } else {
+                // Fallback: Try legacy endpoint
+                const legacyResponse = await fetchWithAuth('/api/v1/control/trading/status');
+                if (legacyResponse.ok) {
+                    const legacyData = await legacyResponse.json();
+                    setTradingStatus({
+                        is_running: legacyData.is_running || false,
+                        paper_trading: true,
+                        system_ready: legacyData.system_ready || false,
+                        last_updated: new Date().toISOString()
+                    });
+                }
             }
-        } catch (err) {
-            console.error('Error fetching trading status:', err);
+        } catch (error) {
+            console.error('Error fetching trading status:', error);
+            // Set safe defaults on error
             setTradingStatus({
-                success: false,
                 is_running: false,
-                status: 'UNKNOWN'
+                paper_trading: true,
+                system_ready: false,
+                error: error.message,
+                last_updated: new Date().toISOString()
             });
         }
     };
@@ -494,16 +502,17 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                                 Please refresh your auth token daily for live trading data.
                             </Alert>
 
-                            <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+                            <Box sx={{ display: 'flex', gap: 2, mt: 2, alignItems: 'center' }}>
                                 {tradingStatus?.is_running ? (
                                     <Button
                                         variant="contained"
-                                        color="error"
-                                        startIcon={<Stop />}
+                                        color="warning"
+                                        startIcon={<Pause />}
                                         onClick={() => handleTradingControl('stop')}
                                         disabled={controlLoading}
+                                        sx={{ minWidth: 200 }}
                                     >
-                                        Stop Trading
+                                        🟡 TRADING ENGAGED - Stop
                                     </Button>
                                 ) : (
                                     <Button
@@ -512,21 +521,39 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                                         startIcon={<PlayArrow />}
                                         onClick={() => handleTradingControl('start')}
                                         disabled={controlLoading}
+                                        sx={{ minWidth: 200 }}
                                     >
-                                        Start Trading
+                                        ▶️ Start Trading
                                     </Button>
                                 )}
+
                                 <Chip
-                                    label={tradingStatus?.is_running ? "Trading Active" : "Trading Stopped"}
-                                    color={tradingStatus?.is_running ? "success" : "default"}
-                                    variant="outlined"
+                                    label={tradingStatus?.is_running ? "🟢 ACTIVE & ENGAGED" : "🔴 INACTIVE"}
+                                    color={tradingStatus?.is_running ? "success" : "error"}
+                                    variant="filled"
+                                    sx={{ fontWeight: 'bold' }}
                                 />
+
                                 {tradingStatus?.paper_trading && (
                                     <Chip
-                                        label="Paper Trading Mode"
+                                        label="📝 Paper Trading Mode"
                                         color="info"
                                         variant="outlined"
                                     />
+                                )}
+
+                                {tradingStatus?.total_trades > 0 && (
+                                    <Chip
+                                        label={`📊 ${tradingStatus.total_trades} Trades Today`}
+                                        color="primary"
+                                        variant="outlined"
+                                    />
+                                )}
+
+                                {tradingStatus?.last_updated && (
+                                    <Typography variant="caption" color="text.secondary">
+                                        Last updated: {new Date(tradingStatus.last_updated).toLocaleTimeString()}
+                                    </Typography>
                                 )}
                             </Box>
                         </Box>

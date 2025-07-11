@@ -144,11 +144,13 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                         dashboardData.systemMetrics = {
                             totalPnL: safeNumber(realTrading.daily_pnl),
                             totalTrades: safeNumber(realTrading.total_trades),
-                            successRate: safeNumber(realTrading.success_rate || 70), // Default 70%
-                            activeUsers: realTrading.is_active ? 1 : 0,
-                            aum: 1000000, // Paper trading capital - 10 lakhs
+                            successRate: safeNumber(realTrading.success_rate || 0),
+                            activeUsers: realTrading.is_active ? 1 : 0, // 1 active paper trader
+                            aum: safeNumber(realTrading.capital || realTrading.initial_capital || 0), // Get real capital from backend
                             dailyVolume: safeNumber(Math.abs(realTrading.daily_pnl || 0) * 10) // Estimated volume
                         };
+
+                        console.log('🎯 REAL DASHBOARD DATA:', dashboardData.systemMetrics);
 
                         // Create performance data from real trading
                         if (realTrading.total_trades > 0) {
@@ -195,8 +197,41 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                 }
             }
 
-            // FALLBACK: Process dashboard summary data ONLY if autonomous data not available
-            if (dashboardData.systemMetrics.totalTrades === 0 && dashboardRes.status === 'fulfilled' && dashboardRes.value.ok) {
+            // FALLBACK: Show realistic paper trading defaults if no real data available
+            if (dashboardData.systemMetrics.totalTrades === 0) {
+                console.log('🔄 Using fallback paper trading metrics');
+
+                // Try to get real capital from system config
+                let systemCapital = 0;
+                try {
+                    const configRes = await fetchWithAuth('/api/v1/system/config');
+                    if (configRes.ok) {
+                        const configData = await configRes.json();
+                        systemCapital = configData.initial_capital || configData.capital || 0;
+                    }
+                } catch (configError) {
+                    console.warn('Could not fetch system config:', configError);
+                }
+
+                dashboardData.systemMetrics = {
+                    totalPnL: 0,
+                    totalTrades: 0,
+                    successRate: 0,
+                    activeUsers: 1, // Always show 1 paper trader
+                    aum: systemCapital, // Use real capital from system config
+                    dailyVolume: 0
+                };
+
+                // Show paper trading info in alerts
+                dashboardData.alerts = [{
+                    type: 'info',
+                    message: `Paper Trading Mode Active - ₹${systemCapital.toLocaleString()} virtual capital available`,
+                    time: new Date().toLocaleTimeString()
+                }];
+            }
+
+            // ADDITIONAL FALLBACK: Process dashboard summary data if available
+            if (dashboardRes.status === 'fulfilled' && dashboardRes.value.ok) {
                 try {
                     const summaryData = await dashboardRes.value.json();
                     if (summaryData.success) {
@@ -831,16 +866,21 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                         <Card sx={{ p: 2, textAlign: 'center', bgcolor: 'primary.main', color: 'white' }}>
                             <Typography variant="h6">Portfolio Value</Typography>
                             <Typography variant="h4" sx={{ my: 1 }}>
-                                {formatCurrency(1000000 + (dashboardData.systemMetrics.totalPnL || 0))}
+                                {formatCurrency(dashboardData.systemMetrics.aum + (dashboardData.systemMetrics.totalPnL || 0))}
                             </Typography>
-                            <Typography variant="body2">Initial: ₹1,000,000 + P&L</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Total Assets Under Management
+                            </Typography>
+                            <Typography variant="body2" color="success.main">
+                                {formatPercent(dashboardData.systemMetrics.aum > 0 ? ((dashboardData.systemMetrics.totalPnL || 0) / dashboardData.systemMetrics.aum) * 100 : 0)}
+                            </Typography>
                         </Card>
                     </Grid>
                     <Grid item xs={12} md={4}>
                         <Card sx={{ p: 2, textAlign: 'center', bgcolor: 'success.main', color: 'white' }}>
                             <Typography variant="h6">Total Returns</Typography>
                             <Typography variant="h4" sx={{ my: 1 }}>
-                                {formatPercent(((dashboardData.systemMetrics.totalPnL || 0) / 1000000) * 100)}
+                                {formatPercent(dashboardData.systemMetrics.aum > 0 ? ((dashboardData.systemMetrics.totalPnL || 0) / dashboardData.systemMetrics.aum) * 100 : 0)}
                             </Typography>
                             <Typography variant="body2">Since inception</Typography>
                         </Card>
@@ -894,7 +934,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 <ListItem>
                                     <ListItemText
                                         primary="Paper Trading Mode"
-                                        secondary="Risk-free testing with ₹1,000,000 virtual capital"
+                                        secondary={`Risk-free testing with ₹${dashboardData.systemMetrics.aum?.toLocaleString() || '0'} virtual capital`}
                                     />
                                 </ListItem>
                                 <ListItem>
@@ -1001,7 +1041,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 <Grid item xs={12} md={3}>
                                     <Box sx={{ textAlign: 'center', p: 2 }}>
                                         <Typography variant="h4" color="primary.main">
-                                            {((Math.abs(dashboardData.systemMetrics.totalPnL || 0) / 1000000) * 100).toFixed(1)}%
+                                            {dashboardData.systemMetrics.aum > 0 ? ((Math.abs(dashboardData.systemMetrics.totalPnL || 0) / dashboardData.systemMetrics.aum) * 100).toFixed(1) : '0.0'}%
                                         </Typography>
                                         <Typography variant="body2">Capital at Risk</Typography>
                                     </Box>

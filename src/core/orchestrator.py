@@ -597,31 +597,69 @@ class TradingOrchestrator:
             import os
             from urllib.parse import urlparse
             
-            # Get Redis configuration
-            redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-            parsed = urlparse(redis_url)
+            # CRITICAL FIX: Use DigitalOcean Redis configuration
+            redis_url = os.getenv('REDIS_URL')
             
-            # Check if SSL is required (DigitalOcean Redis)
-            ssl_required = 'ondigitalocean.com' in redis_url or redis_url.startswith('rediss://')
+            if redis_url:
+                # Parse the Redis URL provided by DigitalOcean
+                parsed = urlparse(redis_url)
+                
+                # Extract connection details
+                redis_config = {
+                    'host': parsed.hostname,
+                    'port': parsed.port or 25061,
+                    'password': parsed.password,
+                    'username': parsed.username or 'default',
+                    'db': int(parsed.path[1:]) if parsed.path and len(parsed.path) > 1 else 0,
+                    'decode_responses': True,
+                    'socket_timeout': 30,
+                    'socket_connect_timeout': 30,
+                    'retry_on_timeout': True,
+                    'ssl': True,  # DigitalOcean Redis requires SSL
+                    'ssl_check_hostname': False,  # Disable hostname check for managed Redis
+                    'ssl_cert_reqs': None,  # Don't require SSL certificates
+                    'health_check_interval': 30,
+                    'socket_keepalive': True,
+                    'socket_keepalive_options': {}
+                }
+                
+                self.logger.info(f"🔗 Using DigitalOcean Redis: {redis_config['host']}:{redis_config['port']}")
+                
+            else:
+                # Fallback to individual environment variables
+                redis_config = {
+                    'host': os.getenv('REDIS_HOST', 'redis-cache-do-user-23093341-0.k.db.ondigitalocean.com'),
+                    'port': int(os.getenv('REDIS_PORT', 25061)),
+                    'password': os.getenv('REDIS_PASSWORD', 'AVNS_TSCy17L6f9z0CdWgcvW'),
+                    'username': os.getenv('REDIS_USERNAME', 'default'),
+                    'db': int(os.getenv('REDIS_DB', 0)),
+                    'decode_responses': True,
+                    'socket_timeout': 30,
+                    'socket_connect_timeout': 30,
+                    'retry_on_timeout': True,
+                    'ssl': os.getenv('REDIS_SSL', 'true').lower() == 'true',
+                    'ssl_check_hostname': False,
+                    'ssl_cert_reqs': None,
+                    'health_check_interval': 30,
+                    'socket_keepalive': True,
+                    'socket_keepalive_options': {}
+                }
+                
+                self.logger.info(f"🔗 Using Redis env vars: {redis_config['host']}:{redis_config['port']}")
             
-            redis_config = {
-                'host': parsed.hostname or 'localhost',
-                'port': parsed.port or 6379,
-                'password': parsed.password,
-                'db': int(parsed.path[1:]) if parsed.path and len(parsed.path) > 1 else 0,
-                'decode_responses': True,
-                'socket_timeout': 10,
-                'socket_connect_timeout': 10,
-                'retry_on_timeout': True,
-                'ssl': ssl_required
-            }
-            
-            # Create Redis client (will test connection later async)
+            # Create Redis client with proper configuration (test connection in async initialize)
             self.redis = redis.Redis(**redis_config)
-            self.logger.info(f"✅ Redis client created for {redis_config['host']}:{redis_config['port']}")
+            self.logger.info(f"✅ Redis client created: {redis_config['host']}:{redis_config['port']}")
+                
         except Exception as e:
-            self.logger.error(f"❌ Redis connection failed: {e}")
-            self.redis = None
+            self.logger.error(f"❌ Redis connection setup failed: {e}")
+            # CRITICAL: Don't continue without Redis in production
+            if os.getenv('ENVIRONMENT') == 'production':
+                self.logger.error("🚨 PRODUCTION ERROR: Redis connection required for production deployment!")
+                raise Exception(f"Redis connection required for production: {e}")
+            else:
+                self.logger.info("🔄 Development mode: System will continue in memory-only mode")
+                self.redis = None
         
         # Initialize position tracker
         from src.core.position_tracker import ProductionPositionTracker
@@ -696,62 +734,51 @@ class TradingOrchestrator:
             if self.redis:
                 try:
                     await self.redis.ping()
-                    self.logger.info("✅ Redis connection verified")
+                    self.logger.info("✅ Redis connection verified and working")
                 except Exception as e:
-                    self.logger.error(f"❌ Redis connection failed: {e}")
-                    
-            # Initialize trade engine async components
-            if self.trade_engine:
-                try:
-                    await self.trade_engine.initialize()
-                    self.logger.info("✅ Trade engine initialized")
-                except Exception as e:
-                    self.logger.error(f"❌ Trade engine initialization failed: {e}")
-                    
-            # Initialize position tracker async components
-            if self.position_tracker:
-                try:
-                    await self.position_tracker.initialize()
-                    self.logger.info("✅ Position tracker initialized")
-                except Exception as e:
-                    self.logger.error(f"❌ Position tracker initialization failed: {e}")
-                    
-            # Initialize risk manager async components
-            if self.risk_manager:
-                try:
-                    await self.risk_manager.initialize()
-                    self.logger.info("✅ Risk manager initialized")
-                except Exception as e:
-                    self.logger.error(f"❌ Risk manager initialization failed: {e}")
-                    
-            # Load strategies asynchronously
-            try:
-                await self._load_strategies()
-                self.logger.info("✅ Trading strategies loaded successfully")
-            except Exception as e:
-                self.logger.error(f"❌ Strategy loading failed: {e}")
-                    
-            # CRITICAL FIX: Update components dictionary with actual status
-            self.components = {
-                'zerodha': bool(self.zerodha_client),
-                'risk_manager': type(self.risk_manager).__name__ if self.risk_manager else 'NOT_SET',
-                'position_tracker': type(self.position_tracker).__name__ if self.position_tracker else 'NOT_SET',
-                'market_data': bool(self.truedata_cache),
-                'strategy_engine': len(self.strategies) > 0,
-                'trade_engine': type(self.trade_engine).__name__ if self.trade_engine else 'NOT_SET',
-                'connection_manager': bool(self.redis),
-                'pre_market_analyzer': 'NOT_SET',
-                'truedata_cache': bool(self.truedata_cache)
-            }
+                    self.logger.error(f"❌ Redis connection test failed: {e}")
+                    # CRITICAL: Don't continue without Redis in production
+                    if os.getenv('ENVIRONMENT') == 'production':
+                        self.logger.error("🚨 PRODUCTION ERROR: Redis connection required!")
+                        raise Exception(f"Redis connection test failed in production: {e}")
+                    else:
+                        self.logger.warning("⚠️ Redis connection failed - continuing in memory-only mode")
+                        self.redis = None
+            else:
+                self.logger.info("ℹ️ Redis not configured - using memory-only mode")
             
-            # Set initialization flag
-            self.is_initialized = True
-            self.logger.info("✅ TradingOrchestrator initialization completed successfully")
+            # Initialize event bus
+            if hasattr(self, 'event_bus'):
+                await self.event_bus.initialize()
+                self.logger.info("✅ Event bus initialized")
+            
+            # Initialize position tracker
+            if hasattr(self, 'position_tracker'):
+                await self.position_tracker.initialize()
+                self.logger.info("✅ Position tracker initialized")
+            
+            # Initialize trade engine
+            if hasattr(self, 'trade_engine'):
+                await self.trade_engine.initialize()
+                self.logger.info("✅ Trade engine initialized")
+            
+            # Load strategies
+            await self._load_strategies()
+            self.logger.info("✅ Strategies loaded")
+            
+            # Initialize Zerodha client
+            if self.zerodha_client:
+                try:
+                    await self.zerodha_client.initialize()
+                    self.logger.info("✅ Zerodha client initialized")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Zerodha client initialization failed: {e}")
+            
+            self.logger.info("🎉 TradingOrchestrator fully initialized and ready")
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ TradingOrchestrator initialization failed: {e}")
-            self.is_initialized = False
+            self.logger.error(f"❌ Failed to initialize TradingOrchestrator: {e}")
             return False
         
     def _initialize_order_manager_with_fallback(self):
