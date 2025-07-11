@@ -706,6 +706,19 @@ class TradingOrchestrator:
             except Exception as e:
                 self.logger.error(f"❌ Strategy loading failed: {e}")
                     
+            # CRITICAL FIX: Update components dictionary with actual status
+            self.components = {
+                'zerodha': bool(self.zerodha_client),
+                'risk_manager': type(self.risk_manager).__name__ if self.risk_manager else 'NOT_SET',
+                'position_tracker': type(self.position_tracker).__name__ if self.position_tracker else 'NOT_SET',
+                'market_data': bool(self.truedata_cache),
+                'strategy_engine': len(self.strategies) > 0,
+                'trade_engine': type(self.trade_engine).__name__ if self.trade_engine else 'NOT_SET',
+                'connection_manager': bool(self.redis),
+                'pre_market_analyzer': 'NOT_SET',
+                'truedata_cache': bool(self.truedata_cache)
+            }
+            
             # Set initialization flag
             self.is_initialized = True
             self.logger.info("✅ TradingOrchestrator initialization completed successfully")
@@ -1329,6 +1342,16 @@ class TradingOrchestrator:
                 for strategy_key in self.strategies.keys():
                     if strategy_key not in self.active_strategies:
                         self.active_strategies.append(strategy_key)
+            
+            # CRITICAL FIX: Update components dictionary with active status
+            self.components.update({
+                'system_ready': True,
+                'is_active': True,
+                'session_id': f"session_{int(time_module.time())}",
+                'start_time': datetime.now().isoformat(),
+                'strategy_engine': len(self.strategies) > 0,
+                'market_data': bool(self.truedata_cache)
+            })
             
             self.logger.info(f"✅ Active strategies list: {self.active_strategies}")
             
