@@ -554,6 +554,10 @@ class TradingOrchestrator:
         # CRITICAL FIX: Add missing timezone attribute
         self.ist_timezone = pytz.timezone('Asia/Kolkata')
         
+        # CRITICAL FIX: Add missing market data tracking attributes
+        self.market_data_history = {}  # Required for volume change calculation
+        self.last_data_update = {}     # Required for data transformation
+        
         # CRITICAL FIX: Set TrueData skip auto-init for deployment overlap
         import os
         os.environ['SKIP_TRUEDATA_AUTO_INIT'] = 'true'
@@ -619,7 +623,16 @@ class TradingOrchestrator:
         from src.core.risk_manager import RiskManager
         from src.events import EventBus
         self.event_bus = EventBus()
-        self.risk_manager = RiskManager(self.config, self.position_tracker, self.event_bus)
+        
+        # CRITICAL FIX: Create proper config for RiskManager with Redis settings
+        risk_manager_config = {
+            'redis': {
+                'host': os.environ.get('REDIS_HOST', 'localhost'),
+                'port': int(os.environ.get('REDIS_PORT', 6379)),
+                'db': int(os.environ.get('REDIS_DB', 0))
+            } if self.redis else None
+        }
+        self.risk_manager = RiskManager(risk_manager_config, self.position_tracker, self.event_bus)
         self.logger.info("Risk manager initialized")
         
         # Initialize Zerodha client with enhanced credential handling
@@ -946,8 +959,13 @@ class TradingOrchestrator:
                 from brokers.zerodha import ZerodhaIntegration
                 from brokers.resilient_zerodha import ResilientZerodhaConnection
                 
-                # Create broker instance
-                broker = ZerodhaIntegration(api_key=api_key, user_id=user_id)
+                # Create broker instance with proper config format
+                zerodha_config = {
+                    'api_key': api_key,
+                    'user_id': user_id,
+                    'mock_mode': True  # Default to mock mode for safety
+                }
+                broker = ZerodhaIntegration(zerodha_config)
                 
                 # Create config for resilient connection
                 resilient_config = {
@@ -1033,6 +1051,8 @@ class TradingOrchestrator:
                         
                         if parsed_data:
                             self.logger.info(f"📊 Using Redis cache: {len(parsed_data)} symbols")
+                            # CRITICAL FIX: Update orchestrator's truedata_cache reference
+                            self.truedata_cache = parsed_data
                             return parsed_data
                 except Exception as redis_error:
                     self.logger.warning(f"⚠️ Redis cache read failed: {redis_error}")
@@ -1043,6 +1063,8 @@ class TradingOrchestrator:
             # Try direct access first (most reliable)
             if live_market_data:
                 self.logger.info(f"📊 Using direct TrueData cache: {len(live_market_data)} symbols")
+                # CRITICAL FIX: Update orchestrator's truedata_cache reference
+                self.truedata_cache = live_market_data
                 return live_market_data.copy()  # Return copy to avoid modification issues
             
             # Fallback to get_all_live_data() function
