@@ -261,6 +261,11 @@ class DynamicPositionSizer:
         """Kelly criterion position sizing"""
         p = win_rate
         q = 1 - win_rate
+        
+        # Prevent division by zero when avg_loss is 0
+        if avg_loss == 0:
+            return capital * 0.01  # Conservative 1% position size
+            
         b = abs(avg_win / avg_loss)
         kelly_percentage = (p * b - q) / b
 
@@ -758,14 +763,22 @@ class RiskManager:
             # Delta limit check
             new_delta = abs(current_greeks['delta'] + estimated_delta)
             if new_delta > greeks_limits.max_delta_exposure:
-                delta_reduction = greeks_limits.max_delta_exposure / new_delta
-                base_size *= delta_reduction
+                # Prevent division by zero
+                if new_delta > 0:
+                    delta_reduction = greeks_limits.max_delta_exposure / new_delta
+                    base_size *= delta_reduction
+                else:
+                    base_size *= 0.5  # Conservative 50% reduction
 
             # Vega limit check
             new_vega = abs(current_greeks['vega'] + estimated_vega)
             if new_vega > greeks_limits.max_vega_exposure:
-                vega_reduction = greeks_limits.max_vega_exposure / new_vega
-                base_size *= vega_reduction
+                # Prevent division by zero
+                if new_vega > 0:
+                    vega_reduction = greeks_limits.max_vega_exposure / new_vega
+                    base_size *= vega_reduction
+                else:
+                    base_size *= 0.5  # Conservative 50% reduction
 
             return base_size
 
