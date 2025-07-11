@@ -1414,9 +1414,9 @@ async def search_endpoint(
 async def trading_status_endpoint():
     """Trading status endpoint"""
     try:
-        # Get orchestrator instance
-        from src.core.orchestrator import get_orchestrator_instance
-        orchestrator = get_orchestrator_instance()
+        # CRITICAL FIX: Use get_orchestrator() instead of get_orchestrator_instance() for consistency
+        from src.core.orchestrator import get_orchestrator
+        orchestrator = await get_orchestrator()
         
         if orchestrator:
             status = await orchestrator.get_trading_status()
