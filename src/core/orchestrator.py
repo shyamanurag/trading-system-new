@@ -548,6 +548,7 @@ class TradingOrchestrator:
         self.running = False
         self.is_running = False  # Add missing is_running attribute
         self.is_initialized = False
+        self.components = {}  # Add missing components dictionary
         self.logger = logging.getLogger(__name__)
         
         # CRITICAL FIX: Set TrueData skip auto-init for deployment overlap
@@ -857,8 +858,17 @@ class TradingOrchestrator:
                     os.environ['ZERODHA_API_KEY'] = api_key
                     os.environ['ZERODHA_USER_ID'] = user_id
                     
-                    # Create broker instance
-                    broker = ZerodhaIntegration(api_key=api_key, user_id=user_id)
+                    # Create proper broker instance and config
+                    from brokers.zerodha import ZerodhaIntegration
+                    from brokers.resilient_zerodha import ResilientZerodhaConnection
+                    
+                    # Create broker instance with proper config dictionary
+                    zerodha_config = {
+                        'api_key': api_key,
+                        'user_id': user_id,
+                        'mock_mode': True  # Start with mock mode for safety
+                    }
+                    broker = ZerodhaIntegration(zerodha_config)
                     
                     # Create config for resilient connection
                     resilient_config = {
