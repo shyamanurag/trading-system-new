@@ -16,6 +16,10 @@ class OrderError(TradingSystemException):
     """Exception for order errors"""
     pass
 
+class RiskError(TradingSystemException):
+    """Exception for risk management errors"""
+    pass
+
 class RiskManagementException(TradingSystemException):
     """Exception for risk management errors"""
     pass

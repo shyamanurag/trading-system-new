@@ -262,6 +262,80 @@ class Order:
     filled_at: Optional[datetime] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def to_dict(self) -> Dict:
+        return {
+            'order_id': self.order_id,
+            'user_id': self.user_id,
+            'signal_id': self.signal_id,
+            'broker_order_id': self.broker_order_id,
+            'parent_order_id': self.parent_order_id,
+            'symbol': self.symbol,
+            'option_type': self.option_type.value,
+            'strike': self.strike,
+            'quantity': self.quantity,
+            'order_type': self.order_type.value,
+            'side': self.side.value,
+            'price': self.price,
+            'execution_strategy': self.execution_strategy.value,
+            'slice_number': self.slice_number,
+            'total_slices': self.total_slices,
+            'state': self.state.value,
+            'status': self.status.value,
+            'filled_quantity': self.filled_quantity,
+            'average_price': self.average_price,
+            'fees': self.fees,
+            'slippage': self.slippage,
+            'market_impact': self.market_impact,
+            'strategy_name': self.strategy_name,
+            'position_id': self.position_id,
+            'created_at': self.created_at.isoformat(),
+            'queued_at': self.queued_at.isoformat() if self.queued_at else None,
+            'sent_at': self.sent_at.isoformat() if self.sent_at else None,
+            'placed_at': self.placed_at.isoformat() if self.placed_at else None,
+            'filled_at': self.filled_at.isoformat() if self.filled_at else None,
+            'metadata': self.metadata
+        }
+
+@dataclass
+class Trade:
+    """Represents a completed trade execution"""
+    trade_id: str
+    order_id: str
+    user_id: str
+    symbol: str
+    option_type: OptionType
+    strike: float
+    quantity: int
+    side: OrderSide
+    price: float
+    fees: float = 0.0
+    slippage: float = 0.0
+    market_impact: float = 0.0
+    strategy_name: Optional[str] = None
+    position_id: Optional[str] = None
+    executed_at: datetime = field(default_factory=datetime.now)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict:
+        return {
+            'trade_id': self.trade_id,
+            'order_id': self.order_id,
+            'user_id': self.user_id,
+            'symbol': self.symbol,
+            'option_type': self.option_type.value,
+            'strike': self.strike,
+            'quantity': self.quantity,
+            'side': self.side.value,
+            'price': self.price,
+            'fees': self.fees,
+            'slippage': self.slippage,
+            'market_impact': self.market_impact,
+            'strategy_name': self.strategy_name,
+            'position_id': self.position_id,
+            'executed_at': self.executed_at.isoformat(),
+            'metadata': self.metadata
+        }
+
 @dataclass
 class MultiLegOrder:
     """Multi-leg order representation"""

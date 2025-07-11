@@ -625,11 +625,23 @@ class TradingOrchestrator:
         
         # Initialize trade engine
         from src.core.trade_engine import TradeEngine
-        self.trade_engine = TradeEngine(
-            order_manager=self.order_manager,
-            zerodha_client=self.zerodha_client,
-            config=self.config
-        )
+        
+        # Create trade engine config
+        trade_engine_config = {
+            'rate_limit': {
+                'max_trades_per_second': 7
+            },
+            'batch_processing': {
+                'size': 5,
+                'timeout': 0.5
+            }
+        }
+        
+        self.trade_engine = TradeEngine(trade_engine_config)
+        
+        # Set components after initialization (will be done async later)
+        self.trade_engine.zerodha_client = self.zerodha_client
+        
         self.logger.info("Trade engine initialized")
         
         # Load strategies
