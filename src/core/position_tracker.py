@@ -224,6 +224,10 @@ class ProductionPositionTracker:
         """Get all current positions"""
         return self.positions.copy()
     
+    async def get_open_positions(self) -> Dict[str, Position]:
+        """Get all open positions (alias for get_all_positions for RiskManager compatibility)"""
+        return self.positions.copy()
+    
     async def get_positions_summary(self) -> Dict[str, Any]:
         """Get summary of all positions"""
         try:
