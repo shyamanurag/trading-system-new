@@ -900,11 +900,16 @@ class RiskManager:
             )
 
             # Estimate new position VaR
+            from datetime import datetime
             position_var = self.var_calculator.calculate_position_var(
                 Position(
                     position_id="TEMP_" + signal.signal_id,
                     symbol=signal.symbol,
+                    option_type=OptionType.CALL,  # Default for equity signals
+                    strike=0.0,  # Default for equity signals
                     quantity=signal.quantity,
+                    entry_price=getattr(signal, 'entry_price', 100.0),  # Use signal entry price or default
+                    entry_time=datetime.now(),
                     strategy_name=signal.strategy_name
                 ),
                 current_var
