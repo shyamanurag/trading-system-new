@@ -631,6 +631,7 @@ class RiskManager:
 
             # Publish risk assessment event
             await self.event_bus.publish(TradingEvent(
+                event_type=EventType.RISK_ASSESSMENT,
                 data=result
             ))
 
@@ -659,10 +660,15 @@ class RiskManager:
             spot_price = nifty_data.get('ltp', nifty_data.get('last_price', 0.0))
 
             # Create temporary position from signal for Greeks validation
+            from datetime import datetime
             temp_position = Position(
                 position_id="TEMP_" + signal.signal_id,
                 symbol=signal.symbol,
+                option_type=OptionType.CALL,  # Default for equity signals
+                strike=0.0,  # Default for equity signals
                 quantity=signal.quantity,
+                entry_price=getattr(signal, 'entry_price', 100.0),  # Use signal entry price or default
+                entry_time=datetime.now(),
                 strategy_name=signal.strategy_name
             )
 
