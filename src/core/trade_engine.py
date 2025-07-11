@@ -41,7 +41,7 @@ class TradeEngine:
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        self.trade_allocator = TradeAllocator(config)
+        self.trade_allocator = None  # Will be set by orchestrator if needed
         self.risk_manager = None  # Will be set by orchestrator
         self.zerodha_client = None
         
