@@ -648,7 +648,7 @@ class TradingOrchestrator:
         
         # Load strategies
         self.logger.info("Loading 5 trading strategies (news_impact_scalper removed for debugging)...")
-        self._load_strategies()
+        # Note: _load_strategies is async and will be called during initialize()
         
         # System ready
         self.logger.info("✅ Trading orchestrator initialized successfully")
@@ -695,6 +695,13 @@ class TradingOrchestrator:
                     self.logger.info("✅ Risk manager initialized")
                 except Exception as e:
                     self.logger.error(f"❌ Risk manager initialization failed: {e}")
+                    
+            # Load strategies asynchronously
+            try:
+                await self._load_strategies()
+                self.logger.info("✅ Trading strategies loaded successfully")
+            except Exception as e:
+                self.logger.error(f"❌ Strategy loading failed: {e}")
                     
             # Set initialization flag
             self.is_initialized = True

@@ -338,6 +338,22 @@ class RiskManager:
         # Store for later async initialization
         self._event_handlers_setup = False
 
+    async def initialize(self) -> bool:
+        """Initialize the risk manager asynchronously"""
+        try:
+            logger.info("🚀 Initializing RiskManager async components...")
+            
+            # Initialize async event handlers
+            await self.async_initialize_event_handlers()
+            
+            # Initialize any other async components here
+            logger.info("✅ RiskManager initialization completed successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ RiskManager initialization failed: {e}")
+            return False
+
     async def initialize_user_risk(self, user_id: str, capital: float) -> bool:
         """Initialize risk tracking for a new user"""
         try:

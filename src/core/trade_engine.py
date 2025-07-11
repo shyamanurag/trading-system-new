@@ -77,6 +77,23 @@ class TradeEngine:
         # Batch processor will be started when needed
         logger.info("📦 TradeEngine initialized (batch processor will start when trading begins)")
     
+    async def initialize(self) -> bool:
+        """Initialize the trade engine asynchronously"""
+        try:
+            logger.info("🚀 Initializing TradeEngine async components...")
+            
+            # Start batch processor if needed
+            if not self.batch_processor_task:
+                self.start_batch_processor()
+            
+            # Initialize any async components here
+            logger.info("✅ TradeEngine initialization completed successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ TradeEngine initialization failed: {e}")
+            return False
+    
     def start_batch_processor(self):
         """Start the batch signal processor"""
         if self.batch_processor_task is None:
