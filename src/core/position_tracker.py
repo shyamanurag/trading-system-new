@@ -54,6 +54,10 @@ class ProductionPositionTracker:
         self.logger = logging.getLogger(__name__)
         self.is_initialized = False
         
+        # Capital management - CRITICAL for RiskManager
+        self.capital = 1000000.0  # Default 10 lakh capital
+        self.peak_capital = self.capital
+        
         # Performance tracking
         self.total_pnl = 0.0
         self.daily_pnl = 0.0
@@ -164,6 +168,11 @@ class ProductionPositionTracker:
             self.daily_pnl += realized_pnl
             self.total_trades += 1
             
+            # Update capital tracking
+            current_portfolio_value = self.capital + self.total_pnl
+            if current_portfolio_value > self.peak_capital:
+                self.peak_capital = current_portfolio_value
+            
             if realized_pnl > 0:
                 self.winning_trades += 1
             
@@ -237,6 +246,26 @@ class ProductionPositionTracker:
         except Exception as e:
             self.logger.error(f"Failed to get positions summary: {e}")
             return {}
+    
+    async def set_capital(self, capital: float) -> bool:
+        """Set trading capital"""
+        try:
+            self.capital = capital
+            if self.peak_capital < capital:
+                self.peak_capital = capital
+            self.logger.info(f"Capital set to: ₹{capital:,.2f}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to set capital: {e}")
+            return False
+    
+    async def get_capital(self) -> float:
+        """Get current capital"""
+        return self.capital
+    
+    async def get_portfolio_value(self) -> float:
+        """Get current portfolio value (capital + PnL)"""
+        return self.capital + self.total_pnl
     
     async def get_risk_exposure(self) -> Dict[str, Any]:
         """Get current risk exposure"""
