@@ -18,7 +18,7 @@ from .risk_manager import RiskManager
 from .position_manager import PositionManager
 from .market_data import MarketDataManager
 from .config import settings
-from .models import Order, OrderType, OrderSide, Trade
+from .models import Order, OrderType, OrderSide, Trade, Signal, OptionType, ExecutionStrategy, OrderState, OrderStatus
 from .exceptions import OrderError, RiskError
 from .trade_allocator import TradeAllocator
 
@@ -175,6 +175,114 @@ class TradeEngine:
         except Exception as e:
             logger.error(f"Error processing signal batch: {e}")
     
+    def _dict_to_signal(self, signal_dict: Dict[str, Any]) -> Signal:
+        """Convert dict signal to Signal object"""
+        try:
+            # Extract required fields with defaults
+            signal_id = signal_dict.get('signal_id', f"signal_{datetime.now().timestamp()}")
+            strategy_name = signal_dict.get('strategy', 'unknown')
+            symbol = signal_dict.get('symbol', '')
+            action = signal_dict.get('action', 'BUY')
+            quantity = signal_dict.get('quantity', 1)
+            entry_price = signal_dict.get('entry_price', 0.0)
+            stop_loss = signal_dict.get('stop_loss', 0.0)
+            target = signal_dict.get('target', 0.0)
+            
+            # Calculate percentages for stop loss and target
+            stop_loss_percent = 0.0
+            target_percent = 0.0
+            
+            if entry_price > 0:
+                if stop_loss > 0:
+                    stop_loss_percent = abs((stop_loss - entry_price) / entry_price) * 100
+                if target > 0:
+                    target_percent = abs((target - entry_price) / entry_price) * 100
+            
+            # Create Signal object
+            return Signal(
+                signal_id=signal_id,
+                strategy_name=strategy_name,
+                symbol=symbol,
+                option_type=OptionType.CALL,  # Default for stocks
+                strike=0.0,  # Default for stocks
+                action=OrderSide.BUY if action.upper() == 'BUY' else OrderSide.SELL,
+                quality_score=signal_dict.get('confidence', 0.8),
+                quantity=quantity,
+                entry_price=entry_price,
+                stop_loss_percent=stop_loss_percent,
+                target_percent=target_percent,
+                metadata=signal_dict.get('metadata', {}),
+                timestamp=datetime.now()
+            )
+            
+        except Exception as e:
+            logger.error(f"Error converting dict to Signal: {e}")
+            # Return a minimal valid Signal
+            return Signal(
+                signal_id=f"error_signal_{datetime.now().timestamp()}",
+                strategy_name='error',
+                symbol=signal_dict.get('symbol', 'UNKNOWN'),
+                option_type=OptionType.CALL,
+                strike=0.0,
+                action=OrderSide.BUY,
+                quality_score=0.0,
+                quantity=1,
+                entry_price=0.0,
+                stop_loss_percent=0.0,
+                target_percent=0.0,
+                metadata={'error': str(e)},
+                timestamp=datetime.now()
+            )
+
+    def _create_order_from_signal(self, signal_dict: Dict[str, Any]) -> Order:
+        """Create Order object from signal dict"""
+        try:
+            return Order(
+                order_id=f"ORDER_{uuid.uuid4()}",
+                user_id='system',
+                signal_id=signal_dict.get('signal_id'),
+                broker_order_id=None,
+                parent_order_id=None,
+                symbol=signal_dict.get('symbol', ''),
+                option_type=OrderType.MARKET,
+                strike=0.0,
+                quantity=signal_dict.get('quantity', 1),
+                order_type=OrderType.MARKET,
+                side=OrderSide.BUY if signal_dict.get('action', 'BUY').upper() == 'BUY' else OrderSide.SELL,
+                price=signal_dict.get('entry_price'),
+                execution_strategy=ExecutionStrategy.MARKET,
+                slice_number=None,
+                total_slices=None,
+                state=OrderState.CREATED,
+                status=OrderStatus.PENDING,
+                strategy_name=signal_dict.get('strategy', 'unknown'),
+                metadata=signal_dict.get('metadata', {})
+            )
+        except Exception as e:
+            logger.error(f"Error creating order from signal: {e}")
+            # Return minimal order
+            return Order(
+                order_id=f"ERROR_{uuid.uuid4()}",
+                user_id='system',
+                signal_id=None,
+                broker_order_id=None,
+                parent_order_id=None,
+                symbol=signal_dict.get('symbol', 'UNKNOWN'),
+                option_type=OrderType.MARKET,
+                strike=0.0,
+                quantity=1,
+                order_type=OrderType.MARKET,
+                side=OrderSide.BUY,
+                price=0.0,
+                execution_strategy=ExecutionStrategy.MARKET,
+                slice_number=None,
+                total_slices=None,
+                state=OrderState.CREATED,
+                status=OrderStatus.PENDING,
+                strategy_name='error',
+                metadata={'error': str(e)}
+            )
+
     async def _process_symbol_signals(self, symbol: str, signals: List[Dict[str, Any]]):
         """Process signals for a single symbol with OCO logic"""
         try:
@@ -186,15 +294,19 @@ class TradeEngine:
                 await self._evaluate_oco_for_symbol(symbol, signals, existing_orders)
             
             # Process new signals
-            for signal in signals:
+            for signal_dict in signals:
+                # Convert dict to Signal object for risk validation
+                signal_obj = self._dict_to_signal(signal_dict)
+                
                 # Risk check first (if risk manager is available)
                 should_skip = False
                 if self.risk_manager:
-                    if not await self.risk_manager.validate_signal(signal):
-                        logger.warning(f"⚠️ Signal rejected by risk manager: {signal}")
+                    risk_result = await self.risk_manager.validate_signal(signal_obj)
+                    if not risk_result.get('approved', False):
+                        logger.warning(f"⚠️ Signal rejected by risk manager: {signal_dict.get('symbol', 'unknown')} - {risk_result.get('reason', 'Unknown')}")
                         should_skip = True
                 else:
-                    logger.info(f"ℹ️ Processing signal without risk validation (risk manager not set): {signal.get('symbol', 'unknown')}")
+                    logger.info(f"ℹ️ Processing signal without risk validation (risk manager not set): {signal_dict.get('symbol', 'unknown')}")
                 
                 if should_skip:
                     continue
@@ -207,10 +319,14 @@ class TradeEngine:
                 else:
                     oco_group_id = None
                 
-                # Allocate trades
-                allocated_orders = await self.trade_allocator.allocate_trade_optimized(
-                    signal['strategy'], signal
-                )
+                # Allocate trades (with fallback if allocator not available)
+                if self.trade_allocator and hasattr(self.trade_allocator, 'allocate_trade_optimized'):
+                    allocated_orders = await self.trade_allocator.allocate_trade_optimized(
+                        signal_dict['strategy'], signal_dict
+                    )
+                else:
+                    # Fallback allocation for system user
+                    allocated_orders = [('system', self._create_order_from_signal(signal_dict))]
                 
                 # Place orders with rate limiting
                 for user_id, order in allocated_orders:
