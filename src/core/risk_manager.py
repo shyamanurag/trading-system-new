@@ -301,6 +301,11 @@ class RiskManager:
         self.position_tracker = position_tracker
         self.event_bus = event_bus
         
+        # CRITICAL FIX: Initialize async locks for thread safety
+        import asyncio
+        self._position_lock = asyncio.Lock()
+        self._stats_lock = asyncio.Lock()
+        
         # CRITICAL FIX: Handle None redis config properly
         redis_config = config.get('redis')
         if redis_config is not None and isinstance(redis_config, dict):
