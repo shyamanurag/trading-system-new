@@ -225,12 +225,10 @@ class ConnectionManager:
     async def _initialize_zerodha_safe(self):
         """Safely initialize Zerodha connection"""
         try:
-            # Try to import from brokers folder
-            try:
-                from brokers.zerodha import ZerodhaIntegration
-            except ImportError:
-                # Try alternative import path
-                from src.core.zerodha import ZerodhaIntegration
+            logger.info("Initializing Zerodha connection...")
+            
+            # Import ZerodhaIntegration from the correct location
+            from brokers.zerodha import ZerodhaIntegration
             
             # Get access token from environment or Redis
             access_token = os.getenv('ZERODHA_ACCESS_TOKEN')

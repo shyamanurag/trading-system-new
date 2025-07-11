@@ -572,10 +572,33 @@ class TradingOrchestrator:
         # Initialize Redis connection with enhanced error handling
         self.logger.info("🔄 Initializing Redis connection...")
         try:
-            from src.config.database import get_redis_connection
-            self.redis = get_redis_connection()
-            self.redis.ping()
-            self.logger.info("✅ Redis connection established")
+            # Import redis directly for sync initialization
+            import redis.asyncio as redis
+            import os
+            from urllib.parse import urlparse
+            
+            # Get Redis configuration
+            redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+            parsed = urlparse(redis_url)
+            
+            # Check if SSL is required (DigitalOcean Redis)
+            ssl_required = 'ondigitalocean.com' in redis_url or redis_url.startswith('rediss://')
+            
+            redis_config = {
+                'host': parsed.hostname or 'localhost',
+                'port': parsed.port or 6379,
+                'password': parsed.password,
+                'db': int(parsed.path[1:]) if parsed.path and len(parsed.path) > 1 else 0,
+                'decode_responses': True,
+                'socket_timeout': 10,
+                'socket_connect_timeout': 10,
+                'retry_on_timeout': True,
+                'ssl': ssl_required
+            }
+            
+            # Create Redis client (will test connection later async)
+            self.redis = redis.Redis(**redis_config)
+            self.logger.info(f"✅ Redis client created for {redis_config['host']}:{redis_config['port']}")
         except Exception as e:
             self.logger.error(f"❌ Redis connection failed: {e}")
             self.redis = None
@@ -1101,69 +1124,6 @@ class TradingOrchestrator:
             # CRITICAL FIX: Instead of returning raw_data, return empty dict to force retry
             return {}
 
-    async def _initialize_zerodha_client(self):
-        """Initialize Zerodha client (non-blocking)"""
-        try:
-            # CRITICAL FIX: Get credentials from trading_control if available
-            from src.api.trading_control import broker_users
-            
-            master_user = broker_users.get("MASTER_USER_001")
-            
-            # Create Zerodha config - prioritize trading_control data
-            if master_user:
-                zerodha_config = {
-                    'api_key': master_user.get('api_key'),
-                    'api_secret': master_user.get('api_secret'),
-                    'user_id': master_user.get('client_id'),  # client_id is the user_id
-                    'access_token': os.getenv('ZERODHA_ACCESS_TOKEN', ''),  # From daily auth
-                    'pin': os.getenv('ZERODHA_PIN', ''),
-                    'mock_mode': False
-                }
-                self.logger.info(f"✅ Using Zerodha credentials from trading_control: API Key: {zerodha_config['api_key'][:8]}..., User ID: {zerodha_config['user_id']}")
-            else:
-                # Fallback to environment variables
-                zerodha_config = {
-                    'api_key': os.getenv('ZERODHA_API_KEY'),
-                    'api_secret': os.getenv('ZERODHA_API_SECRET'),
-                    'user_id': os.getenv('ZERODHA_USER_ID') or os.getenv('ZERODHA_CLIENT_ID'),
-                    'access_token': os.getenv('ZERODHA_ACCESS_TOKEN', ''),
-                    'pin': os.getenv('ZERODHA_PIN', ''),
-                    'mock_mode': False
-                }
-                self.logger.info("⚠️ Using Zerodha credentials from environment variables")
-            
-            # Check if we have minimum required credentials
-            if not zerodha_config['api_key'] or not zerodha_config['api_secret']:
-                self.logger.error("❌ Missing required Zerodha API credentials (api_key, api_secret)")
-                self.components['zerodha'] = False
-                return
-            
-            # Create resilient connection config
-            resilient_config = {
-                'order_rate_limit': 1.0,
-                'ws_reconnect_delay': 5,
-                'ws_max_reconnect_attempts': 10
-            }
-            
-            # Import ZerodhaIntegration
-            from brokers.zerodha import ZerodhaIntegration
-            from brokers.resilient_zerodha import ResilientZerodhaConnection
-            
-            # Create broker instance with config
-            broker = ZerodhaIntegration(zerodha_config)
-            self.zerodha_client = ResilientZerodhaConnection(broker, resilient_config)
-            
-            if await self.zerodha_client.initialize():
-                self.components['zerodha'] = True
-                self.logger.info("✅ Zerodha client initialized with full credentials")
-            else:
-                self.components['zerodha'] = False
-                self.logger.error("❌ Zerodha client initialization failed")
-        except Exception as e:
-            self.components['zerodha'] = False
-            self.logger.error(f"❌ Zerodha client initialization failed: {e}")
-            self.logger.info("⚠️ System will continue without Zerodha client")
-    
     async def _load_strategies(self):
         """Load and initialize trading strategies"""
         try:

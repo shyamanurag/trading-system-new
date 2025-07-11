@@ -91,12 +91,12 @@ class MarketDataManager:
     async def start(self):
         """Start the market data manager"""
         logger.info("Starting market data manager...")
-            self.is_running = True
-            if self.paper_mode:
+        self.is_running = True
+        if self.paper_mode:
             # Start REAL market data updates - NO FAKE DATA
             asyncio.create_task(self._update_real_market_data())
-                logger.info("Market data started in paper mode")
-            else:
+            logger.info("Market data started in paper mode")
+        else:
             logger.info("Market data started in live mode")
     
     async def stop(self):
@@ -446,13 +446,13 @@ async def get_market_data(symbol: str) -> Dict[str, Any]:
             'timestamp': datetime.now().isoformat()
         }
     except Exception as e:
-    return {
+        return {
             'success': False,
             'error': str(e),
             'message': 'SAFETY: No fake data fallback available',
-        'symbol': symbol,
+            'symbol': symbol,
             'timestamp': datetime.now().isoformat()
-    }
+        }
 
 async def get_option_chain(symbol: str, expiry: Optional[str] = None) -> Dict[str, Any]:
     """Get option chain data"""
