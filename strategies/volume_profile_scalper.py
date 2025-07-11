@@ -39,6 +39,11 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
         # SCALPING cooldown control
         self.scalping_cooldown = 15  # 15 seconds between signals
         self.symbol_cooldowns = {}   # Symbol-specific cooldowns
+    
+    async def initialize(self):
+        """Initialize the strategy"""
+        self.is_active = True
+        logger.info(f"✅ {self.name} strategy initialized successfully")
         
     async def on_market_data(self, data: Dict):
         """Handle incoming market data and generate signals"""

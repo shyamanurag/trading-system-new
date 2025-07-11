@@ -43,6 +43,11 @@ class EnhancedVolatilityExplosion(BaseStrategy):
         
         # Historical volatility tracking per symbol
         self.volatility_history = {}
+    
+    async def initialize(self):
+        """Initialize the strategy"""
+        self.is_active = True
+        logger.info(f"✅ {self.name} strategy initialized successfully")
         
     async def on_market_data(self, data: Dict):
         """Handle incoming market data and generate signals"""

@@ -31,6 +31,11 @@ class ConfluenceAmplifier(BaseStrategy):
             'EnhancedVolatilityExplosion': 0.25,
             'EnhancedNewsImpactScalper': 0.2
         }
+    
+    async def initialize(self):
+        """Initialize the strategy"""
+        self.is_active = True
+        logger.info(f"✅ {self.name} strategy initialized successfully")
         
     async def on_market_data(self, data: Dict):
         """Handle incoming market data and generate signals"""
