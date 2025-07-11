@@ -6,7 +6,7 @@ A sophisticated volume-based trading strategy with proper ATR-based risk managem
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime
-from .base_strategy import BaseStrategy
+from strategies.base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 

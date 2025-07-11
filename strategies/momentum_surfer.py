@@ -6,7 +6,7 @@ A sophisticated momentum-based trading strategy with SCALPING-OPTIMIZED risk man
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime
-from .base_strategy import BaseStrategy
+from strategies.base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ import logging
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 from datetime import datetime, timedelta
-from .base_strategy import BaseStrategy
+from strategies.base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
