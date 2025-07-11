@@ -551,6 +551,9 @@ class TradingOrchestrator:
         self.components = {}  # Add missing components dictionary
         self.logger = logging.getLogger(__name__)
         
+        # CRITICAL FIX: Add missing timezone attribute
+        self.ist_timezone = pytz.timezone('Asia/Kolkata')
+        
         # CRITICAL FIX: Set TrueData skip auto-init for deployment overlap
         import os
         os.environ['SKIP_TRUEDATA_AUTO_INIT'] = 'true'
