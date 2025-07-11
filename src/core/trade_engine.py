@@ -198,8 +198,8 @@ class TradeEngine:
                 if target > 0:
                     target_percent = abs((target - entry_price) / entry_price) * 100
             
-            # Create Signal object
-            return Signal(
+            # Create Signal object with expected_price attribute
+            signal_obj = Signal(
                 signal_id=signal_id,
                 strategy_name=strategy_name,
                 symbol=symbol,
@@ -215,10 +215,15 @@ class TradeEngine:
                 timestamp=datetime.now()
             )
             
+            # CRITICAL FIX: Add expected_price attribute that RiskManager needs
+            signal_obj.expected_price = entry_price
+            
+            return signal_obj
+            
         except Exception as e:
             logger.error(f"Error converting dict to Signal: {e}")
             # Return a minimal valid Signal
-            return Signal(
+            error_signal = Signal(
                 signal_id=f"error_signal_{datetime.now().timestamp()}",
                 strategy_name='error',
                 symbol=signal_dict.get('symbol', 'UNKNOWN'),
@@ -233,6 +238,11 @@ class TradeEngine:
                 metadata={'error': str(e)},
                 timestamp=datetime.now()
             )
+            
+            # Add expected_price for error signal too
+            error_signal.expected_price = 0.0
+            
+            return error_signal
 
     def _create_order_from_signal(self, signal_dict: Dict[str, Any]) -> Order:
         """Create Order object from signal dict"""
