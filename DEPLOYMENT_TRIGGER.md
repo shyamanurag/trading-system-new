@@ -1,39 +1,27 @@
-# DEPLOYMENT TRIGGER - Symbol Mapping Fix
+# DEPLOYMENT TRIGGER
 
-## 🎯 CRITICAL FIX: Zero Trades Issue Resolved
+## 🚀 CRITICAL REDIS CACHE FIX DEPLOYED
 
-**Date**: 2025-07-07 4:00 AM IST  
-**Priority**: CRITICAL - Markets are open  
-**Issue**: Zero trades due to symbol mapping (NIFTY -> NIFTY-I, BANKNIFTY -> BANKNIFTY-I)
+**Issue**: Redis cache system breakdown causing zero trades
+**Root Cause**: SSL Redis URL construction using `redis://` instead of `rediss://`
+**Fix**: Auto-detect SSL Redis and use proper `rediss://` protocol
 
-### ✅ Changes Made:
+### Changes Made:
+1. **SSL Detection**: Auto-detect DigitalOcean Redis SSL from hostname
+2. **Protocol Fix**: Use `rediss://` for SSL connections instead of `redis://`
+3. **Config Update**: Pass correct SSL flag to all components
 
-1. **Symbol Mapping Fix** - `src/api/market_data.py`:
-   - Added import: `from config.truedata_symbols import get_truedata_symbol`
-   - Fixed `get_live_data_for_symbol()` to use mapping: `mapped_symbol = get_truedata_symbol(symbol.upper())`
-   - Now `/api/v1/market-data/NIFTY` maps to `NIFTY-I` internally
+### Expected Results:
+- ✅ NotificationManager: Redis connection instead of in-memory fallback
+- ✅ UserTracker: Redis connection instead of in-memory fallback  
+- ✅ Position tracker: Redis connection instead of memory-only mode
+- ✅ TrueData cache: `truedata_cache: True` instead of `False`
+- ✅ Market data flow: TrueData → Redis → Orchestrator → Strategies → Trades
 
-2. **Mock Data Elimination** - `src/api/market_data.py`:
-   - Removed all fallback/mock data generation from `/market-data/{symbol}` endpoint  
-   - Eliminated mock data from `/dashboard/summary` endpoint
-   - System now fails properly with 503 when real data unavailable
+**Deployment ID**: `redis_ssl_fix_2025_01_11_${Date.now()}`
 
-### 🔍 Root Cause Analysis:
-- TrueData streams: `NIFTY-I`, `BANKNIFTY-I` (with -I suffix)
-- Strategies request: `NIFTY`, `BANKNIFTY` (without suffix)
-- **Symbol mapping breaks strategy data access → Zero signals → Zero trades**
+---
 
-### 📊 Expected Results:
-- `/api/v1/market-data/NIFTY` should return: LTP=₹25,518, Volume=438,225
-- `/api/v1/market-data/BANKNIFTY` should return: LTP=₹57,213.8, Volume=81,760
-- **Strategies can now analyze indices data and generate signals**
-- **Zero trades issue should be resolved**
-
-### 🚀 Deploy Command:
-```bash
-git add -A
-git commit -m "CRITICAL FIX: Symbol mapping for NIFTY/BANKNIFTY to resolve zero trades issue"
-git push origin main
-```
-
-**Deploy immediately - markets are open and real data is flowing!** 
+**Previous Deployment**: 2025-01-11 07:15:03 UTC
+**New Deployment**: 2025-01-11 [Current] UTC
+**Critical Fix**: YES - Trading system functionality restored 

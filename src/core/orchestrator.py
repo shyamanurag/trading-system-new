@@ -94,6 +94,14 @@ class TradeEngine:
                 # Check if we're in production environment
                 is_production = os.getenv('ENVIRONMENT', 'development') == 'production'
                 
+                # CRITICAL FIX: Detect SSL Redis from hostname (DigitalOcean pattern)
+                uses_ssl = (
+                    os.getenv('REDIS_SSL', 'false').lower() == 'true' or
+                    'digitalocean.com' in redis_host or
+                    'amazonaws.com' in redis_host or
+                    'azure.com' in redis_host
+                )
+                
                 if is_production:
                     # Production Redis configuration
                     if redis_host == 'localhost':
@@ -101,24 +109,26 @@ class TradeEngine:
                         redis_host = 'trading-redis'  # Kubernetes service name
                         self.logger.info(f"Production mode: Using Redis service: {redis_host}")
                     
-                    # Build Redis URL for production
+                    # Build Redis URL for production with SSL support
+                    protocol = 'rediss' if uses_ssl else 'redis'
                     if redis_password:
-                        redis_url = f"redis://:{redis_password}@{redis_host}:{redis_port}/0"
+                        redis_url = f"{protocol}://:{redis_password}@{redis_host}:{redis_port}/0"
                     else:
-                        redis_url = f"redis://{redis_host}:{redis_port}/0"
+                        redis_url = f"{protocol}://{redis_host}:{redis_port}/0"
                 else:
                     # Development fallback
                     redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
                 
+                # CRITICAL FIX: Update SSL flag in config
                 config = {
                     'redis': {
                         'host': redis_host,
                         'port': redis_port,
                         'db': int(os.getenv('REDIS_DB', '0')),
                         'password': redis_password,
-                        'ssl': os.getenv('REDIS_SSL', 'false').lower() == 'true'
+                        'ssl': uses_ssl  # Use detected SSL flag
                     },
-                    'redis_url': redis_url,  # For UserTracker compatibility
+                    'redis_url': redis_url,  # For UserTracker and NotificationManager compatibility
                     'database': {
                         'url': os.getenv('DATABASE_URL', 'sqlite:///trading.db')
                     },
@@ -136,7 +146,8 @@ class TradeEngine:
                 }
                 
                 # Log the config being used (without sensitive data)
-                self.logger.info(f"OrderManager config - Redis: {redis_host}:{redis_port}")
+                self.logger.info(f"OrderManager config - Redis: {redis_host}:{redis_port} (SSL: {uses_ssl})")
+                self.logger.info(f"OrderManager config - Redis URL: {redis_url.split('@')[0] if '@' in redis_url else redis_url}")
                 self.logger.info(f"OrderManager config - Database: {config['database']['url'].split('@')[0] if '@' in config['database']['url'] else 'local'}")
                 self.logger.info(f"OrderManager config - Zerodha client: {'Available' if self.zerodha_client else 'Not available'}")
                 
