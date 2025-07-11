@@ -1029,8 +1029,13 @@ class RiskManager:
                     elif 'max_correlation' in check_result:
                         score += weights[check_name] * (check_result['max_correlation'] * 100)
                     elif 'var_impact' in check_result:
-                        impact_percent = (check_result['var_impact'] / check_result['current_var']) * 100
-                        score += weights[check_name] * min(impact_percent, 100)
+                        # Prevent division by zero when current_var is 0
+                        if check_result['current_var'] > 0:
+                            impact_percent = (check_result['var_impact'] / check_result['current_var']) * 100
+                            score += weights[check_name] * min(impact_percent, 100)
+                        else:
+                            # If current_var is 0, assume low impact
+                            score += weights[check_name] * 10  # 10% impact as default
                     elif 'symbol_concentration' in check_result:
                         score += weights[check_name] * (check_result['symbol_concentration'] / 20 * 100)
                     elif 'daily_pnl_percent' in check_result:
