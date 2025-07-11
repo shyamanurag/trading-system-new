@@ -1437,7 +1437,7 @@ class TradingOrchestrator:
                 self.is_initialized and 
                 self.is_running and 
                 len(self.active_strategies) > 0 and
-                self.components.get('trade_engine', False)
+                bool(self.components.get('trade_engine'))  # Fix: Check if trade_engine exists (not False)
             )
             
             # Get strategy details
