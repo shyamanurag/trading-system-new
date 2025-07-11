@@ -545,6 +545,7 @@ class TradingOrchestrator:
         self.config = config or {}
         self.strategies: Dict[str, Any] = {}
         self.running = False
+        self.is_initialized = False
         self.logger = logging.getLogger(__name__)
         
         # CRITICAL FIX: Set TrueData skip auto-init for deployment overlap
@@ -657,6 +658,53 @@ class TradingOrchestrator:
         
         # Log component status
         self._log_component_status()
+        
+    async def initialize(self) -> bool:
+        """Initialize the orchestrator asynchronously"""
+        try:
+            self.logger.info("🚀 Initializing TradingOrchestrator async components...")
+            
+            # Test Redis connection
+            if self.redis:
+                try:
+                    await self.redis.ping()
+                    self.logger.info("✅ Redis connection verified")
+                except Exception as e:
+                    self.logger.error(f"❌ Redis connection failed: {e}")
+                    
+            # Initialize trade engine async components
+            if self.trade_engine:
+                try:
+                    await self.trade_engine.initialize()
+                    self.logger.info("✅ Trade engine initialized")
+                except Exception as e:
+                    self.logger.error(f"❌ Trade engine initialization failed: {e}")
+                    
+            # Initialize position tracker async components
+            if self.position_tracker:
+                try:
+                    await self.position_tracker.initialize()
+                    self.logger.info("✅ Position tracker initialized")
+                except Exception as e:
+                    self.logger.error(f"❌ Position tracker initialization failed: {e}")
+                    
+            # Initialize risk manager async components
+            if self.risk_manager:
+                try:
+                    await self.risk_manager.initialize()
+                    self.logger.info("✅ Risk manager initialized")
+                except Exception as e:
+                    self.logger.error(f"❌ Risk manager initialization failed: {e}")
+                    
+            # Set initialization flag
+            self.is_initialized = True
+            self.logger.info("✅ TradingOrchestrator initialization completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ TradingOrchestrator initialization failed: {e}")
+            self.is_initialized = False
+            return False
         
     def _initialize_order_manager_with_fallback(self):
         """Initialize OrderManager with multiple fallback levels"""
