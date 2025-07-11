@@ -57,6 +57,10 @@ class ProductionPositionTracker:
         # Capital management - CRITICAL for RiskManager
         self.capital = 1000000.0  # Default 10 lakh capital
         self.peak_capital = self.capital
+        self.previous_capital = self.capital  # For VaR calculations
+        
+        # Market regime tracking - CRITICAL for RiskManager
+        self.current_regime = "NORMAL"  # NORMAL, HIGH, EXTREME
         
         # Performance tracking
         self.total_pnl = 0.0
