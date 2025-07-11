@@ -117,6 +117,30 @@ async def get_status(
             }
         )
 
+@router.post("/reset", response_model=BaseResponse)
+async def reset_orchestrator():
+    """Reset orchestrator instance to force recreation with new code"""
+    try:
+        logger.info("🔄 Resetting orchestrator instance...")
+        
+        # Reset the singleton instance
+        from src.core.orchestrator import TradingOrchestrator
+        TradingOrchestrator.reset_instance()
+        
+        # Also reset the global instance
+        from src.core.orchestrator import set_orchestrator_instance
+        set_orchestrator_instance(None)
+        
+        logger.info("✅ Orchestrator instance reset successfully")
+        return BaseResponse(
+            success=True,
+            message="Orchestrator instance reset successfully - next API call will create fresh instance"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error resetting orchestrator: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to reset orchestrator: {str(e)}")
+
 @router.post("/start", response_model=BaseResponse)
 async def start_trading(
     orchestrator: Any = Depends(get_orchestrator)

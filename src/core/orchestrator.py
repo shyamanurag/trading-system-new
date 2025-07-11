@@ -1559,7 +1559,7 @@ async def get_orchestrator() -> TradingOrchestrator:
 _orchestrator_instance = None
 
 
-def set_orchestrator_instance(instance: TradingOrchestrator):
+def set_orchestrator_instance(instance: Optional[TradingOrchestrator]):
     """Set the global orchestrator instance"""
     global _orchestrator_instance
     _orchestrator_instance = instance
