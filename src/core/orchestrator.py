@@ -174,7 +174,7 @@ class TradeEngine:
                             health_check_interval=30,
                             max_connections=5,  # Increased pool size
                             retry_on_timeout=True,
-                            retry_on_error=[ConnectionError, TimeoutError],  # Auto-retry on connection errors
+                            retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError],  # Auto-retry on connection errors
                             connection_class=redis.Connection
                         )
                         
@@ -183,15 +183,13 @@ class TradeEngine:
                         # Test connection with retry logic
                         for attempt in range(3):
                             try:
-                                await self.redis_client.ping()
+                                self.redis_client.ping()
                                 self.logger.info(f"✅ Orchestrator Redis connected (attempt {attempt + 1}): {redis_host}:{redis_port}")
                                 break
-                            except Exception as ping_error:
-                                if attempt < 2:
-                                    self.logger.warning(f"⚠️ Redis ping failed (attempt {attempt + 1}): {ping_error}")
-                                    await asyncio.sleep(2)
-                                else:
-                                    raise ping_error
+                            except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as e:
+                                if attempt == 2:  # Last attempt
+                                    raise e
+                                await asyncio.sleep(1)  # Wait before retry
                     else:
                         raise ImportError("Redis not available")
                     
@@ -1020,28 +1018,37 @@ class TradingOrchestrator:
                     redis_password = os.environ.get('REDIS_PASSWORD')
                     
                     try:
-                        # CRITICAL FIX: Use connection pooling to prevent "Connection closed by server"
+                        # CRITICAL FIX: Enhanced Redis connection with resilience
                         connection_pool = redis.ConnectionPool(
                             host=redis_host,
                             port=redis_port,
                             password=redis_password,
                             decode_responses=True,
-                            socket_connect_timeout=10,
-                            socket_timeout=10,
+                            socket_connect_timeout=5,  # Reduced timeout
+                            socket_timeout=5,
                             socket_keepalive=True,
                             socket_keepalive_options={},
-                            health_check_interval=30,
-                            max_connections=3,  # Limit connections to prevent server overload
-                            retry_on_timeout=True
+                            health_check_interval=60,  # Increased health check interval
+                            max_connections=2,  # Reduced max connections
+                            retry_on_timeout=True,
+                            retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError]
                         )
                         
                         self.redis_client = redis.Redis(connection_pool=connection_pool)
                         
-                        # Test connection
-                        self.redis_client.ping()
-                        self.logger.info(f"✅ Orchestrator Redis connected with pool: {redis_host}:{redis_port}")
+                        # Test connection with retry logic
+                        for attempt in range(3):
+                            try:
+                                self.redis_client.ping()
+                                self.logger.info(f"✅ Orchestrator Redis connected (attempt {attempt + 1}): {redis_host}:{redis_port}")
+                                break
+                            except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as e:
+                                if attempt == 2:  # Last attempt
+                                    raise e
+                                await asyncio.sleep(1)  # Wait before retry
+                        
                     except Exception as redis_error:
-                        self.logger.warning(f"⚠️ Redis connection failed: {redis_error}")
+                        self.logger.warning(f"⚠️ Redis connection failed after retries: {redis_error}")
                         self.redis_client = None
                 else:
                     self.redis_client = None
