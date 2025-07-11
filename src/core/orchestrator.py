@@ -641,6 +641,7 @@ class TradingOrchestrator:
         
         # Set components after initialization (will be done async later)
         self.trade_engine.zerodha_client = self.zerodha_client
+        self.trade_engine.risk_manager = self.risk_manager  # Share the risk manager
         
         self.logger.info("Trade engine initialized")
         

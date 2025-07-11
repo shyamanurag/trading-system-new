@@ -42,7 +42,7 @@ class TradeEngine:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.trade_allocator = TradeAllocator(config)
-        self.risk_manager = RiskManager(config)
+        self.risk_manager = None  # Will be set by orchestrator
         self.zerodha_client = None
         
         # OCO Order Management
@@ -74,8 +74,8 @@ class TradeEngine:
             'rate_limit_delays': 0
         }
         
-        # Start batch processor
-        self.start_batch_processor()
+        # Batch processor will be started when needed
+        logger.info("📦 TradeEngine initialized (batch processor will start when trading begins)")
     
     def start_batch_processor(self):
         """Start the batch signal processor"""
@@ -170,9 +170,16 @@ class TradeEngine:
             
             # Process new signals
             for signal in signals:
-                # Risk check first
-                if not await self.risk_manager.validate_signal(signal):
-                    logger.warning(f"⚠️ Signal rejected by risk manager: {signal}")
+                # Risk check first (if risk manager is available)
+                should_skip = False
+                if self.risk_manager:
+                    if not await self.risk_manager.validate_signal(signal):
+                        logger.warning(f"⚠️ Signal rejected by risk manager: {signal}")
+                        should_skip = True
+                else:
+                    logger.info(f"ℹ️ Processing signal without risk validation (risk manager not set): {signal.get('symbol', 'unknown')}")
+                
+                if should_skip:
                     continue
                 
                 # Create OCO group if multiple signals for same symbol
