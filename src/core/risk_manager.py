@@ -505,9 +505,9 @@ class RiskManager:
         """Get current VIX value"""
         try:
             if self.redis_client is not None:
-            vix_data = await self.redis_client.get('market:vix')
-            if vix_data:
-                return float(vix_data)
+                vix_data = await self.redis_client.get('market:vix')
+                if vix_data:
+                    return float(vix_data)
             return 0.0
         except Exception as e:
             logger.error(f"Error getting VIX: {str(e)}")

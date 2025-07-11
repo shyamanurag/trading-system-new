@@ -540,107 +540,286 @@ class TradingOrchestrator:
     _instance = None
     _lock = asyncio.Lock()
     
-    def __init__(self):
-        self.is_initialized = False
-        self.is_running = False
-        self.components = {}
-        self.strategies = {}
-        self.active_strategies = []
-        self.market_data = None
-        self.trade_engine = None
-        self.event_bus = None
-        self.position_tracker = None
-        self.risk_manager = None
-        self.zerodha_client = None
+    def __init__(self, config: Optional[Dict] = None):
+        """Initialize orchestrator with TrueData cache and proper fallback system"""
+        self.config = config or {}
+        self.strategies: Dict[str, Any] = {}
+        self.running = False
         self.logger = logging.getLogger(__name__)
         
-        # Initialize IST timezone (CRITICAL FIX)
-        self.ist_timezone = pytz.timezone('Asia/Kolkata')
+        # CRITICAL FIX: Set TrueData skip auto-init for deployment overlap
+        import os
+        os.environ['SKIP_TRUEDATA_AUTO_INIT'] = 'true'
+        self.logger.info("🔧 TrueData auto-init disabled to prevent deployment overlap")
         
-        # Strategy last run tracking
-        self.strategy_last_run = {}
+        # Initialize TrueData access
+        self.logger.info("🚀 Initializing Trading Orchestrator with simple TrueData access...")
         
-        # Historical data for market analysis - renamed to avoid conflict with strategy historical_data
-        self.market_data_history = {}
-        self.last_data_update = {}
-        
-        # Trading loop task
-        self._trading_task = None
-        
-    async def initialize(self) -> bool:
-        """Initialize the trading orchestrator with simple TrueData access"""
+        # Test TrueData cache access
+        self.logger.info("🔄 Testing access to existing TrueData cache...")
         try:
-            self.logger.info("🚀 Initializing Trading Orchestrator with simple TrueData access...")
+            from data.truedata_client import live_market_data
+            if live_market_data:
+                self.logger.info(f"✅ TrueData cache contains {len(live_market_data)} symbols")
+                self.truedata_cache = live_market_data
+            else:
+                self.logger.warning("⚠️ TrueData cache is empty - will retry later")
+                self.truedata_cache = {}
+        except ImportError:
+            self.logger.error("❌ TrueData client not available")
+            self.truedata_cache = {}
+        
+        # Initialize Redis connection with enhanced error handling
+        self.logger.info("🔄 Initializing Redis connection...")
+        try:
+            from src.config.database import get_redis_connection
+            self.redis = get_redis_connection()
+            self.redis.ping()
+            self.logger.info("✅ Redis connection established")
+        except Exception as e:
+            self.logger.error(f"❌ Redis connection failed: {e}")
+            self.redis = None
+        
+        # Initialize position tracker
+        from src.core.position_tracker import ProductionPositionTracker
+        self.position_tracker = ProductionPositionTracker()
+        self.logger.info("✅ Position tracker initialized with Redis")
+        
+        # Initialize risk manager
+        from src.core.risk_manager import RiskManager
+        from src.events import EventBus
+        self.event_bus = EventBus()
+        self.risk_manager = RiskManager(self.config, self.position_tracker, self.event_bus)
+        self.logger.info("Risk manager initialized")
+        
+        # Initialize Zerodha client with enhanced credential handling
+        self.logger.info("🔄 Initializing Zerodha client...")
+        self.zerodha_client = self._initialize_zerodha_client()
+        
+        # CRITICAL FIX: Enhanced OrderManager initialization with multiple fallback levels
+        self.logger.info("🔄 Initializing OrderManager with enhanced fallback system...")
+        self.order_manager = self._initialize_order_manager_with_fallback()
+        
+        # Initialize trade engine
+        from src.core.trade_engine import TradeEngine
+        self.trade_engine = TradeEngine(
+            order_manager=self.order_manager,
+            zerodha_client=self.zerodha_client,
+            config=self.config
+        )
+        self.logger.info("Trade engine initialized")
+        
+        # Load strategies
+        self.logger.info("Loading 5 trading strategies (news_impact_scalper removed for debugging)...")
+        self._load_strategies()
+        
+        # System ready
+        self.logger.info("✅ Trading orchestrator initialized successfully")
+        
+        # Schedule TrueData manual connection
+        self._schedule_truedata_connection()
+        
+        # Log component status
+        self._log_component_status()
+        
+    def _initialize_order_manager_with_fallback(self):
+        """Initialize OrderManager with multiple fallback levels"""
+        # Try full OrderManager first
+        try:
+            from src.core.order_manager import OrderManager
+            config = {
+                'zerodha_client': self.zerodha_client,
+                'redis': {
+                    'host': os.environ.get('REDIS_HOST', 'localhost'),
+                    'port': int(os.environ.get('REDIS_PORT', 6379)),
+                    'db': int(os.environ.get('REDIS_DB', 0))
+                } if self.redis else None
+            }
             
-            # SIMPLE FIX: Test access to existing TrueData cache
-            self.logger.info("🔄 Testing access to existing TrueData cache...")
-            try:
-                from data.truedata_client import live_market_data
-                if live_market_data:
-                    self.logger.info(f"✅ TrueData cache accessible: {len(live_market_data)} symbols")
-                    self.components['truedata_cache'] = True
-                else:
-                    self.logger.warning("⚠️ TrueData cache is empty - will retry later")
-                    self.components['truedata_cache'] = False
-            except ImportError:
-                self.logger.warning("⚠️ TrueData client not available")
-                self.components['truedata_cache'] = False
-            except Exception as e:
-                self.logger.error(f"❌ Error accessing TrueData cache: {e}")
-                self.components['truedata_cache'] = False
+            # CRITICAL FIX: Add syntax error handling
+            self.logger.info("🔄 Attempting full OrderManager initialization...")
+            order_manager = OrderManager(config)
+            self.logger.info("✅ Full OrderManager initialized successfully")
+            return order_manager
             
-            # Initialize event bus
-            self.event_bus = EventBus()
-            await self.event_bus.initialize()
-            self.components['event_bus'] = True
+        except SyntaxError as e:
+            self.logger.error(f"❌ OrderManager syntax error: {e}")
+            self.logger.error("🔄 Falling back to SimpleOrderManager...")
+            return self._initialize_simple_order_manager()
+        except Exception as e:
+            self.logger.error(f"❌ OrderManager initialization failed: {e}")
+            self.logger.error("🔄 Falling back to SimpleOrderManager...")
+            return self._initialize_simple_order_manager()
             
-            # Initialize position tracker with Redis
-            try:
-                redis_client = await get_redis()
-                self.position_tracker = ProductionPositionTracker(redis_client)
-                await self.position_tracker.initialize()
-                self.components['position_tracker'] = True
-                self.logger.info("✅ Position tracker initialized with Redis")
-            except Exception as e:
-                self.logger.warning(f"Redis not available, using in-memory position tracker: {e}")
-                self.position_tracker = ProductionPositionTracker()
-                await self.position_tracker.initialize()
+    def _initialize_simple_order_manager(self):
+        """Initialize SimpleOrderManager as fallback"""
+        try:
+            from src.core.simple_order_manager import SimpleOrderManager
+            config = {
+                'zerodha_client': self.zerodha_client,
+                'redis': self.redis
+            }
             
-            # Initialize risk manager
-            self.risk_manager = ProductionRiskManager(
-                event_bus=self.event_bus,
-                position_tracker=self.position_tracker,
-                max_daily_loss=100000,
-                max_position_size=1000000
-            )
-            await self.risk_manager.initialize()
-            self.components['risk_manager'] = True
-            
-            # Initialize Zerodha client FIRST (before trade engine)
-            await self._initialize_zerodha_client()
-            
-            # Initialize trade engine WITH Zerodha client
-            self.trade_engine = TradeEngine(self.zerodha_client)
-            await self.trade_engine.initialize()
-            self.components['trade_engine'] = True
-            
-            # Load strategies
-            await self._load_strategies()
-            
-            self.is_initialized = True
-            self.logger.info("✅ Trading orchestrator initialized successfully")
-            
-            # Log component status
-            self.logger.info("📊 Component Status:")
-            for component, status in self.components.items():
-                status_icon = "✅" if status else "❌"
-                self.logger.info(f"   {status_icon} {component}: {status}")
-            
-            return True
+            self.logger.info("🔄 Attempting SimpleOrderManager initialization...")
+            order_manager = SimpleOrderManager(config)
+            self.logger.info("✅ SimpleOrderManager initialized successfully")
+            return order_manager
             
         except Exception as e:
-            self.logger.error(f"❌ Orchestrator initialization failed: {e}")
-            return False
+            self.logger.error(f"❌ SimpleOrderManager initialization failed: {e}")
+            self.logger.error("🔄 Falling back to MinimalOrderManager...")
+            return self._initialize_minimal_order_manager()
+            
+    def _initialize_minimal_order_manager(self):
+        """Initialize MinimalOrderManager as last resort"""
+        try:
+            from src.core.minimal_order_manager import MinimalOrderManager
+            config = {
+                'zerodha_client': self.zerodha_client
+            }
+            
+            self.logger.info("🔄 Attempting MinimalOrderManager initialization...")
+            order_manager = MinimalOrderManager(config)
+            self.logger.info("✅ MinimalOrderManager initialized successfully")
+            return order_manager
+            
+        except Exception as e:
+            self.logger.error(f"❌ MinimalOrderManager initialization failed: {e}")
+            self.logger.error("❌ ALL OrderManager fallbacks failed - this is CRITICAL")
+            self.logger.error("❌ System will NOT be able to execute trades")
+            return None
+            
+    def _schedule_truedata_connection(self):
+        """Schedule TrueData connection after deployment stabilizes"""
+        import asyncio
+        import threading
+        
+        def connect_truedata_delayed():
+            """Connect TrueData after delay"""
+            import time
+            time.sleep(30)  # Wait 30 seconds for deployment to stabilize
+            
+            try:
+                self.logger.info("🔄 Attempting delayed TrueData connection...")
+                from data.truedata_client import truedata_client
+                
+                # Reset circuit breaker and connection attempts
+                truedata_client._circuit_breaker_active = False
+                truedata_client._connection_attempts = 0
+                
+                # Attempt connection
+                if truedata_client.connect():
+                    self.logger.info("✅ TrueData connected successfully after deployment")
+                    # Update our cache reference
+                    from data.truedata_client import live_market_data
+                    self.truedata_cache = live_market_data
+                else:
+                    self.logger.warning("⚠️ TrueData connection failed - will retry later")
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Delayed TrueData connection failed: {e}")
+        
+        # Start delayed connection in background thread
+        connection_thread = threading.Thread(target=connect_truedata_delayed, daemon=True)
+        connection_thread.start()
+        self.logger.info("🔄 TrueData connection scheduled for 30 seconds")
+        
+    def _log_component_status(self):
+        """Log comprehensive component status"""
+        self.logger.info("📊 Component Status:")
+        self.logger.info(f"   {'✅' if self.truedata_cache else '❌'} truedata_cache: {bool(self.truedata_cache)}")
+        self.logger.info(f"   {'✅' if self.event_bus else '❌'} event_bus: {bool(self.event_bus)}")
+        self.logger.info(f"   {'✅' if self.position_tracker else '❌'} position_tracker: {bool(self.position_tracker)}")
+        self.logger.info(f"   {'✅' if self.risk_manager else '❌'} risk_manager: {bool(self.risk_manager)}")
+        self.logger.info(f"   {'✅' if self.zerodha_client else '❌'} zerodha: {bool(self.zerodha_client)}")
+        self.logger.info(f"   {'✅' if self.order_manager else '❌'} order_manager: {bool(self.order_manager)}")
+        self.logger.info(f"   {'✅' if self.trade_engine else '❌'} trade_engine: {bool(self.trade_engine)}")
+        
+        # Log critical warnings
+        if not self.order_manager:
+            self.logger.error("❌ OrderManager initialization failed - this is CRITICAL for real money trading")
+            self.logger.error("❌ System will NOT use simplified components for real money")
+            self.logger.warning("⚠️ Starting in degraded mode - manual OrderManager initialization required")
+        else:
+            self.logger.info("✅ OrderManager available - trade execution enabled")
+            
+    def _initialize_zerodha_client(self):
+        """Initialize Zerodha client with enhanced credential handling"""
+        try:
+            # CRITICAL FIX: Get credentials from trading_control first
+            zerodha_credentials = self._get_zerodha_credentials_from_trading_control()
+            
+            if zerodha_credentials:
+                api_key = zerodha_credentials.get('api_key')
+                user_id = zerodha_credentials.get('user_id')
+                
+                if api_key and user_id:
+                    self.logger.info(f"✅ Using Zerodha credentials from trading_control: API Key: {api_key[:8]}..., User ID: {user_id}")
+                    
+                    # Create Zerodha client
+                    from brokers.resilient_zerodha import ResilientZerodhaConnection
+                    
+                    # Set environment variables for the client
+                    os.environ['ZERODHA_API_KEY'] = api_key
+                    os.environ['ZERODHA_USER_ID'] = user_id
+                    
+                    zerodha_client = ResilientZerodhaConnection()
+                    self.logger.info("✅ Zerodha client initialized with full credentials")
+                    return zerodha_client
+                else:
+                    self.logger.error("❌ Incomplete Zerodha credentials from trading_control")
+            else:
+                self.logger.warning("⚠️ No Zerodha credentials found in trading_control")
+                
+            # Fallback to environment variables
+            self.logger.info("🔄 Falling back to environment variables for Zerodha credentials")
+            return self._initialize_zerodha_from_env()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Zerodha client initialization error: {e}")
+            return None
+            
+    def _get_zerodha_credentials_from_trading_control(self):
+        """Get Zerodha credentials from trading_control module"""
+        try:
+            from src.api.trading_control import broker_users
+            
+            # Look for MASTER_USER_001 or any active user
+            for user_id, user_data in broker_users.items():
+                if user_data.get('active') and user_data.get('platform') == 'zerodha':
+                    credentials = user_data.get('credentials', {})
+                    if credentials.get('api_key') and credentials.get('user_id'):
+                        self.logger.info(f"✅ Found Zerodha credentials for user: {user_id}")
+                        return credentials
+                        
+            self.logger.warning("⚠️ No active Zerodha users found in trading_control")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error getting Zerodha credentials from trading_control: {e}")
+            return None
+            
+    def _initialize_zerodha_from_env(self):
+        """Initialize Zerodha client from environment variables"""
+        try:
+            api_key = os.environ.get('ZERODHA_API_KEY')
+            user_id = os.environ.get('ZERODHA_USER_ID')  # Note: corrected variable name
+            
+            if api_key and user_id:
+                self.logger.info(f"✅ Using Zerodha credentials from environment: API Key: {api_key[:8]}..., User ID: {user_id}")
+                
+                from brokers.resilient_zerodha import ResilientZerodhaConnection
+                zerodha_client = ResilientZerodhaConnection()
+                self.logger.info("✅ Zerodha client initialized from environment")
+                return zerodha_client
+            else:
+                self.logger.error("❌ Missing Zerodha credentials in environment variables")
+                self.logger.error("❌ Required: ZERODHA_API_KEY and ZERODHA_USER_ID")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing Zerodha from environment: {e}")
+            return None
     
     async def _get_market_data_from_api(self) -> Dict[str, Any]:
         """Get market data from Redis cache - SOLVES PROCESS ISOLATION"""
