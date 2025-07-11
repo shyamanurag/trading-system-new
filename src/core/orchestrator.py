@@ -150,16 +150,37 @@ class TradeEngine:
                 
                 try:
                     if redis:
-                        redis_client = redis.Redis(
+                        # CRITICAL FIX: Enhanced Redis connection with better pool settings
+                        connection_pool = redis.ConnectionPool(
                             host=redis_host,
                             port=redis_port,
-                            db=config['redis']['db'],
                             password=redis_password,
-                            socket_connect_timeout=5,
-                            socket_timeout=5
+                            decode_responses=True,
+                            socket_connect_timeout=15,  # Increased timeout
+                            socket_timeout=15,  # Increased timeout
+                            socket_keepalive=True,
+                            socket_keepalive_options={},
+                            health_check_interval=30,
+                            max_connections=5,  # Increased pool size
+                            retry_on_timeout=True,
+                            retry_on_error=[ConnectionError, TimeoutError],  # Auto-retry on connection errors
+                            connection_class=redis.Connection
                         )
-                        await redis_client.ping()
-                        self.logger.info("Redis connection successful")
+                        
+                        self.redis_client = redis.Redis(connection_pool=connection_pool)
+                        
+                        # Test connection with retry logic
+                        for attempt in range(3):
+                            try:
+                                await self.redis_client.ping()
+                                self.logger.info(f"✅ Orchestrator Redis connected (attempt {attempt + 1}): {redis_host}:{redis_port}")
+                                break
+                            except Exception as ping_error:
+                                if attempt < 2:
+                                    self.logger.warning(f"⚠️ Redis ping failed (attempt {attempt + 1}): {ping_error}")
+                                    await asyncio.sleep(2)
+                                else:
+                                    raise ping_error
                     else:
                         raise ImportError("Redis not available")
                     
@@ -168,10 +189,10 @@ class TradeEngine:
                     self.logger.info("OrderManager initialized successfully with production config")
                     
                 except Exception as redis_error:
-                    self.logger.warning(f"Redis connection failed: {redis_error}")
-                    self.logger.info("🔄 Initializing OrderManager without Redis (using in-memory fallback)")
+                    self.logger.warning(f"⚠️ Redis connection failed: {redis_error}")
+                    self.logger.info("🔄 Initializing OrderManager without Redis (using SimpleOrderManager fallback)")
                     
-                    # Create Redis-less config for OrderManager with proper structure
+                    # Create Redis-less config for SimpleOrderManager
                     config_no_redis = {
                         'redis': None,
                         'redis_url': None,
@@ -186,7 +207,7 @@ class TradeEngine:
                             'email_alerts': False,
                             'sms_alerts': False
                         }),
-                        'strategies': config.get('strategies', {}),  # CRITICAL: Include strategies
+                        'strategies': config.get('strategies', {}),
                         'trade_rotation': config.get('trade_rotation', {
                             'min_interval_seconds': 300,
                             'max_position_size_percent': 0.1
@@ -196,26 +217,30 @@ class TradeEngine:
                             'min_samples_for_learning': 100,
                             'retraining_interval_hours': 24
                         }),
-                        'zerodha_client': self.zerodha_client  # CRITICAL FIX: Pass Zerodha client to OrderManager
+                        'zerodha_client': self.zerodha_client
                     }
                     
+                    # CRITICAL FIX: Always create SimpleOrderManager fallback
                     try:
-                        self.order_manager = OrderManager(config_no_redis)
-                        self.logger.info("OrderManager initialized with in-memory fallback")
-                    except Exception as e:
-                        self.logger.error(f"OrderManager initialization failed even without Redis: {e}")
-                        self.logger.error(f"Config structure: {list(config_no_redis.keys())}")
-                        # CRITICAL FIX: Create minimal OrderManager for degraded mode
-                        try:
-                            from src.core.simple_order_manager import SimpleOrderManager
-                            self.order_manager = SimpleOrderManager(config_no_redis)
-                            self.logger.info("✅ Created SimpleOrderManager for degraded mode")
-                        except ImportError:
-                            self.logger.warning("⚠️ SimpleOrderManager not available - continuing without OrderManager")
-                            self.order_manager = None
-                        except Exception as simple_error:
-                            self.logger.error(f"❌ SimpleOrderManager creation failed: {simple_error}")
-                            self.order_manager = None
+                        from src.core.simple_order_manager import SimpleOrderManager
+                        self.order_manager = SimpleOrderManager(config_no_redis)
+                        self.logger.info("✅ SimpleOrderManager created successfully for degraded mode")
+                    except Exception as simple_error:
+                        self.logger.error(f"❌ SimpleOrderManager creation failed: {simple_error}")
+                        # Last resort - create a minimal in-memory order manager
+                        class MinimalOrderManager:
+                            def __init__(self, config):
+                                self.config = config
+                                self.orders = {}
+                                
+                            async def async_initialize_components(self):
+                                pass
+                                
+                            async def place_strategy_order(self, signal, user_id="system"):
+                                return {"success": False, "message": "Minimal order manager - no execution"}
+                        
+                        self.order_manager = MinimalOrderManager(config_no_redis)
+                        self.logger.warning("⚠️ Using minimal fallback order manager")
             
             except Exception as e:
                 self.logger.error(f"OrderManager initialization failed: {e}")
@@ -900,15 +925,39 @@ class TradingOrchestrator:
     async def _initialize_zerodha_client(self):
         """Initialize Zerodha client (non-blocking)"""
         try:
-            # Create Zerodha config from environment variables
-            zerodha_config = {
-                'api_key': os.getenv('ZERODHA_API_KEY'),
-                'api_secret': os.getenv('ZERODHA_API_SECRET'),
-                'user_id': os.getenv('ZERODHA_USER_ID'),
-                'access_token': os.getenv('ZERODHA_ACCESS_TOKEN'),
-                'pin': os.getenv('ZERODHA_PIN'),
-                'mock_mode': False  # Always use real Zerodha API - Zerodha handles paper trading internally
-            }
+            # CRITICAL FIX: Get credentials from trading_control if available
+            from src.api.trading_control import broker_users
+            
+            master_user = broker_users.get("MASTER_USER_001")
+            
+            # Create Zerodha config - prioritize trading_control data
+            if master_user:
+                zerodha_config = {
+                    'api_key': master_user.get('api_key'),
+                    'api_secret': master_user.get('api_secret'),
+                    'user_id': master_user.get('client_id'),  # client_id is the user_id
+                    'access_token': os.getenv('ZERODHA_ACCESS_TOKEN', ''),  # From daily auth
+                    'pin': os.getenv('ZERODHA_PIN', ''),
+                    'mock_mode': False
+                }
+                self.logger.info(f"✅ Using Zerodha credentials from trading_control: API Key: {zerodha_config['api_key'][:8]}..., User ID: {zerodha_config['user_id']}")
+            else:
+                # Fallback to environment variables
+                zerodha_config = {
+                    'api_key': os.getenv('ZERODHA_API_KEY'),
+                    'api_secret': os.getenv('ZERODHA_API_SECRET'),
+                    'user_id': os.getenv('ZERODHA_USER_ID') or os.getenv('ZERODHA_CLIENT_ID'),
+                    'access_token': os.getenv('ZERODHA_ACCESS_TOKEN', ''),
+                    'pin': os.getenv('ZERODHA_PIN', ''),
+                    'mock_mode': False
+                }
+                self.logger.info("⚠️ Using Zerodha credentials from environment variables")
+            
+            # Check if we have minimum required credentials
+            if not zerodha_config['api_key'] or not zerodha_config['api_secret']:
+                self.logger.error("❌ Missing required Zerodha API credentials (api_key, api_secret)")
+                self.components['zerodha'] = False
+                return
             
             # Create resilient connection config
             resilient_config = {
@@ -927,7 +976,7 @@ class TradingOrchestrator:
             
             if await self.zerodha_client.initialize():
                 self.components['zerodha'] = True
-                self.logger.info("✅ Zerodha client initialized")
+                self.logger.info("✅ Zerodha client initialized with full credentials")
             else:
                 self.components['zerodha'] = False
                 self.logger.error("❌ Zerodha client initialization failed")

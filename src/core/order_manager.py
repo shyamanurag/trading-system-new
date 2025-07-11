@@ -369,18 +369,26 @@ class OrderManager:
             return order
 
     async def _validate_user_order(self, user_id: str, order: Order) -> bool:
-        """Validate order against user-specific risk limits"""
+        """Validate if user can place this order"""
         try:
+            # Get user details
+            user_details = await self.user_tracker.get_user_details(user_id)
+            if not user_details:
+                logger.error(f"User {user_id} not found")
+                return False
+            
+            # Check if user is active
+            if not user_details.get('is_active', False):
+                logger.error(f"User {user_id} is not active")
+                return False
+            
             # Check risk limits
-            if not await self.risk_manager.check_order_risk(user_id, order):
+            if not await self.risk_manager.validate_order(user_id, order):
+                logger.error(f"Order failed risk validation for user {user_id}")
                 return False
-
-            # Check user's active orders limit
-            if len(self.active_orders[user_id]) >= self.config['user_management']['limits']['max_active_orders']:
-                return False
-
+            
             return True
-
+            
         except Exception as e:
             logger.error(f"Error validating order for user {user_id}: {str(e)}")
             return False
@@ -388,16 +396,16 @@ class OrderManager:
     async def _store_bracket_order(self, bracket_order: BracketOrder):
         """Store bracket order for monitoring"""
         if self.redis is not None:
-        key = f"bracket_orders:{bracket_order.user_id}:{bracket_order.order_id}"
-        await self.redis.set(key, json.dumps(bracket_order.__dict__))
+            key = f"bracket_orders:{bracket_order.user_id}:{bracket_order.order_id}"
+            await self.redis.set(key, json.dumps(bracket_order.__dict__))
         else:
             logger.warning("Redis not available - bracket order not stored for monitoring")
 
     async def _store_conditional_order(self, conditional_order: ConditionalOrder):
         """Store conditional order for monitoring"""
         if self.redis is not None:
-        key = f"conditional_orders:{conditional_order.user_id}:{conditional_order.order_id}"
-        await self.redis.set(key, json.dumps(conditional_order.__dict__))
+            key = f"conditional_orders:{conditional_order.user_id}:{conditional_order.order_id}"
+            await self.redis.set(key, json.dumps(conditional_order.__dict__))
         else:
             logger.warning("Redis not available - conditional order not stored for monitoring")
 
