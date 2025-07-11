@@ -848,13 +848,28 @@ class TradingOrchestrator:
                     self.logger.info(f"✅ Using Zerodha credentials from trading_control: API Key: {api_key[:8]}..., User ID: {user_id}")
                     
                     # Create Zerodha client
+                    from brokers.zerodha import ZerodhaIntegration
                     from brokers.resilient_zerodha import ResilientZerodhaConnection
                     
                     # Set environment variables for the client
                     os.environ['ZERODHA_API_KEY'] = api_key
                     os.environ['ZERODHA_USER_ID'] = user_id
                     
-                    zerodha_client = ResilientZerodhaConnection()
+                    # Create broker instance
+                    broker = ZerodhaIntegration(api_key=api_key, user_id=user_id)
+                    
+                    # Create config for resilient connection
+                    resilient_config = {
+                        'max_retries': 3,
+                        'retry_delay': 5,
+                        'health_check_interval': 30,
+                        'order_rate_limit': 1.0,
+                        'ws_reconnect_delay': 5,
+                        'ws_max_reconnect_attempts': 10
+                    }
+                    
+                    # Create resilient connection with proper arguments
+                    zerodha_client = ResilientZerodhaConnection(broker, resilient_config)
                     self.logger.info("✅ Zerodha client initialized with full credentials")
                     return zerodha_client
                 else:
@@ -899,9 +914,26 @@ class TradingOrchestrator:
             if api_key and user_id:
                 self.logger.info(f"✅ Using Zerodha credentials from environment: API Key: {api_key[:8]}..., User ID: {user_id}")
                 
+                # Create proper broker instance and config
+                from brokers.zerodha import ZerodhaIntegration
                 from brokers.resilient_zerodha import ResilientZerodhaConnection
-                zerodha_client = ResilientZerodhaConnection()
-                self.logger.info("✅ Zerodha client initialized from environment")
+                
+                # Create broker instance
+                broker = ZerodhaIntegration(api_key=api_key, user_id=user_id)
+                
+                # Create config for resilient connection
+                resilient_config = {
+                    'max_retries': 3,
+                    'retry_delay': 5,
+                    'health_check_interval': 30,
+                    'order_rate_limit': 1.0,
+                    'ws_reconnect_delay': 5,
+                    'ws_max_reconnect_attempts': 10
+                }
+                
+                # Create resilient connection with proper arguments
+                zerodha_client = ResilientZerodhaConnection(broker, resilient_config)
+                self.logger.info("✅ Zerodha client initialized from environment with proper config")
                 return zerodha_client
             else:
                 self.logger.error("❌ Missing Zerodha credentials in environment variables")
