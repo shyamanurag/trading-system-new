@@ -716,6 +716,9 @@ class TradingOrchestrator:
         self.logger.info("Loading 5 trading strategies (news_impact_scalper removed for debugging)...")
         # Note: _load_strategies is async and will be called during initialize()
         
+        # Initialize Position Monitor for continuous auto square-off
+        self.position_monitor = None  # Will be initialized during async initialize()
+        
         # System ready
         self.logger.info("✅ Trading orchestrator initialized successfully")
         
@@ -773,6 +776,21 @@ class TradingOrchestrator:
                     self.logger.info("✅ Zerodha client initialized")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Zerodha client initialization failed: {e}")
+            
+            # Initialize Position Monitor for continuous auto square-off
+            try:
+                from src.core.position_monitor import PositionMonitor
+                self.position_monitor = PositionMonitor(
+                    orchestrator=self,
+                    position_tracker=self.position_tracker,
+                    risk_manager=self.risk_manager,
+                    order_manager=self.order_manager
+                )
+                self.logger.info("✅ Position Monitor initialized - continuous auto square-off ready")
+            except Exception as e:
+                self.logger.error(f"❌ Position Monitor initialization failed: {e}")
+                self.logger.warning("⚠️ Auto square-off monitoring will not be available")
+                self.position_monitor = None
             
             self.logger.info("🎉 TradingOrchestrator fully initialized and ready")
             return True
@@ -1430,6 +1448,16 @@ class TradingOrchestrator:
                 self._trading_task = asyncio.create_task(self._trading_loop())
                 self.logger.info("🔄 Started trading loop")
             
+            # Start Position Monitor for continuous auto square-off
+            if self.position_monitor:
+                try:
+                    await self.position_monitor.start_monitoring()
+                    self.logger.info("🔄 Position Monitor started - continuous auto square-off active")
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to start Position Monitor: {e}")
+            else:
+                self.logger.warning("⚠️ Position Monitor not available - auto square-off monitoring disabled")
+            
             self.logger.info(f"✅ Autonomous trading started with {len(self.active_strategies)} active strategies")
             return True
             
@@ -1455,6 +1483,14 @@ class TradingOrchestrator:
                 self._trading_task.cancel()
                 self._trading_task = None
                 self.logger.info("🛑 Cancelled trading loop")
+            
+            # Stop Position Monitor
+            if self.position_monitor:
+                try:
+                    await self.position_monitor.stop_monitoring()
+                    self.logger.info("🛑 Position Monitor stopped")
+                except Exception as e:
+                    self.logger.error(f"❌ Error stopping Position Monitor: {e}")
             
             self.logger.info("✅ Autonomous trading stopped")
             return True

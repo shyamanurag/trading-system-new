@@ -148,6 +148,12 @@ ROUTER_CONFIG = {
         'attr': 'router',
         'prefix': '',
         'tags': ['zerodha-multi']
+    },
+    'position_monitor': {
+        'module': 'src.api.position_monitor',
+        'attr': 'router',
+        'prefix': '/api/v1/position-monitor',
+        'tags': ['position-monitor']
     }
 }
 
