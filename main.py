@@ -1342,6 +1342,26 @@ async def trading_status_endpoint():
         )
 
 # CATCH-ALL ROUTE - MUST BE LAST
+
+# Frontend-Backend Integration Fixes - Redirect Routes
+@app.get("/api/v1/trades", tags=["trades"])
+async def redirect_trades():
+    """Redirect to autonomous trades endpoint"""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/api/v1/autonomous/trades", status_code=307)
+
+@app.get("/api/v1/strategies", tags=["strategies"])  
+async def redirect_strategies():
+    """Redirect to autonomous strategies endpoint"""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/api/v1/autonomous/strategies", status_code=307)
+
+@app.get("/api/v1/users", tags=["users"])
+async def redirect_users():
+    """Redirect to users performance endpoint"""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/api/v1/users/performance", status_code=307)
+
 @app.api_route("/{path:path}", methods=["GET"])
 async def catch_all(request: Request, path: str):
     """Serve frontend for non-API routes, return 404 for API routes"""

@@ -39,7 +39,7 @@ export const API_ENDPOINTS = {
     USER_PROFILE: createEndpoint('/api/auth/me'),
 
     // User endpoints - These use /api/v1/users prefix - FIXED: Added trailing slash
-    USERS: createEndpoint('/api/v1/users/', true),
+    USERS: createEndpoint('/api/v1/users/performance', true),
     USER_PERFORMANCE: createEndpoint('/api/v1/users/performance'),
     USER_CURRENT: createEndpoint('/api/v1/users/current'),
 
@@ -47,7 +47,7 @@ export const API_ENDPOINTS = {
     BROKER_USERS: createEndpoint('/api/v1/control/users/broker'),
 
     // Trading endpoints - FIXED: Added /api prefix and trailing slashes
-    TRADES: createEndpoint('/api/v1/trades', true),
+    TRADES: createEndpoint('/api/v1/autonomous/trades', true),
     POSITIONS: createEndpoint('/api/v1/positions', true),
     ORDERS: createEndpoint('/api/v1/orders', true),
 
@@ -62,7 +62,7 @@ export const API_ENDPOINTS = {
     SYMBOLS: createEndpoint('/api/market/symbols'),
 
     // Strategy endpoints - FIXED: Added /api prefix
-    STRATEGIES: createEndpoint('/api/v1/strategies'),
+    STRATEGIES: createEndpoint('/api/v1/autonomous/strategies'),
     STRATEGY_PERFORMANCE: createEndpoint('/api/v1/strategies/performance'),
 
     // Dashboard endpoints - FIXED: Added /api prefix

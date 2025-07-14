@@ -161,7 +161,7 @@ const UserManagementDashboard = ({ tradingData }) => {
 
                 // ELIMINATED: Mock trades removed - use real trade data only
                 try {
-                    const tradesResponse = await fetchWithAuth('/api/v1/trades/');
+                    const tradesResponse = await fetchWithAuth('/api/v1/autonomous/trades');
                     if (tradesResponse.ok) {
                         const tradesData = await tradesResponse.json();
                         if (tradesData.success && tradesData.data) {
