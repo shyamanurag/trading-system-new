@@ -575,6 +575,19 @@ class TradingOrchestrator:
                 except Exception as e:
                     self.logger.warning(f"⚠️ Zerodha client initialization failed: {e}")
             
+            # CRITICAL FIX: Set Zerodha client in trade engine after initialization
+            if hasattr(self, 'trade_engine') and self.trade_engine and self.zerodha_client:
+                self.trade_engine.zerodha_client = self.zerodha_client
+                self.logger.info("✅ Zerodha client assigned to trade engine")
+            else:
+                self.logger.error("❌ Failed to assign Zerodha client to trade engine")
+                if not hasattr(self, 'trade_engine'):
+                    self.logger.error("❌ Trade engine not found")
+                if not self.trade_engine:
+                    self.logger.error("❌ Trade engine is None")
+                if not self.zerodha_client:
+                    self.logger.error("❌ Zerodha client is None")
+            
             # Initialize Position Monitor for continuous auto square-off
             try:
                 from src.core.position_monitor import PositionMonitor
