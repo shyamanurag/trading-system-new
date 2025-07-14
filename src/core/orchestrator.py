@@ -1305,6 +1305,10 @@ class TradingOrchestrator:
     async def get_trading_status(self) -> Dict[str, Any]:
         """Get comprehensive trading status"""
         try:
+            # Ensure active_strategies is always a list
+            if not isinstance(self.active_strategies, list):
+                self.active_strategies = []
+            
             # Check if system is properly initialized
             system_ready = (
                 self.is_initialized and 
