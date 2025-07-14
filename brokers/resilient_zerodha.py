@@ -67,8 +67,9 @@ class ResilientZerodhaConnection(ResilientConnection):
             if not account_info:
                 return False
                 
-            # Check WebSocket connection
-            if not self.broker.ticker_connected:
+            # Check WebSocket connection - handle missing attribute gracefully
+            if not hasattr(self.broker, 'ticker_connected') or not self.broker.ticker_connected:
+                logger.debug("WebSocket not connected or ticker_connected attribute missing")
                 return False
                 
             return True
@@ -80,7 +81,10 @@ class ResilientZerodhaConnection(ResilientConnection):
         """Monitor WebSocket connection and handle reconnection"""
         while True:
             try:
-                if not self.broker.ticker_connected:
+                # Check if ticker_connected attribute exists and is False
+                ticker_connected = getattr(self.broker, 'ticker_connected', True)  # Default to True if missing
+                
+                if not ticker_connected:
                     current_time = time.time()
                     
                     # Check if we should attempt reconnection
@@ -99,7 +103,7 @@ class ResilientZerodhaConnection(ResilientConnection):
                             self._ws_reconnect_attempts = 0
                 
                 # Reset reconnection attempts if connection is stable
-                if self.broker.ticker_connected:
+                if ticker_connected:
                     self._ws_reconnect_attempts = 0
                 
                 await asyncio.sleep(1)  # Check every second

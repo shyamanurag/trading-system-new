@@ -34,6 +34,7 @@ class ZerodhaIntegration:
             logger.warning("Zerodha API key not provided - using mock mode")
         
         self.is_connected = False
+        self.ticker_connected = False  # Add missing ticker_connected attribute
         self.mock_mode = config.get('mock_mode', True)  # Default to mock for safety
         self.mock_orders = {}
         self.mock_positions = {}
@@ -48,6 +49,7 @@ class ZerodhaIntegration:
             if self.mock_mode:
                 logger.info("🔧 Zerodha running in MOCK mode")
                 self.is_connected = True
+                await self._initialize_websocket()  # Initialize WebSocket
                 return True
             
             if not self.kite or not self.access_token:
@@ -58,6 +60,7 @@ class ZerodhaIntegration:
             profile = await self._async_api_call(self.kite.profile)
             if profile:
                 self.is_connected = True
+                await self._initialize_websocket()  # Initialize WebSocket
                 logger.info(f"✅ Connected to Zerodha API for user: {profile.get('user_name', 'Unknown')}")
                 return True
             else:
@@ -328,12 +331,18 @@ class ZerodhaIntegration:
     
     async def _initialize_websocket(self):
         """Initialize WebSocket connection for real-time data"""
-        if self.mock_mode:
-            self.is_connected = True
-            logger.info("Mock WebSocket connection established")
-        else:
-            # Real WebSocket implementation would go here
-            logger.info("Real WebSocket connection not implemented")
+        try:
+            if self.mock_mode:
+                self.ticker_connected = True
+                logger.info("Mock WebSocket connection established")
+            else:
+                # Real WebSocket implementation would go here
+                # For now, set to False since real implementation is not complete
+                self.ticker_connected = False
+                logger.info("Real WebSocket connection not implemented - ticker_connected set to False")
+        except Exception as e:
+            logger.error(f"WebSocket initialization failed: {e}")
+            self.ticker_connected = False
     
     def get_connection_status(self) -> Dict:
         """Get connection status"""

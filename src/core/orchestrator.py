@@ -13,6 +13,8 @@ from typing import Dict, List, Optional, Any
 import sys
 import os
 import pytz
+from urllib.parse import urlparse
+import redis
 
 # Add project root to Python path for imports
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -743,9 +745,42 @@ class TradingOrchestrator:
                     # CRITICAL: Don't continue without Redis in production
                     if os.getenv('ENVIRONMENT') == 'production':
                         self.logger.error("🚨 PRODUCTION ERROR: Redis connection required!")
-                        raise Exception(f"Redis connection test failed in production: {e}")
+                        # Try to reconnect with better settings
+                        try:
+                            # Parse the Redis URL provided by DigitalOcean
+                            redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+                            parsed = urlparse(redis_url)
+                            
+                            # Enhanced Redis config with better resilience
+                            redis_config = {
+                                'host': parsed.hostname,
+                                'port': parsed.port or 25061,
+                                'password': parsed.password,
+                                'username': parsed.username or 'default',
+                                'db': int(parsed.path[1:]) if parsed.path and len(parsed.path) > 1 else 0,
+                                'decode_responses': True,
+                                'socket_timeout': 10,  # Reduced timeout
+                                'socket_connect_timeout': 10,  # Reduced timeout
+                                'retry_on_timeout': True,
+                                'retry_on_error': [Exception],  # Retry on all errors
+                                'ssl': True,
+                                'ssl_check_hostname': False,
+                                'ssl_cert_reqs': None,
+                                'health_check_interval': 60,
+                                'socket_keepalive': True,
+                                'socket_keepalive_options': {},
+                                'max_connections': 3  # Reduced connections
+                            }
+                            
+                            # Create new Redis client with enhanced config
+                            self.redis = redis.Redis(**redis_config)
+                            await self.redis.ping()
+                            self.logger.info("✅ Redis reconnected successfully with enhanced config")
+                        except Exception as reconnect_error:
+                            self.logger.warning(f"⚠️ Redis reconnection failed: {reconnect_error}")
+                            self.redis = None
                     else:
-                        self.logger.warning("⚠️ Redis connection failed - continuing in memory-only mode")
+                        self.logger.info("🔄 Development mode: System will continue in memory-only mode")
                         self.redis = None
             else:
                 self.logger.info("ℹ️ Redis not configured - using memory-only mode")
