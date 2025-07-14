@@ -428,7 +428,7 @@ class TradingOrchestrator:
                 # Parse the Redis URL provided by DigitalOcean
                 parsed = urlparse(redis_url)
                 
-                # Extract connection details
+                # CRITICAL FIX: Enhanced Redis config for DigitalOcean managed Redis
                 redis_config = {
                     'host': parsed.hostname,
                     'port': parsed.port or 25061,
@@ -436,44 +436,57 @@ class TradingOrchestrator:
                     'username': parsed.username or 'default',
                     'db': int(parsed.path[1:]) if parsed.path and len(parsed.path) > 1 else 0,
                     'decode_responses': True,
-                    'socket_timeout': 30,
-                    'socket_connect_timeout': 30,
+                    'socket_timeout': 15,  # Increased timeout for managed Redis
+                    'socket_connect_timeout': 15,  # Increased timeout for managed Redis
                     'retry_on_timeout': True,
+                    'retry_on_error': [Exception],  # Retry on all errors
                     'ssl': True,  # DigitalOcean Redis requires SSL
-                    'ssl_check_hostname': False,  # Disable hostname check for managed Redis
-                    'ssl_cert_reqs': None,  # Don't require SSL certificates
-                    'health_check_interval': 30,
+                    'ssl_check_hostname': False,  # CRITICAL: Disable hostname check for managed Redis
+                    'ssl_cert_reqs': None,  # CRITICAL: Don't require SSL certificates
+                    'ssl_ca_certs': None,  # CRITICAL: No CA certificate validation
+                    'ssl_keyfile': None,
+                    'ssl_certfile': None,
+                    'health_check_interval': 90,  # Increased health check interval
                     'socket_keepalive': True,
-                    'socket_keepalive_options': {}
+                    'socket_keepalive_options': {},
+                    'max_connections': 5,  # Increased max connections for symbol processing
+                    'connection_pool_class': redis.ConnectionPool,
+                    'connection_pool_class_kwargs': {
+                        'max_connections': 10,  # Pool size for 250 symbols
+                        'retry_on_timeout': True,
+                        'retry_on_error': [Exception]
+                    }
                 }
                 
-                self.logger.info(f"🔗 Using DigitalOcean Redis: {redis_config['host']}:{redis_config['port']}")
+                self.logger.info(f"🔗 Using DigitalOcean Redis: {redis_config['host']}:{redis_config['port']} (SSL: {redis_config['ssl']})")
                 
+                try:
+                    # Create connection pool first
+                    connection_pool = redis.ConnectionPool(**redis_config)
+                    self.redis = redis.Redis(connection_pool=connection_pool)
+                    
+                    # Test connection with retry logic
+                    for attempt in range(5):  # Increased retry attempts
+                        try:
+                            self.redis.ping()
+                            self.logger.info(f"✅ Redis connected successfully (attempt {attempt + 1})")
+                            break
+                        except Exception as e:
+                            if attempt == 4:  # Last attempt
+                                self.logger.error(f"❌ Redis connection failed after {attempt + 1} attempts: {e}")
+                                raise e
+                            self.logger.warning(f"⚠️ Redis connection attempt {attempt + 1} failed: {e}, retrying...")
+                            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    
+                    # Set longer TTL for symbol data to prevent loss
+                    self.redis_ttl = 3600  # 1 hour TTL for symbol data
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Redis connection failed: {e}")
+                    self.redis = None
             else:
-                # Fallback to individual environment variables
-                redis_config = {
-                    'host': os.getenv('REDIS_HOST', 'redis-cache-do-user-23093341-0.k.db.ondigitalocean.com'),
-                    'port': int(os.getenv('REDIS_PORT', 25061)),
-                    'password': os.getenv('REDIS_PASSWORD', 'AVNS_TSCy17L6f9z0CdWgcvW'),
-                    'username': os.getenv('REDIS_USERNAME', 'default'),
-                    'db': int(os.getenv('REDIS_DB', 0)),
-                    'decode_responses': True,
-                    'socket_timeout': 30,
-                    'socket_connect_timeout': 30,
-                    'retry_on_timeout': True,
-                    'ssl': os.getenv('REDIS_SSL', 'true').lower() == 'true',
-                    'ssl_check_hostname': False,
-                    'ssl_cert_reqs': None,
-                    'health_check_interval': 30,
-                    'socket_keepalive': True,
-                    'socket_keepalive_options': {}
-                }
-                
-                self.logger.info(f"🔗 Using Redis env vars: {redis_config['host']}:{redis_config['port']}")
-            
-            # Create Redis client with proper configuration (test connection in async initialize)
-            self.redis = redis.Redis(**redis_config)
-            self.logger.info(f"✅ Redis client created: {redis_config['host']}:{redis_config['port']}")
+                self.logger.warning("⚠️ No REDIS_URL provided - using memory-only mode")
+                self.redis = None
                 
         except Exception as e:
             self.logger.error(f"❌ Redis connection setup failed: {e}")
