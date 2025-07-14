@@ -68,219 +68,41 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class TradeEngine:
-    """Simple trade engine for signal processing"""
+    """Production-level trade engine with proper error handling"""
     
     def __init__(self, zerodha_client=None):
+        self.zerodha_client = zerodha_client
+        self.order_manager = None
+        self.risk_manager = None
+        self.signal_queue = []
         self.is_initialized = False
         self.is_running = False
-        self.signal_queue = []
+        self.executed_trades = 0  # CRITICAL FIX: Track executed trades
         self.logger = logging.getLogger(__name__)
-        self.order_manager = None  # Will be set during initialization
-        self.zerodha_client = zerodha_client  # Store Zerodha client for OrderManager
         
     async def initialize(self) -> bool:
-        """Initialize the trade engine"""
+        """Initialize trade engine with enhanced fallback system"""
         try:
-            # Initialize OrderManager for proper order processing
-            try:
-                from src.core.order_manager import OrderManager
-                from database_manager import get_database_operations
-                import os
-                
-                # Create proper production config for OrderManager
-                # PRODUCTION FIX: Use proper Redis service discovery
-                redis_host = os.getenv('REDIS_HOST', 'localhost')
-                redis_port = int(os.getenv('REDIS_PORT', '6379'))
-                redis_password = os.getenv('REDIS_PASSWORD')
-                
-                # Check if we're in production environment
-                is_production = os.getenv('ENVIRONMENT', 'development') == 'production'
-                
-                # CRITICAL FIX: Detect SSL Redis from hostname (DigitalOcean pattern)
-                uses_ssl = (
-                    os.getenv('REDIS_SSL', 'false').lower() == 'true' or
-                    'digitalocean.com' in redis_host or
-                    'amazonaws.com' in redis_host or
-                    'azure.com' in redis_host
-                )
-                
-                if is_production:
-                    # Production Redis configuration
-                    if redis_host == 'localhost':
-                        # Try common production Redis services
-                        redis_host = 'trading-redis'  # Kubernetes service name
-                        self.logger.info(f"Production mode: Using Redis service: {redis_host}")
-                    
-                    # Build Redis URL for production with SSL support
-                    protocol = 'rediss' if uses_ssl else 'redis'
-                    if redis_password:
-                        redis_url = f"{protocol}://:{redis_password}@{redis_host}:{redis_port}/0"
-                    else:
-                        redis_url = f"{protocol}://{redis_host}:{redis_port}/0"
-                else:
-                    # Development fallback
-                    redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-                
-                # CRITICAL FIX: Update SSL flag in config
-                config = {
-                    'redis': {
-                        'host': redis_host,
-                        'port': redis_port,
-                        'db': int(os.getenv('REDIS_DB', '0')),
-                        'password': redis_password,
-                        'ssl': uses_ssl  # Use detected SSL flag
-                    },
-                    'redis_url': redis_url,  # For UserTracker and NotificationManager compatibility
-                    'database': {
-                        'url': os.getenv('DATABASE_URL', 'sqlite:///trading.db')
-                    },
-                    'trading': {
-                        'max_daily_loss': 100000,
-                        'max_position_size': 1000000,
-                        'risk_per_trade': 0.02
-                    },
-                    'notifications': {
-                        'enabled': True,
-                        'email_alerts': False,
-                        'sms_alerts': False
-                    },
-                    'zerodha_client': self.zerodha_client  # CRITICAL FIX: Pass Zerodha client to OrderManager
-                }
-                
-                # Log the config being used (without sensitive data)
-                self.logger.info(f"OrderManager config - Redis: {redis_host}:{redis_port} (SSL: {uses_ssl})")
-                self.logger.info(f"OrderManager config - Redis URL: {redis_url.split('@')[0] if '@' in redis_url else redis_url}")
-                self.logger.info(f"OrderManager config - Database: {config['database']['url'].split('@')[0] if '@' in config['database']['url'] else 'local'}")
-                self.logger.info(f"OrderManager config - Zerodha client: {'Available' if self.zerodha_client else 'Not available'}")
-                
-                # Test Redis connection before initializing OrderManager
-                try:
-                    import redis.asyncio as redis
-                except ImportError:
-                    # Fallback for environments without redis
-                    self.logger.warning("Redis package not available - using fallback")
-                    redis = None
-                
-                try:
-                    if redis:
-                        # CRITICAL FIX: Enhanced Redis connection with better pool settings
-                        connection_pool = redis.ConnectionPool(
-                        host=redis_host,
-                        port=redis_port,
-                        password=redis_password,
-                            decode_responses=True,
-                            socket_connect_timeout=15,  # Increased timeout
-                            socket_timeout=15,  # Increased timeout
-                            socket_keepalive=True,
-                            socket_keepalive_options={},
-                            health_check_interval=30,
-                            max_connections=5,  # Increased pool size
-                            retry_on_timeout=True,
-                            retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError],  # Auto-retry on connection errors
-                            connection_class=redis.Connection
-                        )
-                        
-                        self.redis_client = redis.Redis(connection_pool=connection_pool)
-                        
-                        # Test connection with retry logic
-                        for attempt in range(3):
-                            try:
-                                self.redis_client.ping()
-                                self.logger.info(f"✅ Orchestrator Redis connected (attempt {attempt + 1}): {redis_host}:{redis_port}")
-                                break
-                            except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as e:
-                                if attempt == 2:  # Last attempt
-                                    raise e
-                                await asyncio.sleep(1)  # Wait before retry
-                    else:
-                        raise ImportError("Redis not available")
-                    
-                    # Initialize OrderManager with working Redis
-                    self.order_manager = OrderManager(config)
-                    self.logger.info("OrderManager initialized successfully with production config")
-                    
-                except Exception as redis_error:
-                    self.logger.warning(f"⚠️ Redis connection failed: {redis_error}")
-                    self.logger.info("🔄 Initializing OrderManager without Redis (using SimpleOrderManager fallback)")
-                    
-                    # Create Redis-less config for SimpleOrderManager
-                    config_no_redis = {
-                        'redis': None,
-                        'redis_url': None,
-                        'database': config.get('database', {'url': os.getenv('DATABASE_URL', 'sqlite:///trading.db')}),
-                        'trading': config.get('trading', {
-                            'max_daily_loss': 100000,
-                            'max_position_size': 1000000,
-                            'risk_per_trade': 0.02
-                        }),
-                        'notifications': config.get('notifications', {
-                            'enabled': True,
-                            'email_alerts': False,
-                            'sms_alerts': False
-                        }),
-                        'strategies': config.get('strategies', {}),
-                        'trade_rotation': config.get('trade_rotation', {
-                            'min_interval_seconds': 300,
-                            'max_position_size_percent': 0.1
-                        }),
-                        'evolution': config.get('evolution', {
-                            'learning_window_days': 30,
-                            'min_samples_for_learning': 100,
-                            'retraining_interval_hours': 24
-                        }),
-                        'zerodha_client': self.zerodha_client
-                    }
-                    
-                    # CRITICAL FIX: Always create SimpleOrderManager fallback
-                    try:
-                        from src.core.simple_order_manager import SimpleOrderManager
-                        self.order_manager = SimpleOrderManager(config_no_redis)
-                        self.logger.info("✅ SimpleOrderManager created successfully for degraded mode")
-                    except Exception as simple_error:
-                        self.logger.error(f"❌ SimpleOrderManager creation failed: {simple_error}")
-                        # Last resort - create a minimal in-memory order manager
-                        class MinimalOrderManager:
-                            def __init__(self, config):
-                                self.config = config
-                                self.orders = {}
-                                
-                            async def async_initialize_components(self):
-                                pass
-                                
-                            async def place_strategy_order(self, signal, user_id="system"):
-                                return {"success": False, "message": "Minimal order manager - no execution"}
-                        
-                        self.order_manager = MinimalOrderManager(config_no_redis)
-                        self.logger.warning("⚠️ Using minimal fallback order manager")
+            self.logger.info("🚀 Initializing TradeEngine async components...")
             
-            except Exception as e:
-                self.logger.error(f"OrderManager initialization failed: {e}")
-                self.logger.info("Continuing without OrderManager - will use fallback method")
-                self.order_manager = None
+            # Initialize risk manager
+            self.risk_manager = ProductionRiskManager()
+            await self.risk_manager.initialize()
             
-            # CRITICAL FIX: Initialize OrderManager async components if it was created successfully
-            if self.order_manager and hasattr(self.order_manager, 'async_initialize_components'):
-                try:
-                    await self.order_manager.async_initialize_components()
-                    self.logger.info("✅ OrderManager async components initialized successfully")
-                except Exception as e:
-                    self.logger.error(f"❌ OrderManager async initialization failed: {e}")
-                    # Continue - don't fail the entire system due to async component issues
+            # Initialize order manager with fallback system
+            await self._initialize_order_manager_with_fallback()
             
-            # DEPLOYMENT FIX: Allow system to start without OrderManager during deployment
-            if not self.order_manager:
-                self.logger.error("❌ OrderManager initialization failed - this is CRITICAL for real money trading")
-                self.logger.error("❌ System will NOT use simplified components for real money")
-                # DEPLOYMENT FIX: Continue initialization but mark as degraded
-                self.logger.warning("⚠️ Starting in degraded mode - manual OrderManager initialization required")
-                # Don't fail initialization - allow health checks to pass
-                # return False  # Commented out to allow deployment to succeed
-            
+            # Start batch processing
+            self.is_running = True
             self.is_initialized = True
-            self.logger.info("Trade engine initialized")
+            
+            self.logger.info("🚀 Batch signal processor started")
+            self.logger.info("✅ TradeEngine initialization completed successfully")
+            
             return True
+            
         except Exception as e:
-            self.logger.error(f"Trade engine initialization failed: {e}")
+            self.logger.error(f"TradeEngine initialization failed: {e}")
             return False
             
     async def process_signals(self, signals: List[Dict]):
@@ -1555,20 +1377,60 @@ class TradingOrchestrator:
                     'initialized': 'instance' in strategy_info
                 })
             
+            # Get actual trading data from trade engine and position tracker
+            total_trades = 0
+            daily_pnl = 0.0
+            active_positions = 0
+            
+            # Get trades from trade engine
+            if self.trade_engine:
+                try:
+                    trade_engine_status = await self.trade_engine.get_status()
+                    total_trades = trade_engine_status.get('executed_trades', 0)  # CRITICAL FIX: Use executed_trades not signals_processed
+                except Exception as e:
+                    self.logger.warning(f"Could not get trade engine status: {e}")
+            
+            # Get positions from position tracker
+            if self.position_tracker:
+                try:
+                    positions = getattr(self.position_tracker, 'positions', {})
+                    active_positions = len(positions)
+                    
+                    # Calculate daily P&L from positions
+                    for position in positions.values():
+                        if isinstance(position, dict):
+                            daily_pnl += position.get('unrealized_pnl', 0.0)
+                        else:
+                            daily_pnl += getattr(position, 'unrealized_pnl', 0.0)
+                except Exception as e:
+                    self.logger.warning(f"Could not get position data: {e}")
+            
+            # Get market status
+            market_open = self._is_market_open()
+            
             # Get risk status
             risk_status = {
                 'max_daily_loss': 100000,
                 'max_position_size': 1000000,
-                'current_positions': len(getattr(self.position_tracker, 'positions', [])) if self.position_tracker else 0,
-                'daily_pnl': 0.0
+                'current_positions': active_positions,
+                'daily_pnl': daily_pnl,
+                'status': 'healthy' if system_ready else 'degraded'
             }
             
             return {
                 'is_running': self.is_running,
+                'is_active': self.is_running,  # Frontend expects is_active
                 'system_ready': system_ready,
                 'active_strategies': self.active_strategies,  # Return list not count
                 'active_strategies_count': len(self.active_strategies),  # Add count separately
                 'strategy_details': strategy_details,
+                'total_trades': total_trades,  # CRITICAL FIX: Add actual trade count
+                'daily_pnl': daily_pnl,  # CRITICAL FIX: Add actual P&L
+                'active_positions': active_positions,  # CRITICAL FIX: Add position count
+                'market_status': 'OPEN' if market_open else 'CLOSED',  # CRITICAL FIX: Add market status
+                'session_id': self.components.get('session_id', f"session_{int(time_module.time())}"),
+                'start_time': self.components.get('start_time'),
+                'last_heartbeat': datetime.now().isoformat(),
                 'risk_status': risk_status,
                 'components': self.components.copy(),
                 'timestamp': datetime.now().isoformat()
@@ -1578,7 +1440,14 @@ class TradingOrchestrator:
             self.logger.error(f"Error getting trading status: {e}")
             return {
                 'is_running': False,
+                'is_active': False,
                 'system_ready': False,
+                'active_strategies': [],
+                'active_strategies_count': 0,
+                'total_trades': 0,
+                'daily_pnl': 0.0,
+                'active_positions': 0,
+                'market_status': 'UNKNOWN',
                 'error': str(e),
                 'timestamp': datetime.now().isoformat()
             }
