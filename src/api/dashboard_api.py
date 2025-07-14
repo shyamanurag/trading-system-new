@@ -175,7 +175,14 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
         # Calculate additional metrics
         total_trades = autonomous_status.get('total_trades', 0)
         daily_pnl = autonomous_status.get('daily_pnl', 0.0)
-        active_positions = autonomous_status.get('active_positions', [])
+        active_positions_raw = autonomous_status.get('active_positions', [])
+        # Handle both integer and list types for active_positions
+        if isinstance(active_positions_raw, int):
+            active_positions_count = active_positions_raw
+            active_positions = []
+        else:
+            active_positions_count = len(active_positions_raw)
+            active_positions = active_positions_raw
         is_active = autonomous_status.get('is_active', False)
         
         # ELIMINATED: Mock 70% win rate and fake success metrics
@@ -214,7 +221,7 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                 "is_active": is_active,
                 "total_trades": total_trades,
                 "daily_pnl": round(daily_pnl, 2),
-                "active_positions": len(active_positions),
+                "active_positions": active_positions_count,
                 "win_rate": win_rate,
                 "market_open": market_open,
                 "session_id": autonomous_status.get('session_id'),
@@ -256,7 +263,7 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
             
             # Position Details
             "positions": {
-                "active_count": len(active_positions),
+                "active_count": active_positions_count,
                 "total_value": round(daily_pnl, 2),
                 "positions": active_positions[:10]  # First 10 positions
             },
@@ -285,7 +292,7 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
             ]
         }
         
-        logger.info(f"📊 Dashboard summary: {total_trades} trades, ₹{daily_pnl:,.2f} P&L, {len(active_positions)} positions")
+        logger.info(f"📊 Dashboard summary: {total_trades} trades, ₹{daily_pnl:,.2f} P&L, {active_positions_count} positions")
         
         return dashboard_data
         
