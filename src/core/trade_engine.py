@@ -337,9 +337,14 @@ class TradeEngine:
     def _create_order_from_signal(self, signal_dict: Dict[str, Any]) -> Order:
         """Create Order object from signal dict"""
         try:
+            # Get user_id from signal or environment
+            user_id = signal_dict.get('user_id')
+            if not user_id:
+                user_id = os.getenv('ACTIVE_USER_ID', 'system')
+            
             return Order(
                 order_id=f"ORDER_{uuid.uuid4()}",
-                user_id='system',
+                user_id=user_id,
                 signal_id=signal_dict.get('signal_id'),
                 broker_order_id=None,
                 parent_order_id=None,
