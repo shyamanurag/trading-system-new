@@ -341,6 +341,7 @@ class TradingOrchestrator:
             # Import redis directly for sync initialization
             import redis.asyncio as redis
             import os
+            import ssl
             from urllib.parse import urlparse
             
             # CRITICAL FIX: Use DigitalOcean Redis configuration
@@ -364,7 +365,7 @@ class TradingOrchestrator:
                     'retry_on_error': [Exception],  # Retry on all errors
                     'ssl': True,  # DigitalOcean Redis requires SSL
                     'ssl_check_hostname': False,  # CRITICAL: Disable hostname check for managed Redis
-                    'ssl_cert_reqs': None,  # CRITICAL: Don't require SSL certificates
+                    'ssl_cert_reqs': ssl.CERT_NONE,  # CRITICAL: Use ssl.CERT_NONE for managed Redis
                     'ssl_ca_certs': None,  # CRITICAL: No CA certificate validation
                     'ssl_keyfile': None,
                     'ssl_certfile': None,
