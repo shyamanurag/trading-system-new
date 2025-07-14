@@ -378,36 +378,6 @@ async def submit_manual_token(token_data: TokenSubmission):
         
         # CRITICAL FIX: Store token in Redis for orchestrator access
         try:
-            import redis
-            redis_url = os.getenv('REDIS_URL')
-            if redis_url:
-                redis_client = redis.from_url(redis_url, decode_responses=True)
-            else:
-                redis_client = redis.Redis(
-                    host=os.getenv('REDIS_HOST', 'localhost'),
-                    port=int(os.getenv('REDIS_PORT', 6379)),
-                    password=os.getenv('REDIS_PASSWORD'),
-                    decode_responses=True
-                )
-            
-            redis_key = f"zerodha:token:{token_data.user_id}"
-            
-            # Store token with expiration (tokens expire at 6 AM IST next day)
-            from datetime import datetime
-            current_hour = datetime.now().hour
-            if current_hour < 6:
-                seconds_until_6am = (6 - current_hour) * 3600
-            else:
-                seconds_until_6am = (24 - current_hour + 6) * 3600
-            
-            redis_client.set(redis_key, access_token, ex=seconds_until_6am)
-            logger.info(f"✅ Token stored in Redis at {redis_key} with TTL: {seconds_until_6am}s")
-            
-        except Exception as e:
-            logger.error(f"⚠️  Failed to store token in Redis: {e}")
-            # Don't fail the request, just log the error
-# CRITICAL FIX: Store token in Redis for orchestrator access
-        try:
             redis_client = await get_redis_client()
             redis_key = f"zerodha:token:{token_data.user_id}"
             
