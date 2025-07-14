@@ -372,8 +372,9 @@ async def get_orders(
         
         # Try to get orders from database
         try:
-            from src.core.database import get_db_session
-            async with get_db_session() as session:
+            from src.core.database import get_db
+            db_session = next(get_db())
+            if db_session:
                 # Get orders for today
                 from sqlalchemy import text
                 query = text("""
@@ -383,7 +384,7 @@ async def get_orders(
                     WHERE DATE(created_at) = :today
                     ORDER BY created_at DESC
                 """)
-                result = await session.execute(query, {"today": today})
+                result = db_session.execute(query, {"today": today})
                 orders = []
                 for row in result:
                     orders.append({
@@ -403,6 +404,14 @@ async def get_orders(
                     "success": True,
                     "message": f"Found {len(orders)} orders for today",
                     "data": orders,
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                logger.warning("Database session not available")
+                return {
+                    "success": True,
+                    "message": "No orders found (database unavailable)",
+                    "data": [],
                     "timestamp": datetime.now().isoformat()
                 }
         except Exception as db_error:
@@ -431,8 +440,9 @@ async def get_trades(
         
         # Try to get trades from database
         try:
-            from src.core.database import get_db_session
-            async with get_db_session() as session:
+            from src.core.database import get_db
+            db_session = next(get_db())
+            if db_session:
                 # Get trades for today
                 from sqlalchemy import text
                 query = text("""
@@ -442,7 +452,7 @@ async def get_trades(
                     WHERE DATE(executed_at) = :today
                     ORDER BY executed_at DESC
                 """)
-                result = await session.execute(query, {"today": today})
+                result = db_session.execute(query, {"today": today})
                 trades = []
                 for row in result:
                     trades.append({
@@ -462,6 +472,14 @@ async def get_trades(
                     "data": trades,
                     "timestamp": datetime.now().isoformat()
                 }
+            else:
+                logger.warning("Database session not available")
+                return {
+                    "success": True,
+                    "message": "No trades found (database unavailable)",
+                    "data": [],
+                    "timestamp": datetime.now().isoformat()
+                }
         except Exception as db_error:
             logger.warning(f"Database query failed: {db_error}")
             # Return empty list if database fails
@@ -472,9 +490,6 @@ async def get_trades(
                 "timestamp": datetime.now().isoformat()
             }
             
-    except Exception as e:
-        logger.error(f"Error getting trades: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 
     except Exception as e:
         logger.error(f"Error getting trades: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 
