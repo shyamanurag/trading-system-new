@@ -84,6 +84,7 @@ router_imports = {
     'dashboard': ('src.api.dashboard_api', 'router'),
     'reports': ('src.api.routes.reports', 'router'),
     'system_status': ('src.api.system_status', 'router'),
+    'system_config': ('src.api.system_config', 'router'),
     'intelligent_symbols': ('src.api.intelligent_symbol_api', 'router'),
     'debug_endpoints': ('src.api.debug_endpoints', 'router'),
     'orchestrator_debug': ('src.api.orchestrator_debug', 'router'),
@@ -637,6 +638,7 @@ router_configs = [
     ('dashboard', '/api/v1/dashboard', ('dashboard',)),
     ('reports', '', ('reports',)),  # Already has /api/reports prefix
     ('system_status', '', ('system-status',)),  # Has full paths in router
+    ('system_config', '/api/v1', ('system-config',)),  # System configuration endpoints
     ('search', '/api/v1', ('search',)),  # Comprehensive search API
     
     # Debug endpoints
