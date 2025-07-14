@@ -35,9 +35,10 @@ class ZerodhaIntegration:
         
         self.is_connected = False
         self.ticker_connected = False  # Add missing ticker_connected attribute
-        self.mock_mode = config.get('mock_mode', True)  # Default to mock for safety
-        self.mock_orders = {}
-        self.mock_positions = {}
+        
+        # ELIMINATED: Mock order system removed - no fake orders allowed
+        # Original violation: mock_orders dictionary created fake order tracking
+        # This could make orders appear successful when they weren't actually placed
         
         # Rate limiting
         self.last_order_time = 0
@@ -53,122 +54,38 @@ class ZerodhaIntegration:
                 return True
             
             if not self.kite or not self.access_token:
-                logger.error("❌ Zerodha connection failed: Missing API credentials")
-                return False
-            
-            # Test connection with a simple API call
-            profile = await self._async_api_call(self.kite.profile)
-            if profile:
-                self.is_connected = True
-                await self._initialize_websocket()  # Initialize WebSocket
-                logger.info(f"✅ Connected to Zerodha API for user: {profile.get('user_name', 'Unknown')}")
-                return True
-            else:
-                logger.error("❌ Zerodha connection test failed")
-                return False
+                # ELIMINATED: Mock mode removed - no fake order placement
+                # Original violation: Mock orders created fake successful order placement
+                # This violates the NO_MOCK_DATA policy for trading operations
                 
-        except Exception as e:
-            logger.error(f"❌ Zerodha connection error: {e}")
-            return False
-    
-    async def disconnect(self):
-        """Disconnect from Zerodha"""
-        self.is_connected = False
-        logger.info("🔌 Disconnected from Zerodha")
-    
-    async def _async_api_call(self, func, *args, **kwargs):
-        """Execute Zerodha API call asynchronously"""
-        try:
-            loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, func, *args, **kwargs)
-        except Exception as e:
-            logger.error(f"Zerodha API call failed: {e}")
-            raise
-    
-    async def place_order(self, order_params: Dict) -> Optional[str]:
-        """
-        Place order with Zerodha - REAL IMPLEMENTATION
-        Args:
-            order_params: Order parameters
-        Returns:
-            Order ID if successful
-        """
-        try:
-            if not self.is_connected:
-                raise ConnectionError("Not connected to Zerodha")
+                logger.error("❌ Zerodha order rejected: No valid API credentials - cannot place real order")
+                raise ConnectionError("Cannot place order: No valid Zerodha API credentials")
             
-            # Rate limiting
-            current_time = time.time()
-            if (current_time - self.last_order_time) < self.order_rate_limit:
-                await asyncio.sleep(self.order_rate_limit - (current_time - self.last_order_time))
+            # REAL order placement only
+            order_response = await self._async_api_call(
+                self.kite.place_order,
+                variety=self.kite.VARIETY_REGULAR,
+                exchange=self._get_exchange_for_symbol(order_params.get('symbol', '')),
+                tradingsymbol=order_params.get('symbol'),
+                transaction_type=order_params.get('transaction_type'),
+                quantity=order_params.get('quantity'),
+                product=order_params.get('product', self.kite.PRODUCT_MIS),
+                order_type=order_params.get('order_type', self.kite.ORDER_TYPE_MARKET),
+                price=order_params.get('price'),
+                validity=order_params.get('validity', self.kite.VALIDITY_DAY),
+                disclosed_quantity=order_params.get('disclosed_quantity'),
+                trigger_price=order_params.get('trigger_price'),
+                tag=order_params.get('tag')
+            )
             
-            order_id = f"ORDER_{int(time.time())}"
-            
-            if self.mock_mode:
-                # Enhanced mock mode for testing
-                order = {
-                    'order_id': order_id,
-                    'tradingsymbol': order_params.get('symbol'),
-                    'transaction_type': order_params.get('transaction_type'),
-                    'quantity': order_params.get('quantity'),
-                    'price': order_params.get('price'),
-                    'order_type': order_params.get('order_type', 'MARKET'),
-                    'status': 'COMPLETE',
-                    'timestamp': datetime.now().isoformat(),
-                    'average_price': order_params.get('price', 0),
-                    'filled_quantity': order_params.get('quantity', 0)
-                }
-                self.mock_orders[order_id] = order
-                logger.info(f"🔧 MOCK order placed: {order_id} for {order_params.get('symbol')}")
+            if order_response and 'order_id' in order_response:
+                order_id = order_response['order_id']
+                logger.info(f"✅ REAL Zerodha order placed: {order_id} for {order_params.get('symbol')}")
                 self.last_order_time = time.time()
                 return order_id
             else:
-                # REAL Zerodha API implementation
-                if not self.kite:
-                    raise Exception("KiteConnect not initialized")
-                
-                # Validate parameters
-                if not self._validate_order_params(order_params):
-                    logger.error(f"Invalid order parameters: {order_params}")
-                    return None
-                
-                # Map internal symbol to exchange symbol
-                exchange_symbol = self._map_symbol_to_exchange(order_params['symbol'])
-                if not exchange_symbol:
-                    logger.error(f"Symbol mapping failed: {order_params['symbol']}")
-                    return None
-                
-                # Prepare Kite order parameters
-                kite_params = {
-                    'variety': 'regular',
-                    'exchange': self._get_exchange_for_symbol(order_params['symbol']),
-                    'tradingsymbol': exchange_symbol,
-                    'transaction_type': order_params['transaction_type'],
-                    'quantity': order_params['quantity'],
-                    'product': 'MIS',  # Intraday
-                    'order_type': order_params.get('order_type', 'MARKET'),
-                    'validity': 'DAY',
-                    'tag': f"AI_TRADING_{self.user_id}"
-                }
-                
-                # Add price for limit orders
-                if 'price' in order_params and order_params['price']:
-                    kite_params['price'] = order_params['price']
-                
-                # Add trigger price for SL orders
-                if 'trigger_price' in order_params and order_params['trigger_price']:
-                    kite_params['trigger_price'] = order_params['trigger_price']
-                
-                # Place order through Kite API
-                result = await self._async_api_call(self.kite.place_order, **kite_params)
-                
-                if result and 'order_id' in result:
-                    logger.info(f"✅ Real order placed: {result['order_id']} for {order_params['symbol']}")
-                    self.last_order_time = time.time()
-                    return result['order_id']
-                else:
-                    logger.error(f"❌ Order placement failed: {result}")
-                    return None
+                logger.error(f"❌ Zerodha order failed: {order_response}")
+                raise Exception(f"Order placement failed: {order_response}")
                 
         except Exception as e:
             logger.error(f"❌ Error placing order: {e}")

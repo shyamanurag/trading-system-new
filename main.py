@@ -1129,48 +1129,24 @@ async def get_recent_signals_direct():
         except Exception as e:
             logger.error(f"Error accessing orchestrator for signals: {e}")
         
-        # If no signals found, generate some test signals to show the endpoint works
-        if not recent_signals:
-            logger.info("No recent signals found - generating test signals for diagnosis")
-            test_signals = [
-                {
-                    'strategy': 'momentum_surfer',
-                    'signal': {
-                        'symbol': 'NIFTY',
-                        'action': 'BUY',
-                        'price': 24500,
-                        'confidence': 0.75,
-                        'timestamp': (datetime.now() - timedelta(minutes=5)).isoformat()
-                    },
-                    'timestamp': (datetime.now() - timedelta(minutes=5)).isoformat(),
-                    'source': 'test_signal'
-                },
-                {
-                    'strategy': 'volatility_explosion',
-                    'signal': {
-                        'symbol': 'BANKNIFTY',
-                        'action': 'SELL',
-                        'price': 51800,
-                        'confidence': 0.68,
-                        'timestamp': (datetime.now() - timedelta(minutes=3)).isoformat()
-                    },
-                    'timestamp': (datetime.now() - timedelta(minutes=3)).isoformat(),
-                    'source': 'test_signal'
-                }
-            ]
-            recent_signals = test_signals
+        # ELIMINATED: Test signal generation removed - no fake signals allowed
+        # Original violation: Lines 1131-1160 generated fake NIFTY/BANKNIFTY signals
+        # This could trigger real trading decisions with fake data
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "signals": recent_signals,
-                "signal_count": len(recent_signals),
-                "timestamp": datetime.now().isoformat(),
-                "message": f"Found {len(recent_signals)} recent signals",
-                "source": "direct_fix_endpoint"
-            }
-        )
+        # If no real signals found, return empty result - no fake fallbacks
+        if not recent_signals:
+            logger.warning("No recent signals found - returning empty result (no fake signals)")
+            recent_signals = []
+        
+        return {
+            "success": True,
+            "signals": recent_signals,
+            "signal_count": len(recent_signals),
+            "timestamp": datetime.now().isoformat(),
+            "message": f"Found {len(recent_signals)} real signals - no fake data generated",
+            "source": "main_endpoint",
+            "warning": "FAKE_SIGNAL_GENERATION_ELIMINATED" if len(recent_signals) == 0 else None
+        }
         
     except Exception as e:
         logger.error(f"Direct signals endpoint error: {e}")
