@@ -134,6 +134,9 @@ envs:
 - key: ENABLE_CORS
   scope: RUN_AND_BUILD_TIME
   value: "true"
+- key: ACTIVE_USER_ID
+  scope: RUN_AND_BUILD_TIME
+  value: "PAPER_TRADER_MAIN"
 - key: LOG_LEVEL
   scope: RUN_AND_BUILD_TIME
   value: DEBUG
