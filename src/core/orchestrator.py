@@ -387,18 +387,9 @@ class TradingOrchestrator:
                     connection_pool = redis.ConnectionPool(**redis_config)
                     self.redis = redis.Redis(connection_pool=connection_pool)
                     
-                    # Test connection with retry logic
-                    for attempt in range(5):  # Increased retry attempts
-                        try:
-                            self.redis.ping()
-                            self.logger.info(f"✅ Redis connected successfully (attempt {attempt + 1})")
-                            break
-                        except Exception as e:
-                            if attempt == 4:  # Last attempt
-                                self.logger.error(f"❌ Redis connection failed after {attempt + 1} attempts: {e}")
-                                raise e
-                            self.logger.warning(f"⚠️ Redis connection attempt {attempt + 1} failed: {e}, retrying...")
-                            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    # Test connection with retry logic - MOVE TO ASYNC initialize()
+                    # Cannot use await in __init__ method
+                    self.logger.info(f"✅ Redis client created (will test connection during initialize)")
                     
                     # Set longer TTL for symbol data to prevent loss
                     self.redis_ttl = 3600  # 1 hour TTL for symbol data
@@ -492,10 +483,30 @@ class TradingOrchestrator:
         try:
             self.logger.info("🚀 Initializing TradingOrchestrator async components...")
             
-            # Test Redis connection
+            # CRITICAL FIX: Test Redis connection with retry logic (moved from __init__)
             if self.redis:
                 try:
-                    await self.redis.ping()
+                    # Test connection with retry logic
+                    for attempt in range(5):  # Increased retry attempts
+                        try:
+                            self.redis.ping()
+                            self.logger.info(f"✅ Redis connected successfully (attempt {attempt + 1})")
+                            break
+                        except Exception as e:
+                            if attempt == 4:  # Last attempt
+                                self.logger.error(f"❌ Redis connection failed after {attempt + 1} attempts: {e}")
+                                self.redis = None  # Disable Redis on failure
+                                break
+                            self.logger.warning(f"⚠️ Redis connection attempt {attempt + 1} failed: {e}, retrying...")
+                            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                except Exception as e:
+                    self.logger.error(f"❌ Redis connection test failed: {e}")
+                    self.redis = None
+            
+            # Test Redis connection (enhanced with retry)
+            if self.redis:
+                try:
+                    self.redis.ping()
                     self.logger.info("✅ Redis connection verified and working")
                 except Exception as e:
                     self.logger.error(f"❌ Redis connection test failed: {e}")
