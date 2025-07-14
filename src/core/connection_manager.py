@@ -234,25 +234,40 @@ class ConnectionManager:
             access_token = os.getenv('ZERODHA_ACCESS_TOKEN')
             user_id = os.getenv('ZERODHA_USER_ID')
             
-            # If no access token in environment, check Redis
+            # If no access token in environment, check Redis with multiple key patterns
             if not access_token and user_id:
                 try:
                     import redis.asyncio as redis
                     redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
                     redis_client = redis.from_url(redis_url)
                     
-                    # Check for stored token in Redis
-                    stored_token = await redis_client.get(f"zerodha:token:{user_id}")
-                    if stored_token:
-                        access_token = stored_token
-                        logger.info(f"Found stored Zerodha token for user {user_id} in Redis")
+                    # Check multiple Redis key patterns to find the token
+                    token_keys_to_check = [
+                        f"zerodha:token:{user_id}",  # Standard pattern with env user_id
+                        f"zerodha:token:PAPER_TRADER_001",  # Frontend user_id pattern
+                        f"zerodha:token:PAPER_TRADER_MAIN",  # Alternative paper trader ID
+                        f"zerodha:{user_id}:access_token",  # Alternative pattern
+                        f"zerodha:access_token",  # Simple pattern
+                        f"zerodha_token_{user_id}",  # Alternative format
+                    ]
                     
-                    # Also check alternative Redis key patterns
+                    for key in token_keys_to_check:
+                        stored_token = await redis_client.get(key)
+                        if stored_token:
+                            access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
+                            logger.info(f"✅ Found Zerodha token in Redis with key: {key}")
+                            break
+                    
+                    # If still no token, check all zerodha:token:* keys
                     if not access_token:
-                        alt_token = await redis_client.get(f"zerodha:{user_id}:access_token")
-                        if alt_token:
-                            access_token = alt_token
-                            logger.info(f"Found alternative stored Zerodha token for user {user_id}")
+                        logger.info("🔍 Searching all zerodha:token:* keys in Redis...")
+                        all_keys = await redis_client.keys("zerodha:token:*")
+                        for key in all_keys:
+                            stored_token = await redis_client.get(key)
+                            if stored_token:
+                                access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
+                                logger.info(f"✅ Found Zerodha token in Redis with key: {key}")
+                                break
                     
                     await redis_client.close()
                     
@@ -268,15 +283,18 @@ class ConnectionManager:
                 'mock_mode': not all([
                     os.getenv('ZERODHA_API_KEY'),
                     os.getenv('ZERODHA_API_SECRET'),
-                    user_id
+                    user_id,
+                    access_token  # Also require access token for real mode
                 ])
             }
             
             # Log token status for debugging (without exposing actual token)
             if access_token:
-                logger.info(f"Zerodha token available for user {user_id}: {access_token[:10]}...")
+                logger.info(f"✅ Zerodha token available for user {user_id}: {access_token[:10]}...")
+                logger.info("🔄 Zerodha will run in LIVE mode with real API credentials")
             else:
-                logger.warning(f"No Zerodha token found for user {user_id} - running in mock mode")
+                logger.warning(f"❌ No Zerodha token found for user {user_id} - running in mock mode")
+                logger.warning("💡 Make sure to authenticate via frontend daily auth")
             
             zerodha = ZerodhaIntegration(zerodha_config)
             await zerodha.initialize()
@@ -287,11 +305,11 @@ class ConnectionManager:
                 'last_check': datetime.now()
             }
             
-            logger.info("Zerodha connection initialized successfully")
+            logger.info("✅ Zerodha connection initialized successfully")
             return True
             
         except Exception as e:
-            logger.error(f"Failed to initialize Zerodha: {e}")
+            logger.error(f"❌ Failed to initialize Zerodha: {e}")
             self.connections['zerodha'] = {
                 'instance': None,
                 'status': ConnectionStatus.ERROR,
