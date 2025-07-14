@@ -438,8 +438,9 @@ class TradeEngine:
                         signal_dict['strategy'], signal_dict
                     )
                 else:
-                    # Fallback allocation for system user
-                    allocated_orders = [('system', self._create_order_from_signal(signal_dict))]
+                    # Fallback allocation - use proper user_id from environment
+                    user_id = signal_dict.get('user_id') or os.getenv('ACTIVE_USER_ID', 'system')
+                    allocated_orders = [(user_id, self._create_order_from_signal(signal_dict))]
                 
                 # Place orders with rate limiting
                 for user_id, order in allocated_orders:
