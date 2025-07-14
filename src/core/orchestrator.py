@@ -669,7 +669,7 @@ class TradingOrchestrator:
         # Initialize risk manager
         from src.core.risk_manager import RiskManager
         from src.events import EventBus
-            self.event_bus = EventBus()
+        self.event_bus = EventBus()
         
         # CRITICAL FIX: Create proper config for RiskManager with Redis settings
         risk_manager_config = {
@@ -738,7 +738,7 @@ class TradingOrchestrator:
                 try:
                     await self.redis.ping()
                     self.logger.info("✅ Redis connection verified and working")
-            except Exception as e:
+                except Exception as e:
                     self.logger.error(f"❌ Redis connection test failed: {e}")
                     # CRITICAL: Don't continue without Redis in production
                     if os.getenv('ENVIRONMENT') == 'production':
@@ -762,7 +762,7 @@ class TradingOrchestrator:
             
             # Initialize trade engine
             if hasattr(self, 'trade_engine'):
-            await self.trade_engine.initialize()
+                await self.trade_engine.initialize()
                 self.logger.info("✅ Trade engine initialized")
             
             # Load strategies
@@ -1050,19 +1050,19 @@ class TradingOrchestrator:
             # STRATEGY 1: Redis cache (PRIMARY - fixes process isolation)
             if not hasattr(self, 'redis_client') or not self.redis_client:
                 try:
-                import redis
+                    import redis
                 except ImportError:
                     self.logger.warning("Redis package not available - using fallback")
                     redis = None
                 
                 if redis:
-                import json
-                
-                redis_host = os.environ.get('REDIS_HOST', 'localhost')
-                redis_port = int(os.environ.get('REDIS_PORT', 6379))
-                redis_password = os.environ.get('REDIS_PASSWORD')
-                
-                try:
+                    import json
+                    
+                    redis_host = os.environ.get('REDIS_HOST', 'localhost')
+                    redis_port = int(os.environ.get('REDIS_PORT', 6379))
+                    redis_password = os.environ.get('REDIS_PASSWORD')
+                    
+                    try:
                         # CRITICAL FIX: Enhanced Redis connection with resilience
                         connection_pool = redis.ConnectionPool(
                         host=redis_host,
@@ -1084,7 +1084,7 @@ class TradingOrchestrator:
                         # Test connection with retry logic
                         for attempt in range(3):
                             try:
-                    self.redis_client.ping()
+                                self.redis_client.ping()
                                 self.logger.info(f"✅ Orchestrator Redis connected (attempt {attempt + 1}): {redis_host}:{redis_port}")
                                 break
                             except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as e:
@@ -1092,7 +1092,7 @@ class TradingOrchestrator:
                                     raise e
                                 await asyncio.sleep(1)  # Wait before retry
                         
-                except Exception as redis_error:
+                    except Exception as redis_error:
                         self.logger.warning(f"⚠️ Redis connection failed after retries: {redis_error}")
                         self.redis_client = None
                 else:
@@ -1138,25 +1138,25 @@ class TradingOrchestrator:
             
             # STRATEGY 3: API call to market data endpoint (FINAL FALLBACK)
             try:
-            try:
                 import aiohttp
-                except ImportError:
-                    self.logger.warning("aiohttp package not available - skipping API fallback")
-                    aiohttp = None
-                
-                if aiohttp:
-                async with aiohttp.ClientSession() as session:
-                    # Call the working market data API endpoint
-                    api_url = "http://localhost:8000/api/v1/market-data"
-                    async with session.get(api_url, timeout=5) as response:
-                        if response.status == 200:
-                            api_data = await response.json()
-                            if api_data.get('success') and api_data.get('data'):
-                                market_data = api_data['data']
-                                self.logger.info(f"📊 Using market data API: {len(market_data)} symbols")
-                                return market_data
-            except Exception as api_error:
-                self.logger.warning(f"API fallback failed: {api_error}")
+            except ImportError:
+                self.logger.warning("aiohttp package not available - skipping API fallback")
+                aiohttp = None
+            
+            if aiohttp:
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        # Call the working market data API endpoint
+                        api_url = "http://localhost:8000/api/v1/market-data"
+                        async with session.get(api_url, timeout=5) as response:
+                            if response.status == 200:
+                                api_data = await response.json()
+                                if api_data.get('success') and api_data.get('data'):
+                                    market_data = api_data['data']
+                                    self.logger.info(f"📊 Using market data API: {len(market_data)} symbols")
+                                    return market_data
+                except Exception as api_error:
+                    self.logger.warning(f"API fallback failed: {api_error}")
             
             self.logger.warning("⚠️ All TrueData access methods failed")
             return {}
