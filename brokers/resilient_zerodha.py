@@ -192,6 +192,11 @@ class ResilientZerodhaConnection(ResilientConnection):
             'ws_last_reconnect': self._ws_last_reconnect
         }
         return status
+    
+    @property
+    def mock_mode(self) -> bool:
+        """Get mock mode status from underlying broker"""
+        return getattr(self.broker, 'mock_mode', False)
 
     async def execute(self, func, *args, **kwargs):
         """Execute function with retry logic"""

@@ -351,42 +351,28 @@ class TradingOrchestrator:
                 # Parse the Redis URL provided by DigitalOcean
                 parsed = urlparse(redis_url)
                 
-                # CRITICAL FIX: Enhanced Redis config for DigitalOcean managed Redis
+                # Simple Redis config that works with all versions
                 redis_config = {
                     'host': parsed.hostname,
                     'port': parsed.port or 25061,
                     'password': parsed.password,
-                    'username': parsed.username or 'default',
                     'db': int(parsed.path[1:]) if parsed.path and len(parsed.path) > 1 else 0,
                     'decode_responses': True,
-                    'socket_timeout': 15,  # Increased timeout for managed Redis
-                    'socket_connect_timeout': 15,  # Increased timeout for managed Redis
-                    'retry_on_timeout': True,
-                    'retry_on_error': [Exception],  # Retry on all errors
-                    'ssl': True,  # DigitalOcean Redis requires SSL
-                    'ssl_check_hostname': False,  # CRITICAL: Disable hostname check for managed Redis
-                    'ssl_cert_reqs': ssl.CERT_NONE,  # CRITICAL: Use ssl.CERT_NONE for managed Redis
-                    'ssl_ca_certs': None,  # CRITICAL: No CA certificate validation
-                    'ssl_keyfile': None,
-                    'ssl_certfile': None,
-                    'health_check_interval': 90,  # Increased health check interval
-                    'socket_keepalive': True,
-                    'socket_keepalive_options': {},
-                    'max_connections': 5,  # Increased max connections for symbol processing
-                    'connection_pool_class': redis.ConnectionPool,
-                    'connection_pool_class_kwargs': {
-                        'max_connections': 10,  # Pool size for 250 symbols
-                        'retry_on_timeout': True,
-                        'retry_on_error': [Exception]
-                    }
+                    'socket_timeout': 10,
+                    'socket_connect_timeout': 10
                 }
                 
-                self.logger.info(f"🔗 Using DigitalOcean Redis: {redis_config['host']}:{redis_config['port']} (SSL: {redis_config['ssl']})")
+                # Add SSL only if explicitly required
+                if redis_url.startswith('rediss://') or 'ondigitalocean.com' in str(parsed.hostname):
+                    redis_config['ssl'] = True
+                    redis_config['ssl_cert_reqs'] = None
+                    redis_config['ssl_check_hostname'] = False
+                
+                self.logger.info(f"🔗 Using DigitalOcean Redis: {redis_config['host']}:{redis_config['port']}")
                 
                 try:
-                    # Create connection pool first
-                    connection_pool = redis.ConnectionPool(**redis_config)
-                    self.redis = redis.Redis(connection_pool=connection_pool)
+                    # Create Redis client directly with simple config
+                    self.redis = redis.Redis(**redis_config)
                     
                     # Test connection with retry logic - MOVE TO ASYNC initialize()
                     # Cannot use await in __init__ method

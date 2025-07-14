@@ -30,70 +30,27 @@ router = APIRouter(prefix="/api/v1", tags=["market-data"])
 redis_client = None
 
 def setup_redis():
-    """Setup Redis connection with enhanced SSL support for DigitalOcean managed Redis"""
+    """Setup Redis client with simple, compatible configuration"""
     global redis_client
     
     try:
         redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
         
-        # Parse Redis URL to extract components
-        parsed = urlparse(redis_url)
-        
-        redis_host = parsed.hostname or 'localhost'
-        redis_port = parsed.port or 6379
-        redis_password = parsed.password
-        redis_db = int(parsed.path[1:]) if parsed.path and len(parsed.path) > 1 else 0
-        
-        # Check if SSL is required (DigitalOcean Redis)
-        ssl_required = 'ondigitalocean.com' in redis_host or redis_url.startswith('rediss://')
-        
-        # CRITICAL FIX: Enhanced Redis config for DigitalOcean managed Redis
-        redis_client = redis.Redis(
-            host=redis_host,
-            port=redis_port,
-            password=redis_password,
-            db=redis_db,
+        # Simple Redis client that works with all versions
+        redis_client = redis.from_url(
+            redis_url,
             decode_responses=True,
-            socket_connect_timeout=10,  # Increased timeout
-            socket_timeout=10,  # Increased timeout
-            ssl=ssl_required,
-            ssl_cert_reqs=ssl.CERT_NONE if ssl_required else ssl.CERT_REQUIRED,  # CRITICAL: No cert validation
-            ssl_check_hostname=False if ssl_required else True,  # CRITICAL: Disable hostname check
-            ssl_ca_certs=None,  # CRITICAL: No CA certificate validation
-            ssl_keyfile=None,
-            ssl_certfile=None,
-            retry_on_timeout=True,
-            retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError],  # Retry on connection errors
-            health_check_interval=60,  # Increased health check interval
-            max_connections=15,  # Increased for 250 symbols
-            connection_pool_class_kwargs={
-                'max_connections': 25,  # Pool size for 250 symbols
-                'retry_on_timeout': True,
-                'retry_on_error': [redis.exceptions.ConnectionError, redis.exceptions.TimeoutError]
-            }
+            socket_timeout=10,
+            socket_connect_timeout=10
         )
         
-        # Test connection with retry logic
-        for attempt in range(3):
-            try:
-                redis_client.ping()
-                logger.info(f"✅ Market Data Redis connected: {redis_host}:{redis_port} (SSL: {ssl_required}) - attempt {attempt + 1}")
-                break
-            except Exception as e:
-                if attempt == 2:  # Last attempt
-                    logger.error(f"❌ Market Data Redis connection failed after {attempt + 1} attempts: {e}")
-                    redis_client = None
-                    return False
-                logger.warning(f"⚠️ Market Data Redis connection attempt {attempt + 1} failed: {e}, retrying...")
-                time.sleep(1)  # Brief pause before retry
-        
-        logger.info(f"✅ Market Data Redis setup successful for {redis_host}:{redis_port}")
-        return True
+        # Test connection
+        redis_client.ping()
+        logger.info(f"✅ Market Data Redis connected: {redis_url[:50]}...")
         
     except Exception as e:
         logger.warning(f"⚠️ Market Data Redis connection failed: {e}")
         redis_client = None
-        return False
 
 # Initialize Redis at module level
 setup_redis()

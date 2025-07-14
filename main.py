@@ -561,26 +561,21 @@ async def health_ready_json():
 
 @app.get("/ready")
 async def readiness_check():
-    """Simple readiness check"""
+    """Fast readiness check - responds immediately during startup"""
     global app_startup_complete
     
-    if not app_startup_complete:
-        return JSONResponse(
-            status_code=200,  # Return 200 during normal startup
-            content={
-                "status": "starting",
-                "message": "Application startup in progress",
-                "ready": False,
-                "timestamp": datetime.now().isoformat()
-            }
-        )
-    
-    return {
-        "status": "ready",
-        "message": "Application fully initialized and ready",
-        "ready": True,
-        "timestamp": datetime.now().isoformat()
-    }
+    # Always return 200 during startup - DigitalOcean just needs to know the server is responding
+    # The actual initialization can continue in the background
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "ready" if app_startup_complete else "starting",
+            "message": "Server is responding" if not app_startup_complete else "Application fully initialized and ready",
+            "ready": True,  # Always True - server is ready to accept requests
+            "app_fully_initialized": app_startup_complete,
+            "timestamp": datetime.now().isoformat()
+        }
+    )
 
 # Debug endpoint to check request details
 @app.get("/debug/request", tags=["debug"])

@@ -110,29 +110,34 @@ class ZerodhaIntegration:
     async def connect(self) -> bool:
         """Connect to Zerodha API"""
         try:
-            if self.mock_mode:
-                logger.info("🔧 Zerodha running in MOCK mode")
-                self.is_connected = True
-                await self._initialize_websocket()
-                return True
-            
-            if not self.kite or not self.access_token:
+            if not self.kite:
                 logger.error("❌ Cannot connect: No valid API credentials")
                 return False
-                
+            
             # Test the connection by fetching account info
-            try:
-                await self._async_api_call(self.kite.margins)
+            account_info = await self._async_api_call(self.kite.profile)
+            if account_info:
                 self.is_connected = True
                 await self._initialize_websocket()
                 logger.info("✅ Zerodha connected successfully")
                 return True
-            except Exception as e:
+            else:
                 logger.error(f"❌ Connection test failed: {e}")
                 return False
-                
         except Exception as e:
             logger.error(f"❌ Error connecting to Zerodha: {e}")
+            self.is_connected = False
+            return False
+    
+    async def disconnect(self) -> bool:
+        """Disconnect from Zerodha API"""
+        try:
+            self.is_connected = False
+            self.ticker_connected = False
+            logger.info("✅ Zerodha disconnected successfully")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error disconnecting from Zerodha: {e}")
             return False
     
     def _validate_order_params(self, order_params: Dict) -> bool:

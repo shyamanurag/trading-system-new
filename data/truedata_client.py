@@ -27,71 +27,30 @@ redis_client = None
 
 # Add Redis setup after logger initialization
 def setup_redis_client():
-    """Setup Redis client for cross-process data sharing with SSL support"""
+    """Setup Redis client for cross-process data sharing with simple config"""
     global redis_client
     
     try:
         redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379')
         
-        # Parse Redis URL to extract components
-        from urllib.parse import urlparse
-        import ssl
-        
-        parsed = urlparse(redis_url)
-        
-        redis_host = parsed.hostname or 'localhost'
-        redis_port = parsed.port or 6379
-        redis_password = parsed.password
-        redis_db = int(parsed.path[1:]) if parsed.path and len(parsed.path) > 1 else 0
-        
-        # Check if SSL is required (DigitalOcean Redis)
-        ssl_required = 'ondigitalocean.com' in redis_host or redis_url.startswith('rediss://')
-        
-        # CRITICAL FIX: Enhanced Redis config for DigitalOcean managed Redis
-        # Create connection pool first, then Redis client
-        connection_pool = redis.ConnectionPool(
-            host=redis_host,
-            port=redis_port,
-            password=redis_password,
-            db=redis_db,
+        # Simple Redis client that works with all versions
+        redis_client = redis.from_url(
+            redis_url,
             decode_responses=True,
-            socket_connect_timeout=10,  # Increased timeout
-            socket_timeout=10,  # Increased timeout
-            ssl=ssl_required,
-            ssl_cert_reqs=ssl.CERT_NONE if ssl_required else ssl.CERT_REQUIRED,  # CRITICAL: No cert validation for managed Redis
-            ssl_check_hostname=False if ssl_required else True,  # CRITICAL: Disable hostname check
-            ssl_ca_certs=None,  # CRITICAL: No CA certificate validation
-            ssl_keyfile=None,
-            ssl_certfile=None,
-            retry_on_timeout=True,
-            retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError],  # Retry on connection errors
-            health_check_interval=60,  # Increased health check interval
-            max_connections=20,  # Pool size for 250 symbols
+            socket_timeout=10,
+            socket_connect_timeout=10
         )
         
-        redis_client = redis.Redis(connection_pool=connection_pool)
-        
-        # Test connection with retry logic
-        for attempt in range(3):
-            try:
-                redis_client.ping()
-                logger.info(f"✅ TrueData Redis connected: {redis_host}:{redis_port} (SSL: {ssl_required}) - attempt {attempt + 1}")
-                break
-            except Exception as e:
-                if attempt == 2:  # Last attempt
-                    logger.error(f"❌ TrueData Redis connection failed after {attempt + 1} attempts: {e}")
-                    redis_client = None
-                    return False
-                logger.warning(f"⚠️ TrueData Redis connection attempt {attempt + 1} failed: {e}, retrying...")
-                time.sleep(2 ** attempt)  # Exponential backoff
-        
-        logger.info(f"✅ TrueData Redis client initialized successfully for {redis_host}:{redis_port}")
-        return True
+        # Test connection
+        redis_client.ping()
+        logger.info(f"✅ TrueData Redis connected: {redis_url[:50]}...")
         
     except Exception as e:
-        logger.error(f"❌ TrueData Redis setup failed: {e}")
+        logger.warning(f"⚠️ TrueData Redis connection failed: {e}")
         redis_client = None
         return False
+    
+    return True
 
 # Call setup at module level
 setup_redis_client()
