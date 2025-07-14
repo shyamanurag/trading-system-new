@@ -847,6 +847,7 @@ class TradingOrchestrator:
                             f"zerodha:token:{user_id}",  # Standard pattern with env user_id
                             f"zerodha:token:PAPER_TRADER_001",  # Frontend user_id pattern
                             f"zerodha:token:PAPER_TRADER_MAIN",  # Alternative paper trader ID
+                            f"zerodha:token:QSW899",  # Direct user ID from environment
                             f"zerodha:{user_id}:access_token",  # Alternative pattern
                             f"zerodha:access_token",  # Simple pattern
                             f"zerodha_token_{user_id}",  # Alternative format
