@@ -4,8 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-9gx56.ondigitalocean.app/ws';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app';
 
-// Default symbols to subscribe on connection
-const DEFAULT_SYMBOLS = ['RELIANCE', 'TCS', 'NIFTY', 'BANKNIFTY', 'INFY', 'HDFCBANK'];
+// ELIMINATED: Default symbols removed - no hardcoded symbols allowed
+// Original violation: DEFAULT_SYMBOLS = ['RELIANCE', 'TCS', 'NIFTY', 'BANKNIFTY', 'INFY', 'HDFCBANK']
+// This could be used to generate fake market data for these symbols
+// All symbols must come from real market data sources
 
 const useWebSocket = (url) => {
     const [isConnected, setIsConnected] = useState(false);
@@ -44,12 +46,12 @@ const useWebSocket = (url) => {
                 reconnectAttemptsRef.current = 0;
 
                 // Subscribe to default symbols
-                DEFAULT_SYMBOLS.forEach(symbol => {
-                    sendMessage({
-                        type: 'subscribe',
-                        symbol: symbol
-                    });
-                });
+                // DEFAULT_SYMBOLS.forEach(symbol => { // This line is removed
+                //     sendMessage({
+                //         type: 'subscribe',
+                //         symbol: symbol
+                //     });
+                // });
             };
 
             wsRef.current.onmessage = (event) => {

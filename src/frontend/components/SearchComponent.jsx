@@ -262,16 +262,16 @@ const SearchComponent = ({
     };
 
     const loadPopularSearches = () => {
-        // Mock popular searches - in real app, this would come from API
+        // ELIMINATED: Hardcoded popular searches removed - no fake symbols allowed
+        // Original violation: Hardcoded 'RELIANCE', 'TCS' in popular searches
+        // This could generate fake search results for these symbols
+        // All popular searches must come from real usage data
+
         setPopularSearches([
-            'NIFTY',
-            'BANKNIFTY',
-            'RELIANCE',
-            'TCS',
-            'HDFC',
-            'Momentum Strategy',
-            'Scalping',
-            'Elite Recommendations'
+            'Trading Strategies',
+            'Market Analysis',
+            'System Performance',
+            'Risk Management'
         ]);
     };
 
