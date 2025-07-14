@@ -901,6 +901,22 @@ class TradingOrchestrator:
                             has_valid_credentials = True
                         else:
                             self.logger.error(f"🚨 EMERGENCY: No token found with key {emergency_key}")
+                            
+                            # DEBUGGING: Check what keys actually exist
+                            self.logger.info("🔍 DEBUGGING: Checking all zerodha:token:* keys in Redis...")
+                            all_keys = await redis_client.keys("zerodha:token:*")
+                            self.logger.info(f"🔍 DEBUGGING: Found {len(all_keys)} zerodha:token:* keys")
+                            for key in all_keys:
+                                key_str = key.decode() if isinstance(key, bytes) else key
+                                self.logger.info(f"🔍 DEBUGGING: Key found: {key_str}")
+                                # Try to get token from any found key
+                                if not access_token:
+                                    stored_token = await redis_client.get(key)
+                                    if stored_token:
+                                        access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
+                                        self.logger.info(f"🚨 EMERGENCY FIX: Using token from key {key_str}")
+                                        has_valid_credentials = True
+                                        break
                         
                         await redis_client.close()
                     except Exception as emergency_error:
