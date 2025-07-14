@@ -1335,10 +1335,19 @@ class TradingOrchestrator:
             # Get trades from trade engine
             if self.trade_engine:
                 try:
-                    trade_engine_status = await self.trade_engine.get_status()
-                    total_trades = trade_engine_status.get('executed_trades', 0)  # CRITICAL FIX: Use executed_trades not signals_processed
+                    # CRITICAL FIX: Use get_statistics() instead of get_status() for full-featured TradeEngine
+                    if hasattr(self.trade_engine, 'get_statistics'):
+                        trade_engine_status = self.trade_engine.get_statistics()
+                        total_trades = trade_engine_status.get('executed_trades', 0)
+                    elif hasattr(self.trade_engine, 'get_status'):
+                        trade_engine_status = await self.trade_engine.get_status()
+                        total_trades = trade_engine_status.get('executed_trades', 0)
+                    else:
+                        self.logger.warning("Trade engine has no get_statistics or get_status method")
+                        total_trades = 0
                 except Exception as e:
                     self.logger.warning(f"Could not get trade engine status: {e}")
+                    total_trades = 0
             
             # Get positions from position tracker
             if self.position_tracker:
