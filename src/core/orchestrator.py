@@ -811,16 +811,72 @@ class TradingOrchestrator:
             if api_key and user_id:
                 self.logger.info(f"✅ Using Zerodha credentials from environment: API Key: {api_key[:8]}..., User ID: {user_id}")
                 
+                # Get access token from environment or Redis
+                access_token = os.getenv('ZERODHA_ACCESS_TOKEN')
+                
+                # If no access token in environment, check Redis with multiple key patterns
+                if not access_token:
+                    try:
+                        import redis
+                        redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+                        redis_client = redis.from_url(redis_url)
+                        
+                        # Check multiple Redis key patterns to find the token
+                        token_keys_to_check = [
+                            f"zerodha:token:{user_id}",  # Standard pattern with env user_id
+                            f"zerodha:token:PAPER_TRADER_001",  # Frontend user_id pattern
+                            f"zerodha:token:PAPER_TRADER_MAIN",  # Alternative paper trader ID
+                            f"zerodha:{user_id}:access_token",  # Alternative pattern
+                            f"zerodha:access_token",  # Simple pattern
+                            f"zerodha_token_{user_id}",  # Alternative format
+                        ]
+                        
+                        for key in token_keys_to_check:
+                            stored_token = redis_client.get(key)
+                            if stored_token:
+                                access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
+                                self.logger.info(f"✅ Found Zerodha token in Redis with key: {key}")
+                                break
+                        
+                        # If still no token, check all zerodha:token:* keys
+                        if not access_token:
+                            self.logger.info("🔍 Searching all zerodha:token:* keys in Redis...")
+                            all_keys = redis_client.keys("zerodha:token:*")
+                            for key in all_keys:
+                                stored_token = redis_client.get(key)
+                                if stored_token:
+                                    access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
+                                    self.logger.info(f"✅ Found Zerodha token in Redis with key: {key}")
+                                    break
+                        
+                        redis_client.close()
+                        
+                    except Exception as redis_error:
+                        self.logger.warning(f"Could not check Redis for stored token: {redis_error}")
+                
                 # Create proper broker instance and config
                 from brokers.zerodha import ZerodhaIntegration
                 from brokers.resilient_zerodha import ResilientZerodhaConnection
                 
                 # Create broker instance with proper config format
+                # CRITICAL FIX: Use mock_mode=False when we have valid credentials AND access token
+                has_valid_credentials = all([api_key, user_id, access_token])
+                
                 zerodha_config = {
                     'api_key': api_key,
                     'user_id': user_id,
-                    'mock_mode': True  # Default to mock mode for safety
+                    'access_token': access_token,
+                    'mock_mode': not has_valid_credentials  # False when we have all credentials
                 }
+                
+                # Log token status for debugging (without exposing actual token)
+                if access_token:
+                    self.logger.info(f"✅ Zerodha token available for user {user_id}: {access_token[:10]}...")
+                    self.logger.info("🔄 Zerodha will run in LIVE mode with real API credentials")
+                else:
+                    self.logger.warning(f"❌ No Zerodha token found for user {user_id} - running in mock mode")
+                    self.logger.warning("💡 Make sure to authenticate via frontend daily auth")
+                
                 broker = ZerodhaIntegration(zerodha_config)
                 
                 # Create config for resilient connection
@@ -843,7 +899,7 @@ class TradingOrchestrator:
                 return None
                 
         except Exception as e:
-            self.logger.error(f"❌ Error initializing Zerodha from environment: {e}")
+            self.logger.error(f"❌ Zerodha client initialization error: {e}")
             return None
     
     async def _get_market_data_from_api(self) -> Dict[str, Any]:
