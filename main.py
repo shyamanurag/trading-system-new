@@ -1254,76 +1254,9 @@ async def force_activate_autonomous_trading():
 
 # Catch-all route for frontend serving - ONLY for non-API paths
 
-# CRITICAL FIX: Direct market data endpoint to fix zero trades
-@app.get("/api/v1/market-data/live-data", tags=["market-data"])
-async def get_live_market_data_direct():
-    """EMERGENCY FIX: Direct live market data endpoint with fallback data"""
-    try:
-        logger.info("🔧 EMERGENCY FIX: Direct market data endpoint called")
-        
-        # Generate realistic market data for key symbols
-        import random
-        
-        # Key symbols for trading
-        key_symbols = [
-            "NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX", "MIDCPNIFTY",
-            "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY"
-        ]
-        
-        fallback_data = {}
-        
-        for symbol in key_symbols:
-            # Generate realistic price data
-            base_price = 24500 if symbol == "NIFTY" else (
-                51800 if symbol == "BANKNIFTY" else
-                19500 if symbol == "FINNIFTY" else
-                random.randint(100, 5000)
-            )
-            
-            # Add some realistic variation
-            change_percent = random.uniform(-2.0, 2.0)
-            current_price = base_price * (1 + change_percent/100)
-            change = current_price - base_price
-            
-            fallback_data[symbol] = {
-                "ltp": round(current_price, 2),
-                "change": round(change, 2),
-                "change_percent": round(change_percent, 2),
-                "volume": random.randint(10000, 1000000),
-                "high": round(current_price * 1.02, 2),
-                "low": round(current_price * 0.98, 2),
-                "open": round(base_price * 1.001, 2),
-                "timestamp": datetime.now().isoformat(),
-                "symbol": symbol,
-                "source": "EMERGENCY_FALLBACK_FOR_TRADING"
-            }
-        
-        logger.info(f"🔧 EMERGENCY FIX: Providing {len(fallback_data)} symbols with fallback data")
-        
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "data": fallback_data,
-                "symbol_count": len(fallback_data),
-                "timestamp": datetime.now().isoformat(),
-                "source": "EMERGENCY_FALLBACK_MARKET_DATA",
-                "note": "Emergency fallback data provided to enable trading"
-            }
-        )
-        
-    except Exception as e:
-        logger.error(f"Emergency market data endpoint error: {e}")
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": False,
-                "data": {},
-                "symbol_count": 0,
-                "error": str(e),
-                "timestamp": datetime.now().isoformat()
-            }
-        )
+# ELIMINATED: Emergency fallback mock market data endpoint removed
+# This endpoint was generating fake market data which violates the "NO MOCK DATA" policy
+# All market data must come from real sources like TrueData
 
 # FIXED: Move user performance endpoint BEFORE catch-all route to fix routing
 @app.get("/api/v1/users/performance", tags=["users"])

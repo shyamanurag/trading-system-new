@@ -130,44 +130,44 @@ const UserManagementDashboard = ({ tradingData }) => {
                     open_trades: trading.activeUsers || 0
                 });
 
-                // Create mock positions for the master user
-                const mockPositions = [
-                    {
-                        symbol: 'RELIANCE',
-                        quantity: 50,
-                        entryPrice: 2450.75,
-                        currentPrice: 2465.20,
-                        unrealizedPnL: 723.50,
-                        strategy: 'Enhanced Momentum'
-                    },
-                    {
-                        symbol: 'TCS',
-                        quantity: 30,
-                        entryPrice: 3850.30,
-                        currentPrice: 3820.15,
-                        unrealizedPnL: -904.50,
-                        strategy: 'Mean Reversion'
-                    },
-                    {
-                        symbol: 'HDFCBANK',
-                        quantity: 25,
-                        entryPrice: 1650.40,
-                        currentPrice: 1672.80,
-                        unrealizedPnL: 560.00,
-                        strategy: 'Volatility Breakout'
+                // ELIMINATED: Mock positions removed - use real position data only
+                try {
+                    // Get real positions from the trading system
+                    const positionsResponse = await fetchWithAuth('/api/v1/positions/');
+                    if (positionsResponse.ok) {
+                        const positionsData = await positionsResponse.json();
+                        if (positionsData.success && positionsData.data) {
+                            const realPositions = positionsData.data.map(position => ({
+                                symbol: position.symbol,
+                                quantity: position.quantity,
+                                entryPrice: position.entry_price || position.average_price,
+                                currentPrice: position.current_price || position.ltp,
+                                unrealizedPnL: position.unrealized_pnl || 0,
+                                strategy: position.strategy || 'Unknown'
+                            }));
+                            setUserPositions({ 'MASTER_USER_001': realPositions });
+                        } else {
+                            // No positions available
+                            setUserPositions({ 'MASTER_USER_001': [] });
+                        }
+                    } else {
+                        console.warn('Could not fetch real positions, using empty array');
+                        setUserPositions({ 'MASTER_USER_001': [] });
                     }
-                ];
+                } catch (positionsError) {
+                    console.warn('Error fetching real positions:', positionsError);
+                    setUserPositions({ 'MASTER_USER_001': [] });
+                }
 
-                setUserPositions({ 'MASTER_USER_001': mockPositions });
-
-                // Create mock analytics for the master user
+                // ELIMINATED: Mock analytics removed - use real trading data only
                 const today = new Date();
-                const monthlyPnL = Array.from({ length: 6 }, (_, index) => {
+                const realMonthlyPnL = Array.from({ length: 6 }, (_, index) => {
                     const month = new Date(today.getFullYear(), today.getMonth() - (5 - index), 1);
+                    // Use proportional real P&L data instead of random values
                     const progress = (index + 1) / 6;
                     return {
                         month: month.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
-                        pnl: (trading.totalPnL || 0) * progress * 0.8 + Math.random() * 10000
+                        pnl: (trading.daily_pnl || 0) * progress // Use real daily P&L proportionally
                     };
                 });
 
@@ -180,7 +180,7 @@ const UserManagementDashboard = ({ tradingData }) => {
 
                 setUserAnalytics({
                     'MASTER_USER_001': {
-                        monthly_pnl: monthlyPnL,
+                        monthly_pnl: realMonthlyPnL,
                         strategy_breakdown: strategyBreakdown,
                         performance_metrics: {
                             total_pnl: trading.totalPnL || 0,

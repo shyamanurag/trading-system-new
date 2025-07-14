@@ -53,7 +53,7 @@ const TodaysTradeReport = () => {
         setError(null);
 
         try {
-            // FIXED: Use the correct autonomous status endpoint where REAL trading data lives
+            // Get real trading status from autonomous endpoint
             const autonomousResponse = await fetch('/api/v1/autonomous/status');
             const autonomousData = await autonomousResponse.json();
 
@@ -81,23 +81,63 @@ const TodaysTradeReport = () => {
                     active_strategies: trading.active_strategies || []
                 };
 
-                // Create mock trades based on real trading data
-                if (trading.total_trades > 0) {
-                    const symbols = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'BHARTIARTL', 'ITC', 'SBIN', 'LT', 'MARUTI'];
-                    trades = Array.from({ length: Math.min(trading.total_trades, 20) }, (_, index) => ({
-                        id: `trade_${index + 1}`,
-                        symbol: symbols[index % symbols.length],
-                        side: index % 2 === 0 ? 'BUY' : 'SELL',
-                        quantity: Math.floor(Math.random() * 100) + 10,
-                        entry_price: 1000 + Math.random() * 2000,
-                        current_price: 1000 + Math.random() * 2000,
-                        pnl: (trading.daily_pnl / trading.total_trades) + (Math.random() - 0.5) * 1000,
-                        pnl_percent: (Math.random() - 0.5) * 10,
-                        status: index < 3 ? 'OPEN' : 'CLOSED',
-                        entry_time: new Date(Date.now() - Math.random() * 8 * 60 * 60 * 1000).toISOString(),
-                        strategy: ['Enhanced Momentum', 'Mean Reversion', 'Volatility Breakout'][index % 3]
-                    }));
+                // FIXED: Get REAL trades from the trading system API endpoints
+                try {
+                    // Try to get real trades from the autonomous trading API
+                    const tradesResponse = await fetch('/api/v1/autonomous/trades');
+                    if (tradesResponse.ok) {
+                        const tradesData = await tradesResponse.json();
+                        if (tradesData.success && tradesData.data) {
+                            trades = tradesData.data.map(trade => ({
+                                id: trade.trade_id,
+                                symbol: trade.symbol,
+                                side: trade.trade_type || trade.side,
+                                quantity: trade.quantity,
+                                entry_price: trade.price,
+                                current_price: trade.price, // For executed trades, current price = execution price
+                                pnl: trade.pnl || 0,
+                                pnl_percent: trade.pnl_percent || 0,
+                                status: trade.status || 'EXECUTED',
+                                entry_time: trade.executed_at,
+                                strategy: trade.strategy,
+                                commission: trade.commission || 0
+                            }));
+                        }
+                    }
+                } catch (tradesError) {
+                    console.warn('Could not fetch real trades:', tradesError);
                 }
+
+                // If no trades from autonomous API, try the search API
+                if (trades.length === 0 && summary.total_trades > 0) {
+                    try {
+                        const searchResponse = await fetch('/api/v1/search/trades?limit=50');
+                        if (searchResponse.ok) {
+                            const searchData = await searchResponse.json();
+                            if (searchData.success && searchData.data && searchData.data.trades) {
+                                trades = searchData.data.trades.map(trade => ({
+                                    id: trade.trade_id,
+                                    symbol: trade.symbol,
+                                    side: trade.side,
+                                    quantity: trade.quantity,
+                                    entry_price: trade.price,
+                                    current_price: trade.price,
+                                    pnl: trade.pnl || 0,
+                                    pnl_percent: ((trade.pnl || 0) / (trade.price * trade.quantity)) * 100,
+                                    status: trade.status || 'EXECUTED',
+                                    entry_time: trade.executed_at || trade.created_at,
+                                    strategy: trade.strategy,
+                                    commission: 0
+                                }));
+                            }
+                        }
+                    } catch (searchError) {
+                        console.warn('Could not fetch trades from search API:', searchError);
+                    }
+                }
+
+                // ELIMINATED: All mock trade generation removed - only real data allowed
+                console.log(`✅ REAL TRADES ONLY: Found ${trades.length} actual trades`);
             }
 
             setTradeData({
