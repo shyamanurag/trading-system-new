@@ -1362,6 +1362,12 @@ async def redirect_users():
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/api/v1/users/performance", status_code=307)
 
+@app.post("/auth/zerodha/submit-token", tags=["auth"])
+async def redirect_submit_token(request: Request):
+    """Redirect to zerodha manual submit-token endpoint"""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/zerodha/submit-token", status_code=307)
+
 @app.api_route("/{path:path}", methods=["GET"])
 async def catch_all(request: Request, path: str):
     """Serve frontend for non-API routes, return 404 for API routes"""
