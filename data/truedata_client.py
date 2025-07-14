@@ -48,7 +48,8 @@ def setup_redis_client():
         ssl_required = 'ondigitalocean.com' in redis_host or redis_url.startswith('rediss://')
         
         # CRITICAL FIX: Enhanced Redis config for DigitalOcean managed Redis
-        redis_client = redis.Redis(
+        # Create connection pool first, then Redis client
+        connection_pool = redis.ConnectionPool(
             host=redis_host,
             port=redis_port,
             password=redis_password,
@@ -65,13 +66,10 @@ def setup_redis_client():
             retry_on_timeout=True,
             retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError],  # Retry on connection errors
             health_check_interval=60,  # Increased health check interval
-            max_connections=10,  # Increased for 250 symbols
-            connection_pool_class_kwargs={
-                'max_connections': 20,  # Pool size for 250 symbols
-                'retry_on_timeout': True,
-                'retry_on_error': [redis.exceptions.ConnectionError, redis.exceptions.TimeoutError]
-            }
+            max_connections=20,  # Pool size for 250 symbols
         )
+        
+        redis_client = redis.Redis(connection_pool=connection_pool)
         
         # Test connection with retry logic
         for attempt in range(3):

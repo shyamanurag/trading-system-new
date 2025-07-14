@@ -24,6 +24,9 @@ class ZerodhaIntegration:
         self.access_token = config.get('access_token')
         self.pin = config.get('pin')
         
+        # CRITICAL FIX: Add missing mock_mode attribute
+        self.mock_mode = config.get('mock_mode', False)
+        
         # Initialize KiteConnect
         if self.api_key:
             self.kite = KiteConnect(api_key=self.api_key)
@@ -32,6 +35,7 @@ class ZerodhaIntegration:
         else:
             self.kite = None
             logger.warning("Zerodha API key not provided - using mock mode")
+            self.mock_mode = True  # Force mock mode if no API key
         
         self.is_connected = False
         self.ticker_connected = False  # Add missing ticker_connected attribute

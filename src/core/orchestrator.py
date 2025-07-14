@@ -490,7 +490,7 @@ class TradingOrchestrator:
                     # Test connection with retry logic
                     for attempt in range(5):  # Increased retry attempts
                         try:
-                            self.redis.ping()
+                            await self.redis.ping()
                             self.logger.info(f"✅ Redis connected successfully (attempt {attempt + 1})")
                             break
                         except Exception as e:
@@ -507,7 +507,7 @@ class TradingOrchestrator:
             # Test Redis connection (enhanced with retry)
             if self.redis:
                 try:
-                    self.redis.ping()
+                    await self.redis.ping()
                     self.logger.info("✅ Redis connection verified and working")
                 except Exception as e:
                     self.logger.error(f"❌ Redis connection test failed: {e}")
