@@ -272,15 +272,24 @@ class BaseStrategy:
             reward_percent = (reward_amount / entry_price) * 100
             risk_reward_ratio = reward_amount / risk_amount if risk_amount > 0 else 0
             
+            # CRITICAL FIX: Generate unique signal_id for tracking
+            signal_id = f"{self.name}_{symbol}_{int(datetime.now().timestamp())}"
+            
             return {
+                # Core signal fields (consistent naming)
+                'signal_id': signal_id,
                 'symbol': symbol,
-                'action': action.upper(),
+                'action': action.upper(),  # Use 'action' not 'direction'
                 'quantity': 50,  # Standard lot size
                 'entry_price': round(entry_price, 2),
                 'stop_loss': round(stop_loss, 2),
                 'target': round(target, 2),
-                'strategy': self.name,
+                'strategy': self.name,  # Use 'strategy' for compatibility
+                'strategy_name': self.name,  # Also include strategy_name for new components
                 'confidence': round(min(confidence, 0.9), 2),
+                'quality_score': round(min(confidence, 0.9), 2),  # Map confidence to quality_score
+                
+                # Risk metrics
                 'risk_metrics': {
                     'risk_amount': round(risk_amount, 2),
                     'reward_amount': round(reward_amount, 2),
@@ -288,10 +297,14 @@ class BaseStrategy:
                     'reward_percent': round(reward_percent, 2),
                     'risk_reward_ratio': round(risk_reward_ratio, 2)
                 },
+                
+                # Enhanced metadata
                 'metadata': {
                     **metadata,
                     'signal_validation': 'PASSED',
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now().isoformat(),
+                    'strategy_instance': self.name,
+                    'signal_source': 'strategy_engine'
                 }
             }
             

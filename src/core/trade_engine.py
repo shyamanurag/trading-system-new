@@ -2,7 +2,7 @@
 Trade Engine
 Handles trading logic and strategy execution
 """
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 import logging
 import asyncio
@@ -175,18 +175,91 @@ class TradeEngine:
         except Exception as e:
             logger.error(f"Error processing signal batch: {e}")
     
+    def _validate_signal_structure(self, signal_dict: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Comprehensive signal validation to catch field mismatches early
+        Returns (is_valid, error_message)
+        """
+        try:
+            # Required fields validation
+            required_fields = ['symbol', 'quantity', 'entry_price']
+            missing_fields = [field for field in required_fields if field not in signal_dict]
+            if missing_fields:
+                return False, f"Missing required fields: {missing_fields}"
+            
+            # Action/Direction field validation (handle both)
+            if 'action' not in signal_dict and 'direction' not in signal_dict:
+                return False, "Missing 'action' or 'direction' field"
+            
+            action_value = signal_dict.get('action') or signal_dict.get('direction', '')
+            if action_value.upper() not in ['BUY', 'SELL']:
+                return False, f"Invalid action/direction value: {action_value}"
+            
+            # Strategy field validation (handle both)
+            if 'strategy' not in signal_dict and 'strategy_name' not in signal_dict:
+                return False, "Missing 'strategy' or 'strategy_name' field"
+            
+            # Numeric field validation
+            numeric_fields = ['quantity', 'entry_price']
+            for field in numeric_fields:
+                if field in signal_dict:
+                    try:
+                        value = float(signal_dict[field])
+                        if value <= 0:
+                            return False, f"Field '{field}' must be positive, got: {value}"
+                    except (ValueError, TypeError):
+                        return False, f"Field '{field}' must be numeric, got: {signal_dict[field]}"
+            
+            # Optional numeric field validation
+            optional_numeric = ['stop_loss', 'target', 'confidence', 'quality_score', 'strike']
+            for field in optional_numeric:
+                if field in signal_dict:
+                    try:
+                        float(signal_dict[field])
+                    except (ValueError, TypeError):
+                        return False, f"Field '{field}' must be numeric, got: {signal_dict[field]}"
+            
+            # Confidence/Quality score range validation
+            confidence = signal_dict.get('confidence') or signal_dict.get('quality_score', 1.0)
+            if not (0.0 <= confidence <= 1.0):
+                return False, f"Confidence/quality_score must be between 0.0 and 1.0, got: {confidence}"
+            
+            # Symbol validation
+            symbol = signal_dict.get('symbol', '')
+            if not symbol or not isinstance(symbol, str):
+                return False, f"Invalid symbol: {symbol}"
+            
+            # Signal ID validation (if present)
+            if 'signal_id' in signal_dict and not signal_dict['signal_id']:
+                return False, "signal_id cannot be empty"
+            
+            return True, "Signal validation passed"
+            
+        except Exception as e:
+            return False, f"Signal validation error: {str(e)}"
+
     def _dict_to_signal(self, signal_dict: Dict[str, Any]) -> Signal:
         """Convert dict signal to Signal object"""
         try:
-            # Extract required fields with defaults
+            # Extract required fields with proper mapping
             signal_id = signal_dict.get('signal_id', f"signal_{datetime.now().timestamp()}")
-            strategy_name = signal_dict.get('strategy', 'unknown')
+            
+            # CRITICAL FIX: Map strategy field names consistently
+            strategy_name = signal_dict.get('strategy_name') or signal_dict.get('strategy', 'unknown')
+            
             symbol = signal_dict.get('symbol', '')
-            action = signal_dict.get('action', 'BUY')
+            
+            # CRITICAL FIX: Map action/direction fields consistently
+            action_value = signal_dict.get('action') or signal_dict.get('direction', 'BUY')
+            action = OrderSide.BUY if action_value.upper() == 'BUY' else OrderSide.SELL
+            
             quantity = signal_dict.get('quantity', 1)
             entry_price = signal_dict.get('entry_price', 0.0)
             stop_loss = signal_dict.get('stop_loss', 0.0)
             target = signal_dict.get('target', 0.0)
+            
+            # CRITICAL FIX: Map confidence/quality_score consistently
+            quality_score = signal_dict.get('quality_score') or signal_dict.get('confidence', 0.8)
             
             # Calculate percentages for stop loss and target
             stop_loss_percent = 0.0
@@ -198,15 +271,26 @@ class TradeEngine:
                 if target > 0:
                     target_percent = abs((target - entry_price) / entry_price) * 100
             
-            # Create Signal object with expected_price attribute
+            # CRITICAL FIX: Handle option_type mapping
+            option_type = OptionType.CALL  # Default for stocks
+            if 'option_type' in signal_dict:
+                try:
+                    option_type = OptionType(signal_dict['option_type'])
+                except (ValueError, AttributeError):
+                    option_type = OptionType.CALL
+            
+            # CRITICAL FIX: Handle strike price
+            strike = signal_dict.get('strike', 0.0)
+            
+            # Create Signal object with all required fields properly mapped
             signal_obj = Signal(
                 signal_id=signal_id,
                 strategy_name=strategy_name,
                 symbol=symbol,
-                option_type=OptionType.CALL,  # Default for stocks
-                strike=0.0,  # Default for stocks
-                action=OrderSide.BUY if action.upper() == 'BUY' else OrderSide.SELL,
-                quality_score=signal_dict.get('confidence', 0.8),
+                option_type=option_type,
+                strike=strike,
+                action=action,
+                quality_score=quality_score,
                 quantity=quantity,
                 entry_price=entry_price,
                 stop_loss_percent=stop_loss_percent,
@@ -218,14 +302,19 @@ class TradeEngine:
             # CRITICAL FIX: Add expected_price attribute that RiskManager needs
             signal_obj.expected_price = entry_price
             
+            # CRITICAL FIX: Add original signal data for backward compatibility
+            signal_obj.original_signal = signal_dict.copy()
+            
             return signal_obj
             
         except Exception as e:
             logger.error(f"Error converting dict to Signal: {e}")
-            # Return a minimal valid Signal
+            logger.error(f"Signal dict: {signal_dict}")
+            
+            # Return a minimal valid Signal with error information
             error_signal = Signal(
                 signal_id=f"error_signal_{datetime.now().timestamp()}",
-                strategy_name='error',
+                strategy_name=signal_dict.get('strategy', 'error'),
                 symbol=signal_dict.get('symbol', 'UNKNOWN'),
                 option_type=OptionType.CALL,
                 strike=0.0,
@@ -235,12 +324,13 @@ class TradeEngine:
                 entry_price=0.0,
                 stop_loss_percent=0.0,
                 target_percent=0.0,
-                metadata={'error': str(e)},
+                metadata={'error': str(e), 'original_signal': signal_dict},
                 timestamp=datetime.now()
             )
             
             # Add expected_price for error signal too
             error_signal.expected_price = 0.0
+            error_signal.original_signal = signal_dict.copy()
             
             return error_signal
 
@@ -305,6 +395,13 @@ class TradeEngine:
             
             # Process new signals
             for signal_dict in signals:
+                # CRITICAL FIX: Validate signal structure first
+                is_valid, validation_error = self._validate_signal_structure(signal_dict)
+                if not is_valid:
+                    logger.error(f"❌ Signal validation failed for {signal_dict.get('symbol', 'unknown')}: {validation_error}")
+                    logger.error(f"Invalid signal: {signal_dict}")
+                    continue
+                
                 # Convert dict to Signal object for risk validation
                 signal_obj = self._dict_to_signal(signal_dict)
                 

@@ -6,7 +6,7 @@ import asyncio
 import time
 import uuid
 
-from .models import Order, OrderType, OrderSide
+from .models import Order, OrderType, OrderSide, ExecutionStrategy, OrderState, OrderStatus
 from .exceptions import OrderError
 from .system_evolution import SystemEvolution
 
@@ -501,28 +501,44 @@ class TradeAllocator:
             if current_position + quantity > max_position:
                 quantity = int(max_position - current_position)
             
-            # Create order
+            # CRITICAL FIX: Handle both action/direction field names
+            action_value = signal.get('action') or signal.get('direction', 'BUY')
+            order_side = OrderSide.BUY if action_value.upper() == 'BUY' else OrderSide.SELL
+            
+            # CRITICAL FIX: Handle both strategy_name/strategy field names
+            strategy_name = signal.get('strategy_name') or signal.get('strategy', 'unknown')
+            
+            # Create order with proper field mapping
             return Order(
                 order_id=str(uuid.uuid4()),
                 user_id=user_id,
                 signal_id=signal.get('signal_id'),
+                broker_order_id=None,  # Will be set when placed with broker
+                parent_order_id=None,  # Not a child order
                 symbol=signal['symbol'],
-                option_type=signal.get('option_type'),
-                strike=signal.get('strike'),
+                option_type=OrderType.MARKET,  # Default order type
+                strike=signal.get('strike', 0.0),
                 quantity=quantity,
                 order_type=OrderType.MARKET,
-                side=OrderSide.BUY if signal['action'] == 'BUY' else OrderSide.SELL,
+                side=order_side,
                 price=signal.get('entry_price'),
-                strategy_name=signal.get('strategy_name'),
+                execution_strategy=ExecutionStrategy.MARKET,  # Default execution strategy
+                slice_number=None,  # Not a sliced order
+                total_slices=None,  # Not a sliced order
+                state=OrderState.CREATED,  # Initial state
+                status=OrderStatus.PENDING,  # Initial status
+                strategy_name=strategy_name,
                 metadata={
                     'allocation_type': 'pro_rata',
                     'original_quantity': signal['quantity'],
-                    'allocation_percent': quantity / signal['quantity']
+                    'allocation_percent': quantity / signal['quantity'] if signal['quantity'] > 0 else 0,
+                    'original_signal': signal.copy()  # Keep original for debugging
                 }
             )
             
         except Exception as e:
             logger.error(f"Error creating user order: {str(e)}")
+            logger.error(f"Signal: {signal}")
             raise OrderError(f"Failed to create user order: {str(e)}")
     
     async def _get_current_position(self, user_id: str, symbol: str) -> float:

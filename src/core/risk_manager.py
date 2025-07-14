@@ -525,7 +525,7 @@ class RiskManager:
             
             total_exposure = current_exposure + position_value
             return total_exposure > max_concentration
-            
+
         except Exception as e:
             logger.error(f"Error checking concentration limit: {e}")
             return True  # Conservative: assume limit exceeded on error
@@ -543,7 +543,7 @@ class RiskManager:
                         return True
             
             return False
-            
+
         except Exception as e:
             logger.error(f"Error checking correlation limit: {e}")
             return True  # Conservative: assume limit exceeded on error
@@ -558,7 +558,7 @@ class RiskManager:
             estimated_new_var = self.portfolio_var + (position_value * 0.02)  # Rough estimate
             
             return estimated_new_var > max_var
-            
+
         except Exception as e:
             logger.error(f"Error checking VaR limit: {e}")
             return True  # Conservative: assume limit exceeded on error
@@ -576,7 +576,7 @@ class RiskManager:
             # Warning: Approaching drawdown limit
             if self.current_drawdown > self.risk_limits['max_drawdown_percent'] * 0.8:  # 80% of limit
                 self.add_risk_alert("WARNING", f"Approaching drawdown limit: {self.current_drawdown*100:.1f}%")
-            
+
         except Exception as e:
             logger.error(f"Error generating risk alerts: {e}")
             
@@ -590,7 +590,158 @@ class RiskManager:
         
         self.risk_alerts.append(alert)
         logger.warning(f"⚠️ RISK ALERT: {severity} - {message}")
-        
+    
+    async def validate_signal(self, signal: Signal) -> Dict[str, Any]:
+        """
+        Validate trading signal for risk compliance
+        This is the main signal validation method called by TradeEngine
+        """
+        try:
+            # Extract required fields from Signal object
+            symbol = signal.symbol
+            strategy_name = signal.strategy_name
+            quantity = signal.quantity
+            entry_price = getattr(signal, 'entry_price', 0.0)
+            
+            # Calculate position value
+            position_value = entry_price * quantity
+            
+            # Validate trade risk using existing method
+            risk_approved, risk_reason = self.validate_trade_risk(position_value, strategy_name, symbol)
+            
+            if not risk_approved:
+                return {
+                    'approved': False,
+                    'reason': risk_reason,
+                    'risk_score': 100.0,  # Maximum risk
+                    'position_size': 0,
+                    'validation_details': {
+                        'symbol': symbol,
+                        'strategy': strategy_name,
+                        'position_value': position_value,
+                        'risk_check_failed': True
+                    }
+                }
+            
+            # Calculate risk score (0-100, lower is better)
+            risk_score = self._calculate_signal_risk_score(signal)
+            
+            # Validate Greeks if options signal
+            if hasattr(signal, 'option_type') and signal.option_type != 'EQUITY':
+                greeks_result = await self.greeks_manager.validate_new_position_greeks(
+                    signal, entry_price
+                )
+                if not greeks_result.get('approved', True):
+                    return {
+                        'approved': False,
+                        'reason': f"Greeks validation failed: {greeks_result.get('reason', 'Unknown')}",
+                        'risk_score': 100.0,
+                        'position_size': quantity,
+                        'validation_details': {
+                            'symbol': symbol,
+                            'strategy': strategy_name,
+                            'greeks_violations': greeks_result.get('violations', [])
+                        }
+                    }
+            
+            # Signal approved
+            return {
+                'approved': True,
+                'reason': 'Signal passed risk validation',
+                'risk_score': risk_score,
+                'position_size': quantity,
+                'validation_details': {
+                    'symbol': symbol,
+                    'strategy': strategy_name,
+                    'position_value': position_value,
+                    'risk_score': risk_score,
+                    'confidence': getattr(signal, 'quality_score', 0.0),
+                    'validation_timestamp': datetime.now().isoformat()
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error validating signal: {e}")
+            return {
+                'approved': False,
+                'reason': f'Signal validation error: {str(e)}',
+                'risk_score': 100.0,
+                'position_size': 0,
+                'validation_details': {
+                    'error': str(e),
+                    'validation_timestamp': datetime.now().isoformat()
+                }
+            }
+    
+    def _calculate_signal_risk_score(self, signal: Signal) -> float:
+        """Calculate risk score for signal (0-100, lower is better)"""
+        try:
+            risk_score = 0.0
+            
+            # Base risk from strategy
+            strategy_risk = {
+                'momentum_surfer': 20.0,
+                'volatility_explosion': 40.0,
+                'volume_profile_scalper': 30.0,
+                'regime_adaptive_controller': 25.0,
+                'confluence_amplifier': 15.0
+            }.get(signal.strategy_name, 35.0)
+            
+            risk_score += strategy_risk
+            
+            # Risk from signal quality (inverse relationship)
+            quality_score = getattr(signal, 'quality_score', 0.5)
+            quality_risk = (1.0 - quality_score) * 30.0  # Max 30 points
+            risk_score += quality_risk
+            
+            # Risk from position size
+            position_value = signal.entry_price * signal.quantity
+            total_capital = self.position_tracker.capital
+            
+            if total_capital > 0:
+                position_percent = position_value / total_capital
+                if position_percent > 0.05:  # More than 5% of capital
+                    risk_score += (position_percent - 0.05) * 200  # Penalty for large positions
+            
+            # Risk from current market conditions
+            if self.current_drawdown > 0.02:  # In drawdown
+                risk_score += self.current_drawdown * 100
+            
+            if self.daily_pnl < 0:  # Negative P&L today
+                daily_loss_percent = abs(self.daily_pnl) / total_capital if total_capital > 0 else 0
+                risk_score += daily_loss_percent * 200
+            
+            # Risk from emergency conditions
+            if self.emergency_stop_triggered:
+                risk_score = 100.0  # Maximum risk
+            
+            return min(risk_score, 100.0)  # Cap at 100
+            
+        except Exception as e:
+            logger.error(f"Error calculating signal risk score: {e}")
+            return 50.0  # Default moderate risk
+    
+    async def validate_order(self, user_id: str, order) -> bool:
+        """Validate order for user (called by OrderManager)"""
+        try:
+            # Convert order to signal-like object for validation
+            class OrderSignal:
+                def __init__(self, order):
+                    self.symbol = order.symbol
+                    self.strategy_name = getattr(order, 'strategy_name', 'unknown')
+                    self.quantity = order.quantity
+                    self.entry_price = getattr(order, 'price', 0.0)
+                    self.quality_score = 0.8  # Default quality
+            
+            signal = OrderSignal(order)
+            result = await self.validate_signal(signal)
+            
+            return result.get('approved', False)
+            
+        except Exception as e:
+            logger.error(f"Error validating order: {e}")
+            return False
+
     def get_risk_report(self) -> Dict[str, Any]:
         """Get comprehensive risk report"""
         total_capital = self.position_tracker.capital
