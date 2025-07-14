@@ -145,16 +145,32 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
     try:
         logger.info("📊 Getting dashboard summary with live autonomous trading data")
         
-        # Get live autonomous trading status from the CORRECT source
+        # CRITICAL FIX: Use the correct orchestrator instance that's actively processing trades
         try:
-            # Try to get from autonomous endpoint first (where real data lives)
-            from src.core.orchestrator import TradingOrchestrator
-            orchestrator_instance = TradingOrchestrator.get_instance()
-            autonomous_status = await orchestrator_instance.get_trading_status()
-            logger.info(f"🎯 Got autonomous status: {autonomous_status.get('total_trades', 0)} trades, ₹{autonomous_status.get('daily_pnl', 0):,.2f} P&L")
+            # First try to get from the dependency injection (should be the active instance)
+            if orchestrator and hasattr(orchestrator, 'get_trading_status'):
+                autonomous_status = await orchestrator.get_trading_status()
+                logger.info(f"🎯 Got autonomous status from DI: {autonomous_status.get('total_trades', 0)} trades, ₹{autonomous_status.get('daily_pnl', 0):,.2f} P&L")
+            else:
+                # Fallback to get_instance method
+                from src.core.orchestrator import get_orchestrator
+                orchestrator_instance = await get_orchestrator()
+                if orchestrator_instance:
+                    autonomous_status = await orchestrator_instance.get_trading_status()
+                    logger.info(f"🎯 Got autonomous status from get_orchestrator: {autonomous_status.get('total_trades', 0)} trades, ₹{autonomous_status.get('daily_pnl', 0):,.2f} P&L")
+                else:
+                    raise Exception("No orchestrator instance available")
         except Exception as e:
             logger.error(f"Error getting autonomous status: {e}")
-            autonomous_status = await orchestrator.get_trading_status()
+            # Last resort: create minimal status
+            autonomous_status = {
+                'is_active': False,
+                'total_trades': 0,
+                'daily_pnl': 0.0,
+                'active_positions': [],
+                'system_ready': False,
+                'active_strategies': []
+            }
         
         # Calculate additional metrics
         total_trades = autonomous_status.get('total_trades', 0)
@@ -182,8 +198,11 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
         estimated_wins = 0
         estimated_losses = 0
         
-        # Market status
-        market_open = orchestrator._is_market_open()
+        # Market status - use safe fallback if orchestrator not available
+        try:
+            market_open = orchestrator._is_market_open() if orchestrator else True
+        except:
+            market_open = True  # Default to market open during trading hours
         
         # Create comprehensive dashboard data
         dashboard_data = {
