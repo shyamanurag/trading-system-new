@@ -421,7 +421,7 @@ class TradingOrchestrator:
         
         # Initialize Zerodha client with enhanced credential handling
         self.logger.info("🔄 Initializing Zerodha client...")
-        self.zerodha_client = self._initialize_zerodha_client()
+        self.zerodha_client = None  # Will be initialized async later
         
         # CRITICAL FIX: Enhanced OrderManager initialization with multiple fallback levels
         self.logger.info("🔄 Initializing OrderManager with enhanced fallback system...")
@@ -558,6 +558,14 @@ class TradingOrchestrator:
             # Load strategies
             await self._load_strategies()
             self.logger.info("✅ Strategies loaded")
+            
+            # Initialize Zerodha client
+            if not self.zerodha_client:
+                try:
+                    self.zerodha_client = await self._initialize_zerodha_client()
+                    self.logger.info("✅ Zerodha client initialized")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Zerodha client initialization failed: {e}")
             
             # Initialize Zerodha client
             if self.zerodha_client:
@@ -722,7 +730,7 @@ class TradingOrchestrator:
         else:
             self.logger.info("✅ OrderManager available - trade execution enabled")
             
-    def _initialize_zerodha_client(self):
+    async def _initialize_zerodha_client(self):
         """Initialize Zerodha client with enhanced credential handling"""
         try:
             # CRITICAL FIX: Get credentials from trading_control first
@@ -776,7 +784,7 @@ class TradingOrchestrator:
                 
             # Fallback to environment variables
             self.logger.info("🔄 Falling back to environment variables for Zerodha credentials")
-            return self._initialize_zerodha_from_env()
+            return await self._initialize_zerodha_from_env()
             
         except Exception as e:
             self.logger.error(f"❌ Zerodha client initialization error: {e}")
@@ -802,7 +810,7 @@ class TradingOrchestrator:
             self.logger.error(f"❌ Error getting Zerodha credentials from trading_control: {e}")
             return None
             
-    def _initialize_zerodha_from_env(self):
+    async def _initialize_zerodha_from_env(self):
         """Initialize Zerodha client from environment variables"""
         try:
             api_key = os.environ.get('ZERODHA_API_KEY')
@@ -817,7 +825,7 @@ class TradingOrchestrator:
                 # If no access token in environment, check Redis with multiple key patterns
                 if not access_token:
                     try:
-                        import redis
+                        import redis.asyncio as redis
                         redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
                         redis_client = redis.from_url(redis_url)
                         
@@ -832,7 +840,7 @@ class TradingOrchestrator:
                         ]
                         
                         for key in token_keys_to_check:
-                            stored_token = redis_client.get(key)
+                            stored_token = await redis_client.get(key)
                             if stored_token:
                                 access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
                                 self.logger.info(f"✅ Found Zerodha token in Redis with key: {key}")
@@ -841,15 +849,15 @@ class TradingOrchestrator:
                         # If still no token, check all zerodha:token:* keys
                         if not access_token:
                             self.logger.info("🔍 Searching all zerodha:token:* keys in Redis...")
-                            all_keys = redis_client.keys("zerodha:token:*")
+                            all_keys = await redis_client.keys("zerodha:token:*")
                             for key in all_keys:
-                                stored_token = redis_client.get(key)
+                                stored_token = await redis_client.get(key)
                                 if stored_token:
                                     access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
                                     self.logger.info(f"✅ Found Zerodha token in Redis with key: {key}")
                                     break
                         
-                        redis_client.close()
+                        await redis_client.close()
                         
                     except Exception as redis_error:
                         self.logger.warning(f"Could not check Redis for stored token: {redis_error}")
