@@ -9,10 +9,11 @@ import os
 import json
 import asyncio
 from typing import Dict, Optional, Any
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from pydantic import BaseModel, validator
 from datetime import datetime, timedelta
+import redis.asyncio as redis
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,25 @@ ZERODHA_API_KEY = os.getenv('ZERODHA_API_KEY', 'vc9ft4zpknynpm3u')
 ZERODHA_API_SECRET = os.getenv('ZERODHA_API_SECRET', '0nwjb2cncw9stf3m5cre73rqc3bc5xsc')
 ZERODHA_USER_ID = os.getenv('ZERODHA_USER_ID', 'QSW899')
 
-# In-memory session storage (use Redis in production)
+# Initialize Redis client for token storage
+redis_client = None
+
+async def get_redis_client():
+    global redis_client
+    if redis_client is None:
+        redis_url = os.getenv('REDIS_URL')
+        if redis_url:
+            redis_client = redis.from_url(redis_url, decode_responses=True)
+        else:
+            redis_client = redis.Redis(
+                host=os.getenv('REDIS_HOST', 'localhost'),
+                port=int(os.getenv('REDIS_PORT', 6379)),
+                password=os.getenv('REDIS_PASSWORD'),
+                decode_responses=True
+            )
+    return redis_client
+
+# Keep in-memory sessions for backward compatibility and performance
 zerodha_sessions = {}
 
 class TokenSubmission(BaseModel):
@@ -353,8 +372,60 @@ async def submit_manual_token(token_data: TokenSubmission):
         session.expires_at = datetime.now() + timedelta(hours=8)  # Zerodha tokens expire daily
         session.profile = profile
         
-        # Store session
+        # Store session in memory
         zerodha_sessions[token_data.user_id] = session
+        
+        
+        # CRITICAL FIX: Store token in Redis for orchestrator access
+        try:
+            import redis
+            redis_url = os.getenv('REDIS_URL')
+            if redis_url:
+                redis_client = redis.from_url(redis_url, decode_responses=True)
+            else:
+                redis_client = redis.Redis(
+                    host=os.getenv('REDIS_HOST', 'localhost'),
+                    port=int(os.getenv('REDIS_PORT', 6379)),
+                    password=os.getenv('REDIS_PASSWORD'),
+                    decode_responses=True
+                )
+            
+            redis_key = f"zerodha:token:{token_data.user_id}"
+            
+            # Store token with expiration (tokens expire at 6 AM IST next day)
+            from datetime import datetime
+            current_hour = datetime.now().hour
+            if current_hour < 6:
+                seconds_until_6am = (6 - current_hour) * 3600
+            else:
+                seconds_until_6am = (24 - current_hour + 6) * 3600
+            
+            redis_client.set(redis_key, access_token, ex=seconds_until_6am)
+            logger.info(f"✅ Token stored in Redis at {redis_key} with TTL: {seconds_until_6am}s")
+            
+        except Exception as e:
+            logger.error(f"⚠️  Failed to store token in Redis: {e}")
+            # Don't fail the request, just log the error
+# CRITICAL FIX: Store token in Redis for orchestrator access
+        try:
+            redis_client = await get_redis_client()
+            redis_key = f"zerodha:token:{token_data.user_id}"
+            
+            # Store token with expiration (tokens expire at 6 AM IST next day)
+            current_hour = datetime.now().hour
+            if current_hour < 6:
+                # Before 6 AM, expires at 6 AM today
+                seconds_until_6am = (6 - current_hour) * 3600
+            else:
+                # After 6 AM, expires at 6 AM tomorrow
+                seconds_until_6am = (24 - current_hour + 6) * 3600
+            
+            await redis_client.set(redis_key, access_token, ex=seconds_until_6am)
+            logger.info(f"✅ Token stored in Redis at {redis_key} with TTL: {seconds_until_6am}s")
+            
+        except Exception as e:
+            logger.error(f"⚠️  Failed to store token in Redis: {e}")
+            # Don't fail the request, just log the error
         
         logger.info(f"✅ Authentication successful for user: {token_data.user_id}")
         
@@ -365,7 +436,7 @@ async def submit_manual_token(token_data: TokenSubmission):
             "status": "authenticated",
             "profile": profile,
             "session": session.to_dict(),
-            "expires_at": session.expires_at.isoformat()
+            "expires_at": session.expires_at.isoformat() if session.expires_at else None
         })
         
     except Exception as e:

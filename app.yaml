@@ -100,7 +100,7 @@ envs:
   value: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
 - key: ZERODHA_USER_ID
   scope: RUN_AND_BUILD_TIME
-  value: QSW899
+  value: PAPER_TRADER_001
 - key: JWT_SECRET
   scope: RUN_AND_BUILD_TIME
   value: K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A
@@ -136,7 +136,7 @@ envs:
   value: "true"
 - key: ACTIVE_USER_ID
   scope: RUN_AND_BUILD_TIME
-  value: "PAPER_TRADER_MAIN"
+  value: "PAPER_TRADER_001"
 - key: LOG_LEVEL
   scope: RUN_AND_BUILD_TIME
   value: DEBUG
