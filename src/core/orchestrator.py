@@ -883,6 +883,28 @@ class TradingOrchestrator:
                 # CRITICAL FIX: Use mock_mode=False when we have valid credentials AND access token
                 has_valid_credentials = all([api_key, user_id, access_token])
                 
+                # EMERGENCY FIX: Force check for token in Redis with exact key pattern
+                if not access_token and user_id:
+                    self.logger.warning(f"🔄 EMERGENCY: No access token found, forcing Redis check for user {user_id}")
+                    try:
+                        import redis.asyncio as redis
+                        redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+                        redis_client = redis.from_url(redis_url)
+                        
+                        # Force check the exact key pattern that frontend uses
+                        emergency_key = f"zerodha:token:{user_id}"
+                        stored_token = await redis_client.get(emergency_key)
+                        if stored_token:
+                            access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
+                            self.logger.info(f"🚨 EMERGENCY FIX: Found token with key {emergency_key}")
+                            has_valid_credentials = True
+                        else:
+                            self.logger.error(f"🚨 EMERGENCY: No token found with key {emergency_key}")
+                        
+                        await redis_client.close()
+                    except Exception as emergency_error:
+                        self.logger.error(f"🚨 EMERGENCY Redis check failed: {emergency_error}")
+                
                 zerodha_config = {
                     'api_key': api_key,
                     'user_id': user_id,
