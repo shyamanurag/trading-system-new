@@ -175,33 +175,15 @@ CREATE INDEX idx_user_metrics_user_date ON user_metrics(user_id, date);
 CREATE INDEX idx_risk_metrics_user_timestamp ON risk_metrics(user_id, timestamp);
 CREATE INDEX idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp);
 
--- Insert hardcoded master trading user (always recreated after database reset)
-INSERT INTO users (
-    username, 
-    email, 
-    password_hash, 
-    full_name, 
-    initial_capital, 
-    current_balance, 
-    risk_tolerance, 
-    is_active, 
-    zerodha_client_id,
-    trading_enabled,
-    max_daily_trades,
-    max_position_size
-) VALUES (
-    'PAPER_TRADER_001',
-    'paper.trader@algoauto.com',
-    '$2b$12$dummy.hash.for.paper.trading.user.not.used.for.login',
-    'AlgoAuto Paper Trading Master',
-    100000.00,
-    100000.00,
-    'medium',
-    true,
-    'PAPER_API_KEY',
-    true,
-    1000,
-    500000.00
-);
+-- REAL USER CREATION:
+-- Users should be created through the API endpoints:
+-- POST /api/v1/users - Create new user
+-- POST /api/v1/control/users/broker - Add broker credentials
+-- 
+-- Environment variables should provide real credentials:
+-- ZERODHA_API_KEY, ZERODHA_API_SECRET, ZERODHA_CLIENT_ID
+--
+-- Database should only contain real users with real credentials
+-- No demo, test, or hardcoded users allowed in production
 
 COMMIT; 

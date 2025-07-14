@@ -10,6 +10,7 @@ import logging
 import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
+import os # Added missing import
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,18 @@ class SimpleOrderManager:
     async def place_strategy_order(self, strategy_name: str, signal: Dict[str, Any]) -> List[Tuple[str, Any]]:
         """Place a simplified order based on strategy signal"""
         try:
-            user_id = "MASTER_USER_001"  # Use default user for simplicity
+            # ELIMINATED: Hardcoded MASTER_USER_001 removed
+            # Original violation: Used fake user ID for all orders
+            # This violates the NO_MOCK_DATA policy for user management
+            
+            # Get real user from signal or environment
+            user_id = signal.get('user_id')
+            if not user_id:
+                # Try to get from environment or configuration
+                user_id = os.getenv('ACTIVE_USER_ID')
+                if not user_id:
+                    self.logger.error("❌ No valid user ID found - cannot place order without real user")
+                    return []
             
             # Create simplified order
             order_id = str(uuid.uuid4())
@@ -52,7 +64,8 @@ class SimpleOrderManager:
                 'price': signal.get('price', 0),
                 'order_type': signal.get('order_type', 'MARKET'),
                 'status': 'PENDING',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'note': 'Order requires real user validation'
             }
             
             # Execute order
@@ -61,7 +74,7 @@ class SimpleOrderManager:
             # Store in history
             self.order_history.append(order)
             
-            self.logger.info(f"✅ SimpleOrderManager placed order: {order_id} for {strategy_name}")
+            self.logger.info(f"✅ SimpleOrderManager placed order: {order_id} for {strategy_name} (user: {user_id})")
             return [(user_id, order)]
             
         except Exception as e:

@@ -9,6 +9,7 @@ import logging
 import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
+import os # Added missing import
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,18 @@ class MinimalOrderManager:
     async def place_strategy_order(self, strategy_name: str, signal: Dict[str, Any]) -> List[Tuple[str, Any]]:
         """Place a minimal order - logs only"""
         try:
-            user_id = "MASTER_USER_001"  # Use default user
+            # ELIMINATED: Hardcoded MASTER_USER_001 removed
+            # Original violation: Used fake user ID for all orders
+            # This violates the NO_MOCK_DATA policy for user management
+            
+            # Get real user from signal or environment
+            user_id = signal.get('user_id')
+            if not user_id:
+                # Try to get from environment or configuration
+                user_id = os.getenv('ACTIVE_USER_ID')
+                if not user_id:
+                    self.logger.error("❌ No valid user ID found - cannot log order without real user")
+                    return []
             
             # Create minimal order record
             order_id = str(uuid.uuid4())
@@ -55,7 +67,7 @@ class MinimalOrderManager:
             }
             
             # Log the order for record keeping
-            self.logger.info(f"📝 MinimalOrderManager LOGGED order {self.order_count}: {order['symbol']} {order['side']} {order['quantity']} @ {order['price']}")
+            self.logger.info(f"📝 MinimalOrderManager LOGGED order {self.order_count}: {order['symbol']} {order['side']} {order['quantity']} @ {order['price']} (user: {user_id})")
             self.logger.warning(f"⚠️ ORDER NOT EXECUTED - MinimalOrderManager is logging only")
             
             return [(user_id, order)]
