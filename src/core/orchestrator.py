@@ -607,8 +607,12 @@ class TradingOrchestrator:
         # Try full OrderManager first
         try:
             from src.core.order_manager import OrderManager
+            
+            # CRITICAL FIX: Add redis_url to config for NotificationManager
+            redis_url = os.environ.get('REDIS_URL')
             config = {
                 'zerodha_client': self.zerodha_client,
+                'redis_url': redis_url,  # Add redis_url for NotificationManager
                 'redis': {
                     'host': os.environ.get('REDIS_HOST', 'localhost'),
                     'port': int(os.environ.get('REDIS_PORT', 6379)),
@@ -635,8 +639,12 @@ class TradingOrchestrator:
         """Initialize SimpleOrderManager as fallback"""
         try:
             from src.core.simple_order_manager import SimpleOrderManager
+            
+            # CRITICAL FIX: Add redis_url to config for consistency
+            redis_url = os.environ.get('REDIS_URL')
             config = {
                 'zerodha_client': self.zerodha_client,
+                'redis_url': redis_url,  # Add redis_url for consistency
                 'redis': self.redis
             }
             
@@ -654,8 +662,12 @@ class TradingOrchestrator:
         """Initialize MinimalOrderManager as last resort"""
         try:
             from src.core.minimal_order_manager import MinimalOrderManager
+            
+            # CRITICAL FIX: Add redis_url to config for consistency
+            redis_url = os.environ.get('REDIS_URL')
             config = {
-                'zerodha_client': self.zerodha_client
+                'zerodha_client': self.zerodha_client,
+                'redis_url': redis_url  # Add redis_url for consistency
             }
             
             self.logger.info("🔄 Attempting MinimalOrderManager initialization...")
