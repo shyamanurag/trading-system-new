@@ -188,6 +188,11 @@ def get_engine():
     """Get database engine - backward compatibility"""
     return db_manager.get_engine()
 
+def get_db():
+    """Get database session generator - FastAPI style"""
+    with db_manager.get_session() as session:
+        yield session
+
 def initialize_database():
     """Initialize database - backward compatibility"""
     return db_manager.initialize()
