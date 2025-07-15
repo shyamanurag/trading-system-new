@@ -197,31 +197,30 @@ class TradeEngine:
             
             db_session = next(get_db())
             if db_session:
-                # Generate trade ID
-                trade_id = f"PAPER_TRADE_{int(time.time() * 1000)}"
-                
-                # Insert paper trade into trades table (without PnL columns for now)
+                # Insert paper trade into trades table (let trade_id auto-increment)
                 query = text("""
                     INSERT INTO trades (
-                        trade_id, order_id, user_id, symbol, trade_type, quantity, 
+                        order_id, user_id, symbol, trade_type, quantity, 
                         price, commission, strategy, executed_at, created_at
                     ) VALUES (
-                        :trade_id, :order_id, 1, :symbol, :trade_type, :quantity,
+                        :order_id, 1, :symbol, :trade_type, :quantity,
                         :price, 0, :strategy, NOW(), NOW()
                     )
                 """)
                 
+                # Store paper trading identifier in strategy field
+                paper_strategy = f"PAPER_{strategy_name}_{int(time.time() * 1000)}"
+                
                 db_session.execute(query, {
-                    "trade_id": trade_id,
                     "order_id": order_id,
                     "symbol": symbol,
                     "trade_type": action,
                     "quantity": quantity,
                     "price": price,
-                    "strategy": f"PAPER_{strategy_name}"
+                    "strategy": paper_strategy
                 })
                 db_session.commit()
-                self.logger.debug(f"💾 Paper trade {trade_id} saved to database")
+                self.logger.debug(f"💾 Paper trade saved to database with strategy: {paper_strategy}")
             
         except Exception as e:
             self.logger.error(f"❌ Error saving paper trade to database: {e}")
