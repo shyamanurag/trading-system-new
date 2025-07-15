@@ -119,9 +119,10 @@ class TradeEngine:
             action = signal.get('action', 'BUY')
             quantity = signal.get('quantity', 0)
             price = signal.get('entry_price', 0)
+            strategy_name = signal.get('strategy', 'unknown')
             
-            # Store paper order
-            self.paper_orders[order_id] = {
+            # Store paper order in memory
+            paper_order = {
                 'order_id': order_id,
                 'symbol': symbol,
                 'action': action,
@@ -131,6 +132,13 @@ class TradeEngine:
                 'timestamp': datetime.now().isoformat(),
                 'signal': signal
             }
+            self.paper_orders[order_id] = paper_order
+            
+            # Save paper order to database so frontend can see it
+            try:
+                await self._save_paper_order_to_db(order_id, symbol, action, quantity, price, strategy_name)
+            except Exception as db_error:
+                self.logger.warning(f"⚠️ Failed to save paper order to database: {db_error}")
             
             self.logger.info(f"📋 PAPER TRADING: Signal processed - {order_id}")
             self.logger.info(f"   Symbol: {symbol}, Action: {action}, Qty: {quantity}, Price: ₹{price}")
@@ -140,6 +148,42 @@ class TradeEngine:
         except Exception as e:
             self.logger.error(f"❌ Error processing paper signal: {e}")
             return None
+
+    async def _save_paper_order_to_db(self, order_id: str, symbol: str, action: str, quantity: int, price: float, strategy_name: str):
+        """Save paper order to database for frontend display"""
+        try:
+            from src.core.database import get_db
+            from sqlalchemy import text
+            
+            db_session = next(get_db())
+            if db_session:
+                # Insert paper order into orders table
+                query = text("""
+                    INSERT INTO orders (
+                        order_id, user_id, symbol, order_type, side, quantity, 
+                        price, filled_quantity, average_price, status, 
+                        strategy_name, created_at, placed_at, filled_at
+                    ) VALUES (
+                        :order_id, 1, :symbol, 'MARKET', :side, :quantity,
+                        :price, :quantity, :price, 'FILLED',
+                        :strategy_name, NOW(), NOW(), NOW()
+                    )
+                """)
+                
+                db_session.execute(query, {
+                    "order_id": order_id,
+                    "symbol": symbol,
+                    "side": action,
+                    "quantity": quantity,
+                    "price": price,
+                    "strategy_name": f"PAPER_{strategy_name}"
+                })
+                db_session.commit()
+                self.logger.debug(f"💾 Paper order {order_id} saved to database")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error saving paper order to database: {e}")
+            raise
     
     async def _process_live_signal(self, signal: Dict):
         """Process signal in live trading mode"""
