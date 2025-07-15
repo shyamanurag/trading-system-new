@@ -9,7 +9,14 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 import json
 import time
-from kiteconnect import KiteConnect
+import os
+
+try:
+    from kiteconnect import KiteConnect
+except ImportError:
+    logger = logging.getLogger(__name__)
+    logger.warning("KiteConnect not available - running in mock mode")
+    KiteConnect = None
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +66,24 @@ class ZerodhaIntegration:
     async def place_order(self, order_params: Dict) -> Optional[str]:
         """Place order with proper validation and execution"""
         try:
+            # CRITICAL FIX: Check for paper trading mode first
+            paper_trading_enabled = os.getenv('PAPER_TRADING', 'false').lower() == 'true'
+            
+            if paper_trading_enabled or self.mock_mode or self.sandbox_mode:
+                # PAPER TRADING MODE: Simulate order placement
+                order_id = f"PAPER_{int(time.time() * 1000)}"
+                symbol = order_params.get('symbol', 'UNKNOWN')
+                action = order_params.get('action', order_params.get('transaction_type', 'BUY'))
+                quantity = order_params.get('quantity', 0)
+                price = order_params.get('price', order_params.get('entry_price', 0))
+                
+                logger.info(f"📋 PAPER TRADING: Order simulated - {order_id}")
+                logger.info(f"   Symbol: {symbol}, Action: {action}, Qty: {quantity}, Price: ₹{price}")
+                logger.info(f"   Mode: Paper Trading Enabled")
+                
+                # Return simulated order ID
+                return order_id
+            
             # Validate order parameters
             if not self._validate_order_params(order_params):
                 logger.error("❌ Order validation failed")
@@ -136,7 +161,7 @@ class ZerodhaIntegration:
                 logger.info("✅ Zerodha connected successfully")
                 return True
             else:
-                logger.error(f"❌ Connection test failed: {e}")
+                logger.error("❌ Connection test failed: No account info returned")
                 return False
         except Exception as e:
             logger.error(f"❌ Error connecting to Zerodha: {e}")
