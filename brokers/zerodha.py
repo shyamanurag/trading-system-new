@@ -26,10 +26,18 @@ class ZerodhaIntegration:
         
         # CRITICAL FIX: Add missing mock_mode attribute
         self.mock_mode = config.get('mock_mode', False)
+        self.sandbox_mode = config.get('sandbox_mode', False)
         
         # Initialize KiteConnect
         if self.api_key:
-            self.kite = KiteConnect(api_key=self.api_key)
+            # Use sandbox URL for paper trading
+            if self.sandbox_mode:
+                self.kite = KiteConnect(api_key=self.api_key, root="https://sandbox.kite.trade")
+                logger.info("🧪 Zerodha initialized in SANDBOX mode for paper trading")
+            else:
+                self.kite = KiteConnect(api_key=self.api_key)
+                logger.info("🔴 Zerodha initialized in LIVE mode")
+                
             if self.access_token:
                 self.kite.set_access_token(self.access_token)
         else:
