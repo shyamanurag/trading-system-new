@@ -61,6 +61,55 @@ class TradeEngine:
             self.logger.error(f"❌ Error processing signal: {e}")
             return None
     
+    async def process_signals(self, signals: List[Dict]):
+        """Process multiple trading signals"""
+        try:
+            if not signals:
+                return []
+            
+            self.logger.info(f"🚀 Processing {len(signals)} signals for execution")
+            
+            results = []
+            for signal in signals:
+                try:
+                    # Process each signal
+                    order_id = await self.process_signal(signal)
+                    
+                    result = {
+                        'signal_id': signal.get('signal_id'),
+                        'symbol': signal.get('symbol'),
+                        'action': signal.get('action'),
+                        'order_id': order_id,
+                        'status': 'SUCCESS' if order_id else 'FAILED',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+                    results.append(result)
+                    
+                    if order_id:
+                        self.logger.info(f"✅ Signal processed successfully: {signal.get('symbol')} {signal.get('action')} - Order ID: {order_id}")
+                    else:
+                        self.logger.error(f"❌ Signal processing failed: {signal.get('symbol')} {signal.get('action')}")
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Error processing signal {signal.get('signal_id', 'unknown')}: {e}")
+                    
+                    results.append({
+                        'signal_id': signal.get('signal_id'),
+                        'symbol': signal.get('symbol'),
+                        'action': signal.get('action'),
+                        'order_id': None,
+                        'status': 'ERROR',
+                        'error': str(e),
+                        'timestamp': datetime.now().isoformat()
+                    })
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error processing signals batch: {e}")
+            return []
+    
     async def _process_paper_signal(self, signal: Dict):
         """Process signal in paper trading mode"""
         try:
