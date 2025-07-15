@@ -8,8 +8,14 @@ import asyncio
 import logging
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
-import redis.asyncio as redis
 from contextlib import asynccontextmanager
+
+try:
+    import redis.asyncio as redis
+except ImportError:
+    # Fallback for older redis versions
+    import redis
+    redis.asyncio = redis
 
 logger = logging.getLogger(__name__)
 
@@ -55,13 +61,19 @@ class ProductionRedisManager:
                 'socket_keepalive_options': {},
                 'health_check_interval': 30,
                 'max_connections': 10,
-                'retry_on_timeout': True,
-                'retry_on_error': [
-                    redis.exceptions.ConnectionError,
-                    redis.exceptions.TimeoutError,
-                    redis.exceptions.BusyLoadingError
-                ]
+                'retry_on_timeout': True
             }
+            
+            # Add error handling for different Redis versions
+            try:
+                pool_config['retry_on_error'] = [
+                    redis.ConnectionError,
+                    redis.TimeoutError,
+                    redis.BusyLoadingError
+                ]
+            except AttributeError:
+                # Fallback for older Redis versions
+                pass
             
             # Add SSL configuration for DigitalOcean
             if self.ssl_required:
@@ -91,9 +103,12 @@ class ProductionRedisManager:
         """Test Redis connection with exponential backoff retry"""
         for attempt in range(self.max_retries):
             try:
-                await self.redis_client.ping()
-                logger.info(f"✅ Redis connection test successful (attempt {attempt + 1})")
-                return
+                if self.redis_client:
+                    await self.redis_client.ping()
+                    logger.info(f"✅ Redis connection test successful (attempt {attempt + 1})")
+                    return
+                else:
+                    raise Exception("Redis client not initialized")
             except Exception as e:
                 self.retry_count += 1
                 if attempt == self.max_retries - 1:
@@ -104,11 +119,24 @@ class ProductionRedisManager:
                 logger.info(f"🔄 Retrying in {wait_time} seconds...")
                 await asyncio.sleep(wait_time)
     
+    async def ping(self) -> bool:
+        """Ping Redis to test connection"""
+        try:
+            if self.redis_client:
+                await self.redis_client.ping()
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"❌ Redis ping failed: {e}")
+            return False
+    
     async def get_client(self) -> Optional[redis.Redis]:
         """Get Redis client with connection validation"""
         if not self.is_connected or not self.redis_client:
             logger.warning("⚠️ Redis not connected, attempting to reconnect...")
-            await self.initialize()
+            success = await self.initialize()
+            if not success:
+                return None
         
         return self.redis_client if self.is_connected else None
     
@@ -122,12 +150,13 @@ class ProductionRedisManager:
         
         try:
             yield client
-        except redis.exceptions.ConnectionError as e:
-            logger.error(f"❌ Redis connection error: {e}")
-            self.is_connected = False
-            yield None
         except Exception as e:
-            logger.error(f"❌ Redis operation error: {e}")
+            # Handle connection errors generically
+            if "connection" in str(e).lower() or "timeout" in str(e).lower():
+                logger.error(f"❌ Redis connection error: {e}")
+                self.is_connected = False
+            else:
+                logger.error(f"❌ Redis operation error: {e}")
             yield None
     
     async def safe_get(self, key: str, default=None) -> Any:
