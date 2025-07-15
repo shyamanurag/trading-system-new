@@ -105,7 +105,7 @@ class ZerodhaIntegration:
     async def _async_api_call(self, func, *args, **kwargs):
         """Execute synchronous API call in thread pool"""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, func, *args, **kwargs)
+        return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
         
     async def connect(self) -> bool:
         """Connect to Zerodha API"""
