@@ -180,9 +180,53 @@ class TradeEngine:
                 })
                 db_session.commit()
                 self.logger.debug(f"💾 Paper order {order_id} saved to database")
+                
+                # Also save as a trade for frontend display
+                await self._save_paper_trade_to_db(order_id, symbol, action, quantity, price, strategy_name)
             
         except Exception as e:
             self.logger.error(f"❌ Error saving paper order to database: {e}")
+            raise
+
+    async def _save_paper_trade_to_db(self, order_id: str, symbol: str, action: str, quantity: int, price: float, strategy_name: str):
+        """Save paper trade to database for frontend display"""
+        try:
+            from src.core.database import get_db
+            from sqlalchemy import text
+            import uuid
+            
+            db_session = next(get_db())
+            if db_session:
+                # Generate trade ID
+                trade_id = f"PAPER_TRADE_{int(time.time() * 1000)}"
+                
+                # Insert paper trade into trades table
+                query = text("""
+                    INSERT INTO trades (
+                        trade_id, order_id, user_id, symbol, trade_type, quantity, 
+                        price, commission, pnl, pnl_percent, status,
+                        strategy, executed_at, created_at
+                    ) VALUES (
+                        :trade_id, :order_id, 1, :symbol, :trade_type, :quantity,
+                        :price, 0, 0, 0, 'EXECUTED',
+                        :strategy, NOW(), NOW()
+                    )
+                """)
+                
+                db_session.execute(query, {
+                    "trade_id": trade_id,
+                    "order_id": order_id,
+                    "symbol": symbol,
+                    "trade_type": action,
+                    "quantity": quantity,
+                    "price": price,
+                    "strategy": f"PAPER_{strategy_name}"
+                })
+                db_session.commit()
+                self.logger.debug(f"💾 Paper trade {trade_id} saved to database")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error saving paper trade to database: {e}")
             raise
     
     async def _process_live_signal(self, signal: Dict):
