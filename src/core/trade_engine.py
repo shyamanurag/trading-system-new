@@ -200,16 +200,14 @@ class TradeEngine:
                 # Generate trade ID
                 trade_id = f"PAPER_TRADE_{int(time.time() * 1000)}"
                 
-                # Insert paper trade into trades table with PnL columns
+                # Insert paper trade into trades table (without PnL columns for now)
                 query = text("""
                     INSERT INTO trades (
                         trade_id, order_id, user_id, symbol, trade_type, quantity, 
-                        price, commission, pnl, pnl_percent, status,
-                        strategy, executed_at, created_at
+                        price, commission, strategy, executed_at, created_at
                     ) VALUES (
                         :trade_id, :order_id, 1, :symbol, :trade_type, :quantity,
-                        :price, 0, 0, 0, 'EXECUTED',
-                        :strategy, NOW(), NOW()
+                        :price, 0, :strategy, NOW(), NOW()
                     )
                 """)
                 
