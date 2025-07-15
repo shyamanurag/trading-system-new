@@ -68,11 +68,17 @@ class ZerodhaIntegration:
                 raise ConnectionError("Cannot place order: No valid Zerodha API credentials")
             
             # Map signal parameters to Zerodha API format
+            action = order_params.get('action', '').upper()
+            if not action:
+                action = order_params.get('side', '').upper()  # Try alternative field
+            if not action:
+                action = 'BUY'  # Default to BUY if no action specified
+                
             zerodha_params = {
                 'variety': self.kite.VARIETY_REGULAR,
                 'exchange': self._get_exchange_for_symbol(order_params.get('symbol', '')),
                 'tradingsymbol': self._map_symbol_to_exchange(order_params.get('symbol', '')),
-                'transaction_type': order_params.get('action', '').upper(),  # BUY/SELL
+                'transaction_type': action,  # BUY/SELL
                 'quantity': int(order_params.get('quantity', 0)),
                 'product': order_params.get('product', self.kite.PRODUCT_MIS),
                 'order_type': order_params.get('order_type', self.kite.ORDER_TYPE_MARKET),
