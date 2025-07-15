@@ -6,6 +6,7 @@ Handles DigitalOcean managed Redis with SSL, connection pooling, and retry logic
 import os
 import asyncio
 import logging
+import ssl
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 from contextlib import asynccontextmanager
@@ -48,44 +49,17 @@ class ProductionRedisManager:
     async def initialize(self) -> bool:
         """Initialize Redis connection with retry logic"""
         try:
-            # Create connection pool with production settings
-            pool_config = {
-                'host': self.redis_host,
-                'port': self.redis_port,
-                'password': self.redis_password,
-                'db': self.redis_db,
-                'decode_responses': True,
-                'socket_timeout': 10,
-                'socket_connect_timeout': 10,
-                'socket_keepalive': True,
-                'socket_keepalive_options': {},
-                'health_check_interval': 30,
-                'max_connections': 10,
-                'retry_on_timeout': True
-            }
-            
-            # Add error handling for different Redis versions
-            try:
-                pool_config['retry_on_error'] = [
-                    redis.ConnectionError,
-                    redis.TimeoutError,
-                    redis.BusyLoadingError
-                ]
-            except AttributeError:
-                # Fallback for older Redis versions
-                pass
-            
-            # Add SSL configuration for DigitalOcean
-            if self.ssl_required:
-                pool_config.update({
-                    'ssl': True,
-                    'ssl_cert_reqs': None,
-                    'ssl_check_hostname': False,
-                    'ssl_ca_certs': None
-                })
-            
-            self.connection_pool = redis.ConnectionPool(**pool_config)
-            self.redis_client = redis.Redis(connection_pool=self.connection_pool)
+            # Use from_url for all connections - it handles SSL automatically
+            self.redis_client = redis.from_url(
+                self.redis_url,
+                decode_responses=True,
+                socket_timeout=10,
+                socket_connect_timeout=10,
+                socket_keepalive=True,
+                health_check_interval=30,
+                max_connections=10,
+                retry_on_timeout=True
+            )
             
             # Test connection with retry logic
             await self._test_connection_with_retry()
@@ -118,128 +92,125 @@ class ProductionRedisManager:
                 logger.warning(f"⚠️ Redis connection failed (attempt {attempt + 1}): {e}")
                 logger.info(f"🔄 Retrying in {wait_time} seconds...")
                 await asyncio.sleep(wait_time)
-    
-    async def ping(self) -> bool:
-        """Ping Redis to test connection"""
-        try:
-            if self.redis_client:
-                await self.redis_client.ping()
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"❌ Redis ping failed: {e}")
-            return False
-    
+
     async def get_client(self) -> Optional[redis.Redis]:
-        """Get Redis client with connection validation"""
-        if not self.is_connected or not self.redis_client:
-            logger.warning("⚠️ Redis not connected, attempting to reconnect...")
-            success = await self.initialize()
-            if not success:
-                return None
-        
-        return self.redis_client if self.is_connected else None
-    
-    @asynccontextmanager
-    async def get_connection(self):
-        """Context manager for Redis operations with automatic cleanup"""
-        client = await self.get_client()
-        if not client:
-            yield None
-            return
-        
-        try:
-            yield client
-        except Exception as e:
-            # Handle connection errors generically
-            if "connection" in str(e).lower() or "timeout" in str(e).lower():
-                logger.error(f"❌ Redis connection error: {e}")
-                self.is_connected = False
-            else:
-                logger.error(f"❌ Redis operation error: {e}")
-            yield None
-    
-    async def safe_get(self, key: str, default=None) -> Any:
-        """Safely get value from Redis with error handling"""
-        try:
-            async with self.get_connection() as client:
-                if client:
-                    result = await client.get(key)
-                    return result if result is not None else default
-                return default
-        except Exception as e:
-            logger.error(f"❌ Redis GET failed for key '{key}': {e}")
-            return default
-    
-    async def safe_set(self, key: str, value: Any, ex: Optional[int] = None) -> bool:
-        """Safely set value in Redis with error handling"""
-        try:
-            async with self.get_connection() as client:
-                if client:
-                    await client.set(key, value, ex=ex)
-                    return True
-                return False
-        except Exception as e:
-            logger.error(f"❌ Redis SET failed for key '{key}': {e}")
-            return False
-    
-    async def safe_keys(self, pattern: str) -> list:
-        """Safely get keys matching pattern with error handling"""
-        try:
-            async with self.get_connection() as client:
-                if client:
-                    keys = await client.keys(pattern)
-                    return [key.decode() if isinstance(key, bytes) else key for key in keys]
-                return []
-        except Exception as e:
-            logger.error(f"❌ Redis KEYS failed for pattern '{pattern}': {e}")
-            return []
-    
-    async def health_check(self) -> Dict[str, Any]:
-        """Perform comprehensive Redis health check"""
-        try:
-            async with self.get_connection() as client:
-                if not client:
-                    return {
-                        'status': 'disconnected',
-                        'connected': False,
-                        'error': 'No Redis connection available'
-                    }
-                
-                # Test basic operations
-                await client.ping()
-                info = await client.info()
-                
-                return {
-                    'status': 'connected',
-                    'connected': True,
-                    'host': self.redis_host,
-                    'port': self.redis_port,
-                    'ssl_enabled': self.ssl_required,
-                    'memory_usage': info.get('used_memory_human', 'unknown'),
-                    'connected_clients': info.get('connected_clients', 0),
-                    'retry_count': self.retry_count
-                }
-        except Exception as e:
-            return {
-                'status': 'error',
-                'connected': False,
-                'error': str(e),
-                'retry_count': self.retry_count
-            }
+        """Get Redis client, initialize if not connected"""
+        if not self.is_connected:
+            await self.initialize()
+        return self.redis_client
     
     async def close(self):
         """Close Redis connection"""
         if self.redis_client:
             await self.redis_client.close()
-        if self.connection_pool:
-            await self.connection_pool.disconnect()
-        self.is_connected = False
-        logger.info("Redis connection closed")
+            self.is_connected = False
+            logger.info("✅ Redis connection closed")
+    
+    @asynccontextmanager
+    async def get_connection(self):
+        """Context manager for Redis operations"""
+        client = await self.get_client()
+        if not client:
+            raise Exception("Redis client not available")
+        try:
+            yield client
+        finally:
+            # Connection is managed by the pool, no need to close
+            pass
+    
+    async def set_with_retry(self, key: str, value: Any, ex: Optional[int] = None) -> bool:
+        """Set value with retry logic"""
+        for attempt in range(3):
+            try:
+                async with self.get_connection() as client:
+                    await client.set(key, value, ex=ex)
+                    return True
+            except Exception as e:
+                if attempt == 2:
+                    logger.error(f"❌ Redis SET failed after 3 attempts: {e}")
+                    return False
+                await asyncio.sleep(1)
+        return False
+    
+    async def get_with_retry(self, key: str) -> Optional[Any]:
+        """Get value with retry logic"""
+        for attempt in range(3):
+            try:
+                async with self.get_connection() as client:
+                    return await client.get(key)
+            except Exception as e:
+                if attempt == 2:
+                    logger.error(f"❌ Redis GET failed after 3 attempts: {e}")
+                    return None
+                await asyncio.sleep(1)
+        return None
+    
+    async def delete_with_retry(self, key: str) -> bool:
+        """Delete key with retry logic"""
+        for attempt in range(3):
+            try:
+                async with self.get_connection() as client:
+                    await client.delete(key)
+                    return True
+            except Exception as e:
+                if attempt == 2:
+                    logger.error(f"❌ Redis DELETE failed after 3 attempts: {e}")
+                    return False
+                await asyncio.sleep(1)
+        return False
+    
+    async def keys_with_retry(self, pattern: str) -> list:
+        """Get keys matching pattern with retry logic"""
+        for attempt in range(3):
+            try:
+                async with self.get_connection() as client:
+                    return await client.keys(pattern)
+            except Exception as e:
+                if attempt == 2:
+                    logger.error(f"❌ Redis KEYS failed after 3 attempts: {e}")
+                    return []
+                await asyncio.sleep(1)
+        return []
+    
+    async def hset_with_retry(self, key: str, field: str, value: Any) -> bool:
+        """Hash set with retry logic"""
+        for attempt in range(3):
+            try:
+                async with self.get_connection() as client:
+                    await client.hset(key, field, value)
+                    return True
+            except Exception as e:
+                if attempt == 2:
+                    logger.error(f"❌ Redis HSET failed after 3 attempts: {e}")
+                    return False
+                await asyncio.sleep(1)
+        return False
+    
+    async def hget_with_retry(self, key: str, field: str) -> Optional[Any]:
+        """Hash get with retry logic"""
+        for attempt in range(3):
+            try:
+                async with self.get_connection() as client:
+                    return await client.hget(key, field)
+            except Exception as e:
+                if attempt == 2:
+                    logger.error(f"❌ Redis HGET failed after 3 attempts: {e}")
+                    return None
+                await asyncio.sleep(1)
+        return None
+    
+    async def hgetall_with_retry(self, key: str) -> dict:
+        """Hash get all with retry logic"""
+        for attempt in range(3):
+            try:
+                async with self.get_connection() as client:
+                    return await client.hgetall(key)
+            except Exception as e:
+                if attempt == 2:
+                    logger.error(f"❌ Redis HGETALL failed after 3 attempts: {e}")
+                    return {}
+                await asyncio.sleep(1)
+        return {}
 
 # Global instance
-redis_manager = ProductionRedisManager()
-
-async def get_redis_manager() -> ProductionRedisManager:
-    """Get the global Redis manager instance"""
-    return redis_manager 
+redis_manager = ProductionRedisManager() 
