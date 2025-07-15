@@ -32,6 +32,10 @@ app:
   environment: "development"
   log_level: "INFO"
 
+# Environment Variables for Trading
+environment:
+  ZERODHA_SANDBOX_MODE: "true"
+
 brokers:
   zerodha:
     api_key: vc9ft4zpknynpm3u

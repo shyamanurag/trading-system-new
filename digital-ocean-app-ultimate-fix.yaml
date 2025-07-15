@@ -106,10 +106,10 @@ envs:
   value: QSW899
 - key: ZERODHA_API_KEY
   scope: RUN_AND_BUILD_TIME
-  value: sylcoq492qz6f7ej
+  value: vc9ft4zpknynpm3u
 - key: ZERODHA_API_SECRET
   scope: RUN_AND_BUILD_TIME
-  value: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
+  value: 0nwjb2cncw9stf3m5cre73rqc3bc5xsc
 - key: ZERODHA_USER_ID
   scope: RUN_AND_BUILD_TIME
   value: QSW899

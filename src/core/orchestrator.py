@@ -722,9 +722,10 @@ class TradingOrchestrator:
                     zerodha_config = {
                         'api_key': api_key,
                         'user_id': user_id,
-                        'mock_mode': True  # Start with mock mode for safety
+                        'access_token': access_token,
+                        'mock_mode': not has_valid_credentials,  # False when we have all credentials
+                        'sandbox_mode': os.getenv('ZERODHA_SANDBOX_MODE', 'true').lower() == 'true'  # Default to sandbox for safety
                     }
-                    broker = ZerodhaIntegration(zerodha_config)
                     
                     # Create config for resilient connection
                     resilient_config = {
@@ -896,7 +897,8 @@ class TradingOrchestrator:
                     'api_key': api_key,
                     'user_id': user_id,
                     'access_token': access_token,
-                    'mock_mode': not has_valid_credentials  # False when we have all credentials
+                    'mock_mode': not has_valid_credentials,  # False when we have all credentials
+                    'sandbox_mode': os.getenv('ZERODHA_SANDBOX_MODE', 'true').lower() == 'true'  # Default to sandbox for safety
                 }
                 
                 # Log token status for debugging (without exposing actual token)
