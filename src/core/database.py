@@ -1,48 +1,65 @@
 """
 Database manager for the trading system
 """
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.ext.declarative import declarative_base
-from contextlib import contextmanager
 import logging
-from .config import settings
+import os
+import sqlalchemy
+from contextlib import contextmanager
+from sqlalchemy import create_engine, text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.pool import NullPool
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Create declarative base
+# Database base for models
 Base = declarative_base()
 
 class DatabaseManager:
-    """Database connection manager"""
+    """Centralized database management"""
     
     def __init__(self):
-        """Initialize database manager"""
-        self.engine = None
-        self.SessionLocal = None
-        self._initialize()
-    
-    def _initialize(self):
+        self.engine: Optional[sqlalchemy.Engine] = None
+        self.SessionLocal: Optional[sessionmaker] = None
+        self._initialized = False
+        
+    def initialize(self):
         """Initialize database connection"""
-        try:
-            # Try to create engine with the configured URL
-            database_url = settings.database_url
-            connect_args = settings.DATABASE_CONNECT_ARGS
+        if self._initialized:
+            return
             
-            logger.info(f"Attempting to connect to database...")
-            logger.info(f"Database URL (masked): {database_url.split('@')[0]}@[MASKED]")
+        try:
+            logger.info("Attempting to connect to database...")
+            
+            # Get database URL from environment
+            database_url = os.getenv('DATABASE_URL')
+            if not database_url:
+                raise ValueError("DATABASE_URL environment variable not set")
+            
+            # Log masked URL for debugging
+            masked_url = database_url.replace(database_url.split('@')[0].split('//')[1], 'AVNS_LpaPpsdL4CtOii03MnN')
+            masked_url = masked_url.replace(database_url.split('@')[1].split('/')[0], '[MASKED]')
+            logger.info(f"Database URL (masked): {masked_url}")
+            
+            # Configure connection args
+            connect_args = {}
+            if 'sslmode=require' in database_url or database_url.startswith('postgresql'):
+                connect_args['sslmode'] = 'require'
+                
             logger.info(f"Using connect_args: {connect_args}")
             
-            # Create engine with proper SSL configuration
+            # Create engine with connection pooling optimized for DigitalOcean
             self.engine = create_engine(
                 database_url,
+                poolclass=NullPool,  # Disable connection pooling for serverless
+                connect_args=connect_args,
+                echo=False,  # Set to True for SQL debugging
                 pool_pre_ping=True,
-                pool_size=5,
-                max_overflow=10,
-                connect_args=connect_args
+                pool_recycle=3600
             )
             
-            # Test the connection
+            # Test connection
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             
@@ -55,18 +72,13 @@ class DatabaseManager:
             
             logger.info("Database connection initialized successfully")
             
-            # CRITICAL FIX: Apply migrations automatically
+            # Apply migrations if needed
             self._apply_migrations()
             
+            self._initialized = True
+            
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Failed to initialize database: {error_msg}")
-            
-            # If it's an SSL error, provide helpful information
-            if "sslmode" in error_msg.lower():
-                logger.error("SSL mode error detected. Check your DATABASE_URL format.")
-                logger.error("For DigitalOcean, the sslmode parameter should be handled via connect_args.")
-            
+            logger.error(f"Failed to initialize database: {e}")
             # Don't raise the error - let the app continue without database
             self.engine = None
             self.SessionLocal = None
@@ -83,12 +95,12 @@ class DatabaseManager:
             if environment == 'production':
                 logger.info("🔄 Production environment detected - applying critical migrations...")
                 
-                # Apply migration 009 specifically to fix users table
-                migration_009_path = Path("database/migrations/009_fix_users_table_id_column.sql")
-                if migration_009_path.exists():
-                    logger.info("🔧 Applying migration 009 to fix users table schema...")
+                # Apply migration 010 specifically to fix users table primary key
+                migration_010_path = Path("database/migrations/010_fix_users_primary_key.sql")
+                if migration_010_path.exists():
+                    logger.info("🔧 Applying migration 010 to fix users table primary key...")
                     
-                    with open(migration_009_path, 'r') as f:
+                    with open(migration_010_path, 'r') as f:
                         migration_sql = f.read()
                     
                     # Execute the migration
@@ -97,15 +109,15 @@ class DatabaseManager:
                         with conn.begin():
                             conn.execute(text(migration_sql))
                     
-                    logger.info("✅ Migration 009 applied successfully!")
+                    logger.info("✅ Migration 010 applied successfully!")
                     
                     # Verify the fix
                     with self.engine.connect() as conn:
                         result = conn.execute(text("SELECT id FROM users LIMIT 1"))
-                        logger.info("✅ Verified: users table now has id column")
+                        logger.info("✅ Verified: users table now has proper id column with primary key")
                 
                 else:
-                    logger.warning("⚠️ Migration 009 file not found, skipping")
+                    logger.warning("⚠️ Migration 010 file not found, skipping")
             else:
                 logger.info("📝 Development environment - skipping auto-migrations")
                 
@@ -123,42 +135,63 @@ class DatabaseManager:
         try:
             yield session
             session.commit()
-        except Exception as e:
+        except Exception:
             session.rollback()
             raise
         finally:
             session.close()
     
-    def create_tables(self):
-        """Create all tables"""
+    def execute_sql(self, sql: str):
+        """Execute raw SQL"""
         if not self.engine:
-            logger.warning("Cannot create tables - database not initialized")
-            return
+            raise RuntimeError("Database not initialized")
         
-        try:
-            Base.metadata.create_all(bind=self.engine)
-            logger.info("Database tables created successfully")
-        except Exception as e:
-            logger.error(f"Failed to create tables: {str(e)}")
-            raise
+        with self.engine.connect() as conn:
+            with conn.begin():
+                return conn.execute(text(sql))
     
-    def is_connected(self) -> bool:
-        """Check if database is connected"""
-        return self.engine is not None
+    def get_engine(self):
+        """Get SQLAlchemy engine"""
+        if not self.engine:
+            raise RuntimeError("Database not initialized")
+        return self.engine
+    
+    def health_check(self) -> dict:
+        """Check database health"""
+        try:
+            if not self.engine:
+                return {"status": "error", "message": "Database not initialized"}
+            
+            with self.engine.connect() as conn:
+                result = conn.execute(text("SELECT 1 as health_check"))
+                row = result.fetchone()
+                
+            return {
+                "status": "healthy" if row and row[0] == 1 else "unhealthy",
+                "message": "Database connection successful"
+            }
+        except Exception as e:
+            return {
+                "status": "error", 
+                "message": f"Database health check failed: {str(e)}"
+            }
 
-# Create database manager instance - but don't fail if database is not available
-try:
-    db_manager = DatabaseManager()
-except Exception as e:
-    logger.warning(f"Database manager initialization failed: {e}")
-    db_manager = None
+# Global database manager instance
+db_manager = DatabaseManager()
 
-# Dependency for FastAPI
-def get_db():
-    """Get database session for dependency injection"""
-    if db_manager and db_manager.is_connected():
-        with db_manager.get_session() as session:
-            yield session
-    else:
-        # Return None if database is not available
-        yield None 
+# Convenience functions for backward compatibility
+def get_session():
+    """Get database session - backward compatibility"""
+    return db_manager.get_session()
+
+def get_engine():
+    """Get database engine - backward compatibility"""
+    return db_manager.get_engine()
+
+def initialize_database():
+    """Initialize database - backward compatibility"""
+    return db_manager.initialize()
+
+def execute_sql(sql: str):
+    """Execute SQL - backward compatibility"""
+    return db_manager.execute_sql(sql) 
