@@ -1,0 +1,50 @@
+{
+  "test_run_time": "2025-07-15T15:39:53.926876",
+  "summary": {
+    "total_tests": 8,
+    "passed": 3,
+    "failed": 5
+  },
+  "detailed_results": {
+    "Deployment Status": {
+      "success": true,
+      "details": "Deployment ID: unknown, System Ready: False",
+      "timestamp": "2025-07-15T15:39:41.264277"
+    },
+    "Database Connection": {
+      "success": false,
+      "details": "HTTP 404",
+      "timestamp": "2025-07-15T15:39:42.533570"
+    },
+    "Users Table Schema": {
+      "success": false,
+      "details": "Users found: 0, All have ID field: False",
+      "timestamp": "2025-07-15T15:39:44.432423"
+    },
+    "Trading System Status": {
+      "success": false,
+      "details": "System Ready: False, Strategies: 0, OrderManager: False",
+      "timestamp": "2025-07-15T15:39:46.140314"
+    },
+    "Paper Trading Capability": {
+      "success": false,
+      "details": "HTTP 404",
+      "timestamp": "2025-07-15T15:39:48.065370"
+    },
+    "Database Trade Retrieval": {
+      "success": true,
+      "details": "Trades retrieved successfully, Count: 0",
+      "timestamp": "2025-07-15T15:39:49.515548"
+    },
+    "Order Management Endpoints": {
+      "success": true,
+      "details": "Orders retrieved successfully, Count: 0",
+      "timestamp": "2025-07-15T15:39:50.956842"
+    },
+    "Frontend Dashboard Access": {
+      "success": false,
+      "details": "Dashboard data structure valid: False",
+      "timestamp": "2025-07-15T15:39:52.904265"
+    }
+  }
+}

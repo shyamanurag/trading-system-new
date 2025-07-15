@@ -27,7 +27,7 @@ migrations:
   enabled: true
   directory: migrations
   table: alembic_version
-  auto_migrate: false
+  auto_migrate: true
   backup_before_migrate: true
   backup_directory: backups/migrations
   version_format: %%(year)d%%(month).2d%%(day).2d_%%(hour).2d%%(minute).2d

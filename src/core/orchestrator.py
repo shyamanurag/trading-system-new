@@ -108,7 +108,7 @@ class TradeEngine:
             
             return True
             
-        except Exception as e:
+                    except Exception as e:
             self.logger.error(f"TradeEngine initialization failed: {e}")
             return False
             
@@ -136,15 +136,15 @@ class TradeEngine:
                     elif isinstance(self.executed_trades, dict):
                         trade_id = f"TRADE_{len(self.executed_trades) + 1}"
                         self.executed_trades[trade_id] = {
-                            'signal': signal,
+                    'signal': signal,
                             'executed_at': datetime.now(),
                             'status': 'executed'
                         }
                     
                     # Process signal
                     signal['processed'] = True
-                    
-                except Exception as e:
+                
+        except Exception as e:
                     self.logger.error(f"Error processing signal: {e}")
                     signal['processed'] = False
                     
@@ -169,11 +169,11 @@ class TradeEngine:
             
             # Simulate order execution for paper trading
             self.logger.info(f"✅ Order executed: {order_id}")
-            
+                
         except Exception as e:
             self.logger.error(f"Error processing signal through order manager: {e}")
             raise
-            
+
     async def _process_signal_through_zerodha(self, signal: Dict):
         """Process signal through direct Zerodha integration"""
         try:
@@ -183,7 +183,7 @@ class TradeEngine:
                 self.logger.info(f"🔧 MOCK order placed: {order_id} for {signal.get('symbol', 'UNKNOWN')}")
                 self.logger.info(f"✅ Order executed: {order_id}")
                 return
-                
+            
             # Create order
             order = self._create_order_from_signal(signal)
             
@@ -326,20 +326,20 @@ class TradingOrchestrator:
         self.logger.info("🔧 TrueData auto-init disabled to prevent deployment overlap")
         
         # Initialize TrueData access
-        self.logger.info("🚀 Initializing Trading Orchestrator with simple TrueData access...")
-        
+            self.logger.info("🚀 Initializing Trading Orchestrator with simple TrueData access...")
+            
         # Test TrueData cache access
-        self.logger.info("🔄 Testing access to existing TrueData cache...")
+            self.logger.info("🔄 Testing access to existing TrueData cache...")
         
-        try:
-            from data.truedata_client import live_market_data
-            if live_market_data:
+            try:
+                from data.truedata_client import live_market_data
+                if live_market_data:
                 self.logger.info(f"✅ TrueData cache contains {len(live_market_data)} symbols")
                 self.truedata_cache = live_market_data
-            else:
+                else:
                 self.logger.info("⚠️ TrueData cache is empty - will use API fallback")
                 self.truedata_cache = {}
-        except ImportError:
+            except ImportError:
             self.logger.error("❌ TrueData client not available")
             self.truedata_cache = {}
         
@@ -356,7 +356,7 @@ class TradingOrchestrator:
         # Initialize risk manager
         from src.core.risk_manager import RiskManager
         from src.events import EventBus
-        self.event_bus = EventBus()
+            self.event_bus = EventBus()
         
         # CRITICAL FIX: Create proper config for RiskManager with Redis settings
         risk_manager_config = {
@@ -429,7 +429,7 @@ class TradingOrchestrator:
                             await self.redis_manager.ping()
                             self.logger.info(f"✅ Redis connected successfully (attempt {attempt + 1})")
                             break
-                        except Exception as e:
+            except Exception as e:
                             if attempt == 4:  # Last attempt
                                 self.logger.error(f"❌ Redis connection failed after {attempt + 1} attempts: {e}")
                                 self.redis_client = None  # Disable Redis on failure
@@ -502,7 +502,7 @@ class TradingOrchestrator:
             
             # Initialize trade engine
             if hasattr(self, 'trade_engine'):
-                await self.trade_engine.initialize()
+            await self.trade_engine.initialize()
                 self.logger.info("✅ Trade engine initialized")
             
             # Load strategies
@@ -844,7 +844,7 @@ class TradingOrchestrator:
                             
                             await redis_client.close()
                         
-                    except Exception as redis_error:
+                except Exception as redis_error:
                         self.logger.warning(f"Could not check Redis for stored token: {redis_error}")
                 
                 # Create proper broker instance and config
@@ -939,54 +939,70 @@ class TradingOrchestrator:
         try:
             # STRATEGY 1: Redis cache (PRIMARY - fixes process isolation)
             if not hasattr(self, 'redis_client') or not self.redis_client:
-                try:
-                    import redis
-                except ImportError:
-                    self.logger.warning("Redis package not available - using fallback")
-                    redis = None
+                # Check if we recently failed to connect (add cooldown)
+                if not hasattr(self, '_redis_last_attempt'):
+                    self._redis_last_attempt = 0
+                    self._redis_failure_count = 0
                 
-                if redis:
-                    import json
-                    
-                    redis_host = os.environ.get('REDIS_HOST', 'localhost')
-                    redis_port = int(os.environ.get('REDIS_PORT', 6379))
-                    redis_password = os.environ.get('REDIS_PASSWORD')
-                    
-                    try:
-                        # CRITICAL FIX: Enhanced Redis connection with resilience
-                        connection_pool = redis.ConnectionPool(
-                        host=redis_host,
-                        port=redis_port,
-                        password=redis_password,
-                        decode_responses=True,
-                            socket_connect_timeout=5,  # Reduced timeout
-                            socket_timeout=5,
-                            socket_keepalive=True,
-                            socket_keepalive_options={},
-                            health_check_interval=60,  # Increased health check interval
-                            max_connections=2,  # Reduced max connections
-                            retry_on_timeout=True,
-                            retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError]
-                        )
-                        
-                        self.redis_client = redis.Redis(connection_pool=connection_pool)
-                        
-                        # Test connection with retry logic
-                        for attempt in range(3):
-                            try:
-                                self.redis_client.ping()
-                                self.logger.info(f"✅ Orchestrator Redis connected (attempt {attempt + 1}): {redis_host}:{redis_port}")
-                                break
-                            except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as e:
-                                if attempt == 2:  # Last attempt
-                                    raise e
-                                await asyncio.sleep(1)  # Wait before retry
-                        
-                    except Exception as redis_error:
-                        self.logger.warning(f"⚠️ Redis connection failed after retries: {redis_error}")
-                        self.redis_client = None
+                import time
+                current_time = time.time()
+                
+                # Implement exponential backoff for Redis reconnection attempts
+                cooldown_period = min(60, self._redis_failure_count * 10)  # Max 60 seconds
+                
+                if current_time - self._redis_last_attempt < cooldown_period:
+                    # Skip Redis connection attempt during cooldown
+                    pass
                 else:
-                    self.redis_client = None
+                    try:
+                        import redis
+                    except ImportError:
+                        self.logger.warning("Redis package not available - using fallback")
+                        redis = None
+                    
+                    if redis:
+                        import json
+                        
+                        redis_host = os.environ.get('REDIS_HOST', 'localhost')
+                        redis_port = int(os.environ.get('REDIS_PORT', 6379))
+                        redis_password = os.environ.get('REDIS_PASSWORD')
+                        
+                        try:
+                            # CRITICAL FIX: Enhanced Redis connection with resilience
+                            connection_pool = redis.ConnectionPool(
+                                host=redis_host,
+                                port=redis_port,
+                                password=redis_password,
+                                decode_responses=True,
+                                socket_connect_timeout=5,  # Reduced timeout
+                                socket_timeout=5,
+                                socket_keepalive=True,
+                                socket_keepalive_options={},
+                                health_check_interval=60,  # Increased health check interval
+                                max_connections=2,  # Reduced max connections
+                                retry_on_timeout=True,
+                                retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError]
+                            )
+                            
+                            self.redis_client = redis.Redis(connection_pool=connection_pool)
+                            
+                            # Test connection with single attempt (no retry loop here)
+                            self.redis_client.ping()
+                            self.logger.info(f"✅ Orchestrator Redis connected: {redis_host}:{redis_port}")
+                            self._redis_failure_count = 0  # Reset failure count on success
+                            
+                        except Exception as redis_error:
+                            self._redis_last_attempt = current_time
+                            self._redis_failure_count += 1
+                            
+                            # Only log every 5th failure to reduce noise
+                            if self._redis_failure_count % 5 == 1:
+                                self.logger.warning(f"⚠️ Redis connection failed after retries: {redis_error}")
+                                self.logger.info(f"🔄 Next Redis attempt in {cooldown_period} seconds")
+                            
+                            self.redis_client = None
+                    else:
+                        self.redis_client = None
             
             # Try to get data from Redis first
             if self.redis_client:
@@ -1008,7 +1024,13 @@ class TradingOrchestrator:
                             self.truedata_cache = parsed_data
                             return parsed_data
                 except Exception as redis_error:
-                    self.logger.warning(f"⚠️ Redis cache read failed: {redis_error}")
+                    # Reduce Redis error logging frequency
+                    if not hasattr(self, '_redis_read_errors'):
+                        self._redis_read_errors = 0
+                    self._redis_read_errors += 1
+                    
+                    if self._redis_read_errors % 10 == 1:  # Log every 10th error
+                        self.logger.warning(f"⚠️ Redis cache read failed: {redis_error}")
             
             # STRATEGY 2: Direct TrueData cache access (FALLBACK)
             from data.truedata_client import live_market_data, get_all_live_data
@@ -1035,18 +1057,18 @@ class TradingOrchestrator:
             
             if aiohttp:
                 try:
-                    async with aiohttp.ClientSession() as session:
-                        # Call the working market data API endpoint
-                        api_url = "http://localhost:8000/api/v1/market-data"
-                        async with session.get(api_url, timeout=5) as response:
-                            if response.status == 200:
-                                api_data = await response.json()
-                                if api_data.get('success') and api_data.get('data'):
-                                    market_data = api_data['data']
-                                    self.logger.info(f"📊 Using market data API: {len(market_data)} symbols")
-                                    return market_data
-                except Exception as api_error:
-                    self.logger.warning(f"API fallback failed: {api_error}")
+                async with aiohttp.ClientSession() as session:
+                    # Call the working market data API endpoint
+                    api_url = "http://localhost:8000/api/v1/market-data"
+                    async with session.get(api_url, timeout=5) as response:
+                        if response.status == 200:
+                            api_data = await response.json()
+                            if api_data.get('success') and api_data.get('data'):
+                                market_data = api_data['data']
+                                self.logger.info(f"📊 Using market data API: {len(market_data)} symbols")
+                                return market_data
+            except Exception as api_error:
+                self.logger.warning(f"API fallback failed: {api_error}")
             
             self.logger.warning("⚠️ All TrueData access methods failed")
             return {}

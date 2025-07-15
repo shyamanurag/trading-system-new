@@ -347,4 +347,49 @@ class TradeEngine:
             self.paper_orders[order_id]['status'] = 'CANCELLED'
             self.logger.info(f"📋 Paper order cancelled: {order_id}")
             return True
-        return False 
+        return False
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get trade engine statistics"""
+        try:
+            executed_count = len([order for order in self.paper_orders.values() if order.get('status') == 'EXECUTED'])
+            pending_count = len([order for order in self.paper_orders.values() if order.get('status') == 'PENDING'])
+            cancelled_count = len([order for order in self.paper_orders.values() if order.get('status') == 'CANCELLED'])
+            
+            return {
+                'total_orders': len(self.paper_orders),
+                'executed_trades': executed_count,
+                'pending_orders': pending_count,
+                'cancelled_orders': cancelled_count,
+                'paper_trading_enabled': self.paper_trading_enabled,
+                'signals_processed': len(self.pending_signals),
+                'rate_limit_per_second': self.signal_rate_limit,
+                'last_signal_time': self.last_signal_time,
+                'engine_status': 'active' if hasattr(self, 'is_running') and getattr(self, 'is_running', False) else 'inactive'
+            }
+        except Exception as e:
+            self.logger.error(f"Error getting trade engine statistics: {e}")
+            return {
+                'total_orders': 0,
+                'executed_trades': 0,
+                'pending_orders': 0,
+                'cancelled_orders': 0,
+                'paper_trading_enabled': self.paper_trading_enabled,
+                'signals_processed': 0,
+                'rate_limit_per_second': self.signal_rate_limit,
+                'last_signal_time': self.last_signal_time,
+                'engine_status': 'error'
+            }
+    
+    async def get_status(self) -> Dict[str, Any]:
+        """Get trade engine status (async version)"""
+        stats = self.get_statistics()
+        stats.update({
+            'initialized': hasattr(self, 'is_initialized') and getattr(self, 'is_initialized', False),
+            'running': hasattr(self, 'is_running') and getattr(self, 'is_running', False),
+            'order_manager_available': self.order_manager is not None,
+            'zerodha_client_available': self.zerodha_client is not None,
+            'risk_manager_available': self.risk_manager is not None,
+            'timestamp': datetime.now().isoformat()
+        })
+        return stats 

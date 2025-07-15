@@ -1,0 +1,28 @@
+CRITICAL DEPLOYMENT TRIGGER - MIGRATION 010 FIX
+================================================
+
+Timestamp: 2025-07-15 09:45:00
+Issue: Paper trading database persistence failure
+Error: Foreign key constraint preventing users table schema fix
+
+PROBLEM ANALYSIS:
+- Previous migration 009 failed due to existing foreign key dependencies
+- Users table has 'id' column but missing PRIMARY KEY constraint
+- Foreign keys (trades_user_id_fkey, user_capital_user_id_fkey) depend on existing constraint
+- Cannot drop existing constraint without CASCADE
+
+SOLUTION IMPLEMENTED:
+- Created Migration 010: Safer approach that doesn't drop existing constraints
+- Updated auto-migration runner to use migration 010 instead of 009
+- Migration 010 intelligently handles existing schema without breaking dependencies
+
+COMMIT: a8d5979 - "fix: add migration 010 to properly handle users table primary key constraint"
+
+EXPECTED RESULT:
+✅ Migration 010 will execute successfully during startup
+✅ Users table will have proper PRIMARY KEY on id column
+✅ Paper trading trades will save to database successfully  
+✅ Frontend will display executed trades
+✅ No more "column id does not exist" errors
+
+This deployment rebuild is CRITICAL for restoring paper trading database persistence. 
