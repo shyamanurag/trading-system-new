@@ -1,7 +1,7 @@
 """
 Database manager for the trading system
 """
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
 from contextlib import contextmanager
@@ -43,7 +43,6 @@ class DatabaseManager:
             )
             
             # Test the connection
-            from sqlalchemy import text
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             
@@ -55,6 +54,10 @@ class DatabaseManager:
             )
             
             logger.info("Database connection initialized successfully")
+            
+            # CRITICAL FIX: Apply migrations automatically
+            self._apply_migrations()
+            
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Failed to initialize database: {error_msg}")
@@ -67,6 +70,48 @@ class DatabaseManager:
             # Don't raise the error - let the app continue without database
             self.engine = None
             self.SessionLocal = None
+    
+    def _apply_migrations(self):
+        """Apply database migrations if needed"""
+        try:
+            import os
+            from pathlib import Path
+            
+            # Check if we're in production and should apply migrations
+            environment = os.getenv('ENVIRONMENT', 'development')
+            
+            if environment == 'production':
+                logger.info("🔄 Production environment detected - applying critical migrations...")
+                
+                # Apply migration 009 specifically to fix users table
+                migration_009_path = Path("database/migrations/009_fix_users_table_id_column.sql")
+                if migration_009_path.exists():
+                    logger.info("🔧 Applying migration 009 to fix users table schema...")
+                    
+                    with open(migration_009_path, 'r') as f:
+                        migration_sql = f.read()
+                    
+                    # Execute the migration
+                    with self.engine.connect() as conn:
+                        # Execute in a transaction
+                        with conn.begin():
+                            conn.execute(text(migration_sql))
+                    
+                    logger.info("✅ Migration 009 applied successfully!")
+                    
+                    # Verify the fix
+                    with self.engine.connect() as conn:
+                        result = conn.execute(text("SELECT id FROM users LIMIT 1"))
+                        logger.info("✅ Verified: users table now has id column")
+                
+                else:
+                    logger.warning("⚠️ Migration 009 file not found, skipping")
+            else:
+                logger.info("📝 Development environment - skipping auto-migrations")
+                
+        except Exception as e:
+            logger.error(f"❌ Migration application failed: {e}")
+            logger.info("🔄 Continuing without migration - check schema manually")
     
     @contextmanager
     def get_session(self) -> Session:
