@@ -99,6 +99,25 @@ class ProductionRedisManager:
             await self.initialize()
         return self.redis_client
     
+    async def ping(self) -> bool:
+        """Ping Redis server to test connection"""
+        try:
+            if self.redis_client:
+                await self.redis_client.ping()
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"❌ Redis ping failed: {e}")
+            return False
+    
+    async def safe_get(self, key: str) -> Optional[str]:
+        """Safe get operation with error handling"""
+        return await self.get_with_retry(key)
+    
+    async def safe_keys(self, pattern: str) -> list:
+        """Safe keys operation with error handling"""
+        return await self.keys_with_retry(pattern)
+    
     async def close(self):
         """Close Redis connection"""
         if self.redis_client:
