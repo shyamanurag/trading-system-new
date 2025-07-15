@@ -157,22 +157,15 @@ class TradeEngine:
             
             db_session = next(get_db())
             if db_session:
-                # Find an existing user_id or use a default
+                # Find the existing user_id - fail clearly if none exists
                 user_query = text("SELECT id FROM users LIMIT 1")
                 user_result = db_session.execute(user_query)
                 user_row = user_result.fetchone()
                 
-                if user_row:
-                    user_id = user_row[0]
-                else:
-                    # Create a default paper trading user if none exists
-                    create_user_query = text("""
-                        INSERT INTO users (username, email, password_hash, full_name)
-                        VALUES ('paper_trader', 'paper@trading.com', 'paper_hash', 'Paper Trading User')
-                        RETURNING id
-                    """)
-                    create_result = db_session.execute(create_user_query)
-                    user_id = create_result.fetchone()[0]
+                if not user_row:
+                    raise Exception("No users found in database. Paper trading requires at least one user to exist.")
+                
+                user_id = user_row[0]
                 
                 # Insert paper order into orders table
                 query = text("""
@@ -214,12 +207,16 @@ class TradeEngine:
             
             db_session = next(get_db())
             if db_session:
-                # Use provided user_id or find existing one
+                # Use provided user_id or find existing one - fail clearly if none exists
                 if user_id is None:
                     user_query = text("SELECT id FROM users LIMIT 1")
                     user_result = db_session.execute(user_query)
                     user_row = user_result.fetchone()
-                    user_id = user_row[0] if user_row else 1
+                    
+                    if not user_row:
+                        raise Exception("No users found in database. Paper trading requires at least one user to exist.")
+                    
+                    user_id = user_row[0]
                 
                 # Insert paper trade into trades table (let trade_id auto-increment)
                 query = text("""
