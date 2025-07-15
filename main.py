@@ -67,6 +67,7 @@ router_imports = {
     'trade_management': ('src.api.trade_management', 'router'),
     'zerodha_auth': ('src.api.zerodha_auth', 'router'),
     'zerodha_daily_auth': ('src.api.zerodha_daily_auth', 'router'),
+    'token_diagnostic': ('src.api.token_diagnostic', 'router'),
     'zerodha_multi_user': ('src.api.zerodha_multi_user_auth', 'router'),
     'zerodha_manual_auth': ('src.api.zerodha_manual_auth', 'router'),
     'zerodha_refresh': ('src.api.zerodha_refresh', 'router'),
@@ -643,6 +644,7 @@ router_configs = [
     # External integrations
     ('zerodha_auth', '', ('zerodha',)),  # Already has /api/zerodha prefix
     ('zerodha_daily_auth', '', ('zerodha-daily',)),  # Mount at root, has /zerodha prefix
+    ('token_diagnostic', '/api/v1', ('token-diagnostic',)),  # Token debugging endpoints
     ('zerodha_multi_user', '', ('zerodha-multi',)),  # Mount at root, has /zerodha-multi prefix
     ('zerodha_manual_auth', '', ('zerodha-manual',)),  # Mount at root - router already has /auth/zerodha prefix
     ('daily_auth_workflow', '', ('daily-auth',)),  # Mount at root, has /daily-auth prefix

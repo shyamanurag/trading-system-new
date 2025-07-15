@@ -63,6 +63,13 @@ except ImportError:
         async def connect(self):
             return False
 
+# Import the new Redis manager
+try:
+    from src.core.redis_connection_manager import redis_manager
+except ImportError:
+    # Fallback if Redis manager is not available
+    redis_manager = None
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -323,6 +330,7 @@ class TradingOrchestrator:
         
         # Test TrueData cache access
         self.logger.info("🔄 Testing access to existing TrueData cache...")
+        
         try:
             from data.truedata_client import live_market_data
             if live_market_data:
@@ -335,68 +343,10 @@ class TradingOrchestrator:
             self.logger.error("❌ TrueData client not available")
             self.truedata_cache = {}
         
-        # Initialize Redis connection with enhanced error handling
-        self.logger.info("🔄 Initializing Redis connection...")
-        try:
-            # Import redis directly for sync initialization
-            import redis.asyncio as redis
-            import os
-            import ssl
-            from urllib.parse import urlparse
-            
-            # CRITICAL FIX: Use DigitalOcean Redis configuration
-            redis_url = os.getenv('REDIS_URL')
-            
-            if redis_url:
-                # Parse the Redis URL provided by DigitalOcean
-                parsed = urlparse(redis_url)
-                
-                # Simple Redis config that works with all versions
-                redis_config = {
-                    'host': parsed.hostname,
-                    'port': parsed.port or 25061,
-                    'password': parsed.password,
-                    'db': int(parsed.path[1:]) if parsed.path and len(parsed.path) > 1 else 0,
-                    'decode_responses': True,
-                    'socket_timeout': 10,
-                    'socket_connect_timeout': 10
-                }
-                
-                # Add SSL only if explicitly required
-                if redis_url.startswith('rediss://') or 'ondigitalocean.com' in str(parsed.hostname):
-                    redis_config['ssl'] = True
-                    redis_config['ssl_cert_reqs'] = None
-                    redis_config['ssl_check_hostname'] = False
-                
-                self.logger.info(f"🔗 Using DigitalOcean Redis: {redis_config['host']}:{redis_config['port']}")
-                
-                try:
-                    # Create Redis client directly with simple config
-                    self.redis = redis.Redis(**redis_config)
-                    
-                    # Test connection with retry logic - MOVE TO ASYNC initialize()
-                    # Cannot use await in __init__ method
-                    self.logger.info(f"✅ Redis client created (will test connection during initialize)")
-                    
-                    # Set longer TTL for symbol data to prevent loss
-                    self.redis_ttl = 3600  # 1 hour TTL for symbol data
-                    
-                except Exception as e:
-                    self.logger.error(f"❌ Redis connection failed: {e}")
-                    self.redis = None
-            else:
-                self.logger.warning("⚠️ No REDIS_URL provided - using memory-only mode")
-                self.redis = None
-                
-        except Exception as e:
-            self.logger.error(f"❌ Redis connection setup failed: {e}")
-            # CRITICAL: Don't continue without Redis in production
-            if os.getenv('ENVIRONMENT') == 'production':
-                self.logger.error("🚨 PRODUCTION ERROR: Redis connection required for production deployment!")
-                raise Exception(f"Redis connection required for production: {e}")
-            else:
-                self.logger.info("🔄 Development mode: System will continue in memory-only mode")
-                self.redis = None
+        # Initialize Redis connection with enhanced error handling using new manager
+        self.logger.info("🔄 Initializing Redis connection with ProductionRedisManager...")
+        self.redis_client = None
+        self.redis_manager = redis_manager
         
         # Initialize position tracker
         from src.core.position_tracker import ProductionPositionTracker
@@ -414,7 +364,7 @@ class TradingOrchestrator:
                 'host': os.environ.get('REDIS_HOST', 'localhost'),
                 'port': int(os.environ.get('REDIS_PORT', 6379)),
                 'db': int(os.environ.get('REDIS_DB', 0))
-            } if self.redis else None
+            } if self.redis_manager else None
         }
         self.risk_manager = RiskManager(risk_manager_config, self.position_tracker, self.event_bus)
         self.logger.info("Risk manager initialized")
@@ -471,29 +421,29 @@ class TradingOrchestrator:
             self.logger.info("🚀 Initializing TradingOrchestrator async components...")
             
             # CRITICAL FIX: Test Redis connection with retry logic (moved from __init__)
-            if self.redis:
+            if self.redis_manager:
                 try:
                     # Test connection with retry logic
                     for attempt in range(5):  # Increased retry attempts
                         try:
-                            await self.redis.ping()
+                            await self.redis_manager.ping()
                             self.logger.info(f"✅ Redis connected successfully (attempt {attempt + 1})")
                             break
                         except Exception as e:
                             if attempt == 4:  # Last attempt
                                 self.logger.error(f"❌ Redis connection failed after {attempt + 1} attempts: {e}")
-                                self.redis = None  # Disable Redis on failure
+                                self.redis_client = None  # Disable Redis on failure
                                 break
                             self.logger.warning(f"⚠️ Redis connection attempt {attempt + 1} failed: {e}, retrying...")
                             await asyncio.sleep(2 ** attempt)  # Exponential backoff
                 except Exception as e:
                     self.logger.error(f"❌ Redis connection test failed: {e}")
-                    self.redis = None
+                    self.redis_client = None
             
             # Test Redis connection (enhanced with retry)
-            if self.redis:
+            if self.redis_manager:
                 try:
-                    await self.redis.ping()
+                    await self.redis_manager.ping()
                     self.logger.info("✅ Redis connection verified and working")
                 except Exception as e:
                     self.logger.error(f"❌ Redis connection test failed: {e}")
@@ -528,15 +478,15 @@ class TradingOrchestrator:
                             }
                             
                             # Create new Redis client with enhanced config
-                            self.redis = redis.Redis(**redis_config)
-                            await self.redis.ping()
+                            self.redis_client = redis.Redis(**redis_config)
+                            await self.redis_client.ping()
                             self.logger.info("✅ Redis reconnected successfully with enhanced config")
                         except Exception as reconnect_error:
                             self.logger.warning(f"⚠️ Redis reconnection failed: {reconnect_error}")
-                            self.redis = None
+                            self.redis_client = None
                     else:
                         self.logger.info("🔄 Development mode: System will continue in memory-only mode")
-                        self.redis = None
+                        self.redis_client = None
             else:
                 self.logger.info("ℹ️ Redis not configured - using memory-only mode")
             
@@ -625,7 +575,7 @@ class TradingOrchestrator:
                     'host': os.environ.get('REDIS_HOST', 'localhost'),
                     'port': int(os.environ.get('REDIS_PORT', 6379)),
                     'db': int(os.environ.get('REDIS_DB', 0))
-                } if self.redis else None
+                } if self.redis_manager else None
             }
             
             # CRITICAL FIX: Add syntax error handling
@@ -653,7 +603,7 @@ class TradingOrchestrator:
             config = {
                 'zerodha_client': self.zerodha_client,
                 'redis_url': redis_url,  # Add redis_url for consistency
-                'redis': self.redis
+                'redis': self.redis_manager
             }
             
             self.logger.info("🔄 Attempting SimpleOrderManager initialization...")
@@ -835,43 +785,63 @@ class TradingOrchestrator:
                 # Get access token from environment or Redis
                 access_token = os.getenv('ZERODHA_ACCESS_TOKEN')
                 
-                # If no access token in environment, check Redis with multiple key patterns
+                # If no access token in environment, check Redis with multiple key patterns using new manager
                 if not access_token:
                     try:
-                        import redis.asyncio as redis
-                        redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-                        redis_client = redis.from_url(redis_url)
-                        
-                        # Check multiple Redis key patterns to find the token
-                        token_keys_to_check = [
-                            f"zerodha:token:{user_id}",  # Standard pattern with env user_id
-                            f"zerodha:token:PAPER_TRADER_001",  # Frontend user_id pattern
-                            f"zerodha:token:PAPER_TRADER_MAIN",  # Alternative paper trader ID
-                            f"zerodha:token:QSW899",  # Direct user ID from environment
-                            f"zerodha:{user_id}:access_token",  # Alternative pattern
-                            f"zerodha:access_token",  # Simple pattern
-                            f"zerodha_token_{user_id}",  # Alternative format
-                        ]
-                        
-                        for key in token_keys_to_check:
-                            stored_token = await redis_client.get(key)
-                            if stored_token:
-                                access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
-                                self.logger.info(f"✅ Found Zerodha token in Redis with key: {key}")
-                                break
-                        
-                        # If still no token, check all zerodha:token:* keys
-                        if not access_token:
-                            self.logger.info("🔍 Searching all zerodha:token:* keys in Redis...")
-                            all_keys = await redis_client.keys("zerodha:token:*")
-                            for key in all_keys:
+                        # Use the new Redis manager for better connection handling
+                        if self.redis_manager:
+                            await self.redis_manager.initialize()
+                            
+                            # Check multiple Redis key patterns to find the token
+                            token_keys_to_check = [
+                                f"zerodha:token:{user_id}",  # Standard pattern with env user_id
+                                f"zerodha:token:PAPER_TRADER_001",  # Frontend user_id pattern
+                                f"zerodha:token:PAPER_TRADER_MAIN",  # Alternative paper trader ID
+                                f"zerodha:token:QSW899",  # Direct user ID from environment
+                                f"zerodha:{user_id}:access_token",  # Alternative pattern
+                                f"zerodha:access_token",  # Simple pattern
+                                f"zerodha_token_{user_id}",  # Alternative format
+                            ]
+                            
+                            for key in token_keys_to_check:
+                                stored_token = await self.redis_manager.safe_get(key)
+                                if stored_token:
+                                    access_token = stored_token
+                                    self.logger.info(f"✅ Found Zerodha token in Redis with key: {key}")
+                                    break
+                            
+                            # If still no token, check all zerodha:token:* keys
+                            if not access_token:
+                                self.logger.info("🔍 Searching all zerodha:token:* keys in Redis...")
+                                all_keys = await self.redis_manager.safe_keys("zerodha:token:*")
+                                for key in all_keys:
+                                    stored_token = await self.redis_manager.safe_get(key)
+                                    if stored_token:
+                                        access_token = stored_token
+                                        self.logger.info(f"✅ Found Zerodha token in Redis with key: {key}")
+                                        break
+                        else:
+                            # Fallback to direct Redis connection
+                            import redis.asyncio as redis
+                            redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+                            redis_client = redis.from_url(redis_url)
+                            
+                            # Check multiple Redis key patterns to find the token
+                            token_keys_to_check = [
+                                f"zerodha:token:{user_id}",  # Standard pattern with env user_id
+                                f"zerodha:token:PAPER_TRADER_001",  # Frontend user_id pattern
+                                f"zerodha:token:PAPER_TRADER_MAIN",  # Alternative paper trader ID
+                                f"zerodha:token:QSW899",  # Direct user ID from environment
+                            ]
+                            
+                            for key in token_keys_to_check:
                                 stored_token = await redis_client.get(key)
                                 if stored_token:
                                     access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
                                     self.logger.info(f"✅ Found Zerodha token in Redis with key: {key}")
                                     break
-                        
-                        await redis_client.close()
+                            
+                            await redis_client.close()
                         
                     except Exception as redis_error:
                         self.logger.warning(f"Could not check Redis for stored token: {redis_error}")
