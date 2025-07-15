@@ -35,55 +35,29 @@ class ZerodhaIntegration:
         self.mock_mode = config.get('mock_mode', False)
         self.sandbox_mode = config.get('sandbox_mode', False)
         
-        # Initialize KiteConnect
-        if self.api_key:
-            # Use sandbox URL for paper trading
-            if self.sandbox_mode:
-                self.kite = KiteConnect(api_key=self.api_key, root="https://sandbox.kite.trade")
-                logger.info("🧪 Zerodha initialized in SANDBOX mode for paper trading")
-            else:
-                self.kite = KiteConnect(api_key=self.api_key)
-                logger.info("🔴 Zerodha initialized in LIVE mode")
+        # Initialize KiteConnect for REAL trading
+        if self.api_key and KiteConnect:
+            self.kite = KiteConnect(api_key=self.api_key)
+            logger.info("🔴 Zerodha initialized for REAL trading")
                 
             if self.access_token:
                 self.kite.set_access_token(self.access_token)
+                logger.info("✅ Zerodha access token set")
         else:
             self.kite = None
-            logger.warning("Zerodha API key not provided - using mock mode")
+            logger.warning("Zerodha API key not provided or KiteConnect not available")
             self.mock_mode = True  # Force mock mode if no API key
         
         self.is_connected = False
-        self.ticker_connected = False  # Add missing ticker_connected attribute
-        
-        # ELIMINATED: Mock order system removed - no fake orders allowed
-        # Original violation: mock_orders dictionary created fake order tracking
-        # This could make orders appear successful when they weren't actually placed
+        self.ticker_connected = False
         
         # Rate limiting
         self.last_order_time = 0
         self.order_rate_limit = 1.0  # 1 second between orders
         
     async def place_order(self, order_params: Dict) -> Optional[str]:
-        """Place order with proper validation and execution"""
+        """Place REAL order on Zerodha"""
         try:
-            # CRITICAL FIX: Check for paper trading mode first
-            paper_trading_enabled = os.getenv('PAPER_TRADING', 'false').lower() == 'true'
-            
-            if paper_trading_enabled or self.mock_mode or self.sandbox_mode:
-                # PAPER TRADING MODE: Simulate order placement
-                order_id = f"PAPER_{int(time.time() * 1000)}"
-                symbol = order_params.get('symbol', 'UNKNOWN')
-                action = order_params.get('action', order_params.get('transaction_type', 'BUY'))
-                quantity = order_params.get('quantity', 0)
-                price = order_params.get('price', order_params.get('entry_price', 0))
-                
-                logger.info(f"📋 PAPER TRADING: Order simulated - {order_id}")
-                logger.info(f"   Symbol: {symbol}, Action: {action}, Qty: {quantity}, Price: ₹{price}")
-                logger.info(f"   Mode: Paper Trading Enabled")
-                
-                # Return simulated order ID
-                return order_id
-            
             # Validate order parameters
             if not self._validate_order_params(order_params):
                 logger.error("❌ Order validation failed")
@@ -96,33 +70,56 @@ class ZerodhaIntegration:
                 logger.info(f"⏱️ Rate limiting: waiting {wait_time:.2f}s")
                 await asyncio.sleep(wait_time)
             
+            # Check if we have valid Zerodha connection
             if not self.kite or not self.access_token:
-                logger.error("❌ Zerodha order rejected: No valid API credentials - cannot place real order")
-                raise ConnectionError("Cannot place order: No valid Zerodha API credentials")
+                logger.error("❌ Zerodha order rejected: No valid API credentials")
+                return None
             
             # Map signal parameters to Zerodha API format
             action = order_params.get('action', '').upper()
             if not action:
-                action = order_params.get('side', '').upper()  # Try alternative field
+                action = order_params.get('transaction_type', '').upper()
+            if not action:
+                action = order_params.get('side', '').upper()
             if not action:
                 action = 'BUY'  # Default to BUY if no action specified
                 
+            symbol = order_params.get('symbol', '')
+            quantity = int(order_params.get('quantity', 0))
+            
+            # Build Zerodha order parameters
             zerodha_params = {
                 'variety': self.kite.VARIETY_REGULAR,
-                'exchange': self._get_exchange_for_symbol(order_params.get('symbol', '')),
-                'tradingsymbol': self._map_symbol_to_exchange(order_params.get('symbol', '')),
-                'transaction_type': action,  # BUY/SELL
-                'quantity': int(order_params.get('quantity', 0)),
+                'exchange': self._get_exchange_for_symbol(symbol),
+                'tradingsymbol': self._map_symbol_to_exchange(symbol),
+                'transaction_type': action,
+                'quantity': quantity,
                 'product': order_params.get('product', self.kite.PRODUCT_MIS),
                 'order_type': order_params.get('order_type', self.kite.ORDER_TYPE_MARKET),
-                'price': order_params.get('price') or order_params.get('entry_price'),
                 'validity': order_params.get('validity', self.kite.VALIDITY_DAY),
-                'disclosed_quantity': order_params.get('disclosed_quantity'),
-                'trigger_price': order_params.get('trigger_price') or order_params.get('stop_loss'),
                 'tag': order_params.get('tag', 'ALGO_TRADE')
             }
             
-            # Place the order
+            # Add price for limit orders
+            if zerodha_params['order_type'] != self.kite.ORDER_TYPE_MARKET:
+                price = order_params.get('price') or order_params.get('entry_price')
+                if price:
+                    zerodha_params['price'] = float(price)
+            
+            # Add trigger price for stop loss orders
+            trigger_price = order_params.get('trigger_price') or order_params.get('stop_loss')
+            if trigger_price:
+                zerodha_params['trigger_price'] = float(trigger_price)
+            
+            # Add disclosed quantity if specified
+            disclosed_quantity = order_params.get('disclosed_quantity')
+            if disclosed_quantity:
+                zerodha_params['disclosed_quantity'] = int(disclosed_quantity)
+            
+            logger.info(f"🔄 Placing REAL Zerodha order: {symbol} {action} {quantity}")
+            logger.info(f"   Exchange: {zerodha_params['exchange']}, Product: {zerodha_params['product']}")
+            
+            # Place the REAL order
             order_response = await self._async_api_call(
                 self.kite.place_order,
                 **zerodha_params
@@ -130,7 +127,8 @@ class ZerodhaIntegration:
             
             if order_response and 'order_id' in order_response:
                 order_id = order_response['order_id']
-                logger.info(f"✅ REAL Zerodha order placed: {order_id} for {order_params.get('symbol')}")
+                logger.info(f"✅ REAL Zerodha order placed successfully: {order_id}")
+                logger.info(f"   Symbol: {symbol}, Action: {action}, Quantity: {quantity}")
                 self.last_order_time = time.time()
                 return order_id
             else:
@@ -138,7 +136,7 @@ class ZerodhaIntegration:
                 return None
                 
         except Exception as e:
-            logger.error(f"❌ Error placing order: {e}")
+            logger.error(f"❌ Error placing REAL order: {e}")
             return None
             
     async def _async_api_call(self, func, *args, **kwargs):
@@ -181,18 +179,34 @@ class ZerodhaIntegration:
     
     def _validate_order_params(self, order_params: Dict) -> bool:
         """Validate order parameters"""
-        required_fields = ['symbol', 'transaction_type', 'quantity']
-        for field in required_fields:
-            if field not in order_params:
-                logger.error(f"Missing required field: {field}")
-                return False
-        
-        if order_params['quantity'] <= 0:
-            logger.error(f"Invalid quantity: {order_params['quantity']}")
+        # Check for symbol
+        if 'symbol' not in order_params:
+            logger.error("Missing required field: symbol")
             return False
         
-        if order_params['transaction_type'] not in ['BUY', 'SELL']:
-            logger.error(f"Invalid transaction type: {order_params['transaction_type']}")
+        # Check for quantity
+        if 'quantity' not in order_params:
+            logger.error("Missing required field: quantity")
+            return False
+            
+        quantity = order_params['quantity']
+        if quantity <= 0:
+            logger.error(f"Invalid quantity: {quantity}")
+            return False
+        
+        # Check for transaction type (can be action, transaction_type, or side)
+        action = order_params.get('action', '').upper()
+        if not action:
+            action = order_params.get('transaction_type', '').upper()
+        if not action:
+            action = order_params.get('side', '').upper()
+        
+        if not action:
+            logger.error("Missing required field: action/transaction_type/side")
+            return False
+            
+        if action not in ['BUY', 'SELL']:
+            logger.error(f"Invalid transaction type: {action}")
             return False
         
         return True
