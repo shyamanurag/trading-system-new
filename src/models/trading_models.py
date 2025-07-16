@@ -170,7 +170,10 @@ class MarketData(Base):
 class Position(Base):
     """Trading positions"""
     __tablename__ = "positions"
-    __table_args__ = {'extend_existing': True}
+    __table_args__ = {
+        'extend_existing': True,
+        'postgresql_ignore_search_path': False
+    }
     
     position_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)

@@ -286,7 +286,7 @@ class Indexes:
     ORDER_STATUS = "order_status_idx"
 
 # Position Models
-class Position(BaseModel):
+class PositionSchema(BaseModel):
     user_id: str
     symbol: str
     quantity: int
