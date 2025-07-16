@@ -18,7 +18,7 @@ import os
 import json
 import redis.asyncio as redis
 
-from ..models.trading_models import User, Trade, Position, Order
+from ..models.trading_models import User, Trade, TradingPosition, Order
 from ..core.database_schema_manager import DatabaseSchemaManager
 from ..config.database import DatabaseConfig
 
@@ -284,8 +284,8 @@ class DynamicUserManager:
                 raise HTTPException(status_code=404, detail="User not found")
             
             # Check for active positions
-            active_positions = db.query(Position).filter(
-                and_(Position.user_id == user_id, Position.is_active == True)
+            active_positions = db.query(TradingPosition).filter(
+                and_(TradingPosition.user_id == user_id, TradingPosition.status == 'open')
             ).count()
             
             if active_positions > 0:
@@ -350,8 +350,8 @@ class DynamicUserManager:
             win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
             
             # Get active positions
-            active_positions = db.query(Position).filter(
-                and_(Position.user_id == user_id, Position.is_active == True)
+            active_positions = db.query(TradingPosition).filter(
+                and_(TradingPosition.user_id == user_id, TradingPosition.status == 'open')
             ).count()
             
             # Calculate average trade duration (in hours)
@@ -381,8 +381,8 @@ class DynamicUserManager:
                 sharpe_ratio = 0.0
             
             # Calculate available capital (current balance - margin used)
-            margin_used = sum(p.current_value for p in db.query(Position).filter(
-                and_(Position.user_id == user_id, Position.is_active == True)
+            margin_used = sum(p.current_value for p in db.query(TradingPosition).filter(
+                and_(TradingPosition.user_id == user_id, TradingPosition.status == 'open')
             ).all() if p.current_value)
             
             available_capital = user.current_balance - margin_used
@@ -431,8 +431,8 @@ class DynamicUserManager:
             win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
             
             # Get active positions count
-            active_positions = db.query(Position).filter(
-                and_(Position.user_id == user.id, Position.is_active == True)
+            active_positions = db.query(TradingPosition).filter(
+                and_(TradingPosition.user_id == user.id, TradingPosition.status == 'open')
             ).count()
             
             return UserResponse(
@@ -654,9 +654,9 @@ async def get_user_positions(
     """Get user's current positions"""
     db = manager.get_db_session()
     try:
-        query = db.query(Position).filter(Position.user_id == user_id)
+        query = db.query(TradingPosition).filter(TradingPosition.user_id == user_id)
         if active_only:
-            query = query.filter(Position.is_active == True)
+            query = query.filter(TradingPosition.status == 'open')
         
         positions = query.all()
         
@@ -670,7 +670,7 @@ async def get_user_positions(
                 'current_price': float(position.current_price) if position.current_price else None,
                 'current_value': float(position.current_value) if position.current_value else None,
                 'pnl': float(position.pnl) if position.pnl else None,
-                'is_active': position.is_active,
+                'is_active': position.status == 'open',
                 'created_at': position.created_at,
                 'updated_at': position.updated_at
             })
