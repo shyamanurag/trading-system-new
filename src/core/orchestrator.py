@@ -108,7 +108,7 @@ class TradeEngine:
             
             return True
             
-                    except Exception as e:
+        except Exception as e:
             self.logger.error(f"TradeEngine initialization failed: {e}")
             return False
             
@@ -136,7 +136,7 @@ class TradeEngine:
                     elif isinstance(self.executed_trades, dict):
                         trade_id = f"TRADE_{len(self.executed_trades) + 1}"
                         self.executed_trades[trade_id] = {
-                    'signal': signal,
+                            'signal': signal,
                             'executed_at': datetime.now(),
                             'status': 'executed'
                         }
@@ -144,7 +144,7 @@ class TradeEngine:
                     # Process signal
                     signal['processed'] = True
                 
-        except Exception as e:
+                except Exception as e:
                     self.logger.error(f"Error processing signal: {e}")
                     signal['processed'] = False
                     
