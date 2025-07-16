@@ -48,8 +48,8 @@ class DatabaseSchemaManager:
     
     # Define the precise schema for paper_trades table
     PAPER_TRADES_TABLE_SCHEMA = {
-        'id': {'type': 'INTEGER', 'primary_key': True, 'autoincrement': True, 'nullable': False},
-        'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.user_id'},  # Reference user_id, not id
+        'id': {'type': 'SERIAL', 'primary_key': True, 'nullable': False},
+        'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.user_id'},  # Match users.user_id type
         'symbol': {'type': 'VARCHAR(20)', 'nullable': False},
         'action': {'type': 'VARCHAR(10)', 'nullable': False},
         'quantity': {'type': 'INTEGER', 'nullable': False},
