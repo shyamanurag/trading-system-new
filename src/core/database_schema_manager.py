@@ -18,13 +18,13 @@ class DatabaseSchemaManager:
     
     # Define the precise schema for users table
     USERS_TABLE_SCHEMA = {
-        'id': {'type': 'SERIAL', 'primary_key': True, 'nullable': False},  # Correct: Production uses id, not user_id
+        'id': {'type': 'SERIAL', 'primary_key': True, 'nullable': False},
         'email': {'type': 'VARCHAR(255)', 'unique': True, 'nullable': False},
         'username': {'type': 'VARCHAR(50)', 'unique': True, 'nullable': False},
-        'full_name': {'type': 'VARCHAR(100)', 'nullable': False},
+        'full_name': {'type': 'VARCHAR(100)', 'nullable': True},  # Make nullable
         'password_hash': {'type': 'VARCHAR(255)', 'nullable': False},
-        'role': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'trader'},  # Make nullable to match production
-        'status': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'active'},  # Make nullable to match production
+        'role': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'trader'},
+        'status': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'active'},
         'is_active': {'type': 'BOOLEAN', 'nullable': False, 'default': True},
         'broker_account_id': {'type': 'VARCHAR(255)', 'nullable': True},
         'trading_enabled': {'type': 'BOOLEAN', 'nullable': False, 'default': False},
@@ -49,7 +49,7 @@ class DatabaseSchemaManager:
     # Define the precise schema for paper_trades table
     PAPER_TRADES_TABLE_SCHEMA = {
         'id': {'type': 'SERIAL', 'primary_key': True, 'nullable': False},
-        'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.id'},  # Correct: Reference users.id
+        'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.id'},
         'symbol': {'type': 'VARCHAR(20)', 'nullable': False},
         'action': {'type': 'VARCHAR(10)', 'nullable': False},
         'quantity': {'type': 'INTEGER', 'nullable': False},
@@ -62,68 +62,26 @@ class DatabaseSchemaManager:
         'created_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'}
     }
     
-    # Define the precise schema for trades table (production trades)
-    TRADES_TABLE_SCHEMA = {
-        'trade_id': {'type': 'INTEGER', 'primary_key': True, 'autoincrement': True, 'nullable': False},
-        'symbol': {'type': 'VARCHAR(20)', 'nullable': False},
-        'trade_type': {'type': 'VARCHAR(10)', 'nullable': False},
-        'quantity': {'type': 'INTEGER', 'nullable': False},
-        'price': {'type': 'FLOAT', 'nullable': False},
-        'strategy': {'type': 'VARCHAR(50)', 'nullable': True},
-        'commission': {'type': 'FLOAT', 'nullable': True, 'default': 0.0},
-        'executed_at': {'type': 'TIMESTAMP', 'nullable': False},
-        'pnl': {'type': 'FLOAT', 'nullable': True, 'default': 0.0},
-        'pnl_percent': {'type': 'FLOAT', 'nullable': True, 'default': 0.0},
-        'status': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'EXECUTED'},
-        'user_id': {'type': 'INTEGER', 'nullable': True, 'foreign_key': 'users.id'},  # Correct: Reference users.id
-        'created_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'},
-        'updated_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'}
-    }
-    
     def __init__(self, database_url: str):
         self.database_url = database_url
         self.engine = create_engine(database_url)
         
-    def ensure_precise_schema(self) -> Dict[str, Any]:
-        """
-        Ensures the database has the precise schema required.
-        This is not a workaround - this is the correct way to manage schema.
-        """
-        results = {
-            'users_table': {'status': 'unknown', 'actions': []},
-            'paper_trades_table': {'status': 'unknown', 'actions': []},
-            'trades_table': {'status': 'unknown', 'actions': []},
-            'errors': []
-        }
+    def ensure_schema(self) -> Dict[str, Any]:
+        """Ensure all tables exist with precise schema"""
+        results = {}
         
-        try:
-            # Ensure users table exists with correct schema
-            users_result = self._ensure_table('users', self.USERS_TABLE_SCHEMA)
-            results['users_table'] = users_result
-            
-            # Ensure paper_trades table exists with correct schema
-            paper_trades_result = self._ensure_table('paper_trades', self.PAPER_TRADES_TABLE_SCHEMA)
-            results['paper_trades_table'] = paper_trades_result
-            
-            # Ensure trades table exists with correct schema
-            trades_result = self._ensure_table('trades', self.TRADES_TABLE_SCHEMA)
-            results['trades_table'] = trades_result
-            
-            # Ensure default paper trading user exists
+        # Ensure tables in dependency order (users first, then tables that reference it)
+        results['users'] = self._ensure_table('users', self.USERS_TABLE_SCHEMA)
+        results['paper_trades'] = self._ensure_table('paper_trades', self.PAPER_TRADES_TABLE_SCHEMA)
+        
+        # Ensure default user exists (only after schema is correct)
+        if results['users']['status'] in ['created', 'verified', 'updated']:
             self._ensure_default_user()
-            
-            results['status'] = 'success'
-            logger.info("Database schema verification complete - all tables have precise structure")
-            
-        except Exception as e:
-            logger.error(f"Error ensuring database schema: {e}")
-            results['errors'].append(str(e))
-            results['status'] = 'error'
             
         return results
     
     def _generate_create_table_sql(self, table_name: str, schema: Dict[str, Dict[str, Any]]) -> str:
-        """Generate precise CREATE TABLE SQL"""
+        """Generate precise CREATE TABLE SQL with proper constraints"""
         columns = []
         foreign_keys = []
         
@@ -131,45 +89,45 @@ class DatabaseSchemaManager:
         is_postgresql = 'postgresql' in self.database_url
         
         for col_name, col_spec in schema.items():
-            # Handle PostgreSQL vs SQLite differences
-            if col_spec.get('primary_key') and col_spec.get('autoincrement'):
-                if is_postgresql:
-                    # PostgreSQL uses SERIAL for auto-incrementing integers
+            # Handle primary key columns with SERIAL (auto-incrementing)
+            if col_spec.get('primary_key'):
+                if is_postgresql and col_spec.get('type') == 'SERIAL':
                     col_def = f"{col_name} SERIAL PRIMARY KEY"
+                elif is_postgresql:
+                    col_def = f"{col_name} {col_spec['type']} PRIMARY KEY"
                 else:
-                    # SQLite uses INTEGER PRIMARY KEY AUTOINCREMENT
+                    # SQLite
                     col_def = f"{col_name} INTEGER PRIMARY KEY AUTOINCREMENT"
             else:
                 col_def = f"{col_name} {col_spec['type']}"
                 
-                if col_spec.get('primary_key'):
-                    col_def += " PRIMARY KEY"
-                    
-            if not col_spec.get('nullable', True) and not col_spec.get('primary_key'):
-                col_def += " NOT NULL"
+                # Add NOT NULL constraint if specified
+                if not col_spec.get('nullable', True):
+                    col_def += " NOT NULL"
                 
-            if 'default' in col_spec and not col_spec.get('primary_key'):
-                if col_spec['default'] == 'CURRENT_TIMESTAMP':
-                    col_def += f" DEFAULT {col_spec['default']}"
-                elif isinstance(col_spec['default'], bool):
-                    # Handle boolean defaults properly for each database
-                    if is_postgresql:
-                        col_def += f" DEFAULT {str(col_spec['default']).lower()}"
+                # Add DEFAULT clause if specified and not primary key
+                if 'default' in col_spec:
+                    if col_spec['default'] == 'CURRENT_TIMESTAMP':
+                        col_def += f" DEFAULT {col_spec['default']}"
+                    elif isinstance(col_spec['default'], bool):
+                        # Handle boolean defaults properly for each database
+                        if is_postgresql:
+                            col_def += f" DEFAULT {str(col_spec['default']).lower()}"
+                        else:
+                            col_def += f" DEFAULT {1 if col_spec['default'] else 0}"
+                    elif isinstance(col_spec['default'], str):
+                        col_def += f" DEFAULT '{col_spec['default']}'"
                     else:
-                        col_def += f" DEFAULT {1 if col_spec['default'] else 0}"
-                elif isinstance(col_spec['default'], str):
-                    col_def += f" DEFAULT '{col_spec['default']}'"
-                else:
-                    col_def += f" DEFAULT {col_spec['default']}"
-                    
-            if col_spec.get('unique') and not col_spec.get('primary_key'):
-                col_def += " UNIQUE"
+                        col_def += f" DEFAULT {col_spec['default']}"
                 
+                # Add UNIQUE constraint if specified
+                if col_spec.get('unique'):
+                    col_def += " UNIQUE"
+                    
             columns.append(col_def)
             
-            # Collect foreign keys separately
-            if 'foreign_key' in col_spec:
-                # For SQLite, use proper syntax: REFERENCES table(column)
+            # Collect foreign keys separately (only for non-primary key columns)
+            if 'foreign_key' in col_spec and not col_spec.get('primary_key'):
                 ref_table, ref_col = col_spec['foreign_key'].split('.')
                 foreign_keys.append(f"FOREIGN KEY ({col_name}) REFERENCES {ref_table}({ref_col})")
         
@@ -237,6 +195,7 @@ class DatabaseSchemaManager:
                     if table_name not in inspector.get_table_names():
                         # Create table with precise schema
                         create_sql = self._generate_create_table_sql(table_name, schema)
+                        logger.info(f"Creating table {table_name} with SQL: {create_sql}")
                         conn.execute(text(create_sql))
                         result['actions'].append(f"Created table {table_name} with precise schema")
                         result['status'] = 'created'
@@ -248,24 +207,9 @@ class DatabaseSchemaManager:
                         for col_name, col_spec in schema.items():
                             if col_name not in existing_columns:
                                 alter_sql = self._generate_add_column_sql(table_name, col_name, col_spec)
-                                try:
-                                    conn.execute(text(alter_sql))
-                                    result['actions'].append(f"Added column {col_name} to {table_name}")
-                                except Exception as e:
-                                    logger.warning(f"Could not add column {col_name}: {e}")
-                        
-                        # Ensure primary key exists
-                        pk_cols = [col for col, spec in schema.items() if spec.get('primary_key')]
-                        existing_pk = inspector.get_pk_constraint(table_name)
-                        
-                        if pk_cols and not existing_pk['constrained_columns']:
-                            # Add primary key
-                            for pk_col in pk_cols:
-                                try:
-                                    conn.execute(text(f"ALTER TABLE {table_name} ADD PRIMARY KEY ({pk_col})"))
-                                    result['actions'].append(f"Added primary key on {pk_col}")
-                                except Exception as e:
-                                    logger.warning(f"Could not add primary key: {e}")
+                                logger.info(f"Adding missing column {col_name} to {table_name}")
+                                conn.execute(text(alter_sql))
+                                result['actions'].append(f"Added missing column {col_name} to {table_name}")
                         
                         result['status'] = 'verified' if not result['actions'] else 'updated'
                     
@@ -287,57 +231,137 @@ class DatabaseSchemaManager:
     def _ensure_default_user(self):
         """Ensure default paper trading user exists"""
         with self.engine.connect() as conn:
-            # Check if any user exists
+            trans = conn.begin()
             try:
+                # Check if any user exists
                 result = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
                 
                 if result == 0:
-                    # Create default paper trading user using only essential columns that exist
-                    # Use the same approach as our fixed paper_trading_user_manager
-                    try:
-                        insert_sql = """
+                    logger.info("No users found, creating default paper trading user")
+                    
+                    # Create default paper trading user with only required fields
+                    insert_sql = """
                         INSERT INTO users (
-                            username, email, password_hash, full_name,
-                            initial_capital, current_balance, risk_tolerance,
-                            is_active, zerodha_client_id, trading_enabled,
-                            max_daily_trades, max_position_size, created_at, updated_at
+                            username, email, password_hash, 
+                            is_active, trading_enabled,
+                            created_at, updated_at
                         ) VALUES (
                             'PAPER_TRADER_001', 'paper@algoauto.com',
-                            '$2b$12$dummy.hash.paper.trading', 'Paper Trading Account',
-                            100000, 100000, 'medium',
-                            :true_val, 'PAPER', :true_val,
-                            1000, 500000, :now, :now
+                            '$2b$12$dummy.hash.paper.trading',
+                            :is_active_val, :trading_enabled_val,
+                            :now_val, :now_val
                         ) ON CONFLICT (username) DO NOTHING
                         """
-                        
-                        # Handle boolean and timestamp values based on database type
-                        if 'postgresql' in self.database_url:
-                            params = {
-                                'true_val': True,
-                                'now': datetime.now()
-                            }
-                        else:  # SQLite
-                            params = {
-                                'true_val': 1,
-                                'now': datetime.now()
-                            }
-                        
-                        conn.execute(text(insert_sql), params)
-                        conn.commit()
-                        logger.info("Created default paper trading user")
-                    except Exception as e:
-                        logger.warning(f"Could not create default user: {e}")
-                        # Try minimal approach if the above fails
-                        try:
-                            minimal_sql = """
-                            INSERT INTO users (username, email, password_hash, trading_enabled) 
-                            VALUES ('PAPER_TRADER_001', 'paper@algoauto.com', 'dummy_hash', :true_val)
-                            ON CONFLICT (username) DO NOTHING
-                            """
-                            conn.execute(text(minimal_sql), {'true_val': True if 'postgresql' in self.database_url else 1})
-                            conn.commit()
-                            logger.info("Created minimal paper trading user")
-                        except Exception as e2:
-                            logger.error(f"Failed to create any paper trading user: {e2}")
+                    
+                    # Handle database-specific values
+                    if 'postgresql' in self.database_url:
+                        params = {
+                            'is_active_val': True,
+                            'trading_enabled_val': True,
+                            'now_val': datetime.now()
+                        }
+                    else:  # SQLite
+                        params = {
+                            'is_active_val': 1,
+                            'trading_enabled_val': 1,
+                            'now_val': datetime.now()
+                        }
+                    
+                    conn.execute(text(insert_sql), params)
+                    trans.commit()
+                    logger.info("✅ Created default paper trading user successfully")
+                else:
+                    trans.commit()
+                    logger.info(f"Users table already has {result} users")
+                    
             except Exception as e:
-                logger.error(f"Error checking/creating default user: {e}") 
+                trans.rollback()
+                logger.warning(f"Could not ensure default user: {e}")
+                # Try even more minimal approach
+                try:
+                    trans2 = conn.begin()
+                    minimal_sql = """
+                        INSERT INTO users (username, email, password_hash) 
+                        VALUES ('PAPER_TRADER_001', 'paper@algoauto.com', 'dummy_hash')
+                        ON CONFLICT (username) DO NOTHING
+                        """
+                    conn.execute(text(minimal_sql))
+                    trans2.commit()
+                    logger.info("✅ Created minimal paper trading user")
+                except Exception as e2:
+                    trans2.rollback()
+                    logger.error(f"Failed to create any paper trading user: {e2}")
+
+    def ensure_precise_schema(self) -> Dict[str, Any]:
+        """
+        Ensure all database tables have the precise schema required.
+        This is the main entry point called by the application.
+        """
+        logger.info("Starting precise database schema verification...")
+        
+        try:
+            # Run our comprehensive schema check
+            results = self.ensure_schema()
+            
+            # Format results for compatibility with existing code
+            formatted_result = {
+                'status': 'success' if all(
+                    r['status'] in ['created', 'verified', 'updated'] 
+                    for r in results.values() 
+                    if 'status' in r
+                ) else 'error',
+                'users_table': results.get('users', {}),
+                'paper_trades_table': results.get('paper_trades', {}),
+                'actions': [],
+                'errors': []
+            }
+            
+            # Collect all actions and errors
+            for table_name, table_result in results.items():
+                if 'actions' in table_result:
+                    formatted_result['actions'].extend(table_result['actions'])
+                if 'errors' in table_result:
+                    formatted_result['errors'].extend(table_result['errors'])
+            
+            # Log results
+            if formatted_result['status'] == 'success':
+                logger.info("✅ Database schema verification completed successfully")
+                if formatted_result['actions']:
+                    for action in formatted_result['actions']:
+                        logger.info(f"  ✓ {action}")
+            else:
+                logger.error("❌ Database schema verification failed")
+                for error in formatted_result['errors']:
+                    logger.error(f"  ✗ {error}")
+            
+            return formatted_result
+            
+        except Exception as e:
+            logger.error(f"Critical error during schema verification: {e}")
+            return {
+                'status': 'error',
+                'errors': [str(e)],
+                'users_table': {'status': 'error'},
+                'paper_trades_table': {'status': 'error'},
+                'actions': []
+            }
+
+    async def ensure_table_exists(self, table_name: str) -> bool:
+        """
+        Async wrapper for table existence check.
+        Used by some API components.
+        """
+        try:
+            if table_name == 'users':
+                result = self._ensure_table('users', self.USERS_TABLE_SCHEMA)
+            elif table_name == 'paper_trades':
+                result = self._ensure_table('paper_trades', self.PAPER_TRADES_TABLE_SCHEMA)
+            else:
+                logger.warning(f"Unknown table name: {table_name}")
+                return False
+                
+            return result['status'] in ['created', 'verified', 'updated']
+            
+        except Exception as e:
+            logger.error(f"Error ensuring table {table_name} exists: {e}")
+            return False 

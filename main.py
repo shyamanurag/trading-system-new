@@ -90,6 +90,8 @@ router_imports = {
     'debug_endpoints': ('src.api.debug_endpoints', 'router'),
     'orchestrator_debug': ('src.api.orchestrator_debug', 'router'),
     'search': ('src.api.search', 'router'),
+    'dynamic_user_management': ('src.api.dynamic_user_management', 'router'),
+    'user_analytics_service': ('src.api.user_analytics_service', 'router'),
 }
 
 # Import routers dynamically
@@ -619,6 +621,8 @@ router_configs = [
     
     # User management
     ('users', '', ('users',)),  # Already has /api/v1/users prefix
+    ('dynamic_user_management', '', ('dynamic-users',)),  # Already has /api/v1/users/dynamic prefix
+    ('user_analytics_service', '', ('user-analytics',)),  # Already has /api/v1/analytics prefix
     
     # Trading operations
     ('trading_control', '/api/v1/control', ('trading-control',)),

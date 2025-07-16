@@ -76,16 +76,23 @@ async def initialize_system(config: AppConfig) -> Dict[str, Any]:
         # Ensure precise database schema - this is the definitive approach
         logger.info("Ensuring precise database schema...")
         schema_manager = DatabaseSchemaManager(db_config.database_url)
-        schema_result = schema_manager.ensure_precise_schema()
+        result = schema_manager.ensure_precise_schema()
         
-        if schema_result['status'] == 'success':
+        if result['status'] == 'success':
             logger.info("✅ Database schema verified - all tables have precise structure")
         else:
-            logger.error(f"❌ Database schema verification failed: {schema_result['errors']}")
+            logger.error(f"❌ Database schema verification failed: {result['errors']}")
             # Continue anyway - system can work with partial schema
         
         # Initialize Redis connection
         logger.info("Initializing Redis connection...")
+        
+        components['status'] = 'ready'
+        return components
+        
+    except Exception as e:
+        logger.error(f"System initialization failed: {e}")
+        return {'status': 'error', 'error': str(e)}
 
 def create_app():
     """Create FastAPI app for development"""
@@ -94,15 +101,11 @@ def create_app():
     
     # Enhanced app for development with multi-user support
     app = FastAPI(
-        title="Trading System API (Development)",
-        description="Development bootstrap with Multi-User Support - Use main.py for production",
-        version="DEV",
+        title="AlgoAuto Trading System",
+        description="Automated trading system with multi-user support",
+        version="2.0.0",
         lifespan=lifespan
     )
-    
-    # Include new API routers
-    app.include_router(dynamic_user_router, tags=["dynamic-users"])
-    app.include_router(analytics_router, tags=["analytics"])
     
     # Basic health check
     @app.get("/health")

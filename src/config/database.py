@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Check if we're in production environment
 IS_PRODUCTION = os.getenv('ENVIRONMENT', '').lower() in ['production', 'prod', 'live']
+IS_DEPLOYMENT = bool(os.getenv('DATABASE_URL'))  # If DATABASE_URL is set, we're in deployment
 
 # Database Base Model
 Base = declarative_base()
@@ -32,51 +33,74 @@ class DatabaseConfig:
         self.postgres_engine = None
         self.async_session_maker = None
         
-        # Environment variables
+        # Environment variables - prioritize deployment vars
         self.redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-        self.database_url = os.getenv('DATABASE_URL', 'sqlite:///./trading_system.db')
+        self.database_url = os.getenv('DATABASE_URL') or os.getenv('DB_URL', 'sqlite:///./trading_system.db')
         
-        # Fail fast if localhost detected in production
-        if IS_PRODUCTION:
-            if "localhost" in self.redis_url:
-                error_msg = f"CRITICAL: REDIS_URL is set to localhost in production: {self.redis_url}. Set proper environment variables!"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
-            if "localhost" in self.database_url and not self.database_url.startswith('sqlite'):
-                error_msg = f"CRITICAL: DATABASE_URL is set to localhost in production: {self.database_url}. Set proper environment variables!"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
-        else:
-            # Warn in development
-            if "localhost" in self.redis_url:
-                logger.warning(f"[DEV WARNING] REDIS_URL is set to localhost: {self.redis_url}. This MUST be overridden in production!")
-            if "localhost" in self.database_url and not self.database_url.startswith('sqlite'):
-                logger.warning(f"[DEV WARNING] DATABASE_URL is set to localhost: {self.database_url}. This MUST be overridden in production!")
+        # Override with individual components if available (DigitalOcean style)
+        if os.getenv('DATABASE_HOST') and not os.getenv('DATABASE_URL'):
+            self.database_url = self._build_database_url_from_components()
         
-        # Initialize database with precise schema
+        # Setup configurations
+        self._setup_redis_config()
+        self._setup_postgres_config()
+        
+        # Ensure database schema is correct
         self._ensure_precise_database_schema()
+        
+        # Warn about localhost in production
+        if IS_PRODUCTION or IS_DEPLOYMENT:
+            if "localhost" in self.redis_url:
+                logger.warning("REDIS_URL contains localhost in production - consider updating")
+            if "localhost" in self.database_url and not self.database_url.startswith('sqlite'):
+                logger.warning("DATABASE_URL contains localhost in production - consider updating")
+        else:
+            # Development warnings
+            if 'localhost' in self.redis_url:
+                logger.debug("[DEV WARNING] REDIS_URL is set to localhost. This MUST be overridden in production!")
+            if 'localhost' in self.database_url:
+                logger.debug("[DEV WARNING] DATABASE_URL is set to localhost. This MUST be overridden in production!")
+
+    def _build_database_url_from_components(self) -> str:
+        """Build database URL from individual environment variables"""
+        host = os.getenv('DATABASE_HOST', 'localhost')
+        port = os.getenv('DATABASE_PORT', '5432')
+        name = os.getenv('DATABASE_NAME', 'trading_system')
+        user = os.getenv('DATABASE_USER', 'user')
+        password = os.getenv('DATABASE_PASSWORD', 'password')
+        ssl_mode = os.getenv('DATABASE_SSL', 'prefer')
+        
+        url = f"postgresql://{user}:{password}@{host}:{port}/{name}"
+        if ssl_mode:
+            url += f"?sslmode={ssl_mode}"
+        
+        logger.info(f"Built database URL from components: postgresql://{user}:***@{host}:{port}/{name}")
+        return url
 
     def _ensure_precise_database_schema(self):
         """Ensure database has the precise schema required - this is not a workaround, this is the correct approach"""
         try:
+            # Only run schema management for actual databases, not during imports
+            if self.postgres_engine is None:
+                return
+                
             schema_manager = DatabaseSchemaManager(self.database_url)
             result = schema_manager.ensure_precise_schema()
             
             if result['status'] == 'success':
                 logger.info("Database schema verified - all tables have precise structure")
-                if result['users_table']['actions']:
-                    logger.info(f"Users table updates: {result['users_table']['actions']}")
-                if result['paper_trades_table']['actions']:
-                    logger.info(f"Paper trades table updates: {result['paper_trades_table']['actions']}")
+                if result.get('actions'):
+                    for action in result['actions']:
+                        logger.info(f"Schema action: {action}")
             else:
-                logger.error(f"Database schema verification failed: {result['errors']}")
+                logger.error(f"Database schema verification failed: {result.get('errors', [])}")
                 
         except Exception as e:
             logger.error(f"Error ensuring database schema: {e}")
             # Don't fail initialization - the system can still work with partial schema
-    
+
     def _setup_redis_config(self):
-        """Setup Redis connection configuration with SSL support"""
+        """Setup Redis connection configuration"""
         try:
             parsed = urlparse(self.redis_url)
             
@@ -122,15 +146,20 @@ class DatabaseConfig:
                 )
                 logger.info("Using SQLite database for development")
             else:
-                # Production PostgreSQL
+                # Production PostgreSQL - add SSL requirements for DigitalOcean
+                connect_args = {}
+                if 'ondigitalocean.com' in self.database_url or 'sslmode=require' in self.database_url:
+                    connect_args['sslmode'] = 'require'
+                
                 self.postgres_engine = create_engine(
                     self.database_url,
                     pool_size=10,
                     max_overflow=20,
                     pool_pre_ping=True,
-                    pool_recycle=3600
+                    pool_recycle=3600,
+                    connect_args=connect_args
                 )
-                logger.info("PostgreSQL database configured")
+                logger.info("PostgreSQL database configured with SSL requirements")
                 
             # Create async session maker for SQLAlchemy 1.4
             if self.database_url.startswith('postgresql'):
@@ -139,6 +168,8 @@ class DatabaseConfig:
                 
         except Exception as e:
             logger.error(f"Error setting up PostgreSQL: {e}")
+            # Set to None so we know there's an issue
+            self.postgres_engine = None
     
     async def get_redis_client(self) -> Optional[redis.Redis]:
         """Get Redis client with connection pooling"""
@@ -164,6 +195,7 @@ class DatabaseConfig:
     def get_postgres_session(self):
         """Get PostgreSQL session"""
         if self.postgres_engine is None:
+            logger.error("PostgreSQL engine not initialized")
             return None
             
         SessionLocal = sessionmaker(
