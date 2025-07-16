@@ -211,7 +211,8 @@ class DatabaseSchemaManager:
                                 if value is not None:
                                     insert_cols.append(col_name)
                                     if isinstance(value, str):
-                                        insert_vals.append(f"'{value.replace(\"'\", \"''\")}'")  # Escape quotes
+                                        escaped_value = value.replace("'", "''")
+                                        insert_vals.append(f"'{escaped_value}'")  # Escape quotes
                                     elif isinstance(value, bool):
                                         insert_vals.append('TRUE' if value else 'FALSE')
                                     else:
