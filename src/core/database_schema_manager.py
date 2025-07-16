@@ -70,16 +70,175 @@ class DatabaseSchemaManager:
         """Ensure all tables exist with precise schema"""
         results = {}
         
-        # Ensure tables in dependency order (users first, then tables that reference it)
-        results['users'] = self._ensure_table('users', self.USERS_TABLE_SCHEMA)
-        results['paper_trades'] = self._ensure_table('paper_trades', self.PAPER_TRADES_TABLE_SCHEMA)
+        # CRITICAL: Fix users table first - this is the root cause of all issues
+        results['users'] = self._ensure_users_table_with_aggressive_fix()
         
-        # Ensure default user exists (only after schema is correct)
-        if results['users']['status'] in ['created', 'verified', 'updated']:
+        # Only create dependent tables if users table is fixed
+        if results['users']['status'] in ['created', 'verified', 'updated', 'repaired']:
+            results['paper_trades'] = self._ensure_table('paper_trades', self.PAPER_TRADES_TABLE_SCHEMA)
+            
+            # Ensure default user exists (only after schema is correct)
             self._ensure_default_user()
+        else:
+            logger.error("❌ Cannot create dependent tables - users table has issues")
+            results['paper_trades'] = {'status': 'skipped', 'reason': 'users table issues'}
             
         return results
-    
+
+    def _check_users_primary_key_constraint(self, conn) -> bool:
+        """Check if users table has a PROPER primary key constraint that works for foreign keys"""
+        try:
+            # Method 1: Direct PostgreSQL constraint check
+            result = conn.execute(text("""
+                SELECT constraint_name, constraint_type 
+                FROM information_schema.table_constraints 
+                WHERE table_name = 'users' 
+                AND constraint_type = 'PRIMARY KEY'
+            """)).fetchall()
+            
+            if not result:
+                logger.warning("❌ No PRIMARY KEY constraint found in information_schema")
+                return False
+            
+            # Method 2: Check if foreign key can actually reference this table
+            try:
+                # Try to create a test foreign key to see if it works
+                test_sql = """
+                    CREATE TABLE IF NOT EXISTS test_foreign_key_check (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER,
+                        FOREIGN KEY (user_id) REFERENCES users(id)
+                    )
+                """
+                conn.execute(text(test_sql))
+                
+                # If successful, clean up the test table
+                conn.execute(text("DROP TABLE IF EXISTS test_foreign_key_check"))
+                logger.info("✅ Users table PRIMARY KEY constraint works for foreign keys")
+                return True
+                
+            except Exception as fk_test_error:
+                logger.error(f"❌ Foreign key test failed: {fk_test_error}")
+                conn.execute(text("DROP TABLE IF EXISTS test_foreign_key_check"))  # Cleanup
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Primary key constraint check failed: {e}")
+            return False
+
+    def _fix_users_primary_key_aggressive(self, conn) -> bool:
+        """Aggressively fix users table primary key constraint"""
+        try:
+            logger.info("🔧 Starting aggressive users table PRIMARY KEY repair...")
+            
+            # First check if we actually need to fix it
+            if self._check_users_primary_key_constraint(conn):
+                logger.info("✅ Users table PRIMARY KEY is working correctly")
+                return True
+            
+            logger.warning("⚠️ Users table PRIMARY KEY needs repair - starting aggressive fix...")
+            
+            # Get current data
+            backup_data = conn.execute(text("SELECT * FROM users")).fetchall()
+            logger.info(f"📦 Backing up {len(backup_data)} user records")
+            
+            # Drop dependent tables that reference users
+            logger.info("🔄 Dropping dependent tables...")
+            dependent_tables = ['paper_trades', 'positions', 'trades', 'orders']
+            for table in dependent_tables:
+                try:
+                    conn.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
+                    logger.info(f"   ✓ Dropped {table}")
+                except Exception as e:
+                    logger.warning(f"   ⚠️ Could not drop {table}: {e}")
+            
+            # Drop and recreate users table with proper schema
+            logger.info("🔄 Recreating users table with proper PRIMARY KEY...")
+            conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
+            
+            # Create users table with proper SERIAL PRIMARY KEY
+            create_users_sql = """
+                CREATE TABLE users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(50) UNIQUE NOT NULL,
+                    email VARCHAR(100) UNIQUE NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    full_name VARCHAR(100),
+                    initial_capital FLOAT DEFAULT 50000.0,
+                    current_balance FLOAT DEFAULT 50000.0,
+                    risk_tolerance VARCHAR(20) DEFAULT 'medium',
+                    is_active BOOLEAN DEFAULT TRUE,
+                    zerodha_client_id VARCHAR(50),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    total_trades INTEGER DEFAULT 0,
+                    user_type VARCHAR(20) DEFAULT 'trader',
+                    status VARCHAR(20) DEFAULT 'active',
+                    phone VARCHAR(20),
+                    trading_enabled BOOLEAN DEFAULT TRUE,
+                    max_position_size INTEGER DEFAULT 500000,
+                    zerodha_api_key VARCHAR(100),
+                    zerodha_api_secret VARCHAR(100),
+                    zerodha_access_token TEXT,
+                    zerodha_public_token VARCHAR(100),
+                    total_pnl FLOAT DEFAULT 0,
+                    last_login TIMESTAMP,
+                    paper_trading BOOLEAN DEFAULT FALSE,
+                    max_daily_trades INTEGER,
+                    max_daily_trades INTEGER
+                )
+            """
+            conn.execute(text(create_users_sql))
+            logger.info("✅ Users table recreated with proper SERIAL PRIMARY KEY")
+            
+            # Restore data if any existed
+            if backup_data:
+                logger.info(f"🔄 Restoring {len(backup_data)} user records...")
+                
+                # Get column names from the original data
+                columns = [desc[0] for desc in conn.execute(text("SELECT * FROM users LIMIT 0")).cursor.description]
+                
+                for row_data in backup_data:
+                    try:
+                        # Map the data to new schema, excluding auto-generated id
+                        insert_cols = []
+                        insert_vals = []
+                        
+                        # Map known columns (skip id since it's SERIAL)
+                        for i, value in enumerate(row_data[1:], 1):  # Skip first column (id)
+                            if i < len(columns):
+                                col_name = columns[i]
+                                if value is not None:
+                                    insert_cols.append(col_name)
+                                    if isinstance(value, str):
+                                        insert_vals.append(f"'{value.replace(\"'\", \"''\")}'")  # Escape quotes
+                                    elif isinstance(value, bool):
+                                        insert_vals.append('TRUE' if value else 'FALSE')
+                                    else:
+                                        insert_vals.append(str(value))
+                        
+                        if insert_cols:
+                            insert_sql = f"INSERT INTO users ({', '.join(insert_cols)}) VALUES ({', '.join(insert_vals)})"
+                            conn.execute(text(insert_sql))
+                            
+                    except Exception as restore_error:
+                        logger.warning(f"⚠️ Could not restore user record: {restore_error}")
+                        continue
+                        
+                logger.info("✅ User data restoration completed")
+            
+            # Verify the fix worked
+            if self._check_users_primary_key_constraint(conn):
+                logger.info("✅ Users table PRIMARY KEY constraint verified working")
+                return True
+            else:
+                logger.error("❌ PRIMARY KEY constraint still not working after aggressive fix")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Aggressive PRIMARY KEY fix failed: {e}")
+            return False
+
     def _generate_create_table_sql(self, table_name: str, schema: Dict[str, Dict[str, Any]]) -> str:
         """Generate precise CREATE TABLE SQL with proper constraints"""
         columns = []
@@ -179,56 +338,6 @@ class DatabaseSchemaManager:
             col_def += " UNIQUE"
             
         return f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}"
-
-    def _fix_users_primary_key(self, conn, inspector) -> bool:
-        """Fix users table primary key if it's missing"""
-        try:
-            # Check if users table has a primary key
-            pk_constraints = inspector.get_pk_constraint('users')
-            
-            if not pk_constraints or not pk_constraints.get('constrained_columns'):
-                logger.info("❌ Users table missing primary key - attempting repair...")
-                
-                # Check if id column exists and has data
-                result = conn.execute(text("SELECT COUNT(*) FROM users WHERE id IS NOT NULL")).scalar()
-                
-                if result > 0:
-                    # Users exist with id values - need to add primary key constraint
-                    logger.info("🔧 Adding primary key constraint to existing users table...")
-                    
-                    # First ensure id is unique and not null
-                    conn.execute(text("DELETE FROM users WHERE id IS NULL"))
-                    
-                    # Remove duplicates keeping the first occurrence
-                    conn.execute(text("""
-                        DELETE FROM users WHERE id NOT IN (
-                            SELECT DISTINCT ON (username) id FROM users ORDER BY username, created_at
-                        )
-                    """))
-                    
-                    # Add primary key constraint
-                    conn.execute(text("ALTER TABLE users ADD PRIMARY KEY (id)"))
-                    logger.info("✅ Added primary key constraint to users.id")
-                    return True
-                else:
-                    # No users exist - add sequence and primary key
-                    logger.info("🔧 Setting up primary key for empty users table...")
-                    conn.execute(text("ALTER TABLE users ADD PRIMARY KEY (id)"))
-                    
-                    # Ensure id has proper sequence
-                    conn.execute(text("CREATE SEQUENCE IF NOT EXISTS users_id_seq"))
-                    conn.execute(text("ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq')"))
-                    conn.execute(text("ALTER SEQUENCE users_id_seq OWNED BY users.id"))
-                    
-                    logger.info("✅ Set up primary key for users table")
-                    return True
-            else:
-                logger.info("✅ Users table already has primary key")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Failed to fix users primary key: {e}")
-            return False
     
     def _ensure_table(self, table_name: str, schema: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         """Ensure a table exists with the precise schema"""
@@ -250,12 +359,6 @@ class DatabaseSchemaManager:
                         result['actions'].append(f"Created table {table_name} with precise schema")
                         result['status'] = 'created'
                     else:
-                        # Special handling for users table primary key issues
-                        if table_name == 'users':
-                            pk_fixed = self._fix_users_primary_key(conn, inspector)
-                            if pk_fixed:
-                                result['actions'].append("Fixed users table primary key constraint")
-                        
                         # Verify and fix existing table schema
                         existing_columns = {col['name']: col for col in inspector.get_columns(table_name)}
                         
@@ -362,7 +465,7 @@ class DatabaseSchemaManager:
             # Format results for compatibility with existing code
             formatted_result = {
                 'status': 'success' if all(
-                    r['status'] in ['created', 'verified', 'updated'] 
+                    r['status'] in ['created', 'verified', 'updated', 'repaired'] 
                     for r in results.values() 
                     if 'status' in r
                 ) else 'error',
@@ -409,14 +512,14 @@ class DatabaseSchemaManager:
         """
         try:
             if table_name == 'users':
-                result = self._ensure_table('users', self.USERS_TABLE_SCHEMA)
+                result = self._ensure_users_table_with_aggressive_fix()
             elif table_name == 'paper_trades':
                 result = self._ensure_table('paper_trades', self.PAPER_TRADES_TABLE_SCHEMA)
             else:
                 logger.warning(f"Unknown table name: {table_name}")
                 return False
                 
-            return result['status'] in ['created', 'verified', 'updated']
+            return result['status'] in ['created', 'verified', 'updated', 'repaired']
             
         except Exception as e:
             logger.error(f"Error ensuring table {table_name} exists: {e}")

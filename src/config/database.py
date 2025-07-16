@@ -35,7 +35,9 @@ class DatabaseConfig:
         
         # Environment variables - prioritize deployment vars
         self.redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-        self.database_url = os.getenv('DATABASE_URL') or os.getenv('DB_URL', 'sqlite:///./trading_system.db')
+        # Use PostgreSQL by default to match production (eliminates schema mismatches)
+        default_db_url = 'postgresql://trading_user:trading_password@localhost:5432/trading_system'
+        self.database_url = os.getenv('DATABASE_URL') or os.getenv('DB_URL', default_db_url)
         
         # Override with individual components if available (DigitalOcean style)
         if os.getenv('DATABASE_HOST') and not os.getenv('DATABASE_URL'):
