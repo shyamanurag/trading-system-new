@@ -13,10 +13,14 @@ from contextlib import asynccontextmanager
 
 try:
     import redis.asyncio as redis
+    from redis.asyncio import ConnectionError as RedisConnectionError
 except ImportError:
     # Fallback for older redis versions
     import redis
-    redis.asyncio = redis
+    from redis import ConnectionError as RedisConnectionError
+    # Create asyncio namespace if it doesn't exist
+    if not hasattr(redis, 'asyncio'):
+        redis.asyncio = redis
 
 logger = logging.getLogger(__name__)
 
@@ -49,38 +53,14 @@ class ProductionRedisManager:
     async def initialize(self) -> bool:
         """Initialize Redis connection with retry logic"""
         try:
-            # Parse Redis URL for better control
-            parsed = urlparse(self.redis_url)
-            
-            # Enhanced connection parameters for DigitalOcean
-            connection_kwargs = {
-                'decode_responses': True,
-                'socket_timeout': 30,  # Increased from 10
-                'socket_connect_timeout': 30,  # Increased from 10
-                'socket_keepalive': True,
-                'socket_keepalive_options': {
-                    1: 1,  # TCP_KEEPIDLE
-                    2: 3,  # TCP_KEEPINTVL  
-                    3: 5,  # TCP_KEEPCNT
-                },
-                'health_check_interval': 60,  # Increased from 30
-                'max_connections': 50,  # Increased from 10
-                'retry_on_timeout': True,
-                'retry_on_error': [ConnectionError, TimeoutError]
-            }
-            
-            # Add SSL context for DigitalOcean
-            if self.ssl_required:
-                ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-                ssl_context.check_hostname = False
-                ssl_context.verify_mode = ssl.CERT_REQUIRED
-                connection_kwargs['ssl_cert_reqs'] = 'required'
-                connection_kwargs['ssl_ca_certs'] = None  # Use system CA bundle
-                
-            # Create client directly without the problematic retry configuration
-            self.redis_client = redis.from_url(
+            # For DigitalOcean Redis, use minimal configuration
+            # The URL already contains all necessary SSL and auth info
+            self.redis_client = await redis.from_url(
                 self.redis_url,
-                **connection_kwargs
+                decode_responses=True,
+                socket_timeout=30,
+                socket_connect_timeout=30,
+                max_connections=50
             )
             
             # Test connection with retry logic
