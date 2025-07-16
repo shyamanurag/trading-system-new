@@ -56,6 +56,24 @@ class DatabaseSchemaManager:
         'created_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'}
     }
     
+    # Define the precise schema for trades table (production trades)
+    TRADES_TABLE_SCHEMA = {
+        'trade_id': {'type': 'INTEGER', 'primary_key': True, 'autoincrement': True, 'nullable': False},
+        'symbol': {'type': 'VARCHAR(20)', 'nullable': False},
+        'trade_type': {'type': 'VARCHAR(10)', 'nullable': False},
+        'quantity': {'type': 'INTEGER', 'nullable': False},
+        'price': {'type': 'FLOAT', 'nullable': False},
+        'strategy': {'type': 'VARCHAR(50)', 'nullable': True},
+        'commission': {'type': 'FLOAT', 'nullable': True, 'default': 0.0},
+        'executed_at': {'type': 'TIMESTAMP', 'nullable': False},
+        'pnl': {'type': 'FLOAT', 'nullable': True, 'default': 0.0},
+        'pnl_percent': {'type': 'FLOAT', 'nullable': True, 'default': 0.0},
+        'status': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'EXECUTED'},
+        'user_id': {'type': 'INTEGER', 'nullable': True, 'foreign_key': 'users.id'},
+        'created_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'},
+        'updated_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'}
+    }
+    
     def __init__(self, database_url: str):
         self.database_url = database_url
         self.engine = create_engine(database_url)
@@ -68,6 +86,7 @@ class DatabaseSchemaManager:
         results = {
             'users_table': {'status': 'unknown', 'actions': []},
             'paper_trades_table': {'status': 'unknown', 'actions': []},
+            'trades_table': {'status': 'unknown', 'actions': []},
             'errors': []
         }
         
@@ -77,8 +96,12 @@ class DatabaseSchemaManager:
             results['users_table'] = users_result
             
             # Ensure paper_trades table exists with correct schema
-            trades_result = self._ensure_table('paper_trades', self.PAPER_TRADES_TABLE_SCHEMA)
-            results['paper_trades_table'] = trades_result
+            paper_trades_result = self._ensure_table('paper_trades', self.PAPER_TRADES_TABLE_SCHEMA)
+            results['paper_trades_table'] = paper_trades_result
+            
+            # Ensure trades table exists with correct schema
+            trades_result = self._ensure_table('trades', self.TRADES_TABLE_SCHEMA)
+            results['trades_table'] = trades_result
             
             # Ensure default paper trading user exists
             self._ensure_default_user()

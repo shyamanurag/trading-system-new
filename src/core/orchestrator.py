@@ -351,7 +351,21 @@ class TradingOrchestrator:
         # Initialize position tracker
         from src.core.position_tracker import ProductionPositionTracker
         self.position_tracker = ProductionPositionTracker()
-        self.logger.info("✅ Position tracker initialized with Redis")
+        
+        # Initialize performance tracker
+        self.performance_tracker = {
+            'total_trades': 0,
+            'winning_trades': 0,
+            'losing_trades': 0,
+            'total_pnl': 0.0,
+            'daily_pnl': 0.0,
+            'max_drawdown': 0.0,
+            'sharpe_ratio': 0.0,
+            'win_rate': 0.0
+        }
+        
+        # Initialize notification manager (simplified for now)
+        self.notification_manager = None  # Will be initialized later if needed
         
         # Initialize risk manager
         from src.core.risk_manager import RiskManager
@@ -377,23 +391,27 @@ class TradingOrchestrator:
         self.logger.info("🔄 Initializing OrderManager with enhanced fallback system...")
         self.order_manager = self._initialize_order_manager_with_fallback()
         
-        # Initialize trade engine
-        from src.core.trade_engine import TradeEngine
-        
-        # Create trade engine config
+        # Initialize trade engine with proper configuration
         trade_engine_config = {
-            'rate_limit': {
-                'max_trades_per_second': 7
-            },
-            'batch_processing': {
-                'size': 5,
+            'max_retries': 3,
+            'retry_delay': 1,
+            'paper_trading': self.config.get('paper_trading', True),
+            'database': {
+                'url': self.config.get('database_url', 'sqlite:///trading_system.db'),
                 'timeout': 0.5
             }
         }
         
-        self.trade_engine = TradeEngine(trade_engine_config)
+        # Initialize trade engine with all required components
+        self.trade_engine = TradeEngine(
+            db_config=self.db_config,
+            order_manager=self.order_manager,
+            position_tracker=self.position_tracker,
+            performance_tracker=self.performance_tracker,
+            notification_manager=self.notification_manager
+        )
         
-        # Set components after initialization (will be done async later)
+        # Set additional components after initialization
         self.trade_engine.zerodha_client = self.zerodha_client
         self.trade_engine.risk_manager = self.risk_manager  # Share the risk manager
         
