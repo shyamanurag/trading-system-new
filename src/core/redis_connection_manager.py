@@ -66,11 +66,7 @@ class ProductionRedisManager:
                 'health_check_interval': 60,  # Increased from 30
                 'max_connections': 50,  # Increased from 10
                 'retry_on_timeout': True,
-                'retry_on_error': [ConnectionError, TimeoutError],
-                'retry': redis.retry.Retry(
-                    retries=3,
-                    backoff=redis.retry.ExponentialBackoff(base=1, cap=10)
-                )
+                'retry_on_error': [ConnectionError, TimeoutError]
             }
             
             # Add SSL context for DigitalOcean
@@ -81,14 +77,11 @@ class ProductionRedisManager:
                 connection_kwargs['ssl_cert_reqs'] = 'required'
                 connection_kwargs['ssl_ca_certs'] = None  # Use system CA bundle
                 
-            # Create connection pool explicitly for better control
-            self.connection_pool = redis.ConnectionPool.from_url(
+            # Create client directly without the problematic retry configuration
+            self.redis_client = redis.from_url(
                 self.redis_url,
                 **connection_kwargs
             )
-            
-            # Create client from pool
-            self.redis_client = redis.Redis(connection_pool=self.connection_pool)
             
             # Test connection with retry logic
             await self._test_connection_with_retry()
