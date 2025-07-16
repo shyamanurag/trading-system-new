@@ -8,6 +8,7 @@ import logging
 from typing import Optional, Union
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -92,17 +93,22 @@ class PaperTradingUserManager:
                 db_session.execute(text("""
                     INSERT INTO users (
                         username, email, password_hash, full_name,
+                        role, status, is_active, trading_enabled,
                         initial_capital, current_balance, risk_tolerance,
-                        is_active, zerodha_client_id, trading_enabled,
-                        max_daily_trades, max_position_size, created_at, updated_at
+                        zerodha_client_id, max_daily_trades, max_position_size,
+                        created_at, updated_at
                     ) VALUES (
                         'PAPER_TRADER_001', 'paper@algoauto.com',
                         '$2b$12$dummy.hash.paper.trading', 'Paper Trading Account',
+                        'trader', 'active', :true_val, :true_val,
                         100000, 100000, 'medium',
-                        true, 'PAPER', true,
-                        1000, 500000, NOW(), NOW()
+                        'PAPER', 1000, 500000,
+                        :now, :now
                     )
-                """))
+                """), {
+                    'true_val': True if 'postgresql' in str(db_session.bind.url) else 1,
+                    'now': datetime.now()
+                })
                 db_session.commit()
                 logger.info("✅ Created paper trading user without id column")
                 return 'PAPER_TRADER_001'  # Return username

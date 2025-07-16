@@ -348,6 +348,11 @@ class TradingOrchestrator:
         self.redis_client = None
         self.redis_manager = redis_manager
         
+        # Initialize database configuration
+        from src.config.database import DatabaseConfig
+        self.db_config = DatabaseConfig()
+        self.logger.info("✅ Database configuration initialized")
+        
         # Initialize position tracker
         from src.core.position_tracker import ProductionPositionTracker
         self.position_tracker = ProductionPositionTracker()

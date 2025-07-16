@@ -37,7 +37,13 @@ class DatabaseSchemaManager:
         'failed_login_attempts': {'type': 'INTEGER', 'nullable': False, 'default': 0},
         'last_password_change': {'type': 'TIMESTAMP', 'nullable': True},
         'two_factor_enabled': {'type': 'BOOLEAN', 'nullable': False, 'default': False},
-        'two_factor_secret': {'type': 'VARCHAR(255)', 'nullable': True}
+        'two_factor_secret': {'type': 'VARCHAR(255)', 'nullable': True},
+        # Additional columns for paper trading compatibility
+        'initial_capital': {'type': 'FLOAT', 'nullable': True, 'default': 100000.0},
+        'current_balance': {'type': 'FLOAT', 'nullable': True, 'default': 100000.0},
+        'risk_tolerance': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'medium'},
+        'zerodha_client_id': {'type': 'VARCHAR(50)', 'nullable': True},
+        'max_daily_trades': {'type': 'INTEGER', 'nullable': True, 'default': 1000}
     }
     
     # Define the precise schema for paper_trades table
@@ -251,18 +257,36 @@ class DatabaseSchemaManager:
             
             if result == 0:
                 # Create default paper trading user
-                insert_sql = """
-                INSERT INTO users (
-                    email, username, full_name, password_hash, role, status, 
-                    is_active, trading_enabled, created_at, updated_at
-                ) VALUES (
-                    'paper@trading.com', 'paper_trader', 'Paper Trading User',
-                    'no_password_needed', 'trader', 'active', 1, 1,
-                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                )
-                """
+                # Use database-agnostic approach
                 try:
-                    conn.execute(text(insert_sql))
+                    insert_sql = """
+                    INSERT INTO users (
+                        email, username, full_name, password_hash, role, status, 
+                        is_active, trading_enabled, created_at, updated_at,
+                        initial_capital, current_balance, risk_tolerance,
+                        zerodha_client_id, max_daily_trades
+                    ) VALUES (
+                        'paper@trading.com', 'paper_trader', 'Paper Trading User',
+                        'no_password_needed', 'trader', 'active', 
+                        :true_val, :true_val, :now, :now,
+                        100000, 100000, 'medium',
+                        'PAPER', 1000
+                    )
+                    """
+                    
+                    # Handle boolean and timestamp values based on database type
+                    if 'postgresql' in self.database_url:
+                        params = {
+                            'true_val': True,
+                            'now': datetime.now()
+                        }
+                    else:  # SQLite
+                        params = {
+                            'true_val': 1,
+                            'now': datetime.now()
+                        }
+                    
+                    conn.execute(text(insert_sql), params)
                     conn.commit()
                     logger.info("Created default paper trading user")
                 except Exception as e:
