@@ -1,338 +1,391 @@
+import { CheckCircle, Error, Info, Warning } from '@mui/icons-material';
+import {
+    Alert,
+    Box,
+    Button,
+    Card,
+    CardContent,
+    CircularProgress,
+    Container,
+    TextField,
+    Typography
+} from '@mui/material';
 import React, { useEffect, useState } from 'react';
 import './ZerodhaManualAuth.css';
+// UNIFIED: Import standardized user utilities
+import {
+    getContextualDisplayName,
+    getContextualUserId,
+    USER_CONFIG
+} from '../utils/userUtils';
 
 const ZerodhaManualAuth = () => {
-    const [authUrl, setAuthUrl] = useState('');
     const [requestToken, setRequestToken] = useState('');
-    const [status, setStatus] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [instructions, setInstructions] = useState([]);
-    const [componentLoading, setComponentLoading] = useState(true);
-    const [error, setError] = useState(null);
+    const [status, setStatus] = useState({
+        connected: false,
+        loading: false,
+        error: null,
+        success: null,
+        // UNIFIED: Use consistent user identification
+        user_id: getContextualUserId('zerodha'),
+        display_name: getContextualDisplayName(USER_CONFIG.ZERODHA_USER_ID)
+    });
+    const [authUrl, setAuthUrl] = useState('');
 
-    const fetchAuthUrl = async () => {
+    useEffect(() => {
+        checkConnectionStatus();
+        generateAuthUrl();
+    }, []);
+
+    const checkConnectionStatus = async () => {
+        try {
+            // UNIFIED: Use standardized Zerodha user ID
+            const zerodhaUserId = getContextualUserId('zerodha');
+            const response = await fetch(`/auth/zerodha/status?user_id=${zerodhaUserId}`);
+            const data = await response.json();
+
+            setStatus(prev => ({
+                ...prev,
+                connected: data.connected || false,
+                // UNIFIED: Use consistent user identification
+                user_id: zerodhaUserId,
+                display_name: getContextualDisplayName(zerodhaUserId),
+                token_expiry: data.token_expiry,
+                last_update: data.last_update
+            }));
+        } catch (error) {
+            console.error('Error checking connection status:', error);
+            setStatus(prev => ({
+                ...prev,
+                error: 'Failed to check connection status'
+            }));
+        }
+    };
+
+    const generateAuthUrl = async () => {
         try {
             const response = await fetch('/auth/zerodha/auth-url');
-
-            if (response.status === 404) {
-                // Fallback when endpoints not deployed yet
-                setAuthUrl(`https://kite.zerodha.com/connect/login?api_key=${import.meta.env.VITE_ZERODHA_API_KEY || 'sylcoq492qz6f7ej'}`);
-                setInstructions([
-                    "1. Click the authorization URL below",
-                    "2. Login to Zerodha with your credentials",
-                    "3. After login, you'll be redirected to a URL",
-                    "4. Copy the 'request_token' parameter from the redirected URL",
-                    "5. Paste the token in the manual token entry below"
-                ]);
-                return;
-            }
-
             const data = await response.json();
-            if (data.success) {
+            if (data.auth_url) {
                 setAuthUrl(data.auth_url);
-                setInstructions(data.instructions);
             }
         } catch (error) {
-            console.error('Failed to fetch auth URL:', error);
-            // Fallback URL
-            setAuthUrl('https://kite.zerodha.com/connect/login?api_key=sylcoq492qz6f7ej');
-            setInstructions([
-                "1. Click the authorization URL below",
-                "2. Login to Zerodha with your credentials",
-                "3. Copy the 'request_token' from the redirect URL",
-                "4. Paste it below"
-            ]);
+            console.error('Error generating auth URL:', error);
         }
     };
 
-    const checkStatus = async () => {
-        try {
-            const response = await fetch('/auth/zerodha/status');
-
-            if (response.status === 404) {
-                // Fallback status when endpoints not deployed yet
-                setStatus({
-                    success: true,
-                    message: "Auth system starting up - endpoints deploying...",
-                    authenticated: false,
-                    user_id: "PAPER_TRADER_001",
-                    note: "Backend deployment in progress"
-                });
-                return;
-            }
-
-            const data = await response.json();
-            setStatus(data);
-        } catch (error) {
-            console.error('Failed to check status:', error);
-            setStatus({
-                success: false,
-                message: "Connection error - check network",
-                authenticated: false,
-                user_id: "PAPER_TRADER_001"
-            });
-        }
-    };
-
-    const submitToken = async () => {
+    const handleSubmitToken = async () => {
         if (!requestToken.trim()) {
-            alert('Please enter a request token');
+            setStatus(prev => ({
+                ...prev,
+                error: 'Please enter a request token'
+            }));
             return;
         }
 
-        setLoading(true);
+        setStatus(prev => ({
+            ...prev,
+            loading: true,
+            error: null,
+            success: null
+        }));
+
         try {
+            // UNIFIED: Use standardized Zerodha user ID consistently
+            const zerodhaUserId = getContextualUserId('zerodha');
             const response = await fetch('/auth/zerodha/submit-token', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    request_token: requestToken.trim(),
-                    user_id: 'PAPER_TRADER_001'
+                    request_token: requestToken,
+                    // UNIFIED: Use consistent user identification
+                    user_id: zerodhaUserId
                 })
             });
 
-            if (response.status === 404) {
-                alert('Auth endpoints are deploying... Please try again in a few minutes when deployment completes.');
-                setLoading(false);
-                return;
-            }
-
             const data = await response.json();
 
             if (data.success) {
-                alert('Token submitted successfully! Processing...');
+                setStatus(prev => ({
+                    ...prev,
+                    loading: false,
+                    connected: true,
+                    success: 'Authentication successful! Token saved.',
+                    // UNIFIED: Update with consistent user data
+                    user_id: zerodhaUserId,
+                    display_name: getContextualDisplayName(zerodhaUserId),
+                    token_expiry: data.token_expiry,
+                    last_update: new Date().toISOString()
+                }));
                 setRequestToken('');
-
-                // Check status after a delay
-                setTimeout(() => {
-                    checkStatus();
-                }, 3000);
             } else {
-                alert('Failed to submit token: ' + data.message);
+                setStatus(prev => ({
+                    ...prev,
+                    loading: false,
+                    error: data.message || 'Authentication failed'
+                }));
             }
         } catch (error) {
-            alert('Error submitting token: ' + error.message + ' - Check if endpoints are deployed');
+            console.error('Error submitting token:', error);
+            setStatus(prev => ({
+                ...prev,
+                loading: false,
+                error: 'Network error. Please try again.'
+            }));
         }
-        setLoading(false);
     };
 
-    const testConnection = async () => {
-        setLoading(true);
+    const handleTestConnection = async () => {
+        setStatus(prev => ({
+            ...prev,
+            loading: true,
+            error: null
+        }));
+
         try {
-            const response = await fetch('/auth/zerodha/test-connection');
+            // UNIFIED: Use standardized Zerodha user ID
+            const zerodhaUserId = getContextualUserId('zerodha');
+            const response = await fetch(`/auth/zerodha/test-connection?user_id=${zerodhaUserId}`);
             const data = await response.json();
 
-            if (data.success) {
-                alert(`Connection successful!\nUser: ${data.profile.user_name}\nSample NIFTY LTP: ${data.sample_data.ltp}`);
-            } else {
-                alert('Connection test failed: ' + data.message);
-            }
+            setStatus(prev => ({
+                ...prev,
+                loading: false,
+                success: data.success ? 'Connection test successful!' : null,
+                error: data.success ? null : (data.message || 'Connection test failed'),
+                connected: data.success
+            }));
         } catch (error) {
-            alert('Connection test error: ' + error.message);
+            console.error('Error testing connection:', error);
+            setStatus(prev => ({
+                ...prev,
+                loading: false,
+                error: 'Failed to test connection'
+            }));
         }
-        setLoading(false);
     };
 
-    const logout = async () => {
-        setLoading(true);
+    const handleLogout = async () => {
         try {
-            const response = await fetch('/auth/zerodha/logout', {
-                method: 'DELETE'
+            // UNIFIED: Use standardized Zerodha user ID
+            const zerodhaUserId = getContextualUserId('zerodha');
+            const response = await fetch(`/auth/zerodha/logout?user_id=${zerodhaUserId}`, {
+                method: 'POST'
             });
             const data = await response.json();
 
             if (data.success) {
-                alert('Logged out successfully');
-                setStatus(null);
-                checkStatus();
+                setStatus(prev => ({
+                    ...prev,
+                    connected: false,
+                    success: 'Logged out successfully',
+                    error: null,
+                    user_id: zerodhaUserId,
+                    display_name: getContextualDisplayName(zerodhaUserId)
+                }));
+            } else {
+                setStatus(prev => ({
+                    ...prev,
+                    error: data.message || 'Logout failed'
+                }));
             }
         } catch (error) {
-            alert('Logout failed: ' + error.message);
+            console.error('Error logging out:', error);
+            setStatus(prev => ({
+                ...prev,
+                error: 'Failed to logout'
+            }));
         }
-        setLoading(false);
     };
 
-    useEffect(() => {
-        let isMounted = true;
-
-        const initializeComponent = async () => {
-            try {
-                if (!isMounted) return;
-
-                await fetchAuthUrl();
-                if (!isMounted) return;
-
-                await checkStatus();
-                if (!isMounted) return;
-
-                setComponentLoading(false);
-            } catch (err) {
-                if (!isMounted) return;
-                setError('Failed to initialize auth component: ' + (err?.message || 'Unknown error'));
-                setComponentLoading(false);
-            }
-        };
-
-        initializeComponent();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-
-    if (componentLoading) {
-        return (
-            <div className="zerodha-manual-auth">
-                <div className="auth-container">
-                    <h2>🔐 Loading Zerodha Auth...</h2>
-                    <p>Initializing authentication interface...</p>
-                </div>
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="zerodha-manual-auth">
-                <div className="auth-container">
-                    <h2>🔐 Zerodha Manual Authentication</h2>
-                    <div className="status-card not-authenticated">
-                        <h3>⚠️ Initialization Error</h3>
-                        <p>{error}</p>
-                        <p><strong>Note:</strong> Backend might still be deploying. Please try again in a few minutes.</p>
-                        <button
-                            onClick={() => window.location.reload()}
-                            className="refresh-button"
-                            style={{ marginTop: '10px' }}
-                        >
-                            🔄 Retry
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
     return (
-        <div className="zerodha-manual-auth">
-            <div className="auth-container">
-                <h2>🔐 Zerodha Manual Authentication</h2>
+        <Container maxWidth="md" className="zerodha-auth-container">
+            <Box sx={{ py: 4 }}>
+                <Typography variant="h4" gutterBottom align="center" className="auth-title">
+                    🔐 Zerodha Manual Authentication
+                </Typography>
+
+                <Typography variant="subtitle1" align="center" color="text.secondary" sx={{ mb: 4 }}>
+                    {/* UNIFIED: Use consistent display name */}
+                    Secure daily authentication for {status.display_name || USER_CONFIG.DISPLAY_NAMES.ZERODHA}
+                </Typography>
 
                 {/* Status Display */}
-                {status ? (
-                    <div className={`status-card ${status.authenticated ? 'authenticated' : 'not-authenticated'}`}>
-                        <h3>Current Status</h3>
-                        <p><strong>Authenticated:</strong> {status.authenticated ? '✅ Yes' : '❌ No'}</p>
-                        {status.user_id && <p><strong>User ID:</strong> {status.user_id}</p>}
-                        {status.token_expires_at && <p><strong>Expires:</strong> {status.token_expires_at}</p>}
-                        <p><strong>Message:</strong> {status.message}</p>
-                    </div>
-                ) : (
-                    <div className="status-card not-authenticated">
-                        <h3>⏳ Checking Status...</h3>
-                        <p>Connecting to authentication server...</p>
-                    </div>
-                )}
+                <Card sx={{ mb: 3 }} className="status-card">
+                    <CardContent>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                            {status.connected ? (
+                                <CheckCircle sx={{ color: 'success.main', mr: 1 }} />
+                            ) : (
+                                <Error sx={{ color: 'error.main', mr: 1 }} />
+                            )}
+                            <Typography variant="h6">
+                                Status: {status.connected ? 'Connected' : 'Disconnected'}
+                            </Typography>
+                        </Box>
 
-                {/* Authentication Steps */}
-                {!status?.authenticated && (
-                    <div className="auth-steps">
-                        <h3>📋 Authentication Steps</h3>
-                        <div className="instructions">
-                            {instructions.map((instruction, index) => (
-                                <div key={index} className="instruction-step">
-                                    <span className="step-number">{index + 1}</span>
-                                    <span className="step-text">{instruction}</span>
-                                </div>
-                            ))}
-                        </div>
+                        {/* UNIFIED: Display consistent user information */}
+                        {status.user_id && (
+                            <Typography variant="body2" color="text.secondary">
+                                <strong>User ID:</strong> {status.user_id}
+                            </Typography>
+                        )}
+                        {status.display_name && (
+                            <Typography variant="body2" color="text.secondary">
+                                <strong>Account:</strong> {status.display_name}
+                            </Typography>
+                        )}
+                        {status.token_expiry && (
+                            <Typography variant="body2" color="text.secondary">
+                                <strong>Token Expires:</strong> {new Date(status.token_expiry).toLocaleString()}
+                            </Typography>
+                        )}
+                        {status.last_update && (
+                            <Typography variant="body2" color="text.secondary">
+                                <strong>Last Updated:</strong> {new Date(status.last_update).toLocaleString()}
+                            </Typography>
+                        )}
+                    </CardContent>
+                </Card>
 
-                        {/* Auth URL Button */}
-                        <div className="auth-url-section">
-                            <h4>Step 1: Get Authorization URL</h4>
-                            {authUrl && (
-                                <a
+                {/* Authentication Form */}
+                {!status.connected && (
+                    <Card sx={{ mb: 3 }} className="auth-form-card">
+                        <CardContent>
+                            <Typography variant="h6" gutterBottom>
+                                Daily Authentication Required
+                            </Typography>
+
+                            <Box sx={{ mb: 3 }}>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                    1. Click the button below to open Zerodha login
+                                </Typography>
+                                <Button
+                                    variant="outlined"
                                     href={authUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="auth-url-button"
+                                    disabled={!authUrl}
+                                    sx={{ mb: 2 }}
                                 >
-                                    🔗 Open Zerodha Authorization
-                                </a>
-                            )}
-                            <p className="note">
-                                <strong>Note:</strong> After login, copy the 'request_token' from the redirected URL
-                            </p>
-                        </div>
+                                    Open Zerodha Login
+                                </Button>
 
-                        {/* Token Input */}
-                        <div className="token-input-section">
-                            <h4>Step 2: Enter Request Token</h4>
-                            <div className="token-input-group">
-                                <input
-                                    type="text"
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                    2. After logging in, copy the request_token from the URL and paste below:
+                                </Typography>
+
+                                <TextField
+                                    fullWidth
+                                    label="Request Token"
+                                    variant="outlined"
                                     value={requestToken}
                                     onChange={(e) => setRequestToken(e.target.value)}
-                                    placeholder="Paste your request_token here..."
-                                    className="token-input"
-                                    disabled={loading}
+                                    placeholder="Enter request_token from Zerodha URL"
+                                    disabled={status.loading}
+                                    sx={{ mb: 2 }}
                                 />
-                                <button
-                                    onClick={submitToken}
-                                    disabled={loading || !requestToken.trim()}
-                                    className="submit-button"
+
+                                <Button
+                                    variant="contained"
+                                    onClick={handleSubmitToken}
+                                    disabled={status.loading || !requestToken.trim()}
+                                    startIcon={status.loading ? <CircularProgress size={20} /> : null}
+                                    fullWidth
                                 >
-                                    {loading ? '⏳ Processing...' : '🚀 Submit Token'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                                    {status.loading ? 'Authenticating...' : 'Submit Token'}
+                                </Button>
+                            </Box>
+                        </CardContent>
+                    </Card>
                 )}
 
-                {/* Authenticated Actions */}
-                {status?.authenticated && (
-                    <div className="authenticated-actions">
-                        <h3>✅ Authenticated Successfully</h3>
-                        <div className="action-buttons">
-                            <button
-                                onClick={testConnection}
-                                disabled={loading}
-                                className="test-button"
-                            >
-                                {loading ? '⏳ Testing...' : '🧪 Test Connection'}
-                            </button>
-                            <button
-                                onClick={logout}
-                                disabled={loading}
-                                className="logout-button"
-                            >
-                                {loading ? '⏳ Logging out...' : '🚪 Logout'}
-                            </button>
-                        </div>
+                {/* Connected Actions */}
+                {status.connected && (
+                    <Card sx={{ mb: 3 }} className="connected-actions-card">
+                        <CardContent>
+                            <Typography variant="h6" gutterBottom>
+                                Connection Actions
+                            </Typography>
 
-                        <div className="info-box">
-                            <h4>📊 Data Sources</h4>
-                            <p><strong>TrueData:</strong> Primary (Fast, Real-time)</p>
-                            <p><strong>Zerodha:</strong> Secondary (Slower, for trading)</p>
-                            <p><strong>Note:</strong> Zerodha tokens expire daily at 6:00 AM IST</p>
-                        </div>
-                    </div>
+                            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                                <Button
+                                    variant="outlined"
+                                    onClick={handleTestConnection}
+                                    disabled={status.loading}
+                                    startIcon={status.loading ? <CircularProgress size={20} /> : null}
+                                >
+                                    Test Connection
+                                </Button>
+
+                                <Button
+                                    variant="outlined"
+                                    color="error"
+                                    onClick={handleLogout}
+                                >
+                                    Logout
+                                </Button>
+
+                                <Button
+                                    variant="outlined"
+                                    onClick={checkConnectionStatus}
+                                >
+                                    Refresh Status
+                                </Button>
+                            </Box>
+                        </CardContent>
+                    </Card>
                 )}
 
-                {/* Refresh Button */}
-                <div className="refresh-section">
-                    <button
-                        onClick={checkStatus}
-                        disabled={loading}
-                        className="refresh-button"
-                    >
-                        {loading ? '⏳ Checking...' : '🔄 Refresh Status'}
-                    </button>
-                </div>
-            </div>
-        </div>
+                {/* Status Messages */}
+                {status.error && (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                        {status.error}
+                    </Alert>
+                )}
+
+                {status.success && (
+                    <Alert severity="success" sx={{ mb: 2 }}>
+                        {status.success}
+                    </Alert>
+                )}
+
+                {/* Instructions */}
+                <Card className="instructions-card">
+                    <CardContent>
+                        <Typography variant="h6" gutterBottom>
+                            <Info sx={{ mr: 1, verticalAlign: 'middle' }} />
+                            Important Instructions
+                        </Typography>
+
+                        <Box component="ul" sx={{ pl: 2 }}>
+                            <Typography component="li" variant="body2" sx={{ mb: 1 }}>
+                                Zerodha tokens expire daily at 6:00 AM IST
+                            </Typography>
+                            <Typography component="li" variant="body2" sx={{ mb: 1 }}>
+                                You need to authenticate once per day for live trading
+                            </Typography>
+                            <Typography component="li" variant="body2" sx={{ mb: 1 }}>
+                                {/* UNIFIED: Use consistent user identification */}
+                                All trades will be executed through your {USER_CONFIG.ZERODHA_USER_ID} account
+                            </Typography>
+                            <Typography component="li" variant="body2" sx={{ mb: 1 }}>
+                                Keep your login credentials secure and never share tokens
+                            </Typography>
+                        </Box>
+
+                        <Alert severity="warning" sx={{ mt: 2 }}>
+                            <Typography variant="body2">
+                                <Warning sx={{ mr: 1, verticalAlign: 'middle' }} />
+                                This is your live trading account. All orders will be real trades.
+                            </Typography>
+                        </Alert>
+                    </CardContent>
+                </Card>
+            </Box>
+        </Container>
     );
 };
 
