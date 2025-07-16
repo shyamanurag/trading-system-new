@@ -409,11 +409,11 @@ class TradingOrchestrator:
         
         # Initialize trade engine with all required components
         self.trade_engine = TradeEngine(
-            db_config=self.db_config,
-            order_manager=self.order_manager,
-            position_tracker=self.position_tracker,
-            performance_tracker=self.performance_tracker,
-            notification_manager=self.notification_manager
+            self.db_config,
+            self.order_manager,
+            self.position_tracker,
+            self.performance_tracker,
+            self.notification_manager
         )
         
         # Set additional components after initialization
