@@ -167,13 +167,10 @@ class MarketData(Base):
     # Relationships
     stock = relationship("Stock", back_populates="market_data")
 
-class Position(Base):
+class TradingPosition(Base):
     """Trading positions"""
     __tablename__ = "positions"
-    __table_args__ = {
-        'extend_existing': True,
-        'postgresql_ignore_search_path': False
-    }
+    __table_args__ = {'extend_existing': True}
     
     position_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
