@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, text, inspect, Column, Integer, String, Da
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime
 from typing import Dict, List, Any
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -267,14 +268,16 @@ class DatabaseSchemaManager:
             
             # Test the fix with a simple foreign key check
             try:
-                conn.execute(text("""
-                    CREATE TEMP TABLE test_foreign_key_validation (
+                # Use a regular table instead of TEMP table for foreign key validation
+                test_table_name = f"test_fk_validation_{int(time.time())}"
+                conn.execute(text(f"""
+                    CREATE TABLE {test_table_name} (
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER,
                         FOREIGN KEY (user_id) REFERENCES users(id)
                     )
                 """))
-                conn.execute(text("DROP TABLE test_foreign_key_validation"))
+                conn.execute(text(f"DROP TABLE {test_table_name}"))
                 logger.info("✅ Users table PRIMARY KEY constraint verified working")
                 return True
             except Exception as verify_error:
