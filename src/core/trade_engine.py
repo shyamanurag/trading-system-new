@@ -30,8 +30,8 @@ class TradeEngine:
         # Ensure precise database schema
         self._ensure_database_schema()
         
-        # Initialize paper trading user manager
-        self.paper_user_manager = PaperTradingUserManager(db_config.database_url)
+        # Initialize paper trading user manager (no arguments needed - it uses static methods)
+        self.paper_user_manager = PaperTradingUserManager()
         
         # Initialize statistics
         self.statistics = {

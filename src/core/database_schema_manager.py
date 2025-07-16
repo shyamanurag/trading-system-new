@@ -18,7 +18,7 @@ class DatabaseSchemaManager:
     
     # Define the precise schema for users table
     USERS_TABLE_SCHEMA = {
-        'id': {'type': 'INTEGER', 'primary_key': True, 'autoincrement': True, 'nullable': False},
+        'user_id': {'type': 'SERIAL', 'primary_key': True, 'nullable': False},  # Production uses user_id, not id
         'email': {'type': 'VARCHAR(255)', 'unique': True, 'nullable': False},
         'username': {'type': 'VARCHAR(50)', 'unique': True, 'nullable': False},
         'full_name': {'type': 'VARCHAR(100)', 'nullable': False},
@@ -49,7 +49,7 @@ class DatabaseSchemaManager:
     # Define the precise schema for paper_trades table
     PAPER_TRADES_TABLE_SCHEMA = {
         'id': {'type': 'INTEGER', 'primary_key': True, 'autoincrement': True, 'nullable': False},
-        'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.id'},
+        'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.user_id'},  # Reference user_id, not id
         'symbol': {'type': 'VARCHAR(20)', 'nullable': False},
         'action': {'type': 'VARCHAR(10)', 'nullable': False},
         'quantity': {'type': 'INTEGER', 'nullable': False},
@@ -75,7 +75,7 @@ class DatabaseSchemaManager:
         'pnl': {'type': 'FLOAT', 'nullable': True, 'default': 0.0},
         'pnl_percent': {'type': 'FLOAT', 'nullable': True, 'default': 0.0},
         'status': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'EXECUTED'},
-        'user_id': {'type': 'INTEGER', 'nullable': True, 'foreign_key': 'users.id'},
+        'user_id': {'type': 'INTEGER', 'nullable': True, 'foreign_key': 'users.user_id'},  # Reference user_id
         'created_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'},
         'updated_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'}
     }
