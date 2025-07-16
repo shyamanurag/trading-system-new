@@ -250,6 +250,11 @@ class TradeEngine:
                 if user_id is None:
                     user_id = PaperTradingUserManager.ensure_user_exists(db_session)
                 
+                # Validate user exists before inserting trade
+                if not PaperTradingUserManager.validate_user_exists(db_session, user_id):
+                    self.logger.error(f"❌ User {user_id} does not exist in database, skipping trade save")
+                    return
+                
                 # Insert paper trade into trades table (let trade_id auto-increment)
                 query = text("""
                     INSERT INTO trades (
@@ -278,11 +283,15 @@ class TradeEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Error saving paper trade to database: {e}")
-            # Rollback on any error
-            if db_session:
-                db_session.rollback()
-            # Don't raise - allow paper trading to continue
-            self.logger.warning(f"⚠️ Failed to save paper trade to database: {e}")
+            # Log more details for debugging
+            self.logger.error(f"   Order: {order_id}, Symbol: {symbol}, Action: {action}")
+            self.logger.error(f"   User ID: {user_id}, Strategy: {strategy_name}")
+        finally:
+            if 'db_session' in locals():
+                try:
+                    db_session.close()
+                except:
+                    pass
     
     async def _process_live_signal(self, signal: Dict):
         """Process signal in live trading mode"""

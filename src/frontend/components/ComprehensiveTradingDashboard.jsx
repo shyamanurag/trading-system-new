@@ -57,9 +57,9 @@ import { safeRender } from '../utils/safeRender';
 import AutonomousTradingDashboard from './AutonomousTradingDashboard';
 import EliteRecommendationsDashboard from './EliteRecommendationsDashboard';
 import TodaysTradeReport from './TodaysTradeReport';
-import UserManagementDashboard from './UserManagementDashboard';
 import UserPerformanceDashboard from './UserPerformanceDashboard';
 
+import DynamicUserManagement from './DynamicUserManagement';
 import MarketIndicesWidget from './MarketIndicesWidget';
 import SearchComponent from './SearchComponent';
 import SystemHealthMonitor from './SystemHealthMonitor';
@@ -1083,7 +1083,21 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
 
             {/* User Management Tab */}
             <TabPanel value={selectedTab} index={6}>
-                <UserManagementDashboard tradingData={dashboardData} />
+                <Box>
+                    {/* Enhanced Dynamic User Management */}
+                    <Typography variant="h5" gutterBottom sx={{ mb: 3, fontWeight: 600 }}>
+                        🎛️ Dynamic User Management System
+                    </Typography>
+
+                    {/* Alert for new features */}
+                    <Alert severity="info" sx={{ mb: 3 }}>
+                        <strong>New Feature:</strong> Multi-user trading system with real-time analytics and Zerodha integration.
+                        Create and manage multiple trading users with individual P&L tracking.
+                    </Alert>
+
+                    {/* Dynamic User Management Component */}
+                    <DynamicUserManagement />
+                </Box>
             </TabPanel>
 
             {/* Today's Trades Tab - WAS MISSING! */}
