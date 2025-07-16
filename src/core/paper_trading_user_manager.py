@@ -68,6 +68,7 @@ class PaperTradingUserManager:
                 # Create paper user with user_id (let SERIAL generate it)
                 logger.info("📝 Creating paper trading user...")
                 
+                # For PostgreSQL with SERIAL user_id, don't include user_id in INSERT
                 db_session.execute(text("""
                     INSERT INTO users (
                         username, email, password_hash, full_name,
@@ -82,9 +83,9 @@ class PaperTradingUserManager:
                         :true_val, 'PAPER', :true_val,
                         1000, 500000, :now, :now,
                         'trader', 'active'
-                    )
+                    ) ON CONFLICT (username) DO NOTHING
                 """), {
-                    'true_val': True if 'postgresql' in str(db_session.bind.url) else 1,
+                    'true_val': True,
                     'now': datetime.now()
                 })
                 db_session.commit()
@@ -95,10 +96,11 @@ class PaperTradingUserManager:
                 """))
                 row = result.fetchone()
                 if row:
-                    logger.info(f"✅ Created paper trading user with user_id: {row[0]}")
+                    logger.info(f"✅ Paper trading user ready with user_id: {row[0]}")
                     return row[0]
-                    
-                return user_id or 1
+                else:
+                    logger.warning("⚠️ Paper trading user creation may have failed, using fallback")
+                    return 1
                     
             else:
                 # No user_id column - use username-based approach for development
