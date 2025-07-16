@@ -44,38 +44,45 @@ except ImportError:
 try:
     from src.core.position_tracker import ProductionPositionTracker
 except ImportError:
-    # Fallback PositionTracker if not available  
+    # Fallback PositionTracker if not available
     class ProductionPositionTracker:
-        def __init__(self, *args, **kwargs):
+        def __init__(self):
             pass
         async def initialize(self):
             pass
-    
+        async def get_status(self):
+            return {"status": "fallback_position_tracker"}
+
+# Configure logging first
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Import the correct TradeEngine
+try:
+    from src.core.trade_engine import TradeEngine
+except ImportError:
+    logger.warning("Could not import TradeEngine from trade_engine.py")
+    TradeEngine = None
+
 try:
     from brokers.resilient_zerodha import ResilientZerodhaConnection
 except ImportError:
-    # Fallback if Zerodha is not available
+    # Fallback Zerodha connection if not available
     class ResilientZerodhaConnection:
         def __init__(self, *args, **kwargs):
             pass
         async def initialize(self):
             return False
-        async def connect(self):
-            return False
 
-# Import the new Redis manager
+# CRITICAL FIX: Import redis_manager after it's defined
 try:
-    from src.core.redis_connection_manager import redis_manager
+    from src.core.redis_manager import redis_manager
 except ImportError:
     # Fallback if Redis manager is not available
     redis_manager = None
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-class TradeEngine:
-    """Production-level trade engine with proper error handling"""
+class SimpleTradeEngine:
+    """Simple trade engine for fallback - renamed to avoid conflict"""
     
     def __init__(self, zerodha_client=None):
         self.zerodha_client = zerodha_client
