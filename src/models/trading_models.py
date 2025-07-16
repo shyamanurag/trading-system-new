@@ -206,6 +206,9 @@ class Trade(Base):
     order_id = Column(String(50))
     strategy = Column(String(50))
     commission = Column(DECIMAL(8,2), default=0)
+    pnl = Column(DECIMAL(12,2), default=0)
+    pnl_percent = Column(DECIMAL(6,2), default=0) 
+    status = Column(String(20), default='EXECUTED')
     executed_at = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
