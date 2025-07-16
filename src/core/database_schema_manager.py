@@ -18,13 +18,13 @@ class DatabaseSchemaManager:
     
     # Define the precise schema for users table
     USERS_TABLE_SCHEMA = {
-        'user_id': {'type': 'SERIAL', 'primary_key': True, 'nullable': False},  # Production uses user_id, not id
+        'id': {'type': 'SERIAL', 'primary_key': True, 'nullable': False},  # Correct: Production uses id, not user_id
         'email': {'type': 'VARCHAR(255)', 'unique': True, 'nullable': False},
         'username': {'type': 'VARCHAR(50)', 'unique': True, 'nullable': False},
         'full_name': {'type': 'VARCHAR(100)', 'nullable': False},
         'password_hash': {'type': 'VARCHAR(255)', 'nullable': False},
-        'role': {'type': 'VARCHAR(20)', 'nullable': False, 'default': 'trader'},
-        'status': {'type': 'VARCHAR(20)', 'nullable': False, 'default': 'active'},
+        'role': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'trader'},  # Make nullable to match production
+        'status': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'active'},  # Make nullable to match production
         'is_active': {'type': 'BOOLEAN', 'nullable': False, 'default': True},
         'broker_account_id': {'type': 'VARCHAR(255)', 'nullable': True},
         'trading_enabled': {'type': 'BOOLEAN', 'nullable': False, 'default': False},
@@ -49,7 +49,7 @@ class DatabaseSchemaManager:
     # Define the precise schema for paper_trades table
     PAPER_TRADES_TABLE_SCHEMA = {
         'id': {'type': 'SERIAL', 'primary_key': True, 'nullable': False},
-        'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.user_id'},  # Match users.user_id type
+        'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.id'},  # Correct: Reference users.id
         'symbol': {'type': 'VARCHAR(20)', 'nullable': False},
         'action': {'type': 'VARCHAR(10)', 'nullable': False},
         'quantity': {'type': 'INTEGER', 'nullable': False},
@@ -75,7 +75,7 @@ class DatabaseSchemaManager:
         'pnl': {'type': 'FLOAT', 'nullable': True, 'default': 0.0},
         'pnl_percent': {'type': 'FLOAT', 'nullable': True, 'default': 0.0},
         'status': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'EXECUTED'},
-        'user_id': {'type': 'INTEGER', 'nullable': True, 'foreign_key': 'users.user_id'},  # Reference user_id
+        'user_id': {'type': 'INTEGER', 'nullable': True, 'foreign_key': 'users.id'},  # Correct: Reference users.id
         'created_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'},
         'updated_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'}
     }
@@ -288,41 +288,56 @@ class DatabaseSchemaManager:
         """Ensure default paper trading user exists"""
         with self.engine.connect() as conn:
             # Check if any user exists
-            result = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
-            
-            if result == 0:
-                # Create default paper trading user
-                # Use database-agnostic approach
-                try:
-                    insert_sql = """
-                    INSERT INTO users (
-                        email, username, full_name, password_hash, role, status, 
-                        is_active, trading_enabled, created_at, updated_at,
-                        initial_capital, current_balance, risk_tolerance,
-                        zerodha_client_id, max_daily_trades
-                    ) VALUES (
-                        'paper@trading.com', 'paper_trader', 'Paper Trading User',
-                        'no_password_needed', 'trader', 'active', 
-                        :true_val, :true_val, :now, :now,
-                        100000, 100000, 'medium',
-                        'PAPER', 1000
-                    )
-                    """
-                    
-                    # Handle boolean and timestamp values based on database type
-                    if 'postgresql' in self.database_url:
-                        params = {
-                            'true_val': True,
-                            'now': datetime.now()
-                        }
-                    else:  # SQLite
-                        params = {
-                            'true_val': 1,
-                            'now': datetime.now()
-                        }
-                    
-                    conn.execute(text(insert_sql), params)
-                    conn.commit()
-                    logger.info("Created default paper trading user")
-                except Exception as e:
-                    logger.warning(f"Could not create default user: {e}") 
+            try:
+                result = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
+                
+                if result == 0:
+                    # Create default paper trading user using only essential columns that exist
+                    # Use the same approach as our fixed paper_trading_user_manager
+                    try:
+                        insert_sql = """
+                        INSERT INTO users (
+                            username, email, password_hash, full_name,
+                            initial_capital, current_balance, risk_tolerance,
+                            is_active, zerodha_client_id, trading_enabled,
+                            max_daily_trades, max_position_size, created_at, updated_at
+                        ) VALUES (
+                            'PAPER_TRADER_001', 'paper@algoauto.com',
+                            '$2b$12$dummy.hash.paper.trading', 'Paper Trading Account',
+                            100000, 100000, 'medium',
+                            :true_val, 'PAPER', :true_val,
+                            1000, 500000, :now, :now
+                        ) ON CONFLICT (username) DO NOTHING
+                        """
+                        
+                        # Handle boolean and timestamp values based on database type
+                        if 'postgresql' in self.database_url:
+                            params = {
+                                'true_val': True,
+                                'now': datetime.now()
+                            }
+                        else:  # SQLite
+                            params = {
+                                'true_val': 1,
+                                'now': datetime.now()
+                            }
+                        
+                        conn.execute(text(insert_sql), params)
+                        conn.commit()
+                        logger.info("Created default paper trading user")
+                    except Exception as e:
+                        logger.warning(f"Could not create default user: {e}")
+                        # Try minimal approach if the above fails
+                        try:
+                            minimal_sql = """
+                            INSERT INTO users (username, email, password_hash, trading_enabled) 
+                            VALUES ('PAPER_TRADER_001', 'paper@algoauto.com', 'dummy_hash', :true_val)
+                            ON CONFLICT (username) DO NOTHING
+                            """
+                            conn.execute(text(minimal_sql), {'true_val': True if 'postgresql' in self.database_url else 1})
+                            conn.commit()
+                            logger.info("Created minimal paper trading user")
+                        except Exception as e2:
+                            logger.error(f"Failed to create any paper trading user: {e2}")
+            except Exception as e:
+                logger.error(f"Error checking/creating default user: {e}") 
