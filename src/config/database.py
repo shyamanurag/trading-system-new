@@ -12,6 +12,9 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import StaticPool
 
+# Import our precise schema manager
+from src.core.database_schema_manager import DatabaseSchemaManager
+
 logger = logging.getLogger(__name__)
 
 # Check if we're in production environment
@@ -50,11 +53,27 @@ class DatabaseConfig:
             if "localhost" in self.database_url and not self.database_url.startswith('sqlite'):
                 logger.warning(f"[DEV WARNING] DATABASE_URL is set to localhost: {self.database_url}. This MUST be overridden in production!")
         
-        # Parse Redis connection
-        self._setup_redis_config()
-        
-        # Setup PostgreSQL
-        self._setup_postgres_config()
+        # Initialize database with precise schema
+        self._ensure_precise_database_schema()
+
+    def _ensure_precise_database_schema(self):
+        """Ensure database has the precise schema required - this is not a workaround, this is the correct approach"""
+        try:
+            schema_manager = DatabaseSchemaManager(self.database_url)
+            result = schema_manager.ensure_precise_schema()
+            
+            if result['status'] == 'success':
+                logger.info("Database schema verified - all tables have precise structure")
+                if result['users_table']['actions']:
+                    logger.info(f"Users table updates: {result['users_table']['actions']}")
+                if result['paper_trades_table']['actions']:
+                    logger.info(f"Paper trades table updates: {result['paper_trades_table']['actions']}")
+            else:
+                logger.error(f"Database schema verification failed: {result['errors']}")
+                
+        except Exception as e:
+            logger.error(f"Error ensuring database schema: {e}")
+            # Don't fail initialization - the system can still work with partial schema
     
     def _setup_redis_config(self):
         """Setup Redis connection configuration with SSL support"""

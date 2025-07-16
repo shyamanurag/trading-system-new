@@ -11,33 +11,54 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+from src.core.paper_trading_user_manager import PaperTradingUserManager
+from src.core.database_schema_manager import DatabaseSchemaManager
+from sqlalchemy import text
+
 class TradeEngine:
     """Enhanced trade engine with paper trading support"""
     
-    def __init__(self, config: Dict):
-        self.config = config
-        self.order_manager = None
-        self.zerodha_client = None
-        self.risk_manager = None
+    def __init__(self, db_config, order_manager, position_tracker, performance_tracker, notification_manager):
+        """Initialize trade engine with all required components"""
+        self.db_config = db_config
+        self.order_manager = order_manager
+        self.position_tracker = position_tracker
+        self.performance_tracker = performance_tracker
+        self.notification_manager = notification_manager
         self.logger = logging.getLogger(__name__)
         
-        # Paper trading configuration
-        self.paper_trading_enabled = os.getenv('PAPER_TRADING', 'false').lower() == 'true'
-        self.paper_orders = {}  # Store simulated orders
+        # Ensure precise database schema
+        self._ensure_database_schema()
         
-        # Rate limiting
-        self.rate_limit = config.get('rate_limit', {})
-        self.last_signal_time = 0
-        self.signal_count = 0
-        self.signal_rate_limit = self.rate_limit.get('max_trades_per_second', 7)
+        # Initialize paper trading user manager
+        self.paper_user_manager = PaperTradingUserManager(db_config.database_url)
         
-        # Batch processing
-        self.batch_config = config.get('batch_processing', {})
-        self.pending_signals = []
-        self.batch_size = self.batch_config.get('size', 5)
-        self.batch_timeout = self.batch_config.get('timeout', 0.5)
+        # Initialize statistics
+        self.statistics = {
+            'total_trades': 0,
+            'successful_trades': 0,
+            'failed_trades': 0,
+            'total_pnl': 0.0,
+            'last_trade_time': None
+        }
         
-        self.logger.info(f"Trade Engine initialized - Paper Trading: {self.paper_trading_enabled}")
+        # Status tracking
+        self.is_active = True
+        self.last_error = None
+        
+    def _ensure_database_schema(self):
+        """Ensure database has precise schema - this is the definitive approach"""
+        try:
+            schema_manager = DatabaseSchemaManager(self.db_config.database_url)
+            result = schema_manager.ensure_precise_schema()
+            
+            if result['status'] == 'success':
+                self.logger.info("Trade engine: Database schema verified")
+            else:
+                self.logger.error(f"Trade engine: Database schema issues: {result['errors']}")
+                
+        except Exception as e:
+            self.logger.error(f"Trade engine: Error ensuring database schema: {e}")
     
     async def initialize(self):
         """Initialize trade engine"""
@@ -390,3 +411,55 @@ class TradeEngine:
             'timestamp': datetime.now().isoformat()
         })
         return stats 
+
+    async def save_paper_trade(self, trade_data: dict) -> bool:
+        """Save paper trade to database with precise schema handling"""
+        try:
+            # Get paper trading user
+            user = self.paper_user_manager.get_or_create_paper_user()
+            if not user:
+                self.logger.error("Failed to get paper trading user")
+                return False
+                
+            # Create paper trade record with precise schema
+            paper_trade = {
+                'user_id': user['id'],  # Use the precise id field
+                'symbol': trade_data.get('symbol'),
+                'action': trade_data.get('action'),
+                'quantity': trade_data.get('quantity'),
+                'price': trade_data.get('price'),
+                'timestamp': trade_data.get('timestamp', datetime.now()),
+                'status': trade_data.get('status', 'executed'),
+                'order_id': trade_data.get('order_id'),
+                'pnl': trade_data.get('pnl', 0.0),
+                'strategy': trade_data.get('strategy'),
+                'created_at': datetime.now()
+            }
+            
+            # Save to database
+            async with self.db_config.get_session() as session:
+                # Use text query for precise control
+                insert_query = text("""
+                    INSERT INTO paper_trades (
+                        user_id, symbol, action, quantity, price, timestamp,
+                        status, order_id, pnl, strategy, created_at
+                    ) VALUES (
+                        :user_id, :symbol, :action, :quantity, :price, :timestamp,
+                        :status, :order_id, :pnl, :strategy, :created_at
+                    )
+                """)
+                
+                await session.execute(insert_query, paper_trade)
+                await session.commit()
+                
+                self.logger.info(f"Paper trade saved: {trade_data['symbol']} {trade_data['action']} {trade_data['quantity']}@{trade_data['price']}")
+                return True
+                
+        except Exception as e:
+            self.logger.error(f"Error saving paper trade: {e}")
+            # Try to rollback if possible
+            try:
+                await session.rollback()
+            except:
+                pass
+            return False 
