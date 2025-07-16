@@ -92,6 +92,21 @@ class DatabaseManager:
                 logger.info("🔄 Ensuring database is ready for paper trading...")
                 
                 with self.engine.begin() as conn:
+                    # First check if users table already has a primary key
+                    result = conn.execute(text("""
+                        SELECT constraint_name, column_name 
+                        FROM information_schema.key_column_usage 
+                        WHERE table_name = 'users' 
+                        AND constraint_name IN (
+                            SELECT constraint_name 
+                            FROM information_schema.table_constraints 
+                            WHERE table_name = 'users' 
+                            AND constraint_type = 'PRIMARY KEY'
+                        )
+                    """))
+                    
+                    primary_key_info = result.fetchone()
+                    
                     # Check if users table has id column
                     result = conn.execute(text("""
                         SELECT column_name 
@@ -100,11 +115,20 @@ class DatabaseManager:
                         AND column_name = 'id'
                     """))
                     
-                    if not result.fetchone():
-                        logger.info("📝 Adding id column to users table...")
-                        conn.execute(text("""
-                            ALTER TABLE users ADD COLUMN id SERIAL PRIMARY KEY
-                        """))
+                    has_id_column = result.fetchone() is not None
+                    
+                    if not has_id_column:
+                        if primary_key_info:
+                            logger.info(f"📝 Users table has primary key on column: {primary_key_info[1]}")
+                            logger.info("📝 Adding id column without primary key constraint...")
+                            conn.execute(text("""
+                                ALTER TABLE users ADD COLUMN id SERIAL
+                            """))
+                        else:
+                            logger.info("📝 Adding id column as primary key...")
+                            conn.execute(text("""
+                                ALTER TABLE users ADD COLUMN id SERIAL PRIMARY KEY
+                            """))
                         logger.info("✅ Added id column to users table")
                     
                     # Ensure at least one user exists for paper trading
@@ -114,20 +138,30 @@ class DatabaseManager:
                     
                     if result.scalar() == 0:
                         logger.info("📝 Creating default paper trading user...")
+                        # First check if we need to specify id explicitly
                         conn.execute(text("""
                             INSERT INTO users (
-                                id, username, email, password_hash, full_name,
+                                username, email, password_hash, full_name,
                                 initial_capital, current_balance, risk_tolerance,
                                 is_active, zerodha_client_id, trading_enabled,
                                 max_daily_trades, max_position_size, created_at, updated_at
                             ) VALUES (
-                                1, 'PAPER_TRADER_001', 'paper@algoauto.com',
+                                'PAPER_TRADER_001', 'paper@algoauto.com',
                                 '$2b$12$dummy.hash.paper.trading', 'Paper Trading Account',
                                 100000, 100000, 'medium',
                                 true, 'PAPER', true,
                                 1000, 500000, NOW(), NOW()
-                            ) ON CONFLICT (id) DO NOTHING
+                            )
                         """))
+                        
+                        # Update the user to have id=1 if possible
+                        conn.execute(text("""
+                            UPDATE users SET id = 1 
+                            WHERE username = 'PAPER_TRADER_001' 
+                            AND id != 1
+                            AND NOT EXISTS (SELECT 1 FROM users WHERE id = 1)
+                        """))
+                        
                         logger.info("✅ Created default paper trading user")
                     
                     logger.info("✅ Database is ready for paper trading!")
