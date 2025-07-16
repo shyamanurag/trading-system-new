@@ -93,37 +93,14 @@ class DatabaseManager:
             environment = os.getenv('ENVIRONMENT', 'development')
             
             if environment == 'production':
-                logger.info("🔄 Production environment detected - applying critical migrations...")
-                
-                # Apply migration 010 specifically to fix users table primary key
-                migration_010_path = Path("database/migrations/010_fix_users_primary_key.sql")
-                if migration_010_path.exists():
-                    logger.info("🔧 Applying migration 010 to fix users table primary key...")
-                    
-                    with open(migration_010_path, 'r') as f:
-                        migration_sql = f.read()
-                    
-                    # Execute the migration
-                    with self.engine.connect() as conn:
-                        # Execute in a transaction
-                        with conn.begin():
-                            conn.execute(text(migration_sql))
-                    
-                    logger.info("✅ Migration 010 applied successfully!")
-                    
-                    # Verify the fix
-                    with self.engine.connect() as conn:
-                        result = conn.execute(text("SELECT id FROM users LIMIT 1"))
-                        logger.info("✅ Verified: users table now has proper id column with primary key")
-                
-                else:
-                    logger.warning("⚠️ Migration 010 file not found, skipping")
+                logger.info("🔄 Production environment detected - skipping auto-migrations")
+                logger.info("📝 Database migrations should be applied manually via deployment scripts")
             else:
                 logger.info("📝 Development environment - skipping auto-migrations")
                 
         except Exception as e:
-            logger.error(f"❌ Migration application failed: {e}")
-            logger.info("🔄 Continuing without migration - check schema manually")
+            logger.error(f"❌ Migration check failed: {e}")
+            logger.info("🔄 Continuing without migration")
     
     @contextmanager
     def get_session(self) -> Session:
