@@ -544,7 +544,7 @@ class RiskManager:
             
             return False
 
-            except Exception as e:
+        except Exception as e:
             logger.error(f"Error checking correlation limit: {e}")
             return True  # Conservative: assume limit exceeded on error
             
@@ -610,7 +610,7 @@ class RiskManager:
             risk_approved, risk_reason = self.validate_trade_risk(position_value, strategy_name, symbol)
             
             if not risk_approved:
-            return {
+                return {
                     'approved': False,
                     'reason': risk_reason,
                     'risk_score': 100.0,  # Maximum risk
@@ -632,7 +632,7 @@ class RiskManager:
                     signal, entry_price
                 )
                 if not greeks_result.get('approved', True):
-        return {
+                    return {
                         'approved': False,
                         'reason': f"Greeks validation failed: {greeks_result.get('reason', 'Unknown')}",
                         'risk_score': 100.0,
@@ -645,7 +645,7 @@ class RiskManager:
                     }
             
             # Signal approved
-        return {
+            return {
                 'approved': True,
                 'reason': 'Signal passed risk validation',
                 'risk_score': risk_score,
@@ -737,7 +737,7 @@ class RiskManager:
             result = await self.validate_signal(signal)
             
             return result.get('approved', False)
-                
+            
         except Exception as e:
             logger.error(f"Error validating order: {e}")
             return False
