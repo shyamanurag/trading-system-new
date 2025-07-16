@@ -153,22 +153,14 @@ class TradeEngine:
         """Save paper order to database for frontend display"""
         try:
             from src.core.database import get_db
+            from src.core.paper_trading_user_manager import PaperTradingUserManager
             from sqlalchemy import text
             
             db_session = next(get_db())
             if db_session:
-                # Try to find user_id - handle missing id column gracefully
-                try:
-                    user_query = text("SELECT id FROM users LIMIT 1")
-                    user_result = db_session.execute(user_query)
-                    user_row = user_result.fetchone()
-                    user_id = user_row[0] if user_row else 1
-                except Exception as e:
-                    # If id column doesn't exist, rollback and use default user_id
-                    self.logger.warning(f"⚠️ Could not get user id (likely missing column): {e}")
-                    self.logger.info("📝 Using default user_id=1 for paper trading")
-                    db_session.rollback()  # Important: rollback failed transaction
-                    user_id = 1
+                # Use dynamic user manager to ensure user exists
+                user_id = PaperTradingUserManager.ensure_user_exists(db_session)
+                self.logger.debug(f"📝 Using user_id={user_id} for paper trading")
                 
                 # Insert paper order into orders table
                 query = text("""
@@ -210,22 +202,14 @@ class TradeEngine:
         """Save paper trade to database for frontend display"""
         try:
             from src.core.database import get_db
+            from src.core.paper_trading_user_manager import PaperTradingUserManager
             from sqlalchemy import text
             
             db_session = next(get_db())
             if db_session:
-                # Use provided user_id or find existing one - handle missing id column
+                # Use provided user_id or get from dynamic user manager
                 if user_id is None:
-                    try:
-                        user_query = text("SELECT id FROM users LIMIT 1")
-                        user_result = db_session.execute(user_query)
-                        user_row = user_result.fetchone()
-                        user_id = user_row[0] if user_row else 1
-                    except Exception as e:
-                        # If id column doesn't exist, rollback and use default user_id
-                        self.logger.warning(f"⚠️ Could not get user id for trade: {e}")
-                        db_session.rollback()  # Important: rollback failed transaction
-                        user_id = 1
+                    user_id = PaperTradingUserManager.ensure_user_exists(db_session)
                 
                 # Insert paper trade into trades table (let trade_id auto-increment)
                 query = text("""

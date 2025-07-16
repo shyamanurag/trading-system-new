@@ -25,7 +25,7 @@ class DatabaseManager:
         self._initialized = False
         
     def initialize(self):
-        """Initialize database connection"""
+        """Initialize database connection and ensure schema is ready"""
         if self._initialized:
             return
             
@@ -72,8 +72,8 @@ class DatabaseManager:
             
             logger.info("Database connection initialized successfully")
             
-            # Apply migrations if needed
-            self._apply_migrations()
+            # Ensure database is ready for paper trading (autonomous)
+            self._ensure_database_ready()
             
             self._initialized = True
             
@@ -82,6 +82,59 @@ class DatabaseManager:
             # Don't raise the error - let the app continue without database
             self.engine = None
             self.SessionLocal = None
+
+    def _ensure_database_ready(self):
+        """Ensure database has required structure for paper trading"""
+        try:
+            environment = os.getenv('ENVIRONMENT', 'development')
+            
+            if environment == 'production':
+                logger.info("🔄 Ensuring database is ready for paper trading...")
+                
+                with self.engine.begin() as conn:
+                    # Check if users table has id column
+                    result = conn.execute(text("""
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name = 'users' 
+                        AND column_name = 'id'
+                    """))
+                    
+                    if not result.fetchone():
+                        logger.info("📝 Adding id column to users table...")
+                        conn.execute(text("""
+                            ALTER TABLE users ADD COLUMN id SERIAL PRIMARY KEY
+                        """))
+                        logger.info("✅ Added id column to users table")
+                    
+                    # Ensure at least one user exists for paper trading
+                    result = conn.execute(text("""
+                        SELECT COUNT(*) FROM users WHERE id = 1
+                    """))
+                    
+                    if result.scalar() == 0:
+                        logger.info("📝 Creating default paper trading user...")
+                        conn.execute(text("""
+                            INSERT INTO users (
+                                id, username, email, password_hash, full_name,
+                                initial_capital, current_balance, risk_tolerance,
+                                is_active, zerodha_client_id, trading_enabled,
+                                max_daily_trades, max_position_size, created_at, updated_at
+                            ) VALUES (
+                                1, 'PAPER_TRADER_001', 'paper@algoauto.com',
+                                '$2b$12$dummy.hash.paper.trading', 'Paper Trading Account',
+                                100000, 100000, 'medium',
+                                true, 'PAPER', true,
+                                1000, 500000, NOW(), NOW()
+                            ) ON CONFLICT (id) DO NOTHING
+                        """))
+                        logger.info("✅ Created default paper trading user")
+                    
+                    logger.info("✅ Database is ready for paper trading!")
+                    
+        except Exception as e:
+            logger.warning(f"⚠️ Could not ensure database readiness: {e}")
+            logger.info("📊 System will continue - paper trading may have limited functionality")
     
     def _apply_migrations(self):
         """Apply database migrations if needed"""
