@@ -179,6 +179,56 @@ class DatabaseSchemaManager:
             col_def += " UNIQUE"
             
         return f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}"
+
+    def _fix_users_primary_key(self, conn, inspector) -> bool:
+        """Fix users table primary key if it's missing"""
+        try:
+            # Check if users table has a primary key
+            pk_constraints = inspector.get_pk_constraint('users')
+            
+            if not pk_constraints or not pk_constraints.get('constrained_columns'):
+                logger.info("❌ Users table missing primary key - attempting repair...")
+                
+                # Check if id column exists and has data
+                result = conn.execute(text("SELECT COUNT(*) FROM users WHERE id IS NOT NULL")).scalar()
+                
+                if result > 0:
+                    # Users exist with id values - need to add primary key constraint
+                    logger.info("🔧 Adding primary key constraint to existing users table...")
+                    
+                    # First ensure id is unique and not null
+                    conn.execute(text("DELETE FROM users WHERE id IS NULL"))
+                    
+                    # Remove duplicates keeping the first occurrence
+                    conn.execute(text("""
+                        DELETE FROM users WHERE id NOT IN (
+                            SELECT DISTINCT ON (username) id FROM users ORDER BY username, created_at
+                        )
+                    """))
+                    
+                    # Add primary key constraint
+                    conn.execute(text("ALTER TABLE users ADD PRIMARY KEY (id)"))
+                    logger.info("✅ Added primary key constraint to users.id")
+                    return True
+                else:
+                    # No users exist - add sequence and primary key
+                    logger.info("🔧 Setting up primary key for empty users table...")
+                    conn.execute(text("ALTER TABLE users ADD PRIMARY KEY (id)"))
+                    
+                    # Ensure id has proper sequence
+                    conn.execute(text("CREATE SEQUENCE IF NOT EXISTS users_id_seq"))
+                    conn.execute(text("ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq')"))
+                    conn.execute(text("ALTER SEQUENCE users_id_seq OWNED BY users.id"))
+                    
+                    logger.info("✅ Set up primary key for users table")
+                    return True
+            else:
+                logger.info("✅ Users table already has primary key")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to fix users primary key: {e}")
+            return False
     
     def _ensure_table(self, table_name: str, schema: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         """Ensure a table exists with the precise schema"""
@@ -200,6 +250,12 @@ class DatabaseSchemaManager:
                         result['actions'].append(f"Created table {table_name} with precise schema")
                         result['status'] = 'created'
                     else:
+                        # Special handling for users table primary key issues
+                        if table_name == 'users':
+                            pk_fixed = self._fix_users_primary_key(conn, inspector)
+                            if pk_fixed:
+                                result['actions'].append("Fixed users table primary key constraint")
+                        
                         # Verify and fix existing table schema
                         existing_columns = {col['name']: col for col in inspector.get_columns(table_name)}
                         
