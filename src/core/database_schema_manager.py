@@ -240,6 +240,82 @@ class DatabaseSchemaManager:
             logger.error(f"❌ Aggressive PRIMARY KEY fix failed: {e}")
             return False
 
+    def _ensure_users_table_with_aggressive_fix(self) -> Dict[str, Any]:
+        """Ensure users table exists with aggressive PRIMARY KEY fixing"""
+        result = {
+            'status': 'unknown',
+            'errors': [],
+            'actions': []
+        }
+        
+        try:
+            with self.engine.connect() as conn:
+                trans = conn.begin()
+                try:
+                    # Check if users table exists
+                    table_exists = self._table_exists(conn, 'users')
+                    
+                    if not table_exists:
+                        logger.info("📋 Users table doesn't exist - creating with proper schema...")
+                        create_sql = self._generate_create_table_sql('users', self.USERS_TABLE_SCHEMA)
+                        conn.execute(text(create_sql))
+                        result['status'] = 'created'
+                        result['actions'].append('Created users table with SERIAL PRIMARY KEY')
+                        logger.info("✅ Users table created successfully")
+                        
+                    else:
+                        # Table exists, check if PRIMARY KEY constraint is working
+                        if self._check_users_primary_key_constraint(conn):
+                            logger.info("✅ Users table PRIMARY KEY constraint working correctly")
+                            result['status'] = 'verified'
+                        else:
+                            logger.warning("⚠️ Users table PRIMARY KEY constraint needs fixing...")
+                            if self._fix_users_primary_key_aggressive(conn):
+                                result['status'] = 'repaired'
+                                result['actions'].append('Fixed PRIMARY KEY constraint with aggressive repair')
+                                logger.info("✅ Users table PRIMARY KEY constraint repaired")
+                            else:
+                                result['status'] = 'error'
+                                result['errors'].append('Failed to repair PRIMARY KEY constraint')
+                                logger.error("❌ Failed to repair users table PRIMARY KEY constraint")
+                    
+                    trans.commit()
+                    return result
+                    
+                except Exception as e:
+                    trans.rollback()
+                    raise e
+                    
+        except Exception as e:
+            logger.error(f"❌ Error ensuring users table: {e}")
+            result['status'] = 'error'
+            result['errors'].append(str(e))
+            return result
+
+    def _table_exists(self, conn, table_name: str) -> bool:
+        """Check if a table exists in the database"""
+        try:
+            # For PostgreSQL
+            if 'postgresql' in self.database_url:
+                result = conn.execute(text("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name = :table_name
+                    )
+                """), {'table_name': table_name}).scalar()
+                return bool(result)
+            else:
+                # For SQLite
+                result = conn.execute(text("""
+                    SELECT name FROM sqlite_master 
+                    WHERE type='table' AND name = :table_name
+                """), {'table_name': table_name}).fetchone()
+                return result is not None
+        except Exception as e:
+            logger.error(f"Error checking table existence for {table_name}: {e}")
+            return False
+
     def _generate_create_table_sql(self, table_name: str, schema: Dict[str, Dict[str, Any]]) -> str:
         """Generate precise CREATE TABLE SQL with proper constraints"""
         columns = []
