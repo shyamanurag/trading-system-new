@@ -19,71 +19,81 @@ class PaperTradingUserManager:
     def ensure_user_exists(db_session: Session, user_id: Optional[int] = None) -> Union[int, str]:
         """
         Ensure a paper trading user exists and return the user identifier
-        Returns id (primary key) for production database
+        Updated to handle actual production database schema
         """
         try:
-            # Check if this is production database (PostgreSQL) or development (SQLite)
-            result = db_session.execute(text("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'users' AND column_name = 'id'
-            """))
-            
-            has_id_column = result.fetchone() is not None
-            logger.info(f"📊 Database schema detected - has 'id' column: {has_id_column}")
-        except:
-            # For SQLite or if information_schema doesn't exist, assume id column exists
-            has_id_column = True
-            logger.info("📊 Assuming SQLite database with 'id' column")
-                
-        try:        
-            if has_id_column:
-                # Standard database with id column (both production and development)
-                logger.info("📊 Using standard database schema with 'id' primary key")
-                
-                if user_id:
-                    # Check if specific user exists
-                    result = db_session.execute(text("""
-                        SELECT id FROM users WHERE id = :user_id
-                    """), {"user_id": user_id})
-                    
-                    if result.fetchone():
-                        return user_id
-                        
-                # Check if any paper trading user exists
+            # First, determine the actual database schema
+            try:
+                # Check what columns exist and their types
                 result = db_session.execute(text("""
-                    SELECT id FROM users 
-                    WHERE username = 'PAPER_TRADER_001' 
-                    OR trading_enabled = true 
-                    LIMIT 1
+                    SELECT column_name, data_type, is_nullable
+                    FROM information_schema.columns 
+                    WHERE table_name = 'users' AND column_name IN ('id', 'user_id')
                 """))
                 
+                columns = {row[0]: {'type': row[1], 'nullable': row[2]} for row in result.fetchall()}
+                logger.info(f"📊 Database schema detected: {columns}")
+                
+                has_id = 'id' in columns
+                has_user_id = 'user_id' in columns
+                user_id_type = columns.get('user_id', {}).get('type', '')
+                
+            except Exception as e:
+                logger.warning(f"Could not detect schema: {e}, using fallback")
+                has_id = True
+                has_user_id = False
+                user_id_type = 'integer'
+                
+            # Try to find existing paper trading user
+            if has_user_id:
+                # Production database has user_id column
+                result = db_session.execute(text("""
+                    SELECT user_id FROM users WHERE username = 'PAPER_TRADER_001' LIMIT 1
+                """))
+                row = result.fetchone()
+                if row:
+                    logger.info(f"✅ Found existing paper trading user with user_id: {row[0]}")
+                    return row[0]
+                    
+                # Create paper trading user for production database
+                logger.info("📝 Creating paper trading user for production database...")
+                
+                if 'character' in user_id_type.lower() or 'varchar' in user_id_type.lower():
+                    # user_id is character varying - use string
+                    db_session.execute(text("""
+                        INSERT INTO users (user_id, username, email, password_hash) 
+                        VALUES ('PAPER_001', 'PAPER_TRADER_001', 'paper@algoauto.com', 'dummy_hash')
+                        ON CONFLICT (username) DO NOTHING
+                    """))
+                    db_session.commit()
+                    return 'PAPER_001'
+                else:
+                    # user_id is integer - use integer
+                    db_session.execute(text("""
+                        INSERT INTO users (user_id, username, email, password_hash) 
+                        VALUES (1001, 'PAPER_TRADER_001', 'paper@algoauto.com', 'dummy_hash')
+                        ON CONFLICT (username) DO NOTHING
+                    """))
+                    db_session.commit()
+                    return 1001
+                    
+            elif has_id:
+                # Development database with id column (auto-generated)
+                result = db_session.execute(text("""
+                    SELECT id FROM users WHERE username = 'PAPER_TRADER_001' LIMIT 1
+                """))
                 row = result.fetchone()
                 if row:
                     logger.info(f"✅ Found existing paper trading user with id: {row[0]}")
                     return row[0]
                     
-                # Create paper user - let SERIAL auto-generate id
-                logger.info("📝 Creating paper trading user...")
-                
-                # Don't include id in INSERT - let SERIAL generate it
+                # Create paper trading user - let SERIAL auto-generate id
+                logger.info("📝 Creating paper trading user for development database...")
                 db_session.execute(text("""
-                    INSERT INTO users (
-                        username, email, password_hash, full_name,
-                        initial_capital, current_balance, risk_tolerance,
-                        is_active, zerodha_client_id, trading_enabled,
-                        max_daily_trades, max_position_size, created_at, updated_at
-                    ) VALUES (
-                        'PAPER_TRADER_001', 'paper@algoauto.com',
-                        '$2b$12$dummy.hash.paper.trading', 'Paper Trading Account',
-                        100000, 100000, 'medium',
-                        :true_val, 'PAPER', :true_val,
-                        1000, 500000, :now, :now
-                    ) ON CONFLICT (username) DO NOTHING
-                """), {
-                    'true_val': True,
-                    'now': datetime.now()
-                })
+                    INSERT INTO users (username, email, password_hash, trading_enabled) 
+                    VALUES ('PAPER_TRADER_001', 'paper@algoauto.com', 'dummy_hash', true)
+                    ON CONFLICT (username) DO NOTHING
+                """))
                 db_session.commit()
                 
                 # Get the created user id
@@ -100,22 +110,13 @@ class PaperTradingUserManager:
                     
             else:
                 # Fallback for unusual database schemas
-                logger.info("📝 Using fallback approach for unusual database schema")
-                
-                # Try to create with minimal fields
-                db_session.execute(text("""
-                    INSERT INTO users (username, email, password_hash, trading_enabled) 
-                    VALUES ('PAPER_TRADER_001', 'paper@algoauto.com', 'dummy_hash', true)
-                    ON CONFLICT (username) DO NOTHING
-                """))
-                db_session.commit()
-                
-                return 'PAPER_TRADER_001'  # Return username as identifier
+                logger.warning("📝 Using fallback approach - no standard id columns found")
+                return 'PAPER_TRADER_001'
                     
         except Exception as e:
             logger.error(f"❌ Error ensuring user exists: {e}")
-            # Return a safe fallback
-            return 1
+            # Return a safe fallback based on what we expect
+            return 'PAPER_001'  # Use string fallback for production compatibility
     
     @staticmethod
     def get_paper_trading_user_id(db_session: Session) -> Union[int, str]:
