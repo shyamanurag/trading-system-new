@@ -97,9 +97,9 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
-    positions = relationship("Position", back_populates="user")
-    trades = relationship("Trade", back_populates="user")
-    orders = relationship("Order", back_populates="user")
+    positions = relationship("TradingPosition", back_populates="user", cascade="all, delete-orphan")
+    trades = relationship("Trade", back_populates="user", cascade="all, delete-orphan")
+    orders = relationship("Order", back_populates="user", cascade="all, delete-orphan")
     metrics = relationship("UserMetric", back_populates="user")
     risk_metrics = relationship("RiskMetric", back_populates="user")
 
