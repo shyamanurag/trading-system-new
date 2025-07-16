@@ -101,25 +101,34 @@ class DatabaseSchemaManager:
                 return False
             
             # Method 2: Check if foreign key can actually reference this table
+            # Use a separate connection to avoid transaction conflicts
             try:
-                # Try to create a test foreign key to see if it works
-                test_sql = """
-                    CREATE TABLE IF NOT EXISTS test_foreign_key_check (
-                        id SERIAL PRIMARY KEY,
-                        user_id INTEGER,
-                        FOREIGN KEY (user_id) REFERENCES users(id)
-                    )
-                """
-                conn.execute(text(test_sql))
+                # Create a savepoint to handle potential rollbacks
+                savepoint = conn.begin_nested()
+                try:
+                    # Try to create a test foreign key to see if it works
+                    test_sql = """
+                        CREATE TABLE IF NOT EXISTS test_foreign_key_check (
+                            id SERIAL PRIMARY KEY,
+                            user_id INTEGER,
+                            FOREIGN KEY (user_id) REFERENCES users(id)
+                        )
+                    """
+                    conn.execute(text(test_sql))
+                    
+                    # If successful, clean up the test table
+                    conn.execute(text("DROP TABLE IF EXISTS test_foreign_key_check"))
+                    savepoint.commit()
+                    logger.info("✅ Users table PRIMARY KEY constraint works for foreign keys")
+                    return True
+                    
+                except Exception as fk_test_error:
+                    logger.error(f"❌ Foreign key test failed: {fk_test_error}")
+                    savepoint.rollback()
+                    return False
                 
-                # If successful, clean up the test table
-                conn.execute(text("DROP TABLE IF EXISTS test_foreign_key_check"))
-                logger.info("✅ Users table PRIMARY KEY constraint works for foreign keys")
-                return True
-                
-            except Exception as fk_test_error:
-                logger.error(f"❌ Foreign key test failed: {fk_test_error}")
-                conn.execute(text("DROP TABLE IF EXISTS test_foreign_key_check"))  # Cleanup
+            except Exception as savepoint_error:
+                logger.error(f"❌ Savepoint operation failed: {savepoint_error}")
                 return False
                 
         except Exception as e:
@@ -131,16 +140,13 @@ class DatabaseSchemaManager:
         try:
             logger.info("🔧 Starting aggressive users table PRIMARY KEY repair...")
             
-            # First check if we actually need to fix it
-            if self._check_users_primary_key_constraint(conn):
-                logger.info("✅ Users table PRIMARY KEY is working correctly")
-                return True
-            
-            logger.warning("⚠️ Users table PRIMARY KEY needs repair - starting aggressive fix...")
-            
-            # Get current data
-            backup_data = conn.execute(text("SELECT * FROM users")).fetchall()
-            logger.info(f"📦 Backing up {len(backup_data)} user records")
+            # Get current data before any operations
+            backup_data = []
+            try:
+                backup_data = conn.execute(text("SELECT * FROM users")).fetchall()
+                logger.info(f"📦 Backing up {len(backup_data)} user records")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not backup existing data: {e}")
             
             # Drop dependent tables that reference users
             logger.info("🔄 Dropping dependent tables...")
@@ -156,7 +162,7 @@ class DatabaseSchemaManager:
             logger.info("🔄 Recreating users table with proper PRIMARY KEY...")
             conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
             
-            # Create users table with proper SERIAL PRIMARY KEY
+            # Create users table with proper SERIAL PRIMARY KEY (fixed duplicate column)
             create_users_sql = """
                 CREATE TABLE users (
                     id SERIAL PRIMARY KEY,
@@ -164,8 +170,8 @@ class DatabaseSchemaManager:
                     email VARCHAR(100) UNIQUE NOT NULL,
                     password_hash VARCHAR(255) NOT NULL,
                     full_name VARCHAR(100),
-                    initial_capital FLOAT DEFAULT 50000.0,
-                    current_balance FLOAT DEFAULT 50000.0,
+                    initial_capital FLOAT DEFAULT 100000.0,
+                    current_balance FLOAT DEFAULT 100000.0,
                     risk_tolerance VARCHAR(20) DEFAULT 'medium',
                     is_active BOOLEAN DEFAULT TRUE,
                     zerodha_client_id VARCHAR(50),
@@ -184,8 +190,7 @@ class DatabaseSchemaManager:
                     total_pnl FLOAT DEFAULT 0,
                     last_login TIMESTAMP,
                     paper_trading BOOLEAN DEFAULT FALSE,
-                    max_daily_trades INTEGER,
-                    max_daily_trades INTEGER
+                    max_daily_trades INTEGER DEFAULT 1000
                 )
             """
             conn.execute(text(create_users_sql))
@@ -195,32 +200,54 @@ class DatabaseSchemaManager:
             if backup_data:
                 logger.info(f"🔄 Restoring {len(backup_data)} user records...")
                 
-                # Get column names from the original data
-                columns = [desc[0] for desc in conn.execute(text("SELECT * FROM users LIMIT 0")).cursor.description]
-                
                 for row_data in backup_data:
                     try:
-                        # Map the data to new schema, excluding auto-generated id
-                        insert_cols = []
-                        insert_vals = []
-                        
-                        # Map known columns (skip id since it's SERIAL)
-                        for i, value in enumerate(row_data[1:], 1):  # Skip first column (id)
-                            if i < len(columns):
-                                col_name = columns[i]
-                                if value is not None:
-                                    insert_cols.append(col_name)
-                                    if isinstance(value, str):
-                                        escaped_value = value.replace("'", "''")
-                                        insert_vals.append(f"'{escaped_value}'")  # Escape quotes
-                                    elif isinstance(value, bool):
-                                        insert_vals.append('TRUE' if value else 'FALSE')
-                                    else:
-                                        insert_vals.append(str(value))
-                        
-                        if insert_cols:
-                            insert_sql = f"INSERT INTO users ({', '.join(insert_cols)}) VALUES ({', '.join(insert_vals)})"
-                            conn.execute(text(insert_sql))
+                        # Create a simplified insert (skip auto-generated id)
+                        conn.execute(text("""
+                            INSERT INTO users (
+                                username, email, password_hash, full_name, initial_capital,
+                                current_balance, risk_tolerance, is_active, zerodha_client_id,
+                                created_at, updated_at, total_trades, user_type, status,
+                                phone, trading_enabled, max_position_size, zerodha_api_key,
+                                zerodha_api_secret, zerodha_access_token, zerodha_public_token,
+                                total_pnl, last_login, paper_trading, max_daily_trades
+                            ) VALUES (
+                                :username, :email, :password_hash, :full_name, :initial_capital,
+                                :current_balance, :risk_tolerance, :is_active, :zerodha_client_id,
+                                COALESCE(:created_at, CURRENT_TIMESTAMP), COALESCE(:updated_at, CURRENT_TIMESTAMP),
+                                :total_trades, :user_type, :status, :phone, :trading_enabled,
+                                :max_position_size, :zerodha_api_key, :zerodha_api_secret,
+                                :zerodha_access_token, :zerodha_public_token, :total_pnl,
+                                :last_login, :paper_trading, :max_daily_trades
+                            )
+                        """), {
+                            'username': row_data[1] if len(row_data) > 1 else 'RESTORED_USER',
+                            'email': row_data[2] if len(row_data) > 2 else f'restored_{len(backup_data)}@example.com',
+                            'password_hash': row_data[3] if len(row_data) > 3 else '$2b$12$default.hash',
+                            'full_name': row_data[4] if len(row_data) > 4 else 'Restored User',
+                            'initial_capital': row_data[5] if len(row_data) > 5 else 100000.0,
+                            'current_balance': row_data[6] if len(row_data) > 6 else 100000.0,
+                            'risk_tolerance': row_data[7] if len(row_data) > 7 else 'medium',
+                            'is_active': row_data[8] if len(row_data) > 8 else True,
+                            'zerodha_client_id': row_data[9] if len(row_data) > 9 else None,
+                            'created_at': row_data[10] if len(row_data) > 10 else None,
+                            'updated_at': row_data[11] if len(row_data) > 11 else None,
+                            'total_trades': row_data[12] if len(row_data) > 12 else 0,
+                            'user_type': row_data[13] if len(row_data) > 13 else 'trader',
+                            'status': row_data[14] if len(row_data) > 14 else 'active',
+                            'phone': row_data[15] if len(row_data) > 15 else None,
+                            'trading_enabled': row_data[16] if len(row_data) > 16 else True,
+                            'max_position_size': row_data[17] if len(row_data) > 17 else 500000,
+                            'zerodha_api_key': row_data[18] if len(row_data) > 18 else None,
+                            'zerodha_api_secret': row_data[19] if len(row_data) > 19 else None,
+                            'zerodha_access_token': row_data[20] if len(row_data) > 20 else None,
+                            'zerodha_public_token': row_data[21] if len(row_data) > 21 else None,
+                            'total_pnl': row_data[22] if len(row_data) > 22 else 0,
+                            'last_login': row_data[23] if len(row_data) > 23 else None,
+                            'paper_trading': row_data[24] if len(row_data) > 24 else False,
+                            'max_daily_trades': row_data[25] if len(row_data) > 25 else 1000
+                        })
+                        logger.info(f"   ✓ Restored user: {row_data[1] if len(row_data) > 1 else 'Unknown'}")
                             
                     except Exception as restore_error:
                         logger.warning(f"⚠️ Could not restore user record: {restore_error}")
@@ -228,12 +255,30 @@ class DatabaseSchemaManager:
                         
                 logger.info("✅ User data restoration completed")
             
-            # Verify the fix worked
-            if self._check_users_primary_key_constraint(conn):
+            # Add default paper trading user if no users exist
+            user_count = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
+            if user_count == 0:
+                logger.info("📝 Creating default paper trading user...")
+                conn.execute(text("""
+                    INSERT INTO users (username, email, password_hash, full_name, trading_enabled, paper_trading)
+                    VALUES ('PAPER_TRADER_001', 'paper@algoauto.com', '$2b$12$dummy.hash.paper.trading', 'Paper Trading Account', true, true)
+                """))
+                logger.info("✅ Default paper trading user created")
+            
+            # Test the fix with a simple foreign key check
+            try:
+                conn.execute(text("""
+                    CREATE TEMP TABLE test_foreign_key_validation (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER,
+                        FOREIGN KEY (user_id) REFERENCES users(id)
+                    )
+                """))
+                conn.execute(text("DROP TABLE test_foreign_key_validation"))
                 logger.info("✅ Users table PRIMARY KEY constraint verified working")
                 return True
-            else:
-                logger.error("❌ PRIMARY KEY constraint still not working after aggressive fix")
+            except Exception as verify_error:
+                logger.error(f"❌ PRIMARY KEY constraint still not working: {verify_error}")
                 return False
                 
         except Exception as e:
@@ -249,42 +294,55 @@ class DatabaseSchemaManager:
         }
         
         try:
+            # Step 1: Check if table exists (separate transaction)
             with self.engine.connect() as conn:
-                trans = conn.begin()
-                try:
-                    # Check if users table exists
-                    table_exists = self._table_exists(conn, 'users')
-                    
-                    if not table_exists:
-                        logger.info("📋 Users table doesn't exist - creating with proper schema...")
+                table_exists = self._table_exists(conn, 'users')
+            
+            if not table_exists:
+                # Step 2: Create table (separate transaction)
+                logger.info("📋 Users table doesn't exist - creating with proper schema...")
+                with self.engine.connect() as conn:
+                    trans = conn.begin()
+                    try:
                         create_sql = self._generate_create_table_sql('users', self.USERS_TABLE_SCHEMA)
                         conn.execute(text(create_sql))
+                        trans.commit()
                         result['status'] = 'created'
                         result['actions'].append('Created users table with SERIAL PRIMARY KEY')
                         logger.info("✅ Users table created successfully")
-                        
-                    else:
-                        # Table exists, check if PRIMARY KEY constraint is working
-                        if self._check_users_primary_key_constraint(conn):
-                            logger.info("✅ Users table PRIMARY KEY constraint working correctly")
-                            result['status'] = 'verified'
-                        else:
-                            logger.warning("⚠️ Users table PRIMARY KEY constraint needs fixing...")
+                    except Exception as e:
+                        trans.rollback()
+                        raise e
+            else:
+                # Step 3: Check PRIMARY KEY constraint (separate transaction)
+                pk_working = False
+                with self.engine.connect() as conn:
+                    pk_working = self._check_users_primary_key_constraint(conn)
+                
+                if pk_working:
+                    logger.info("✅ Users table PRIMARY KEY constraint working correctly")
+                    result['status'] = 'verified'
+                else:
+                    # Step 4: Fix PRIMARY KEY constraint (separate transaction)
+                    logger.warning("⚠️ Users table PRIMARY KEY constraint needs fixing...")
+                    with self.engine.connect() as conn:
+                        trans = conn.begin()
+                        try:
                             if self._fix_users_primary_key_aggressive(conn):
+                                trans.commit()
                                 result['status'] = 'repaired'
                                 result['actions'].append('Fixed PRIMARY KEY constraint with aggressive repair')
                                 logger.info("✅ Users table PRIMARY KEY constraint repaired")
                             else:
+                                trans.rollback()
                                 result['status'] = 'error'
                                 result['errors'].append('Failed to repair PRIMARY KEY constraint')
                                 logger.error("❌ Failed to repair users table PRIMARY KEY constraint")
-                    
-                    trans.commit()
-                    return result
-                    
-                except Exception as e:
-                    trans.rollback()
-                    raise e
+                        except Exception as e:
+                            trans.rollback()
+                            raise e
+            
+            return result
                     
         except Exception as e:
             logger.error(f"❌ Error ensuring users table: {e}")
