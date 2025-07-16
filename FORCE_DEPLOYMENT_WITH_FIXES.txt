@@ -1,0 +1,21 @@
+DEPLOYMENT TRIGGER - CRITICAL FIXES
+=====================================
+Timestamp: 2025-07-16 07:30:00 UTC
+
+This deployment includes critical fixes for:
+
+1. PostgreSQL Database Compatibility
+   - Fixed AUTOINCREMENT -> SERIAL for PostgreSQL
+   - Fixed boolean defaults (true/false instead of 1/0)
+   - Added proper transaction management
+
+2. TradeEngine Initialization
+   - Fixed to use positional arguments instead of keyword arguments
+   - Matches exact constructor signature
+
+3. Database Schema Management
+   - Added all missing columns to users table
+   - Proper handling of PostgreSQL vs SQLite differences
+   - Transaction rollback on errors
+
+FORCE DEPLOYMENT NOW 

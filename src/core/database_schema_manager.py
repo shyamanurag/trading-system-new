@@ -122,84 +122,47 @@ class DatabaseSchemaManager:
             
         return results
     
-    def _ensure_table(self, table_name: str, schema: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-        """Ensure a table exists with the precise schema"""
-        result = {'status': 'unknown', 'actions': []}
-        
-        try:
-            with self.engine.connect() as conn:
-                inspector = inspect(self.engine)
-                
-                # Check if table exists
-                if table_name not in inspector.get_table_names():
-                    # Create table with precise schema
-                    create_sql = self._generate_create_table_sql(table_name, schema)
-                    conn.execute(text(create_sql))
-                    conn.commit()
-                    result['actions'].append(f"Created table {table_name} with precise schema")
-                    result['status'] = 'created'
-                else:
-                    # Verify and fix existing table schema
-                    existing_columns = {col['name']: col for col in inspector.get_columns(table_name)}
-                    
-                    # Check for missing columns
-                    for col_name, col_spec in schema.items():
-                        if col_name not in existing_columns:
-                            alter_sql = self._generate_add_column_sql(table_name, col_name, col_spec)
-                            try:
-                                conn.execute(text(alter_sql))
-                                conn.commit()
-                                result['actions'].append(f"Added column {col_name} to {table_name}")
-                            except Exception as e:
-                                logger.warning(f"Could not add column {col_name}: {e}")
-                    
-                    # Ensure primary key exists
-                    pk_cols = [col for col, spec in schema.items() if spec.get('primary_key')]
-                    existing_pk = inspector.get_pk_constraint(table_name)
-                    
-                    if pk_cols and not existing_pk['constrained_columns']:
-                        # Add primary key
-                        for pk_col in pk_cols:
-                            try:
-                                conn.execute(text(f"ALTER TABLE {table_name} ADD PRIMARY KEY ({pk_col})"))
-                                conn.commit()
-                                result['actions'].append(f"Added primary key on {pk_col}")
-                            except Exception as e:
-                                logger.warning(f"Could not add primary key: {e}")
-                    
-                    result['status'] = 'verified' if not result['actions'] else 'updated'
-                    
-        except Exception as e:
-            logger.error(f"Error ensuring table {table_name}: {e}")
-            result['status'] = 'error'
-            result['errors'] = [str(e)]
-                
-        return result
-    
     def _generate_create_table_sql(self, table_name: str, schema: Dict[str, Dict[str, Any]]) -> str:
         """Generate precise CREATE TABLE SQL"""
         columns = []
         foreign_keys = []
         
+        # Detect database type
+        is_postgresql = 'postgresql' in self.database_url
+        
         for col_name, col_spec in schema.items():
-            col_def = f"{col_name} {col_spec['type']}"
-            
-            if col_spec.get('primary_key'):
-                col_def += " PRIMARY KEY"
-            if col_spec.get('autoincrement'):
-                col_def += " AUTOINCREMENT"
-            if not col_spec.get('nullable', True):
+            # Handle PostgreSQL vs SQLite differences
+            if col_spec.get('primary_key') and col_spec.get('autoincrement'):
+                if is_postgresql:
+                    # PostgreSQL uses SERIAL for auto-incrementing integers
+                    col_def = f"{col_name} SERIAL PRIMARY KEY"
+                else:
+                    # SQLite uses INTEGER PRIMARY KEY AUTOINCREMENT
+                    col_def = f"{col_name} INTEGER PRIMARY KEY AUTOINCREMENT"
+            else:
+                col_def = f"{col_name} {col_spec['type']}"
+                
+                if col_spec.get('primary_key'):
+                    col_def += " PRIMARY KEY"
+                    
+            if not col_spec.get('nullable', True) and not col_spec.get('primary_key'):
                 col_def += " NOT NULL"
-            if 'default' in col_spec:
+                
+            if 'default' in col_spec and not col_spec.get('primary_key'):
                 if col_spec['default'] == 'CURRENT_TIMESTAMP':
                     col_def += f" DEFAULT {col_spec['default']}"
                 elif isinstance(col_spec['default'], bool):
-                    col_def += f" DEFAULT {1 if col_spec['default'] else 0}"
+                    # Handle boolean defaults properly for each database
+                    if is_postgresql:
+                        col_def += f" DEFAULT {str(col_spec['default']).lower()}"
+                    else:
+                        col_def += f" DEFAULT {1 if col_spec['default'] else 0}"
                 elif isinstance(col_spec['default'], str):
                     col_def += f" DEFAULT '{col_spec['default']}'"
                 else:
                     col_def += f" DEFAULT {col_spec['default']}"
-            if col_spec.get('unique'):
+                    
+            if col_spec.get('unique') and not col_spec.get('primary_key'):
                 col_def += " UNIQUE"
                 
             columns.append(col_def)
@@ -219,13 +182,20 @@ class DatabaseSchemaManager:
         """Generate precise ALTER TABLE ADD COLUMN SQL"""
         col_def = f"{col_spec['type']}"
         
+        # Detect database type
+        is_postgresql = 'postgresql' in self.database_url
+        
         if not col_spec.get('nullable', True):
             # For NOT NULL columns, we need a default value
             if 'default' in col_spec:
                 if col_spec['default'] == 'CURRENT_TIMESTAMP':
                     col_def += f" DEFAULT {col_spec['default']}"
                 elif isinstance(col_spec['default'], bool):
-                    col_def += f" DEFAULT {1 if col_spec['default'] else 0}"
+                    # Handle boolean defaults properly
+                    if is_postgresql:
+                        col_def += f" DEFAULT {str(col_spec['default']).lower()}"
+                    else:
+                        col_def += f" DEFAULT {1 if col_spec['default'] else 0}"
                 elif isinstance(col_spec['default'], str):
                     col_def += f" DEFAULT '{col_spec['default']}'"
                 else:
@@ -237,7 +207,10 @@ class DatabaseSchemaManager:
                 elif 'VARCHAR' in col_spec['type']:
                     col_def += " DEFAULT ''"
                 elif 'BOOLEAN' in col_spec['type']:
-                    col_def += " DEFAULT 0"
+                    if is_postgresql:
+                        col_def += " DEFAULT false"
+                    else:
+                        col_def += " DEFAULT 0"
                 elif 'FLOAT' in col_spec['type']:
                     col_def += " DEFAULT 0.0"
                 elif 'TIMESTAMP' in col_spec['type']:
@@ -248,6 +221,68 @@ class DatabaseSchemaManager:
             col_def += " UNIQUE"
             
         return f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}"
+    
+    def _ensure_table(self, table_name: str, schema: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """Ensure a table exists with the precise schema"""
+        result = {'status': 'unknown', 'actions': []}
+        
+        try:
+            with self.engine.connect() as conn:
+                # Start a transaction
+                trans = conn.begin()
+                try:
+                    inspector = inspect(self.engine)
+                    
+                    # Check if table exists
+                    if table_name not in inspector.get_table_names():
+                        # Create table with precise schema
+                        create_sql = self._generate_create_table_sql(table_name, schema)
+                        conn.execute(text(create_sql))
+                        result['actions'].append(f"Created table {table_name} with precise schema")
+                        result['status'] = 'created'
+                    else:
+                        # Verify and fix existing table schema
+                        existing_columns = {col['name']: col for col in inspector.get_columns(table_name)}
+                        
+                        # Check for missing columns
+                        for col_name, col_spec in schema.items():
+                            if col_name not in existing_columns:
+                                alter_sql = self._generate_add_column_sql(table_name, col_name, col_spec)
+                                try:
+                                    conn.execute(text(alter_sql))
+                                    result['actions'].append(f"Added column {col_name} to {table_name}")
+                                except Exception as e:
+                                    logger.warning(f"Could not add column {col_name}: {e}")
+                        
+                        # Ensure primary key exists
+                        pk_cols = [col for col, spec in schema.items() if spec.get('primary_key')]
+                        existing_pk = inspector.get_pk_constraint(table_name)
+                        
+                        if pk_cols and not existing_pk['constrained_columns']:
+                            # Add primary key
+                            for pk_col in pk_cols:
+                                try:
+                                    conn.execute(text(f"ALTER TABLE {table_name} ADD PRIMARY KEY ({pk_col})"))
+                                    result['actions'].append(f"Added primary key on {pk_col}")
+                                except Exception as e:
+                                    logger.warning(f"Could not add primary key: {e}")
+                        
+                        result['status'] = 'verified' if not result['actions'] else 'updated'
+                    
+                    # Commit the transaction
+                    trans.commit()
+                    
+                except Exception as e:
+                    # Rollback on error
+                    trans.rollback()
+                    raise e
+                    
+        except Exception as e:
+            logger.error(f"Error ensuring table {table_name}: {e}")
+            result['status'] = 'error'
+            result['errors'] = [str(e)]
+                
+        return result
     
     def _ensure_default_user(self):
         """Ensure default paper trading user exists"""
