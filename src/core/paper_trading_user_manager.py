@@ -19,35 +19,32 @@ class PaperTradingUserManager:
     def ensure_user_exists(db_session: Session, user_id: Optional[int] = None) -> Union[int, str]:
         """
         Ensure a paper trading user exists and return the user identifier
-        Returns user_id if user_id column exists, otherwise returns username
+        Returns id (primary key) for production database
         """
         try:
-            # First check if user_id column exists (production uses user_id, not id)
+            # Check if this is production database (PostgreSQL) or development (SQLite)
             result = db_session.execute(text("""
                 SELECT column_name 
                 FROM information_schema.columns 
-                WHERE table_name = 'users' AND column_name = 'user_id'
+                WHERE table_name = 'users' AND column_name = 'id'
             """))
             
-            has_user_id_column = result.fetchone() is not None
+            has_id_column = result.fetchone() is not None
+            logger.info(f"📊 Database schema detected - has 'id' column: {has_id_column}")
         except:
-            # For SQLite or if information_schema doesn't exist
-            try:
-                # Try to select user_id to see if it exists
-                result = db_session.execute(text("SELECT user_id FROM users LIMIT 1"))
-                has_user_id_column = True
-            except:
-                has_user_id_column = False
+            # For SQLite or if information_schema doesn't exist, assume id column exists
+            has_id_column = True
+            logger.info("📊 Assuming SQLite database with 'id' column")
                 
         try:        
-            if has_user_id_column:
-                # Production database with user_id column
-                logger.info("📊 Users table has user_id column - using production approach")
+            if has_id_column:
+                # Standard database with id column (both production and development)
+                logger.info("📊 Using standard database schema with 'id' primary key")
                 
                 if user_id:
                     # Check if specific user exists
                     result = db_session.execute(text("""
-                        SELECT user_id FROM users WHERE user_id = :user_id
+                        SELECT id FROM users WHERE id = :user_id
                     """), {"user_id": user_id})
                     
                     if result.fetchone():
@@ -55,7 +52,7 @@ class PaperTradingUserManager:
                         
                 # Check if any paper trading user exists
                 result = db_session.execute(text("""
-                    SELECT user_id FROM users 
+                    SELECT id FROM users 
                     WHERE username = 'PAPER_TRADER_001' 
                     OR trading_enabled = true 
                     LIMIT 1
@@ -63,26 +60,25 @@ class PaperTradingUserManager:
                 
                 row = result.fetchone()
                 if row:
+                    logger.info(f"✅ Found existing paper trading user with id: {row[0]}")
                     return row[0]
                     
-                # Create paper user with user_id (let SERIAL generate it)
+                # Create paper user - let SERIAL auto-generate id
                 logger.info("📝 Creating paper trading user...")
                 
-                # For PostgreSQL with SERIAL user_id, don't include user_id in INSERT
+                # Don't include id in INSERT - let SERIAL generate it
                 db_session.execute(text("""
                     INSERT INTO users (
                         username, email, password_hash, full_name,
                         initial_capital, current_balance, risk_tolerance,
                         is_active, zerodha_client_id, trading_enabled,
-                        max_daily_trades, max_position_size, created_at, updated_at,
-                        role, status
+                        max_daily_trades, max_position_size, created_at, updated_at
                     ) VALUES (
                         'PAPER_TRADER_001', 'paper@algoauto.com',
                         '$2b$12$dummy.hash.paper.trading', 'Paper Trading Account',
                         100000, 100000, 'medium',
                         :true_val, 'PAPER', :true_val,
-                        1000, 500000, :now, :now,
-                        'trader', 'active'
+                        1000, 500000, :now, :now
                     ) ON CONFLICT (username) DO NOTHING
                 """), {
                     'true_val': True,
@@ -90,90 +86,118 @@ class PaperTradingUserManager:
                 })
                 db_session.commit()
                 
-                # Get the created user_id
+                # Get the created user id
                 result = db_session.execute(text("""
-                    SELECT user_id FROM users WHERE username = 'PAPER_TRADER_001'
+                    SELECT id FROM users WHERE username = 'PAPER_TRADER_001'
                 """))
                 row = result.fetchone()
                 if row:
-                    logger.info(f"✅ Paper trading user ready with user_id: {row[0]}")
+                    logger.info(f"✅ Paper trading user ready with id: {row[0]}")
                     return row[0]
                 else:
                     logger.warning("⚠️ Paper trading user creation may have failed, using fallback")
                     return 1
                     
             else:
-                # No user_id column - use username-based approach for development
-                logger.info("📝 Users table has no user_id column - using development approach")
+                # Fallback for unusual database schemas
+                logger.info("📝 Using fallback approach for unusual database schema")
                 
-                # Check if paper user exists
-                result = db_session.execute(text("""
-                    SELECT username FROM users 
-                    WHERE username = 'PAPER_TRADER_001' 
-                    OR trading_enabled = true 
-                    LIMIT 1
-                """))
-                
-                row = result.fetchone()
-                if row:
-                    return row[0]  # Return username
-                    
-                # Create paper user without user_id (for development with id column)
+                # Try to create with minimal fields
                 db_session.execute(text("""
-                    INSERT INTO users (
-                        username, email, password_hash, full_name,
-                        role, status, is_active, trading_enabled,
-                        initial_capital, current_balance, risk_tolerance,
-                        zerodha_client_id, max_daily_trades, max_position_size,
-                        created_at, updated_at
-                    ) VALUES (
-                        'PAPER_TRADER_001', 'paper@algoauto.com',
-                        '$2b$12$dummy.hash.paper.trading', 'Paper Trading Account',
-                        'trader', 'active', :true_val, :true_val,
-                        100000, 100000, 'medium',
-                        'PAPER', 1000, 500000,
-                        :now, :now
-                    )
-                """), {
-                    'true_val': True if 'postgresql' in str(db_session.bind.url) else 1,
-                    'now': datetime.now()
-                })
+                    INSERT INTO users (username, email, password_hash, trading_enabled) 
+                    VALUES ('PAPER_TRADER_001', 'paper@algoauto.com', 'dummy_hash', true)
+                    ON CONFLICT (username) DO NOTHING
+                """))
                 db_session.commit()
-                logger.info("✅ Created paper trading user without user_id column")
-                return 'PAPER_TRADER_001'  # Return username
                 
+                return 'PAPER_TRADER_001'  # Return username as identifier
+                    
         except Exception as e:
             logger.error(f"❌ Error ensuring user exists: {e}")
-            # Try rollback
-            try:
-                db_session.rollback()
-            except:
-                pass
-            # Return safe defaults
-            return 1 if user_id else 'PAPER_TRADER_001'
+            # Return a safe fallback
+            return 1
     
     @staticmethod
-    def get_user_id_for_trades(db_session: Session) -> int:
-        """
-        Get a user_id suitable for trades table foreign key
-        Always returns an integer, creating dummy user if needed
-        """
+    def get_paper_trading_user_id(db_session: Session) -> Union[int, str]:
+        """Get paper trading user identifier quickly"""
         try:
-            # For trades, we always need an integer user_id
-            # First try to get from users table
+            # Try to get existing paper user
             result = db_session.execute(text("""
-                SELECT user_id FROM users 
-                WHERE user_id IS NOT NULL 
-                LIMIT 1
+                SELECT id FROM users WHERE username = 'PAPER_TRADER_001' LIMIT 1
+            """))
+            row = result.fetchone()
+            if row:
+                return row[0]
+                
+            # If no paper user exists, create one
+            return PaperTradingUserManager.ensure_user_exists(db_session)
+        except:
+            # If id column doesn't exist, try username approach
+            try:
+                result = db_session.execute(text("""
+                    SELECT username FROM users WHERE username = 'PAPER_TRADER_001' LIMIT 1
+                """))
+                row = result.fetchone()
+                if row:
+                    return row[0]
+                return 'PAPER_TRADER_001'
+            except:
+                return 1
+                
+    @staticmethod
+    def validate_user_exists(db_session: Session, user_identifier: Union[int, str]) -> bool:
+        """Validate that a user exists in the database"""
+        try:
+            if isinstance(user_identifier, int):
+                # Check by id
+                result = db_session.execute(text("""
+                    SELECT 1 FROM users WHERE id = :user_id LIMIT 1
+                """), {"user_id": user_identifier})
+            else:
+                # Check by username
+                result = db_session.execute(text("""
+                    SELECT 1 FROM users WHERE username = :username LIMIT 1
+                """), {"username": user_identifier})
+                
+            return result.fetchone() is not None
+        except Exception as e:
+            logger.error(f"❌ Error validating user exists: {e}")
+            return False
+
+    @staticmethod  
+    def create_demo_user_if_needed(db_session: Session) -> Union[int, str]:
+        """Create a demo user for testing purposes"""
+        try:
+            # Check if demo user already exists
+            result = db_session.execute(text("""
+                SELECT id FROM users WHERE username = 'demo_user' LIMIT 1
             """))
             
             row = result.fetchone()
             if row:
                 return row[0]
                 
-        except:
-            pass
+            # Create demo user
+            db_session.execute(text("""
+                INSERT INTO users (
+                    username, email, password_hash, full_name,
+                    trading_enabled, is_active
+                ) VALUES (
+                    'demo_user', 'demo@algoauto.com', 'demo_hash', 'Demo User',
+                    true, true
+                ) ON CONFLICT (username) DO NOTHING
+            """))
+            db_session.commit()
             
-        # If no user_id column or no users, return 1 as fallback
-        # The trade will fail to save but paper trading continues
-        return 1 
+            # Get created user id
+            result = db_session.execute(text("""
+                SELECT id FROM users WHERE username = 'demo_user'
+            """))
+            row = result.fetchone()
+            if row:
+                return row[0]
+            return 1
+            
+        except Exception as e:
+            logger.error(f"❌ Error creating demo user: {e}")
+            return 1 
