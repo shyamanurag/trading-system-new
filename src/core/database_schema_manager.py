@@ -63,6 +63,71 @@ class DatabaseSchemaManager:
         'created_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'}
     }
     
+    # Define the precise schema for trades table (main trading table)
+    TRADES_TABLE_SCHEMA = {
+        'trade_id': {'type': 'SERIAL', 'primary_key': True, 'nullable': False},
+        'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.id'},
+        'position_id': {'type': 'INTEGER', 'nullable': True},
+        'symbol': {'type': 'VARCHAR(20)', 'nullable': False},
+        'trade_type': {'type': 'VARCHAR(10)', 'nullable': False},
+        'quantity': {'type': 'INTEGER', 'nullable': False},
+        'price': {'type': 'DECIMAL(10,2)', 'nullable': False},
+        'order_id': {'type': 'VARCHAR(50)', 'nullable': True},
+        'strategy': {'type': 'VARCHAR(50)', 'nullable': True},
+        'commission': {'type': 'DECIMAL(8,2)', 'nullable': True, 'default': 0},
+        'pnl': {'type': 'DECIMAL(12,2)', 'nullable': True, 'default': 0},
+        'pnl_percent': {'type': 'DECIMAL(6,2)', 'nullable': True, 'default': 0},
+        'status': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'EXECUTED'},
+        'executed_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'},
+        'created_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'}
+    }
+    
+    # Define the precise schema for positions table
+    POSITIONS_TABLE_SCHEMA = {
+        'position_id': {'type': 'SERIAL', 'primary_key': True, 'nullable': False},
+        'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.id'},
+        'symbol': {'type': 'VARCHAR(20)', 'nullable': False},
+        'quantity': {'type': 'INTEGER', 'nullable': False},
+        'entry_price': {'type': 'DECIMAL(10,2)', 'nullable': False},
+        'current_price': {'type': 'DECIMAL(10,2)', 'nullable': True},
+        'entry_time': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'},
+        'exit_time': {'type': 'TIMESTAMP', 'nullable': True},
+        'strategy': {'type': 'VARCHAR(50)', 'nullable': True},
+        'status': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'open'},
+        'unrealized_pnl': {'type': 'DECIMAL(12,2)', 'nullable': True},
+        'realized_pnl': {'type': 'DECIMAL(12,2)', 'nullable': True},
+        'stop_loss': {'type': 'DECIMAL(10,2)', 'nullable': True},
+        'take_profit': {'type': 'DECIMAL(10,2)', 'nullable': True},
+        'created_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'},
+        'updated_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'}
+    }
+    
+    # Define the precise schema for orders table
+    ORDERS_TABLE_SCHEMA = {
+        'order_id': {'type': 'VARCHAR(50)', 'primary_key': True, 'nullable': False},
+        'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.id'},
+        'broker_order_id': {'type': 'VARCHAR(100)', 'nullable': True},
+        'parent_order_id': {'type': 'VARCHAR(50)', 'nullable': True},
+        'symbol': {'type': 'VARCHAR(20)', 'nullable': False},
+        'order_type': {'type': 'VARCHAR(20)', 'nullable': False},
+        'side': {'type': 'VARCHAR(10)', 'nullable': False},
+        'quantity': {'type': 'INTEGER', 'nullable': False},
+        'price': {'type': 'DECIMAL(10,2)', 'nullable': True},
+        'stop_price': {'type': 'DECIMAL(10,2)', 'nullable': True},
+        'filled_quantity': {'type': 'INTEGER', 'nullable': True, 'default': 0},
+        'average_price': {'type': 'DECIMAL(10,2)', 'nullable': True},
+        'status': {'type': 'VARCHAR(20)', 'nullable': True, 'default': 'PENDING'},
+        'execution_strategy': {'type': 'VARCHAR(30)', 'nullable': True},
+        'time_in_force': {'type': 'VARCHAR(10)', 'nullable': True, 'default': 'DAY'},
+        'strategy_name': {'type': 'VARCHAR(50)', 'nullable': True},
+        'signal_id': {'type': 'VARCHAR(50)', 'nullable': True},
+        'fees': {'type': 'DECIMAL(8,2)', 'nullable': True, 'default': 0},
+        'created_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'},
+        'placed_at': {'type': 'TIMESTAMP', 'nullable': True},
+        'filled_at': {'type': 'TIMESTAMP', 'nullable': True},
+        'updated_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'}
+    }
+    
     def __init__(self, database_url: str):
         self.database_url = database_url
         self.engine = create_engine(database_url)
@@ -77,6 +142,9 @@ class DatabaseSchemaManager:
         # Only create dependent tables if users table is fixed
         if results['users']['status'] in ['created', 'verified', 'updated', 'repaired']:
             results['paper_trades'] = self._ensure_table('paper_trades', self.PAPER_TRADES_TABLE_SCHEMA)
+            results['trades'] = self._ensure_table('trades', self.TRADES_TABLE_SCHEMA)
+            results['positions'] = self._ensure_table('positions', self.POSITIONS_TABLE_SCHEMA)
+            results['orders'] = self._ensure_table('orders', self.ORDERS_TABLE_SCHEMA)
             
             # Ensure default user exists (only after schema is correct)
             self._ensure_default_user()
@@ -526,68 +594,47 @@ class DatabaseSchemaManager:
         return result
     
     def _ensure_default_user(self):
-        """Ensure default paper trading user exists"""
-        with self.engine.connect() as conn:
-            trans = conn.begin()
-            try:
-                # Check if any user exists
-                result = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
-                
-                if result == 0:
-                    logger.info("No users found, creating default paper trading user")
-                    
-                    # Create default paper trading user with only required fields
-                    insert_sql = """
-                        INSERT INTO users (
-                            username, email, password_hash, 
-                            is_active, trading_enabled,
-                            created_at, updated_at
-                        ) VALUES (
-                            'PAPER_TRADER_001', 'paper@algoauto.com',
-                            '$2b$12$dummy.hash.paper.trading',
-                            :is_active_val, :trading_enabled_val,
-                            :now_val, :now_val
-                        ) ON CONFLICT (username) DO NOTHING
-                        """
-                    
-                    # Handle database-specific values
-                    if 'postgresql' in self.database_url:
-                        params = {
-                            'is_active_val': True,
-                            'trading_enabled_val': True,
-                            'now_val': datetime.now()
-                        }
-                    else:  # SQLite
-                        params = {
-                            'is_active_val': 1,
-                            'trading_enabled_val': 1,
-                            'now_val': datetime.now()
-                        }
-                    
-                    conn.execute(text(insert_sql), params)
-                    trans.commit()
-                    logger.info("✅ Created default paper trading user successfully")
-                else:
-                    trans.commit()
-                    logger.info(f"Users table already has {result} users")
-                    
-            except Exception as e:
-                trans.rollback()
-                logger.warning(f"Could not ensure default user: {e}")
-                # Try even more minimal approach
+        """Ensure PAPER_TRADER_001 user exists for paper trading"""
+        try:
+            with self.engine.connect() as conn:
+                trans = conn.begin()
                 try:
-                    trans2 = conn.begin()
-                    minimal_sql = """
-                        INSERT INTO users (username, email, password_hash) 
-                        VALUES ('PAPER_TRADER_001', 'paper@algoauto.com', 'dummy_hash')
-                        ON CONFLICT (username) DO NOTHING
-                        """
-                    conn.execute(text(minimal_sql))
-                    trans2.commit()
-                    logger.info("✅ Created minimal paper trading user")
-                except Exception as e2:
-                    trans2.rollback()
-                    logger.error(f"Failed to create any paper trading user: {e2}")
+                    # Check if PAPER_TRADER_001 exists
+                    result = conn.execute(
+                        text("SELECT COUNT(*) FROM users WHERE username = :username"),
+                        {'username': 'PAPER_TRADER_001'}
+                    ).scalar()
+                    
+                    if result == 0:
+                        # Insert default paper trading user
+                        conn.execute(text("""
+                            INSERT INTO users (
+                                username, email, password_hash, full_name, 
+                                initial_capital, current_balance, is_active, 
+                                trading_enabled, zerodha_client_id, max_daily_trades
+                            ) VALUES (
+                                'PAPER_TRADER_001', 
+                                'paper@trader.com', 
+                                'hashed_password_placeholder',
+                                'Paper Trading User',
+                                1000000.0,
+                                1000000.0,
+                                true,
+                                true,
+                                'QSW899',
+                                1000
+                            )
+                        """))
+                        logger.info("✅ Created default PAPER_TRADER_001 user")
+                    
+                    trans.commit()
+                    
+                except Exception as e:
+                    trans.rollback()
+                    logger.error(f"❌ Failed to create default user: {e}")
+                    
+        except Exception as e:
+            logger.error(f"❌ Error ensuring default user: {e}")
 
     def ensure_precise_schema(self) -> Dict[str, Any]:
         """
@@ -653,6 +700,12 @@ class DatabaseSchemaManager:
                 result = self._ensure_users_table_with_aggressive_fix()
             elif table_name == 'paper_trades':
                 result = self._ensure_table('paper_trades', self.PAPER_TRADES_TABLE_SCHEMA)
+            elif table_name == 'trades':
+                result = self._ensure_table('trades', self.TRADES_TABLE_SCHEMA)
+            elif table_name == 'positions':
+                result = self._ensure_table('positions', self.POSITIONS_TABLE_SCHEMA)
+            elif table_name == 'orders':
+                result = self._ensure_table('orders', self.ORDERS_TABLE_SCHEMA)
             else:
                 logger.warning(f"Unknown table name: {table_name}")
                 return False
