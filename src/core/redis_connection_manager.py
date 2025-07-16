@@ -55,7 +55,7 @@ class ProductionRedisManager:
         try:
             # For DigitalOcean Redis, use minimal configuration
             # The URL already contains all necessary SSL and auth info
-            self.redis_client = await redis.from_url(
+            self.redis_client = redis.from_url(
                 self.redis_url,
                 decode_responses=True,
                 socket_timeout=30,
