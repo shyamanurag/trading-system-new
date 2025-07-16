@@ -18,14 +18,30 @@ from sqlalchemy import text
 class TradeEngine:
     """Enhanced trade engine with paper trading support"""
     
-    def __init__(self, db_config, order_manager, position_tracker, performance_tracker, notification_manager):
-        """Initialize trade engine with all required components"""
+    def __init__(self, db_config, order_manager, position_tracker, performance_tracker, notification_manager, config=None):
+        """Initialize trade engine with all required components and configuration"""
         self.db_config = db_config
         self.order_manager = order_manager
         self.position_tracker = position_tracker
         self.performance_tracker = performance_tracker
         self.notification_manager = notification_manager
         self.logger = logging.getLogger(__name__)
+        
+        # Handle configuration with defaults
+        self.config = config or {}
+        
+        # CRITICAL FIX: Initialize paper trading mode from configuration
+        self.paper_trading_enabled = self.config.get('paper_trading', True)  # Default to paper trading for safety
+        
+        # CRITICAL FIX: Initialize all missing attributes
+        self.paper_orders = {}  # Store paper trading orders
+        self.pending_signals = []  # Store pending signals
+        self.signal_rate_limit = 10.0  # Max 10 signals per second
+        self.last_signal_time = 0.0  # Last signal processing time
+        
+        # Initialize additional required attributes
+        self.zerodha_client = None  # Will be set by orchestrator
+        self.risk_manager = None  # Will be set by orchestrator
         
         # Ensure precise database schema
         self._ensure_database_schema()
@@ -46,6 +62,8 @@ class TradeEngine:
         self.is_active = True
         self.last_error = None
         
+        self.logger.info(f"✅ TradeEngine initialized - Paper trading: {self.paper_trading_enabled}")
+    
     def _ensure_database_schema(self):
         """Ensure database has precise schema - this is the definitive approach"""
         try:

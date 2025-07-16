@@ -414,13 +414,14 @@ class TradingOrchestrator:
             }
         }
         
-        # Initialize trade engine with all required components
+        # Initialize trade engine with all required components and configuration
         self.trade_engine = TradeEngine(
             self.db_config,
             self.order_manager,
             self.position_tracker,
             self.performance_tracker,
-            self.notification_manager
+            self.notification_manager,
+            trade_engine_config
         )
         
         # Set additional components after initialization
