@@ -121,7 +121,7 @@ class Portfolio(Base):
     
     # Relationships
     user = relationship("User", back_populates="portfolios")
-    positions = relationship("Position", back_populates="portfolio")
+    positions = relationship("TradingPosition", back_populates="portfolio")
     trades = relationship("Trade", back_populates="portfolio")
 
 class Stock(Base):
@@ -141,7 +141,7 @@ class Stock(Base):
     
     # Relationships
     market_data = relationship("MarketData", back_populates="stock")
-    positions = relationship("Position", back_populates="stock")
+    positions = relationship("TradingPosition", back_populates="stock")
     trades = relationship("Trade", back_populates="stock")
     recommendations = relationship("Recommendation", back_populates="stock")
 
