@@ -183,12 +183,22 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ TrueData initialization error: {e}")
         logger.info("📊 App continues - cache will be empty initially")
     
-    # STEP 2: Load routers (cache system will now find populated data)
-    logger.info("🚀 STEP 2: Loading API routers (cache system will find populated data)...")
-    
-    # STEP 3: Initialize Symbol Management System (after TrueData is ready)
+    # STEP 2: Initialize Database
+    logger.info("🚀 STEP 2: Initializing Database connection...")
     try:
-        logger.info("🤖 STEP 3: Starting Intelligent Symbol Management System...")
+        from src.core.database import db_manager
+        db_manager.initialize()
+        logger.info("✅ Database initialized successfully!")
+    except Exception as e:
+        logger.error(f"❌ Database initialization error: {e}")
+        logger.info("📊 App continues - paper trades won't be persisted")
+    
+    # STEP 3: Load routers (cache system will now find populated data)
+    logger.info("🚀 STEP 3: Loading API routers (cache system will find populated data)...")
+    
+    # STEP 4: Initialize Symbol Management System (after TrueData is ready)
+    try:
+        logger.info("🤖 STEP 4: Starting Intelligent Symbol Management System...")
         from src.core.intelligent_symbol_manager import start_intelligent_symbol_management
         await start_intelligent_symbol_management()
         logger.info("✅ Intelligent Symbol Manager started successfully!")
@@ -197,9 +207,9 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Intelligent Symbol Manager startup failed: {e}")
         logger.info("🔄 Will continue with basic symbol management")
 
-    # STEP 4: Initialize Trading Orchestrator (after cache is populated)
+    # STEP 5: Initialize Trading Orchestrator (after cache is populated)
     try:
-        logger.info("🚀 STEP 4: Initializing Trading Orchestrator...")
+        logger.info("🚀 STEP 5: Initializing Trading Orchestrator...")
         from src.core.orchestrator import TradingOrchestrator, set_orchestrator_instance
         
         # Create orchestrator instance
