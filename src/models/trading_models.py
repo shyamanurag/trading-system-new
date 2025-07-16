@@ -211,7 +211,7 @@ class Trade(Base):
     
     # Relationships
     user = relationship("User", back_populates="trades")
-    position = relationship("Position", back_populates="trades")
+    position = relationship("TradingPosition", back_populates="trades")
 
 class Order(Base):
     """Trading orders"""
