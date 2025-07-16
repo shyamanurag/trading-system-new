@@ -164,9 +164,10 @@ class TradeEngine:
                     user_row = user_result.fetchone()
                     user_id = user_row[0] if user_row else 1
                 except Exception as e:
-                    # If id column doesn't exist, use default user_id
+                    # If id column doesn't exist, rollback and use default user_id
                     self.logger.warning(f"⚠️ Could not get user id (likely missing column): {e}")
                     self.logger.info("📝 Using default user_id=1 for paper trading")
+                    db_session.rollback()  # Important: rollback failed transaction
                     user_id = 1
                 
                 # Insert paper order into orders table
@@ -199,6 +200,9 @@ class TradeEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Error saving paper order to database: {e}")
+            # Rollback on any error to prevent transaction from staying in failed state
+            if db_session:
+                db_session.rollback()
             # Don't raise - allow paper trading to continue even if DB save fails
             self.logger.warning(f"⚠️ Failed to save paper order to database: {e}")
 
@@ -218,8 +222,9 @@ class TradeEngine:
                         user_row = user_result.fetchone()
                         user_id = user_row[0] if user_row else 1
                     except Exception as e:
-                        # If id column doesn't exist, use default user_id
+                        # If id column doesn't exist, rollback and use default user_id
                         self.logger.warning(f"⚠️ Could not get user id for trade: {e}")
+                        db_session.rollback()  # Important: rollback failed transaction
                         user_id = 1
                 
                 # Insert paper trade into trades table (let trade_id auto-increment)
@@ -250,6 +255,9 @@ class TradeEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Error saving paper trade to database: {e}")
+            # Rollback on any error
+            if db_session:
+                db_session.rollback()
             # Don't raise - allow paper trading to continue
             self.logger.warning(f"⚠️ Failed to save paper trade to database: {e}")
     
