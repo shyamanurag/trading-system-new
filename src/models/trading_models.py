@@ -382,4 +382,8 @@ class Signal(BaseModel):
             'stop_loss': self.stop_loss,
             'take_profit': self.take_profit,
             'metadata': self.metadata
-        } 
+        }
+
+# Create aliases for backward compatibility
+Position = PositionModel
+TradingPosition = PositionModel 
