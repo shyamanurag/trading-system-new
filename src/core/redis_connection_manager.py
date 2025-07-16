@@ -49,17 +49,46 @@ class ProductionRedisManager:
     async def initialize(self) -> bool:
         """Initialize Redis connection with retry logic"""
         try:
-            # Use from_url for all connections - it handles SSL automatically
-            self.redis_client = redis.from_url(
+            # Parse Redis URL for better control
+            parsed = urlparse(self.redis_url)
+            
+            # Enhanced connection parameters for DigitalOcean
+            connection_kwargs = {
+                'decode_responses': True,
+                'socket_timeout': 30,  # Increased from 10
+                'socket_connect_timeout': 30,  # Increased from 10
+                'socket_keepalive': True,
+                'socket_keepalive_options': {
+                    1: 1,  # TCP_KEEPIDLE
+                    2: 3,  # TCP_KEEPINTVL  
+                    3: 5,  # TCP_KEEPCNT
+                },
+                'health_check_interval': 60,  # Increased from 30
+                'max_connections': 50,  # Increased from 10
+                'retry_on_timeout': True,
+                'retry_on_error': [ConnectionError, TimeoutError],
+                'retry': redis.retry.Retry(
+                    retries=3,
+                    backoff=redis.retry.ExponentialBackoff(base=1, cap=10)
+                )
+            }
+            
+            # Add SSL context for DigitalOcean
+            if self.ssl_required:
+                ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_REQUIRED
+                connection_kwargs['ssl_cert_reqs'] = 'required'
+                connection_kwargs['ssl_ca_certs'] = None  # Use system CA bundle
+                
+            # Create connection pool explicitly for better control
+            self.connection_pool = redis.ConnectionPool.from_url(
                 self.redis_url,
-                decode_responses=True,
-                socket_timeout=10,
-                socket_connect_timeout=10,
-                socket_keepalive=True,
-                health_check_interval=30,
-                max_connections=10,
-                retry_on_timeout=True
+                **connection_kwargs
             )
+            
+            # Create client from pool
+            self.redis_client = redis.Redis(connection_pool=self.connection_pool)
             
             # Test connection with retry logic
             await self._test_connection_with_retry()
@@ -231,5 +260,64 @@ class ProductionRedisManager:
                 await asyncio.sleep(1)
         return {}
 
-# Global instance
-redis_manager = ProductionRedisManager() 
+    async def ensure_connection(self):
+        """Ensure Redis connection is alive, reconnect if needed"""
+        try:
+            if not self.redis_client:
+                logger.info("🔄 Redis client not initialized, attempting to connect...")
+                return await self.initialize()
+                
+            # Test current connection
+            await self.redis_client.ping()
+            return True
+            
+        except (ConnectionError, TimeoutError, redis.ConnectionError) as e:
+            logger.warning(f"⚠️ Redis connection lost: {e}")
+            logger.info("🔄 Attempting to reconnect...")
+            
+            # Close existing connection
+            if self.redis_client:
+                try:
+                    await self.redis_client.close()
+                except:
+                    pass
+                    
+            # Reset state
+            self.redis_client = None
+            self.is_connected = False
+            
+            # Reconnect
+            return await self.initialize()
+            
+        except Exception as e:
+            logger.error(f"❌ Unexpected Redis error: {e}")
+            return False
+    
+    async def execute_with_reconnect(self, operation, *args, **kwargs):
+        """Execute Redis operation with automatic reconnection"""
+        max_attempts = 3
+        
+        for attempt in range(max_attempts):
+            try:
+                # Ensure connection before operation
+                if not await self.ensure_connection():
+                    raise ConnectionError("Failed to establish Redis connection")
+                    
+                # Execute operation
+                return await operation(*args, **kwargs)
+                
+            except (ConnectionError, TimeoutError, redis.ConnectionError) as e:
+                if attempt == max_attempts - 1:
+                    logger.error(f"❌ Operation failed after {max_attempts} attempts: {e}")
+                    raise
+                    
+                logger.warning(f"⚠️ Attempt {attempt + 1} failed: {e}")
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+
+# Global Redis manager instance
+redis_manager = ProductionRedisManager()
+
+# Convenience function for backward compatibility
+async def get_redis_client():
+    """Get Redis client with automatic connection management"""
+    return await redis_manager.get_client() 
