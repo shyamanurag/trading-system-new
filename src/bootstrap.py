@@ -15,6 +15,7 @@ from typing import Dict, Any
 # Import new API modules
 from src.api.dynamic_user_management import router as dynamic_user_router
 from src.api.user_analytics_service import router as analytics_router
+from src.api.database_admin import router as database_admin_router
 from src.core.multi_user_zerodha_manager import multi_user_zerodha_manager
 
 # Add parent directory to path for imports
@@ -144,6 +145,11 @@ def create_app():
                 "status": "error",
                 "error": str(e)
             }
+    
+    # Register API routers
+    app.include_router(dynamic_user_router)
+    app.include_router(analytics_router)
+    app.include_router(database_admin_router)  # CRITICAL: Emergency database cleanup endpoint
     
     return app
 
