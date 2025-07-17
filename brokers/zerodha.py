@@ -179,7 +179,7 @@ class ZerodhaIntegration:
             if account_info:
                 self.is_connected = True
                 await self._initialize_websocket()
-                logger.info("✅ Zerodha connected successfully")
+                # REMOVED: Misleading success message - let resilient wrapper handle connection status
                 return True
             else:
                 logger.error("❌ Connection test failed: No account info returned")
