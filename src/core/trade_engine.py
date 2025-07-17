@@ -199,9 +199,11 @@ class TradeEngine:
                 # Place order through Zerodha (sandbox)
                 result = await self.zerodha_client.place_order(order_data)
                 
-                if result and result.get('success'):
-                    order_id = result.get('order_id', f"PAPER_{int(time.time())}")
-                    execution_price = result.get('price', signal.get('price', 0))
+                # CRITICAL FIX: Handle string order_id returned by ZerodhaIntegration  
+                if result and isinstance(result, str):
+                    # ZerodhaIntegration returns order_id string directly
+                    order_id = result
+                    execution_price = signal.get('entry_price', 0)
                     
                     # CRITICAL FIX: Never store trades with zero or invalid prices
                     if not execution_price or execution_price <= 0:
@@ -234,6 +236,35 @@ class TradeEngine:
                     # CRITICAL FIX: Calculate real P&L and store to database
                     await self._calculate_and_store_trade_pnl(trade_record)
                     
+                    self.logger.info(f"✅ Paper trade executed via Zerodha API: {order_id}")
+                    return trade_record
+                elif result and isinstance(result, dict) and result.get('success'):
+                    # Handle dict format (backward compatibility)
+                    order_id = result.get('order_id', f"PAPER_{int(time.time())}")
+                    execution_price = result.get('price', signal.get('entry_price', 0))
+                    
+                    # Similar processing as above for dict format...
+                    trade_record = {
+                        'trade_id': order_id,
+                        'symbol': signal.get('symbol'),
+                        'side': signal_action,
+                        'quantity': signal.get('quantity', 50),
+                        'price': execution_price,
+                        'strategy': signal.get('strategy', 'unknown'),
+                        'status': 'EXECUTED',
+                        'executed_at': datetime.now(),
+                        'user_id': 'PAPER_TRADER_001'
+                    }
+                    
+                    if self.position_tracker:
+                        await self.position_tracker.update_position(
+                            symbol=trade_record['symbol'],
+                            quantity=trade_record['quantity'],
+                            price=execution_price,
+                            side=trade_record['side'].lower()
+                        )
+                    
+                    await self._calculate_and_store_trade_pnl(trade_record)
                     self.logger.info(f"✅ Paper trade executed via Zerodha API: {order_id}")
                     return trade_record
                 
