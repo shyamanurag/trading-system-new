@@ -61,9 +61,9 @@ class DatabaseManager:
                 pool_timeout=15,      # Faster timeout
                 connect_args=connect_args,
                 echo=False,
-                # Add connection pooling optimizations
-                pool_reset_on_return='commit',
-                pool_recycle_on_invalidate=True
+                # CRITICAL FIX: Remove invalid parameter that breaks database initialization
+                pool_reset_on_return='commit'
+                # pool_recycle_on_invalidate=True  # ❌ REMOVED: This parameter doesn't exist in SQLAlchemy
             )
             
             # Test connection
