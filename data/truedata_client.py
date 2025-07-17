@@ -200,7 +200,7 @@ class TrueDataClient:
             return False
 
     def connect(self):
-        """Main connection method with deployment overlap handling"""
+        """Main connection method with optimized deployment overlap handling"""
         with self._lock:
             if self._shutdown_requested:
                 logger.info("🛑 Shutdown requested - skipping connection")
@@ -208,11 +208,17 @@ class TrueDataClient:
                 
             # Circuit breaker check
             if self._circuit_breaker_active:
-                time_since_failure = time.time() - self._last_connection_failure
-                if time_since_failure < self._circuit_breaker_timeout:
-                    logger.warning(f"⚡ Circuit breaker ACTIVE - cooling down for {self._circuit_breaker_timeout - time_since_failure:.0f}s")
-                    return False
+                if self._last_connection_failure is not None:
+                    time_since_failure = time.time() - self._last_connection_failure
+                    if time_since_failure < self._circuit_breaker_timeout:
+                        logger.warning(f"⚡ Circuit breaker ACTIVE - cooling down for {self._circuit_breaker_timeout - time_since_failure:.0f}s")
+                        return False
+                    else:
+                        logger.info("⚡ Circuit breaker timeout expired - attempting connection")
+                        self._circuit_breaker_active = False
+                        self._consecutive_failures = 0
                 else:
+                    # If _last_connection_failure is None, reset circuit breaker
                     logger.info("⚡ Circuit breaker timeout expired - attempting connection")
                     self._circuit_breaker_active = False
                     self._consecutive_failures = 0
@@ -232,16 +238,16 @@ class TrueDataClient:
 
             # Check if this is a deployment overlap scenario
             if self._check_deployment_overlap():
-                logger.info("🔄 Deployment overlap detected - attempting graceful takeover")
+                logger.info("🔄 Deployment overlap detected - using optimized graceful takeover")
                 
-                # Strategy 1: Try graceful takeover
-                if self._attempt_graceful_takeover():
+                # OPTIMIZED Strategy 1: Quick graceful takeover with shorter waits
+                if self._attempt_optimized_takeover():
                     self._reset_circuit_breaker()
                     return True
                 
-                # Strategy 2: Wait for old connection to timeout and retry
-                logger.info("⏳ Graceful takeover failed - waiting for connection timeout...")
-                time.sleep(15)  # Wait for old connection to timeout
+                # OPTIMIZED Strategy 2: Reduced wait time for connection timeout
+                logger.info("⏳ Quick takeover failed - waiting for connection timeout (optimized)...")
+                time.sleep(5)  # Reduced from 15 seconds
                 
                 if self._direct_connect():
                     self._reset_circuit_breaker()
@@ -261,6 +267,41 @@ class TrueDataClient:
                 else:
                     self._activate_circuit_breaker()
                     return False
+
+    def _attempt_optimized_takeover(self):
+        """Optimized graceful takeover with faster timeouts"""
+        logger.info("🔄 Attempting optimized graceful connection takeover...")
+        
+        try:
+            # Try to create a temporary connection to force disconnect the existing one
+            from truedata import TD_live
+            
+            logger.info("📡 Creating temporary connection to force disconnect existing...")
+            temp_td = TD_live(
+                self.username,
+                self.password,
+                live_port=self.port,
+                url=self.url,
+                compression=False
+            )
+            
+            # Send disconnect signal
+            try:
+                if hasattr(temp_td, 'disconnect'):
+                    temp_td.disconnect()
+                    logger.info("✅ Sent disconnect signal to existing connection")
+            except:
+                pass
+            
+            # OPTIMIZED: Shorter delay for faster takeover
+            time.sleep(2)  # Reduced from 5 seconds
+            
+            # Now try our actual connection
+            return self._direct_connect()
+            
+        except Exception as e:
+            logger.error(f"❌ Optimized graceful takeover failed: {e}")
+            return False
 
     def _activate_circuit_breaker(self):
         """Activate circuit breaker to prevent constant reconnection attempts"""

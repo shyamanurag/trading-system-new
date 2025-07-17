@@ -17,16 +17,17 @@ logger = logging.getLogger(__name__)
 Base = declarative_base()
 
 class DatabaseManager:
-    """Centralized database management"""
+    """Centralized database manager with proper connection pooling for DigitalOcean"""
     
     def __init__(self):
-        self.engine: Optional[sqlalchemy.Engine] = None
-        self.SessionLocal: Optional[sessionmaker] = None
+        self.engine = None
+        self.SessionLocal = None
         self._initialized = False
         
     def initialize(self):
-        """Initialize database connection and ensure schema is ready"""
+        """Initialize database with optimized connection pooling for DigitalOcean"""
         if self._initialized:
+            logger.info("Database already initialized - reusing connection pool")
             return
             
         try:
@@ -49,14 +50,20 @@ class DatabaseManager:
                 
             logger.info(f"Using connect_args: {connect_args}")
             
-            # Create engine with connection pooling optimized for DigitalOcean
+            # FIXED: Optimize for DigitalOcean connection limits
+            # Use small pool size to stay under DigitalOcean connection limits
             self.engine = create_engine(
                 database_url,
-                poolclass=NullPool,  # Disable connection pooling for serverless
-                connect_args=connect_args,
-                echo=False,  # Set to True for SQL debugging
+                pool_size=3,          # Reduced from 10 
+                max_overflow=5,       # Reduced from 20
                 pool_pre_ping=True,
-                pool_recycle=3600
+                pool_recycle=1800,    # 30 minutes instead of 1 hour
+                pool_timeout=15,      # Faster timeout
+                connect_args=connect_args,
+                echo=False,
+                # Add connection pooling optimizations
+                pool_reset_on_return='commit',
+                pool_recycle_on_invalidate=True
             )
             
             # Test connection
@@ -70,7 +77,8 @@ class DatabaseManager:
                 bind=self.engine
             )
             
-            logger.info("Database connection initialized successfully")
+            logger.info("✅ Database connection pool initialized: 3 connections + 5 overflow")
+            logger.info("📊 Optimized for DigitalOcean connection limits")
             
             # Ensure database is ready for paper trading (autonomous)
             self._ensure_database_ready()
@@ -78,97 +86,102 @@ class DatabaseManager:
             self._initialized = True
             
         except Exception as e:
-            logger.error(f"Failed to initialize database: {e}")
-            # Don't raise the error - let the app continue without database
-            self.engine = None
-            self.SessionLocal = None
-
+            logger.error(f"❌ Database initialization failed: {e}")
+            logger.error("💡 This may be due to connection pool exhaustion")
+            logger.error("🔧 Check DigitalOcean database connection limits")
+            raise
+    
     def _ensure_database_ready(self):
-        """Ensure database has required structure for paper trading"""
+        """Ensure database is ready for paper trading"""
         try:
-            environment = os.getenv('ENVIRONMENT', 'development')
-            
-            if environment == 'production':
-                logger.info("🔄 Ensuring database is ready for paper trading...")
+            if not self.engine:
+                logger.error("❌ Cannot ensure database ready - engine not initialized")
+                return
                 
-                with self.engine.begin() as conn:
-                    # First check if users table already has a primary key
-                    result = conn.execute(text("""
-                        SELECT constraint_name, column_name 
-                        FROM information_schema.key_column_usage 
+            logger.info("🔄 Ensuring database is ready for paper trading...")
+            
+            with self.engine.begin() as conn:
+                # First check if users table already has a primary key
+                result = conn.execute(text("""
+                    SELECT constraint_name, column_name 
+                    FROM information_schema.key_column_usage 
+                    WHERE table_name = 'users' 
+                    AND constraint_name IN (
+                        SELECT constraint_name 
+                        FROM information_schema.table_constraints 
                         WHERE table_name = 'users' 
-                        AND constraint_name IN (
-                            SELECT constraint_name 
-                            FROM information_schema.table_constraints 
-                            WHERE table_name = 'users' 
-                            AND constraint_type = 'PRIMARY KEY'
+                        AND constraint_type = 'PRIMARY KEY'
+                    )
+                """))
+                
+                primary_key_info = result.fetchall()
+                
+                if primary_key_info:
+                    logger.info("✅ Users table already has PRIMARY KEY - database ready")
+                else:
+                    logger.info("🔧 Users table missing PRIMARY KEY - creating schema...")
+                    
+                    # Create users table with proper PRIMARY KEY
+                    conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS users (
+                            id SERIAL PRIMARY KEY,
+                            user_id VARCHAR(50) UNIQUE NOT NULL,
+                            username VARCHAR(100),
+                            email VARCHAR(255),
+                            broker_user_id VARCHAR(100),
+                            api_key_encrypted TEXT,
+                            is_active BOOLEAN DEFAULT true,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         )
                     """))
                     
-                    primary_key_info = result.fetchone()
-                    
-                    # Check if users table has id column
-                    result = conn.execute(text("""
-                        SELECT column_name 
-                        FROM information_schema.columns 
-                        WHERE table_name = 'users' 
-                        AND column_name = 'id'
+                    # Create other essential tables if they don't exist
+                    conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS trades (
+                            id SERIAL PRIMARY KEY,
+                            trade_id VARCHAR(100) UNIQUE,
+                            user_id VARCHAR(50) REFERENCES users(user_id),
+                            symbol VARCHAR(50) NOT NULL,
+                            side VARCHAR(10) NOT NULL,
+                            quantity INTEGER NOT NULL,
+                            entry_price DECIMAL(10,2),
+                            current_price DECIMAL(10,2),
+                            pnl DECIMAL(10,2),
+                            pnl_percent DECIMAL(5,2),
+                            status VARCHAR(20) DEFAULT 'OPEN',
+                            strategy VARCHAR(50),
+                            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            exit_timestamp TIMESTAMP,
+                            broker_order_id VARCHAR(100),
+                            notes TEXT
+                        )
                     """))
                     
-                    has_id_column = result.fetchone() is not None
-                    
-                    if not has_id_column:
-                        if primary_key_info:
-                            logger.info(f"📝 Users table has primary key on column: {primary_key_info[1]}")
-                            logger.info("📝 Adding id column without primary key constraint...")
-                            conn.execute(text("""
-                                ALTER TABLE users ADD COLUMN id SERIAL
-                            """))
-                        else:
-                            logger.info("📝 Adding id column as primary key...")
-                            conn.execute(text("""
-                                ALTER TABLE users ADD COLUMN id SERIAL PRIMARY KEY
-                            """))
-                        logger.info("✅ Added id column to users table")
-                    
-                    # Ensure at least one user exists for paper trading
-                    result = conn.execute(text("""
-                        SELECT COUNT(*) FROM users WHERE id = 1
+                    # Create indexes for performance
+                    conn.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_trades_user_id ON trades(user_id);
+                        CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
+                        CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp);
+                        CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
                     """))
                     
-                    if result.scalar() == 0:
-                        logger.info("📝 Creating default paper trading user...")
-                        # First check if we need to specify id explicitly
-                        conn.execute(text("""
-                            INSERT INTO users (
-                                username, email, password_hash, full_name,
-                                initial_capital, current_balance, risk_tolerance,
-                                is_active, zerodha_client_id, trading_enabled,
-                                max_daily_trades, max_position_size, created_at, updated_at
-                            ) VALUES (
-                                'PAPER_TRADER_001', 'paper@algoauto.com',
-                                '$2b$12$dummy.hash.paper.trading', 'Paper Trading Account',
-                                100000, 100000, 'medium',
-                                true, 'PAPER', true,
-                                1000, 500000, NOW(), NOW()
-                            )
-                        """))
-                        
-                        # Update the user to have id=1 if possible
-                        conn.execute(text("""
-                            UPDATE users SET id = 1 
-                            WHERE username = 'PAPER_TRADER_001' 
-                            AND id != 1
-                            AND NOT EXISTS (SELECT 1 FROM users WHERE id = 1)
-                        """))
-                        
-                        logger.info("✅ Created default paper trading user")
-                    
-                    logger.info("✅ Database is ready for paper trading!")
-                    
+                    logger.info("✅ Database schema created successfully")
+                
+                # Always ensure PAPER_TRADER_001 user exists for autonomous operation
+                conn.execute(text("""
+                    INSERT INTO users (user_id, username, broker_user_id, is_active)
+                    VALUES ('PAPER_TRADER_001', 'Autonomous Paper Trader', 'QSW899', true)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        broker_user_id = EXCLUDED.broker_user_id,
+                        updated_at = CURRENT_TIMESTAMP
+                """))
+                
+                logger.info("✅ Database is ready for paper trading!")
+                
         except Exception as e:
-            logger.warning(f"⚠️ Could not ensure database readiness: {e}")
-            logger.info("📊 System will continue - paper trading may have limited functionality")
+            logger.error(f"❌ Error ensuring database ready: {e}")
+            # Don't raise - app can continue without full database functionality
     
     def _apply_migrations(self):
         """Apply database migrations if needed"""
@@ -189,13 +202,18 @@ class DatabaseManager:
             logger.error(f"❌ Migration check failed: {e}")
             logger.info("🔄 Continuing without migration")
     
-    @contextmanager
-    def get_session(self) -> Session:
-        """Get database session"""
+    def get_shared_session(self):
+        """Get database session from the shared pool"""
+        if not self._initialized:
+            self.initialize()
         if not self.SessionLocal:
-            raise RuntimeError("Database not initialized. Check your database configuration.")
-        
-        session = self.SessionLocal()
+            raise RuntimeError("Database not properly initialized - SessionLocal is None")
+        return self.SessionLocal()
+    
+    @contextmanager
+    def get_session(self):
+        """Get database session with context manager - backward compatibility"""
+        session = self.get_shared_session()
         try:
             yield session
             session.commit()
@@ -214,10 +232,10 @@ class DatabaseManager:
             with conn.begin():
                 return conn.execute(text(sql))
     
-    def get_engine(self):
-        """Get SQLAlchemy engine"""
-        if not self.engine:
-            raise RuntimeError("Database not initialized")
+    def get_shared_engine(self):
+        """Get the shared database engine for all components"""
+        if not self._initialized:
+            self.initialize()
         return self.engine
     
     def health_check(self) -> dict:
@@ -250,12 +268,15 @@ def get_session():
 
 def get_engine():
     """Get database engine - backward compatibility"""
-    return db_manager.get_engine()
+    return db_manager.get_shared_engine()
 
 def get_db():
     """Get database session generator - FastAPI style"""
-    with db_manager.get_session() as session:
+    session = db_manager.get_shared_session()
+    try:
         yield session
+    finally:
+        session.close()
 
 def initialize_database():
     """Initialize database - backward compatibility"""

@@ -330,7 +330,7 @@ class ZerodhaIntegration:
     
     async def get_account_info(self) -> Dict:
         """Get account information"""
-        if not self.is_connected:
+        if not self.is_connected or not self.kite:
             return {}
         
         if self.mock_mode:
@@ -344,8 +344,30 @@ class ZerodhaIntegration:
                 'last_updated': datetime.now().isoformat()
             }
         else:
-            # Real implementation would fetch from Zerodha API
-            return {}
+            # FIXED: Implement real API call instead of returning empty dict
+            try:
+                # Fetch actual profile from Zerodha API
+                profile = await self._async_api_call(self.kite.profile)
+                if profile:
+                    return {
+                        'user_id': profile.get('user_id', self.user_id),
+                        'user_name': profile.get('user_name', ''),
+                        'email': profile.get('email', ''),
+                        'broker': 'Zerodha',
+                        'exchanges': profile.get('exchanges', []),
+                        'products': profile.get('products', ['CNC', 'MIS', 'NRML']),
+                        'order_types': profile.get('order_types', ['MARKET', 'LIMIT', 'SL', 'SL-M']),
+                        'avatar_url': profile.get('avatar_url', ''),
+                        'last_updated': datetime.now().isoformat(),
+                        'connection_status': 'connected'
+                    }
+                else:
+                    logger.warning("⚠️ Zerodha profile returned empty - connection may be invalid")
+                    return {}
+            except Exception as e:
+                logger.error(f"❌ Failed to fetch Zerodha account info: {e}")
+                # Return empty dict to indicate connection issue
+                return {}
     
     async def get_holdings(self) -> Dict:
         """Get current holdings"""
