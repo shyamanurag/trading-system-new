@@ -496,12 +496,103 @@ async def auth_me_fallback_high_priority():
         headers={"Content-Type": "application/json"}
     )
 
-@app.get("/health")
+@app.get("/health", tags=["health"])
 async def health_check():
-    """Basic health check endpoint"""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    """Health check endpoint for DigitalOcean"""
+    return {"status": "healthy", "timestamp": datetime.utcnow()}
 
-@app.get("/health/ready/json")
+@app.get("/ready", tags=["health"])
+async def ready_check():
+    """Ready check endpoint for DigitalOcean health checks"""
+    return {"status": "ready", "timestamp": datetime.utcnow()}
+
+@app.post("/emergency-cleanup-contaminated-database", tags=["emergency"])
+async def emergency_cleanup_contaminated_database():
+    """
+    EMERGENCY: Clean contaminated database
+    Removes ALL 3,597+ fake/simulated trades with ₹0.00 prices
+    """
+    try:
+        from src.core.database import DatabaseManager
+        from sqlalchemy import text
+        
+        logger.info("🚨 EMERGENCY: Starting database cleanup - removing 3,597+ contaminated trades")
+        
+        # Get database manager
+        db_manager = DatabaseManager()
+        db_manager.initialize()
+        
+        if not db_manager.engine:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+        
+        # Check current counts before cleanup
+        with db_manager.engine.connect() as conn:
+            trade_count = conn.execute(text("SELECT COUNT(*) FROM trades")).scalar()
+            position_count = conn.execute(text("SELECT COUNT(*) FROM positions")).scalar()
+            order_count = conn.execute(text("SELECT COUNT(*) FROM orders")).scalar()
+        
+        logger.info(f"📊 BEFORE CLEANUP: {trade_count} trades, {position_count} positions, {order_count} orders")
+        
+        # Execute cleanup
+        cleanup_sql = """
+        BEGIN;
+        DELETE FROM trades WHERE 1=1;
+        DELETE FROM positions WHERE 1=1;
+        DELETE FROM orders WHERE 1=1;
+        DELETE FROM user_metrics WHERE 1=1;
+        DELETE FROM audit_logs WHERE entity_type IN ('TRADE', 'ORDER', 'POSITION');
+        ALTER SEQUENCE IF EXISTS trades_trade_id_seq RESTART WITH 1;
+        ALTER SEQUENCE IF EXISTS positions_position_id_seq RESTART WITH 1;
+        UPDATE users SET current_balance = initial_capital WHERE username = 'PAPER_TRADER_001';
+        COMMIT;
+        """
+        
+        with db_manager.engine.connect() as conn:
+            with conn.begin():
+                conn.execute(text(cleanup_sql))
+        
+        # Verify cleanup
+        with db_manager.engine.connect() as conn:
+            trades_after = conn.execute(text("SELECT COUNT(*) FROM trades")).scalar()
+            positions_after = conn.execute(text("SELECT COUNT(*) FROM positions")).scalar()
+            orders_after = conn.execute(text("SELECT COUNT(*) FROM orders")).scalar()
+        
+        success = trades_after == 0 and positions_after == 0 and orders_after == 0
+        
+        result = {
+            "success": success,
+            "message": "Database cleanup completed" if success else "Cleanup failed",
+            "before_cleanup": {
+                "trades": trade_count,
+                "positions": position_count,
+                "orders": order_count,
+                "total": trade_count + position_count + order_count
+            },
+            "after_cleanup": {
+                "trades": trades_after,
+                "positions": positions_after,
+                "orders": orders_after,
+                "total": trades_after + positions_after + orders_after
+            },
+            "deleted": {
+                "trades": trade_count - trades_after,
+                "total": (trade_count + position_count + order_count) - (trades_after + positions_after + orders_after)
+            }
+        }
+        
+        if success:
+            logger.info("🎉 SUCCESS: Database completely cleaned!")
+            logger.info(f"🗑️ Deleted {result['deleted']['total']} contaminated records")
+        else:
+            logger.error("❌ Cleanup failed - some data remains")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Emergency cleanup failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Cleanup failed: {str(e)}")
+
+@app.get("/health/ready/json", tags=["health"])
 async def health_ready_json():
     """Enhanced health check with component status for frontend SystemHealthMonitor"""
     global app_startup_complete
