@@ -1090,7 +1090,16 @@ class TradingOrchestrator:
         """Run all active strategies with transformed data and collect signals"""
         try:
             all_signals = []
-            transformed_data = self._transform_market_data_for_strategies(market_data)
+            # CRITICAL FIX: Use the already-transformed data passed in, don't re-transform
+            # transformed_data = self._transform_market_data_for_strategies(market_data)  # ❌ REMOVED: Causes double processing
+            transformed_data = market_data  # ✅ FIXED: Use pre-transformed data
+            
+            # DEBUG: Show strategy status before processing
+            self.logger.info(f"🔍 DEBUG: Total strategies loaded: {len(self.strategies)}")
+            for strategy_key, strategy_info in self.strategies.items():
+                active = strategy_info.get('active', False)
+                has_instance = 'instance' in strategy_info
+                self.logger.info(f"   📋 {strategy_key}: active={active}, has_instance={has_instance}")
             
             for strategy_key, strategy_info in self.strategies.items():
                 if strategy_info.get('active', False) and 'instance' in strategy_info:
