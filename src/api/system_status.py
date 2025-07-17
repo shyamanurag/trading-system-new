@@ -8,6 +8,9 @@ from datetime import datetime
 import logging
 import asyncio
 from src.models.responses import APIResponse
+from sqlalchemy import text
+
+from src.core.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -290,3 +293,121 @@ async def get_strategies_performance():
     except Exception as e:
         logger.error(f"Error getting strategies performance: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 
+
+@router.post("/emergency-cleanup")
+async def emergency_database_cleanup() -> Dict[str, Any]:
+    """
+    EMERGENCY ENDPOINT: Clean contaminated database
+    Removes ALL fake/simulated trades that have accumulated across deployments
+    """
+    
+    migration_sql = """
+-- EMERGENCY CLEANUP: Remove All Fake/Simulated Trades  
+BEGIN;
+
+-- CRITICAL: Delete all fake/simulated trades and related data
+DELETE FROM trades WHERE 1=1;
+DELETE FROM positions WHERE 1=1;  
+DELETE FROM orders WHERE 1=1;
+
+-- Clear any trade-related cache or session data
+DELETE FROM user_metrics WHERE 1=1;
+DELETE FROM audit_logs WHERE entity_type IN ('TRADE', 'ORDER', 'POSITION');
+
+-- Reset auto-increment sequences to start fresh
+ALTER SEQUENCE IF EXISTS trades_trade_id_seq RESTART WITH 1;
+ALTER SEQUENCE IF EXISTS positions_position_id_seq RESTART WITH 1;
+
+-- Ensure clean user state for paper trading
+UPDATE users 
+SET 
+    current_balance = initial_capital,
+    updated_at = NOW()
+WHERE username = 'PAPER_TRADER_001';
+
+COMMIT;
+"""
+
+    try:
+        logger.info("🚨 EMERGENCY: Starting database cleanup via system status endpoint")
+        
+        # Get database manager instance
+        db_manager = DatabaseManager()
+        db_manager.initialize()
+        
+        if not db_manager.engine:
+            raise HTTPException(
+                status_code=500, 
+                detail="Database connection failed - cannot execute cleanup"
+            )
+        
+        # Check current state before cleanup
+        with db_manager.engine.connect() as conn:
+            # Get current counts
+            trade_result = conn.execute(text("SELECT COUNT(*) FROM trades"))
+            position_result = conn.execute(text("SELECT COUNT(*) FROM positions"))
+            order_result = conn.execute(text("SELECT COUNT(*) FROM orders"))
+            
+            trades_before = trade_result.scalar()
+            positions_before = position_result.scalar()
+            orders_before = order_result.scalar()
+        
+        logger.info(f"📊 BEFORE CLEANUP: {trades_before} trades, {positions_before} positions, {orders_before} orders")
+        
+        # Execute cleanup migration
+        with db_manager.engine.connect() as conn:
+            with conn.begin():
+                conn.execute(text(migration_sql))
+                
+        logger.info("✅ Cleanup migration executed successfully")
+        
+        # Verify cleanup results
+        with db_manager.engine.connect() as conn:
+            trade_result = conn.execute(text("SELECT COUNT(*) FROM trades"))
+            position_result = conn.execute(text("SELECT COUNT(*) FROM positions"))
+            order_result = conn.execute(text("SELECT COUNT(*) FROM orders"))
+            
+            trades_after = trade_result.scalar()
+            positions_after = position_result.scalar()
+            orders_after = order_result.scalar()
+        
+        cleanup_success = (trades_after == 0 and positions_after == 0 and orders_after == 0)
+        
+        result = {
+            "success": cleanup_success,
+            "message": "Database cleanup completed" if cleanup_success else "Cleanup incomplete",
+            "timestamp": datetime.utcnow().isoformat(),
+            "before_cleanup": {
+                "trades": trades_before,
+                "positions": positions_before,
+                "orders": orders_before,
+                "total_fake_records": trades_before + positions_before + orders_before
+            },
+            "after_cleanup": {
+                "trades": trades_after,
+                "positions": positions_after,
+                "orders": orders_after,
+                "total_remaining": trades_after + positions_after + orders_after
+            },
+            "records_deleted": {
+                "trades": trades_before - trades_after,
+                "positions": positions_before - positions_after,
+                "orders": orders_before - orders_after,
+                "total": (trades_before + positions_before + orders_before) - (trades_after + positions_after + orders_after)
+            }
+        }
+        
+        if cleanup_success:
+            logger.info("🎉 SUCCESS: Database is now completely clean!")
+            logger.info("🚀 Ready for real trading without fake data contamination")
+        else:
+            logger.error("❌ CLEANUP INCOMPLETE: Some fake data remains")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Emergency cleanup failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database cleanup failed: {str(e)}"
+        ) 
