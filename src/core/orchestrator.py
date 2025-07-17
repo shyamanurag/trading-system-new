@@ -883,62 +883,34 @@ class TradingOrchestrator:
                 from brokers.resilient_zerodha import ResilientZerodhaConnection
                 
                 # Create broker instance with proper config format
-                # CRITICAL FIX: Use mock_mode=False when we have valid credentials AND access token
+                # CRITICAL FIX: Use mock_mode=False when we have all credentials AND access token
                 has_valid_credentials = all([api_key, user_id, access_token])
                 
-                # EMERGENCY FIX: Force check for token in Redis with exact key pattern
-                if not access_token and user_id:
-                    self.logger.warning(f"🔄 EMERGENCY: No access token found, forcing Redis check for user {user_id}")
-                    try:
-                        import redis.asyncio as redis
-                        redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-                        redis_client = redis.from_url(redis_url)
-                        
-                        # Force check the exact key pattern that frontend uses
-                        emergency_key = f"zerodha:token:{user_id}"
-                        stored_token = await redis_client.get(emergency_key)
-                        if stored_token:
-                            access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
-                            self.logger.info(f"🚨 EMERGENCY FIX: Found token with key {emergency_key}")
-                            has_valid_credentials = True
-                        else:
-                            self.logger.error(f"🚨 EMERGENCY: No token found with key {emergency_key}")
-                            
-                            # DEBUGGING: Check what keys actually exist
-                            self.logger.info("🔍 DEBUGGING: Checking all zerodha:token:* keys in Redis...")
-                            all_keys = await redis_client.keys("zerodha:token:*")
-                            self.logger.info(f"🔍 DEBUGGING: Found {len(all_keys)} zerodha:token:* keys")
-                            for key in all_keys:
-                                key_str = key.decode() if isinstance(key, bytes) else key
-                                self.logger.info(f"🔍 DEBUGGING: Key found: {key_str}")
-                                # Try to get token from any found key
-                                if not access_token:
-                                    stored_token = await redis_client.get(key)
-                                    if stored_token:
-                                        access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
-                                        self.logger.info(f"🚨 EMERGENCY FIX: Using token from key {key_str}")
-                                        has_valid_credentials = True
-                                        break
-                        
-                        await redis_client.close()
-                    except Exception as emergency_error:
-                        self.logger.error(f"🚨 EMERGENCY Redis check failed: {emergency_error}")
+                # PAPER TRADING FIX: In paper trading mode, still use real Zerodha API even without token initially
+                paper_trading_enabled = os.getenv('PAPER_TRADING', 'false').lower() == 'true'
+                
+                # CRITICAL FIX: Allow Zerodha initialization even without access token
+                # Token will be provided later through frontend authentication
+                has_api_credentials = all([api_key, user_id])
                 
                 zerodha_config = {
                     'api_key': api_key,
                     'user_id': user_id,
-                    'access_token': access_token,
-                    'mock_mode': not has_valid_credentials,  # False when we have all credentials
-                    'sandbox_mode': os.getenv('ZERODHA_SANDBOX_MODE', 'true').lower() == 'true'  # Default to sandbox for safety
+                    'access_token': access_token,  # Can be None initially
+                    'mock_mode': not has_api_credentials,  # Only require API credentials, not token
+                    'sandbox_mode': os.getenv('ZERODHA_SANDBOX_MODE', 'true').lower() == 'true',
+                    'allow_token_update': True  # Allow token to be set later
                 }
                 
-                # Log token status for debugging (without exposing actual token)
-                if access_token:
-                    self.logger.info(f"✅ Zerodha token available for user {user_id}: {access_token[:10]}...")
-                    self.logger.info("🔄 Zerodha will run in LIVE mode with real API credentials")
+                # Log initialization status
+                if has_api_credentials:
+                    if access_token:
+                        self.logger.info(f"✅ Zerodha initializing with token for user {user_id}: {access_token[:10]}...")
+                    else:
+                        self.logger.info(f"🔧 Zerodha initializing WITHOUT token for user {user_id} - will accept token from frontend")
+                    self.logger.info("🔄 Zerodha will use REAL API with sandbox mode for paper trading")
                 else:
-                    self.logger.warning(f"❌ No Zerodha token found for user {user_id} - running in mock mode")
-                    self.logger.warning("💡 Make sure to authenticate via frontend daily auth")
+                    self.logger.warning(f"❌ Missing Zerodha API credentials - running in mock mode")
                 
                 broker = ZerodhaIntegration(zerodha_config)
                 
@@ -1708,6 +1680,38 @@ class TradingOrchestrator:
         """Cleanup when orchestrator is destroyed"""
         if hasattr(self, '_trading_task') and self._trading_task is not None:
             self._trading_task.cancel()
+
+    async def update_zerodha_token(self, access_token: str, user_id: str = None):
+        """Update Zerodha access token after frontend authentication"""
+        try:
+            self.logger.info(f"🔄 Updating Zerodha token for user {user_id or 'default'}")
+            
+            # Update the token in the Zerodha client
+            if self.zerodha_client and hasattr(self.zerodha_client, 'broker'):
+                success = self.zerodha_client.broker.update_access_token(access_token)
+                if success:
+                    self.logger.info("✅ Zerodha token updated successfully")
+                    
+                    # Update Redis storage with new token
+                    try:
+                        if self.redis_manager:
+                            await self.redis_manager.initialize()
+                            await self.redis_manager.safe_set(f"zerodha:token:{user_id or 'QSW899'}", access_token, ttl=86400)
+                            self.logger.info("✅ Token stored in Redis cache")
+                    except Exception as redis_error:
+                        self.logger.warning(f"⚠️ Could not store token in Redis: {redis_error}")
+                    
+                    return True
+                else:
+                    self.logger.error("❌ Failed to update Zerodha token")
+                    return False
+            else:
+                self.logger.error("❌ Zerodha client not available for token update")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error updating Zerodha token: {e}")
+            return False
 
 
 # Global function to get orchestrator instance

@@ -34,6 +34,7 @@ class ZerodhaIntegration:
         # CRITICAL FIX: Add missing mock_mode attribute
         self.mock_mode = config.get('mock_mode', False)
         self.sandbox_mode = config.get('sandbox_mode', False)
+        self.allow_token_update = config.get('allow_token_update', True)
         
         # Initialize KiteConnect for REAL trading
         if self.api_key and KiteConnect:
@@ -43,6 +44,8 @@ class ZerodhaIntegration:
             if self.access_token:
                 self.kite.set_access_token(self.access_token)
                 logger.info("✅ Zerodha access token set")
+            else:
+                logger.info("🔧 Zerodha initialized without token - awaiting frontend authentication")
         else:
             self.kite = None
             logger.warning("Zerodha API key not provided or KiteConnect not available")
@@ -55,6 +58,26 @@ class ZerodhaIntegration:
         self.last_order_time = 0
         self.order_rate_limit = 1.0  # 1 second between orders
         
+    def update_access_token(self, access_token: str):
+        """Update access token after frontend authentication"""
+        try:
+            if self.kite and access_token:
+                self.access_token = access_token
+                self.kite.set_access_token(access_token)
+                logger.info(f"✅ Zerodha access token updated: {access_token[:10]}...")
+                
+                # Test the connection
+                profile = self.kite.profile()
+                logger.info(f"✅ Zerodha connection verified - User: {profile.get('user_name', 'Unknown')}")
+                self.is_connected = True
+                return True
+            else:
+                logger.error("❌ Cannot update token - KiteConnect not initialized or token invalid")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Error updating Zerodha access token: {e}")
+            return False
+            
     async def place_order(self, order_params: Dict) -> Optional[str]:
         """Place REAL order on Zerodha"""
         try:

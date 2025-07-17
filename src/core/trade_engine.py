@@ -30,8 +30,8 @@ class TradeEngine:
         # Handle configuration with defaults
         self.config = config or {}
         
-        # CRITICAL FIX: Initialize paper trading mode from configuration
-        self.paper_trading_enabled = self.config.get('paper_trading', True)  # Default to paper trading for safety
+        # CRITICAL FIX: Initialize paper trading mode from configuration  
+        self.paper_trading_enabled = self.config.get('paper_trading', False)  # Default to LIVE TRADING for real money
         
         # CRITICAL FIX: Initialize all missing attributes
         self.paper_orders = {}  # Store paper trading orders
