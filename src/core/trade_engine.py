@@ -179,15 +179,22 @@ class TradeEngine:
             
             # CRITICAL FIX: Use real Zerodha API even in paper mode
             if self.zerodha_client:
+                # CRITICAL FIX: Map signal 'action' to order 'action' correctly
+                signal_action = signal.get('action', 'BUY').upper()
+                
                 # Create order for Zerodha API (sandbox mode)
                 order_data = {
                     'symbol': signal.get('symbol'),
                     'quantity': signal.get('quantity', 50),
-                    'side': signal.get('side', 'BUY'),
+                    'action': signal_action,  # ✅ FIXED: Use 'action' from signal
+                    'transaction_type': signal_action,  # ✅ FIXED: Backup field  
+                    'side': signal_action,  # ✅ FIXED: Another backup field
                     'order_type': 'MARKET',
                     'product': 'MIS',  # Intraday
                     'validity': 'DAY'
                 }
+                
+                self.logger.info(f"🔄 Signal: {signal.get('symbol')} {signal_action} → Order: {signal.get('symbol')} {signal_action}")
                 
                 # Place order through Zerodha (sandbox)
                 result = await self.zerodha_client.place_order(order_data)
@@ -202,11 +209,11 @@ class TradeEngine:
                         self.logger.error("❌ REJECTED: Cannot store trade with zero/invalid price - violates no-mock-data policy")
                         return None
                     
-                    # Create trade record with real execution data
+                    # Create trade record with real execution data  
                     trade_record = {
                         'trade_id': order_id,
                         'symbol': signal.get('symbol'),
-                        'side': signal.get('side', 'BUY'), 
+                        'side': signal_action,  # ✅ FIXED: Use correct action
                         'quantity': signal.get('quantity', 50),
                         'price': execution_price,
                         'strategy': signal.get('strategy', 'unknown'),
@@ -415,10 +422,20 @@ class TradeEngine:
     
     def _create_order_from_signal(self, signal: Dict) -> Dict:
         """Create order parameters from signal"""
+        # CRITICAL FIX: Properly map signal action to avoid direction reversal
+        signal_action = signal.get('action', '').upper()
+        if not signal_action:
+            signal_action = signal.get('transaction_type', '').upper()
+        if not signal_action:
+            # Log warning if no action found - don't default to avoid wrong trades
+            self.logger.warning(f"⚠️ No action found in signal for {signal.get('symbol', 'UNKNOWN')} - REJECTING")
+            signal_action = 'INVALID'
+        
         return {
             'symbol': signal.get('symbol'),
-            'action': signal.get('action', 'BUY'),
-            'transaction_type': signal.get('action', 'BUY'),
+            'action': signal_action,  # ✅ FIXED: Primary action field
+            'transaction_type': signal_action,  # ✅ FIXED: Zerodha backup field
+            'side': signal_action,  # ✅ FIXED: Generic backup field
             'quantity': signal.get('quantity', 0),
             'price': signal.get('entry_price'),
             'entry_price': signal.get('entry_price'),
