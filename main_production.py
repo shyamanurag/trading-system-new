@@ -108,6 +108,12 @@ ROUTER_CONFIG = {
         'prefix': '/api/v1/autonomous',
         'tags': ['autonomous-trading']
     },
+    'database_admin': {
+        'module': 'src.api.database_admin',
+        'attr': 'router',
+        'prefix': '/api/v1/admin/database',
+        'tags': ['database-admin']
+    },
     'websocket': {
         'module': 'src.api.websocket',
         'attr': 'router',
