@@ -62,6 +62,7 @@ router_imports = {
     'truedata_options': ('src.api.truedata_options', 'router'),
     'market_data': ('src.api.market_data', 'router'),
     'autonomous_trading': ('src.api.autonomous_trading', 'router'),
+    'database_admin': ('src.api.database_admin', 'router'),
     'recommendations': ('src.api.recommendations', 'router'),
     'elite_recommendations': ('src.api.elite_recommendations', 'router'),
     'trade_management': ('src.api.trade_management', 'router'),
