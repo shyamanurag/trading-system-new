@@ -295,15 +295,12 @@ class TradeEngine:
                 from sqlalchemy import text
                 insert_query = text("""
                     INSERT INTO trades (
-                        trade_id, user_id, symbol, trade_type, quantity, price,
+                        order_id, user_id, symbol, trade_type, quantity, price,
                         strategy, pnl, pnl_percent, status, executed_at
                     ) VALUES (
-                        :trade_id, :user_id, :symbol, :trade_type, :quantity, :price,
+                        :order_id, :user_id, :symbol, :trade_type, :quantity, :price,
                         :strategy, :pnl, :pnl_percent, :status, :executed_at
-                    ) ON CONFLICT (trade_id) DO UPDATE SET
-                        pnl = :pnl,
-                        pnl_percent = :pnl_percent,
-                        status = :status
+                    )
                 """)
                 
                 # Get user_id (ensure it exists)
@@ -313,7 +310,7 @@ class TradeEngine:
                 user_id = user_row.id if user_row else 1
                 
                 db_session.execute(insert_query, {
-                    'trade_id': trade_record['trade_id'],
+                    'order_id': trade_record['trade_id'],  # Store the order reference in order_id field
                     'user_id': user_id,
                     'symbol': trade_record['symbol'],
                     'trade_type': trade_record['side'].lower(),
@@ -327,7 +324,7 @@ class TradeEngine:
                 })
                 
                 db_session.commit()
-                self.logger.info(f"✅ Trade stored to database: {trade_record['trade_id']}")
+                self.logger.info(f"✅ Trade stored to database with order_id: {trade_record['trade_id']}")
                 
         except Exception as e:
             self.logger.error(f"❌ Error storing trade to database: {e}")

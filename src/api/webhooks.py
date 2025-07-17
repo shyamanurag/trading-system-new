@@ -79,6 +79,26 @@ async def receive_zerodha_position_update(data: Dict[str, Any], request: Request
         logger.error(f"Error processing Zerodha position update: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Generic Zerodha webhook endpoint (for any Zerodha notification)
+@router.post("/webhooks/zerodha")
+async def receive_zerodha_webhook(data: Dict[str, Any], request: Request):
+    """Generic Zerodha webhook receiver for any notification"""
+    try:
+        logger.info(f"Received Zerodha webhook from {request.client.host if request.client else 'unknown'}: {data}")
+        
+        # Handle different types of Zerodha notifications
+        notification_type = data.get("type", "unknown")
+        
+        return {
+            "status": "received",
+            "type": notification_type,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error processing Zerodha webhook: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # News & Events Webhooks
 @router.post("/webhooks/news-feed")
 async def receive_news(data: Dict[str, Any], request: Request):
