@@ -569,3 +569,113 @@ async def get_recent_signals():
             "message": "Failed to get recent signals",
             "source": "monitoring_endpoint_error"
         }
+
+@router.get("/signals/statistics")
+async def get_signal_statistics():
+    """Get detailed signal generation and execution statistics"""
+    try:
+        logger.info("📊 Signal statistics endpoint called")
+        
+        # Get orchestrator instance
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        if not orchestrator:
+            return {
+                "success": False,
+                "message": "Orchestrator not available",
+                "data": {
+                    "generated": 0,
+                    "executed": 0, 
+                    "failed": 0,
+                    "by_strategy": {},
+                    "recent_signals": [],
+                    "failed_signals": []
+                }
+            }
+        
+        # Get signal statistics
+        signal_stats = orchestrator.get_signal_stats()
+        
+        # Calculate success rate
+        total_processed = signal_stats.get('executed', 0) + signal_stats.get('failed', 0)
+        success_rate = (signal_stats.get('executed', 0) / total_processed * 100) if total_processed > 0 else 0
+        
+        # Prepare detailed response
+        response_data = {
+            "generated": signal_stats.get('generated', 0),
+            "executed": signal_stats.get('executed', 0),
+            "failed": signal_stats.get('failed', 0),
+            "success_rate_percent": round(success_rate, 2),
+            "by_strategy": signal_stats.get('by_strategy', {}),
+            "recent_signals": signal_stats.get('recent_signals', []),
+            "failed_signals": signal_stats.get('failed_signals', []),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        return {
+            "success": True,
+            "message": f"Signal statistics: {signal_stats.get('generated', 0)} generated, {signal_stats.get('executed', 0)} executed, {signal_stats.get('failed', 0)} failed",
+            "data": response_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting signal statistics: {e}")
+        return {
+            "success": False,
+            "message": f"Error getting signal statistics: {str(e)}",
+            "data": {
+                "generated": 0,
+                "executed": 0,
+                "failed": 0,
+                "by_strategy": {},
+                "recent_signals": [],
+                "failed_signals": []
+            }
+        }
+
+@router.get("/signals/failed")
+async def get_failed_signals():
+    """Get detailed information about failed signal executions"""
+    try:
+        logger.info("❌ Failed signals endpoint called")
+        
+        # Get orchestrator instance
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        if not orchestrator:
+            return {
+                "success": False,
+                "message": "Orchestrator not available",
+                "failed_signals": []
+            }
+        
+        # Get signal statistics
+        signal_stats = orchestrator.get_signal_stats()
+        failed_signals = signal_stats.get('failed_signals', [])
+        
+        # Group failure reasons
+        failure_reasons = {}
+        for failed_signal in failed_signals:
+            reason = failed_signal.get('failure_reason', 'Unknown')
+            if reason not in failure_reasons:
+                failure_reasons[reason] = []
+            failure_reasons[reason].append(failed_signal)
+        
+        return {
+            "success": True,
+            "message": f"Found {len(failed_signals)} failed signals",
+            "failed_signals": failed_signals,
+            "failure_reasons": failure_reasons,
+            "total_failed": len(failed_signals),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting failed signals: {e}")
+        return {
+            "success": False,
+            "message": f"Error getting failed signals: {str(e)}",
+            "failed_signals": []
+        }

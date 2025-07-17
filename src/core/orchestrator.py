@@ -1101,7 +1101,7 @@ class TradingOrchestrator:
                         # Call strategy's on_market_data method with TRANSFORMED data
                         await strategy_instance.on_market_data(transformed_data)
                         
-                        # FIXED: Collect signals without clearing them immediately
+                        # Collect signals and track generation count
                         signals_generated = 0
                         if hasattr(strategy_instance, 'current_positions'):
                             for symbol, signal in strategy_instance.current_positions.items():
@@ -1109,15 +1109,19 @@ class TradingOrchestrator:
                                     # Add strategy info to signal
                                     signal['strategy'] = strategy_key
                                     signal['signal_id'] = f"{strategy_key}_{symbol}_{int(datetime.now().timestamp())}"
+                                    signal['generated_at'] = datetime.now().isoformat()
                                     all_signals.append(signal.copy())  # Copy signal to avoid reference issues
                                     signals_generated += 1
                                     self.logger.info(f"🚨 SIGNAL COLLECTED: {strategy_key} -> {signal}")
+                                    
+                                    # TRACK: Increment signals generated count
+                                    self._track_signal_generated(strategy_key, signal)
                         
                         if signals_generated == 0:
                             self.logger.info(f"📝 {strategy_key}: No signals generated (normal operation)")
                         else:
-                            # FIXED: Only clear processed signals, keep strategy active for next tick
-                            # Clear signals after successful collection to prevent duplicates
+                            # Clear signals after collection (correct behavior)
+                            # Signals should be void if execution fails
                             for symbol in list(strategy_instance.current_positions.keys()):
                                 if (isinstance(strategy_instance.current_positions[symbol], dict) and 
                                     strategy_instance.current_positions[symbol].get('action') != 'HOLD'):
@@ -1136,11 +1140,144 @@ class TradingOrchestrator:
                     await self.trade_engine.process_signals(all_signals)
                 else:
                     self.logger.error("❌ Trade engine not available - signals cannot be processed")
+                    # TRACK: Mark all signals as failed due to no trade engine
+                    for signal in all_signals:
+                        self._track_signal_failed(signal, "No trade engine available")
             else:
                 self.logger.debug("📭 No signals generated this cycle")
                     
         except Exception as e:
             self.logger.error(f"Error running strategies: {e}")
+    
+    def _track_signal_generated(self, strategy: str, signal: Dict):
+        """Track signal generation for analytics"""
+        try:
+            if not hasattr(self, 'signal_stats'):
+                self.signal_stats = {
+                    'generated': 0,
+                    'executed': 0,
+                    'failed': 0,
+                    'by_strategy': {},
+                    'recent_signals': [],
+                    'failed_signals': []
+                }
+            
+            # Increment counters
+            self.signal_stats['generated'] += 1
+            
+            if strategy not in self.signal_stats['by_strategy']:
+                self.signal_stats['by_strategy'][strategy] = {
+                    'generated': 0, 'executed': 0, 'failed': 0
+                }
+            self.signal_stats['by_strategy'][strategy]['generated'] += 1
+            
+            # Store recent signals (last 10)
+            signal_record = {
+                'signal_id': signal.get('signal_id'),
+                'strategy': strategy,
+                'symbol': signal.get('symbol'),
+                'action': signal.get('action'),
+                'confidence': signal.get('confidence'),
+                'generated_at': signal.get('generated_at'),
+                'status': 'GENERATED'
+            }
+            
+            self.signal_stats['recent_signals'].append(signal_record)
+            if len(self.signal_stats['recent_signals']) > 10:
+                self.signal_stats['recent_signals'].pop(0)
+                
+            self.logger.info(f"📊 SIGNAL TRACKED: Total generated: {self.signal_stats['generated']}")
+            
+        except Exception as e:
+            self.logger.error(f"Error tracking signal generation: {e}")
+    
+    def _track_signal_failed(self, signal: Dict, reason: str):
+        """Track failed signal execution for debugging"""
+        try:
+            if not hasattr(self, 'signal_stats'):
+                self.signal_stats = {
+                    'generated': 0, 'executed': 0, 'failed': 0,
+                    'by_strategy': {}, 'recent_signals': [], 'failed_signals': []
+                }
+            
+            # Increment counters
+            self.signal_stats['failed'] += 1
+            
+            strategy = signal.get('strategy', 'unknown')
+            if strategy not in self.signal_stats['by_strategy']:
+                self.signal_stats['by_strategy'][strategy] = {
+                    'generated': 0, 'executed': 0, 'failed': 0
+                }
+            self.signal_stats['by_strategy'][strategy]['failed'] += 1
+            
+            # Store failed signals for debugging (last 10)
+            failed_record = {
+                'signal_id': signal.get('signal_id'),
+                'strategy': strategy,
+                'symbol': signal.get('symbol'),
+                'action': signal.get('action'),
+                'confidence': signal.get('confidence'),
+                'generated_at': signal.get('generated_at'),
+                'failed_at': datetime.now().isoformat(),
+                'failure_reason': reason,
+                'status': 'FAILED'
+            }
+            
+            self.signal_stats['failed_signals'].append(failed_record)
+            if len(self.signal_stats['failed_signals']) > 10:
+                self.signal_stats['failed_signals'].pop(0)
+                
+            self.logger.error(f"📊 SIGNAL FAILED: {signal.get('symbol')} - {reason}")
+            self.logger.info(f"📊 FAILURE STATS: Total failed: {self.signal_stats['failed']}")
+            
+        except Exception as e:
+            self.logger.error(f"Error tracking signal failure: {e}")
+    
+    def get_signal_stats(self) -> Dict:
+        """Get signal generation and execution statistics"""
+        if not hasattr(self, 'signal_stats'):
+            return {
+                'generated': 0, 'executed': 0, 'failed': 0,
+                'by_strategy': {}, 'recent_signals': [], 'failed_signals': []
+            }
+        return self.signal_stats.copy()
+    
+    async def _clear_successful_signals(self, signals: List[Dict], execution_results):
+        """Clear signals from strategy instances only if execution was successful"""
+        try:
+            if not execution_results:
+                self.logger.info("⚠️ No execution results - keeping all signals for retry")
+                return
+            
+            # If execution_results is a list of results
+            if isinstance(execution_results, list):
+                for i, signal in enumerate(signals):
+                    if i < len(execution_results) and execution_results[i]:
+                        # Execution successful - clear signal from strategy
+                        strategy_instance = signal.get('_strategy_instance')
+                        symbol_key = signal.get('_symbol_key')
+                        if strategy_instance and symbol_key:
+                            strategy_instance.current_positions[symbol_key] = None
+                            self.logger.info(f"✅ Cleared successful signal: {symbol_key}")
+                    else:
+                        # Execution failed - keep signal for next cycle
+                        self.logger.info(f"⚠️ Keeping failed signal for retry: {signal.get('symbol')}")
+            else:
+                # Single result or boolean
+                if execution_results:
+                    # All signals executed successfully
+                    for signal in signals:
+                        strategy_instance = signal.get('_strategy_instance')
+                        symbol_key = signal.get('_symbol_key')
+                        if strategy_instance and symbol_key:
+                            strategy_instance.current_positions[symbol_key] = None
+                            self.logger.info(f"✅ Cleared successful signal: {symbol_key}")
+                else:
+                    self.logger.info("⚠️ Execution failed - keeping all signals for retry")
+                    
+        except Exception as e:
+            self.logger.error(f"Error clearing signals: {e}")
+            # On error, don't clear any signals to be safe
 
     def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """Transform raw market data into format expected by strategies - FIXED transformation bug"""

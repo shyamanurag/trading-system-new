@@ -101,53 +101,76 @@ class TradeEngine:
             return None
     
     async def process_signals(self, signals: List[Dict]):
-        """Process multiple trading signals"""
-        try:
-            if not signals:
-                return []
-            
-            self.logger.info(f"🚀 Processing {len(signals)} signals for execution")
-            
-            results = []
-            for signal in signals:
-                try:
-                    # Process each signal
-                    order_id = await self.process_signal(signal)
-                    
-                    result = {
-                        'signal_id': signal.get('signal_id'),
-                        'symbol': signal.get('symbol'),
-                        'action': signal.get('action'),
-                        'order_id': order_id,
-                        'status': 'SUCCESS' if order_id else 'FAILED',
-                        'timestamp': datetime.now().isoformat()
-                    }
-                    
-                    results.append(result)
-                    
-                    if order_id:
-                        self.logger.info(f"✅ Signal processed successfully: {signal.get('symbol')} {signal.get('action')} - Order ID: {order_id}")
-                    else:
-                        self.logger.error(f"❌ Signal processing failed: {signal.get('symbol')} {signal.get('action')}")
-                        
-                except Exception as e:
-                    self.logger.error(f"❌ Error processing signal {signal.get('signal_id', 'unknown')}: {e}")
-                    
-                    results.append({
-                        'signal_id': signal.get('signal_id'),
-                        'symbol': signal.get('symbol'),
-                        'action': signal.get('action'),
-                        'order_id': None,
-                        'status': 'ERROR',
-                        'error': str(e),
-                        'timestamp': datetime.now().isoformat()
-                    })
-            
-            return results
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error processing signals batch: {e}")
+        """Process trading signals and track execution results"""
+        if not signals:
             return []
+        
+        self.logger.info(f"🔍 Processing {len(signals)} signals for execution")
+        execution_results = []
+        
+        for signal in signals:
+            try:
+                if self.paper_trading_enabled:
+                    result = await self._process_paper_signal(signal)
+                else:
+                    result = await self._process_live_signal(signal)
+                
+                if result:
+                    execution_results.append(result)
+                    # TRACK: Signal executed successfully
+                    self._track_signal_executed(signal)
+                    self.logger.info(f"✅ Signal executed: {signal.get('symbol')} {signal.get('action')}")
+                else:
+                    execution_results.append(None)
+                    # TRACK: Signal execution failed
+                    self._track_signal_execution_failed(signal, "Execution returned None")
+                    self.logger.error(f"❌ Signal execution failed: {signal.get('symbol')} {signal.get('action')}")
+                    
+            except Exception as e:
+                execution_results.append(None)
+                # TRACK: Signal execution failed with exception
+                self._track_signal_execution_failed(signal, str(e))
+                self.logger.error(f"❌ Signal processing failed: {signal.get('symbol')} {signal.get('action')} - {e}")
+        
+        # Update pending signals list
+        if hasattr(self, 'pending_signals'):
+            self.pending_signals.extend([s for s, r in zip(signals, execution_results) if r is None])
+        
+        return execution_results
+    
+    def _track_signal_executed(self, signal: Dict):
+        """Track successful signal execution"""
+        try:
+            # Get orchestrator instance to update stats
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if orchestrator and hasattr(orchestrator, 'signal_stats'):
+                orchestrator.signal_stats['executed'] += 1
+                
+                strategy = signal.get('strategy', 'unknown')
+                if strategy in orchestrator.signal_stats['by_strategy']:
+                    orchestrator.signal_stats['by_strategy'][strategy]['executed'] += 1
+                
+                self.logger.info(f"📊 EXECUTION TRACKED: Total executed: {orchestrator.signal_stats['executed']}")
+                
+        except Exception as e:
+            self.logger.error(f"Error tracking signal execution: {e}")
+    
+    def _track_signal_execution_failed(self, signal: Dict, reason: str):
+        """Track failed signal execution"""
+        try:
+            # Get orchestrator instance to update stats
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if orchestrator and hasattr(orchestrator, '_track_signal_failed'):
+                orchestrator._track_signal_failed(signal, reason)
+            else:
+                self.logger.error(f"📊 EXECUTION FAILED: {signal.get('symbol')} - {reason}")
+                
+        except Exception as e:
+            self.logger.error(f"Error tracking signal execution failure: {e}")
     
     async def _process_paper_signal(self, signal: Dict):
         """Process signal in paper trading mode with REAL Zerodha API and P&L tracking"""
