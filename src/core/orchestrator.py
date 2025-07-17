@@ -1313,18 +1313,18 @@ class TradingOrchestrator:
                             if prev_volume > 0 and volume > 0:
                                 volume_change = ((volume - prev_volume) / prev_volume) * 100
                         else:
-                            # First time seeing symbol - create reasonable volume change
-                            if volume > 0:
-                                # Use a 20% increase as baseline for first-time volume change
-                                historical_volume = volume * 0.8
-                                volume_change = ((volume - historical_volume) / historical_volume) * 100
+                            # CRITICAL FIX: NO FAKE VOLUME MOMENTUM - violates no-mock-data policy
+                            # Do not create artificial volume changes on first deployment
+                            # Wait for real historical comparison instead of manufacturing fake momentum
+                            volume_change = 0
+                            self.logger.info(f"⚠️ {symbol}: No volume history - using 0% change (no fake momentum)")
                                 
-                                # Initialize history for next comparison
-                                self.market_data_history[symbol] = {
-                                    'close': current_price,
-                                    'volume': historical_volume,
-                                    'timestamp': (current_time - timedelta(minutes=1)).isoformat()
-                                }
+                                # Initialize history for next comparison with CURRENT data only
+                            self.market_data_history[symbol] = {
+                                'close': current_price,
+                                'volume': volume,  # Use actual current volume, not fake historical
+                                'timestamp': current_time.isoformat()
+                            }
                     except Exception as ve:
                         # If volume calculation fails, set to 0 but don't fail entire transformation
                         volume_change = 0
