@@ -333,33 +333,11 @@ class TradeAllocator:
             # Use optimized version
             return await self.allocate_trade_optimized(strategy_name, signal)
         except Exception as e:
-            logger.error(f"Optimized allocation failed: {e}")
-            # Fallback to basic allocation without background caching
-            return await self._allocate_trade_fallback(strategy_name, signal)
-    
-    async def _allocate_trade_fallback(self, strategy_name: str, signal: Dict[str, Any]) -> List[Tuple[str, Order]]:
-        """Fallback allocation method without caching"""
-        try:
-            # Get eligible users
-            eligible_users = await self._get_eligible_users(strategy_name)
-            if not eligible_users:
-                raise OrderError("No eligible users found for trade allocation")
-            
-            # Simple allocation to first eligible user
-            user_id = eligible_users[0]
-            quantity = signal.get('quantity', 1)
-            
-            # Create order
-            order = await self._create_user_order(user_id, signal, quantity)
-            
-            # Update last trade time
-            self.last_trade_time[user_id] = datetime.now()
-            
-            return [(user_id, order)]
-            
-        except Exception as e:
-            logger.error(f"Fallback allocation failed: {e}")
-            raise OrderError(f"Failed to allocate trade: {e}")
+            logger.error(f"CRITICAL: Trade allocation failed for {strategy_name}: {e}")
+            logger.error(f"SAFETY: No fallback allocation - real systems required")
+            # ELIMINATED: Dangerous fallback that creates fake trades
+            # When allocation fails, system should fail, not simulate
+            raise OrderError(f"Trade allocation failed - no fallback simulation: {e}")
     
     def _extract_trade_features(self, signal: Dict[str, Any]) -> Dict[str, Any]:
         """Extract features for trade prediction"""

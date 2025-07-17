@@ -200,29 +200,15 @@ class TradeEngine:
                     
                     self.logger.info(f"✅ Paper trade executed via Zerodha API: {order_id}")
                     return trade_record
-                    
-            # Fallback for when Zerodha client is not available
-            self.logger.warning("⚠️ Zerodha client not available - using fallback execution")
-            order_id = f"PAPER_{int(time.time())}"
+                
+            # SAFETY: When Zerodha fails, STOP trading - no fallback execution
+            self.logger.error("❌ CRITICAL: Zerodha client not available - STOPPING trade execution")
+            self.logger.error("❌ NO FALLBACK EXECUTION - Real broker required for all trades")
+            self.logger.error(f"❌ Signal REJECTED: {signal.get('symbol')} {signal.get('side')} {signal.get('quantity')}")
             
-            trade_record = {
-                'trade_id': order_id,
-                'symbol': signal.get('symbol'),
-                'side': signal.get('side', 'BUY'),
-                'quantity': signal.get('quantity', 50), 
-                'price': signal.get('price', 0),
-                'strategy': signal.get('strategy', 'unknown'),
-                'status': 'EXECUTED',
-                'executed_at': datetime.now(),
-                'user_id': 'PAPER_TRADER_001'
-            }
-            
-            # Calculate P&L even for fallback
-            await self._calculate_and_store_trade_pnl(trade_record)
-            await self._store_trade_to_database(trade_record)
-            
-            return trade_record
-            
+            # Return None to indicate trade execution failed - no fake trades created
+            return None
+                
         except Exception as e:
             self.logger.error(f"❌ Error processing paper signal: {e}")
             return None

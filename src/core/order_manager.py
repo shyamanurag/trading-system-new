@@ -637,21 +637,16 @@ class OrderManager:
                 zerodha_client = self.zerodha_client  # Use the client passed during initialization
                 
                 if not zerodha_client:
-                    # Fallback: Try to get from orchestrator singleton
-                    from src.core.orchestrator import get_orchestrator
-                    orchestrator = await get_orchestrator()
-                    
-                    if hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
-                        zerodha_client = orchestrator.zerodha_client
-                        logger.info("🔄 Using Zerodha client from orchestrator fallback")
-                    else:
-                        logger.error("❌ No Zerodha client available in OrderManager or orchestrator")
-                        return {
-                            'status': 'REJECTED',
-                            'reason': 'NO_BROKER_CLIENT',
-                            'order_id': order.order_id,
-                            'message': 'Zerodha client not available'
-                        }
+                    # ELIMINATED: Dangerous fallback to orchestrator client
+                    # When Zerodha client not available, system should fail, not simulate
+                    logger.error("❌ CRITICAL: No Zerodha client available in OrderManager")
+                    logger.error("❌ SAFETY: No fallback client access - real broker required")
+                    return {
+                        'status': 'REJECTED',
+                        'reason': 'NO_BROKER_CLIENT',
+                        'order_id': order.order_id,
+                        'message': 'Zerodha client not available - no fallback simulation'
+                    }
                 
                 if not zerodha_client:
                     logger.error("❌ No Zerodha client available")
