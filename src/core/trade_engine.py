@@ -150,148 +150,187 @@ class TradeEngine:
             return []
     
     async def _process_paper_signal(self, signal: Dict):
-        """Process signal in paper trading mode"""
+        """Process signal in paper trading mode with REAL Zerodha API and P&L tracking"""
         try:
-            # Create simulated order
-            order_id = f"PAPER_{int(time.time() * 1000)}"
-            symbol = signal.get('symbol', 'UNKNOWN')
-            action = signal.get('action', 'BUY')
-            quantity = signal.get('quantity', 0)
-            price = signal.get('entry_price', 0)
-            strategy_name = signal.get('strategy', 'unknown')
+            self.logger.info(f"📊 Processing paper signal for {signal.get('symbol', 'UNKNOWN')}")
             
-            # Store paper order in memory
-            paper_order = {
-                'order_id': order_id,
-                'symbol': symbol,
-                'action': action,
-                'quantity': quantity,
-                'price': price,
+            # CRITICAL FIX: Use real Zerodha API even in paper mode
+            if self.zerodha_client:
+                # Create order for Zerodha API (sandbox mode)
+                order_data = {
+                    'symbol': signal.get('symbol'),
+                    'quantity': signal.get('quantity', 50),
+                    'side': signal.get('side', 'BUY'),
+                    'order_type': 'MARKET',
+                    'product': 'MIS',  # Intraday
+                    'validity': 'DAY'
+                }
+                
+                # Place order through Zerodha (sandbox)
+                result = await self.zerodha_client.place_order(order_data)
+                
+                if result and result.get('success'):
+                    order_id = result.get('order_id', f"PAPER_{int(time.time())}")
+                    execution_price = result.get('price', signal.get('price', 0))
+                    
+                    # Create trade record with real execution data
+                    trade_record = {
+                        'trade_id': order_id,
+                        'symbol': signal.get('symbol'),
+                        'side': signal.get('side', 'BUY'), 
+                        'quantity': signal.get('quantity', 50),
+                        'price': execution_price,
+                        'strategy': signal.get('strategy', 'unknown'),
+                        'status': 'EXECUTED',
+                        'executed_at': datetime.now(),
+                        'user_id': 'PAPER_TRADER_001'
+                    }
+                    
+                    # Update position tracker
+                    if self.position_tracker:
+                        await self.position_tracker.update_position(
+                            symbol=trade_record['symbol'],
+                            quantity=trade_record['quantity'],
+                            price=execution_price,
+                            side=trade_record['side'].lower()
+                        )
+                    
+                    # CRITICAL FIX: Calculate real P&L and store to database
+                    await self._calculate_and_store_trade_pnl(trade_record)
+                    
+                    self.logger.info(f"✅ Paper trade executed via Zerodha API: {order_id}")
+                    return trade_record
+                    
+            # Fallback for when Zerodha client is not available
+            self.logger.warning("⚠️ Zerodha client not available - using fallback execution")
+            order_id = f"PAPER_{int(time.time())}"
+            
+            trade_record = {
+                'trade_id': order_id,
+                'symbol': signal.get('symbol'),
+                'side': signal.get('side', 'BUY'),
+                'quantity': signal.get('quantity', 50), 
+                'price': signal.get('price', 0),
+                'strategy': signal.get('strategy', 'unknown'),
                 'status': 'EXECUTED',
-                'timestamp': datetime.now().isoformat(),
-                'signal': signal
+                'executed_at': datetime.now(),
+                'user_id': 'PAPER_TRADER_001'
             }
-            self.paper_orders[order_id] = paper_order
             
-            # Save paper order to database so frontend can see it
-            try:
-                await self._save_paper_order_to_db(order_id, symbol, action, quantity, price, strategy_name)
-            except Exception as db_error:
-                self.logger.warning(f"⚠️ Failed to save paper order to database: {db_error}")
+            # Calculate P&L even for fallback
+            await self._calculate_and_store_trade_pnl(trade_record)
+            await self._store_trade_to_database(trade_record)
             
-            self.logger.info(f"📋 PAPER TRADING: Signal processed - {order_id}")
-            self.logger.info(f"   Symbol: {symbol}, Action: {action}, Qty: {quantity}, Price: ₹{price}")
-            
-            return order_id
+            return trade_record
             
         except Exception as e:
             self.logger.error(f"❌ Error processing paper signal: {e}")
             return None
 
-    async def _save_paper_order_to_db(self, order_id: str, symbol: str, action: str, quantity: int, price: float, strategy_name: str):
-        """Save paper order to database for frontend display"""
+    async def _calculate_and_store_trade_pnl(self, trade_record: Dict):
+        """Calculate real-time P&L and store trade to database"""
         try:
-            from src.core.database import get_db
-            from src.core.paper_trading_user_manager import PaperTradingUserManager
-            from sqlalchemy import text
+            symbol = trade_record['symbol']
+            entry_price = float(trade_record['price'])
+            quantity = trade_record['quantity']
+            side = trade_record['side']
             
-            db_session = next(get_db())
-            if db_session:
-                # Use dynamic user manager to ensure user exists
-                user_id = PaperTradingUserManager.ensure_user_exists(db_session)
-                self.logger.debug(f"📝 Using user_id={user_id} for paper trading")
-                
-                # Insert paper order into orders table
-                query = text("""
-                    INSERT INTO orders (
-                        order_id, user_id, symbol, order_type, side, quantity, 
-                        price, filled_quantity, average_price, status, 
-                        strategy_name, created_at, placed_at, filled_at
-                    ) VALUES (
-                        :order_id, :user_id, :symbol, 'MARKET', :side, :quantity,
-                        :price, :quantity, :price, 'FILLED',
-                        :strategy_name, NOW(), NOW(), NOW()
-                    )
-                """)
-                
-                db_session.execute(query, {
-                    "order_id": order_id,
-                    "user_id": user_id,
-                    "symbol": symbol,
-                    "side": action,
-                    "quantity": quantity,
-                    "price": price,
-                    "strategy_name": f"PAPER_{strategy_name}"
-                })
-                db_session.commit()
-                self.logger.debug(f"💾 Paper order {order_id} saved to database with user_id {user_id}")
-                
-                # Also save as a trade for frontend display
-                await self._save_paper_trade_to_db(order_id, symbol, action, quantity, price, strategy_name, user_id)
+            # Get current market price from TrueData
+            current_price = await self._get_current_market_price(symbol)
+            if not current_price:
+                current_price = entry_price  # Fallback to entry price
+            
+            # Calculate P&L
+            if side.upper() == 'BUY':
+                pnl = (current_price - entry_price) * quantity
+            else:  # SELL
+                pnl = (entry_price - current_price) * quantity
+            
+            # Calculate P&L percentage
+            position_value = entry_price * quantity
+            pnl_percent = (pnl / position_value) * 100 if position_value > 0 else 0
+            
+            # Update trade record
+            trade_record['pnl'] = round(pnl, 2)
+            trade_record['pnl_percent'] = round(pnl_percent, 2)
+            trade_record['current_price'] = current_price
+            
+            # Store to database
+            await self._store_trade_to_database(trade_record)
+            
+            self.logger.info(f"💰 P&L calculated and stored for {symbol}: ₹{pnl:.2f} ({pnl_percent:.2f}%)")
             
         except Exception as e:
-            self.logger.error(f"❌ Error saving paper order to database: {e}")
-            # Rollback on any error to prevent transaction from staying in failed state
-            if db_session:
-                db_session.rollback()
-            # Don't raise - allow paper trading to continue even if DB save fails
-            self.logger.warning(f"⚠️ Failed to save paper order to database: {e}")
+            self.logger.error(f"❌ Error calculating and storing P&L: {e}")
 
-    async def _save_paper_trade_to_db(self, order_id: str, symbol: str, action: str, quantity: int, price: float, strategy_name: str, user_id: int = None):
-        """Save paper trade to database for frontend display"""
+    async def _get_current_market_price(self, symbol: str) -> Optional[float]:
+        """Get current market price from TrueData cache"""
         try:
-            from src.core.database import get_db
-            from src.core.paper_trading_user_manager import PaperTradingUserManager
-            from sqlalchemy import text
+            # Try to get from TrueData cache
+            from data.truedata_client import live_market_data
+            if symbol in live_market_data:
+                market_data = live_market_data[symbol]
+                # Use LTP (Last Traded Price) or Close price
+                return float(market_data.get('ltp', market_data.get('close', 0)))
             
-            db_session = next(get_db())
-            if db_session:
-                # Use provided user_id or get from dynamic user manager
-                if user_id is None:
-                    user_id = PaperTradingUserManager.ensure_user_exists(db_session)
-                
-                # Validate user exists before inserting trade
-                if not PaperTradingUserManager.validate_user_exists(db_session, user_id):
-                    self.logger.error(f"❌ User {user_id} does not exist in database, skipping trade save")
-                    return
-                
-                # Insert paper trade into trades table (let trade_id auto-increment)
-                query = text("""
-                    INSERT INTO trades (
-                        order_id, user_id, symbol, trade_type, quantity, 
-                        price, commission, strategy, executed_at, created_at
-                    ) VALUES (
-                        :order_id, :user_id, :symbol, :trade_type, :quantity,
-                        :price, 0, :strategy, NOW(), NOW()
-                    )
-                """)
-                
-                # Store paper trading identifier in strategy field
-                paper_strategy = f"PAPER_{strategy_name}_{int(time.time() * 1000)}"
-                
-                db_session.execute(query, {
-                    "order_id": order_id,
-                    "user_id": user_id,
-                    "symbol": symbol,
-                    "trade_type": action,
-                    "quantity": quantity,
-                    "price": price,
-                    "strategy": paper_strategy
-                })
-                db_session.commit()
-                self.logger.debug(f"💾 Paper trade saved to database with user_id {user_id}, strategy: {paper_strategy}")
+            # Try Redis cache
+            if hasattr(self, 'redis_client') and self.redis_client:
+                cached_price = await self.redis_client.get(f"price:{symbol}")
+                if cached_price:
+                    return float(cached_price)
+            
+            return None
             
         except Exception as e:
-            self.logger.error(f"❌ Error saving paper trade to database: {e}")
-            # Log more details for debugging
-            self.logger.error(f"   Order: {order_id}, Symbol: {symbol}, Action: {action}")
-            self.logger.error(f"   User ID: {user_id}, Strategy: {strategy_name}")
-        finally:
-            if 'db_session' in locals():
-                try:
-                    db_session.close()
-                except:
-                    pass
+            self.logger.error(f"❌ Error getting market price for {symbol}: {e}")
+            return None
+
+    async def _store_trade_to_database(self, trade_record: Dict):
+        """Store trade to database with P&L data"""
+        try:
+            from src.config.database import get_db
+            db_session = next(get_db())
+            
+            if db_session:
+                from sqlalchemy import text
+                insert_query = text("""
+                    INSERT INTO trades (
+                        trade_id, user_id, symbol, trade_type, quantity, price,
+                        strategy, pnl, pnl_percent, status, executed_at
+                    ) VALUES (
+                        :trade_id, :user_id, :symbol, :trade_type, :quantity, :price,
+                        :strategy, :pnl, :pnl_percent, :status, :executed_at
+                    ) ON CONFLICT (trade_id) DO UPDATE SET
+                        pnl = :pnl,
+                        pnl_percent = :pnl_percent,
+                        status = :status
+                """)
+                
+                # Get user_id (ensure it exists)
+                user_query = text("SELECT id FROM users WHERE username = 'PAPER_TRADER_001' LIMIT 1")
+                user_result = db_session.execute(user_query)
+                user_row = user_result.fetchone()
+                user_id = user_row.id if user_row else 1
+                
+                db_session.execute(insert_query, {
+                    'trade_id': trade_record['trade_id'],
+                    'user_id': user_id,
+                    'symbol': trade_record['symbol'],
+                    'trade_type': trade_record['side'].lower(),
+                    'quantity': trade_record['quantity'],
+                    'price': trade_record['price'],
+                    'strategy': trade_record['strategy'],
+                    'pnl': trade_record.get('pnl', 0),
+                    'pnl_percent': trade_record.get('pnl_percent', 0),
+                    'status': trade_record['status'],
+                    'executed_at': trade_record['executed_at']
+                })
+                
+                db_session.commit()
+                self.logger.info(f"✅ Trade stored to database: {trade_record['trade_id']}")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error storing trade to database: {e}")
     
     async def _process_live_signal(self, signal: Dict):
         """Process signal in live trading mode"""

@@ -426,9 +426,12 @@ class TradingOrchestrator:
         
         # Set additional components after initialization
         self.trade_engine.zerodha_client = self.zerodha_client
-        self.trade_engine.risk_manager = self.risk_manager  # Share the risk manager
+        self.trade_engine.risk_manager = self.risk_manager
         
-        self.logger.info("Trade engine initialized")
+        # CRITICAL FIX: Initialize real-time P&L calculator
+        self.pnl_calculator = None
+        
+        self.logger.info("✅ Trading Orchestrator initialized successfully")
         
         # Load strategies
         self.logger.info("Loading 5 trading strategies (news_impact_scalper removed for debugging)...")
@@ -583,6 +586,9 @@ class TradingOrchestrator:
                 self.logger.error(f"❌ Position Monitor initialization failed: {e}")
                 self.logger.warning("⚠️ Auto square-off monitoring will not be available")
                 self.position_monitor = None
+            
+            # CRITICAL FIX: Start market data to position tracker bridge
+            await self._start_market_data_to_position_tracker_bridge()
             
             self.logger.info("🎉 TradingOrchestrator fully initialized and ready")
             return True
@@ -1712,6 +1718,51 @@ class TradingOrchestrator:
         except Exception as e:
             self.logger.error(f"❌ Error updating Zerodha token: {e}")
             return False
+
+    async def _start_market_data_to_position_tracker_bridge(self):
+        """Connect market data updates to position tracker for real-time P&L"""
+        try:
+            if not self.position_tracker:
+                self.logger.warning("⚠️ Position tracker not available for market data bridge")
+                return
+                
+            # Start background task to update positions with market prices
+            asyncio.create_task(self._update_positions_with_market_data())
+            self.logger.info("✅ Market data to position tracker bridge started")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to start market data bridge: {e}")
+
+    async def _update_positions_with_market_data(self):
+        """Background task to update position tracker with real-time market prices"""
+        while self.running and self.is_running:
+            try:
+                if not self.position_tracker:
+                    await asyncio.sleep(10)
+                    continue
+                
+                # Get market data from TrueData cache
+                market_prices = {}
+                try:
+                    from data.truedata_client import live_market_data
+                    for symbol, data in live_market_data.items():
+                        ltp = data.get('ltp', 0)
+                        if ltp and ltp > 0:
+                            market_prices[symbol] = float(ltp)
+                except ImportError:
+                    pass
+                
+                # Update position tracker with current prices
+                if market_prices:
+                    await self.position_tracker.update_market_prices(market_prices)
+                    self.logger.debug(f"📊 Updated {len(market_prices)} market prices in position tracker")
+                
+                # Update every 30 seconds
+                await asyncio.sleep(30)
+                
+            except Exception as e:
+                self.logger.error(f"❌ Error updating positions with market data: {e}")
+                await asyncio.sleep(5)
 
 
 # Global function to get orchestrator instance

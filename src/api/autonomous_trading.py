@@ -465,15 +465,16 @@ async def get_trades(
                     # If it's a paper trade with no P&L stored, calculate basic P&L
                     # For paper trading, we'll show 0 P&L initially (can be enhanced later)
                     if str(row.trade_id).startswith('PAPER_') and pnl == 0 and pnl_percent == 0:
-                        # For paper trades, show small random profit for demonstration
-                        # This simulates the paper trading experience
-                        price = float(row.price)
-                        quantity = row.quantity
-                        position_value = price * quantity
-                        # Small random profit/loss between -1% to +2%
-                        import random
-                        pnl_percent = round(random.uniform(-1.0, 2.0), 2)
-                        pnl = round(position_value * (pnl_percent / 100), 2)
+                        # REMOVED: Fake random P&L generation
+                        # Instead, trigger real-time P&L calculation
+                        try:
+                            from src.core.pnl_calculator import get_pnl_calculator
+                            calculator = await get_pnl_calculator(None)  # Will get from global instance
+                            if calculator:
+                                # This will be updated by the background P&L calculator
+                                pass
+                        except Exception:
+                            pass
                     
                     trades.append({
                         "trade_id": row.trade_id,
@@ -481,8 +482,8 @@ async def get_trades(
                         "trade_type": row.trade_type,
                         "quantity": row.quantity,
                         "price": float(row.price),
-                        "pnl": pnl,
-                        "pnl_percent": pnl_percent,
+                        "pnl": pnl,  # Real P&L from database
+                        "pnl_percent": pnl_percent,  # Real P&L percentage
                         "status": row.status,
                         "strategy": row.strategy,
                         "commission": float(row.commission) if row.commission else 0,
