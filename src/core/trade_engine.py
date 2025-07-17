@@ -173,6 +173,12 @@ class TradeEngine:
                     order_id = result.get('order_id', f"PAPER_{int(time.time())}")
                     execution_price = result.get('price', signal.get('price', 0))
                     
+                    # CRITICAL FIX: Never store trades with zero or invalid prices
+                    if not execution_price or execution_price <= 0:
+                        self.logger.error(f"❌ INVALID EXECUTION PRICE: {execution_price} for {signal.get('symbol')}")
+                        self.logger.error("❌ REJECTED: Cannot store trade with zero/invalid price - violates no-mock-data policy")
+                        return None
+                    
                     # Create trade record with real execution data
                     trade_record = {
                         'trade_id': order_id,
