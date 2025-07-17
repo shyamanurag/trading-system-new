@@ -89,10 +89,16 @@ class TrueDataClient:
         return deployment_id
 
     def _register_cleanup_handlers(self):
-        """Register cleanup handlers for graceful shutdown"""
+        """Register cleanup handlers for graceful shutdown - FIXED to not disconnect during market closure"""
         def cleanup_handler(signum=None, frame=None):
             logger.info(f"🛑 Cleanup handler called (signal: {signum})")
-            self.force_disconnect()
+            
+            # CRITICAL FIX: Only disconnect on actual shutdown signals, not during normal operation
+            if signum in [signal.SIGTERM, signal.SIGINT] or frame is None:
+                logger.info("🛑 Actual shutdown signal detected - disconnecting TrueData")
+                self.force_disconnect()
+            else:
+                logger.info("ℹ️ Non-shutdown signal - maintaining TrueData connection for market closure")
         
         # Register for different shutdown scenarios
         atexit.register(cleanup_handler)
@@ -103,9 +109,16 @@ class TrueDataClient:
             pass  # Windows doesn't support all signals
 
     def _check_deployment_overlap(self):
-        """Check if this is a deployment overlap scenario"""
+        """Check if this is a deployment overlap scenario - FIXED to reduce false positives"""
         is_production = os.getenv('ENVIRONMENT') == 'production'
         is_digitalocean = 'ondigitalocean.app' in os.getenv('APP_URL', '')
+        
+        # CRITICAL FIX: Only enable overlap handling during actual deployments, not normal operation
+        skip_auto_init = os.getenv('SKIP_TRUEDATA_AUTO_INIT', 'false').lower() == 'true'
+        
+        if skip_auto_init:
+            logger.info("⏭️ Deployment overlap handling DISABLED (SKIP_TRUEDATA_AUTO_INIT=true)")
+            return False
         
         if is_production or is_digitalocean:
             logger.info("🏭 Production deployment detected - enabling overlap handling")
@@ -308,14 +321,59 @@ class TrueDataClient:
         self._circuit_breaker_active = True
         self._last_connection_failure = time.time()
         self._consecutive_failures += 1
-        logger.warning(f"⚡ Circuit breaker ACTIVATED - cooldown period: {self._circuit_breaker_timeout}s")
         
+        # CRITICAL FIX: Shorter circuit breaker timeout during market closure
+        current_hour = datetime.now().hour
+        is_market_hours = 9 <= current_hour <= 15  # Approximate market hours
+        
+        if is_market_hours:
+            timeout = self._circuit_breaker_timeout  # 5 minutes during market hours
+        else:
+            timeout = 60  # 1 minute during market closure
+            logger.info("📊 Market closed - using shorter circuit breaker timeout")
+        
+        logger.warning(f"⚡ Circuit breaker ACTIVATED - cooldown period: {timeout}s")
+        self._circuit_breaker_timeout = timeout
+        
+    def reset_circuit_breaker_manual(self):
+        """Manual circuit breaker reset for market closure periods"""
+        self._circuit_breaker_active = False
+        self._consecutive_failures = 0
+        self._last_connection_failure = None
+        self._connection_attempts = 0
+        logger.info("⚡ Circuit breaker MANUALLY RESET - connection attempts cleared")
+        return True
+
     def _reset_circuit_breaker(self):
         """Reset circuit breaker on successful connection"""
         self._circuit_breaker_active = False
         self._consecutive_failures = 0
         self._last_connection_failure = None
         logger.info("⚡ Circuit breaker RESET - connection successful")
+
+    def get_detailed_status(self):
+        """Get detailed status including circuit breaker state"""
+        current_time = time.time()
+        circuit_breaker_remaining = 0
+        
+        if self._circuit_breaker_active and self._last_connection_failure:
+            circuit_breaker_remaining = max(0, self._circuit_breaker_timeout - (current_time - self._last_connection_failure))
+        
+        return {
+            'connected': self.connected,
+            'data_flowing': len(live_market_data) > 0,
+            'symbols_active': len(live_market_data),
+            'username': self.username,
+            'deployment_id': self._deployment_id,
+            'connection_attempts': self._connection_attempts,
+            'shutdown_requested': self._shutdown_requested,
+            'circuit_breaker_active': self._circuit_breaker_active,
+            'circuit_breaker_remaining_seconds': circuit_breaker_remaining,
+            'consecutive_failures': self._consecutive_failures,
+            'last_failure_time': self._last_connection_failure,
+            'market_data_symbols': list(live_market_data.keys())[:10],  # First 10 symbols
+            'timestamp': datetime.now().isoformat()
+        }
 
     def force_disconnect(self):
         """Force disconnect with aggressive cleanup"""
