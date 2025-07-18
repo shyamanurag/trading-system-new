@@ -74,12 +74,22 @@ except ImportError:
         async def initialize(self):
             return False
 
-# CRITICAL FIX: Import redis_manager after it's defined
+# CRITICAL FIX: Import redis_manager with production fallback support
 try:
-    from src.core.redis_manager import redis_manager
+    from src.core.redis_fallback_manager import redis_fallback_manager as redis_manager
 except ImportError:
-    # Fallback if Redis manager is not available
-    redis_manager = None
+    try:
+        from src.core.redis_manager import redis_manager
+    except ImportError:
+        # Final fallback - dummy Redis manager
+        logger.warning("No Redis manager available, using dummy implementation")
+        class DummyRedisManager:
+            def connect(self): return False
+            def get(self, key): return None
+            def set(self, key, value, ex=None): return False
+            def delete(self, key): return False
+            def get_status(self): return {'connected': False, 'fallback_mode': True}
+        redis_manager = DummyRedisManager()
 
 # Import signal deduplicator for quality filtering
 try:
