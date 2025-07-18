@@ -41,8 +41,9 @@ class ProductionRedisFallback:
                     redis_url,
                     password=redis_password,
                     decode_responses=True,
-                    socket_timeout=1,
-                    socket_connect_timeout=1
+                    socket_timeout=5,
+                    socket_connect_timeout=5,
+                    ssl_cert_reqs=None  # Don't verify SSL certificates for managed Redis
                 )
             else:
                 # Use host/port connection
