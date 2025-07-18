@@ -17,25 +17,29 @@ class EnhancedMomentumSurfer(BaseStrategy):
         super().__init__(config)
         self.name = "EnhancedMomentumSurfer"
         
-        # SCALPING-OPTIMIZED momentum thresholds (more sensitive)
+        # REALISTIC momentum thresholds (prevent false signals on market noise)
         self.momentum_thresholds = {
-            'strong_positive': 0.10,  # 0.10% price increase (more sensitive)
-            'moderate_positive': 0.06,  # 0.06% price increase (more sensitive)
-            'strong_negative': -0.10,  # 0.10% price decrease (more sensitive)
-            'moderate_negative': -0.06,  # 0.06% price decrease (more sensitive)
-            'volume_threshold': 12  # 12% volume increase (more sensitive)
+            'strong_positive': 0.25,    # 0.25% price increase (realistic)
+            'moderate_positive': 0.15,  # 0.15% price increase (realistic)
+            'strong_negative': -0.25,   # 0.25% price decrease (realistic)
+            'moderate_negative': -0.15, # 0.15% price decrease (realistic)
+            'volume_threshold': 20      # 20% volume increase (meaningful)
         }
         
-        # SCALPING-OPTIMIZED ATR multipliers (tighter stops)
+        # REALISTIC ATR multipliers (balanced risk management)
         self.atr_multipliers = {
-            'strong_momentum': 1.8,  # 1.8x ATR for strong momentum (tighter)
-            'moderate_momentum': 1.4,  # 1.4x ATR for moderate momentum (tighter)
-            'weak_momentum': 1.1   # 1.1x ATR for weak momentum (tighter)
+            'strong_momentum': 2.0,     # 2.0x ATR for strong momentum
+            'moderate_momentum': 1.8,   # 1.8x ATR for moderate momentum
+            'weak_momentum': 1.5        # 1.5x ATR for weak momentum
         }
         
-        # SCALPING cooldown control
-        self.scalping_cooldown = 25  # 25 seconds between signals
+        # Enhanced cooldown control
+        self.scalping_cooldown = 30  # 30 seconds between signals
         self.symbol_cooldowns = {}   # Symbol-specific cooldowns
+        
+        # Signal quality filters
+        self.min_confidence_threshold = 0.7  # Minimum 70% confidence
+        self.trend_confirmation_periods = 3   # Require 3 periods of trend confirmation
     
     async def initialize(self):
         """Initialize the strategy"""
@@ -133,8 +137,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
             price_change = data.get('price_change', 0)
             volume_change = data.get('volume_change', 0)
             
-            # Analyze momentum strength with SCALPING thresholds
-            momentum_analysis = self._analyze_momentum_strength(price_change, volume_change)
+            # Analyze momentum strength with enhanced filters to prevent false signals
+            momentum_analysis = self._analyze_momentum_strength(price_change, volume_change, data or {})
             
             if momentum_analysis['signal_strength'] == 'none':
                 return None
@@ -153,8 +157,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 current_price, stop_loss, risk_reward_ratio=1.4  # 1.4:1 for momentum scalping
             )
             
-            # Calculate confidence based on momentum strength
-            confidence = self._calculate_confidence(momentum_analysis, price_change, volume_change)
+            # Calculate confidence based on momentum analysis
+            confidence = self._calculate_confidence(momentum_analysis, price_change, volume_change, data or {})
             
             # Create standardized signal
             signal = self.create_standard_signal(
@@ -184,14 +188,14 @@ class EnhancedMomentumSurfer(BaseStrategy):
             
         return None
     
-    def _analyze_momentum_strength(self, price_change: float, volume_change: float) -> Dict:
-        """Analyze momentum strength and determine signal type"""
+    def _analyze_momentum_strength(self, price_change: float, volume_change: float, trend_data: Optional[Dict] = None) -> Dict:
+        """Analyze momentum strength with enhanced filters to prevent false signals"""
         thresholds = self.momentum_thresholds
         
-        # Calculate momentum score
+        # Calculate momentum score based on price and volume changes
         momentum_score = 0
         
-        # Price momentum scoring
+        # Price momentum scoring (with realistic thresholds)
         if price_change >= thresholds['strong_positive']:
             momentum_score += 3
         elif price_change >= thresholds['moderate_positive']:
@@ -201,11 +205,25 @@ class EnhancedMomentumSurfer(BaseStrategy):
         elif price_change <= thresholds['moderate_negative']:
             momentum_score -= 2
         
-        # Volume confirmation
+        # Volume confirmation (must be significant)
         if volume_change > thresholds['volume_threshold']:
             momentum_score += 1 if momentum_score > 0 else -1
+        else:
+            # Penalize low volume moves (likely noise)
+            momentum_score = int(momentum_score * 0.5)
         
-        # Determine signal strength and action
+        # Trend confirmation filter
+        if trend_data:
+            trend_strength = trend_data.get('trend_strength', 0)
+            if abs(trend_strength) < 0.1:  # Weak trend
+                momentum_score = int(momentum_score * 0.7)  # Reduce score
+        
+        # Market volatility filter
+        volatility = trend_data.get('volatility', 0) if trend_data else 0
+        if volatility > 2.0:  # High volatility market
+            momentum_score = int(momentum_score * 0.8)  # Reduce score in choppy markets
+        
+        # Determine signal strength and action (stricter criteria)
         if momentum_score >= 3:
             return {
                 'signal_strength': 'strong_momentum',
@@ -238,22 +256,42 @@ class EnhancedMomentumSurfer(BaseStrategy):
             }
     
     def _calculate_confidence(self, momentum_analysis: Dict, price_change: float, 
-                             volume_change: float) -> float:
-        """Calculate signal confidence based on momentum analysis"""
-        base_confidence = 0.5
+                             volume_change: float, trend_data: Optional[Dict] = None) -> float:
+        """Calculate signal confidence with enhanced quality scoring"""
+        base_confidence = 0.4  # Lower base confidence
         
         # Boost confidence for strong momentum
         if momentum_analysis['signal_strength'] == 'strong_momentum':
-            base_confidence = 0.8
+            base_confidence = 0.7
         elif momentum_analysis['signal_strength'] == 'moderate_momentum':
-            base_confidence = 0.6
+            base_confidence = 0.5
         
-        # Boost confidence for strong price change
-        price_boost = min(abs(price_change) / 0.5, 0.2)  # Up to 20% boost
+        # Boost confidence for meaningful price change (not noise)
+        if abs(price_change) >= 0.2:  # Meaningful move
+            price_boost = min(abs(price_change) / 1.0, 0.25)  # Up to 25% boost
+        else:
+            price_boost = 0  # No boost for small moves
         
-        # Boost confidence for volume confirmation
-        volume_boost = min(volume_change / 50, 0.1)  # Up to 10% boost
+        # Boost confidence for significant volume
+        if volume_change >= 25:  # Significant volume
+            volume_boost = min(volume_change / 100, 0.15)  # Up to 15% boost
+        else:
+            volume_boost = 0  # No boost for low volume
         
-        final_confidence = base_confidence + price_boost + volume_boost
+        # Trend alignment boost
+        trend_boost = 0
+        if trend_data:
+            trend_strength = trend_data.get('trend_strength', 0)
+            if abs(trend_strength) > 0.3:  # Strong trend
+                trend_boost = 0.1
         
-        return min(final_confidence, 0.9)  # Cap at 90% 
+        # Market condition penalty
+        market_penalty = 0
+        if trend_data:
+            volatility = trend_data.get('volatility', 0)
+            if volatility > 2.0:  # High volatility/choppy market
+                market_penalty = 0.2
+        
+        final_confidence = base_confidence + price_boost + volume_boost + trend_boost - market_penalty
+        
+        return max(0.1, min(final_confidence, 0.95))  # Cap between 10% and 95%

@@ -17,23 +17,26 @@ class OptimizedVolumeScalper(BaseStrategy):
         super().__init__(config)
         self.name = "OptimizedVolumeScalper"
         
-        # SCALPING-OPTIMIZED PARAMETERS
-        self.signal_cooldown = 15  # 15 seconds between signals (vs 1 second)
-        self.symbol_cooldown = 30  # 30 seconds per symbol (vs 5 minutes)
+        # Enhanced cooldown parameters (prevent signal spam)
+        self.signal_cooldown = 25  # 25 seconds between signals
+        self.symbol_cooldown = 40  # 40 seconds per symbol
+        
+        # Signal quality filters
+        self.min_confidence = 0.7  # Minimum 70% confidence required
         
         # Position timing controls (CRITICAL for scalping)
         self.position_hold_max_minutes = 2  # Auto-exit after 2 minutes
         self.rapid_exit_minutes = 1         # Consider rapid exit after 1 minute
         
-        # Volume thresholds (optimized for scalping)
+        # REALISTIC volume thresholds (prevent false signals on market noise)
         self.volume_thresholds = {
-            'high_volume': 25,       # 25% volume increase (vs 30%)
-            'moderate_volume': 15,   # 15% volume increase (vs 20%)
-            'low_volume': 8,         # 8% volume increase (vs 12%)
+            'high_volume': 45,       # 45% volume increase (realistic)
+            'moderate_volume': 30,   # 30% volume increase (realistic)
+            'low_volume': 20,        # 20% volume increase (realistic)
             'price_confirmation': {
-                'strong': 0.08,      # 0.08% price movement (vs 0.12%)
-                'moderate': 0.05,    # 0.05% price movement (vs 0.08%)
-                'weak': 0.03         # 0.03% price movement (vs 0.05%)
+                'strong': 0.15,      # 0.15% price movement (realistic)
+                'moderate': 0.10,    # 0.10% price movement (realistic)
+                'weak': 0.08         # 0.08% price movement (realistic)
             }
         }
         

@@ -17,28 +17,32 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
         super().__init__(config)
         self.name = "EnhancedVolumeProfileScalper"
         
-        # SCALPING-OPTIMIZED parameters
+        # REALISTIC parameters (prevent false signals on market noise)
         self.volume_thresholds = {
-            'high_volume': 25,      # 25% volume increase (more sensitive)
-            'moderate_volume': 15,   # 15% volume increase (more sensitive)
-            'low_volume': 8,        # 8% volume increase (more sensitive)
+            'high_volume': 40,      # 40% volume increase (meaningful)
+            'moderate_volume': 25,   # 25% volume increase (significant)
+            'low_volume': 15,        # 15% volume increase (minimum)
             'price_confirmation': {
-                'strong': 0.08,     # 0.08% price movement (tighter)
-                'moderate': 0.05,   # 0.05% price movement (tighter)
-                'weak': 0.03        # 0.03% price movement (tighter)
+                'strong': 0.20,     # 0.20% price movement (realistic)
+                'moderate': 0.12,   # 0.12% price movement (realistic)
+                'weak': 0.08        # 0.08% price movement (realistic)
             }
         }
         
-        # SCALPING-OPTIMIZED ATR multipliers (tighter stops)
+        # REALISTIC ATR multipliers (balanced risk management)
         self.atr_multipliers = {
-            'high_volume': 1.5,     # 1.5x ATR for high volume (tighter)
-            'moderate_volume': 1.2,  # 1.2x ATR for moderate volume (tighter)
-            'low_volume': 1.0       # 1.0x ATR for low volume (tighter)
+            'high_volume': 1.8,     # 1.8x ATR for high volume
+            'moderate_volume': 1.5,  # 1.5x ATR for moderate volume
+            'low_volume': 1.2       # 1.2x ATR for low volume
         }
         
-        # SCALPING cooldown control
-        self.scalping_cooldown = 15  # 15 seconds between signals
+        # Enhanced cooldown control
+        self.scalping_cooldown = 20  # 20 seconds between signals
         self.symbol_cooldowns = {}   # Symbol-specific cooldowns
+        
+        # Signal quality filters
+        self.min_confidence_threshold = 0.7  # Minimum 70% confidence
+        self.volume_confirmation_required = True  # Require volume confirmation
     
     async def initialize(self):
         """Initialize the strategy"""

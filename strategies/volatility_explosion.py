@@ -17,17 +17,17 @@ class EnhancedVolatilityExplosion(BaseStrategy):
         super().__init__(config)
         self.name = "EnhancedVolatilityExplosion"
         
-        # SCALPING-OPTIMIZED volatility thresholds
+        # REALISTIC volatility thresholds (prevent false signals on market noise)
         self.volatility_thresholds = {
-            'extreme_volatility': 1.8,   # 1.8x historical volatility (more sensitive)
-            'high_volatility': 1.4,      # 1.4x historical volatility (more sensitive)
-            'moderate_volatility': 1.2,  # 1.2x historical volatility (more sensitive)
+            'extreme_volatility': 2.5,   # 2.5x historical volatility (realistic)
+            'high_volatility': 2.0,      # 2.0x historical volatility (realistic)
+            'moderate_volatility': 1.6,  # 1.6x historical volatility (realistic)
             'volume_confirmation': {
-                'strong': 25,            # 25% volume increase (more sensitive)
-                'moderate': 18,          # 18% volume increase (more sensitive)
-                'weak': 12              # 12% volume increase (more sensitive)
+                'strong': 50,            # 50% volume increase (realistic)
+                'moderate': 35,          # 35% volume increase (realistic)
+                'weak': 25              # 25% volume increase (realistic)
             },
-            'price_gap_threshold': 0.2   # 0.2% price gap (tighter)
+            'price_gap_threshold': 0.3   # 0.3% price gap (realistic)
         }
         
         # SCALPING-OPTIMIZED ATR multipliers (tighter stops)
@@ -37,9 +37,13 @@ class EnhancedVolatilityExplosion(BaseStrategy):
             'moderate_volatility': 1.3   # 1.3x ATR for moderate volatility (tighter)
         }
         
-        # SCALPING cooldown control
-        self.scalping_cooldown = 20  # 20 seconds between signals
-        self.symbol_cooldowns = {}   # Symbol-specific cooldowns
+        # Enhanced cooldown control (prevent signal spam)
+        self.scalping_cooldown = 30  # 30 seconds between signals
+        self.symbol_cooldowns = {}   # Symbol-specific cooldowns (45 seconds per symbol)
+        self.symbol_cooldown_duration = 45  # 45 seconds per symbol
+        
+        # Signal quality filters
+        self.min_confidence = 0.7  # Minimum 70% confidence required
         
         # Historical volatility tracking per symbol
         self.volatility_history = {}

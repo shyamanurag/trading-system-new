@@ -125,12 +125,20 @@ class DatabaseManager:
                     conn.execute(text("""
                         CREATE TABLE IF NOT EXISTS users (
                             id SERIAL PRIMARY KEY,
-                            user_id VARCHAR(50) UNIQUE NOT NULL,
-                            username VARCHAR(100),
+                            username VARCHAR(100) UNIQUE NOT NULL,
                             email VARCHAR(255),
+                            password_hash VARCHAR(255),
+                            full_name VARCHAR(200),
+                            initial_capital DECIMAL(15,2) DEFAULT 50000,
+                            current_balance DECIMAL(15,2) DEFAULT 50000,
+                            risk_tolerance VARCHAR(20) DEFAULT 'medium',
+                            is_active BOOLEAN DEFAULT true,
+                            zerodha_client_id VARCHAR(50),
                             broker_user_id VARCHAR(100),
                             api_key_encrypted TEXT,
-                            is_active BOOLEAN DEFAULT true,
+                            trading_enabled BOOLEAN DEFAULT true,
+                            max_daily_trades INTEGER DEFAULT 100,
+                            max_position_size DECIMAL(15,2) DEFAULT 100000,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         )
@@ -141,7 +149,7 @@ class DatabaseManager:
                         CREATE TABLE IF NOT EXISTS trades (
                             id SERIAL PRIMARY KEY,
                             trade_id VARCHAR(100) UNIQUE,
-                            user_id VARCHAR(50) REFERENCES users(user_id),
+                            user_id INTEGER REFERENCES users(id),
                             symbol VARCHAR(50) NOT NULL,
                             side VARCHAR(10) NOT NULL,
                             quantity INTEGER NOT NULL,
@@ -169,11 +177,16 @@ class DatabaseManager:
                     logger.info("✅ Database schema created successfully")
                 
                 # Always ensure PAPER_TRADER_001 user exists for autonomous operation
+                # FIXED: Use correct schema with id as primary key, not user_id
                 conn.execute(text("""
-                    INSERT INTO users (user_id, username, broker_user_id, is_active)
-                    VALUES ('PAPER_TRADER_001', 'Autonomous Paper Trader', 'QSW899', true)
-                    ON CONFLICT (user_id) DO UPDATE SET
+                    INSERT INTO users (username, email, password_hash, broker_user_id, is_active, trading_enabled, 
+                                     full_name, initial_capital, current_balance, zerodha_client_id)
+                    VALUES ('PAPER_TRADER_001', 'paper.trader@algoauto.com', 'dummy_hash', 'QSW899', true, true,
+                           'Autonomous Paper Trader', 100000.00, 100000.00, 'QSW899')
+                    ON CONFLICT (username) DO UPDATE SET
                         broker_user_id = EXCLUDED.broker_user_id,
+                        is_active = true,
+                        trading_enabled = true,
                         updated_at = CURRENT_TIMESTAMP
                 """))
                 

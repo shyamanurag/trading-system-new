@@ -1,4 +1,4 @@
-﻿"""
+"""
 Production-Level Trading Orchestrator
 ====================================
 Coordinates all trading system components with shared TrueData connection.
@@ -80,6 +80,16 @@ try:
 except ImportError:
     # Fallback if Redis manager is not available
     redis_manager = None
+
+# Import signal deduplicator for quality filtering
+try:
+    from src.core.signal_deduplicator import signal_deduplicator
+except ImportError:
+    # Fallback if signal deduplicator is not available
+    class DummySignalDeduplicator:
+        def process_signals(self, signals):
+            return signals
+    signal_deduplicator = DummySignalDeduplicator()
 
 class SimpleTradeEngine:
     """Simple trade engine for fallback - renamed to avoid conflict"""
@@ -734,7 +744,7 @@ class TradingOrchestrator:
         """Initialize Zerodha client with enhanced credential handling"""
         try:
             # CRITICAL FIX: Get credentials from trading_control first
-            zerodha_credentials = self._get_zerodha_credentials_from_trading_control()
+            zerodha_credentials = await self._get_zerodha_credentials_from_trading_control()
             
             if zerodha_credentials:
                 api_key = zerodha_credentials.get('api_key')
@@ -755,7 +765,11 @@ class TradingOrchestrator:
                     from brokers.zerodha import ZerodhaIntegration
                     from brokers.resilient_zerodha import ResilientZerodhaConnection
                     
+                    # Get access token from trading control or environment
+                    access_token = zerodha_credentials.get('access_token') or os.getenv('ZERODHA_ACCESS_TOKEN')
+                    
                     # Create broker instance with proper config dictionary
+                    has_valid_credentials = all([api_key, user_id, access_token])
                     zerodha_config = {
                         'api_key': api_key,
                         'user_id': user_id,
@@ -774,6 +788,9 @@ class TradingOrchestrator:
                         'ws_max_reconnect_attempts': 10
                     }
                     
+                    # Create broker instance
+                    broker = ZerodhaIntegration(zerodha_config)
+                    
                     # Create resilient connection with proper arguments
                     zerodha_client = ResilientZerodhaConnection(broker, resilient_config)
                     self.logger.info("✅ Zerodha client initialized with full credentials")
@@ -791,17 +808,38 @@ class TradingOrchestrator:
             self.logger.error(f"❌ Zerodha client initialization error: {e}")
             return None
             
-    def _get_zerodha_credentials_from_trading_control(self):
-        """Get Zerodha credentials from trading_control module"""
+    async def _get_zerodha_credentials_from_trading_control(self):
+        """Get Zerodha credentials from trading_control module and access token from Redis"""
         try:
             from src.api.trading_control import broker_users
             
             # Look for MASTER_USER_001 or any active user
             for user_id, user_data in broker_users.items():
-                if user_data.get('active') and user_data.get('platform') == 'zerodha':
-                    credentials = user_data.get('credentials', {})
+                if user_data.get('is_active') and user_data.get('broker') == 'zerodha':
+                    credentials = {
+                        'api_key': user_data.get('api_key'),
+                        'user_id': user_data.get('client_id'),  # client_id is the Zerodha user_id
+                        'api_secret': user_data.get('api_secret')
+                    }
+                    
                     if credentials.get('api_key') and credentials.get('user_id'):
                         self.logger.info(f"✅ Found Zerodha credentials for user: {user_id}")
+                        
+                        # CRITICAL FIX: Get access token from Redis where frontend stores it
+                        access_token = await self._get_access_token_from_redis(user_id)
+                        if access_token:
+                            credentials['access_token'] = access_token
+                            self.logger.info(f"✅ Retrieved access token from Redis for user: {user_id}")
+                        else:
+                            self.logger.warning(f"⚠️ No access token found in Redis for user: {user_id}")
+                            # Try alternative user IDs that frontend might use
+                            for alt_user_id in ['PAPER_TRADER_001', 'MASTER_USER_001']:
+                                access_token = await self._get_access_token_from_redis(alt_user_id)
+                                if access_token:
+                                    credentials['access_token'] = access_token
+                                    self.logger.info(f"✅ Retrieved access token from Redis for alt user: {alt_user_id}")
+                                    break
+                        
                         return credentials
                         
             self.logger.warning("⚠️ No active Zerodha users found in trading_control")
@@ -810,6 +848,70 @@ class TradingOrchestrator:
         except Exception as e:
             self.logger.error(f"❌ Error getting Zerodha credentials from trading_control: {e}")
             return None
+    
+    async def _get_access_token_from_redis(self, user_id: str) -> Optional[str]:
+        """Get access token from Redis where frontend stores it"""
+        try:
+            import redis.asyncio as redis
+            import os
+            
+            # Initialize Redis client
+            redis_url = os.getenv('REDIS_URL')
+            if redis_url:
+                redis_client = redis.from_url(redis_url, decode_responses=True)
+            else:
+                redis_client = redis.Redis(
+                    host=os.getenv('REDIS_HOST', 'localhost'),
+                    port=int(os.getenv('REDIS_PORT', 6379)),
+                    password=os.getenv('REDIS_PASSWORD'),
+                    decode_responses=True
+                )
+            
+            # Try to get token from Redis
+            redis_key = f"zerodha:token:{user_id}"
+            access_token = await redis_client.get(redis_key)
+            
+            if access_token:
+                self.logger.info(f"✅ Found access token in Redis for user: {user_id}")
+                return access_token
+            else:
+                self.logger.warning(f"⚠️ No access token found in Redis for key: {redis_key}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error retrieving access token from Redis: {e}")
+            return None
+    
+    async def update_zerodha_token(self, user_id: str, access_token: str):
+        """Update Zerodha access token dynamically without restart"""
+        try:
+            self.logger.info(f"✅ Updating Zerodha access token for user: {user_id}")
+            
+            # Update the token in the existing Zerodha client if available
+            if hasattr(self, 'zerodha_client') and self.zerodha_client:
+                if hasattr(self.zerodha_client, 'broker') and self.zerodha_client.broker:
+                    # Update the access token in the broker integration
+                    self.zerodha_client.broker.access_token = access_token
+                    if hasattr(self.zerodha_client.broker, 'kite') and self.zerodha_client.broker.kite:
+                        self.zerodha_client.broker.kite.access_token = access_token
+                    self.logger.info(f"✅ Updated access token in existing Zerodha client")
+                    
+            # Update the token in trade engine if available
+            if hasattr(self, 'trade_engine') and self.trade_engine:
+                if hasattr(self.trade_engine, 'zerodha_client') and self.trade_engine.zerodha_client:
+                    if hasattr(self.trade_engine.zerodha_client, 'broker') and self.trade_engine.zerodha_client.broker:
+                        self.trade_engine.zerodha_client.broker.access_token = access_token
+                        if hasattr(self.trade_engine.zerodha_client.broker, 'kite') and self.trade_engine.zerodha_client.broker.kite:
+                            self.trade_engine.zerodha_client.broker.kite.access_token = access_token
+                        self.logger.info(f"✅ Updated access token in trade engine Zerodha client")
+            
+            # Re-initialize the Zerodha client with the new token
+            await self._initialize_zerodha_client()
+            
+            self.logger.info(f"✅ Successfully updated Zerodha access token for user: {user_id}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error updating Zerodha access token: {e}")
             
     async def _initialize_zerodha_from_env(self):
         """Initialize Zerodha client from environment variables"""
@@ -1142,16 +1244,26 @@ class TradingOrchestrator:
                     except Exception as e:
                         self.logger.error(f"Error running strategy {strategy_key}: {e}")
             
-            # Process all collected signals through trade engine
+            # Process all collected signals through deduplicator and trade engine
             if all_signals:
-                if self.trade_engine:
-                    self.logger.info(f"🚀 Processing {len(all_signals)} signals through trade engine")
-                    await self.trade_engine.process_signals(all_signals)
+                # Apply signal deduplication and quality filtering
+                self.logger.info(f"🔍 Deduplicating {len(all_signals)} raw signals")
+                filtered_signals = signal_deduplicator.process_signals(all_signals)
+                
+                if filtered_signals:
+                    if self.trade_engine:
+                        self.logger.info(f"🚀 Processing {len(filtered_signals)} high-quality signals through trade engine")
+                        await self.trade_engine.process_signals(filtered_signals)
+                    else:
+                        self.logger.error("❌ Trade engine not available - signals cannot be processed")
+                        # TRACK: Mark all signals as failed due to no trade engine
+                        for signal in filtered_signals:
+                            self._track_signal_failed(signal, "No trade engine available")
                 else:
-                    self.logger.error("❌ Trade engine not available - signals cannot be processed")
-                    # TRACK: Mark all signals as failed due to no trade engine
+                    self.logger.info("📭 No high-quality signals after deduplication")
+                    # TRACK: Mark filtered signals as rejected
                     for signal in all_signals:
-                        self._track_signal_failed(signal, "No trade engine available")
+                        self._track_signal_failed(signal, "Filtered out by quality/deduplication")
             else:
                 self.logger.debug("📭 No signals generated this cycle")
                     
@@ -1833,37 +1945,7 @@ class TradingOrchestrator:
         if hasattr(self, '_trading_task') and self._trading_task is not None:
             self._trading_task.cancel()
 
-    async def update_zerodha_token(self, access_token: str, user_id: str = None):
-        """Update Zerodha access token after frontend authentication"""
-        try:
-            self.logger.info(f"🔄 Updating Zerodha token for user {user_id or 'default'}")
-            
-            # Update the token in the Zerodha client
-            if self.zerodha_client and hasattr(self.zerodha_client, 'broker'):
-                success = self.zerodha_client.broker.update_access_token(access_token)
-                if success:
-                    self.logger.info("✅ Zerodha token updated successfully")
-                    
-                    # Update Redis storage with new token
-                    try:
-                        if self.redis_manager:
-                            await self.redis_manager.initialize()
-                            await self.redis_manager.safe_set(f"zerodha:token:{user_id or 'QSW899'}", access_token, ttl=86400)
-                            self.logger.info("✅ Token stored in Redis cache")
-                    except Exception as redis_error:
-                        self.logger.warning(f"⚠️ Could not store token in Redis: {redis_error}")
-                    
-                    return True
-                else:
-                    self.logger.error("❌ Failed to update Zerodha token")
-                    return False
-            else:
-                self.logger.error("❌ Zerodha client not available for token update")
-                return False
-                
-        except Exception as e:
-            self.logger.error(f"❌ Error updating Zerodha token: {e}")
-            return False
+
 
     async def _start_market_data_to_position_tracker_bridge(self):
         """Connect market data updates to position tracker for real-time P&L"""

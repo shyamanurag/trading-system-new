@@ -71,12 +71,12 @@ class TrueDataClient:
         self._max_connection_attempts = 3
         self._deployment_id = self._generate_deployment_id()
         
-        # Circuit breaker for connection attempts
+        # Circuit breaker for connection attempts - IMPROVED for market closure
         self._circuit_breaker_active = False
-        self._circuit_breaker_timeout = 300  # 5 minutes
+        self._circuit_breaker_timeout = 60  # REDUCED: 1 minute during market closure instead of 5
         self._last_connection_failure = None
         self._consecutive_failures = 0
-        self._max_consecutive_failures = 5
+        self._max_consecutive_failures = 3  # REDUCED: Be more aggressive about stopping attempts
         
         # Register cleanup handlers
         self._register_cleanup_handlers()
@@ -345,11 +345,17 @@ class TrueDataClient:
         return True
 
     def _reset_circuit_breaker(self):
-        """Reset circuit breaker on successful connection"""
+        """Reset circuit breaker state"""
         self._circuit_breaker_active = False
         self._consecutive_failures = 0
         self._last_connection_failure = None
-        logger.info("⚡ Circuit breaker RESET - connection successful")
+        logger.info("⚡ Circuit breaker RESET - connection attempts enabled")
+
+    def manual_circuit_breaker_reset(self):
+        """Manually reset circuit breaker - useful during market closure or health checks"""
+        logger.info("🔧 MANUAL circuit breaker reset requested")
+        self._reset_circuit_breaker()
+        return True
 
     def get_detailed_status(self):
         """Get detailed status including circuit breaker state"""
@@ -632,5 +638,19 @@ def subscribe_to_symbols(symbols: list):
     except Exception as e:
         logger.error(f"❌ Subscribe error: {e}")
         return False
+
+def reset_circuit_breaker():
+    """API function to manually reset TrueData circuit breaker"""
+    return truedata_client.manual_circuit_breaker_reset()
+
+def get_connection_status():
+    """Get TrueData connection status for health checks"""
+    return {
+        'connected': truedata_client.connected,
+        'circuit_breaker_active': truedata_client._circuit_breaker_active,
+        'consecutive_failures': truedata_client._consecutive_failures,
+        'deployment_id': truedata_client._deployment_id,
+        'can_attempt_connection': not truedata_client._circuit_breaker_active
+    }
 
 logger.info("🎯 Advanced TrueData Client loaded - deployment overlap solution active") 

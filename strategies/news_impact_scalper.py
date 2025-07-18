@@ -18,19 +18,19 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         super().__init__(config)
         self.name = "EnhancedNewsImpactScalper"
         
-        # SCALPING-OPTIMIZED momentum thresholds (more sensitive)
+        # REALISTIC momentum thresholds (prevent false signals on market noise)
         self.momentum_thresholds = {
             'extreme_momentum': {
-                'price_change': 0.18,    # 0.18% rapid price change (tighter)
-                'volume_spike': 35       # 35% volume spike (more sensitive)
+                'price_change': 0.35,    # 0.35% rapid price change (realistic)
+                'volume_spike': 60       # 60% volume spike (realistic)
             },
             'strong_momentum': {
-                'price_change': 0.12,    # 0.12% rapid price change (tighter)
-                'volume_spike': 25       # 25% volume spike (more sensitive)
+                'price_change': 0.25,    # 0.25% rapid price change (realistic)
+                'volume_spike': 45       # 45% volume spike (realistic)
             },
             'moderate_momentum': {
-                'price_change': 0.08,    # 0.08% rapid price change (tighter)
-                'volume_spike': 18       # 18% volume spike (more sensitive)
+                'price_change': 0.18,    # 0.18% rapid price change (realistic)
+                'volume_spike': 30       # 30% volume spike (realistic)
             }
         }
         
@@ -41,9 +41,13 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             'moderate_momentum': 1.2    # 1.2x ATR for moderate momentum (tighter)
         }
         
-        # SCALPING cooldown control (fastest for news events)
-        self.scalping_cooldown = 10  # 10 seconds between signals
+        # Enhanced cooldown control (prevent signal spam)
+        self.scalping_cooldown = 25  # 25 seconds between signals
         self.symbol_cooldowns = {}   # Symbol-specific cooldowns
+        self.symbol_cooldown_duration = 40  # 40 seconds per symbol
+        
+        # Signal quality filters
+        self.min_confidence = 0.7  # Minimum 70% confidence required
         
     async def on_market_data(self, data: Dict):
         """Handle incoming market data and generate signals"""

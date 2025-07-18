@@ -81,10 +81,35 @@ class ResilientZerodhaConnection(ResilientConnection):
         """Monitor WebSocket connection and handle reconnection"""
         while True:
             try:
-                # Check if ticker_connected attribute exists and is False
-                ticker_connected = getattr(self.broker, 'ticker_connected', True)  # Default to True if missing
+                # FIXED: Skip WebSocket monitoring if real WebSocket is not implemented
+                # This prevents spam reconnection attempts in production
+                if not hasattr(self.broker, 'ticker_connected'):
+                    logger.debug("WebSocket monitoring disabled - ticker_connected attribute not available")
+                    await asyncio.sleep(60)  # Check every minute instead
+                    continue
                 
-                if not ticker_connected:
+                # Check if we're in real mode but WebSocket is intentionally not implemented
+                if (not getattr(self.broker, 'mock_mode', False) and 
+                    not self.broker.ticker_connected):
+                    
+                    # Don't spam reconnection attempts if WebSocket is intentionally disabled
+                    if self._ws_reconnect_attempts == 0:
+                        logger.info("WebSocket intentionally disabled in real mode - monitoring reduced")
+                        
+                    # Only attempt reconnection once, then reduce monitoring frequency
+                    if self._ws_reconnect_attempts == 0:
+                        logger.info("Attempting single WebSocket connection check")
+                        await self.broker._initialize_websocket()
+                        self._ws_reconnect_attempts += 1
+                    
+                    # After initial attempt, check less frequently to avoid spam
+                    await asyncio.sleep(60)  # Check every minute instead of every second
+                    continue
+                
+                # Original monitoring logic for mock mode or when WebSocket is actually expected to work
+                ticker_connected = getattr(self.broker, 'ticker_connected', True)
+                
+                if not ticker_connected and getattr(self.broker, 'mock_mode', False):
                     current_time = time.time()
                     
                     # Check if we should attempt reconnection
@@ -106,11 +131,11 @@ class ResilientZerodhaConnection(ResilientConnection):
                 if ticker_connected:
                     self._ws_reconnect_attempts = 0
                 
-                await asyncio.sleep(1)  # Check every second
+                await asyncio.sleep(5)  # Check every 5 seconds instead of 1 second
                 
             except Exception as e:
                 logger.error(f"Error in WebSocket monitoring: {e}")
-                await asyncio.sleep(1)
+                await asyncio.sleep(5)
     
     async def place_order(self, order_params: Dict) -> Dict:
         """Place order with rate limiting and retry"""
