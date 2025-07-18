@@ -461,9 +461,6 @@ class TradingOrchestrator:
         self.position_monitor = None  # Will be initialized during async initialize()
         
         # System ready
-
-            # Start market data to position tracker bridge
-            await self._start_market_data_to_position_tracker_bridge()
         self.logger.info("✅ Trading orchestrator initialized successfully")
         
         # Schedule TrueData manual connection
