@@ -17,12 +17,12 @@ class EnhancedMomentumSurfer(BaseStrategy):
         super().__init__(config)
         self.name = "EnhancedMomentumSurfer"
         
-        # REALISTIC momentum thresholds (prevent false signals on market noise)
+        # BALANCED momentum thresholds (generate signals for P&L testing)
         self.momentum_thresholds = {
-            'strong_positive': 0.25,    # 0.25% price increase (realistic)
-            'moderate_positive': 0.15,  # 0.15% price increase (realistic)
-            'strong_negative': -0.25,   # 0.25% price decrease (realistic)
-            'moderate_negative': -0.15, # 0.15% price decrease (realistic)
+            'strong_positive': 0.15,    # 0.15% price increase (balanced for testing)
+            'moderate_positive': 0.10,  # 0.10% price increase (balanced for testing)
+            'strong_negative': -0.15,   # 0.15% price decrease (balanced for testing)
+            'moderate_negative': -0.10, # 0.10% price decrease (balanced for testing)
             'volume_threshold': 20      # 20% volume increase (meaningful)
         }
         
