@@ -1,0 +1,3680 @@
+{
+  "timestamp": "2025-07-18T09:30:41.735Z",
+  "baseUrl": "https://algoauto-9gx56.ondigitalocean.app",
+  "totalTests": 32,
+  "passed": 30,
+  "failed": 2,
+  "results": [
+    {
+      "endpoint": "/health",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 272,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=9UfJinZPr1V3D6QFR5i8i7_rIjq4OHOL7vbWesbv8Us-1752831037-1.0.1.1-3yxdrTmkBHoAS1iwefDuqdzDsqCfdx5ZmMtglDq_kC.yp3KtJw707b8nIPSO6zDEfCpMmgaKvtlRP0li_QL7PLdD43FAoSSo0fv8evGWuA8; path=/; expires=Fri, 18-Jul-25 10:00:37 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f61e78d848e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "status": "healthy",
+        "timestamp": "2025-07-18T09:30:37.284535"
+      },
+      "rawData": "{\"status\":\"healthy\",\"timestamp\":\"2025-07-18T09:30:37.284535\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:37.188Z"
+    },
+    {
+      "endpoint": "/ready",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 74,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=u8HtBhVIOdfTTZwhaq1E8hgSsFMw5U.adFhj1Ri8Pmw-1752831037-1.0.1.1-AHsbCeJo_U.yPFDVj8THw9tpMOCIWkvM1DjswpkJb4D0zimslSh5_LP0.bJ3v8IcUADB8MvEn2P.zpd3.aq_YHf1sGKrhbRoVar2DWwjJ8I; path=/; expires=Fri, 18-Jul-25 10:00:37 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f61f39c148e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "status": "ready",
+        "timestamp": "2025-07-18T09:30:37.377866"
+      },
+      "rawData": "{\"status\":\"ready\",\"timestamp\":\"2025-07-18T09:30:37.377866\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:37.271Z"
+    },
+    {
+      "endpoint": "/api/routes",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 123,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=1nIexpG_RFVQKaP8eWKBuQHXIrZK7_XdnZipTeqDue0-1752831037-1.0.1.1-EtiHmMkCew4ooCpjUgSiy0enVF0GK8.XtZ_fFLV3QIyDXoRViI9M5CUpEjZXsA0QFueJNk6qonJBDl3an2GgfwCMBbTxw01oLLMZ8i05K00; path=/; expires=Fri, 18-Jul-25 10:00:37 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f61fba5348e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "total_routes": 294,
+        "auth_routes": [
+          {
+            "path": "/auth/me",
+            "methods": [
+              "GET"
+            ],
+            "name": "auth_me_fallback_high_priority"
+          },
+          {
+            "path": "/auth/login",
+            "methods": [
+              "POST"
+            ],
+            "name": "login"
+          },
+          {
+            "path": "/auth/me",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_current_user_v1"
+          },
+          {
+            "path": "/auth/test",
+            "methods": [
+              "GET"
+            ],
+            "name": "test_auth_v1"
+          },
+          {
+            "path": "/auth/zerodha/auth-url",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_manual_auth_url"
+          },
+          {
+            "path": "/auth/zerodha/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_manual_auth_status"
+          },
+          {
+            "path": "/auth/zerodha/",
+            "methods": [
+              "GET"
+            ],
+            "name": "zerodha_auth_page"
+          },
+          {
+            "path": "/auth/zerodha/submit-token",
+            "methods": [
+              "POST"
+            ],
+            "name": "submit_manual_token"
+          },
+          {
+            "path": "/auth/zerodha/test-connection",
+            "methods": [
+              "GET"
+            ],
+            "name": "test_connection"
+          },
+          {
+            "path": "/auth/zerodha/logout",
+            "methods": [
+              "DELETE"
+            ],
+            "name": "logout"
+          },
+          {
+            "path": "/auth/zerodha/callback",
+            "methods": [
+              "GET"
+            ],
+            "name": "zerodha_callback"
+          },
+          {
+            "path": "/auth/zerodha/start-trading",
+            "methods": [
+              "GET"
+            ],
+            "name": "start_trading_page"
+          },
+          {
+            "path": "/auth/zerodha/submit-token",
+            "methods": [
+              "POST"
+            ],
+            "name": "redirect_submit_token"
+          }
+        ],
+        "api_routes": [
+          {
+            "path": "/api/market/indices",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_market_indices"
+          },
+          {
+            "path": "/api/market/market-status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_market_status"
+          },
+          {
+            "path": "/api/market/volume-data",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_volume_data"
+          },
+          {
+            "path": "/api/market/v1/indices",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_market_indices_legacy"
+          },
+          {
+            "path": "/api/v1/",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_all_market_data"
+          },
+          {
+            "path": "/api/v1/market-data/{symbol}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_market_data"
+          },
+          {
+            "path": "/api/v1/live",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_live_market_data"
+          },
+          {
+            "path": "/api/v1/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_market_data_status"
+          },
+          {
+            "path": "/api/v1/symbol-expansion/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_symbol_expansion_status"
+          },
+          {
+            "path": "/api/v1/individual/{symbol}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_individual_symbol_data"
+          },
+          {
+            "path": "/api/v1/realtime/{symbol}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_realtime_data"
+          },
+          {
+            "path": "/api/v1/option-chain/{symbol}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_option_chain"
+          },
+          {
+            "path": "/api/v1/subscribe",
+            "methods": [
+              "POST"
+            ],
+            "name": "subscribe_symbols"
+          },
+          {
+            "path": "/api/v1/dashboard/summary",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_dashboard_summary"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/connect",
+            "methods": [
+              "POST"
+            ],
+            "name": "connect_truedata"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/subscribe",
+            "methods": [
+              "POST"
+            ],
+            "name": "subscribe_symbols"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/unsubscribe",
+            "methods": [
+              "POST"
+            ],
+            "name": "unsubscribe_symbols"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_truedata_status_endpoint"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/reconnect",
+            "methods": [
+              "POST"
+            ],
+            "name": "reconnect_truedata"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/data/{symbol}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_symbol_data"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/data",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_all_market_data"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/disconnect",
+            "methods": [
+              "POST"
+            ],
+            "name": "disconnect_truedata"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/debug/client-internals",
+            "methods": [
+              "GET"
+            ],
+            "name": "debug_client_internals"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/debug/force-data",
+            "methods": [
+              "POST"
+            ],
+            "name": "force_create_sample_data"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/debug/callback-status",
+            "methods": [
+              "GET"
+            ],
+            "name": "debug_callback_status"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/debug/force-callback-test",
+            "methods": [
+              "POST"
+            ],
+            "name": "force_callback_test"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/debug/test-live-data-call",
+            "methods": [
+              "POST"
+            ],
+            "name": "test_live_data_call"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/debug/callback-registration-test",
+            "methods": [
+              "GET"
+            ],
+            "name": "callback_registration_test"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/force-disconnect",
+            "methods": [
+              "POST"
+            ],
+            "name": "force_disconnect_truedata"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/deployment-safe-connect",
+            "methods": [
+              "POST"
+            ],
+            "name": "deployment_safe_connect"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/deployment-status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_deployment_status"
+          },
+          {
+            "path": "/api/v1/truedata/truedata/connection-status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_detailed_connection_status"
+          },
+          {
+            "path": "/api/v1/truedata/options/subscribe",
+            "methods": [
+              "POST"
+            ],
+            "name": "subscribe_options"
+          },
+          {
+            "path": "/api/v1/truedata/options/data/{symbol}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_options_data"
+          },
+          {
+            "path": "/api/v1/truedata/options/greeks/{symbol}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_greeks"
+          },
+          {
+            "path": "/api/v1/truedata/options/all-options",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_all_options_data"
+          },
+          {
+            "path": "/api/v1/truedata/options/subscribe-crude-options",
+            "methods": [
+              "POST"
+            ],
+            "name": "subscribe_crude_oil_options"
+          },
+          {
+            "path": "/api/v1/truedata/options/option-chain/{underlying}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_option_chain"
+          },
+          {
+            "path": "/api/v1/users/",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_users"
+          },
+          {
+            "path": "/api/v1/users/",
+            "methods": [
+              "POST"
+            ],
+            "name": "add_user"
+          },
+          {
+            "path": "/api/v1/users/{user_id}",
+            "methods": [
+              "DELETE"
+            ],
+            "name": "remove_user"
+          },
+          {
+            "path": "/api/v1/users/current",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_current_user"
+          },
+          {
+            "path": "/api/v1/users/dynamic/create",
+            "methods": [
+              "POST"
+            ],
+            "name": "create_user"
+          },
+          {
+            "path": "/api/v1/users/dynamic/list",
+            "methods": [
+              "GET"
+            ],
+            "name": "list_users"
+          },
+          {
+            "path": "/api/v1/users/dynamic/{user_id}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_user"
+          },
+          {
+            "path": "/api/v1/users/dynamic/{user_id}",
+            "methods": [
+              "PUT"
+            ],
+            "name": "update_user"
+          },
+          {
+            "path": "/api/v1/users/dynamic/{user_id}",
+            "methods": [
+              "DELETE"
+            ],
+            "name": "delete_user"
+          },
+          {
+            "path": "/api/v1/users/dynamic/{user_id}/analytics",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_user_analytics"
+          },
+          {
+            "path": "/api/v1/users/dynamic/{user_id}/trades",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_user_trades"
+          },
+          {
+            "path": "/api/v1/users/dynamic/{user_id}/positions",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_user_positions"
+          },
+          {
+            "path": "/api/v1/analytics/user/{user_id}/performance",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_user_performance"
+          },
+          {
+            "path": "/api/v1/analytics/user/{user_id}/report",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_user_trading_report"
+          },
+          {
+            "path": "/api/v1/analytics/user/{user_id}/dashboard",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_user_dashboard_data"
+          },
+          {
+            "path": "/api/v1/analytics/users/leaderboard",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_users_leaderboard"
+          },
+          {
+            "path": "/api/v1/control/users/broker",
+            "methods": [
+              "POST"
+            ],
+            "name": "add_broker_user"
+          },
+          {
+            "path": "/api/v1/control/users/broker",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_broker_users"
+          },
+          {
+            "path": "/api/v1/control/users/broker/{user_id}",
+            "methods": [
+              "PUT"
+            ],
+            "name": "update_broker_user"
+          },
+          {
+            "path": "/api/v1/control/users/broker/{user_id}",
+            "methods": [
+              "DELETE"
+            ],
+            "name": "delete_broker_user"
+          },
+          {
+            "path": "/api/v1/control/users/broker/initialize",
+            "methods": [
+              "POST"
+            ],
+            "name": "initialize_users"
+          },
+          {
+            "path": "/api/v1/control/trading/control",
+            "methods": [
+              "POST"
+            ],
+            "name": "control_trading"
+          },
+          {
+            "path": "/api/v1/control/trading/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_trading_status"
+          },
+          {
+            "path": "/api/v1/control/zerodha-manual/auth-url",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_zerodha_manual_auth_url"
+          },
+          {
+            "path": "/api/v1/control/zerodha-manual/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_zerodha_manual_status"
+          },
+          {
+            "path": "/api/v1/control/zerodha-manual/submit-token",
+            "methods": [
+              "POST"
+            ],
+            "name": "submit_zerodha_manual_token"
+          },
+          {
+            "path": "/api/v1/control/zerodha-manual/test",
+            "methods": [
+              "GET"
+            ],
+            "name": "test_zerodha_manual_system"
+          },
+          {
+            "path": "/api/v1/autonomous/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_status"
+          },
+          {
+            "path": "/api/v1/autonomous/reset",
+            "methods": [
+              "POST"
+            ],
+            "name": "reset_orchestrator"
+          },
+          {
+            "path": "/api/v1/autonomous/start",
+            "methods": [
+              "POST"
+            ],
+            "name": "start_trading"
+          },
+          {
+            "path": "/api/v1/autonomous/stop",
+            "methods": [
+              "POST"
+            ],
+            "name": "stop_trading"
+          },
+          {
+            "path": "/api/v1/autonomous/positions",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_positions"
+          },
+          {
+            "path": "/api/v1/autonomous/performance",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_performance"
+          },
+          {
+            "path": "/api/v1/autonomous/strategies",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_strategies"
+          },
+          {
+            "path": "/api/v1/autonomous/risk",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_risk_metrics"
+          },
+          {
+            "path": "/api/v1/autonomous/orders",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_orders"
+          },
+          {
+            "path": "/api/v1/autonomous/trades",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_trades"
+          },
+          {
+            "path": "/api/v1/trades/",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_all_trades"
+          },
+          {
+            "path": "/api/v1/trades/live",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_live_trades"
+          },
+          {
+            "path": "/api/v1/trades/users/metrics",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_all_user_metrics"
+          },
+          {
+            "path": "/api/v1/trades/{trade_id}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_trade_details"
+          },
+          {
+            "path": "/api/v1/trades/users/{user_id}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_user_trades"
+          },
+          {
+            "path": "/api/v1/trades/users/{user_id}/metrics",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_user_metrics"
+          },
+          {
+            "path": "/api/v1/orders/",
+            "methods": [
+              "POST"
+            ],
+            "name": "create_order"
+          },
+          {
+            "path": "/api/v1/orders/{order_id}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_order"
+          },
+          {
+            "path": "/api/v1/orders/{order_id}",
+            "methods": [
+              "PUT"
+            ],
+            "name": "update_order"
+          },
+          {
+            "path": "/api/v1/orders/{order_id}",
+            "methods": [
+              "DELETE"
+            ],
+            "name": "cancel_order"
+          },
+          {
+            "path": "/api/v1/orders/users/{user_id}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_user_orders"
+          },
+          {
+            "path": "/api/v1/orders/live",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_live_orders"
+          },
+          {
+            "path": "/api/v1/orders/",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_all_orders"
+          },
+          {
+            "path": "/api/v1/positions/",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_all_positions"
+          },
+          {
+            "path": "/api/v1/positions/users/{user_id}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_user_positions"
+          },
+          {
+            "path": "/api/v1/positions/{position_id}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_position"
+          },
+          {
+            "path": "/api/v1/positions/{position_id}",
+            "methods": [
+              "PUT"
+            ],
+            "name": "update_position"
+          },
+          {
+            "path": "/api/v1/positions/",
+            "methods": [
+              "POST"
+            ],
+            "name": "create_position"
+          },
+          {
+            "path": "/api/v1/strategies/strategies",
+            "methods": [
+              "POST"
+            ],
+            "name": "create_strategy"
+          },
+          {
+            "path": "/api/v1/strategies/strategies",
+            "methods": [
+              "GET"
+            ],
+            "name": "list_strategies"
+          },
+          {
+            "path": "/api/v1/strategies/strategies/{strategy_id}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_strategy"
+          },
+          {
+            "path": "/api/v1/strategies/strategies/{strategy_id}",
+            "methods": [
+              "PUT"
+            ],
+            "name": "update_strategy"
+          },
+          {
+            "path": "/api/v1/strategies/strategies/{strategy_id}",
+            "methods": [
+              "DELETE"
+            ],
+            "name": "delete_strategy"
+          },
+          {
+            "path": "/api/v1/strategies/strategies/{strategy_id}/enable",
+            "methods": [
+              "POST"
+            ],
+            "name": "enable_strategy"
+          },
+          {
+            "path": "/api/v1/strategies/strategies/{strategy_id}/disable",
+            "methods": [
+              "POST"
+            ],
+            "name": "disable_strategy"
+          },
+          {
+            "path": "/api/v1/strategies/strategies/{strategy_id}/signals",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_strategy_signals"
+          },
+          {
+            "path": "/api/v1/strategies/strategies/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_strategies_status"
+          },
+          {
+            "path": "/api/v1/intelligent-symbols",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_intelligent_symbols_status"
+          },
+          {
+            "path": "/api/v1/intelligent-symbols/start",
+            "methods": [
+              "POST"
+            ],
+            "name": "start_intelligent_symbol_management"
+          },
+          {
+            "path": "/api/v1/intelligent-symbols/stop",
+            "methods": [
+              "POST"
+            ],
+            "name": "stop_intelligent_symbol_management"
+          },
+          {
+            "path": "/api/v1/intelligent-symbols/expand-now",
+            "methods": [
+              "POST"
+            ],
+            "name": "trigger_symbol_expansion"
+          },
+          {
+            "path": "/api/v1/intelligent-symbols/active",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_active_symbols_list"
+          },
+          {
+            "path": "/api/v1/intelligent-symbols/analytics",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_symbol_analytics"
+          },
+          {
+            "path": "/api/v1/intelligent-symbols/manual-add",
+            "methods": [
+              "POST"
+            ],
+            "name": "manually_add_symbols"
+          },
+          {
+            "path": "/api/v1/intelligent-symbols/manual-remove",
+            "methods": [
+              "POST"
+            ],
+            "name": "manually_remove_symbols"
+          },
+          {
+            "path": "/api/v1/intelligent-symbols/recommendations",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_symbol_recommendations"
+          },
+          {
+            "path": "/api/v1/risk/risk/limits",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_risk_limits"
+          },
+          {
+            "path": "/api/v1/risk/risk/limits",
+            "methods": [
+              "PUT"
+            ],
+            "name": "update_risk_limits"
+          },
+          {
+            "path": "/api/v1/risk/risk/metrics",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_risk_metrics"
+          },
+          {
+            "path": "/api/v1/risk/users/{user_id}/risk",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_user_risk_profile"
+          },
+          {
+            "path": "/api/v1/risk/risk/hard-stop/reset",
+            "methods": [
+              "POST"
+            ],
+            "name": "reset_hard_stop"
+          },
+          {
+            "path": "/api/v1/risk/risk/alerts",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_risk_alerts"
+          },
+          {
+            "path": "/api/v1/risk/risk/history",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_risk_history"
+          },
+          {
+            "path": "/api/v1/recommendations/",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_recommendations"
+          },
+          {
+            "path": "/api/v1/recommendations/{symbol}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_symbol_recommendations"
+          },
+          {
+            "path": "/api/v1/elite/",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_elite_recommendations"
+          },
+          {
+            "path": "/api/v1/elite/force-scan",
+            "methods": [
+              "POST"
+            ],
+            "name": "force_autonomous_scan"
+          },
+          {
+            "path": "/api/v1/elite/scanner-status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_scanner_status"
+          },
+          {
+            "path": "/api/v1/performance/performance/daily-pnl",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_daily_pnl"
+          },
+          {
+            "path": "/api/v1/performance/performance/positions",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_positions"
+          },
+          {
+            "path": "/api/v1/performance/performance/trades",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_trades"
+          },
+          {
+            "path": "/api/v1/performance/performance/metrics",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_performance_metrics"
+          },
+          {
+            "path": "/api/v1/performance/performance/risk",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_risk_metrics"
+          },
+          {
+            "path": "/api/v1/monitoring/health",
+            "methods": [
+              "GET"
+            ],
+            "name": "health_check"
+          },
+          {
+            "path": "/api/v1/monitoring/liveness",
+            "methods": [
+              "GET"
+            ],
+            "name": "liveness_check"
+          },
+          {
+            "path": "/api/v1/monitoring/readiness",
+            "methods": [
+              "GET"
+            ],
+            "name": "readiness_check"
+          },
+          {
+            "path": "/api/v1/monitoring/metrics",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_system_metrics"
+          },
+          {
+            "path": "/api/v1/monitoring/components",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_components_status"
+          },
+          {
+            "path": "/api/v1/monitoring/system-stats",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_system_stats"
+          },
+          {
+            "path": "/api/v1/monitoring/trading-status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_trading_status"
+          },
+          {
+            "path": "/api/v1/monitoring/connections",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_connection_status"
+          },
+          {
+            "path": "/api/v1/monitoring/performance/elite-trades",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_elite_performance"
+          },
+          {
+            "path": "/api/v1/monitoring/performance/summary",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_performance_summary"
+          },
+          {
+            "path": "/api/v1/monitoring/daily-pnl",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_daily_pnl"
+          },
+          {
+            "path": "/api/v1/monitoring/orchestrator-status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_orchestrator_status"
+          },
+          {
+            "path": "/api/v1/monitoring/api/v1/monitoring/system-status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_system_status_legacy"
+          },
+          {
+            "path": "/api/v1/monitoring/signals/recent",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_recent_signals"
+          },
+          {
+            "path": "/api/v1/monitoring/signals/statistics",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_signal_statistics"
+          },
+          {
+            "path": "/api/v1/monitoring/signals/failed",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_failed_signals"
+          },
+          {
+            "path": "/api/v1/errors/errors/stats",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_error_statistics"
+          },
+          {
+            "path": "/api/v1/errors/errors/recent",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_recent_errors"
+          },
+          {
+            "path": "/api/v1/errors/errors/types",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_error_types"
+          },
+          {
+            "path": "/api/v1/errors/errors/clear",
+            "methods": [
+              "POST"
+            ],
+            "name": "clear_error_history"
+          },
+          {
+            "path": "/api/v1/errors/errors/health",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_error_health"
+          },
+          {
+            "path": "/api/v1/db-health/database/health",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_database_health"
+          },
+          {
+            "path": "/api/v1/db-health/database/stats",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_database_stats"
+          },
+          {
+            "path": "/api/v1/db-health/database/optimize",
+            "methods": [
+              "POST"
+            ],
+            "name": "optimize_database"
+          },
+          {
+            "path": "/api/v1/db-health/database/slow-queries",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_slow_queries"
+          },
+          {
+            "path": "/api/v1/db-health/database/connections",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_connection_info"
+          },
+          {
+            "path": "/api/v1/dashboard/health/detailed",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_detailed_health"
+          },
+          {
+            "path": "/api/v1/dashboard/trading/metrics",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_trading_metrics"
+          },
+          {
+            "path": "/api/v1/dashboard/notifications",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_system_notifications"
+          },
+          {
+            "path": "/api/v1/dashboard/dashboard/summary",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_dashboard_summary"
+          },
+          {
+            "path": "/api/v1/dashboard/performance/summary",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_performance_summary"
+          },
+          {
+            "path": "/api/v1/dashboard/data",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_dashboard_data"
+          },
+          {
+            "path": "/api/v1/dashboard/health/detailed",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_detailed_health"
+          },
+          {
+            "path": "/api/reports/daily",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_daily_report"
+          },
+          {
+            "path": "/api/reports/strategy",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_strategy_report"
+          },
+          {
+            "path": "/api/reports/user",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_user_report"
+          },
+          {
+            "path": "/api/reports/risk",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_risk_report"
+          },
+          {
+            "path": "/api/reports/export/{report_type}",
+            "methods": [
+              "GET"
+            ],
+            "name": "export_report"
+          },
+          {
+            "path": "/api/v1/system/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_system_status"
+          },
+          {
+            "path": "/api/v1/system/logs",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_system_logs"
+          },
+          {
+            "path": "/api/v1/system/redis-status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_redis_status"
+          },
+          {
+            "path": "/api/v1/trades/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_trades_status"
+          },
+          {
+            "path": "/api/v1/broker/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_broker_status"
+          },
+          {
+            "path": "/api/v1/broker/connect",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_broker_connection"
+          },
+          {
+            "path": "/api/v1/broker/connect",
+            "methods": [
+              "POST"
+            ],
+            "name": "connect_broker"
+          },
+          {
+            "path": "/api/v1/broker/disconnect",
+            "methods": [
+              "POST"
+            ],
+            "name": "disconnect_broker"
+          },
+          {
+            "path": "/api/v1/broker/auth",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_broker_auth_status"
+          },
+          {
+            "path": "/api/v1/zerodha/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_zerodha_status"
+          },
+          {
+            "path": "/api/v1/system/refresh-connections",
+            "methods": [
+              "POST"
+            ],
+            "name": "refresh_connections"
+          },
+          {
+            "path": "/api/v1/broker/refresh",
+            "methods": [
+              "POST"
+            ],
+            "name": "refresh_broker_connection"
+          },
+          {
+            "path": "/api/v1/strategies/performance",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_strategies_performance"
+          },
+          {
+            "path": "/api/v1/system/config",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_system_config"
+          },
+          {
+            "path": "/api/v1/system/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_system_status"
+          },
+          {
+            "path": "/api/v1/system/metrics",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_system_metrics"
+          },
+          {
+            "path": "/api/v1/search/symbols",
+            "methods": [
+              "GET"
+            ],
+            "name": "search_symbols"
+          },
+          {
+            "path": "/api/v1/search/trades",
+            "methods": [
+              "GET"
+            ],
+            "name": "search_trades"
+          },
+          {
+            "path": "/api/v1/search/strategies",
+            "methods": [
+              "GET"
+            ],
+            "name": "search_strategies"
+          },
+          {
+            "path": "/api/v1/search/users",
+            "methods": [
+              "GET"
+            ],
+            "name": "search_users"
+          },
+          {
+            "path": "/api/v1/search/recommendations",
+            "methods": [
+              "GET"
+            ],
+            "name": "search_recommendations"
+          },
+          {
+            "path": "/api/v1/search/global",
+            "methods": [
+              "GET"
+            ],
+            "name": "global_search"
+          },
+          {
+            "path": "/api/v1/search/autocomplete",
+            "methods": [
+              "GET"
+            ],
+            "name": "search_autocomplete"
+          },
+          {
+            "path": "/api/v1/debug/orchestrator",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_orchestrator_debug"
+          },
+          {
+            "path": "/api/v1/debug/force-initialize",
+            "methods": [
+              "POST"
+            ],
+            "name": "force_initialize_system"
+          },
+          {
+            "path": "/api/v1/debug/force-enable-trading",
+            "methods": [
+              "POST"
+            ],
+            "name": "force_enable_trading"
+          },
+          {
+            "path": "/api/v1/debug/test-state-setting",
+            "methods": [
+              "POST"
+            ],
+            "name": "test_state_setting"
+          },
+          {
+            "path": "/api/v1/debug/test-enable-trading",
+            "methods": [
+              "POST"
+            ],
+            "name": "test_enable_trading_direct"
+          },
+          {
+            "path": "/api/v1/debug/test-minimal-enable",
+            "methods": [
+              "POST"
+            ],
+            "name": "test_minimal_enable"
+          },
+          {
+            "path": "/api/v1/debug/test-bulletproof-deployed",
+            "methods": [
+              "POST"
+            ],
+            "name": "test_bulletproof_deployed"
+          },
+          {
+            "path": "/api/v1/debug/test-signal-generation",
+            "methods": [
+              "GET"
+            ],
+            "name": "test_signal_generation"
+          },
+          {
+            "path": "/api/v1/debug/initialization-status",
+            "methods": [
+              "GET"
+            ],
+            "name": "check_initialization_status"
+          },
+          {
+            "path": "/api/v1/debug/force-initialize",
+            "methods": [
+              "GET"
+            ],
+            "name": "force_initialize"
+          },
+          {
+            "path": "/api/v1/debug/check-system-ready-state",
+            "methods": [
+              "GET"
+            ],
+            "name": "check_system_ready_state"
+          },
+          {
+            "path": "/api/v1/debug/debug-initialization-steps",
+            "methods": [
+              "GET"
+            ],
+            "name": "debug_initialization_steps"
+          },
+          {
+            "path": "/api/v1/debug/redis-test",
+            "methods": [
+              "GET"
+            ],
+            "name": "test_redis_connection"
+          },
+          {
+            "path": "/api/v1/debug/orchestrator-debug",
+            "methods": [
+              "GET"
+            ],
+            "name": "debug_orchestrator_components"
+          },
+          {
+            "path": "/api/v1/orchestrator/debug",
+            "methods": [
+              "GET"
+            ],
+            "name": "debug_orchestrator_initialization"
+          },
+          {
+            "path": "/api/v1/orchestrator/dependencies",
+            "methods": [
+              "GET"
+            ],
+            "name": "check_dependencies"
+          },
+          {
+            "path": "/api/zerodha/login",
+            "methods": [
+              "POST"
+            ],
+            "name": "initiate_login"
+          },
+          {
+            "path": "/api/zerodha/callback",
+            "methods": [
+              "GET"
+            ],
+            "name": "handle_callback"
+          },
+          {
+            "path": "/api/zerodha/status/{user_id}",
+            "methods": [
+              "GET"
+            ],
+            "name": "check_auth_status"
+          },
+          {
+            "path": "/api/zerodha/logout/{user_id}",
+            "methods": [
+              "POST"
+            ],
+            "name": "logout"
+          },
+          {
+            "path": "/api/zerodha/profile/{user_id}",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_profile"
+          },
+          {
+            "path": "/api/v1/api/v1/token-diagnostic/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_token_diagnostic_status"
+          },
+          {
+            "path": "/api/v1/api/v1/token-diagnostic/repair",
+            "methods": [
+              "POST"
+            ],
+            "name": "repair_token_issue"
+          },
+          {
+            "path": "/api/v1/api/v1/token-diagnostic/orchestrator-debug",
+            "methods": [
+              "GET"
+            ],
+            "name": "debug_orchestrator_token_access"
+          },
+          {
+            "path": "/api/v1/webhooks/webhooks/generic",
+            "methods": [
+              "POST"
+            ],
+            "name": "receive_webhook"
+          },
+          {
+            "path": "/api/v1/webhooks/webhooks/market-data",
+            "methods": [
+              "POST"
+            ],
+            "name": "receive_market_data"
+          },
+          {
+            "path": "/api/v1/webhooks/webhooks/zerodha/order-update",
+            "methods": [
+              "POST"
+            ],
+            "name": "receive_zerodha_order_update"
+          },
+          {
+            "path": "/api/v1/webhooks/webhooks/zerodha/position-update",
+            "methods": [
+              "POST"
+            ],
+            "name": "receive_zerodha_position_update"
+          },
+          {
+            "path": "/api/v1/webhooks/webhooks/zerodha",
+            "methods": [
+              "POST"
+            ],
+            "name": "receive_zerodha_webhook"
+          },
+          {
+            "path": "/api/v1/webhooks/webhooks/news-feed",
+            "methods": [
+              "POST"
+            ],
+            "name": "receive_news"
+          },
+          {
+            "path": "/api/v1/webhooks/webhooks/system-health",
+            "methods": [
+              "POST"
+            ],
+            "name": "receive_health_update"
+          },
+          {
+            "path": "/api/v1/webhooks/n8n",
+            "methods": [
+              "POST"
+            ],
+            "name": "n8n_webhook"
+          },
+          {
+            "path": "/api/v1/webhooks/webhooks/risk-alert",
+            "methods": [
+              "POST"
+            ],
+            "name": "receive_risk_alert"
+          },
+          {
+            "path": "/api/v1/webhooks/webhooks/compliance-update",
+            "methods": [
+              "POST"
+            ],
+            "name": "receive_compliance_update"
+          },
+          {
+            "path": "/api",
+            "methods": [
+              "GET"
+            ],
+            "name": "api_root"
+          },
+          {
+            "path": "/api/routes",
+            "methods": [
+              "GET"
+            ],
+            "name": "list_routes"
+          },
+          {
+            "path": "/api/v1/dashboard/summary",
+            "methods": [
+              "GET"
+            ],
+            "name": "redirect_dashboard_summary"
+          },
+          {
+            "path": "/api/auth/login",
+            "methods": [
+              "POST"
+            ],
+            "name": "redirect_login"
+          },
+          {
+            "path": "/api/auth/me",
+            "methods": [
+              "GET"
+            ],
+            "name": "redirect_me"
+          },
+          {
+            "path": "/api/v1/market/indices",
+            "methods": [
+              "GET"
+            ],
+            "name": "legacy_market_indices"
+          },
+          {
+            "path": "/api/v1/monitoring/system-status",
+            "methods": [
+              "GET"
+            ],
+            "name": "legacy_system_status"
+          },
+          {
+            "path": "/api/v1/positions",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_positions_direct"
+          },
+          {
+            "path": "/api/v1/orders",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_orders_direct"
+          },
+          {
+            "path": "/api/v1/holdings",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_holdings_direct"
+          },
+          {
+            "path": "/api/v1/margins",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_margins_direct"
+          },
+          {
+            "path": "/api/v1/elite",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_elite_recommendations_direct"
+          },
+          {
+            "path": "/api/v1/market-data",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_all_market_data_direct"
+          },
+          {
+            "path": "/api/v1/signals/recent",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_recent_signals_direct"
+          },
+          {
+            "path": "/api/v1/autonomous/force-activate",
+            "methods": [
+              "POST"
+            ],
+            "name": "force_activate_autonomous_trading"
+          },
+          {
+            "path": "/api/v1/users/performance",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_users_performance"
+          },
+          {
+            "path": "/api/v1/search",
+            "methods": [
+              "GET"
+            ],
+            "name": "search_endpoint"
+          },
+          {
+            "path": "/api/v1/trading/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "trading_status_endpoint"
+          },
+          {
+            "path": "/api/v1/trades",
+            "methods": [
+              "GET"
+            ],
+            "name": "redirect_trades"
+          },
+          {
+            "path": "/api/v1/strategies",
+            "methods": [
+              "GET"
+            ],
+            "name": "redirect_strategies"
+          },
+          {
+            "path": "/api/v1/users",
+            "methods": [
+              "GET"
+            ],
+            "name": "redirect_users"
+          },
+          {
+            "path": "/api/market/indices",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_market_indices"
+          },
+          {
+            "path": "/api/v1/orchestrator/start",
+            "methods": [
+              "POST"
+            ],
+            "name": "start_orchestrator"
+          },
+          {
+            "path": "/api/v1/orchestrator/status",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_orchestrator_status"
+          },
+          {
+            "path": "/api/v1/orchestrator/force-start",
+            "methods": [
+              "POST"
+            ],
+            "name": "force_start_orchestrator"
+          },
+          {
+            "path": "/api/v1/orchestrator/test-signals",
+            "methods": [
+              "GET"
+            ],
+            "name": "test_signal_generation"
+          }
+        ],
+        "health_routes": [
+          {
+            "path": "/health",
+            "methods": [
+              "GET"
+            ],
+            "name": "health_check"
+          },
+          {
+            "path": "/ready",
+            "methods": [
+              "GET"
+            ],
+            "name": "ready_check"
+          },
+          {
+            "path": "/health/ready/json",
+            "methods": [
+              "GET"
+            ],
+            "name": "health_ready_json"
+          },
+          {
+            "path": "/ready",
+            "methods": [
+              "GET"
+            ],
+            "name": "readiness_check"
+          },
+          {
+            "path": "/api/v1/monitoring/health",
+            "methods": [
+              "GET"
+            ],
+            "name": "health_check"
+          },
+          {
+            "path": "/api/v1/errors/errors/health",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_error_health"
+          },
+          {
+            "path": "/api/v1/db-health/database/health",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_database_health"
+          },
+          {
+            "path": "/api/v1/db-health/database/stats",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_database_stats"
+          },
+          {
+            "path": "/api/v1/db-health/database/optimize",
+            "methods": [
+              "POST"
+            ],
+            "name": "optimize_database"
+          },
+          {
+            "path": "/api/v1/db-health/database/slow-queries",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_slow_queries"
+          },
+          {
+            "path": "/api/v1/db-health/database/connections",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_connection_info"
+          },
+          {
+            "path": "/api/v1/dashboard/health/detailed",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_detailed_health"
+          },
+          {
+            "path": "/api/v1/dashboard/health/detailed",
+            "methods": [
+              "GET"
+            ],
+            "name": "get_detailed_health"
+          },
+          {
+            "path": "/api/v1/webhooks/webhooks/system-health",
+            "methods": [
+              "POST"
+            ],
+            "name": "receive_health_update"
+          }
+        ],
+        "login_endpoint": "/auth/login"
+      },
+      "rawData": "{\"total_routes\":294,\"auth_routes\":[{\"path\":\"/auth/me\",\"methods\":[\"GET\"],\"name\":\"auth_me_fallback_high_priority\"},{\"path\":\"/auth/login\",\"methods\":[\"POST\"],\"name\":\"login\"},{\"path\":\"/auth/me\",\"methods\":[\"GET\"],\"name\":\"get_current_user_v1\"},{\"path\":\"/auth/test\",\"methods\":[\"GET\"],\"name\":\"test_auth_v1\"},{\"path\":\"/auth/zerodha/auth-url\",\"methods\":[\"GET\"],\"name\":\"get_manual_auth_url\"},{\"path\":\"/auth/zerodha/status\",\"methods\":[\"GET\"],\"name\":\"get_manual_auth_status\"},{\"path\":\"/auth/zerodha/\",\"methods\":[\"GET\"],\"name\":\"zerodha_auth_page\"},{\"path\":\"/auth/zerodha/submit-token\",\"methods\":[\"POST\"],\"name\":\"submit_manual_token\"},{\"path\":\"/auth/zerodha/test-connection\",\"methods\":[\"GET\"],\"name\":\"test_connection\"},{\"path\":\"/auth/zerodha/logout\",\"methods\":[\"DELETE\"],\"name\":\"logout\"},{\"path\":\"/auth/zerodha/callback\",\"methods\":[\"GET\"],\"name\":\"zerodha_callback\"},{\"path\":\"/auth/zerodha/start-trading\",\"methods\":[\"GET\"],\"name\":\"start_trading_page\"},{\"path\":\"/auth/zerodha/submit-token\",\"methods\":[\"POST\"],\"name\":\"redirect_submit_token\"}],\"api_routes\":[{\"path\":\"/api/market/indices\",\"methods\":[\"GET\"],\"name\":\"get_market_indices\"},{\"path\":\"/api/market/market-status\",\"methods\":[\"GET\"],\"name\":\"get_market_status\"},{\"path\":\"/api/market/volume-data\",\"methods\":[\"GET\"],\"name\":\"get_volume_data\"},{\"path\":\"/api/market/v1/indices\",\"methods\":[\"GET\"],\"name\":\"get_market_indices_legacy\"},{\"path\":\"/api/v1/\",\"methods\":[\"GET\"],\"name\":\"get_all_market_data\"},{\"path\":\"/api/v1/market-data/{symbol}\",\"methods\":[\"GET\"],\"name\":\"get_market_data\"},{\"path\":\"/api/v1/live\",\"methods\":[\"GET\"],\"name\":\"get_live_market_data\"},{\"path\":\"/api/v1/status\",\"methods\":[\"GET\"],\"name\":\"get_market_data_status\"},{\"path\":\"/api/v1/symbol-expansion/status\",\"methods\":[\"GET\"],\"name\":\"get_symbol_expansion_status\"},{\"path\":\"/api/v1/individual/{symbol}\",\"methods\":[\"GET\"],\"name\":\"get_individual_symbol_data\"},{\"path\":\"/api/v1/realtime/{symbol}\",\"methods\":[\"GET\"],\"name\":\"get_realtime_data\"},{\"path\":\"/api/v1/option-chain/{symbol}\",\"methods\":[\"GET\"],\"name\":\"get_option_chain\"},{\"path\":\"/api/v1/subscribe\",\"methods\":[\"POST\"],\"name\":\"subscribe_symbols\"},{\"path\":\"/api/v1/dashboard/summary\",\"methods\":[\"GET\"],\"name\":\"get_dashboard_summary\"},{\"path\":\"/api/v1/truedata/truedata/connect\",\"methods\":[\"POST\"],\"name\":\"connect_truedata\"},{\"path\":\"/api/v1/truedata/truedata/subscribe\",\"methods\":[\"POST\"],\"name\":\"subscribe_symbols\"},{\"path\":\"/api/v1/truedata/truedata/unsubscribe\",\"methods\":[\"POST\"],\"name\":\"unsubscribe_symbols\"},{\"path\":\"/api/v1/truedata/truedata/status\",\"methods\":[\"GET\"],\"name\":\"get_truedata_status_endpoint\"},{\"path\":\"/api/v1/truedata/truedata/reconnect\",\"methods\":[\"POST\"],\"name\":\"reconnect_truedata\"},{\"path\":\"/api/v1/truedata/truedata/data/{symbol}\",\"methods\":[\"GET\"],\"name\":\"get_symbol_data\"},{\"path\":\"/api/v1/truedata/truedata/data\",\"methods\":[\"GET\"],\"name\":\"get_all_market_data\"},{\"path\":\"/api/v1/truedata/truedata/disconnect\",\"methods\":[\"POST\"],\"name\":\"disconnect_truedata\"},{\"path\":\"/api/v1/truedata/truedata/debug/client-internals\",\"methods\":[\"GET\"],\"name\":\"debug_client_internals\"},{\"path\":\"/api/v1/truedata/truedata/debug/force-data\",\"methods\":[\"POST\"],\"name\":\"force_create_sample_data\"},{\"path\":\"/api/v1/truedata/truedata/debug/callback-status\",\"methods\":[\"GET\"],\"name\":\"debug_callback_status\"},{\"path\":\"/api/v1/truedata/truedata/debug/force-callback-test\",\"methods\":[\"POST\"],\"name\":\"force_callback_test\"},{\"path\":\"/api/v1/truedata/truedata/debug/test-live-data-call\",\"methods\":[\"POST\"],\"name\":\"test_live_data_call\"},{\"path\":\"/api/v1/truedata/truedata/debug/callback-registration-test\",\"methods\":[\"GET\"],\"name\":\"callback_registration_test\"},{\"path\":\"/api/v1/truedata/truedata/force-disconnect\",\"methods\":[\"POST\"],\"name\":\"force_disconnect_truedata\"},{\"path\":\"/api/v1/truedata/truedata/deployment-safe-connect\",\"methods\":[\"POST\"],\"name\":\"deployment_safe_connect\"},{\"path\":\"/api/v1/truedata/truedata/deployment-status\",\"methods\":[\"GET\"],\"name\":\"get_deployment_status\"},{\"path\":\"/api/v1/truedata/truedata/connection-status\",\"methods\":[\"GET\"],\"name\":\"get_detailed_connection_status\"},{\"path\":\"/api/v1/truedata/options/subscribe\",\"methods\":[\"POST\"],\"name\":\"subscribe_options\"},{\"path\":\"/api/v1/truedata/options/data/{symbol}\",\"methods\":[\"GET\"],\"name\":\"get_options_data\"},{\"path\":\"/api/v1/truedata/options/greeks/{symbol}\",\"methods\":[\"GET\"],\"name\":\"get_greeks\"},{\"path\":\"/api/v1/truedata/options/all-options\",\"methods\":[\"GET\"],\"name\":\"get_all_options_data\"},{\"path\":\"/api/v1/truedata/options/subscribe-crude-options\",\"methods\":[\"POST\"],\"name\":\"subscribe_crude_oil_options\"},{\"path\":\"/api/v1/truedata/options/option-chain/{underlying}\",\"methods\":[\"GET\"],\"name\":\"get_option_chain\"},{\"path\":\"/api/v1/users/\",\"methods\":[\"GET\"],\"name\":\"get_users\"},{\"path\":\"/api/v1/users/\",\"methods\":[\"POST\"],\"name\":\"add_user\"},{\"path\":\"/api/v1/users/{user_id}\",\"methods\":[\"DELETE\"],\"name\":\"remove_user\"},{\"path\":\"/api/v1/users/current\",\"methods\":[\"GET\"],\"name\":\"get_current_user\"},{\"path\":\"/api/v1/users/dynamic/create\",\"methods\":[\"POST\"],\"name\":\"create_user\"},{\"path\":\"/api/v1/users/dynamic/list\",\"methods\":[\"GET\"],\"name\":\"list_users\"},{\"path\":\"/api/v1/users/dynamic/{user_id}\",\"methods\":[\"GET\"],\"name\":\"get_user\"},{\"path\":\"/api/v1/users/dynamic/{user_id}\",\"methods\":[\"PUT\"],\"name\":\"update_user\"},{\"path\":\"/api/v1/users/dynamic/{user_id}\",\"methods\":[\"DELETE\"],\"name\":\"delete_user\"},{\"path\":\"/api/v1/users/dynamic/{user_id}/analytics\",\"methods\":[\"GET\"],\"name\":\"get_user_analytics\"},{\"path\":\"/api/v1/users/dynamic/{user_id}/trades\",\"methods\":[\"GET\"],\"name\":\"get_user_trades\"},{\"path\":\"/api/v1/users/dynamic/{user_id}/positions\",\"methods\":[\"GET\"],\"name\":\"get_user_positions\"},{\"path\":\"/api/v1/analytics/user/{user_id}/performance\",\"methods\":[\"GET\"],\"name\":\"get_user_performance\"},{\"path\":\"/api/v1/analytics/user/{user_id}/report\",\"methods\":[\"GET\"],\"name\":\"get_user_trading_report\"},{\"path\":\"/api/v1/analytics/user/{user_id}/dashboard\",\"methods\":[\"GET\"],\"name\":\"get_user_dashboard_data\"},{\"path\":\"/api/v1/analytics/users/leaderboard\",\"methods\":[\"GET\"],\"name\":\"get_users_leaderboard\"},{\"path\":\"/api/v1/control/users/broker\",\"methods\":[\"POST\"],\"name\":\"add_broker_user\"},{\"path\":\"/api/v1/control/users/broker\",\"methods\":[\"GET\"],\"name\":\"get_broker_users\"},{\"path\":\"/api/v1/control/users/broker/{user_id}\",\"methods\":[\"PUT\"],\"name\":\"update_broker_user\"},{\"path\":\"/api/v1/control/users/broker/{user_id}\",\"methods\":[\"DELETE\"],\"name\":\"delete_broker_user\"},{\"path\":\"/api/v1/control/users/broker/initialize\",\"methods\":[\"POST\"],\"name\":\"initialize_users\"},{\"path\":\"/api/v1/control/trading/control\",\"methods\":[\"POST\"],\"name\":\"control_trading\"},{\"path\":\"/api/v1/control/trading/status\",\"methods\":[\"GET\"],\"name\":\"get_trading_status\"},{\"path\":\"/api/v1/control/zerodha-manual/auth-url\",\"methods\":[\"GET\"],\"name\":\"get_zerodha_manual_auth_url\"},{\"path\":\"/api/v1/control/zerodha-manual/status\",\"methods\":[\"GET\"],\"name\":\"get_zerodha_manual_status\"},{\"path\":\"/api/v1/control/zerodha-manual/submit-token\",\"methods\":[\"POST\"],\"name\":\"submit_zerodha_manual_token\"},{\"path\":\"/api/v1/control/zerodha-manual/test\",\"methods\":[\"GET\"],\"name\":\"test_zerodha_manual_system\"},{\"path\":\"/api/v1/autonomous/status\",\"methods\":[\"GET\"],\"name\":\"get_status\"},{\"path\":\"/api/v1/autonomous/reset\",\"methods\":[\"POST\"],\"name\":\"reset_orchestrator\"},{\"path\":\"/api/v1/autonomous/start\",\"methods\":[\"POST\"],\"name\":\"start_trading\"},{\"path\":\"/api/v1/autonomous/stop\",\"methods\":[\"POST\"],\"name\":\"stop_trading\"},{\"path\":\"/api/v1/autonomous/positions\",\"methods\":[\"GET\"],\"name\":\"get_positions\"},{\"path\":\"/api/v1/autonomous/performance\",\"methods\":[\"GET\"],\"name\":\"get_performance\"},{\"path\":\"/api/v1/autonomous/strategies\",\"methods\":[\"GET\"],\"name\":\"get_strategies\"},{\"path\":\"/api/v1/autonomous/risk\",\"methods\":[\"GET\"],\"name\":\"get_risk_metrics\"},{\"path\":\"/api/v1/autonomous/orders\",\"methods\":[\"GET\"],\"name\":\"get_orders\"},{\"path\":\"/api/v1/autonomous/trades\",\"methods\":[\"GET\"],\"name\":\"get_trades\"},{\"path\":\"/api/v1/trades/\",\"methods\":[\"GET\"],\"name\":\"get_all_trades\"},{\"path\":\"/api/v1/trades/live\",\"methods\":[\"GET\"],\"name\":\"get_live_trades\"},{\"path\":\"/api/v1/trades/users/metrics\",\"methods\":[\"GET\"],\"name\":\"get_all_user_metrics\"},{\"path\":\"/api/v1/trades/{trade_id}\",\"methods\":[\"GET\"],\"name\":\"get_trade_details\"},{\"path\":\"/api/v1/trades/users/{user_id}\",\"methods\":[\"GET\"],\"name\":\"get_user_trades\"},{\"path\":\"/api/v1/trades/users/{user_id}/metrics\",\"methods\":[\"GET\"],\"name\":\"get_user_metrics\"},{\"path\":\"/api/v1/orders/\",\"methods\":[\"POST\"],\"name\":\"create_order\"},{\"path\":\"/api/v1/orders/{order_id}\",\"methods\":[\"GET\"],\"name\":\"get_order\"},{\"path\":\"/api/v1/orders/{order_id}\",\"methods\":[\"PUT\"],\"name\":\"update_order\"},{\"path\":\"/api/v1/orders/{order_id}\",\"methods\":[\"DELETE\"],\"name\":\"cancel_order\"},{\"path\":\"/api/v1/orders/users/{user_id}\",\"methods\":[\"GET\"],\"name\":\"get_user_orders\"},{\"path\":\"/api/v1/orders/live\",\"methods\":[\"GET\"],\"name\":\"get_live_orders\"},{\"path\":\"/api/v1/orders/\",\"methods\":[\"GET\"],\"name\":\"get_all_orders\"},{\"path\":\"/api/v1/positions/\",\"methods\":[\"GET\"],\"name\":\"get_all_positions\"},{\"path\":\"/api/v1/positions/users/{user_id}\",\"methods\":[\"GET\"],\"name\":\"get_user_positions\"},{\"path\":\"/api/v1/positions/{position_id}\",\"methods\":[\"GET\"],\"name\":\"get_position\"},{\"path\":\"/api/v1/positions/{position_id}\",\"methods\":[\"PUT\"],\"name\":\"update_position\"},{\"path\":\"/api/v1/positions/\",\"methods\":[\"POST\"],\"name\":\"create_position\"},{\"path\":\"/api/v1/strategies/strategies\",\"methods\":[\"POST\"],\"name\":\"create_strategy\"},{\"path\":\"/api/v1/strategies/strategies\",\"methods\":[\"GET\"],\"name\":\"list_strategies\"},{\"path\":\"/api/v1/strategies/strategies/{strategy_id}\",\"methods\":[\"GET\"],\"name\":\"get_strategy\"},{\"path\":\"/api/v1/strategies/strategies/{strategy_id}\",\"methods\":[\"PUT\"],\"name\":\"update_strategy\"},{\"path\":\"/api/v1/strategies/strategies/{strategy_id}\",\"methods\":[\"DELETE\"],\"name\":\"delete_strategy\"},{\"path\":\"/api/v1/strategies/strategies/{strategy_id}/enable\",\"methods\":[\"POST\"],\"name\":\"enable_strategy\"},{\"path\":\"/api/v1/strategies/strategies/{strategy_id}/disable\",\"methods\":[\"POST\"],\"name\":\"disable_strategy\"},{\"path\":\"/api/v1/strategies/strategies/{strategy_id}/signals\",\"methods\":[\"GET\"],\"name\":\"get_strategy_signals\"},{\"path\":\"/api/v1/strategies/strategies/status\",\"methods\":[\"GET\"],\"name\":\"get_strategies_status\"},{\"path\":\"/api/v1/intelligent-symbols\",\"methods\":[\"GET\"],\"name\":\"get_intelligent_symbols_status\"},{\"path\":\"/api/v1/intelligent-symbols/start\",\"methods\":[\"POST\"],\"name\":\"start_intelligent_symbol_management\"},{\"path\":\"/api/v1/intelligent-symbols/stop\",\"methods\":[\"POST\"],\"name\":\"stop_intelligent_symbol_management\"},{\"path\":\"/api/v1/intelligent-symbols/expand-now\",\"methods\":[\"POST\"],\"name\":\"trigger_symbol_expansion\"},{\"path\":\"/api/v1/intelligent-symbols/active\",\"methods\":[\"GET\"],\"name\":\"get_active_symbols_list\"},{\"path\":\"/api/v1/intelligent-symbols/analytics\",\"methods\":[\"GET\"],\"name\":\"get_symbol_analytics\"},{\"path\":\"/api/v1/intelligent-symbols/manual-add\",\"methods\":[\"POST\"],\"name\":\"manually_add_symbols\"},{\"path\":\"/api/v1/intelligent-symbols/manual-remove\",\"methods\":[\"POST\"],\"name\":\"manually_remove_symbols\"},{\"path\":\"/api/v1/intelligent-symbols/recommendations\",\"methods\":[\"GET\"],\"name\":\"get_symbol_recommendations\"},{\"path\":\"/api/v1/risk/risk/limits\",\"methods\":[\"GET\"],\"name\":\"get_risk_limits\"},{\"path\":\"/api/v1/risk/risk/limits\",\"methods\":[\"PUT\"],\"name\":\"update_risk_limits\"},{\"path\":\"/api/v1/risk/risk/metrics\",\"methods\":[\"GET\"],\"name\":\"get_risk_metrics\"},{\"path\":\"/api/v1/risk/users/{user_id}/risk\",\"methods\":[\"GET\"],\"name\":\"get_user_risk_profile\"},{\"path\":\"/api/v1/risk/risk/hard-stop/reset\",\"methods\":[\"POST\"],\"name\":\"reset_hard_stop\"},{\"path\":\"/api/v1/risk/risk/alerts\",\"methods\":[\"GET\"],\"name\":\"get_risk_alerts\"},{\"path\":\"/api/v1/risk/risk/history\",\"methods\":[\"GET\"],\"name\":\"get_risk_history\"},{\"path\":\"/api/v1/recommendations/\",\"methods\":[\"GET\"],\"name\":\"get_recommendations\"},{\"path\":\"/api/v1/recommendations/{symbol}\",\"methods\":[\"GET\"],\"name\":\"get_symbol_recommendations\"},{\"path\":\"/api/v1/elite/\",\"methods\":[\"GET\"],\"name\":\"get_elite_recommendations\"},{\"path\":\"/api/v1/elite/force-scan\",\"methods\":[\"POST\"],\"name\":\"force_autonomous_scan\"},{\"path\":\"/api/v1/elite/scanner-status\",\"methods\":[\"GET\"],\"name\":\"get_scanner_status\"},{\"path\":\"/api/v1/performance/performance/daily-pnl\",\"methods\":[\"GET\"],\"name\":\"get_daily_pnl\"},{\"path\":\"/api/v1/performance/performance/positions\",\"methods\":[\"GET\"],\"name\":\"get_positions\"},{\"path\":\"/api/v1/performance/performance/trades\",\"methods\":[\"GET\"],\"name\":\"get_trades\"},{\"path\":\"/api/v1/performance/performance/metrics\",\"methods\":[\"GET\"],\"name\":\"get_performance_metrics\"},{\"path\":\"/api/v1/performance/performance/risk\",\"methods\":[\"GET\"],\"name\":\"get_risk_metrics\"},{\"path\":\"/api/v1/monitoring/health\",\"methods\":[\"GET\"],\"name\":\"health_check\"},{\"path\":\"/api/v1/monitoring/liveness\",\"methods\":[\"GET\"],\"name\":\"liveness_check\"},{\"path\":\"/api/v1/monitoring/readiness\",\"methods\":[\"GET\"],\"name\":\"readiness_check\"},{\"path\":\"/api/v1/monitoring/metrics\",\"methods\":[\"GET\"],\"name\":\"get_system_metrics\"},{\"path\":\"/api/v1/monitoring/components\",\"methods\":[\"GET\"],\"name\":\"get_components_status\"},{\"path\":\"/api/v1/monitoring/system-stats\",\"methods\":[\"GET\"],\"name\":\"get_system_stats\"},{\"path\":\"/api/v1/monitoring/trading-status\",\"methods\":[\"GET\"],\"name\":\"get_trading_status\"},{\"path\":\"/api/v1/monitoring/connections\",\"methods\":[\"GET\"],\"name\":\"get_connection_status\"},{\"path\":\"/api/v1/monitoring/performance/elite-trades\",\"methods\":[\"GET\"],\"name\":\"get_elite_performance\"},{\"path\":\"/api/v1/monitoring/performance/summary\",\"methods\":[\"GET\"],\"name\":\"get_performance_summary\"},{\"path\":\"/api/v1/monitoring/daily-pnl\",\"methods\":[\"GET\"],\"name\":\"get_daily_pnl\"},{\"path\":\"/api/v1/monitoring/orchestrator-status\",\"methods\":[\"GET\"],\"name\":\"get_orchestrator_status\"},{\"path\":\"/api/v1/monitoring/api/v1/monitoring/system-status\",\"methods\":[\"GET\"],\"name\":\"get_system_status_legacy\"},{\"path\":\"/api/v1/monitoring/signals/recent\",\"methods\":[\"GET\"],\"name\":\"get_recent_signals\"},{\"path\":\"/api/v1/monitoring/signals/statistics\",\"methods\":[\"GET\"],\"name\":\"get_signal_statistics\"},{\"path\":\"/api/v1/monitoring/signals/failed\",\"methods\":[\"GET\"],\"name\":\"get_failed_signals\"},{\"path\":\"/api/v1/errors/errors/stats\",\"methods\":[\"GET\"],\"name\":\"get_error_statistics\"},{\"path\":\"/api/v1/errors/errors/recent\",\"methods\":[\"GET\"],\"name\":\"get_recent_errors\"},{\"path\":\"/api/v1/errors/errors/types\",\"methods\":[\"GET\"],\"name\":\"get_error_types\"},{\"path\":\"/api/v1/errors/errors/clear\",\"methods\":[\"POST\"],\"name\":\"clear_error_history\"},{\"path\":\"/api/v1/errors/errors/health\",\"methods\":[\"GET\"],\"name\":\"get_error_health\"},{\"path\":\"/api/v1/db-health/database/health\",\"methods\":[\"GET\"],\"name\":\"get_database_health\"},{\"path\":\"/api/v1/db-health/database/stats\",\"methods\":[\"GET\"],\"name\":\"get_database_stats\"},{\"path\":\"/api/v1/db-health/database/optimize\",\"methods\":[\"POST\"],\"name\":\"optimize_database\"},{\"path\":\"/api/v1/db-health/database/slow-queries\",\"methods\":[\"GET\"],\"name\":\"get_slow_queries\"},{\"path\":\"/api/v1/db-health/database/connections\",\"methods\":[\"GET\"],\"name\":\"get_connection_info\"},{\"path\":\"/api/v1/dashboard/health/detailed\",\"methods\":[\"GET\"],\"name\":\"get_detailed_health\"},{\"path\":\"/api/v1/dashboard/trading/metrics\",\"methods\":[\"GET\"],\"name\":\"get_trading_metrics\"},{\"path\":\"/api/v1/dashboard/notifications\",\"methods\":[\"GET\"],\"name\":\"get_system_notifications\"},{\"path\":\"/api/v1/dashboard/dashboard/summary\",\"methods\":[\"GET\"],\"name\":\"get_dashboard_summary\"},{\"path\":\"/api/v1/dashboard/performance/summary\",\"methods\":[\"GET\"],\"name\":\"get_performance_summary\"},{\"path\":\"/api/v1/dashboard/data\",\"methods\":[\"GET\"],\"name\":\"get_dashboard_data\"},{\"path\":\"/api/v1/dashboard/health/detailed\",\"methods\":[\"GET\"],\"name\":\"get_detailed_health\"},{\"path\":\"/api/reports/daily\",\"methods\":[\"GET\"],\"name\":\"get_daily_report\"},{\"path\":\"/api/reports/strategy\",\"methods\":[\"GET\"],\"name\":\"get_strategy_report\"},{\"path\":\"/api/reports/user\",\"methods\":[\"GET\"],\"name\":\"get_user_report\"},{\"path\":\"/api/reports/risk\",\"methods\":[\"GET\"],\"name\":\"get_risk_report\"},{\"path\":\"/api/reports/export/{report_type}\",\"methods\":[\"GET\"],\"name\":\"export_report\"},{\"path\":\"/api/v1/system/status\",\"methods\":[\"GET\"],\"name\":\"get_system_status\"},{\"path\":\"/api/v1/system/logs\",\"methods\":[\"GET\"],\"name\":\"get_system_logs\"},{\"path\":\"/api/v1/system/redis-status\",\"methods\":[\"GET\"],\"name\":\"get_redis_status\"},{\"path\":\"/api/v1/trades/status\",\"methods\":[\"GET\"],\"name\":\"get_trades_status\"},{\"path\":\"/api/v1/broker/status\",\"methods\":[\"GET\"],\"name\":\"get_broker_status\"},{\"path\":\"/api/v1/broker/connect\",\"methods\":[\"GET\"],\"name\":\"get_broker_connection\"},{\"path\":\"/api/v1/broker/connect\",\"methods\":[\"POST\"],\"name\":\"connect_broker\"},{\"path\":\"/api/v1/broker/disconnect\",\"methods\":[\"POST\"],\"name\":\"disconnect_broker\"},{\"path\":\"/api/v1/broker/auth\",\"methods\":[\"GET\"],\"name\":\"get_broker_auth_status\"},{\"path\":\"/api/v1/zerodha/status\",\"methods\":[\"GET\"],\"name\":\"get_zerodha_status\"},{\"path\":\"/api/v1/system/refresh-connections\",\"methods\":[\"POST\"],\"name\":\"refresh_connections\"},{\"path\":\"/api/v1/broker/refresh\",\"methods\":[\"POST\"],\"name\":\"refresh_broker_connection\"},{\"path\":\"/api/v1/strategies/performance\",\"methods\":[\"GET\"],\"name\":\"get_strategies_performance\"},{\"path\":\"/api/v1/system/config\",\"methods\":[\"GET\"],\"name\":\"get_system_config\"},{\"path\":\"/api/v1/system/status\",\"methods\":[\"GET\"],\"name\":\"get_system_status\"},{\"path\":\"/api/v1/system/metrics\",\"methods\":[\"GET\"],\"name\":\"get_system_metrics\"},{\"path\":\"/api/v1/search/symbols\",\"methods\":[\"GET\"],\"name\":\"search_symbols\"},{\"path\":\"/api/v1/search/trades\",\"methods\":[\"GET\"],\"name\":\"search_trades\"},{\"path\":\"/api/v1/search/strategies\",\"methods\":[\"GET\"],\"name\":\"search_strategies\"},{\"path\":\"/api/v1/search/users\",\"methods\":[\"GET\"],\"name\":\"search_users\"},{\"path\":\"/api/v1/search/recommendations\",\"methods\":[\"GET\"],\"name\":\"search_recommendations\"},{\"path\":\"/api/v1/search/global\",\"methods\":[\"GET\"],\"name\":\"global_search\"},{\"path\":\"/api/v1/search/autocomplete\",\"methods\":[\"GET\"],\"name\":\"search_autocomplete\"},{\"path\":\"/api/v1/debug/orchestrator\",\"methods\":[\"GET\"],\"name\":\"get_orchestrator_debug\"},{\"path\":\"/api/v1/debug/force-initialize\",\"methods\":[\"POST\"],\"name\":\"force_initialize_system\"},{\"path\":\"/api/v1/debug/force-enable-trading\",\"methods\":[\"POST\"],\"name\":\"force_enable_trading\"},{\"path\":\"/api/v1/debug/test-state-setting\",\"methods\":[\"POST\"],\"name\":\"test_state_setting\"},{\"path\":\"/api/v1/debug/test-enable-trading\",\"methods\":[\"POST\"],\"name\":\"test_enable_trading_direct\"},{\"path\":\"/api/v1/debug/test-minimal-enable\",\"methods\":[\"POST\"],\"name\":\"test_minimal_enable\"},{\"path\":\"/api/v1/debug/test-bulletproof-deployed\",\"methods\":[\"POST\"],\"name\":\"test_bulletproof_deployed\"},{\"path\":\"/api/v1/debug/test-signal-generation\",\"methods\":[\"GET\"],\"name\":\"test_signal_generation\"},{\"path\":\"/api/v1/debug/initialization-status\",\"methods\":[\"GET\"],\"name\":\"check_initialization_status\"},{\"path\":\"/api/v1/debug/force-initialize\",\"methods\":[\"GET\"],\"name\":\"force_initialize\"},{\"path\":\"/api/v1/debug/check-system-ready-state\",\"methods\":[\"GET\"],\"name\":\"check_system_ready_state\"},{\"path\":\"/api/v1/debug/debug-initialization-steps\",\"methods\":[\"GET\"],\"name\":\"debug_initialization_steps\"},{\"path\":\"/api/v1/debug/redis-test\",\"methods\":[\"GET\"],\"name\":\"test_redis_connection\"},{\"path\":\"/api/v1/debug/orchestrator-debug\",\"methods\":[\"GET\"],\"name\":\"debug_orchestrator_components\"},{\"path\":\"/api/v1/orchestrator/debug\",\"methods\":[\"GET\"],\"name\":\"debug_orchestrator_initialization\"},{\"path\":\"/api/v1/orchestrator/dependencies\",\"methods\":[\"GET\"],\"name\":\"check_dependencies\"},{\"path\":\"/api/zerodha/login\",\"methods\":[\"POST\"],\"name\":\"initiate_login\"},{\"path\":\"/api/zerodha/callback\",\"methods\":[\"GET\"],\"name\":\"handle_callback\"},{\"path\":\"/api/zerodha/status/{user_id}\",\"methods\":[\"GET\"],\"name\":\"check_auth_status\"},{\"path\":\"/api/zerodha/logout/{user_id}\",\"methods\":[\"POST\"],\"name\":\"logout\"},{\"path\":\"/api/zerodha/profile/{user_id}\",\"methods\":[\"GET\"],\"name\":\"get_profile\"},{\"path\":\"/api/v1/api/v1/token-diagnostic/status\",\"methods\":[\"GET\"],\"name\":\"get_token_diagnostic_status\"},{\"path\":\"/api/v1/api/v1/token-diagnostic/repair\",\"methods\":[\"POST\"],\"name\":\"repair_token_issue\"},{\"path\":\"/api/v1/api/v1/token-diagnostic/orchestrator-debug\",\"methods\":[\"GET\"],\"name\":\"debug_orchestrator_token_access\"},{\"path\":\"/api/v1/webhooks/webhooks/generic\",\"methods\":[\"POST\"],\"name\":\"receive_webhook\"},{\"path\":\"/api/v1/webhooks/webhooks/market-data\",\"methods\":[\"POST\"],\"name\":\"receive_market_data\"},{\"path\":\"/api/v1/webhooks/webhooks/zerodha/order-update\",\"methods\":[\"POST\"],\"name\":\"receive_zerodha_order_update\"},{\"path\":\"/api/v1/webhooks/webhooks/zerodha/position-update\",\"methods\":[\"POST\"],\"name\":\"receive_zerodha_position_update\"},{\"path\":\"/api/v1/webhooks/webhooks/zerodha\",\"methods\":[\"POST\"],\"name\":\"receive_zerodha_webhook\"},{\"path\":\"/api/v1/webhooks/webhooks/news-feed\",\"methods\":[\"POST\"],\"name\":\"receive_news\"},{\"path\":\"/api/v1/webhooks/webhooks/system-health\",\"methods\":[\"POST\"],\"name\":\"receive_health_update\"},{\"path\":\"/api/v1/webhooks/n8n\",\"methods\":[\"POST\"],\"name\":\"n8n_webhook\"},{\"path\":\"/api/v1/webhooks/webhooks/risk-alert\",\"methods\":[\"POST\"],\"name\":\"receive_risk_alert\"},{\"path\":\"/api/v1/webhooks/webhooks/compliance-update\",\"methods\":[\"POST\"],\"name\":\"receive_compliance_update\"},{\"path\":\"/api\",\"methods\":[\"GET\"],\"name\":\"api_root\"},{\"path\":\"/api/routes\",\"methods\":[\"GET\"],\"name\":\"list_routes\"},{\"path\":\"/api/v1/dashboard/summary\",\"methods\":[\"GET\"],\"name\":\"redirect_dashboard_summary\"},{\"path\":\"/api/auth/login\",\"methods\":[\"POST\"],\"name\":\"redirect_login\"},{\"path\":\"/api/auth/me\",\"methods\":[\"GET\"],\"name\":\"redirect_me\"},{\"path\":\"/api/v1/market/indices\",\"methods\":[\"GET\"],\"name\":\"legacy_market_indices\"},{\"path\":\"/api/v1/monitoring/system-status\",\"methods\":[\"GET\"],\"name\":\"legacy_system_status\"},{\"path\":\"/api/v1/positions\",\"methods\":[\"GET\"],\"name\":\"get_positions_direct\"},{\"path\":\"/api/v1/orders\",\"methods\":[\"GET\"],\"name\":\"get_orders_direct\"},{\"path\":\"/api/v1/holdings\",\"methods\":[\"GET\"],\"name\":\"get_holdings_direct\"},{\"path\":\"/api/v1/margins\",\"methods\":[\"GET\"],\"name\":\"get_margins_direct\"},{\"path\":\"/api/v1/elite\",\"methods\":[\"GET\"],\"name\":\"get_elite_recommendations_direct\"},{\"path\":\"/api/v1/market-data\",\"methods\":[\"GET\"],\"name\":\"get_all_market_data_direct\"},{\"path\":\"/api/v1/signals/recent\",\"methods\":[\"GET\"],\"name\":\"get_recent_signals_direct\"},{\"path\":\"/api/v1/autonomous/force-activate\",\"methods\":[\"POST\"],\"name\":\"force_activate_autonomous_trading\"},{\"path\":\"/api/v1/users/performance\",\"methods\":[\"GET\"],\"name\":\"get_users_performance\"},{\"path\":\"/api/v1/search\",\"methods\":[\"GET\"],\"name\":\"search_endpoint\"},{\"path\":\"/api/v1/trading/status\",\"methods\":[\"GET\"],\"name\":\"trading_status_endpoint\"},{\"path\":\"/api/v1/trades\",\"methods\":[\"GET\"],\"name\":\"redirect_trades\"},{\"path\":\"/api/v1/strategies\",\"methods\":[\"GET\"],\"name\":\"redirect_strategies\"},{\"path\":\"/api/v1/users\",\"methods\":[\"GET\"],\"name\":\"redirect_users\"},{\"path\":\"/api/market/indices\",\"methods\":[\"GET\"],\"name\":\"get_market_indices\"},{\"path\":\"/api/v1/orchestrator/start\",\"methods\":[\"POST\"],\"name\":\"start_orchestrator\"},{\"path\":\"/api/v1/orchestrator/status\",\"methods\":[\"GET\"],\"name\":\"get_orchestrator_status\"},{\"path\":\"/api/v1/orchestrator/force-start\",\"methods\":[\"POST\"],\"name\":\"force_start_orchestrator\"},{\"path\":\"/api/v1/orchestrator/test-signals\",\"methods\":[\"GET\"],\"name\":\"test_signal_generation\"}],\"health_routes\":[{\"path\":\"/health\",\"methods\":[\"GET\"],\"name\":\"health_check\"},{\"path\":\"/ready\",\"methods\":[\"GET\"],\"name\":\"ready_check\"},{\"path\":\"/health/ready/json\",\"methods\":[\"GET\"],\"name\":\"health_ready_json\"},{\"path\":\"/ready\",\"methods\":[\"GET\"],\"name\":\"readiness_check\"},{\"path\":\"/api/v1/monitoring/health\",\"methods\":[\"GET\"],\"name\":\"health_check\"},{\"path\":\"/api/v1/errors/errors/health\",\"methods\":[\"GET\"],\"name\":\"get_error_health\"},{\"path\":\"/api/v1/db-health/database/health\",\"methods\":[\"GET\"],\"name\":\"get_database_health\"},{\"path\":\"/api/v1/db-health/database/stats\",\"methods\":[\"GET\"],\"name\":\"get_database_stats\"},{\"path\":\"/api/v1/db-health/database/optimize\",\"methods\":[\"POST\"],\"name\":\"optimize_database\"},{\"path\":\"/api/v1/db-health/database/slow-queries\",\"methods\":[\"GET\"],\"name\":\"get_slow_queries\"},{\"path\":\"/api/v1/db-health/database/connections\",\"methods\":[\"GET\"],\"name\":\"get_connection_info\"},{\"path\":\"/api/v1/dashboard/health/detailed\",\"methods\":[\"GET\"],\"name\":\"get_detailed_health\"},{\"path\":\"/api/v1/dashboard/health/detailed\",\"methods\":[\"GET\"],\"name\":\"get_detailed_health\"},{\"path\":\"/api/v1/webhooks/webhooks/system-health\",\"methods\":[\"POST\"],\"name\":\"receive_health_update\"}],\"login_endpoint\":\"/auth/login\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:37.397Z"
+    },
+    {
+      "endpoint": "/",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 63,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "content-type": "text/html; charset=utf-8",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "last-modified": "Fri, 18 Jul 2025 08:15:24 GMT",
+        "x-rgw-object-type": "Normal",
+        "x-amz-request-id": "tx00000c8a12565f4bb5fc4-00687a04aa-82aee659-sfo3a",
+        "cache-control": "public,max-age=10,s-maxage=86400",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "x-do-static-catchall-document": "index.html",
+        "x-do-orig-status": "200",
+        "cf-cache-status": "HIT",
+        "accept-ranges": "bytes",
+        "set-cookie": [
+          "__cf_bm=Dye4AE2C6xfhlJouKjFZPeVogAvlht.DWwHDp2mZMpU-1752831037-1.0.1.1-ssLuLL.EZj8XFe6uJ4vZJ.3b3WVFuQE2mNBX25CDpDt0P__D8ZQkht0TnXM6TjWZENLqXs_nLs2VMOakzS0lMou5xLX14btltA00XH9Ciq8; path=/; expires=Fri, 18-Jul-25 10:00:37 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f6207b3a48e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": "<!DOCTYPE html>\n<html lang=\"en\">\n\n<head>\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.ico\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>AI Trading System</title>\n    <meta name=\"description\" content=\"Advanced AI-powered trading system with real-time market analysis\" />\n    <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n    <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n    <link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap\"\n        rel=\"stylesheet\" />\n    <link href=\"https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap\" rel=\"stylesheet\">\n  <script type=\"module\" crossorigin src=\"/assets/index.lCIXDwfY.js\"></script>\n  <link rel=\"modulepreload\" crossorigin href=\"/assets/vendor.Cr2nE3UY.js\">\n  <link rel=\"modulepreload\" crossorigin href=\"/assets/mui.DCC_W-LO.js\">\n  <link rel=\"stylesheet\" crossorigin href=\"/assets/index.C67CIsd0.css\">\n</head>\n\n<body>\n    <div id=\"root\"></div>\n</body>\n\n</html>",
+      "rawData": "<!DOCTYPE html>\n<html lang=\"en\">\n\n<head>\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.ico\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>AI Trading System</title>\n    <meta name=\"description\" content=\"Advanced AI-powered trading system with real-time market analysis\" />\n    <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n    <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n    <link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap\"\n        rel=\"stylesheet\" />\n    <link href=\"https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap\" rel=\"stylesheet\">\n  <script type=\"module\" crossorigin src=\"/assets/index.lCIXDwfY.js\"></script>\n  <link rel=\"modulepreload\" crossorigin href=\"/assets/vendor.Cr2nE3UY.js\">\n  <link rel=\"modulepreload\" crossorigin href=\"/assets/mui.DCC_W-LO.js\">\n  <link rel=\"stylesheet\" crossorigin href=\"/assets/index.C67CIsd0.css\">\n</head>\n\n<body>\n    <div id=\"root\"></div>\n</body>\n\n</html>",
+      "parseError": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON",
+      "timestamp": "2025-07-18T09:30:37.463Z"
+    },
+    {
+      "endpoint": "/api",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 115,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=ycAwKfnWnmLosKv0Sk4IjxuV9ZCqmTs6BloguMhe598-1752831037-1.0.1.1-S9iCpTlwz2_uSoS55y2ayYwUrkjHp1Ssiu.juKvJbc9vhgBZGTLSikEwVyO06LmY8cs4dPZQ2C6f7tCF6NRynjCKu4mvETUaApklAhSVpFw; path=/; expires=Fri, 18-Jul-25 10:00:37 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f620ebb748e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "name": "AlgoAuto Trading System API",
+        "version": "4.2.0",
+        "available_versions": [
+          "v1"
+        ],
+        "endpoints": {
+          "v1": "/api/v1",
+          "health": "/health",
+          "auth": "/auth",
+          "docs": "/docs",
+          "routes": "/api/routes"
+        },
+        "status": "operational",
+        "debug": {
+          "user_agent": "AlgoAuto-Debug-Tool/1.0",
+          "accept": "application/json",
+          "timestamp": "2025-07-18T09:30:37.675905"
+        }
+      },
+      "rawData": "{\"name\":\"AlgoAuto Trading System API\",\"version\":\"4.2.0\",\"available_versions\":[\"v1\"],\"endpoints\":{\"v1\":\"/api/v1\",\"health\":\"/health\",\"auth\":\"/auth\",\"docs\":\"/docs\",\"routes\":\"/api/routes\"},\"status\":\"operational\",\"debug\":{\"user_agent\":\"AlgoAuto-Debug-Tool/1.0\",\"accept\":\"application/json\",\"timestamp\":\"2025-07-18T09:30:37.675905\"}}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:37.580Z"
+    },
+    {
+      "endpoint": "/auth/me",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 99,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=CSgCs4ksVXk0sdmfSQiP2tcmbblFdsyrziiQv1Rcgcs-1752831037-1.0.1.1-OHAy3CZklOc4FT6dFULFw_ziVEz3TaH3ogpjJJ9chnpIOXRjRCorlkY_JNxiYi0_4apVLfakh6SKpDyVe8zVpl2lPoxteO_yY3zm8kdnb5U; path=/; expires=Fri, 18-Jul-25 10:00:37 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f621ac8648e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "authenticated": false,
+        "user": null,
+        "message": "Not authenticated - using guest mode",
+        "status": "unauthenticated"
+      },
+      "rawData": "{\"authenticated\":false,\"user\":null,\"message\":\"Not authenticated - using guest mode\",\"status\":\"unauthenticated\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:37.681Z"
+    },
+    {
+      "endpoint": "/auth/zerodha/status",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 103,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=Ips1RIzbw37RaWHTYcibdQ5CamKkz.3HnLBLQe.fjCI-1752831037-1.0.1.1-J3UeSIuaPL8SkVAuarLkorDTLwgVXOExjMVnreZgl1hxpTpXsOfVdaCXtiLASYJ4ssDwKqwY2keiXwjz4vcg.XXQzyGe3RxzvWda8gZVOF0; path=/; expires=Fri, 18-Jul-25 10:00:37 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f6224d2748e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "authenticated": true,
+        "user_id": "PAPER_TRADER_001",
+        "session": {
+          "user_id": "PAPER_TRADER_001",
+          "access_token": true,
+          "login_time": "2025-07-18T08:24:56.309625",
+          "expires_at": "2025-07-18T16:24:56.309628",
+          "valid": true,
+          "profile": {
+            "user_id": "QSW899",
+            "user_type": "individual/res_no_nn",
+            "email": "ranchissi@gmail.com",
+            "user_name": "Shyam Anurag",
+            "user_shortname": "Shyam",
+            "broker": "ZERODHA",
+            "exchanges": [
+              "MF",
+              "NSE",
+              "BSE"
+            ],
+            "products": [
+              "CNC",
+              "NRML",
+              "MIS",
+              "BO",
+              "CO"
+            ],
+            "order_types": [
+              "MARKET",
+              "LIMIT",
+              "SL",
+              "SL-M"
+            ],
+            "avatar_url": null,
+            "meta": {
+              "demat_consent": "consent"
+            }
+          }
+        },
+        "message": "Authentication active and valid",
+        "actions": [
+          "refresh",
+          "logout"
+        ]
+      },
+      "rawData": "{\"success\":true,\"authenticated\":true,\"user_id\":\"PAPER_TRADER_001\",\"session\":{\"user_id\":\"PAPER_TRADER_001\",\"access_token\":true,\"login_time\":\"2025-07-18T08:24:56.309625\",\"expires_at\":\"2025-07-18T16:24:56.309628\",\"valid\":true,\"profile\":{\"user_id\":\"QSW899\",\"user_type\":\"individual/res_no_nn\",\"email\":\"ranchissi@gmail.com\",\"user_name\":\"Shyam Anurag\",\"user_shortname\":\"Shyam\",\"broker\":\"ZERODHA\",\"exchanges\":[\"MF\",\"NSE\",\"BSE\"],\"products\":[\"CNC\",\"NRML\",\"MIS\",\"BO\",\"CO\"],\"order_types\":[\"MARKET\",\"LIMIT\",\"SL\",\"SL-M\"],\"avatar_url\":null,\"meta\":{\"demat_consent\":\"consent\"}}},\"message\":\"Authentication active and valid\",\"actions\":[\"refresh\",\"logout\"]}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:37.785Z"
+    },
+    {
+      "endpoint": "/api/v1/autonomous/status",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 99,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:37 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=Ya6P8E9YKaB3PAML9WvnMkJi4obuf4s06stacIs7QVs-1752831037-1.0.1.1-7S7kPFVpq3Jc24F_wDLiAG9F5.5Uk_mWDJ0kF6aNYs9zST_T1upk7y3sDYplZ187AH3dQhW21Vne0O0C9iiL3Bn38aG_DMKnuc2pgEw_xH0; path=/; expires=Fri, 18-Jul-25 10:00:37 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f622fe0948e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "message": "Trading status retrieved successfully",
+        "data": {
+          "is_active": true,
+          "session_id": "session_1752827135",
+          "start_time": "2025-07-18T08:25:35.311132",
+          "last_heartbeat": "2025-07-18T09:30:37.980047",
+          "active_strategies": [
+            "momentum_surfer",
+            "volatility_explosion",
+            "volume_profile_scalper",
+            "regime_adaptive_controller",
+            "confluence_amplifier"
+          ],
+          "active_strategies_count": 5,
+          "active_positions": 1,
+          "total_trades": 0,
+          "daily_pnl": 0,
+          "risk_status": {
+            "max_daily_loss": 100000,
+            "max_position_size": 1000000,
+            "current_positions": 1,
+            "daily_pnl": 0,
+            "status": "degraded"
+          },
+          "market_status": "OPEN",
+          "system_ready": false,
+          "timestamp": "2025-07-18T09:30:37.980061"
+        }
+      },
+      "rawData": "{\"success\":true,\"message\":\"Trading status retrieved successfully\",\"data\":{\"is_active\":true,\"session_id\":\"session_1752827135\",\"start_time\":\"2025-07-18T08:25:35.311132\",\"last_heartbeat\":\"2025-07-18T09:30:37.980047\",\"active_strategies\":[\"momentum_surfer\",\"volatility_explosion\",\"volume_profile_scalper\",\"regime_adaptive_controller\",\"confluence_amplifier\"],\"active_strategies_count\":5,\"active_positions\":1,\"total_trades\":0,\"daily_pnl\":0.0,\"risk_status\":{\"max_daily_loss\":100000,\"max_position_size\":1000000,\"current_positions\":1,\"daily_pnl\":0.0,\"status\":\"degraded\"},\"market_status\":\"OPEN\",\"system_ready\":false,\"timestamp\":\"2025-07-18T09:30:37.980061\"}}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:37.887Z"
+    },
+    {
+      "endpoint": "/api/v1/positions",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 107,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=6Xnrq1zMobyu0CxewCiKN24SbMq1Ko3yaNph6n5VxTo-1752831038-1.0.1.1-tEmFFjZLNI7l71EQYrhGp4EZ1M6crHF_cEyVqJsdbMstLYDuyHX04UrzxihbZd3qRsRBztRg7w9W8qUCBimXshk.ZjDyd2m0D1BgGUJzPFs; path=/; expires=Fri, 18-Jul-25 10:00:38 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f623bf1e48e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "positions": [],
+        "message": "No active positions - system ready for trading",
+        "count": 0,
+        "data_source": "REAL_POSITION_TRACKER",
+        "timestamp": "2025-07-18T09:30:38.098238"
+      },
+      "rawData": "{\"success\":true,\"positions\":[],\"message\":\"No active positions - system ready for trading\",\"count\":0,\"data_source\":\"REAL_POSITION_TRACKER\",\"timestamp\":\"2025-07-18T09:30:38.098238\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:37.998Z"
+    },
+    {
+      "endpoint": "/api/v1/orders",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 230,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=dDGtQX0CfVghJgunWvNnVeDFfzWXA.1gvqGUmj2FUDk-1752831038-1.0.1.1-F15la02WN24RUyQMP9.TmWmWabMaeCjMcKGtWjUkYcg4DJYrA2H2YXURa7KJNoLAh2ECXBRHM9CvzFfta_OkIzeOpGCtxAUhVPBSeNQOqxA; path=/; expires=Fri, 18-Jul-25 10:00:38 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f6244fe848e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "orders": [],
+        "message": "Found 0 orders for today",
+        "timestamp": "2025-07-18T09:30:38.254409"
+      },
+      "rawData": "{\"success\":true,\"orders\":[],\"message\":\"Found 0 orders for today\",\"timestamp\":\"2025-07-18T09:30:38.254409\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:38.231Z"
+    },
+    {
+      "endpoint": "/api/v1/elite",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 122,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=Dz9GF9I0wKih2cuKVjqqBCQieFiNu2O.E7IyeZW3Mtw-1752831038-1.0.1.1-uNctRTuQvW8uTUsH7LP7eYNLFbNLfxX0Fk0LAC9xqSBdXYTJ5cHqZJI0Wx.CuhjNgZZ8YYxoGl0052J0BJaeC58K.TkjWZHnJMt9xgKp.vg; path=/; expires=Fri, 18-Jul-25 10:00:38 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f625b98948e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "recommendations": [],
+        "total_count": 0,
+        "status": "ACTIVE",
+        "message": "Found 0 VERIFIED elite trading opportunities",
+        "data_source": "REAL_MARKET_DATA_VERIFIED",
+        "scan_timestamp": "2025-07-18T09:30:38.452697",
+        "timestamp": "2025-07-18T09:30:38.452838",
+        "next_scan": "2025-07-18T09:31:08.452841",
+        "safety_check": "DIRECT_ENDPOINT_BYPASS"
+      },
+      "rawData": "{\"success\":true,\"recommendations\":[],\"total_count\":0,\"status\":\"ACTIVE\",\"message\":\"Found 0 VERIFIED elite trading opportunities\",\"data_source\":\"REAL_MARKET_DATA_VERIFIED\",\"scan_timestamp\":\"2025-07-18T09:30:38.452697\",\"timestamp\":\"2025-07-18T09:30:38.452838\",\"next_scan\":\"2025-07-18T09:31:08.452841\",\"safety_check\":\"DIRECT_ENDPOINT_BYPASS\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:38.355Z"
+    },
+    {
+      "endpoint": "/api/v1/intelligent-symbols",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 100,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=.O.sZMm4ZZAm1cfux4ojL0.p0O3N8QRPP_7XngS7CiA-1752831038-1.0.1.1-h8kG8ByLZdrAW7cWhss_JuG2l298E5nqWRTNMouZk9SDEtfDf_x8cQ47Mx17RuqSi_R2CNwQCp_RtSvSaatZ59AbyfpYo.Sh..y2rUigg84; path=/; expires=Fri, 18-Jul-25 10:00:38 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f6267a6548e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "data": {
+          "status": {
+            "is_running": true,
+            "active_symbols": 0,
+            "max_symbols": 250,
+            "symbol_utilization": "0/250",
+            "core_indices": 0,
+            "priority_stocks": 0,
+            "options": 0,
+            "last_refresh": "2025-07-18T09:30:38.565259"
+          },
+          "symbol_breakdown": {
+            "core_indices": [],
+            "priority_stocks": [],
+            "options": [],
+            "other": []
+          },
+          "expansion_progress": {
+            "current": 0,
+            "target": 250,
+            "remaining_capacity": 250,
+            "percentage": 0
+          },
+          "active_symbols": [],
+          "total_symbols": 0
+        },
+        "timestamp": "2025-07-18T09:30:38.565286"
+      },
+      "rawData": "{\"success\":true,\"data\":{\"status\":{\"is_running\":true,\"active_symbols\":0,\"max_symbols\":250,\"symbol_utilization\":\"0/250\",\"core_indices\":0,\"priority_stocks\":0,\"options\":0,\"last_refresh\":\"2025-07-18T09:30:38.565259\"},\"symbol_breakdown\":{\"core_indices\":[],\"priority_stocks\":[],\"options\":[],\"other\":[]},\"expansion_progress\":{\"current\":0,\"target\":250,\"remaining_capacity\":250,\"percentage\":0.0},\"active_symbols\":[],\"total_symbols\":0},\"timestamp\":\"2025-07-18T09:30:38.565286\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:38.458Z"
+    },
+    {
+      "endpoint": "/api/market/indices",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 124,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=luAfvU1tdnPIUDVh9Puj2crmqCUNziaDnpnG5ExGOJA-1752831038-1.0.1.1-isyJaTQXLCq0AEnDhayvLYly776SGDRJ6z.XJdxqAgjFAaKxhEAQ7tKJ6bAMa7qlH0HYABfzFICRRqHKLA6m7KeDetXiDfn.x56F9lGSRy8; path=/; expires=Fri, 18-Jul-25 10:00:38 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f6271b2448e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "message": "Market indices data retrieved successfully",
+        "data": {
+          "indices": [
+            {
+              "symbol": "NIFTY",
+              "name": "NIFTY 50",
+              "last_price": 25036.4,
+              "price": 25036.4,
+              "change": -138.2,
+              "change_percent": -0.55,
+              "high": 25086.47,
+              "low": 24986.33,
+              "open": 25011.36,
+              "volume": 4399425,
+              "status": "LIVE_TRUEDATA",
+              "last_update": "2025-07-18T09:30:35.279759",
+              "data_age_seconds": 0,
+              "heartbeat": false
+            },
+            {
+              "symbol": "BANKNIFTY",
+              "name": "BANK NIFTY",
+              "last_price": 56480,
+              "price": 56480,
+              "change": -493.4,
+              "change_percent": -0.87,
+              "high": 56592.96,
+              "low": 56367.04,
+              "open": 56423.52,
+              "volume": 1136905,
+              "status": "LIVE_TRUEDATA",
+              "last_update": "2025-07-18T09:30:35.865747",
+              "data_age_seconds": 0,
+              "heartbeat": false
+            }
+          ],
+          "market_status": "OPEN",
+          "provider": "TrueData",
+          "last_update": "2025-07-18T15:00:38.689888+05:30",
+          "timestamp": "2025-07-18 15:00:38 IST",
+          "truedata_connection": {
+            "symbols_available": 51,
+            "nifty_available": true,
+            "banknifty_available": true,
+            "live_data_symbols": [
+              "JSWSTEEL",
+              "ICICIBANK",
+              "HINDUNILVR",
+              "RELIANCE",
+              "SBIN",
+              "KOTAKBANK",
+              "BHARTIARTL",
+              "NIFTY-I",
+              "AXISBANK",
+              "HDFCBANK",
+              "ADANIPOWER",
+              "INFY",
+              "ASIANPAINT",
+              "NTPC",
+              "BANKNIFTY-I",
+              "WIPRO",
+              "TCS",
+              "M&M",
+              "BAJAJ-AUTO",
+              "TATAMOTORS",
+              "COALINDIA",
+              "BAJFINANCE",
+              "HINDALCO",
+              "TATASTEEL",
+              "HCLTECH",
+              "CIPLA",
+              "NESTLEIND",
+              "APOLLOHOSP",
+              "DABUR",
+              "INDIGO",
+              "HEROMOTOCO",
+              "TECHM",
+              "POWERGRID",
+              "BAJAJFINSV",
+              "BRITANNIA",
+              "ADANIPORTS",
+              "DRREDDY",
+              "MARUTI",
+              "LT",
+              "VEDL",
+              "TITAN",
+              "SUNPHARMA",
+              "ITC",
+              "MIDCPNIFTY-I",
+              "EICHERMOT",
+              "ULTRACEMCO",
+              "TVSMOTOR",
+              "ADANIGREEN",
+              "GODREJCP",
+              "FINNIFTY-I",
+              "DIVISLAB"
+            ],
+            "connection_healthy": true,
+            "heartbeat_age_seconds": 0,
+            "data_flowing": true,
+            "total_symbols": 51,
+            "market_open": true,
+            "data_source": "LIVE"
+          }
+        },
+        "timestamp": "2025-07-18T08:16:52.885076"
+      },
+      "rawData": "{\"success\":true,\"message\":\"Market indices data retrieved successfully\",\"data\":{\"indices\":[{\"symbol\":\"NIFTY\",\"name\":\"NIFTY 50\",\"last_price\":25036.4,\"price\":25036.4,\"change\":-138.2,\"change_percent\":-0.55,\"high\":25086.47,\"low\":24986.33,\"open\":25011.36,\"volume\":4399425,\"status\":\"LIVE_TRUEDATA\",\"last_update\":\"2025-07-18T09:30:35.279759\",\"data_age_seconds\":0.0,\"heartbeat\":false},{\"symbol\":\"BANKNIFTY\",\"name\":\"BANK NIFTY\",\"last_price\":56480.0,\"price\":56480.0,\"change\":-493.4,\"change_percent\":-0.87,\"high\":56592.96,\"low\":56367.04,\"open\":56423.52,\"volume\":1136905,\"status\":\"LIVE_TRUEDATA\",\"last_update\":\"2025-07-18T09:30:35.865747\",\"data_age_seconds\":0.0,\"heartbeat\":false}],\"market_status\":\"OPEN\",\"provider\":\"TrueData\",\"last_update\":\"2025-07-18T15:00:38.689888+05:30\",\"timestamp\":\"2025-07-18 15:00:38 IST\",\"truedata_connection\":{\"symbols_available\":51,\"nifty_available\":true,\"banknifty_available\":true,\"live_data_symbols\":[\"JSWSTEEL\",\"ICICIBANK\",\"HINDUNILVR\",\"RELIANCE\",\"SBIN\",\"KOTAKBANK\",\"BHARTIARTL\",\"NIFTY-I\",\"AXISBANK\",\"HDFCBANK\",\"ADANIPOWER\",\"INFY\",\"ASIANPAINT\",\"NTPC\",\"BANKNIFTY-I\",\"WIPRO\",\"TCS\",\"M&M\",\"BAJAJ-AUTO\",\"TATAMOTORS\",\"COALINDIA\",\"BAJFINANCE\",\"HINDALCO\",\"TATASTEEL\",\"HCLTECH\",\"CIPLA\",\"NESTLEIND\",\"APOLLOHOSP\",\"DABUR\",\"INDIGO\",\"HEROMOTOCO\",\"TECHM\",\"POWERGRID\",\"BAJAJFINSV\",\"BRITANNIA\",\"ADANIPORTS\",\"DRREDDY\",\"MARUTI\",\"LT\",\"VEDL\",\"TITAN\",\"SUNPHARMA\",\"ITC\",\"MIDCPNIFTY-I\",\"EICHERMOT\",\"ULTRACEMCO\",\"TVSMOTOR\",\"ADANIGREEN\",\"GODREJCP\",\"FINNIFTY-I\",\"DIVISLAB\"],\"connection_healthy\":true,\"heartbeat_age_seconds\":0,\"data_flowing\":true,\"total_symbols\":51,\"market_open\":true,\"data_source\":\"LIVE\"}},\"timestamp\":\"2025-07-18T08:16:52.885076\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:38.584Z"
+    },
+    {
+      "endpoint": "/api/market/market-status",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 120,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=DnZirT7J6cJSIfv8fFPKlwUgQ.mo1O_VzpglRT45yWM-1752831038-1.0.1.1-hkcFkWVbzZvYYXiYVhacb2wCZ45Mg4oNoYjsx2qjryrAQnAA4Yiy8otL7ZtjEQxli3Dl8iPkS6Vy82AE3tDJGb26zOyD8p_3pqe9_mDymqQ; path=/; expires=Fri, 18-Jul-25 10:00:38 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f627ebe548e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "message": "Market is currently OPEN",
+        "data": {
+          "market_status": "OPEN",
+          "market_phase": "NORMAL",
+          "current_time": "2025-07-18T15:00:38.794048+05:30",
+          "timezone": "Asia/Kolkata",
+          "ist_time": "2025-07-18 15:00:38 IST",
+          "market_open": "09:15",
+          "market_close": "15:30",
+          "is_trading_hours": true,
+          "timings": {
+            "pre_open": "09:00 - 09:15",
+            "normal": "09:15 - 15:30",
+            "post_close": "15:30 - 16:00",
+            "closed": "16:00 - 09:00"
+          },
+          "is_trading_day": true,
+          "data_provider": {
+            "name": "TrueData Enhanced",
+            "status": "CONNECTED",
+            "user": "tdwsp697",
+            "connection_healthy": true,
+            "heartbeat_age_seconds": 999,
+            "data_flowing": true
+          }
+        },
+        "timestamp": "2025-07-18T08:16:52.885076"
+      },
+      "rawData": "{\"success\":true,\"message\":\"Market is currently OPEN\",\"data\":{\"market_status\":\"OPEN\",\"market_phase\":\"NORMAL\",\"current_time\":\"2025-07-18T15:00:38.794048+05:30\",\"timezone\":\"Asia/Kolkata\",\"ist_time\":\"2025-07-18 15:00:38 IST\",\"market_open\":\"09:15\",\"market_close\":\"15:30\",\"is_trading_hours\":true,\"timings\":{\"pre_open\":\"09:00 - 09:15\",\"normal\":\"09:15 - 15:30\",\"post_close\":\"15:30 - 16:00\",\"closed\":\"16:00 - 09:00\"},\"is_trading_day\":true,\"data_provider\":{\"name\":\"TrueData Enhanced\",\"status\":\"CONNECTED\",\"user\":\"tdwsp697\",\"connection_healthy\":true,\"heartbeat_age_seconds\":999,\"data_flowing\":true}},\"timestamp\":\"2025-07-18T08:16:52.885076\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:38.707Z"
+    },
+    {
+      "endpoint": "/api/v1/market-data/NIFTY",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 109,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:38 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=YmsSGlkgEM0cC2DMTTHGLQIax9yvdHOx47Uea2lv_0A-1752831038-1.0.1.1-.C.887GD1jmDDPCy9tBhlKwURhUkBoJtrnFYVMCmCq5ZV9wCWDD6X1__YCZSBvdREc8XoIi2Tr7ZES.ZayVjOR6U.bQW1lLQ2.HB4QAKZRY; path=/; expires=Fri, 18-Jul-25 10:00:38 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f628bce348e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "symbol": "NIFTY",
+        "timeframe": "1min",
+        "data": {
+          "symbol": "NIFTY-I",
+          "ltp": 25036.4,
+          "close": 25036.4,
+          "high": 25086.472800000003,
+          "low": 24986.3272,
+          "open": 25011.3636,
+          "volume": 4399425,
+          "change": -138.1999999999971,
+          "changeper": -0.5489660213071791,
+          "change_percent": -0.5489660213071791,
+          "bid": 0,
+          "ask": 0,
+          "timestamp": "2025-07-18T09:30:35.279759",
+          "source": "TrueData_Live",
+          "deployment_id": "deploy_1752826614_50e0393b",
+          "data_quality": {
+            "has_ohlc": true,
+            "has_volume": true,
+            "has_change_percent": true,
+            "calculated_change_percent": true
+          }
+        },
+        "timestamp": "2025-07-18T09:30:38.924250",
+        "source": "truedata_proxy"
+      },
+      "rawData": "{\"success\":true,\"symbol\":\"NIFTY\",\"timeframe\":\"1min\",\"data\":{\"symbol\":\"NIFTY-I\",\"ltp\":25036.4,\"close\":25036.4,\"high\":25086.472800000003,\"low\":24986.3272,\"open\":25011.3636,\"volume\":4399425.0,\"change\":-138.1999999999971,\"changeper\":-0.5489660213071791,\"change_percent\":-0.5489660213071791,\"bid\":0,\"ask\":0,\"timestamp\":\"2025-07-18T09:30:35.279759\",\"source\":\"TrueData_Live\",\"deployment_id\":\"deploy_1752826614_50e0393b\",\"data_quality\":{\"has_ohlc\":true,\"has_volume\":true,\"has_change_percent\":true,\"calculated_change_percent\":true}},\"timestamp\":\"2025-07-18T09:30:38.924250\",\"source\":\"truedata_proxy\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:38.818Z"
+    },
+    {
+      "endpoint": "/api/v1/dashboard/summary",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 132,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:39 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:39 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=u.PjmvZkgO_f71DSLTgSoDONIMMj2d82MD0m8IQYEU8-1752831039-1.0.1.1-PHEao1LzEWXnc69iE7xY1tVwuRVKoVnthSR01grsj0cOqX8ULHdXPRwZCP2nFyuKIOAegxMbFnCA821yTrIWufL5MKhUXXFRUTwNSTJao.0; path=/; expires=Fri, 18-Jul-25 10:00:39 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f6298dc948e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "data": [],
+        "timestamp": "2025-07-18T09:30:39.060010",
+        "total_symbols": 0
+      },
+      "rawData": "{\"success\":true,\"data\":[],\"timestamp\":\"2025-07-18T09:30:39.060010\",\"total_symbols\":0}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:38.953Z"
+    },
+    {
+      "endpoint": "/api/v1/monitoring/system-status",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 111,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:39 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:39 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=kUnFmCbGwkvu.tc_PfAH8Q_Qp2jx3qqJ8rAyMOauhCM-1752831039-1.0.1.1-qWV2dUe98wHX_lwfiaIRAWhEwTCzFpArJK230shyNYwm6Xz4zAW1WAzEsk_cF8Wr84HigJ3cJIkwsSnxjcfRC5uL7LLKI9jfe.LdD88htcQ; path=/; expires=Fri, 18-Jul-25 10:00:39 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f62a3ea048e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "status": "operational",
+        "timestamp": "2025-07-18T09:30:39.173445",
+        "uptime": "active",
+        "services": {
+          "api": "running",
+          "database": "connected",
+          "redis": "connected",
+          "websocket": "active",
+          "truedata": "connected",
+          "trading": "autonomous"
+        },
+        "version": "4.2.0",
+        "message": "All systems operational"
+      },
+      "rawData": "{\"success\":true,\"status\":\"operational\",\"timestamp\":\"2025-07-18T09:30:39.173445\",\"uptime\":\"active\",\"services\":{\"api\":\"running\",\"database\":\"connected\",\"redis\":\"connected\",\"websocket\":\"active\",\"truedata\":\"connected\",\"trading\":\"autonomous\"},\"version\":\"4.2.0\",\"message\":\"All systems operational\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:39.066Z"
+    },
+    {
+      "endpoint": "/api/v1/monitoring/daily-pnl",
+      "method": "GET",
+      "statusCode": 504,
+      "success": false,
+      "responseTime": 187,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:39 GMT",
+        "content-type": "text/html",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "x-do-failure-code": "URX",
+        "x-do-failure-msg": "via_upstream",
+        "cache-control": "private",
+        "x-do-orig-status": "503",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=UhQP9nntf1e4CD1EoPrXGDz9qm5jyc3otS4M5pMPmKc-1752831039-1.0.1.1-2e1DEZ_oNVk2aS0thJFnZbQ8K_sQ1YTGPCtoioGZhC0fhcgElS41Jw3bka3KCV3OBpnTEONFg4obx5mxiyMOwLu1m6CtJ4asXM6XxQK93YQ; path=/; expires=Fri, 18-Jul-25 10:00:39 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f62aef5548e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": "      <!DOCTYPE html>\n      <html>\n      <head>\n          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n          <meta name=\"robots\" content=\"noindex\">\n          <style>body,html{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;flex-direction:column;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}p{text-align:center;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen,Ubuntu,Cantarell,Fira Sans,Droid Sans,Helvetica Neue,sans-serif;color:#000;font-size:14px;margin-top:-50px}p.code{font-size:24px;font-weight:500;border-bottom:1px solid #e0e1e2;padding:0 20px 15px}p.text{margin:0}a,a:visited{color:#aaa}</style>\n      </head>\n      <body>\n      <p class=\"code\">\n        Error\n      </p>\n      <p class=\"text\">\n        We encountered an error when trying to load your application and your page could not be served. Check the logs for your application in the App Platform dashboard.\n      </p>\n        <div style=\"display:none;\">\n          <h1>\n    via_upstream (503 URX)      </h1>\n          <p data-translate=\"connection_timed_out\">App Platform failed to forward this request to the application.</p>\n      </div>\n      </body>\n      </html>\n    ",
+      "rawData": "      <!DOCTYPE html>\n      <html>\n      <head>\n          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n          <meta name=\"robots\" content=\"noindex\">\n          <style>body,html{height:100%;margin:0}body{display:flex;align-items:center;justify-content:center;flex-direction:column;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}p{text-align:center;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen,Ubuntu,Cantarell,Fira Sans,Droid Sans,Helvetica Neue,sans-serif;color:#000;font-size:14px;margin-top:-50px}p.code{font-size:24px;font-weight:500;border-bottom:1px solid #e0e1e2;padding:0 20px 15px}p.text{margin:0}a,a:visited{color:#aaa}</style>\n      </head>\n      <body>\n      <p class=\"code\">\n        Error\n      </p>\n      <p class=\"text\">\n        We encountered an error when trying to load your application and your page could not be served. Check the logs for your application in the App Platform dashboard.\n      </p>\n        <div style=\"display:none;\">\n          <h1>\n    via_upstream (503 URX)      </h1>\n          <p data-translate=\"connection_timed_out\">App Platform failed to forward this request to the application.</p>\n      </div>\n      </body>\n      </html>\n    ",
+      "parseError": "Unexpected token '<', \"      <!DOCTYPE \"... is not valid JSON",
+      "timestamp": "2025-07-18T09:30:39.256Z"
+    },
+    {
+      "endpoint": "/api/v1/search/autocomplete?query=NIFTY&category=symbols&limit=5",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 201,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:39 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:39 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=hefcC.dxLxMkxzhQ3rYwC2kbt3hJYzb8Dwm9ESDaRnE-1752831039-1.0.1.1-Ih4sZaISROIL0BeEIlS_crKaLkvVrF8mjLtuUOZm4IobZ95USbfhyKTB45SYLWlYfLgSy6TekeWCCxlWjhP_finulYB5SdHtReSMjrM9BkE; path=/; expires=Fri, 18-Jul-25 10:00:39 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f62c28b648e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "suggestions": [
+          {
+            "value": "NIFTY",
+            "label": "NIFTY - Nifty 50 Index",
+            "type": "symbol"
+          },
+          {
+            "value": "BANKNIFTY",
+            "label": "BANKNIFTY - Bank Nifty Index",
+            "type": "symbol"
+          }
+        ],
+        "query": "NIFTY",
+        "category": "symbols",
+        "fallback_used": true,
+        "message": "Using fallback data - database table missing",
+        "timestamp": "2025-07-18T09:30:39.521928"
+      },
+      "rawData": "{\"success\":true,\"suggestions\":[{\"value\":\"NIFTY\",\"label\":\"NIFTY - Nifty 50 Index\",\"type\":\"symbol\"},{\"value\":\"BANKNIFTY\",\"label\":\"BANKNIFTY - Bank Nifty Index\",\"type\":\"symbol\"}],\"query\":\"NIFTY\",\"category\":\"symbols\",\"fallback_used\":true,\"message\":\"Using fallback data - database table missing\",\"timestamp\":\"2025-07-18T09:30:39.521928\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:39.459Z"
+    },
+    {
+      "endpoint": "/api/v1/search/global?query=NIFTY&limit=10",
+      "method": "GET",
+      "statusCode": 403,
+      "success": false,
+      "responseTime": 104,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:39 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "403",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=oTZjku.tJovhgn3HVgOFFdZiOBxh8udEYUV_9RBUNqc-1752831039-1.0.1.1-sYGn9aF3uw7eyGjigffgrd3r.7qBY_lkOwvTFbUfhB.kv39G9aDledifAQBdygrDsiRlhyDM.XWgLekB507.XfR_U7rICx5YtiXrXk9ODEo; path=/; expires=Fri, 18-Jul-25 10:00:39 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f62d6a2948e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "detail": "Not authenticated",
+        "message": "Not authenticated",
+        "success": false
+      },
+      "rawData": "{\"detail\":\"Not authenticated\",\"message\":\"Not authenticated\",\"success\":false}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:39.566Z"
+    },
+    {
+      "endpoint": "/api/v1/db-health/status",
+      "method": "GET",
+      "statusCode": 404,
+      "success": true,
+      "responseTime": 117,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:39 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "404",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=4yaWkl6Z4smqXxrVctOYnm9GJ.1DVngRNwVSdz2VhTE-1752831039-1.0.1.1-.T0VJ9zSX_H65AGOvdugQWxtfSlixqnaH4q8eeH5SLjru86n7Zk2Q.kkW3AJnUZ.UVybFGXBN.v51q9AnJLa09vXjyb2jrpADQOz.s0Q_ls; path=/; expires=Fri, 18-Jul-25 10:00:39 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f62e0b0d48e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "detail": "API endpoint not found: api/v1/db-health/status",
+        "method": "GET",
+        "debug": "Matched API pattern: api"
+      },
+      "rawData": "{\"detail\":\"API endpoint not found: api/v1/db-health/status\",\"method\":\"GET\",\"debug\":\"Matched API pattern: api\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:39.685Z"
+    },
+    {
+      "endpoint": "/health",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 98,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:39 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:39 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=nH_lab0EmSnwlAsGaB49FIq4s0r86C8CyxvIfIrwKes-1752831039-1.0.1.1-8Er8yH6GTbhoVWNSeFLj_zZ8n1JWY_d82njL.PeOjiKSUYSkR3eH55DshjQX_N5DszC_FOCD9FFj5JD8PiWdvnNnTebrt0g3Ckn7zDsIW2A; path=/; expires=Fri, 18-Jul-25 10:00:39 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f62efc0c48e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "status": "healthy",
+        "timestamp": "2025-07-18T09:30:39.893954"
+      },
+      "rawData": "{\"status\":\"healthy\",\"timestamp\":\"2025-07-18T09:30:39.893954\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:39.786Z"
+    },
+    {
+      "endpoint": "/health",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 89,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:40 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:40 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=p9PihUXBh2Ecbk9mDfYFvewTS14ChZRE07zQnIfFOVc-1752831040-1.0.1.1-ola2PDjal3SWf58Qy2_UkReIvMX5e3EaZ3I7K8zqHXp31qUVptQtJqtMbN_hd0i7bjJYXrH2GbKpXRx9MXDS.uvGrKCg.KJyBZWz3dkt8uI; path=/; expires=Fri, 18-Jul-25 10:00:40 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f6302d4d48e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "status": "healthy",
+        "timestamp": "2025-07-18T09:30:40.081799"
+      },
+      "rawData": "{\"status\":\"healthy\",\"timestamp\":\"2025-07-18T09:30:40.081799\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:39.985Z"
+    },
+    {
+      "endpoint": "/health",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 92,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:40 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:40 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=0Dhc.lw3infcTk8d.lF_ELyrhV1SepjZtFFfmMWttzM-1752831040-1.0.1.1-9vfpwEo5bn5bOnxvOWuMqk.WL7GW1KY2zH.AzWK9bNEyjzpMcSgPFn0qgpHUhVHiOy7VHaR36E1QUV3vuR4dIAZCvd3n756CGBwuTBia6rw; path=/; expires=Fri, 18-Jul-25 10:00:40 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f6317eb648e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "status": "healthy",
+        "timestamp": "2025-07-18T09:30:40.296219"
+      },
+      "rawData": "{\"status\":\"healthy\",\"timestamp\":\"2025-07-18T09:30:40.296219\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:40.189Z"
+    },
+    {
+      "endpoint": "/health",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 72,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:40 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:40 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=1FwVBKBrYuvnDQA3lM3jqnRnuZ.USW7JLTgXzJBeXZA-1752831040-1.0.1.1-kVq7tdQUBdV.a39R_9nLXlZpiiKwFQoh.3r_PM4edxDdl4l3dYGh0nr8tJv9H.V0wx1y.VvDPzRRRSF0sBSB8BZp6SFI3bihzy0xtd.12Yw; path=/; expires=Fri, 18-Jul-25 10:00:40 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f632aff848e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "status": "healthy",
+        "timestamp": "2025-07-18T09:30:40.477165"
+      },
+      "rawData": "{\"status\":\"healthy\",\"timestamp\":\"2025-07-18T09:30:40.477165\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:40.370Z"
+    },
+    {
+      "endpoint": "/health",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 70,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:40 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:40 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=6VgaDkv3ilUluJM3KX0bHQqHBMYUqVG0tcep0R1LZKo-1752831040-1.0.1.1-mRFdWsXAZdU7bcK4YGjvTL6CUDuiDx2RKaF0habBtSyfzy_uP_q_RgANvk.vWta47k4JseDSbdZ1u56e85bDa8sybxUoQgUYu.jfKixI90k; path=/; expires=Fri, 18-Jul-25 10:00:40 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f633b94948e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "status": "healthy",
+        "timestamp": "2025-07-18T09:30:40.647667"
+      },
+      "rawData": "{\"status\":\"healthy\",\"timestamp\":\"2025-07-18T09:30:40.647667\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:40.545Z"
+    },
+    {
+      "endpoint": "/api/v1/autonomous/status",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 78,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:40 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:40 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=CBW6CMCqQ1P1mbi6xVKJcdGp2Bvk1uGp1U7fxq89VB4-1752831040-1.0.1.1-D2kbMFRv.Z8vwtLtXYXoKT6HTlyFeGWNskVLih.wEs.muKUgxXarck23pHgf46joKL92NDEW1mayhLEtCYUeKZqcQujBldtbesSVXHhvcw4; path=/; expires=Fri, 18-Jul-25 10:00:40 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f634dabf48e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "message": "Trading status retrieved successfully",
+        "data": {
+          "is_active": true,
+          "session_id": "session_1752827135",
+          "start_time": "2025-07-18T08:25:35.311132",
+          "last_heartbeat": "2025-07-18T09:30:40.828858",
+          "active_strategies": [
+            "momentum_surfer",
+            "volatility_explosion",
+            "volume_profile_scalper",
+            "regime_adaptive_controller",
+            "confluence_amplifier"
+          ],
+          "active_strategies_count": 5,
+          "active_positions": 1,
+          "total_trades": 0,
+          "daily_pnl": 0,
+          "risk_status": {
+            "max_daily_loss": 100000,
+            "max_position_size": 1000000,
+            "current_positions": 1,
+            "daily_pnl": 0,
+            "status": "degraded"
+          },
+          "market_status": "OPEN",
+          "system_ready": false,
+          "timestamp": "2025-07-18T09:30:40.828870"
+        }
+      },
+      "rawData": "{\"success\":true,\"message\":\"Trading status retrieved successfully\",\"data\":{\"is_active\":true,\"session_id\":\"session_1752827135\",\"start_time\":\"2025-07-18T08:25:35.311132\",\"last_heartbeat\":\"2025-07-18T09:30:40.828858\",\"active_strategies\":[\"momentum_surfer\",\"volatility_explosion\",\"volume_profile_scalper\",\"regime_adaptive_controller\",\"confluence_amplifier\"],\"active_strategies_count\":5,\"active_positions\":1,\"total_trades\":0,\"daily_pnl\":0.0,\"risk_status\":{\"max_daily_loss\":100000,\"max_position_size\":1000000,\"current_positions\":1,\"daily_pnl\":0.0,\"status\":\"degraded\"},\"market_status\":\"OPEN\",\"system_ready\":false,\"timestamp\":\"2025-07-18T09:30:40.828870\"}}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:40.731Z"
+    },
+    {
+      "endpoint": "/api/v1/autonomous/status",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 68,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:40 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:40 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=9jmvjNv39TzyV4ZJPvbfoXp1giTongTz1gdtZhypxCs-1752831040-1.0.1.1-H8y5RWdoy16qwgkVOvQSg0P_T2vbKD0YsrHWvmpCOEWnhvt4vzcbVkTg_6T2T1EHf.U_ynS1d9NFDnAXo_6yHEKRZtikbDAsD0IcAQIAU2w; path=/; expires=Fri, 18-Jul-25 10:00:40 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f6360c3a48e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "message": "Trading status retrieved successfully",
+        "data": {
+          "is_active": true,
+          "session_id": "session_1752827135",
+          "start_time": "2025-07-18T08:25:35.311132",
+          "last_heartbeat": "2025-07-18T09:30:41.014292",
+          "active_strategies": [
+            "momentum_surfer",
+            "volatility_explosion",
+            "volume_profile_scalper",
+            "regime_adaptive_controller",
+            "confluence_amplifier"
+          ],
+          "active_strategies_count": 5,
+          "active_positions": 1,
+          "total_trades": 0,
+          "daily_pnl": 0,
+          "risk_status": {
+            "max_daily_loss": 100000,
+            "max_position_size": 1000000,
+            "current_positions": 1,
+            "daily_pnl": 0,
+            "status": "degraded"
+          },
+          "market_status": "OPEN",
+          "system_ready": false,
+          "timestamp": "2025-07-18T09:30:41.014306"
+        }
+      },
+      "rawData": "{\"success\":true,\"message\":\"Trading status retrieved successfully\",\"data\":{\"is_active\":true,\"session_id\":\"session_1752827135\",\"start_time\":\"2025-07-18T08:25:35.311132\",\"last_heartbeat\":\"2025-07-18T09:30:41.014292\",\"active_strategies\":[\"momentum_surfer\",\"volatility_explosion\",\"volume_profile_scalper\",\"regime_adaptive_controller\",\"confluence_amplifier\"],\"active_strategies_count\":5,\"active_positions\":1,\"total_trades\":0,\"daily_pnl\":0.0,\"risk_status\":{\"max_daily_loss\":100000,\"max_position_size\":1000000,\"current_positions\":1,\"daily_pnl\":0.0,\"status\":\"degraded\"},\"market_status\":\"OPEN\",\"system_ready\":false,\"timestamp\":\"2025-07-18T09:30:41.014306\"}}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:40.910Z"
+    },
+    {
+      "endpoint": "/api/v1/autonomous/status",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 70,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:41 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:41 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=dHGd5Gjkq44f60YwVFncMabu_n6SmS1oWZr7D.TYIYA-1752831041-1.0.1.1-i7Bbwx5Aw0HVno8LyRsxTiLm2mzSXznarZWgVk8iygmMKKtkf4sjTxnQ_5EAccWFb6r9OMnzY3LS9b.DNmAR3vxHDPvM90lzPQ4855nQsq0; path=/; expires=Fri, 18-Jul-25 10:00:41 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f6371d8f48e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "message": "Trading status retrieved successfully",
+        "data": {
+          "is_active": true,
+          "session_id": "session_1752827135",
+          "start_time": "2025-07-18T08:25:35.311132",
+          "last_heartbeat": "2025-07-18T09:30:41.190286",
+          "active_strategies": [
+            "momentum_surfer",
+            "volatility_explosion",
+            "volume_profile_scalper",
+            "regime_adaptive_controller",
+            "confluence_amplifier"
+          ],
+          "active_strategies_count": 5,
+          "active_positions": 1,
+          "total_trades": 0,
+          "daily_pnl": 0,
+          "risk_status": {
+            "max_daily_loss": 100000,
+            "max_position_size": 1000000,
+            "current_positions": 1,
+            "daily_pnl": 0,
+            "status": "degraded"
+          },
+          "market_status": "OPEN",
+          "system_ready": false,
+          "timestamp": "2025-07-18T09:30:41.190299"
+        }
+      },
+      "rawData": "{\"success\":true,\"message\":\"Trading status retrieved successfully\",\"data\":{\"is_active\":true,\"session_id\":\"session_1752827135\",\"start_time\":\"2025-07-18T08:25:35.311132\",\"last_heartbeat\":\"2025-07-18T09:30:41.190286\",\"active_strategies\":[\"momentum_surfer\",\"volatility_explosion\",\"volume_profile_scalper\",\"regime_adaptive_controller\",\"confluence_amplifier\"],\"active_strategies_count\":5,\"active_positions\":1,\"total_trades\":0,\"daily_pnl\":0.0,\"risk_status\":{\"max_daily_loss\":100000,\"max_position_size\":1000000,\"current_positions\":1,\"daily_pnl\":0.0,\"status\":\"degraded\"},\"market_status\":\"OPEN\",\"system_ready\":false,\"timestamp\":\"2025-07-18T09:30:41.190299\"}}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:41.084Z"
+    },
+    {
+      "endpoint": "/api/market/indices",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 72,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:41 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:41 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=0hxX1Urcrcl2NkUr05YKzrTXc6cnFaxhiErbLctbSoc-1752831041-1.0.1.1-DCcqaoMpeU6HJfnaX9.M9e1NQYKKOr7Y53YrjlQBm_RYlQNJackbSNxlXPrQqDINNOrQtcK.2qqpldC1gAVjh335y0_QPPqA6O0of9HAemE; path=/; expires=Fri, 18-Jul-25 10:00:41 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f6382eca48e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "message": "Market indices data retrieved successfully",
+        "data": {
+          "indices": [
+            {
+              "symbol": "NIFTY",
+              "name": "NIFTY 50",
+              "last_price": 25036.4,
+              "price": 25036.4,
+              "change": -138.2,
+              "change_percent": -0.55,
+              "high": 25086.47,
+              "low": 24986.33,
+              "open": 25011.36,
+              "volume": 4399425,
+              "status": "LIVE_TRUEDATA",
+              "last_update": "2025-07-18T09:30:35.279759",
+              "data_age_seconds": 0,
+              "heartbeat": false
+            },
+            {
+              "symbol": "BANKNIFTY",
+              "name": "BANK NIFTY",
+              "last_price": 56478.4,
+              "price": 56478.4,
+              "change": -495,
+              "change_percent": -0.87,
+              "high": 56591.36,
+              "low": 56365.44,
+              "open": 56421.92,
+              "volume": 1136940,
+              "status": "LIVE_TRUEDATA",
+              "last_update": "2025-07-18T09:30:40.873264",
+              "data_age_seconds": 0,
+              "heartbeat": false
+            }
+          ],
+          "market_status": "OPEN",
+          "provider": "TrueData",
+          "last_update": "2025-07-18T15:00:41.364922+05:30",
+          "timestamp": "2025-07-18 15:00:41 IST",
+          "truedata_connection": {
+            "symbols_available": 51,
+            "nifty_available": true,
+            "banknifty_available": true,
+            "live_data_symbols": [
+              "JSWSTEEL",
+              "ICICIBANK",
+              "HINDUNILVR",
+              "RELIANCE",
+              "SBIN",
+              "KOTAKBANK",
+              "BHARTIARTL",
+              "NIFTY-I",
+              "AXISBANK",
+              "HDFCBANK",
+              "ADANIPOWER",
+              "INFY",
+              "ASIANPAINT",
+              "NTPC",
+              "BANKNIFTY-I",
+              "WIPRO",
+              "TCS",
+              "M&M",
+              "BAJAJ-AUTO",
+              "TATAMOTORS",
+              "COALINDIA",
+              "BAJFINANCE",
+              "HINDALCO",
+              "TATASTEEL",
+              "HCLTECH",
+              "CIPLA",
+              "NESTLEIND",
+              "APOLLOHOSP",
+              "DABUR",
+              "INDIGO",
+              "HEROMOTOCO",
+              "TECHM",
+              "POWERGRID",
+              "BAJAJFINSV",
+              "BRITANNIA",
+              "ADANIPORTS",
+              "DRREDDY",
+              "MARUTI",
+              "LT",
+              "VEDL",
+              "TITAN",
+              "SUNPHARMA",
+              "ITC",
+              "MIDCPNIFTY-I",
+              "EICHERMOT",
+              "ULTRACEMCO",
+              "TVSMOTOR",
+              "ADANIGREEN",
+              "GODREJCP",
+              "FINNIFTY-I",
+              "DIVISLAB"
+            ],
+            "connection_healthy": true,
+            "heartbeat_age_seconds": 0,
+            "data_flowing": true,
+            "total_symbols": 51,
+            "market_open": true,
+            "data_source": "LIVE"
+          }
+        },
+        "timestamp": "2025-07-18T08:16:52.885076"
+      },
+      "rawData": "{\"success\":true,\"message\":\"Market indices data retrieved successfully\",\"data\":{\"indices\":[{\"symbol\":\"NIFTY\",\"name\":\"NIFTY 50\",\"last_price\":25036.4,\"price\":25036.4,\"change\":-138.2,\"change_percent\":-0.55,\"high\":25086.47,\"low\":24986.33,\"open\":25011.36,\"volume\":4399425,\"status\":\"LIVE_TRUEDATA\",\"last_update\":\"2025-07-18T09:30:35.279759\",\"data_age_seconds\":0.0,\"heartbeat\":false},{\"symbol\":\"BANKNIFTY\",\"name\":\"BANK NIFTY\",\"last_price\":56478.4,\"price\":56478.4,\"change\":-495.0,\"change_percent\":-0.87,\"high\":56591.36,\"low\":56365.44,\"open\":56421.92,\"volume\":1136940,\"status\":\"LIVE_TRUEDATA\",\"last_update\":\"2025-07-18T09:30:40.873264\",\"data_age_seconds\":0.0,\"heartbeat\":false}],\"market_status\":\"OPEN\",\"provider\":\"TrueData\",\"last_update\":\"2025-07-18T15:00:41.364922+05:30\",\"timestamp\":\"2025-07-18 15:00:41 IST\",\"truedata_connection\":{\"symbols_available\":51,\"nifty_available\":true,\"banknifty_available\":true,\"live_data_symbols\":[\"JSWSTEEL\",\"ICICIBANK\",\"HINDUNILVR\",\"RELIANCE\",\"SBIN\",\"KOTAKBANK\",\"BHARTIARTL\",\"NIFTY-I\",\"AXISBANK\",\"HDFCBANK\",\"ADANIPOWER\",\"INFY\",\"ASIANPAINT\",\"NTPC\",\"BANKNIFTY-I\",\"WIPRO\",\"TCS\",\"M&M\",\"BAJAJ-AUTO\",\"TATAMOTORS\",\"COALINDIA\",\"BAJFINANCE\",\"HINDALCO\",\"TATASTEEL\",\"HCLTECH\",\"CIPLA\",\"NESTLEIND\",\"APOLLOHOSP\",\"DABUR\",\"INDIGO\",\"HEROMOTOCO\",\"TECHM\",\"POWERGRID\",\"BAJAJFINSV\",\"BRITANNIA\",\"ADANIPORTS\",\"DRREDDY\",\"MARUTI\",\"LT\",\"VEDL\",\"TITAN\",\"SUNPHARMA\",\"ITC\",\"MIDCPNIFTY-I\",\"EICHERMOT\",\"ULTRACEMCO\",\"TVSMOTOR\",\"ADANIGREEN\",\"GODREJCP\",\"FINNIFTY-I\",\"DIVISLAB\"],\"connection_healthy\":true,\"heartbeat_age_seconds\":0,\"data_flowing\":true,\"total_symbols\":51,\"market_open\":true,\"data_source\":\"LIVE\"}},\"timestamp\":\"2025-07-18T08:16:52.885076\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:41.258Z"
+    },
+    {
+      "endpoint": "/api/market/indices",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 77,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:41 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:41 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=oGYcDO9HeejAwvVXSwyNlqNf3ZoLiElgKBBX8XGdI4I-1752831041-1.0.1.1-IuP58l2v5o6JAvQFnM8dhiRth70MgpJ3f8jSL2hdSUYlxTYgMVSpMVcCIA.014arqZm7XmxXGb.vRzs4qIpCzEaYcZg4QX1EhmGnsUkT9T8; path=/; expires=Fri, 18-Jul-25 10:00:41 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f6394fde48e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "message": "Market indices data retrieved successfully",
+        "data": {
+          "indices": [
+            {
+              "symbol": "NIFTY",
+              "name": "NIFTY 50",
+              "last_price": 25036.4,
+              "price": 25036.4,
+              "change": -138.2,
+              "change_percent": -0.55,
+              "high": 25086.47,
+              "low": 24986.33,
+              "open": 25011.36,
+              "volume": 4399425,
+              "status": "LIVE_TRUEDATA",
+              "last_update": "2025-07-18T09:30:35.279759",
+              "data_age_seconds": 0,
+              "heartbeat": false
+            },
+            {
+              "symbol": "BANKNIFTY",
+              "name": "BANK NIFTY",
+              "last_price": 56478.4,
+              "price": 56478.4,
+              "change": -495,
+              "change_percent": -0.87,
+              "high": 56591.36,
+              "low": 56365.44,
+              "open": 56421.92,
+              "volume": 1136940,
+              "status": "LIVE_TRUEDATA",
+              "last_update": "2025-07-18T09:30:40.873264",
+              "data_age_seconds": 0,
+              "heartbeat": false
+            }
+          ],
+          "market_status": "OPEN",
+          "provider": "TrueData",
+          "last_update": "2025-07-18T15:00:41.540256+05:30",
+          "timestamp": "2025-07-18 15:00:41 IST",
+          "truedata_connection": {
+            "symbols_available": 51,
+            "nifty_available": true,
+            "banknifty_available": true,
+            "live_data_symbols": [
+              "JSWSTEEL",
+              "ICICIBANK",
+              "HINDUNILVR",
+              "RELIANCE",
+              "SBIN",
+              "KOTAKBANK",
+              "BHARTIARTL",
+              "NIFTY-I",
+              "AXISBANK",
+              "HDFCBANK",
+              "ADANIPOWER",
+              "INFY",
+              "ASIANPAINT",
+              "NTPC",
+              "BANKNIFTY-I",
+              "WIPRO",
+              "TCS",
+              "M&M",
+              "BAJAJ-AUTO",
+              "TATAMOTORS",
+              "COALINDIA",
+              "BAJFINANCE",
+              "HINDALCO",
+              "TATASTEEL",
+              "HCLTECH",
+              "CIPLA",
+              "NESTLEIND",
+              "APOLLOHOSP",
+              "DABUR",
+              "INDIGO",
+              "HEROMOTOCO",
+              "TECHM",
+              "POWERGRID",
+              "BAJAJFINSV",
+              "BRITANNIA",
+              "ADANIPORTS",
+              "DRREDDY",
+              "MARUTI",
+              "LT",
+              "VEDL",
+              "TITAN",
+              "SUNPHARMA",
+              "ITC",
+              "MIDCPNIFTY-I",
+              "EICHERMOT",
+              "ULTRACEMCO",
+              "TVSMOTOR",
+              "ADANIGREEN",
+              "GODREJCP",
+              "FINNIFTY-I",
+              "DIVISLAB"
+            ],
+            "connection_healthy": true,
+            "heartbeat_age_seconds": 0,
+            "data_flowing": true,
+            "total_symbols": 51,
+            "market_open": true,
+            "data_source": "LIVE"
+          }
+        },
+        "timestamp": "2025-07-18T08:16:52.885076"
+      },
+      "rawData": "{\"success\":true,\"message\":\"Market indices data retrieved successfully\",\"data\":{\"indices\":[{\"symbol\":\"NIFTY\",\"name\":\"NIFTY 50\",\"last_price\":25036.4,\"price\":25036.4,\"change\":-138.2,\"change_percent\":-0.55,\"high\":25086.47,\"low\":24986.33,\"open\":25011.36,\"volume\":4399425,\"status\":\"LIVE_TRUEDATA\",\"last_update\":\"2025-07-18T09:30:35.279759\",\"data_age_seconds\":0.0,\"heartbeat\":false},{\"symbol\":\"BANKNIFTY\",\"name\":\"BANK NIFTY\",\"last_price\":56478.4,\"price\":56478.4,\"change\":-495.0,\"change_percent\":-0.87,\"high\":56591.36,\"low\":56365.44,\"open\":56421.92,\"volume\":1136940,\"status\":\"LIVE_TRUEDATA\",\"last_update\":\"2025-07-18T09:30:40.873264\",\"data_age_seconds\":0.0,\"heartbeat\":false}],\"market_status\":\"OPEN\",\"provider\":\"TrueData\",\"last_update\":\"2025-07-18T15:00:41.540256+05:30\",\"timestamp\":\"2025-07-18 15:00:41 IST\",\"truedata_connection\":{\"symbols_available\":51,\"nifty_available\":true,\"banknifty_available\":true,\"live_data_symbols\":[\"JSWSTEEL\",\"ICICIBANK\",\"HINDUNILVR\",\"RELIANCE\",\"SBIN\",\"KOTAKBANK\",\"BHARTIARTL\",\"NIFTY-I\",\"AXISBANK\",\"HDFCBANK\",\"ADANIPOWER\",\"INFY\",\"ASIANPAINT\",\"NTPC\",\"BANKNIFTY-I\",\"WIPRO\",\"TCS\",\"M&M\",\"BAJAJ-AUTO\",\"TATAMOTORS\",\"COALINDIA\",\"BAJFINANCE\",\"HINDALCO\",\"TATASTEEL\",\"HCLTECH\",\"CIPLA\",\"NESTLEIND\",\"APOLLOHOSP\",\"DABUR\",\"INDIGO\",\"HEROMOTOCO\",\"TECHM\",\"POWERGRID\",\"BAJAJFINSV\",\"BRITANNIA\",\"ADANIPORTS\",\"DRREDDY\",\"MARUTI\",\"LT\",\"VEDL\",\"TITAN\",\"SUNPHARMA\",\"ITC\",\"MIDCPNIFTY-I\",\"EICHERMOT\",\"ULTRACEMCO\",\"TVSMOTOR\",\"ADANIGREEN\",\"GODREJCP\",\"FINNIFTY-I\",\"DIVISLAB\"],\"connection_healthy\":true,\"heartbeat_age_seconds\":0,\"data_flowing\":true,\"total_symbols\":51,\"market_open\":true,\"data_source\":\"LIVE\"}},\"timestamp\":\"2025-07-18T08:16:52.885076\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:41.437Z"
+    },
+    {
+      "endpoint": "/api/market/indices",
+      "method": "GET",
+      "statusCode": 200,
+      "success": true,
+      "responseTime": 71,
+      "headers": {
+        "date": "Fri, 18 Jul 2025 09:30:41 GMT",
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        "connection": "keep-alive",
+        "vary": "Accept-Encoding",
+        "x-do-app-origin": "2d3b8b05-b1c1-4bd6-a969-2d02956b368d",
+        "cache-control": "private",
+        "x-do-orig-status": "200",
+        "last-modified": "Fri, 18 Jul 2025 09:30:41 GMT",
+        "cf-cache-status": "MISS",
+        "set-cookie": [
+          "__cf_bm=wZKc06SkCnDNkjxL20qF8dqRku8Ts5qugMIGren974E-1752831041-1.0.1.1-B.7NYHwEfC.ORd_oFzFUcO3GykVJhFRcLDIAeP1sIpQp7rN1pdj3PEepshySYOY71_VNCeXy9H9i5BG0.ptjppkAYSIvJWRnUsBgIDOIZrA; path=/; expires=Fri, 18-Jul-25 10:00:41 GMT; domain=.ondigitalocean.app; HttpOnly; Secure; SameSite=None"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "9610f63a696648e6-BOM",
+        "alt-svc": "h3=\":443\"; ma=86400"
+      },
+      "data": {
+        "success": true,
+        "message": "Market indices data retrieved successfully",
+        "data": {
+          "indices": [
+            {
+              "symbol": "NIFTY",
+              "name": "NIFTY 50",
+              "last_price": 25036.4,
+              "price": 25036.4,
+              "change": -138.2,
+              "change_percent": -0.55,
+              "high": 25086.47,
+              "low": 24986.33,
+              "open": 25011.36,
+              "volume": 4399425,
+              "status": "LIVE_TRUEDATA",
+              "last_update": "2025-07-18T09:30:35.279759",
+              "data_age_seconds": 0,
+              "heartbeat": false
+            },
+            {
+              "symbol": "BANKNIFTY",
+              "name": "BANK NIFTY",
+              "last_price": 56478.4,
+              "price": 56478.4,
+              "change": -495,
+              "change_percent": -0.87,
+              "high": 56591.36,
+              "low": 56365.44,
+              "open": 56421.92,
+              "volume": 1136940,
+              "status": "LIVE_TRUEDATA",
+              "last_update": "2025-07-18T09:30:40.873264",
+              "data_age_seconds": 0,
+              "heartbeat": false
+            }
+          ],
+          "market_status": "OPEN",
+          "provider": "TrueData",
+          "last_update": "2025-07-18T15:00:41.718426+05:30",
+          "timestamp": "2025-07-18 15:00:41 IST",
+          "truedata_connection": {
+            "symbols_available": 51,
+            "nifty_available": true,
+            "banknifty_available": true,
+            "live_data_symbols": [
+              "JSWSTEEL",
+              "ICICIBANK",
+              "HINDUNILVR",
+              "RELIANCE",
+              "SBIN",
+              "KOTAKBANK",
+              "BHARTIARTL",
+              "NIFTY-I",
+              "AXISBANK",
+              "HDFCBANK",
+              "ADANIPOWER",
+              "INFY",
+              "ASIANPAINT",
+              "NTPC",
+              "BANKNIFTY-I",
+              "WIPRO",
+              "TCS",
+              "M&M",
+              "BAJAJ-AUTO",
+              "TATAMOTORS",
+              "COALINDIA",
+              "BAJFINANCE",
+              "HINDALCO",
+              "TATASTEEL",
+              "HCLTECH",
+              "CIPLA",
+              "NESTLEIND",
+              "APOLLOHOSP",
+              "DABUR",
+              "INDIGO",
+              "HEROMOTOCO",
+              "TECHM",
+              "POWERGRID",
+              "BAJAJFINSV",
+              "BRITANNIA",
+              "ADANIPORTS",
+              "DRREDDY",
+              "MARUTI",
+              "LT",
+              "VEDL",
+              "TITAN",
+              "SUNPHARMA",
+              "ITC",
+              "MIDCPNIFTY-I",
+              "EICHERMOT",
+              "ULTRACEMCO",
+              "TVSMOTOR",
+              "ADANIGREEN",
+              "GODREJCP",
+              "FINNIFTY-I",
+              "DIVISLAB"
+            ],
+            "connection_healthy": true,
+            "heartbeat_age_seconds": 0,
+            "data_flowing": true,
+            "total_symbols": 51,
+            "market_open": true,
+            "data_source": "LIVE"
+          }
+        },
+        "timestamp": "2025-07-18T08:16:52.885076"
+      },
+      "rawData": "{\"success\":true,\"message\":\"Market indices data retrieved successfully\",\"data\":{\"indices\":[{\"symbol\":\"NIFTY\",\"name\":\"NIFTY 50\",\"last_price\":25036.4,\"price\":25036.4,\"change\":-138.2,\"change_percent\":-0.55,\"high\":25086.47,\"low\":24986.33,\"open\":25011.36,\"volume\":4399425,\"status\":\"LIVE_TRUEDATA\",\"last_update\":\"2025-07-18T09:30:35.279759\",\"data_age_seconds\":0.0,\"heartbeat\":false},{\"symbol\":\"BANKNIFTY\",\"name\":\"BANK NIFTY\",\"last_price\":56478.4,\"price\":56478.4,\"change\":-495.0,\"change_percent\":-0.87,\"high\":56591.36,\"low\":56365.44,\"open\":56421.92,\"volume\":1136940,\"status\":\"LIVE_TRUEDATA\",\"last_update\":\"2025-07-18T09:30:40.873264\",\"data_age_seconds\":0.0,\"heartbeat\":false}],\"market_status\":\"OPEN\",\"provider\":\"TrueData\",\"last_update\":\"2025-07-18T15:00:41.718426+05:30\",\"timestamp\":\"2025-07-18 15:00:41 IST\",\"truedata_connection\":{\"symbols_available\":51,\"nifty_available\":true,\"banknifty_available\":true,\"live_data_symbols\":[\"JSWSTEEL\",\"ICICIBANK\",\"HINDUNILVR\",\"RELIANCE\",\"SBIN\",\"KOTAKBANK\",\"BHARTIARTL\",\"NIFTY-I\",\"AXISBANK\",\"HDFCBANK\",\"ADANIPOWER\",\"INFY\",\"ASIANPAINT\",\"NTPC\",\"BANKNIFTY-I\",\"WIPRO\",\"TCS\",\"M&M\",\"BAJAJ-AUTO\",\"TATAMOTORS\",\"COALINDIA\",\"BAJFINANCE\",\"HINDALCO\",\"TATASTEEL\",\"HCLTECH\",\"CIPLA\",\"NESTLEIND\",\"APOLLOHOSP\",\"DABUR\",\"INDIGO\",\"HEROMOTOCO\",\"TECHM\",\"POWERGRID\",\"BAJAJFINSV\",\"BRITANNIA\",\"ADANIPORTS\",\"DRREDDY\",\"MARUTI\",\"LT\",\"VEDL\",\"TITAN\",\"SUNPHARMA\",\"ITC\",\"MIDCPNIFTY-I\",\"EICHERMOT\",\"ULTRACEMCO\",\"TVSMOTOR\",\"ADANIGREEN\",\"GODREJCP\",\"FINNIFTY-I\",\"DIVISLAB\"],\"connection_healthy\":true,\"heartbeat_age_seconds\":0,\"data_flowing\":true,\"total_symbols\":51,\"market_open\":true,\"data_source\":\"LIVE\"}},\"timestamp\":\"2025-07-18T08:16:52.885076\"}",
+      "parseError": null,
+      "timestamp": "2025-07-18T09:30:41.614Z"
+    }
+  ]
+}

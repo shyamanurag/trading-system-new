@@ -131,6 +131,18 @@ class ProductionRedisFallback:
             logger.warning(f"Redis exists failed for key {key}: {e}")
             return key in self.fallback_cache
     
+    def ping(self) -> bool:
+        """Ping Redis server or return True for fallback mode"""
+        try:
+            if self.redis_client and self.is_connected:
+                return bool(self.redis_client.ping())
+            else:
+                # In fallback mode, always return True
+                return True
+        except Exception as e:
+            logger.warning(f"Redis ping failed: {e}")
+            return True  # Return True to continue in fallback mode
+    
     def get_status(self) -> Dict[str, Any]:
         """Get Redis connection status"""
         return {
