@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-CRITICAL PRODUCTION FIXES
+CRITICAL PRODUCTION FIXES - Clean Version
 Fixes the three major system-breaking issues:
 1. Missing broker_user_id database column
-2. Redis await expression error
+2. Redis await expression error 
 3. TrueData connection overlap issues
 """
 
@@ -11,8 +11,6 @@ import os
 import sys
 import logging
 import asyncio
-import psycopg2
-from urllib.parse import urlparse
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -22,6 +20,14 @@ def fix_database_schema():
     """Fix missing broker_user_id column in database"""
     try:
         logger.info("🔧 FIXING CRITICAL DATABASE SCHEMA ISSUE...")
+        
+        # Import psycopg2
+        try:
+            import psycopg2
+            from urllib.parse import urlparse
+        except ImportError:
+            logger.error("❌ psycopg2 not available - install with: pip install psycopg2-binary")
+            return False
         
         # Get database URL from environment
         database_url = os.getenv('DATABASE_URL')
@@ -98,28 +104,32 @@ async def test_redis_connection():
     try:
         logger.info("🔧 TESTING REDIS CONNECTION...")
         
-                 # Import Redis
-         try:
-             import redis.asyncio as redis_async
-             redis = redis_async
-         except ImportError:
-             try:
-                 import redis
-                 logger.warning("⚠️ Using synchronous Redis client")
-             except ImportError:
-                 logger.error("❌ Redis package not available")
-                 return False
+        # Import Redis with fallback
+        redis_module = None
+        try:
+            import redis.asyncio as redis_async
+            redis_module = redis_async
+            logger.info("Using async Redis client")
+        except ImportError:
+            try:
+                import redis
+                redis_module = redis
+                logger.warning("⚠️ Using synchronous Redis client")
+            except ImportError:
+                logger.error("❌ Redis package not available")
+                return False
         
         # Get Redis URL
         redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
         logger.info(f"🔗 Connecting to Redis: {redis_url[:20]}...")
         
         # Create Redis client
-        if hasattr(redis, 'from_url'):
-            redis_client = redis.from_url(redis_url, decode_responses=True)
+        if hasattr(redis_module, 'from_url'):
+            redis_client = redis_module.from_url(redis_url, decode_responses=True)
         else:
+            from urllib.parse import urlparse
             parsed = urlparse(redis_url)
-            redis_client = redis.Redis(
+            redis_client = redis_module.Redis(
                 host=parsed.hostname,
                 port=parsed.port or 6379,
                 password=parsed.password,
@@ -153,14 +163,14 @@ def check_truedata_status():
     try:
         logger.info("🔧 CHECKING TRUEDATA STATUS...")
         
+        # Add project root to path for imports
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        
         # Import TrueData client
         try:
-            from data.truedata_client import live_market_data, get_connection_status
-            
-            # Check connection status
-            if hasattr(get_connection_status, '__call__'):
-                status = get_connection_status()
-                logger.info(f"📊 TrueData status: {status}")
+            from data.truedata_client import live_market_data
             
             # Check live data
             if live_market_data and len(live_market_data) > 0:
@@ -219,13 +229,20 @@ async def main():
     return all_fixed
 
 if __name__ == "__main__":
-         # Load environment variables
-     try:
-         from dotenv import load_dotenv
-         load_dotenv()
-     except ImportError:
-         logger.info("dotenv not available - using system environment variables")
+    # Load environment variables if available
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        logger.info("dotenv not available - using system environment variables")
     
     # Run fixes
-    result = asyncio.run(main())
-    sys.exit(0 if result else 1)
+    try:
+        result = asyncio.run(main())
+        sys.exit(0 if result else 1)
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Critical error: {e}")
+        sys.exit(1) 

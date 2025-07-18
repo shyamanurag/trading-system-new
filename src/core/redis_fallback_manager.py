@@ -7,6 +7,12 @@ import os
 import logging
 from typing import Optional, Dict, Any
 import json
+import asyncio
+
+try:
+    import redis
+except ImportError:
+    redis = None
 
 logger = logging.getLogger(__name__)
 
@@ -131,11 +137,17 @@ class ProductionRedisFallback:
             logger.warning(f"Redis exists failed for key {key}: {e}")
             return key in self.fallback_cache
     
-    def ping(self) -> bool:
-        """Ping Redis server or return True for fallback mode"""
+    async def ping(self) -> bool:
+        """Ping Redis server or return True for fallback mode - ASYNC VERSION"""
         try:
             if self.redis_client and self.is_connected:
-                return bool(self.redis_client.ping())
+                # Make this properly async to fix "object bool can't be used in 'await' expression"
+                if hasattr(self.redis_client, 'ping'):
+                    if asyncio.iscoroutinefunction(self.redis_client.ping):
+                        return bool(await self.redis_client.ping())
+                    else:
+                        return bool(self.redis_client.ping())
+                return True
             else:
                 # In fallback mode, always return True
                 return True
