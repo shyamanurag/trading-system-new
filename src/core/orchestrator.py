@@ -461,6 +461,9 @@ class TradingOrchestrator:
         self.position_monitor = None  # Will be initialized during async initialize()
         
         # System ready
+
+            # Start market data to position tracker bridge
+            await self._start_market_data_to_position_tracker_bridge()
         self.logger.info("✅ Trading orchestrator initialized successfully")
         
         # Schedule TrueData manual connection
@@ -1979,16 +1982,31 @@ class TradingOrchestrator:
                     await asyncio.sleep(10)
                     continue
                 
-                # Get market data from TrueData cache
+                # Get market data from TrueData API
                 market_prices = {}
                 try:
-                    from data.truedata_client import live_market_data
-                    for symbol, data in live_market_data.items():
-                        ltp = data.get('ltp', 0)
-                        if ltp and ltp > 0:
-                            market_prices[symbol] = float(ltp)
-                except ImportError:
-                    pass
+                    # Use the same method as orchestrator uses for market data
+                    market_data_response = await self._get_market_data_from_api()
+                    if market_data_response and market_data_response.get('data'):
+                        for symbol, data in market_data_response['data'].items():
+                            if isinstance(data, dict) and 'ltp' in data:
+                                ltp = data.get('ltp', 0)
+                                if ltp and ltp > 0:
+                                    market_prices[symbol] = float(ltp)
+                    
+                    self.logger.debug(f"📊 Retrieved {len(market_prices)} market prices for position updates")
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Error getting market data for positions: {e}")
+                    # Fallback: try direct TrueData import
+                    try:
+                        from data.truedata_client import live_market_data
+                        for symbol, data in live_market_data.items():
+                            ltp = data.get('ltp', 0)
+                            if ltp and ltp > 0:
+                                market_prices[symbol] = float(ltp)
+                    except ImportError:
+                        pass
                 
                 # Update position tracker with current prices
                 if market_prices:
