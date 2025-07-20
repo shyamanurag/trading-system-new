@@ -170,6 +170,89 @@ COMMIT;
             detail=f"Database cleanup failed: {str(e)}"
         )
 
+@router.post("/fix-schema")
+async def fix_database_schema():
+    """Fix missing broker_user_id column - PRODUCTION ENDPOINT"""
+    try:
+        logger.info("🔧 APPLYING DATABASE SCHEMA FIX...")
+        
+        # Get database connection
+        db_manager = DatabaseManager() # Assuming get_database_manager is a placeholder for DatabaseManager
+        if not db_manager.engine: # Changed from get_database_manager() to db_manager.engine
+            raise HTTPException(status_code=500, detail="Database manager not available")
+        
+        # Apply schema fix
+        with db_manager.engine.connect() as conn: # Changed from get_database_manager() to db_manager.engine
+            with conn.begin():
+                # Check if broker_user_id column exists
+                result = conn.execute(text("""
+                    SELECT column_name FROM information_schema.columns 
+                    WHERE table_name = 'users' AND column_name = 'broker_user_id'
+                """))
+                
+                if result.fetchone():
+                    logger.info("✅ broker_user_id column already exists")
+                    return {
+                        "success": True,
+                        "message": "broker_user_id column already exists",
+                        "action": "none_required"
+                    }
+                else:
+                    logger.info("🔧 Adding missing broker_user_id column...")
+                    conn.execute(text("ALTER TABLE users ADD COLUMN broker_user_id VARCHAR(100)"))
+                    conn.commit()
+                    logger.info("✅ Added broker_user_id column successfully")
+                    
+                    return {
+                        "success": True,
+                        "message": "broker_user_id column added successfully",
+                        "action": "column_added"
+                    }
+                    
+    except Exception as e:
+        logger.error(f"❌ Database schema fix failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database schema fix failed: {str(e)}")
+
+@router.post("/verify-schema")
+async def verify_database_schema():
+    """Verify database schema is correct"""
+    try:
+        logger.info("🔍 VERIFYING DATABASE SCHEMA...")
+        
+        db_manager = DatabaseManager() # Assuming get_database_manager is a placeholder for DatabaseManager
+        if not db_manager.engine: # Changed from get_database_manager() to db_manager.engine
+            raise HTTPException(status_code=500, detail="Database manager not available")
+        
+        with db_manager.engine.connect() as conn: # Changed from get_database_manager() to db_manager.engine
+            # Check broker_user_id column
+            result = conn.execute(text("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'users' AND column_name = 'broker_user_id'
+            """))
+            
+            broker_column_exists = result.fetchone() is not None
+            
+            # Check if PAPER_TRADER_001 exists
+            result = conn.execute(text("""
+                SELECT username, broker_user_id FROM users WHERE username = 'PAPER_TRADER_001'
+            """))
+            
+            paper_trader = result.fetchone()
+            
+            return {
+                "success": True,
+                "schema_status": {
+                    "broker_user_id_column_exists": broker_column_exists,
+                    "paper_trader_001_exists": paper_trader is not None,
+                    "paper_trader_broker_id": paper_trader.broker_user_id if paper_trader else None
+                },
+                "message": "Schema verification completed"
+            }
+            
+    except Exception as e:
+        logger.error(f"❌ Schema verification failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Schema verification failed: {str(e)}")
+
 @router.get("/status")
 async def database_status() -> Dict[str, Any]:
     """Get current database status and counts"""
