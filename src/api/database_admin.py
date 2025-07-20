@@ -390,6 +390,132 @@ async def execute_production_cleanup():
         logger.error(f"❌ Failed to execute cleanup script: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to execute cleanup script: {e}")
 
+@router.post("/direct-cleanup")
+async def direct_cleanup():
+    """Execute database cleanup directly without subprocess"""
+    try:
+        logger.info("🚨 STARTING DIRECT DATABASE CLEANUP...")
+        
+        # Get database connection using existing DatabaseManager
+        db_manager = DatabaseManager()
+        if not db_manager.engine:
+            raise HTTPException(status_code=500, detail="Database manager not available")
+        
+        # Use the database connection
+        from sqlalchemy import text
+        
+        with db_manager.engine.connect() as conn:
+            # STEP 1: Count existing contamination
+            logger.info("📊 STEP 1: Counting contamination...")
+            
+            trades_result = conn.execute(text("SELECT COUNT(*) FROM trades"))
+            trades_count = trades_result.scalar()
+            
+            orders_result = conn.execute(text("SELECT COUNT(*) FROM orders"))
+            orders_count = orders_result.scalar()
+            
+            try:
+                positions_result = conn.execute(text("SELECT COUNT(*) FROM positions"))
+                positions_count = positions_result.scalar()
+            except:
+                positions_count = 0
+            
+            total_contamination = trades_count + orders_count + positions_count
+            
+            logger.info(f"🚨 CONTAMINATION: {trades_count} trades, {orders_count} orders, {positions_count} positions = {total_contamination} total")
+            
+            if total_contamination == 0:
+                return {
+                    "success": True,
+                    "message": "✅ Database is already clean!",
+                    "data": {"contamination_found": 0, "records_deleted": 0}
+                }
+            
+            # STEP 2: Execute cleanup with transaction
+            with conn.begin() as trans:
+                logger.info("🔥 STEP 2: EXECUTING CLEANUP...")
+                
+                # Delete all trades
+                trades_deleted = conn.execute(text("DELETE FROM trades WHERE 1=1")).rowcount
+                logger.info(f"🔥 Deleted {trades_deleted} trades")
+                
+                # Delete all orders  
+                orders_deleted = conn.execute(text("DELETE FROM orders WHERE 1=1")).rowcount
+                logger.info(f"🔥 Deleted {orders_deleted} orders")
+                
+                # Try to delete positions
+                try:
+                    positions_deleted = conn.execute(text("DELETE FROM positions WHERE 1=1")).rowcount
+                    logger.info(f"🔥 Deleted {positions_deleted} positions")
+                except:
+                    positions_deleted = 0
+                    logger.info("⚠️ Positions table not found, skipped")
+                
+                # Reset sequences
+                try:
+                    conn.execute(text("ALTER SEQUENCE IF EXISTS trades_trade_id_seq RESTART WITH 1"))
+                    conn.execute(text("ALTER SEQUENCE IF EXISTS orders_order_id_seq RESTART WITH 1"))
+                    conn.execute(text("ALTER SEQUENCE IF EXISTS positions_position_id_seq RESTART WITH 1"))
+                    logger.info("✅ Sequences reset")
+                except Exception as e:
+                    logger.warning(f"⚠️ Sequence reset warning: {e}")
+                
+                # Commit transaction
+                trans.commit()
+                logger.info("✅ Transaction committed")
+            
+            # STEP 3: Verify cleanup
+            logger.info("✅ STEP 3: Verifying cleanup...")
+            
+            final_trades = conn.execute(text("SELECT COUNT(*) FROM trades")).scalar()
+            final_orders = conn.execute(text("SELECT COUNT(*) FROM orders")).scalar()
+            
+            try:
+                final_positions = conn.execute(text("SELECT COUNT(*) FROM positions")).scalar()
+            except:
+                final_positions = 0
+            
+            total_remaining = final_trades + final_orders + final_positions
+            total_deleted = trades_deleted + orders_deleted + positions_deleted
+            
+            logger.info(f"📊 RESULTS: Deleted {total_deleted}, Remaining {total_remaining}")
+            
+            if total_remaining == 0:
+                logger.info("🎉 SUCCESS: Database is now COMPLETELY CLEAN!")
+                return {
+                    "success": True,
+                    "message": "🎉 EMERGENCY CLEANUP COMPLETED SUCCESSFULLY!",
+                    "data": {
+                        "before": {
+                            "trades": trades_count,
+                            "orders": orders_count, 
+                            "positions": positions_count,
+                            "total": total_contamination
+                        },
+                        "deleted": {
+                            "trades": trades_deleted,
+                            "orders": orders_deleted,
+                            "positions": positions_deleted,
+                            "total": total_deleted
+                        },
+                        "after": {
+                            "trades": final_trades,
+                            "orders": final_orders,
+                            "positions": final_positions,
+                            "total": total_remaining
+                        },
+                        "compliance": "✅ Rule #1: NO MOCK/DEMO DATA - ACHIEVED",
+                        "status": "Database ready for REAL trading data only"
+                    }
+                }
+            else:
+                logger.error(f"❌ CLEANUP INCOMPLETE: {total_remaining} records remain")
+                raise HTTPException(status_code=500, detail=f"Cleanup incomplete: {total_remaining} records remain")
+                
+    except Exception as e:
+        logger.error(f"❌ Direct cleanup failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Direct cleanup failed: {e}")
+
 @router.get("/status")
 async def database_status() -> Dict[str, Any]:
     """Get current database status and counts"""
