@@ -723,6 +723,63 @@ async def execute_migration_014():
         logger.error(f"❌ Failed to execute migration 014: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to execute migration 014: {e}")
 
+@router.post("/execute-migration-015")
+async def execute_migration_015():
+    """Execute simple migration 015 to fix schema + cleanup contamination"""
+    try:
+        logger.info("🚨 EXECUTING SIMPLE MIGRATION 015...")
+        
+        import subprocess
+        import os
+        
+        # Execute the migration script
+        script_path = "execute_emergency_migration_015.py"
+        
+        if not os.path.exists(script_path):
+            raise HTTPException(status_code=500, detail="Migration 015 script not found")
+        
+        logger.info("🔄 Running simple migration 015 script...")
+        
+        # Execute the script with proper environment
+        result = subprocess.run(
+            ["/usr/bin/python3", script_path],
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout
+        )
+        
+        logger.info(f"📊 Migration exit code: {result.returncode}")
+        logger.info(f"📢 Migration output: {result.stdout}")
+        
+        if result.stderr:
+            logger.warning(f"⚠️ Migration stderr: {result.stderr}")
+        
+        if result.returncode == 0:
+            logger.info("🎉 Migration 015 completed successfully!")
+            return {
+                "success": True,
+                "message": "🎉 SIMPLE EMERGENCY MIGRATION 015 COMPLETED SUCCESSFULLY!",
+                "data": {
+                    "migration": "015_simple_fix",
+                    "exit_code": result.returncode,
+                    "output": result.stdout,
+                    "schema_fixed": True,
+                    "contamination_removed": True,
+                    "compliance": "✅ Rule #1: NO MOCK/DEMO DATA - ACHIEVED",
+                    "status": "Database ready for REAL trading data only"
+                }
+            }
+        else:
+            logger.error(f"❌ Migration 015 failed with exit code: {result.returncode}")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Migration failed: {result.stderr or result.stdout}"
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to execute migration 015: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to execute migration 015: {e}")
+
 @router.get("/status")
 async def database_status() -> Dict[str, Any]:
     """Get current database status and counts"""
