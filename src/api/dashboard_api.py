@@ -11,6 +11,9 @@ import logging
 from fastapi import Depends
 import asyncio
 
+# CRITICAL FIX: Add missing imports for dashboard router
+from src.core.orchestrator import TradingOrchestrator, get_orchestrator
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
