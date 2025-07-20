@@ -618,37 +618,26 @@ class TradingOrchestrator:
             return False
     
     def _initialize_order_manager_with_fallback(self):
-        """Initialize OrderManager with multiple fallback levels"""
-        # Try full OrderManager first
+        """Initialize Clean OrderManager - NO FALLBACKS"""
         try:
-            from src.core.order_manager import OrderManager
+            from src.core.clean_order_manager import OrderManager
             
-            # CRITICAL FIX: Add redis_url to config for NotificationManager
-            redis_url = os.environ.get('REDIS_URL')
+            # Clean config - no fake fallbacks
             config = {
                 'zerodha_client': self.zerodha_client,
-                'redis_url': redis_url,  # Add redis_url for NotificationManager
-                'redis': {
-                    'host': os.environ.get('REDIS_HOST', 'localhost'),
-                    'port': int(os.environ.get('REDIS_PORT', 6379)),
-                    'db': int(os.environ.get('REDIS_DB', 0))
-                } if self.redis_manager else None
+                'redis_client': self.redis_manager,
+                'database_url': os.environ.get('DATABASE_URL')
             }
             
-            # CRITICAL FIX: Add syntax error handling
-            self.logger.info("🔄 Attempting full OrderManager initialization...")
+            self.logger.info("🔧 Initializing CLEAN OrderManager (no fallbacks)...")
             order_manager = OrderManager(config)
-            self.logger.info("✅ Full OrderManager initialized successfully")
+            self.logger.info("✅ Clean OrderManager initialized successfully")
             return order_manager
             
-        except SyntaxError as e:
-            self.logger.error(f"❌ OrderManager syntax error: {e}")
-            self.logger.error("🔄 Falling back to SimpleOrderManager...")
-            return self._initialize_simple_order_manager()
         except Exception as e:
-            self.logger.error(f"❌ OrderManager initialization failed: {e}")
-            self.logger.error("🔄 Falling back to SimpleOrderManager...")
-            return self._initialize_simple_order_manager()
+            self.logger.error(f"❌ OrderManager initialization FAILED: {e}")
+            self.logger.error("❌ NO FALLBACKS - System must be fixed properly")
+            raise e
             
     def _initialize_simple_order_manager(self):
         """Initialize SimpleOrderManager as fallback"""
