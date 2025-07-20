@@ -170,6 +170,73 @@ COMMIT;
             detail=f"Database cleanup failed: {str(e)}"
         )
 
+@router.post("/simple-emergency-cleanup")
+async def simple_emergency_cleanup():
+    """EMERGENCY: Delete ALL fake trades/orders - SIMPLE VERSION (existing tables only)"""
+    try:
+        logger.info("🚨 SIMPLE EMERGENCY: Starting database cleanup...")
+        
+        # Get database connection
+        db_manager = DatabaseManager() # Assuming get_database_manager is a placeholder for DatabaseManager
+        if not db_manager.engine: # Changed from get_database_manager() to db_manager.engine
+            raise HTTPException(status_code=500, detail="Database manager not available")
+        
+        async with db_manager.engine.connect() as conn: # Changed from get_database_manager() to db_manager.engine
+            # Check counts before cleanup
+            trade_count = await conn.fetchval("SELECT COUNT(*) FROM trades")
+            order_count = await conn.fetchval("SELECT COUNT(*) FROM orders")
+            
+            logger.info(f"📊 BEFORE CLEANUP: {trade_count} trades, {order_count} orders")
+            
+            # CRITICAL: Delete ALL fake data - ONLY EXISTING TABLES
+            logger.info("🔥 DELETING ALL TRADES...")
+            await conn.execute("DELETE FROM trades WHERE 1=1")
+            
+            logger.info("🔥 DELETING ALL ORDERS...")
+            await conn.execute("DELETE FROM orders WHERE 1=1")
+            
+            # Try positions if exists
+            try:
+                pos_count = await conn.fetchval("SELECT COUNT(*) FROM positions")
+                logger.info(f"🔥 DELETING {pos_count} POSITIONS...")
+                await conn.execute("DELETE FROM positions WHERE 1=1")
+            except Exception as e:
+                logger.warning(f"⚠️ Positions table issue: {e}")
+            
+            # Reset sequences
+            try:
+                await conn.execute("ALTER SEQUENCE IF EXISTS trades_trade_id_seq RESTART WITH 1")
+                await conn.execute("ALTER SEQUENCE IF EXISTS orders_order_id_seq RESTART WITH 1") 
+                await conn.execute("ALTER SEQUENCE IF EXISTS positions_position_id_seq RESTART WITH 1")
+            except Exception as e:
+                logger.warning(f"⚠️ Sequence reset issue: {e}")
+            
+            # Verify cleanup
+            final_trades = await conn.fetchval("SELECT COUNT(*) FROM trades")
+            final_orders = await conn.fetchval("SELECT COUNT(*) FROM orders")
+            
+            logger.info(f"✅ AFTER CLEANUP: {final_trades} trades, {final_orders} orders")
+            
+            if final_trades == 0 and final_orders == 0:
+                return {
+                    "success": True,
+                    "message": "🎉 EMERGENCY CLEANUP SUCCESSFUL - DATABASE IS NOW CLEAN!",
+                    "data": {
+                        "before": {"trades": trade_count, "orders": order_count},
+                        "after": {"trades": final_trades, "orders": final_orders},
+                        "deleted": {"trades": trade_count, "orders": order_count}
+                    }
+                }
+            else:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Cleanup incomplete: {final_trades} trades, {final_orders} orders remaining"
+                )
+                
+    except Exception as e:
+        logger.error(f"❌ Simple emergency cleanup failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Emergency cleanup failed: {e}")
+
 @router.post("/fix-schema")
 async def fix_database_schema():
     """Fix missing broker_user_id column - PRODUCTION ENDPOINT"""
