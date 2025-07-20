@@ -812,7 +812,7 @@ class TradingOrchestrator:
         try:
             from src.api.trading_control import broker_users
             
-            # Look for MASTER_USER_001 or any active user
+            # Look for PAPER_TRADER_001 or any active user
             for user_id, user_data in broker_users.items():
                 if user_data.get('is_active') and user_data.get('broker') == 'zerodha':
                     credentials = {
@@ -832,7 +832,7 @@ class TradingOrchestrator:
                         else:
                             self.logger.warning(f"⚠️ No access token found in Redis for user: {user_id}")
                             # Try alternative user IDs that frontend might use
-                            for alt_user_id in ['PAPER_TRADER_001', 'MASTER_USER_001']:
+                            for alt_user_id in ['PAPER_TRADER_001', 'PAPER_TRADER_MAIN']:
                                 access_token = await self._get_access_token_from_redis(alt_user_id)
                                 if access_token:
                                     credentials['access_token'] = access_token
