@@ -127,7 +127,7 @@ export const API_ENDPOINTS = {
     STRATEGY_PERFORMANCE: createEndpoint('/api/v1/strategies/performance'),
 
     // Dashboard endpoints
-    DASHBOARD_SUMMARY: createEndpoint('/api/v1/dashboard/dashboard/summary'),
+    DASHBOARD_SUMMARY: createEndpoint('/api/v1/dashboard/summary'),
     DAILY_PNL: createEndpoint('/api/v1/monitoring/daily-pnl'),
     RECOMMENDATIONS: createEndpoint('/api/v1/elite', true),
     ELITE_RECOMMENDATIONS: createEndpoint('/api/v1/elite', true),
