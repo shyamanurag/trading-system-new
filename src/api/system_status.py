@@ -90,15 +90,18 @@ async def get_trades_status():
 async def get_broker_status():
     """Get broker connection status"""
     try:
+        from src.core.orchestrator import TradingOrchestrator
+        orchestrator = TradingOrchestrator.get_instance()
+        status = orchestrator.connection_manager.get_connection_status('zerodha')
         return {
             "success": True,
             "broker": "zerodha",
-            "status": "connected",
+            "status": status.get('state', 'unknown'),
             "last_heartbeat": datetime.utcnow().isoformat(),
-            "api_calls_today": 0,
-            "rate_limit_remaining": 100,
-            "market_data_connected": True,
-            "order_management_connected": True
+            "api_calls_today": status.get('api_calls_today', 0),
+            "rate_limit_remaining": status.get('rate_limit_remaining', 100),
+            "market_data_connected": status.get('ws_connected', False),
+            "order_management_connected": status.get('connected', False)
         }
     except Exception as e:
         logger.error(f"Error getting broker status: {str(e)}")
@@ -410,4 +413,4 @@ COMMIT;
         raise HTTPException(
             status_code=500,
             detail=f"Database cleanup failed: {str(e)}"
-        ) 
+        )

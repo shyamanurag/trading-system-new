@@ -217,6 +217,19 @@ class WebSocketService extends EventTarget {
   getMessageQueueSize(): number {
     return this.messageQueue.length;
   }
+
+  // New method to subscribe to topics
+  subscribe(topics: string[]): void {
+      if (!this.isConnected()) {
+          console.error('Cannot subscribe: WebSocket not connected');
+          return;
+      }
+      this.send({
+          type: 'subscribe',
+          topics: topics,
+          timestamp: new Date().toISOString()
+      });
+  }
 }
 
 // Export singleton instance
@@ -225,4 +238,4 @@ export const websocketService = new WebSocketService();
 // Export hook for React components
 export const useWebSocket = () => {
   return websocketService;
-}; 
+};

@@ -104,9 +104,13 @@ export const API_ENDPOINTS = {
     BROKER_USERS: createEndpoint('/api/v1/control/users/broker'),
 
     // UNIFIED Trading endpoints - All use PRIMARY_USER_ID for consistency
-    TRADES: createEndpoint('/api/v1/autonomous/trades', true),
+    TRADES: createEndpoint('/api/v1/trades', true),
     POSITIONS: createEndpoint('/api/v1/positions', true),
     ORDERS: createEndpoint('/api/v1/orders', true),
+    // Added missing endpoints for complete coverage
+    RISK_METRICS: createEndpoint('/api/v1/risk/metrics'),
+    STRATEGIES: createEndpoint('/api/v1/strategies'),
+    AUTONOMOUS: createEndpoint('/api/v1/autonomous'),
 
     // Trading control endpoints
     TRADING_CONTROL: createEndpoint('/api/v1/control/trading/control'),
@@ -194,4 +198,4 @@ export const buildUserEndpoint = (baseEndpoint, context = 'database') => {
 export const buildZerodhaEndpoint = (baseEndpoint) => {
     const userId = getUserIdentifier('zerodha');
     return `${baseEndpoint}?user_id=${userId}`;
-}; 
+};

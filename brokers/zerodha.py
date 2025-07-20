@@ -66,10 +66,13 @@ class ZerodhaIntegration:
                 self.kite.set_access_token(access_token)
                 logger.info(f"✅ Zerodha access token updated: {access_token[:10]}...")
                 
-                # Test the connection
+                # Verify connection
                 profile = self.kite.profile()
                 logger.info(f"✅ Zerodha connection verified - User: {profile.get('user_name', 'Unknown')}")
                 self.is_connected = True
+                
+                # Automatically reinitialize WebSocket after token update
+                await self._initialize_websocket()
                 return True
             else:
                 logger.error("❌ Cannot update token - KiteConnect not initialized or token invalid")
@@ -393,10 +396,13 @@ class ZerodhaIntegration:
                 self.ticker_connected = True
                 logger.info("Mock WebSocket connection established")
             else:
-                # Real WebSocket implementation would go here
-                # For now, set to False since real implementation is not complete
-                self.ticker_connected = False
-                logger.info("Real WebSocket connection not implemented - ticker_connected set to False")
+                from kiteconnect import KiteTicker
+                self.ticker = KiteTicker(self.api_key, self.access_token)
+                self.ticker.on_ticks = self._on_ticks
+                self.ticker.on_connect = self._on_connect
+                self.ticker.connect(threaded=True)
+                self.ticker_connected = True
+                logger.info("Real WebSocket connection established")
         except Exception as e:
             logger.error(f"WebSocket initialization failed: {e}")
             self.ticker_connected = False
@@ -406,4 +412,10 @@ class ZerodhaIntegration:
         return {
             'is_connected': self.is_connected,
             'mock_mode': self.mock_mode
-        } 
+        }
+def _on_ticks(self, ws, ticks):
+    logger.info(f"Received ticks: {ticks}")
+    # Add handling logic here
+def _on_connect(self, ws, response):
+    logger.info("WebSocket connected")
+    # Subscribe to symbols here

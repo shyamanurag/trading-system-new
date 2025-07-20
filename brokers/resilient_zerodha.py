@@ -81,41 +81,14 @@ class ResilientZerodhaConnection(ResilientConnection):
         """Monitor WebSocket connection and handle reconnection"""
         while True:
             try:
-                # FIXED: Skip WebSocket monitoring if real WebSocket is not implemented
-                # This prevents spam reconnection attempts in production
                 if not hasattr(self.broker, 'ticker_connected'):
                     logger.debug("WebSocket monitoring disabled - ticker_connected attribute not available")
-                    await asyncio.sleep(60)  # Check every minute instead
+                    await asyncio.sleep(60)
                     continue
                 
-                # Check if we're in real mode but WebSocket is intentionally not implemented
-                if (not getattr(self.broker, 'mock_mode', False) and 
-                    not self.broker.ticker_connected):
-                    
-                    # Don't spam reconnection attempts if WebSocket is intentionally disabled
-                    if self._ws_reconnect_attempts == 0:
-                        logger.info("WebSocket intentionally disabled in real mode - monitoring reduced")
-                        
-                    # Only attempt reconnection once, then reduce monitoring frequency
-                    if self._ws_reconnect_attempts == 0:
-                        logger.info("Attempting single WebSocket connection check")
-                        await self.broker._initialize_websocket()
-                        self._ws_reconnect_attempts += 1
-                    
-                    # After initial attempt, check less frequently to avoid spam
-                    await asyncio.sleep(60)  # Check every minute instead of every second
-                    continue
-                
-                # Original monitoring logic for mock mode or when WebSocket is actually expected to work
-                ticker_connected = getattr(self.broker, 'ticker_connected', True)
-                
-                if not ticker_connected and getattr(self.broker, 'mock_mode', False):
+                if not self.broker.ticker_connected:
                     current_time = time.time()
-                    
-                    # Check if we should attempt reconnection
-                    if (self._ws_last_reconnect is None or 
-                        current_time - self._ws_last_reconnect >= self._ws_reconnect_delay):
-                        
+                    if self._ws_last_reconnect is None or current_time - self._ws_last_reconnect >= self._ws_reconnect_delay:
                         if self._ws_reconnect_attempts < self._ws_max_reconnect_attempts:
                             logger.info(f"Attempting WebSocket reconnection (attempt {self._ws_reconnect_attempts + 1})")
                             await self.broker._initialize_websocket()
@@ -123,16 +96,12 @@ class ResilientZerodhaConnection(ResilientConnection):
                             self._ws_last_reconnect = current_time
                         else:
                             logger.error("Max WebSocket reconnection attempts reached")
-                            # Reset attempts after a longer delay
                             await asyncio.sleep(self._ws_reconnect_delay * 2)
                             self._ws_reconnect_attempts = 0
-                
-                # Reset reconnection attempts if connection is stable
-                if ticker_connected:
+                else:
                     self._ws_reconnect_attempts = 0
                 
-                await asyncio.sleep(5)  # Check every 5 seconds instead of 1 second
-                
+                await asyncio.sleep(5)
             except Exception as e:
                 logger.error(f"Error in WebSocket monitoring: {e}")
                 await asyncio.sleep(5)
@@ -251,4 +220,4 @@ class ResilientZerodhaConnection(ResilientConnection):
     
     async def _check_connection_alive(self) -> bool:
         """Check if connection is alive"""
-        return await self._health_check_impl() 
+        return await self._health_check_impl()
