@@ -8,6 +8,9 @@ from sqlalchemy import text
 import logging
 from typing import Dict, Any
 from datetime import datetime
+import subprocess
+import sys
+from pathlib import Path
 
 from src.core.database import DatabaseManager
 
@@ -319,6 +322,73 @@ async def verify_database_schema():
     except Exception as e:
         logger.error(f"❌ Schema verification failed: {e}")
         raise HTTPException(status_code=500, detail=f"Schema verification failed: {str(e)}")
+
+@router.post("/execute-production-cleanup")
+async def execute_production_cleanup():
+    """Execute production cleanup script directly from deployment"""
+    try:
+        import subprocess
+        import os
+        from pathlib import Path
+        
+        logger.info("🚨 EXECUTING PRODUCTION CLEANUP SCRIPT...")
+        
+        # Get the script path (should be in project root)
+        project_root = Path(__file__).parent.parent.parent
+        script_path = project_root / "production_cleanup_deployment.py"
+        
+        if not script_path.exists():
+            raise HTTPException(status_code=404, detail=f"Cleanup script not found: {script_path}")
+        
+        logger.info(f"📄 Found cleanup script: {script_path}")
+        
+        # Execute the cleanup script
+        logger.info("⚡ Starting cleanup execution...")
+        
+        result = subprocess.run(
+            [sys.executable, str(script_path)],
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 minute timeout
+            cwd=str(project_root)
+        )
+        
+        # Get output
+        stdout = result.stdout
+        stderr = result.stderr
+        exit_code = result.returncode
+        
+        logger.info(f"🔄 Cleanup script completed with exit code: {exit_code}")
+        
+        if exit_code == 0:
+            logger.info("🎉 PRODUCTION CLEANUP SUCCESSFUL!")
+            return {
+                "success": True,
+                "message": "🎉 Production database cleanup completed successfully!",
+                "data": {
+                    "exit_code": exit_code,
+                    "output": stdout,
+                    "errors": stderr if stderr else None
+                }
+            }
+        else:
+            logger.error(f"❌ PRODUCTION CLEANUP FAILED with exit code {exit_code}")
+            return {
+                "success": False,
+                "message": f"❌ Production cleanup failed with exit code {exit_code}",
+                "data": {
+                    "exit_code": exit_code,
+                    "output": stdout,
+                    "errors": stderr
+                }
+            }
+            
+    except subprocess.TimeoutExpired:
+        logger.error("❌ Cleanup script timed out after 5 minutes")
+        raise HTTPException(status_code=408, detail="Cleanup script timed out")
+    except Exception as e:
+        logger.error(f"❌ Failed to execute cleanup script: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to execute cleanup script: {e}")
 
 @router.get("/status")
 async def database_status() -> Dict[str, Any]:
