@@ -43,15 +43,15 @@ def initialize_default_users():
     """Initialize default master user on startup to prevent user loss on redeploy"""
     try:
         # Only add if master user doesn't exist (prevent duplicates)
-        if "MASTER_USER_001" not in broker_users:
+        if "PAPER_TRADER_001" not in broker_users:
             # Use REAL environment variables instead of fake ones
             real_api_key = os.getenv('ZERODHA_API_KEY', 'vc9ft4zpknynpm3u')
             real_api_secret = os.getenv('ZERODHA_API_SECRET', '0nwjb2cncw9stf3m5cre73rqc3bc5xsc')
             real_client_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
             
             master_user = {
-                "user_id": "MASTER_USER_001",
-                "name": "Master Trader",
+                "user_id": "PAPER_TRADER_001",
+                "name": "Paper Trading Account",
                 "broker": "zerodha",
                 "api_key": real_api_key,
                 "api_secret": real_api_secret,
@@ -69,17 +69,20 @@ def initialize_default_users():
                 "open_trades": 0
             }
             
-            broker_users["MASTER_USER_001"] = master_user
+            broker_users["PAPER_TRADER_001"] = master_user
             
             # DON'T overwrite environment variables - they're already set correctly!
             # Environment variables are properly configured in DigitalOcean
             logger.info(f"✅ Using real API key: {real_api_key[:8]}...")
             logger.info(f"✅ Using real client ID: {real_client_id}")
             
-            logger.info("✅ Auto-initialized MASTER_USER_001 to prevent user loss on redeploy")
+            logger.info("✅ Auto-initialized PAPER_TRADER_001 to prevent user loss on redeploy")
+            return True
+        else:
+            logger.info("✅ PAPER_TRADER_001 already exists - skipping initialization")
             return True
     except Exception as e:
-        logger.error(f"❌ Failed to initialize default users: {e}")
+        logger.error(f"❌ Error initializing default users: {e}")
         return False
 
 # Auto-initialize default users on module import
