@@ -409,16 +409,23 @@ class TrueDataClient:
         logger.info("🛑 Force disconnect completed")
 
     def _get_symbols_to_subscribe(self):
-        """Get symbols from our config file"""
+        """Get symbols from our config file - FIXED TO USE COMPLETE SYMBOL LIST (250 symbols)"""
         try:
-            from config.truedata_symbols import get_default_subscription_symbols
-            symbols = get_default_subscription_symbols()
-            logger.info(f"📋 Using configured symbols: {symbols}")
+            from config.truedata_symbols import get_complete_fo_symbols
+            symbols = get_complete_fo_symbols()
+            logger.info(f"📋 Using COMPLETE symbol set: {len(symbols)} symbols (target: 250)")
             return symbols
         except ImportError:
-            # Fallback to hardcoded symbols
-            symbols = ['NIFTY-I', 'BANKNIFTY-I', 'RELIANCE', 'TCS', 'HDFC', 'INFY']
-            logger.info(f"📋 Using fallback symbols: {symbols}")
+            # Enhanced fallback with more symbols
+            symbols = [
+                # Core Indices  
+                'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
+                # Top F&O Stocks
+                'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
+                'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
+                'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA'
+            ]
+            logger.info(f"📋 Using EXPANDED fallback symbols: {len(symbols)} symbols")
             return symbols
 
     def _setup_callback(self):

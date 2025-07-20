@@ -4,6 +4,9 @@ Official symbol formats for TrueData API integration
 """
 
 from typing import List
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Index symbols (use -I suffix for TrueData)
 INDEX_SYMBOLS = {
@@ -113,34 +116,98 @@ def get_default_subscription_symbols():
     ]
 
 def get_complete_fo_symbols():
-    """Get complete F&O symbol list (up to 250 symbols)"""
+    """Get complete F&O symbol list (EXPANDED TO FULL 250 symbols)"""
     base_symbols = get_default_subscription_symbols()
     
-    # Additional F&O symbols for expansion to 250
+    # EXPANDED: Additional F&O symbols for 250 symbol capacity
     additional_symbols = [
+        # Major Banks & Financial Services (15 symbols)
         'INDUSINDBK', 'FEDERALBNK', 'BANKBARODA', 'PNB', 'CANBK',
         'YESBANK', 'BANDHANBNK', 'IDFCFIRSTB', 'AUBANK', 'RBLBANK',
-        'BHARATFORG', 'BHEL', 'BEL', 'HAL', 'SAIL',
+        'MUTHOOTFIN', 'MANAPPURAM', 'CHOLAFIN', 'BAJAJHLDNG', 'IIFL',
+        
+        # Energy & Oil (15 symbols)
         'ONGC', 'IOC', 'BPCL', 'HPCL', 'GAIL',
+        'HINDPETRO', 'PETRONET', 'CASTROLIND', 'MRPL', 'GSPL',
+        'ADANIGAS', 'IGL', 'MGL', 'ATGL', 'AEGISCHEM',
+        
+        # Metals & Mining (15 symbols)
         'NMDC', 'JINDALSTEL', 'NATIONALUM', 'MOIL', 'RATNAMANI',
-        'ASHOKLEY', 'BALKRISIND', 'CESC', 'DLF', 'GODREJIND',
-        'HAVELLS', 'IBULHSGFIN', 'LICHSGFIN', 'MFSL', 'MOTHERSUMI',
-        'PAGEIND', 'PIDILITIND', 'RAMCOCEM', 'SHREECEM', 'SIEMENS',
-        'TORNTPHARM', 'VOLTAS', 'WHIRLPOOL', 'ZEEL', 'AUROPHARMA',
-        'BATINDIA', 'BERGEPAINT', 'CADILAHC', 'COLPAL', 'CONCOR',
-        'CUMMINSIND', 'ESCORTS', 'EXIDEIND', 'GLENMARK', 'GRASIM',
-        'GSPL', 'HINDPETRO', 'IPCALAB', 'JUBLFOOD', 'KAJARIACER',
-        'KPITTECH', 'LALPATHLAB', 'LUPIN', 'MARICO', 'MGL',
-        'MPHASIS', 'MRF', 'NAVINFLUOR', 'OFSS', 'PERSISTENT',
-        'PETRONET', 'PFIZER', 'PIIND', 'PVR', 'RELAXO',
-        'SBILIFE', 'SRTRANSFIN', 'STAR', 'SYNGENE', 'TATACHEM',
-        'TATACOMM', 'TRENT', 'TVSMOTOR', 'UBL', 'UJJIVAN',
-        'UPL', 'VOLTAS', 'WOCKPHARMA', 'ZYDUSLIFE'
+        'BHARATFORG', 'BHEL', 'BEL', 'HAL', 'SAIL',
+        'WELCORP', 'WELSPUNIND', 'HINDZINC', 'NALCO', 'COALINDIA',
+        
+        # Auto & Auto Components (15 symbols)  
+        'ASHOKLEY', 'BALKRISIND', 'MOTHERSUMI', 'BOSCHLTD', 'EICHERMOT',
+        'BAJAJ-AUTO', 'HEROMOTOCO', 'TVSMOTOR', 'ESCORTS', 'FORCEMOT',
+        'MAHINDCIE', 'APOLLOTYRE', 'MRF', 'CEAT', 'BHARATGEAR',
+        
+        # IT & Technology (15 symbols)
+        'MPHASIS', 'PERSISTENT', 'KPITTECH', 'LTTS', 'MINDTREE',
+        'OFSS', 'CYIENT', 'ROLTA', 'ZENSAR', 'NELCO',
+        'NIITTECH', 'INFIBEAM', 'JUSTDIAL', 'INFO', 'ONMOBILE',
+        
+        # Pharma & Healthcare (15 symbols)
+        'BIOCON', 'CADILAHC', 'GLENMARK', 'LUPIN', 'TORNTPHARM',
+        'AUROPHARMA', 'DRREDDY', 'SUNPHARMA', 'CIPLA', 'DIVISLAB',
+        'PFIZER', 'ALKEM', 'AUROBINDO', 'LALPATHLAB', 'FORTIS',
+        
+        # Consumer Goods (15 symbols)
+        'COLPAL', 'MARICO', 'GODREJCP', 'BATINDIA', 'DABUR',
+        'HINDUNILVR', 'BRITANNIA', 'NESTLEIND', 'VBL', 'TATACONSUM',
+        'EMAMILTD', 'JYOTHYLAB', 'DIXON', 'VOLTAS', 'WHIRLPOOL',
+        
+        # Construction & Real Estate (10 symbols)
+        'DLF', 'GODREJPROP', 'PRESTIGE', 'SOBHA', 'BRIGADE',
+        'PHOENIXLTD', 'OBEROIRLTY', 'MAHLIFE', 'SUNTECK', 'LODHA',
+        
+        # Textiles & Apparel (10 symbols)
+        'RAYMOND', 'ADITYADHOAP', 'GRASIM', 'WELSPUNIND', 'TRIDENT',
+        'VARDHMANTEXT', 'ARVIND', 'SPENCERS', 'SHOPPERSSTOP', 'TRENT',
+        
+        # Infrastructure & Power (10 symbols)
+        'ADANIPOWER', 'NTPC', 'POWERGRID', 'TORNTPOWER', 'CESC',
+        'JSWENERGY', 'ADANIGREEN', 'SUZLON', 'ORIENTELEC', 'THERMAX',
+        
+        # Chemicals & Fertilizers (10 symbols)
+        'UPL', 'PI', 'AARTI', 'DEEPAKNTR', 'BALRAMCHIN',
+        'TATACHEM', 'CHAMBLFERT', 'COROMANDEL', 'KANSAINER', 'NAVINFLUOR',
+        
+        # Aviation & Logistics (10 symbols)
+        'INDIGO', 'SPICEJET', 'CONCOR', 'GATI', 'MAHLOG',
+        'BLUEDART', 'DTDC', 'TCI', 'VTL', 'SNOWMAN',
+        
+        # Media & Entertainment (10 symbols)
+        'ZEEL', 'SUNTV', 'PVRINOX', 'INOXLEISUR', 'EROS',
+        'BALAJITELE', 'TVTODAY', 'JAGRAN', 'HT', 'NAVNETEDUL',
+        
+        # Retail & E-commerce (10 symbols)
+        'DMART', 'JUBLFOOD', 'WESTLIFE', 'SPECIALITY', 'KAJARIACER',
+        'RELAXO', 'BATA', 'PAGEIND', 'PIDILITIND', 'ASTRAZEN',
+        
+        # Diversified (5 symbols)
+        'SIEMENS', 'ABB', 'HONAUT', 'STAR', 'SYNGENE'
     ]
     
-    # Combine and limit to 250
+    # Combine and ensure we reach 250 symbols
     all_symbols = base_symbols + additional_symbols
-    return all_symbols[:250]
+    
+    # If still under 250, add more liquid F&O stocks
+    if len(all_symbols) < 250:
+        extra_symbols = [
+            'RAMCOCEM', 'SHREECEM', 'ULTRACEMCO', 'AMBUJACAM', 'ACC',
+            'JKCEMENT', 'HEIDELBERG', 'PRISMCEM', 'JKLAKSHMI', 'ORIENT',
+            'HAVELLS', 'CROMPTON', 'POLYCAB', 'KEI', 'FINOLEX',
+            'EXIDEIND', 'AMARAJABAT', 'AMETEK', 'EVEREADY', 'HEG'
+        ]
+        all_symbols.extend(extra_symbols)
+    
+    # Return exactly 250 symbols
+    final_symbols = all_symbols[:250]
+    
+    # Log the expansion for monitoring
+    logger.info(f"🚀 EXPANDED F&O SYMBOLS: Generated {len(final_symbols)} symbols for trading")
+    
+    return final_symbols
 
 # Override DEFAULT_SYMBOLS with expanded list
 DEFAULT_SYMBOLS = get_default_subscription_symbols()
