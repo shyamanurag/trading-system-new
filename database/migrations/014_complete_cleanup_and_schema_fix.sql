@@ -42,19 +42,19 @@ BEGIN
 END $$;
 
 -- STEP 3: COMPLETE CLEANUP - Delete ALL fake data
-RAISE NOTICE '🔥 EXECUTING COMPLETE CLEANUP...';
-
--- Delete all trades (ALL are fake - production starts clean)
-DELETE FROM trades WHERE 1=1;
-RAISE NOTICE '🔥 Deleted ALL trades';
-
--- Delete all orders (ALL are fake - production starts clean)  
-DELETE FROM orders WHERE 1=1;
-RAISE NOTICE '🔥 Deleted ALL orders';
-
--- Delete all positions if table exists (ALL are fake - production starts clean)
 DO $$
 BEGIN
+    RAISE NOTICE '🔥 EXECUTING COMPLETE CLEANUP...';
+    
+    -- Delete all trades (ALL are fake - production starts clean)
+    DELETE FROM trades WHERE 1=1;
+    RAISE NOTICE '🔥 Deleted ALL trades';
+    
+    -- Delete all orders (ALL are fake - production starts clean)  
+    DELETE FROM orders WHERE 1=1;
+    RAISE NOTICE '🔥 Deleted ALL orders';
+    
+    -- Delete all positions if table exists (ALL are fake - production starts clean)
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'positions') THEN
         DELETE FROM positions WHERE 1=1;
         RAISE NOTICE '🔥 Deleted ALL positions';
@@ -117,6 +117,10 @@ END $$;
 
 COMMIT;
 
-RAISE NOTICE '🎉 MIGRATION 014 COMPLETED SUCCESSFULLY!';
-RAISE NOTICE '🎯 Next deployment will start with 100% clean database';
-RAISE NOTICE '🔥 Ready for REAL autonomous trading!'; 
+-- Final success notification
+DO $$
+BEGIN
+    RAISE NOTICE '🎉 MIGRATION 014 COMPLETED SUCCESSFULLY!';
+    RAISE NOTICE '🎯 Next deployment will start with 100% clean database';
+    RAISE NOTICE '🔥 Ready for REAL autonomous trading!';
+END $$; 
