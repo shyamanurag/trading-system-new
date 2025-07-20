@@ -58,7 +58,7 @@ class ZerodhaIntegration:
         self.last_order_time = 0
         self.order_rate_limit = 1.0  # 1 second between orders
         
-    def update_access_token(self, access_token: str):
+    async def update_access_token(self, access_token: str):
         """Update access token after frontend authentication"""
         try:
             if self.kite and access_token:
