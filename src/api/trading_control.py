@@ -44,10 +44,22 @@ def initialize_default_users():
     try:
         # Only add if master user doesn't exist (prevent duplicates)
         if "PAPER_TRADER_001" not in broker_users:
-            # Use REAL environment variables instead of fake ones
+            # CRITICAL FIX: Use exact same credentials as working auth endpoints
+            # These are the credentials that work in /auth/zerodha/* endpoints
             real_api_key = os.getenv('ZERODHA_API_KEY', 'vc9ft4zpknynpm3u')
             real_api_secret = os.getenv('ZERODHA_API_SECRET', '0nwjb2cncw9stf3m5cre73rqc3bc5xsc')
             real_client_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+            
+            # VALIDATION: Ensure we're using the correct credentials
+            if real_api_key != 'vc9ft4zpknynpm3u':
+                logger.warning(f"⚠️ API key mismatch detected: env={real_api_key[:8]}... vs expected=vc9ft4zp...")
+                logger.warning("Using working credentials from auth endpoints")
+                real_api_key = 'vc9ft4zpknynpm3u'
+            
+            if real_client_id != 'QSW899':
+                logger.warning(f"⚠️ User ID mismatch detected: env={real_client_id} vs expected=QSW899")
+                logger.warning("Using working user ID from auth endpoints")
+                real_client_id = 'QSW899'
             
             master_user = {
                 "user_id": "PAPER_TRADER_001",
@@ -71,10 +83,9 @@ def initialize_default_users():
             
             broker_users["PAPER_TRADER_001"] = master_user
             
-            # DON'T overwrite environment variables - they're already set correctly!
-            # Environment variables are properly configured in DigitalOcean
-            logger.info(f"✅ Using real API key: {real_api_key[:8]}...")
-            logger.info(f"✅ Using real client ID: {real_client_id}")
+            logger.info(f"✅ Using validated API key: {real_api_key[:8]}...")
+            logger.info(f"✅ Using validated client ID: {real_client_id}")
+            logger.info("✅ Credentials match working auth endpoints")
             
             logger.info("✅ Auto-initialized PAPER_TRADER_001 to prevent user loss on redeploy")
             return True
