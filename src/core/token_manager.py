@@ -47,12 +47,13 @@ class ZerodhaTokenManager:
                     'health_check_interval': 30
                 }
                 
-                # Add SSL configuration for DigitalOcean
-                if self.ssl_required:
+                # CRITICAL FIX: DigitalOcean Redis requires SSL even with redis:// URLs
+                if self.ssl_required or 'ondigitalocean.com' in self.redis_url:
                     config.update({
                         'ssl': True,
                         'ssl_cert_reqs': None,
-                        'ssl_check_hostname': False
+                        'ssl_check_hostname': False,
+                        'retry_on_timeout': True
                     })
                 
                 self.redis_client = redis.Redis(**config)

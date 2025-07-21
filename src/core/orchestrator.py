@@ -1063,23 +1063,40 @@ class TradingOrchestrator:
                     redis_password = os.environ.get('REDIS_PASSWORD')
                     
                     try:
-                        # CRITICAL FIX: Enhanced Redis connection with resilience
-                        connection_pool = redis.ConnectionPool(
-                        host=redis_host,
-                        port=redis_port,
-                        password=redis_password,
-                        decode_responses=True,
-                            socket_connect_timeout=5,  # Reduced timeout
-                            socket_timeout=5,
-                            socket_keepalive=True,
-                            socket_keepalive_options={},
-                            health_check_interval=60,  # Increased health check interval
-                            max_connections=2,  # Reduced max connections
-                            retry_on_timeout=True,
-                            retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError]
-                        )
+                        # CRITICAL FIX: Proper DigitalOcean Redis connection
+                        redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379')
                         
-                        self.redis_client = redis.Redis(connection_pool=connection_pool)
+                        # DigitalOcean managed Redis requires SSL even with redis:// URLs
+                        if 'ondigitalocean.com' in redis_url:
+                            # Use redis.from_url with SSL configuration for DigitalOcean
+                            self.redis_client = redis.from_url(
+                                redis_url,
+                                decode_responses=True,
+                                socket_timeout=10,
+                                socket_connect_timeout=10,
+                                retry_on_timeout=True,
+                                ssl=True,
+                                ssl_cert_reqs=None,
+                                ssl_check_hostname=False,
+                                health_check_interval=30
+                            )
+                        else:
+                            # Local Redis without SSL
+                            connection_pool = redis.ConnectionPool(
+                                host=redis_host,
+                                port=redis_port,
+                                password=redis_password,
+                                decode_responses=True,
+                                socket_connect_timeout=5,
+                                socket_timeout=5,
+                                socket_keepalive=True,
+                                socket_keepalive_options={},
+                                health_check_interval=60,
+                                max_connections=2,
+                                retry_on_timeout=True,
+                                retry_on_error=[redis.exceptions.ConnectionError, redis.exceptions.TimeoutError]
+                            )
+                            self.redis_client = redis.Redis(connection_pool=connection_pool)
                         
                         # Test connection with retry logic
                         for attempt in range(3):

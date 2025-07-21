@@ -53,15 +53,29 @@ class ProductionRedisManager:
     async def initialize(self) -> bool:
         """Initialize Redis connection with retry logic"""
         try:
-            # For DigitalOcean Redis, use minimal configuration
-            # The URL already contains all necessary SSL and auth info
-            self.redis_client = redis.from_url(
-                self.redis_url,
-                decode_responses=True,
-                socket_timeout=30,
-                socket_connect_timeout=30,
-                max_connections=50
-            )
+            # CRITICAL FIX: DigitalOcean Redis requires SSL even with redis:// URLs
+            if 'ondigitalocean.com' in self.redis_url:
+                # DigitalOcean managed Redis needs SSL configuration
+                self.redis_client = redis.from_url(
+                    self.redis_url,
+                    decode_responses=True,
+                    socket_timeout=30,
+                    socket_connect_timeout=30,
+                    max_connections=50,
+                    ssl=True,
+                    ssl_cert_reqs=None,
+                    ssl_check_hostname=False,
+                    retry_on_timeout=True
+                )
+            else:
+                # Local Redis without SSL
+                self.redis_client = redis.from_url(
+                    self.redis_url,
+                    decode_responses=True,
+                    socket_timeout=30,
+                    socket_connect_timeout=30,
+                    max_connections=50
+                )
             
             # Test connection with retry logic
             await self._test_connection_with_retry()

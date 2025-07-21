@@ -96,11 +96,10 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    # Relationships
-    positions = relationship("TradingPosition", back_populates="user", cascade="all, delete-orphan")
+    # Relationships - FIXED: Use proper SQLAlchemy class names
+    # Note: These reference the SQLAlchemy models defined later in this file
     trades = relationship("Trade", back_populates="user", cascade="all, delete-orphan")
     orders = relationship("Order", back_populates="user", cascade="all, delete-orphan")
-    metrics = relationship("UserMetric", back_populates="user")
     risk_metrics = relationship("RiskMetric", back_populates="user")
 
 class Portfolio(Base):
@@ -187,8 +186,8 @@ class TradingPosition(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    # Relationships
-    user = relationship("User", back_populates="positions")
+    # Relationships - FIXED: Remove circular reference
+    user = relationship("User")
     trades = relationship("Trade", back_populates="position")
 
 class Trade(Base):
@@ -384,6 +383,6 @@ class Signal(BaseModel):
             'metadata': self.metadata
         }
 
-# Create aliases for backward compatibility
-Position = PositionModel
-TradingPosition = PositionModel 
+# Create aliases for backward compatibility - FIXED: Only alias Pydantic models
+# Note: TradingPosition SQLAlchemy model is defined above, don't alias it
+Position = PositionModel 
