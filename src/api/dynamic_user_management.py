@@ -105,7 +105,7 @@ class DynamicUserManager:
         self.db_config = DatabaseConfig()
         self.engine = create_engine(self.db_config.database_url)
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
-        self.schema_manager = DatabaseSchemaManager(self.db_config.database_url)  # Fixed: pass database_url
+        self.schema_manager = DatabaseSchemaManager()  # Fixed: remove database_url parameter
         self.redis_client = None
         
     async def initialize(self):
@@ -116,7 +116,13 @@ class DynamicUserManager:
             
             # Initialize Redis connection
             redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-            self.redis_client = await redis.from_url(redis_url)
+            try:
+                self.redis_client = await redis.from_url(redis_url, decode_responses=True)
+                await self.redis_client.ping()
+                logger.info("✅ Redis connection established")
+            except Exception as redis_error:
+                logger.warning(f"⚠️ Redis connection failed: {redis_error}")
+                self.redis_client = None
             
             logger.info("✅ DynamicUserManager initialized successfully")
             return True
@@ -127,11 +133,13 @@ class DynamicUserManager:
     async def _ensure_database_schema(self):
         """Ensure database schema is properly set up"""
         try:
-            await self.schema_manager.ensure_table_exists('users')
-            logger.info("✅ Database schema verified")
+            # Test database connection with simple query
+            with self.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            logger.info("✅ Database connection verified")
         except Exception as e:
-            logger.error(f"❌ Database schema verification failed: {e}")
-            raise
+            logger.error(f"❌ Database connection failed: {e}")
+            raise HTTPException(status_code=500, detail="Database connection failed")
     
     def get_db_session(self) -> Session:
         """Get database session"""
@@ -569,7 +577,11 @@ async def list_users(
     manager: DynamicUserManager = Depends(get_user_manager)
 ):
     """List all users with basic analytics"""
-    return await manager.list_users(skip, limit, active_only)
+    try:
+        return await manager.list_users(skip, limit, active_only)
+    except Exception as e:
+        logger.error(f"Error in list_users endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list users: {str(e)}")
 
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
