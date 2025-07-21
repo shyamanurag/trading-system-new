@@ -17,7 +17,8 @@ trading_state = {
     "is_running": False,
     "start_time": None,
     "orchestrator": None,
-    "data_provider": None
+    "data_provider": None,
+    "paper_trading": False  # CRITICAL FIX: Add missing paper_trading key
 }
 
 class BrokerUser(BaseModel):
