@@ -105,7 +105,7 @@ class DynamicUserManager:
         self.db_config = DatabaseConfig()
         self.engine = create_engine(self.db_config.database_url)
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
-        self.schema_manager = DatabaseSchemaManager()  # Fixed: remove database_url parameter
+        self.schema_manager = DatabaseSchemaManager(database_url=self.db_config.database_url)  # Fixed: pass database_url parameter
         self.redis_client = None
         
     async def initialize(self):
@@ -554,6 +554,9 @@ class DynamicUserManager:
 user_manager = DynamicUserManager()
 
 # Dependency to get user manager
+# Global user manager instance
+user_manager = DynamicUserManager()
+
 async def get_user_manager() -> DynamicUserManager:
     if not user_manager.redis_client:
         await user_manager.initialize()
