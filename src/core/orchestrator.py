@@ -1737,13 +1737,13 @@ class TradingOrchestrator:
             # Get market status
             market_open = self._is_market_open()
             
-            # Get risk status
+            # Get risk status - FIXED: Proper risk assessment
             risk_status = {
                 'max_daily_loss': 100000,
                 'max_position_size': 1000000,
                 'current_positions': active_positions,
                 'daily_pnl': daily_pnl,
-                'status': 'healthy' if system_ready else 'degraded'
+                'status': self._get_risk_status(daily_pnl, active_positions, system_ready)
             }
             
             return {
@@ -2022,6 +2022,29 @@ class TradingOrchestrator:
             except Exception as e:
                 self.logger.error(f"❌ Error updating positions with market data: {e}")
                 await asyncio.sleep(5)
+
+    def _get_risk_status(self, daily_pnl: float, active_positions: int, system_ready: bool) -> str:
+        """Determine risk status based on current conditions"""
+        try:
+            # Check for critical risk conditions
+            if abs(daily_pnl) > 50000:  # Major daily loss/gain
+                return 'critical'
+            
+            if abs(daily_pnl) > 25000:  # Significant daily movement
+                return 'warning'
+            
+            if active_positions > 10:  # Too many positions
+                return 'warning'
+            
+            if not system_ready:  # System not fully ready
+                return 'monitoring'
+            
+            # All good
+            return 'healthy'
+            
+        except Exception as e:
+            self.logger.error(f"Error determining risk status: {e}")
+            return 'unknown'
 
 
 # Global function to get orchestrator instance

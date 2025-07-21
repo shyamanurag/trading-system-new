@@ -98,7 +98,7 @@ class User(Base):
     
     # Relationships - FIXED: Use proper SQLAlchemy class names
     # Note: These reference the SQLAlchemy models defined later in this file
-    trades = relationship("Trade", back_populates="user", cascade="all, delete-orphan")
+    trades = relationship("TradingTrade", back_populates="user", cascade="all, delete-orphan")
     orders = relationship("Order", back_populates="user", cascade="all, delete-orphan")
     risk_metrics = relationship("RiskMetric", back_populates="user")
 
@@ -121,7 +121,7 @@ class Portfolio(Base):
     # Relationships
     user = relationship("User", back_populates="portfolios")
     positions = relationship("TradingPosition", back_populates="portfolio")
-    trades = relationship("Trade", back_populates="portfolio")
+    trades = relationship("TradingTrade", back_populates="portfolio")
 
 class Stock(Base):
     """Stock/Symbol master data"""
@@ -141,7 +141,7 @@ class Stock(Base):
     # Relationships
     market_data = relationship("MarketData", back_populates="stock")
     positions = relationship("TradingPosition", back_populates="stock")
-    trades = relationship("Trade", back_populates="stock")
+    trades = relationship("TradingTrade", back_populates="stock")
     recommendations = relationship("Recommendation", back_populates="stock")
 
 class MarketData(Base):
@@ -190,7 +190,7 @@ class TradingPosition(Base):
     user = relationship("User")
     trades = relationship("Trade", back_populates="position")
 
-class Trade(Base):
+class TradingTrade(Base):  # FIXED: Renamed to avoid conflict with Pydantic Trade
     """Trading transactions"""
     __tablename__ = "trades"
     __table_args__ = {'extend_existing': True}

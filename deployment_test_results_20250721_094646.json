@@ -1,0 +1,641 @@
+{
+  "timestamp": "2025-07-21T09:46:46.410219",
+  "summary": {
+    "total_tests": 17,
+    "passed_tests": 16,
+    "failed_tests": 1,
+    "success_rate": 94.11764705882352
+  },
+  "test_results": [
+    {
+      "endpoint": "/health",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "status": "healthy",
+        "timestamp": "2025-07-21T04:16:42.252866"
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/api/v1/system/status",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "success": true,
+        "status": "operational",
+        "timestamp": "2025-07-21T04:16:42.468081",
+        "uptime": "active",
+        "services": {
+          "api": "running",
+          "database": "connected",
+          "redis": "connected",
+          "websocket": "active"
+        },
+        "version": "4.0.1"
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/api/market/indices",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "success": true,
+        "message": "Market indices data retrieved successfully",
+        "data": {
+          "indices": [
+            {
+              "symbol": "NIFTY",
+              "name": "NIFTY 50",
+              "last_price": 24995.4,
+              "price": 24995.4,
+              "change": -36.9,
+              "change_percent": -0.15,
+              "high": 25045.39,
+              "low": 24945.41,
+              "open": 24970.4,
+              "volume": 1293300,
+              "status": "LIVE_TRUEDATA",
+              "last_update": "2025-07-21T04:16:42.460711",
+              "data_age_seconds": 0.0,
+              "heartbeat": false
+            },
+            {
+              "symbol": "BANKNIFTY",
+              "name": "BANK NIFTY",
+              "last_price": 56598.8,
+              "price": 56598.8,
+              "change": 183.2,
+              "change_percent": 0.32,
+              "high": 56712.0,
+              "low": 56485.6,
+              "open": 56542.2,
+              "volume": 300125,
+              "status": "LIVE_TRUEDATA",
+              "last_update": "2025-07-21T04:16:42.327451",
+              "data_age_seconds": 0.0,
+              "heartbeat": false
+            }
+          ],
+          "market_status": "OPEN",
+          "provider": "TrueData",
+          "last_update": "2025-07-21T09:46:42.663421+05:30",
+          "timestamp": "2025-07-21 09:46:42 IST",
+          "truedata_connection": {
+            "symbols_available": 194,
+            "nifty_available": true,
+            "banknifty_available": true,
+            "live_data_symbols": [
+              "HAL",
+              "TORNTPOWER",
+              "KEI",
+              "AXISBANK",
+              "NATIONALUM",
+              "RELIANCE",
+              "DMART",
+              "CYIENT",
+              "SUNTV",
+              "ITC",
+              "TRIDENT",
+              "APOLLOHOSP",
+              "GLENMARK",
+              "TATACHEM",
+              "ATGL",
+              "HDFCBANK",
+              "SAIL",
+              "AUBANK",
+              "BANKBARODA",
+              "MARICO",
+              "TVSMOTOR",
+              "HEROMOTOCO",
+              "ADANIPORTS",
+              "POWERGRID",
+              "IOC",
+              "ADANIGREEN",
+              "INDUSINDBK",
+              "RAYMOND",
+              "GODREJPROP",
+              "JSWSTEEL",
+              "ICICIBANK",
+              "CHOLAFIN",
+              "TATASTEEL",
+              "MRPL",
+              "YESBANK",
+              "BAJAJHLDNG",
+              "RBLBANK",
+              "POLYCAB",
+              "BEL",
+              "JSWENERGY",
+              "MRF",
+              "BAJAJFINSV",
+              "OBEROIRLTY",
+              "DABUR",
+              "PAGEIND",
+              "CHAMBLFERT",
+              "INDIGO",
+              "MUTHOOTFIN",
+              "PIDILITIND",
+              "IGL",
+              "HAVELLS",
+              "NIFTY-I",
+              "BHARATFORG",
+              "TITAN",
+              "INFIBEAM",
+              "WELCORP",
+              "MGL",
+              "HCLTECH",
+              "DRREDDY",
+              "DIVISLAB",
+              "BIOCON",
+              "ALKEM",
+              "TATACONSUM",
+              "DIXON",
+              "WHIRLPOOL",
+              "PNB",
+              "LT",
+              "UPL",
+              "KOTAKBANK",
+              "JINDALSTEL",
+              "LALPATHLAB",
+              "KAJARIACER",
+              "HINDUNILVR",
+              "IIFL",
+              "AUROPHARMA",
+              "KPITTECH",
+              "PVRINOX",
+              "APOLLOTYRE",
+              "OFSS",
+              "SOBHA",
+              "PERSISTENT",
+              "COROMANDEL",
+              "EICHERMOT",
+              "BHARTIARTL",
+              "VEDL",
+              "TECHM",
+              "GODREJCP",
+              "GSPL",
+              "BAJFINANCE",
+              "INFY",
+              "SUNPHARMA",
+              "ZEEL",
+              "BHEL",
+              "PHOENIXLTD",
+              "PRESTIGE",
+              "NESTLEIND",
+              "HINDALCO",
+              "BANDHANBNK",
+              "FORTIS",
+              "COLPAL",
+              "MAHLIFE",
+              "NMDC",
+              "VOLTAS",
+              "ULTRACEMCO",
+              "HINDZINC",
+              "TRENT",
+              "NAVINFLUOR",
+              "STAR",
+              "TORNTPHARM",
+              "JYOTHYLAB",
+              "BPCL",
+              "WIPRO",
+              "ADANIPOWER",
+              "TCI",
+              "MIDCPNIFTY-I",
+              "CASTROLIND",
+              "NTPC",
+              "NELCO",
+              "MANAPPURAM",
+              "M&M",
+              "SUZLON",
+              "LUPIN",
+              "ABB",
+              "ORIENTELEC",
+              "JKCEMENT",
+              "BALKRISIND",
+              "ONGC",
+              "TCS",
+              "ACC",
+              "DLF",
+              "CANBK",
+              "FEDERALBNK",
+              "CROMPTON",
+              "SBIN",
+              "JAGRAN",
+              "BAJAJ-AUTO",
+              "HINDPETRO",
+              "TATAMOTORS",
+              "GAIL",
+              "COALINDIA",
+              "VBL",
+              "IDFCFIRSTB",
+              "CESC",
+              "ASHOKLEY",
+              "BRIGADE",
+              "FORCEMOT",
+              "SIEMENS",
+              "MPHASIS",
+              "SNOWMAN",
+              "RAMCOCEM",
+              "JKLAKSHMI",
+              "MOIL",
+              "CIPLA",
+              "MARUTI",
+              "BANKNIFTY-I",
+              "BALRAMCHIN",
+              "CONCOR",
+              "RELAXO",
+              "BOSCHLTD",
+              "BHARATGEAR",
+              "DEEPAKNTR",
+              "JUBLFOOD",
+              "GRASIM",
+              "PETRONET",
+              "THERMAX",
+              "NAVNETEDUL",
+              "ASIANPAINT",
+              "SYNGENE",
+              "ESCORTS",
+              "LTTS",
+              "SUNTECK",
+              "PFIZER",
+              "BRITANNIA",
+              "MAHLOG",
+              "EMAMILTD",
+              "JUSTDIAL",
+              "VTL",
+              "ARVIND",
+              "LODHA",
+              "SPENCERS",
+              "SHREECEM",
+              "WESTLIFE",
+              "BLUEDART",
+              "HONAUT",
+              "ASTRAZEN",
+              "RATNAMANI",
+              "KANSAINER",
+              "HEIDELBERG",
+              "TVTODAY",
+              "BALAJITELE",
+              "ONMOBILE",
+              "SPECIALITY",
+              "FINNIFTY-I",
+              "ROLTA"
+            ],
+            "connection_healthy": true,
+            "heartbeat_age_seconds": 0,
+            "data_flowing": true,
+            "total_symbols": 194,
+            "market_open": true,
+            "data_source": "LIVE"
+          }
+        },
+        "timestamp": "2025-07-21T04:06:04.589229"
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/api/v1/market-data/NIFTY",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "success": true,
+        "symbol": "NIFTY",
+        "timeframe": "1min",
+        "data": {
+          "symbol": "NIFTY-I",
+          "ltp": 24995.4,
+          "close": 24995.4,
+          "high": 25045.3908,
+          "low": 24945.409200000002,
+          "open": 24970.4046,
+          "volume": 1293300.0,
+          "change": -36.89999999999782,
+          "changeper": -0.1474095468654411,
+          "change_percent": -0.1474095468654411,
+          "bid": 0,
+          "ask": 0,
+          "timestamp": "2025-07-21T04:16:42.460711",
+          "source": "TrueData_Live",
+          "deployment_id": "deploy_1753070766_95f21016",
+          "data_quality": {
+            "has_ohlc": true,
+            "has_volume": true,
+            "has_change_percent": true,
+            "calculated_change_percent": true
+          }
+        },
+        "timestamp": "2025-07-21T04:16:43.039895",
+        "source": "truedata_proxy"
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/api/v1/autonomous/status",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "success": true,
+        "message": "Trading status retrieved successfully",
+        "data": {
+          "is_active": true,
+          "session_id": "session_1753070927",
+          "start_time": "2025-07-21T04:08:47.029537",
+          "last_heartbeat": "2025-07-21T04:16:43.353616",
+          "active_strategies": [
+            "momentum_surfer",
+            "volatility_explosion",
+            "volume_profile_scalper",
+            "regime_adaptive_controller",
+            "confluence_amplifier"
+          ],
+          "active_strategies_count": 5,
+          "active_positions": 0,
+          "total_trades": 0,
+          "daily_pnl": 0.0,
+          "risk_status": {
+            "max_daily_loss": 100000,
+            "max_position_size": 1000000,
+            "current_positions": 0,
+            "daily_pnl": 0.0,
+            "status": "degraded"
+          },
+          "market_status": "OPEN",
+          "system_ready": false,
+          "timestamp": "2025-07-21T04:16:43.353634"
+        }
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/api/v1/autonomous/strategies",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "success": true,
+        "message": "Strategies retrieved successfully",
+        "data": {
+          "momentum_surfer": {
+            "name": "momentum_surfer",
+            "active": true,
+            "last_signal": "2025-07-21T04:16:43.050311"
+          },
+          "volatility_explosion": {
+            "name": "volatility_explosion",
+            "active": true,
+            "last_signal": "2025-07-21T04:16:43.064872"
+          },
+          "volume_profile_scalper": {
+            "name": "volume_profile_scalper",
+            "active": true,
+            "last_signal": "2025-07-21T04:16:43.077311"
+          },
+          "regime_adaptive_controller": {
+            "name": "regime_adaptive_controller",
+            "active": true,
+            "last_signal": "2025-07-21T04:16:43.077885"
+          },
+          "confluence_amplifier": {
+            "name": "confluence_amplifier",
+            "active": true,
+            "last_signal": "2025-07-21T04:16:43.078617"
+          }
+        }
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/api/v1/control/trading/status?user_id=PAPER_TRADER_001",
+      "method": "GET",
+      "status_code": 500,
+      "success": false,
+      "data": {
+        "detail": "'paper_trading'",
+        "message": "'paper_trading'",
+        "success": false
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/api/v1/control/users/broker",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "success": true,
+        "users": [
+          {
+            "user_id": "PAPER_TRADER_001",
+            "name": "Paper Trading Account",
+            "username": "PAPER_TRADER_001",
+            "avatar": "P",
+            "initial_capital": 1000000.0,
+            "current_capital": 1000000.0,
+            "total_pnl": 0,
+            "daily_pnl": 0,
+            "total_trades": 0,
+            "win_rate": 0,
+            "is_active": true,
+            "open_trades": 0,
+            "paper_trading": true
+          }
+        ]
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/auth/zerodha/status?user_id=QSW899",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "success": true,
+        "authenticated": false,
+        "user_id": "QSW899",
+        "message": "Not authenticated. Please submit manual token.",
+        "session": null,
+        "actions": [
+          "get_auth_url",
+          "submit_token"
+        ]
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/auth/zerodha/auth-url?user_id=QSW899",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "success": true,
+        "auth_url": "https://kite.zerodha.com/connect/login?api_key=vc9ft4zpknynpm3u",
+        "api_key": "vc9ft4zpknynpm3u",
+        "instructions": [
+          "1. Click the authorization URL below",
+          "2. Login to Zerodha with your credentials",
+          "3. After login, you'll be redirected to a URL",
+          "4. Copy the 'request_token' parameter from the redirected URL",
+          "5. Paste the token in the manual token entry form",
+          "6. Click 'Submit Token' to complete authentication"
+        ],
+        "example_redirect": "https://yourapp.com/callback?request_token=YOUR_TOKEN_HERE&action=login&status=success",
+        "note": "Extract only the request_token value (32 characters), not the full URL",
+        "help": "If you don't see a redirect, check your browser's address bar for the token parameter"
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/api/v1/users/performance?user_id=PAPER_TRADER_001",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "success": true,
+        "data": {
+          "user_id": "PAPER_TRADER_001",
+          "total_trades": 0,
+          "winning_trades": 0,
+          "losing_trades": 0,
+          "total_pnl": 0.0,
+          "win_rate": 0.0,
+          "avg_profit": 0.0,
+          "avg_loss": 0.0,
+          "max_drawdown": 0.0,
+          "sharpe_ratio": 0.0,
+          "performance_summary": {
+            "today": {
+              "trades": 0,
+              "pnl": 0.0
+            },
+            "week": {
+              "trades": 0,
+              "pnl": 0.0
+            },
+            "month": {
+              "trades": 0,
+              "pnl": 0.0
+            }
+          }
+        },
+        "timestamp": "2025-07-21T04:16:44.628342"
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/api/v1/users/current",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "status": "error",
+        "error": "SAFETY: Mock current user disabled - real authentication required",
+        "message": "Mock admin user eliminated for safety"
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/api/v1/trades?user_id=PAPER_TRADER_001",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "success": true,
+        "message": "Found 0 trades for today",
+        "data": [],
+        "timestamp": "2025-07-21T04:16:45.160513"
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/api/v1/positions?user_id=PAPER_TRADER_001",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "success": true,
+        "positions": [],
+        "message": "No active positions - system ready for trading",
+        "count": 0,
+        "data_source": "REAL_POSITION_TRACKER",
+        "timestamp": "2025-07-21T04:16:45.384765"
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/api/v1/orders?user_id=PAPER_TRADER_001",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "success": true,
+        "orders": [],
+        "message": "Found 0 orders for today",
+        "timestamp": "2025-07-21T04:16:45.634950"
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/api/v1/system/config",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "success": true,
+        "data": {
+          "initial_capital": 1000000.0,
+          "capital": 1000000.0,
+          "max_daily_loss": 50000.0,
+          "max_position_size": 100000.0,
+          "risk_per_trade": 0.02,
+          "max_open_positions": 10,
+          "trading_enabled": true,
+          "paper_trading": true,
+          "environment": "production",
+          "deployment_id": "unknown",
+          "version": "4.0.1",
+          "features": {
+            "autonomous_trading": true,
+            "risk_management": true,
+            "position_monitoring": true,
+            "real_time_data": true,
+            "elite_recommendations": true
+          },
+          "limits": {
+            "max_strategies": 5,
+            "max_symbols": 250,
+            "max_concurrent_orders": 50
+          },
+          "market_hours": {
+            "start": "09:15",
+            "end": "15:30",
+            "timezone": "Asia/Kolkata"
+          }
+        },
+        "message": "System configuration retrieved successfully"
+      },
+      "expected": true
+    },
+    {
+      "endpoint": "/config",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "data": {
+        "raw_response": "<!DOCTYPE html>\n<html lang=\"en\">\n\n<head>\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.ico\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>AI Trading System</title>\n    <meta name=\"description\" content=\"Advanced AI-powered trading system with real-time market analysis\" />\n    <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n    <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  "
+      },
+      "expected": true
+    }
+  ],
+  "critical_issues": [
+    "\u274c TRADING CONTROL ERROR: Missing paper_trading attribute"
+  ],
+  "recommendations": [
+    "1. Fix trading_state global variable missing paper_trading key"
+  ]
+}
