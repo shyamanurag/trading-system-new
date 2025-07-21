@@ -1338,10 +1338,11 @@ async def force_activate_autonomous_trading():
 # This endpoint was generating fake market data which violates the "NO MOCK DATA" policy
 # All market data must come from real sources like TrueData
 
-# FIXED: Move user performance endpoint BEFORE catch-all route to fix routing
+# FIXED: User performance endpoint with proper trailing slash handling
+@app.get("/api/v1/users/performance/", tags=["users"])
 @app.get("/api/v1/users/performance", tags=["users"])
 async def get_users_performance(user_id: Optional[str] = None):
-    """User performance endpoint that frontend expects - MOVED BEFORE CATCH-ALL"""
+    """User performance endpoint that frontend expects - FIXED ROUTING"""
     try:
         logger.info(f"🔧 Getting user performance for user_id: {user_id}")
         
@@ -1452,12 +1453,41 @@ async def trading_status_endpoint():
 
 # CATCH-ALL ROUTE - MUST BE LAST
 
-# Frontend-Backend Integration Fixes - Redirect Routes
-@app.get("/api/v1/trades", tags=["trades"])
-async def redirect_trades():
-    """Redirect to autonomous trades endpoint"""
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/api/v1/autonomous/trades", status_code=307)
+# Frontend-Backend Integration Fixes - Direct Trades Endpoint
+@app.get("/api/v1/trades/", tags=["trades"])
+async def get_trades():
+    """Get all trades - Direct endpoint instead of redirect"""
+    try:
+        from src.core.orchestrator import get_orchestrator
+        orchestrator = await get_orchestrator()
+        
+        if orchestrator and hasattr(orchestrator, 'trade_engine'):
+            # Get trades from orchestrator's trade engine
+            trades = getattr(orchestrator.trade_engine, 'trades', [])
+            return {
+                "success": True,
+                "trades": trades,
+                "count": len(trades),
+                "message": f"Retrieved {len(trades)} trades",
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "success": True,
+                "trades": [],
+                "count": 0,
+                "message": "No trades available - orchestrator not initialized",
+                "timestamp": datetime.now().isoformat()
+            }
+    except Exception as e:
+        logger.error(f"Error getting trades: {e}")
+        return {
+            "success": False,
+            "trades": [],
+            "count": 0,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
 @app.get("/api/v1/strategies", tags=["strategies"])  
 async def redirect_strategies():
