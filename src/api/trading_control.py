@@ -45,17 +45,17 @@ def initialize_default_users():
     try:
         # Only add if master user doesn't exist (prevent duplicates)
         if "PAPER_TRADER_001" not in broker_users:
-            # CRITICAL FIX: Use exact same credentials as working auth endpoints
-            # These are the credentials that work in /auth/zerodha/* endpoints
-            real_api_key = os.getenv('ZERODHA_API_KEY', 'vc9ft4zpknynpm3u')
-            real_api_secret = os.getenv('ZERODHA_API_SECRET', '0nwjb2cncw9stf3m5cre73rqc3bc5xsc')
+            # CRITICAL FIX: Use production deployment credentials (matches app.yaml)
+            # These must match the DigitalOcean environment variables
+            real_api_key = os.getenv('ZERODHA_API_KEY', 'sylcoq492qz6f7ej')  # Production key
+            real_api_secret = os.getenv('ZERODHA_API_SECRET', 'jm3h4iejwnxr4ngmma2qxccpkhevo8sy')  # Production secret
             real_client_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
             
-            # VALIDATION: Ensure we're using the correct credentials
-            if real_api_key != 'vc9ft4zpknynpm3u':
-                logger.warning(f"⚠️ API key mismatch detected: env={real_api_key[:8]}... vs expected=vc9ft4zp...")
-                logger.warning("Using working credentials from auth endpoints")
-                real_api_key = 'vc9ft4zpknynpm3u'
+            # VALIDATION: Ensure we're using the correct production credentials
+            if real_api_key != 'sylcoq492qz6f7ej':
+                logger.warning(f"⚠️ API key mismatch detected: env={real_api_key[:8]}... vs production=sylcoq49...")
+                logger.warning("Using production credentials from deployment")
+                real_api_key = 'sylcoq492qz6f7ej'
             
             if real_client_id != 'QSW899':
                 logger.warning(f"⚠️ User ID mismatch detected: env={real_client_id} vs expected=QSW899")

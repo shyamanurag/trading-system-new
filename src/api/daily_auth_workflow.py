@@ -10,6 +10,7 @@ from typing import Dict, Optional
 import logging
 import os
 import requests
+import json
 from datetime import datetime, timedelta
 from kiteconnect import KiteConnect
 
@@ -372,7 +373,7 @@ async def submit_daily_token(
         access_token = data["access_token"]
         user_id = data["user_id"]
         
-        # Store the token properly in Redis (not just environment variables)
+        # CRITICAL FIX: Store token properly in Redis with ALL key patterns used by backend
         try:
             import redis.asyncio as redis
             redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
@@ -391,9 +392,46 @@ async def submit_daily_token(
             else:
                 expiry = tomorrow_6am  # Tomorrow 6 AM
             
-            # Store token and expiry in Redis (will replace existing token)
-            await redis_client.set(f"zerodha:token:{user_id}", access_token)
+            # CRITICAL FIX: Store token with ALL key patterns that backend searches for
+            token_keys = [
+                f"zerodha:token:{user_id}",                    # Standard user pattern
+                f"zerodha:token:PAPER_TRADER_001",             # Primary user ID pattern
+                f"zerodha:token:QSW899",                       # Direct user ID pattern
+                f"zerodha:access_token",                       # Simple pattern
+                f"zerodha:{user_id}:access_token",             # Alternative pattern
+                f"zerodha_token_{user_id}",                    # Alternative format
+                f"zerodha:token:ZERODHA_DEFAULT"               # Default pattern
+            ]
+            
+            # Store token with all key patterns for maximum compatibility
+            for key in token_keys:
+                await redis_client.set(key, access_token)
+                logger.info(f"✅ Token stored with key: {key}")
+            
+            # Store expiry and profile data
             await redis_client.set(f"zerodha:token_expiry:{user_id}", expiry.isoformat())
+            
+            # Store authentication status for frontend verification
+            auth_status = {
+                'authenticated': True,
+                'user_id': user_id,
+                'api_key': ZERODHA_API_KEY,
+                'authenticated_at': datetime.now().isoformat(),
+                'expires_at': expiry.isoformat(),
+                'token_source': 'daily_auth_workflow'
+            }
+            await redis_client.set(f"zerodha:auth_status:{user_id}", json.dumps(auth_status))
+            
+            # CRITICAL FIX: Notify orchestrator about new token
+            try:
+                # Update orchestrator's token manager
+                from src.core.orchestrator import TradingOrchestrator
+                orchestrator = TradingOrchestrator.get_instance()
+                if orchestrator and hasattr(orchestrator, 'update_zerodha_token'):
+                    await orchestrator.update_zerodha_token(user_id, access_token)
+                    logger.info("✅ Orchestrator notified of new token")
+            except Exception as orchestrator_error:
+                logger.warning(f"⚠️ Could not notify orchestrator: {orchestrator_error}")
             
             # Also set environment variables for backward compatibility
             os.environ['ZERODHA_ACCESS_TOKEN'] = access_token
@@ -401,13 +439,15 @@ async def submit_daily_token(
             
             await redis_client.close()
             
-            logger.info(f"Token stored in Redis for user {user_id}, expires at {expiry}")
+            logger.info(f"✅ Token stored successfully with {len(token_keys)} key patterns for user {user_id}")
+            logger.info(f"✅ Token expires at {expiry}")
             
         except Exception as redis_error:
-            logger.error(f"Failed to store token in Redis: {redis_error}")
+            logger.error(f"❌ CRITICAL: Failed to store token in Redis: {redis_error}")
             # Fallback to environment variables only
             os.environ['ZERODHA_ACCESS_TOKEN'] = access_token
             os.environ['ZERODHA_USER_ID'] = user_id
+            logger.warning("⚠️ Using environment variable fallback - orchestrator may not access token")
         
         # Start autonomous trading in background
         background_tasks.add_task(start_autonomous_trading_after_auth)
