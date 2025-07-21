@@ -697,4 +697,59 @@ async def get_user_positions(
         logger.error(f"❌ Error fetching positions for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user positions")
     finally:
-        db.close() 
+        db.close()
+
+@router.get("/status")
+async def get_system_status():
+    """Get dynamic user management system status"""
+    try:
+        # Test basic functionality without database dependency
+        status = {
+            "system": "dynamic_user_management",
+            "status": "operational",
+            "timestamp": datetime.utcnow().isoformat(),
+            "database_available": False,
+            "redis_available": False,
+            "tables_exist": False
+        }
+        
+        # Test database connection
+        try:
+            manager = DynamicUserManager()
+            with manager.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            status["database_available"] = True
+            
+            # Test if users table exists
+            with manager.engine.connect() as conn:
+                result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='users'"))
+                if result.fetchone():
+                    status["tables_exist"] = True
+                    
+                    # Count users
+                    user_count = conn.execute(text("SELECT COUNT(*) FROM users")).scalar()
+                    status["user_count"] = user_count
+                    
+        except Exception as db_error:
+            status["database_error"] = str(db_error)
+        
+        # Test Redis connection
+        try:
+            redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+            redis_client = await redis.from_url(redis_url, decode_responses=True)
+            await redis_client.ping()
+            status["redis_available"] = True
+            await redis_client.close()
+        except Exception as redis_error:
+            status["redis_error"] = str(redis_error)
+        
+        return status
+        
+    except Exception as e:
+        logger.error(f"Status check failed: {e}")
+        return {
+            "system": "dynamic_user_management", 
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        } 
