@@ -40,14 +40,29 @@ class StatusResponse(BaseModel):
 async def get_refresh_status():
     """Get current token refresh status"""
     try:
-        # TODO: Implement real token validation
-        # For now, return basic status
-        return StatusResponse(
-            token_valid=False,
-            token_expires_at=None,
-            trading_ready=False,
-            profile=None
-        )
+        from src.core.token_manager import ZerodhaTokenManager
+        
+        # Initialize token manager
+        token_manager = ZerodhaTokenManager()
+        
+        # Check token validity
+        user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+        token_info = await token_manager.validate_token(user_id)
+        
+        if token_info and token_info.get('access_token'):
+            return StatusResponse(
+                token_valid=True,
+                token_expires_at=token_info.get('expires_at'),
+                trading_ready=True,
+                profile=token_info.get('profile')
+            )
+        else:
+            return StatusResponse(
+                token_valid=False,
+                token_expires_at=None,
+                trading_ready=False,
+                profile=None
+            )
     except Exception as e:
         logger.error(f"Status check failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

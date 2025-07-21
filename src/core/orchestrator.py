@@ -854,10 +854,19 @@ class TradingOrchestrator:
             import redis.asyncio as redis
             import os
             
-            # Initialize Redis client
+            # Initialize Redis client with proper SSL configuration
             redis_url = os.getenv('REDIS_URL')
             if redis_url:
-                redis_client = redis.from_url(redis_url, decode_responses=True)
+                # CRITICAL FIX: Use proper SSL configuration for DigitalOcean Redis
+                if 'ondigitalocean.com' in redis_url:
+                    redis_client = redis.from_url(
+                        redis_url, 
+                        decode_responses=True,
+                        ssl_cert_reqs=None,
+                        ssl_check_hostname=False
+                    )
+                else:
+                    redis_client = redis.from_url(redis_url, decode_responses=True)
             else:
                 redis_client = redis.Redis(
                     host=os.getenv('REDIS_HOST', 'localhost'),
@@ -866,16 +875,32 @@ class TradingOrchestrator:
                     decode_responses=True
                 )
             
-            # Try to get token from Redis
-            redis_key = f"zerodha:token:{user_id}"
-            access_token = await redis_client.get(redis_key)
+            # CRITICAL FIX: Try multiple key patterns that frontend uses
+            token_keys_to_check = [
+                f"zerodha:token:{user_id}",                    # Standard pattern
+                f"zerodha:token:PAPER_TRADER_001",             # Primary user ID pattern
+                f"zerodha:token:QSW899",                       # Direct user ID pattern
+                f"zerodha:access_token",                       # Simple pattern
+                f"zerodha:{user_id}:access_token",             # Alternative pattern
+                f"zerodha_token_{user_id}",                    # Alternative format
+                f"zerodha:token:ZERODHA_DEFAULT"               # Default pattern
+            ]
             
-            if access_token:
-                self.logger.info(f"✅ Found access token in Redis for user: {user_id}")
-                return access_token
-            else:
-                self.logger.warning(f"⚠️ No access token found in Redis for key: {redis_key}")
-                return None
+            # Check each key pattern
+            for key in token_keys_to_check:
+                try:
+                    access_token = await redis_client.get(key)
+                    if access_token:
+                        self.logger.info(f"✅ Found access token in Redis with key: {key} for user: {user_id}")
+                        await redis_client.close()
+                        return access_token
+                except Exception as key_error:
+                    self.logger.warning(f"⚠️ Error checking Redis key {key}: {key_error}")
+                    continue
+            
+            self.logger.warning(f"⚠️ No access token found in Redis for user: {user_id} with any key pattern")
+            await redis_client.close()
+            return None
                 
         except Exception as e:
             self.logger.error(f"❌ Error retrieving access token from Redis: {e}")
@@ -960,10 +985,20 @@ class TradingOrchestrator:
                                         self.logger.info(f"✅ Found Zerodha token in Redis with key: {key}")
                                         break
                         else:
-                            # Fallback to direct Redis connection
+                            # Fallback to direct Redis connection with proper SSL configuration
                             import redis.asyncio as redis
                             redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-                            redis_client = redis.from_url(redis_url)
+                            
+                            # CRITICAL FIX: Use proper SSL configuration for DigitalOcean Redis
+                            if 'ondigitalocean.com' in redis_url:
+                                redis_client = redis.from_url(
+                                    redis_url, 
+                                    decode_responses=True,
+                                    ssl_cert_reqs=None,
+                                    ssl_check_hostname=False
+                                )
+                            else:
+                                redis_client = redis.from_url(redis_url, decode_responses=True)
                             
                             # Check multiple Redis key patterns to find the token
                             token_keys_to_check = [
@@ -971,14 +1006,22 @@ class TradingOrchestrator:
                                 f"zerodha:token:PAPER_TRADER_001",  # Frontend user_id pattern
                                 f"zerodha:token:PAPER_TRADER_MAIN",  # Alternative paper trader ID
                                 f"zerodha:token:QSW899",  # Direct user ID from environment
+                                f"zerodha:access_token",  # Simple pattern
+                                f"zerodha:{user_id}:access_token",  # Alternative pattern
+                                f"zerodha_token_{user_id}",  # Alternative format
+                                f"zerodha:token:ZERODHA_DEFAULT"  # Default pattern
                             ]
                             
                             for key in token_keys_to_check:
-                                stored_token = await redis_client.get(key)
-                                if stored_token:
-                                    access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
-                                    self.logger.info(f"✅ Found Zerodha token in Redis with key: {key}")
-                                    break
+                                try:
+                                    stored_token = await redis_client.get(key)
+                                    if stored_token:
+                                        access_token = stored_token.decode() if isinstance(stored_token, bytes) else stored_token
+                                        self.logger.info(f"✅ Found Zerodha token in Redis with key: {key}")
+                                        break
+                                except Exception as key_error:
+                                    self.logger.warning(f"⚠️ Error checking Redis key {key}: {key_error}")
+                                    continue
                             
                             await redis_client.close()
                         
@@ -1075,7 +1118,6 @@ class TradingOrchestrator:
                                 socket_timeout=10,
                                 socket_connect_timeout=10,
                                 retry_on_timeout=True,
-                                ssl=True,
                                 ssl_cert_reqs=None,
                                 ssl_check_hostname=False,
                                 health_check_interval=30
