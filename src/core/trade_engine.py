@@ -269,22 +269,19 @@ class TradeEngine:
                     return trade_record
                 
             # ENHANCED SAFETY: Handle Zerodha failures with graceful degradation
-            self.logger.error("❌ CRITICAL: Zerodha client not available - Implementing fallback strategy")
+            self.logger.error("❌ CRITICAL: Zerodha client not available - NO FALLBACK EXECUTION")
             
-            # Check if we should attempt fallback execution
-            paper_trading_enabled = os.getenv('PAPER_TRADING', 'false').lower() == 'true'
-            emergency_mode = os.getenv('EMERGENCY_TRADING_MODE', 'false').lower() == 'true'
+            # RULE #8: Don't suggest bypasses—fix root causes
+            # RULE #1: Never put mock/demo data in production trading system
+            self.logger.error("❌ NO FALLBACK EXECUTION - Real broker required for all trades")
+            self.logger.error(f"❌ Signal REJECTED: {signal.get('symbol')} {signal.get('side')} {signal.get('quantity')}")
+            self.logger.error("🚨 SYSTEM DESIGNED TO FAIL WHEN BROKER UNAVAILABLE - FIX ZERODHA CONNECTION")
             
-            if paper_trading_enabled or emergency_mode:
-                self.logger.warning("🔄 FALLBACK: Attempting paper trade execution without broker")
-                return await self._execute_paper_trade_fallback(signal)
-            else:
-                self.logger.error("❌ NO FALLBACK EXECUTION - Real broker required for all trades")
-                self.logger.error(f"❌ Signal REJECTED: {signal.get('symbol')} {signal.get('side')} {signal.get('quantity')}")
-                
-                # Track failed execution
-                self._track_signal_execution_failed(signal, "Zerodha client unavailable")
-                return None
+            # Track failed execution
+            self._track_signal_execution_failed(signal, "Zerodha client unavailable - NO FALLBACK ALLOWED")
+            
+            # CRITICAL: Raise exception to make failure visible
+            raise Exception(f"BROKER CONNECTION FAILED: {signal.get('symbol')} - No fallback execution allowed per Rule #8")
                 
         except Exception as e:
             self.logger.error(f"❌ Error processing paper signal: {e}")
@@ -548,69 +545,6 @@ class TradeEngine:
         })
         return stats
     
-    async def _execute_paper_trade_fallback(self, signal: Dict):
-        """Execute paper trade without broker connection as fallback"""
-        try:
-            self.logger.info(f"🔄 FALLBACK: Executing paper trade for {signal.get('symbol')} without broker")
-            
-            # Generate fallback order ID
-            fallback_order_id = f"FALLBACK_{int(time.time())}_{signal.get('symbol', 'UNKNOWN')}"
-            
-            # Get market price for execution
-            symbol = signal.get('symbol')
-            if not symbol:
-                self.logger.error("❌ FALLBACK FAILED: No symbol in signal")
-                return None
-                
-            execution_price = signal.get('entry_price', 0)
-            
-            # If no entry price, try to get current market price
-            if not execution_price or execution_price <= 0:
-                execution_price = await self._get_current_market_price(symbol)
-                if not execution_price or execution_price <= 0:
-                    self.logger.error(f"❌ FALLBACK FAILED: No valid price for {symbol}")
-                    return None
-            
-            # Create trade record
-            signal_action = signal.get('action', 'BUY').upper()
-            trade_record = {
-                'trade_id': fallback_order_id,
-                'symbol': symbol,
-                'side': signal_action,
-                'quantity': signal.get('quantity', 50),
-                'price': execution_price,
-                'strategy': signal.get('strategy', 'unknown'),
-                'status': 'EXECUTED_FALLBACK',
-                'executed_at': datetime.now(),
-                'user_id': 'PAPER_TRADER_001',
-                'execution_method': 'fallback_no_broker'
-            }
-            
-            # Update position tracker if available
-            if self.position_tracker:
-                await self.position_tracker.update_position(
-                    symbol=trade_record['symbol'],
-                    quantity=trade_record['quantity'],
-                    price=execution_price,
-                    side=trade_record['side'].lower()
-                )
-            
-            # Calculate and store P&L
-            await self._calculate_and_store_trade_pnl(trade_record)
-            
-            # Track successful execution
-            self._track_signal_executed(signal)
-            
-            self.logger.info(f"✅ FALLBACK TRADE EXECUTED: {fallback_order_id} - {symbol} {signal_action}")
-            self.logger.warning("⚠️ Trade executed in fallback mode - verify broker connection")
-            
-            return trade_record
-            
-        except Exception as e:
-            self.logger.error(f"❌ Fallback execution failed: {e}")
-            self._track_signal_execution_failed(signal, f"Fallback execution error: {e}")
-            return None
-
     async def save_paper_trade(self, trade_data: dict) -> bool:
         """Save paper trade to database with precise schema handling"""
         try:
