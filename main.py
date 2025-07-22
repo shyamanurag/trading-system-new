@@ -751,6 +751,7 @@ router_configs = [
     # External integrations
     ('zerodha_auth', '', ('zerodha',)),  # Already has /api/zerodha prefix
     ('zerodha_daily_auth', '', ('zerodha-daily',)),  # Mount at root, has /zerodha prefix
+    ('zerodha_refresh', '', ('zerodha-refresh',)),  # CRITICAL FIX: Mount zerodha refresh router
     ('token_diagnostic', '/api/v1', ('token-diagnostic',)),  # Token debugging endpoints
     ('zerodha_multi_user', '', ('zerodha-multi',)),  # Mount at root, has /zerodha-multi prefix
     ('zerodha_manual_auth', '', ('zerodha-manual',)),  # Mount at root - router already has /auth/zerodha prefix
