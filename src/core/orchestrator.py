@@ -15,6 +15,7 @@ import os
 import pytz
 from urllib.parse import urlparse
 import redis
+import json
 
 # Add project root to Python path for imports
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
