@@ -713,7 +713,7 @@ router_configs = [
     
     # User management
     ('users', '', ('users',)),  # Already has /api/v1/users prefix
-    ('dynamic_user_management', '', ('dynamic-users',)),  # Already has /api/v1/users/dynamic prefix
+    ('dynamic_user_management', '/api/v1/users/dynamic', ('dynamic-users',)),  # Mount with prefix since router prefix removed
     ('user_analytics_service', '', ('user-analytics',)),  # Already has /api/v1/analytics prefix
     
     # Trading operations

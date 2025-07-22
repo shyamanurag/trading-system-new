@@ -96,7 +96,7 @@ class UserAnalytics(BaseModel):
     total_capital: float
     available_capital: float
 
-router = APIRouter(prefix="/api/v1/users/dynamic", tags=["dynamic-user-management"])
+router = APIRouter(tags=["dynamic-user-management"])
 
 class DynamicUserManager:
     """Enhanced user manager with real database operations"""
