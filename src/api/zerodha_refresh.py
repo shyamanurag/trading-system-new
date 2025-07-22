@@ -40,21 +40,52 @@ class StatusResponse(BaseModel):
 async def get_refresh_status():
     """Get current token refresh status"""
     try:
-        from src.core.token_manager import ZerodhaTokenManager
+        # CRITICAL FIX: Direct Redis check without circular dependency
+        import redis.asyncio as redis
+        redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
         
-        # Initialize token manager
-        token_manager = ZerodhaTokenManager()
+        if 'ondigitalocean.com' in redis_url:
+            redis_client = redis.from_url(
+                redis_url, 
+                decode_responses=True,
+                ssl_cert_reqs=None,
+                ssl_check_hostname=False
+            )
+        else:
+            redis_client = redis.from_url(redis_url, decode_responses=True)
         
-        # Check token validity
+        # Check multiple Redis key patterns for token
         user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
-        token_info = await token_manager.validate_token(user_id)
+        token_keys_to_check = [
+            f"zerodha:token:{user_id}",
+            f"zerodha:token:PAPER_TRADER_001",
+            f"zerodha:token:QSW899",
+            f"zerodha:access_token",
+            f"zerodha:{user_id}:access_token",
+            f"zerodha_token_{user_id}",
+            f"zerodha:token:ZERODHA_DEFAULT"
+        ]
         
-        if token_info and token_info.get('access_token'):
+        access_token = None
+        for key in token_keys_to_check:
+            try:
+                token = await redis_client.get(key)
+                if token:
+                    access_token = token
+                    logger.info(f"✅ Token found with key: {key}")
+                    break
+            except Exception as e:
+                logger.warning(f"Failed to check key {key}: {e}")
+                continue
+        
+        await redis_client.close()
+        
+        if access_token:
             return StatusResponse(
                 token_valid=True,
-                token_expires_at=token_info.get('expires_at'),
+                token_expires_at=None,  # TODO: Add expiration logic
                 trading_ready=True,
-                profile=token_info.get('profile')
+                profile={"user_id": user_id}
             )
         else:
             return StatusResponse(

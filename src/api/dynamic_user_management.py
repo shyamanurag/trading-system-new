@@ -18,7 +18,7 @@ import os
 import json
 import redis.asyncio as redis
 
-from ..models.trading_models import User, Trade, TradingPosition, Order
+from ..models.trading_models import User, TradingPosition, Order, TradingTrade
 from ..core.database_schema_manager import DatabaseSchemaManager
 from ..config.database import DatabaseConfig
 
@@ -340,8 +340,8 @@ class DynamicUserManager:
             month_start = now - timedelta(days=30)
             
             # Get trade statistics
-            trades = db.query(Trade).filter(
-                and_(Trade.user_id == user_id, Trade.created_at >= start_date)
+            trades = db.query(TradingTrade).filter(
+                and_(TradingTrade.user_id == user_id, TradingTrade.executed_at >= start_date)
             ).all()
             
             total_trades = len(trades)
@@ -350,9 +350,9 @@ class DynamicUserManager:
             total_pnl = sum(t.pnl for t in trades if t.pnl)
             
             # Calculate period PnLs
-            daily_pnl = sum(t.pnl for t in trades if t.created_at >= day_start and t.pnl)
-            weekly_pnl = sum(t.pnl for t in trades if t.created_at >= week_start and t.pnl)
-            monthly_pnl = sum(t.pnl for t in trades if t.created_at >= month_start and t.pnl)
+            daily_pnl = sum(t.pnl for t in trades if t.executed_at >= day_start and t.pnl)
+            weekly_pnl = sum(t.pnl for t in trades if t.executed_at >= week_start and t.pnl)
+            monthly_pnl = sum(t.pnl for t in trades if t.executed_at >= month_start and t.pnl)
             
             # Calculate win rate
             win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
@@ -426,13 +426,13 @@ class DynamicUserManager:
         """Build user response with basic analytics"""
         try:
             # Get basic trade statistics
-            total_trades = db.query(Trade).filter(Trade.user_id == user.id).count()
-            winning_trades = db.query(Trade).filter(
-                and_(Trade.user_id == user.id, Trade.pnl > 0)
+            total_trades = db.query(TradingTrade).filter(TradingTrade.user_id == user.id).count()
+            winning_trades = db.query(TradingTrade).filter(
+                and_(TradingTrade.user_id == user.id, TradingTrade.pnl > 0)
             ).count()
             
             # Calculate total P&L
-            total_pnl_result = db.query(func.sum(Trade.pnl)).filter(Trade.user_id == user.id).scalar()
+            total_pnl_result = db.query(func.sum(TradingTrade.pnl)).filter(TradingTrade.user_id == user.id).scalar()
             total_pnl = float(total_pnl_result) if total_pnl_result else 0.0
             
             # Calculate win rate
@@ -641,20 +641,20 @@ async def get_user_trades(
     """Get user's trading history"""
     db = manager.get_db_session()
     try:
-        trades = db.query(Trade).filter(Trade.user_id == user_id).offset(skip).limit(limit).all()
+        trades = db.query(TradingTrade).filter(TradingTrade.user_id == user_id).offset(skip).limit(limit).all()
         
         trade_data = []
         for trade in trades:
             trade_data.append({
-                'id': trade.id,
+                'id': trade.trade_id,
                 'symbol': trade.symbol,
-                'action': trade.action,
+                'action': trade.trade_type,
                 'quantity': trade.quantity,
-                'entry_price': float(trade.entry_price) if trade.entry_price else None,
-                'exit_price': float(trade.exit_price) if trade.exit_price else None,
+                'entry_price': float(trade.price) if trade.price else None,
+                'exit_price': None,  # TradingTrade doesn't have exit_price
                 'pnl': float(trade.pnl) if trade.pnl else None,
-                'entry_time': trade.entry_time,
-                'exit_time': trade.exit_time,
+                'entry_time': trade.executed_at,
+                'exit_time': None,  # TradingTrade doesn't have exit_time
                 'strategy': trade.strategy,
                 'status': trade.status
             })
