@@ -554,13 +554,24 @@ class DynamicUserManager:
 user_manager = DynamicUserManager()
 
 # Dependency to get user manager
-# Global user manager instance
-user_manager = DynamicUserManager()
+# Global user manager instance with error handling
+try:
+    user_manager = DynamicUserManager()
+    logger.info("✅ DynamicUserManager instance created successfully")
+except Exception as e:
+    logger.error(f"❌ Failed to create DynamicUserManager instance: {e}")
+    user_manager = None
 
 async def get_user_manager() -> DynamicUserManager:
-    if not user_manager.redis_client:
-        await user_manager.initialize()
-    return user_manager
+    if user_manager is None:
+        raise HTTPException(status_code=500, detail="User manager not available")
+    try:
+        if not user_manager.redis_client:
+            await user_manager.initialize()
+        return user_manager
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize user manager: {e}")
+        raise HTTPException(status_code=500, detail="User manager initialization failed")
 
 # API Routes
 @router.post("/create", response_model=UserResponse)
