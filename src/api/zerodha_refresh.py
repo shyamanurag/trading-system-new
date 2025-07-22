@@ -96,23 +96,90 @@ async def submit_token(request: TokenSubmitRequest):
     try:
         logger.info(f"Token submission for user: {request.user_id}")
         
-        # TODO: Implement actual token exchange with Zerodha
-        # For now, simulate success
-        if request.request_token:
-            # In real implementation, exchange request_token for access_token
-            logger.info(f"Processing request token: {request.request_token[:10]}...")
-            
-            return {
-                "success": True,
-                "message": "Token refreshed successfully",
-                "access_token": "mock_access_token",
-                "user_id": request.user_id
-            }
-        else:
+        # CRITICAL FIX: Implement real Zerodha token exchange
+        if not request.request_token:
             return {
                 "success": False,
                 "error": "Invalid request token"
             }
+        
+        try:
+            from kiteconnect import KiteConnect
+            
+            # Get Zerodha credentials
+            api_key = os.getenv("ZERODHA_API_KEY")
+            api_secret = os.getenv("ZERODHA_API_SECRET")
+            
+            if not api_key or not api_secret:
+                logger.error("❌ Zerodha API credentials not configured")
+                return {
+                    "success": False,
+                    "error": "Zerodha API credentials not configured"
+                }
+            
+            # Create Kite instance and generate session
+            kite = KiteConnect(api_key=api_key)
+            data = kite.generate_session(
+                request_token=request.request_token,
+                api_secret=api_secret
+            )
+            
+            access_token = data["access_token"]
+            user_id = data["user_id"]
+            
+            # Store token in Redis for orchestrator access
+            try:
+                import redis.asyncio as redis
+                redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+                
+                # CRITICAL FIX: Use proper SSL configuration for DigitalOcean Redis
+                if 'ondigitalocean.com' in redis_url:
+                    redis_client = redis.from_url(
+                        redis_url, 
+                        decode_responses=True,
+                        ssl_cert_reqs=None,
+                        ssl_check_hostname=False
+                    )
+                else:
+                    redis_client = redis.from_url(redis_url, decode_responses=True)
+                
+                # Store token with multiple key patterns for compatibility
+                token_keys = [
+                    f"zerodha:token:{user_id}",
+                    f"zerodha:token:PAPER_TRADER_001",
+                    f"zerodha:token:QSW899",
+                    f"zerodha:access_token",
+                    f"zerodha:{user_id}:access_token",
+                    f"zerodha_token_{user_id}",
+                    f"zerodha:token:ZERODHA_DEFAULT"
+                ]
+                
+                for key in token_keys:
+                    await redis_client.set(key, access_token)
+                    logger.info(f"✅ Token stored with key: {key}")
+                
+                await redis_client.close()
+                
+            except Exception as redis_error:
+                logger.error(f"❌ Failed to store token in Redis: {redis_error}")
+                # Continue without Redis storage - token is still valid
+            
+            logger.info(f"✅ Real Zerodha authentication successful for user: {user_id}")
+            
+            return {
+                "success": True,
+                "message": "Token refreshed successfully",
+                "access_token": access_token,
+                "user_id": user_id
+            }
+            
+        except Exception as zerodha_error:
+            logger.error(f"❌ Real Zerodha authentication failed: {zerodha_error}")
+            return {
+                "success": False,
+                "error": f"Zerodha authentication failed: {str(zerodha_error)}"
+            }
+            
     except Exception as e:
         logger.error(f"Token submission failed: {e}")
         return {
