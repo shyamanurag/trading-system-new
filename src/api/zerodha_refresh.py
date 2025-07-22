@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/zerodha/refresh", tags=["zerodha-refresh"])
+router = APIRouter(tags=["zerodha-refresh"])
 
 class RefreshRequest(BaseModel):
     """Token refresh request model"""
