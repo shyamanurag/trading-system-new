@@ -98,7 +98,32 @@ def initialize_default_users():
         return False
 
 # Auto-initialize default users on module import
-initialize_default_users()
+try:
+    initialize_default_users()
+    logger.info(f"✅ Default users initialized. Active users: {list(broker_users.keys())}")
+except Exception as e:
+    logger.error(f"❌ Failed to initialize default users: {e}")
+    # Force initialization as fallback
+    broker_users["PAPER_TRADER_001"] = {
+        "user_id": "PAPER_TRADER_001",
+        "name": "Paper Trading Account", 
+        "broker": "zerodha",
+        "api_key": os.getenv('ZERODHA_API_KEY', 'sylcoq492qz6f7ej'),
+        "api_secret": os.getenv('ZERODHA_API_SECRET', 'jm3h4iejwnxr4ngmma2qxccpkhevo8sy'),
+        "client_id": os.getenv('ZERODHA_USER_ID', 'QSW899'),
+        "initial_capital": 1000000.0,
+        "current_capital": 1000000.0,
+        "risk_tolerance": "medium",
+        "paper_trading": True,
+        "is_active": True,
+        "created_at": datetime.now().isoformat(),
+        "total_pnl": 0,
+        "daily_pnl": 0,
+        "total_trades": 0,
+        "win_rate": 0,
+        "open_trades": 0
+    }
+    logger.info("✅ Forced default user initialization as fallback")
 
 @router.post("/users/broker")
 async def add_broker_user(user: BrokerUser):
