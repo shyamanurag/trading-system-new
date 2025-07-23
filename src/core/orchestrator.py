@@ -65,15 +65,8 @@ except ImportError:
     logger.warning("Could not import TradeEngine from trade_engine.py")
     TradeEngine = None
 
-try:
-    from brokers.resilient_zerodha import ResilientZerodhaConnection
-except ImportError:
-    # Fallback Zerodha connection if not available
-    class ResilientZerodhaConnection:
-        def __init__(self, *args, **kwargs):
-            pass
-        async def initialize(self):
-            return False
+# Use unified ZerodhaIntegration directly (no wrapper needed)
+from brokers.zerodha import ZerodhaIntegration
 
 # CRITICAL FIX: Import redis_manager with production fallback support
 try:
@@ -788,11 +781,9 @@ class TradingOrchestrator:
                         'ws_max_reconnect_attempts': 10
                     }
                     
-                    # Create broker instance
-                    broker = ZerodhaIntegration(zerodha_config)
-                    
-                    # Create resilient connection with proper arguments
-                    zerodha_client = ResilientZerodhaConnection(broker, resilient_config)
+                    # Create unified broker instance with built-in resilience
+                    unified_config = {**zerodha_config, **resilient_config}
+                    zerodha_client = ZerodhaIntegration(unified_config)
                     self.logger.info("✅ Zerodha client initialized with full credentials")
                     return zerodha_client
                 else:
@@ -903,48 +894,49 @@ class TradingOrchestrator:
             # CRITICAL TOKEN SYNC FIX: Check ALL possible Redis keys exhaustively
             self.logger.info(f"🔍 EXHAUSTIVE token search for user: {user_id}")
             
-            # First, try to get ALL zerodha token keys to see what's actually stored
-            try:
-                all_zerodha_keys = await redis_client.keys("zerodha:token:*")
-                self.logger.info(f"🔍 Found {len(all_zerodha_keys)} zerodha:token:* keys in Redis")
-                for key in all_zerodha_keys:
-                    key_str = key.decode() if isinstance(key, bytes) else key
-                    try:
-                        token_value = await redis_client.get(key)
-                        if token_value:
-                            self.logger.info(f"🔍 Key: {key_str} -> Token: {token_value[:10]}...")
-                            # If this is ANY valid token, use it immediately
-                            await redis_client.close()
-                            self.logger.info(f"✅ USING FOUND TOKEN from key: {key_str}")
-                            return token_value
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Error reading key {key_str}: {e}")
-            except Exception as e:
-                self.logger.warning(f"⚠️ Error listing zerodha keys: {e}")
-            
-            # DYNAMIC KEY PATTERNS: Use environment-based user ID
+            # PRIORITIZED TOKEN SEARCH: Check specific user ID first, then fallbacks
             master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
             token_keys_to_check = [
-                f"zerodha:token:{user_id}",                    # Standard pattern
-                f"zerodha:token:{master_user_id}",             # Dynamic master user pattern
-                f"zerodha:token:QSW899",                       # Backup specific user ID pattern
-                f"zerodha:access_token",                       # Simple pattern
-                f"zerodha:{user_id}:access_token",             # Alternative pattern
-                f"zerodha_token_{user_id}",                    # Alternative format
-                f"zerodha:token:ZERODHA_DEFAULT"               # Default pattern
+                f"zerodha:token:{user_id}",                    # 1. Exact user ID (highest priority)
+                f"zerodha:token:{master_user_id}",             # 2. Master user ID  
+                f"zerodha:token:QSW899",                       # 3. Specific known user
+                f"zerodha:access_token",                       # 4. Simple pattern
+                f"zerodha:{user_id}:access_token",             # 5. Alternative pattern
+                f"zerodha_token_{user_id}",                    # 6. Alternative format
+                f"zerodha:token:ZERODHA_DEFAULT"               # 7. Default pattern
             ]
             
-            # Check each key pattern
+            # First check priority keys for the specific user
             for key in token_keys_to_check:
                 try:
                     access_token = await redis_client.get(key)
                     if access_token:
-                        self.logger.info(f"✅ Found access token in Redis with key: {key} for user: {user_id}")
                         await redis_client.close()
+                        self.logger.info(f"✅ Found prioritized token for user {user_id} with key: {key}")
                         return access_token
-                except Exception as key_error:
-                    self.logger.warning(f"⚠️ Error checking Redis key {key}: {key_error}")
-                    continue
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Error checking priority key {key}: {e}")
+            
+            # Only if no priority keys found, do wildcard search as fallback
+            try:
+                all_zerodha_keys = await redis_client.keys("zerodha:token:*")
+                self.logger.info(f"🔍 No priority token found, checking {len(all_zerodha_keys)} wildcard keys")
+                for key in all_zerodha_keys:
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    # Skip if we already checked this key in priority list
+                    if key_str in token_keys_to_check:
+                        continue
+                    try:
+                        token_value = await redis_client.get(key)
+                        if token_value:
+                            self.logger.info(f"🔍 Fallback key: {key_str} -> Token: {token_value[:10]}...")
+                            await redis_client.close()
+                            self.logger.warning(f"⚠️ Using fallback token from key: {key_str} (should check why priority keys missing)")
+                            return token_value
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Error reading fallback key {key_str}: {e}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Error listing zerodha keys: {e}")
             
             self.logger.warning(f"⚠️ No access token found in Redis for user: {user_id} with any key pattern")
             await redis_client.close()
@@ -1123,40 +1115,18 @@ class TradingOrchestrator:
                 from brokers.zerodha import ZerodhaIntegration
                 from brokers.resilient_zerodha import ResilientZerodhaConnection
                 
-                # Create broker instance with proper config format
-                # CRITICAL FIX: Use mock_mode=False when we have all credentials AND access token
+                # Create unified config with built-in resilience features
                 has_valid_credentials = all([api_key, user_id, access_token])
-                
-                # PAPER TRADING FIX: In paper trading mode, still use real Zerodha API even without token initially
-                paper_trading_enabled = os.getenv('PAPER_TRADING', 'false').lower() == 'true'
-                
-                # CRITICAL FIX: Allow Zerodha initialization even without access token
-                # Token will be provided later through frontend authentication
                 has_api_credentials = all([api_key, user_id])
                 
-                zerodha_config = {
+                unified_config = {
                     'api_key': api_key,
                     'user_id': user_id,
                     'access_token': access_token,  # Can be None initially
                     'mock_mode': not has_api_credentials,  # Only require API credentials, not token
                     'sandbox_mode': os.getenv('ZERODHA_SANDBOX_MODE', 'true').lower() == 'true',
-                    'allow_token_update': True  # Allow token to be set later
-                }
-                
-                # Log initialization status
-                if has_api_credentials:
-                    if access_token:
-                        self.logger.info(f"✅ Zerodha initializing with token for user {user_id}: {access_token[:10]}...")
-                    else:
-                        self.logger.info(f"🔧 Zerodha initializing WITHOUT token for user {user_id} - will accept token from frontend")
-                    self.logger.info("🔄 Zerodha will use REAL API with sandbox mode for paper trading")
-                else:
-                    self.logger.warning(f"❌ Missing Zerodha API credentials - running in mock mode")
-                
-                broker = ZerodhaIntegration(zerodha_config)
-                
-                # Create config for resilient connection
-                resilient_config = {
+                    'allow_token_update': True,  # Allow token to be set later
+                    # Built-in resilience configuration
                     'max_retries': 3,
                     'retry_delay': 5,
                     'health_check_interval': 30,
@@ -1165,8 +1135,18 @@ class TradingOrchestrator:
                     'ws_max_reconnect_attempts': 10
                 }
                 
-                # Create resilient connection with proper arguments
-                zerodha_client = ResilientZerodhaConnection(broker, resilient_config)
+                # Log initialization status
+                if has_api_credentials:
+                    if access_token:
+                        self.logger.info(f"✅ Zerodha initializing with token for user {user_id}: {access_token[:10]}...")
+                    else:
+                        self.logger.info(f"🔧 Zerodha initializing WITHOUT token for user {user_id} - will accept token from frontend")
+                    self.logger.info("🔄 Zerodha will use REAL API with built-in resilience")
+                else:
+                    self.logger.warning(f"❌ Missing Zerodha API credentials - running in mock mode")
+                
+                # Create unified broker instance with built-in resilience
+                zerodha_client = ZerodhaIntegration(unified_config)
                 self.logger.info("✅ Zerodha client initialized from environment with proper config")
                 return zerodha_client
             else:
