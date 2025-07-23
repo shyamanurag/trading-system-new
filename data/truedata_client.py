@@ -22,6 +22,17 @@ logger = logging.getLogger(__name__)
 # Global data storage
 live_market_data: Dict[str, Dict] = {}
 
+# Add connection status tracking
+truedata_connection_status = {
+    'connected': False,
+    'last_connected': None,
+    'error': None,
+    'retry_disabled': False,
+    'permanent_block': False,
+    'deployment_id': os.environ.get('DEPLOYMENT_ID', 'unknown'),
+    'connection_attempts': 0
+}
+
 # Add Redis client initialization after other imports
 redis_client = None
 
@@ -659,5 +670,9 @@ def get_connection_status():
         'deployment_id': truedata_client._deployment_id,
         'can_attempt_connection': not truedata_client._circuit_breaker_active
     }
+
+def get_truedata_connection_status():
+    """Get detailed TrueData connection status including deployment ID"""
+    return truedata_connection_status
 
 logger.info("🎯 Advanced TrueData Client loaded - deployment overlap solution active") 
