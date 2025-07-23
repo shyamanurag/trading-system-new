@@ -38,8 +38,8 @@ environment:
 
 brokers:
   zerodha:
-    api_key: vc9ft4zpknynpm3u
-    api_secret: 0nwjb2cncw9stf3m5cre73rqc3bc5xsc
+    api_key: sylcoq492qz6f7ej
+    api_secret: jm3h4iejwnxr4ngmma2qxccpkhevo8sy
     base_url: https://api.kite.trade
     name: zerodha
     rate_limit_per_minute: 60
