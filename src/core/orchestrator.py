@@ -1130,6 +1130,9 @@ class TradingOrchestrator:
     async def _get_market_data_from_api(self) -> Dict[str, Any]:
         """Get market data from Redis cache - SOLVES PROCESS ISOLATION"""
         try:
+            # CRITICAL FIX: Import json at function level to ensure it's always available
+            import json
+            
             # STRATEGY 1: Redis cache (PRIMARY - fixes process isolation)
             if not hasattr(self, 'redis_client') or not self.redis_client:
                 try:
@@ -1137,9 +1140,6 @@ class TradingOrchestrator:
                 except ImportError:
                     self.logger.warning("Redis package not available - using fallback")
                     redis = None
-                
-                # CRITICAL FIX: Import json outside the redis block to prevent scoping issues
-                import json
                 
                 if redis:
                     redis_host = os.environ.get('REDIS_HOST', 'localhost')
