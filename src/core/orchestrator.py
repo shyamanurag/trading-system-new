@@ -835,14 +835,14 @@ class TradingOrchestrator:
                     else:
                         self.logger.warning(f"⚠️ No access token found in Redis for Zerodha user: {zerodha_user_id}")
                         # Try alternative patterns for backward compatibility
-                                                    # DYNAMIC FALLBACK: Use environment-based alternatives
-                            master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
-                            for alt_user_id in [zerodha_user_id, master_user_id, 'QSW899', 'PAPER_TRADER_MAIN']:
-                                access_token = await self._get_access_token_from_redis(alt_user_id)
-                                if access_token:
-                                    credentials['access_token'] = access_token
-                                    self.logger.info(f"✅ Retrieved access token from Redis for alt user: {alt_user_id}")
-                                    return credentials
+                        # DYNAMIC FALLBACK: Use environment-based alternatives
+                        master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+                        for alt_user_id in [zerodha_user_id, master_user_id, 'QSW899', 'PAPER_TRADER_MAIN']:
+                            access_token = await self._get_access_token_from_redis(alt_user_id)
+                            if access_token:
+                                credentials['access_token'] = access_token
+                                self.logger.info(f"✅ Retrieved access token from Redis for alt user: {alt_user_id}")
+                                return credentials
             except Exception as master_error:
                 self.logger.warning(f"⚠️ Error getting master user: {master_error}")
             
