@@ -561,11 +561,12 @@ class TrueDataClient:
                     except Exception as redis_error:
                         logger.error(f"Redis storage error for {symbol}: {redis_error}")
                 
-                # Enhanced logging with data quality info - ALWAYS LOG regardless of volume
-                quality = market_data['data_quality']
-                logger.info(f"📊 {symbol}: ₹{ltp:,.2f} | {change_percent:+.2f}% | Vol: {volume:,} | "
-                          f"OHLC: {'✓' if quality['has_ohlc'] else '✗'} | "
-                          f"Deploy: {self._deployment_id}")
+                # Enhanced logging with data quality info
+                if volume > 0:
+                    quality = market_data['data_quality']
+                    logger.info(f"📊 {symbol}: ₹{ltp:,.2f} | {change_percent:+.2f}% | Vol: {volume:,} | "
+                              f"OHLC: {'✓' if quality['has_ohlc'] else '✗'} | "
+                              f"Deploy: {self._deployment_id}")
                 
             except Exception as e:
                 logger.error(f"Error processing tick data: {e}")
