@@ -280,7 +280,7 @@ async def zerodha_auth_page():
                     const response = await fetch(`${API_BASE}/submit-token`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ request_token: token, user_id: 'PAPER_TRADER_001' })
+                        body: JSON.stringify({ request_token: token, user_id: 'QSW899' })
                     });
                     
                     const data = await response.json();
@@ -396,7 +396,9 @@ async def submit_manual_token(token_data: TokenSubmission):
         # CRITICAL FIX: Store token in Redis for orchestrator access
         try:
             redis_client = await get_redis_client()
-            redis_key = f"zerodha:token:{token_data.user_id}"
+            # DYNAMIC USER ID: Use actual user ID from Zerodha response instead of hardcoded
+            actual_user_id = session_data.get("user_id", token_data.user_id)
+            redis_key = f"zerodha:token:{actual_user_id}"
             
             # Store token with expiration (tokens expire at 6 AM IST next day)
             current_hour = datetime.now().hour
@@ -446,7 +448,7 @@ async def submit_manual_token(token_data: TokenSubmission):
         )
 
 @router.get("/test-connection")
-async def test_connection(user_id: str = "PAPER_TRADER_001"):
+async def test_connection(user_id: str = "QSW899"):
     """Test Zerodha connection with real API calls"""
     try:
         session = zerodha_sessions.get(user_id)
@@ -513,7 +515,7 @@ async def test_connection(user_id: str = "PAPER_TRADER_001"):
         )
 
 @router.delete("/logout")
-async def logout(user_id: str = "PAPER_TRADER_001"):
+async def logout(user_id: str = "QSW899"):
     """Logout from Zerodha and clear session"""
     try:
         session = zerodha_sessions.get(user_id)
@@ -538,21 +540,21 @@ async def logout(user_id: str = "PAPER_TRADER_001"):
         )
 
 # Helper functions for system integration
-async def get_manual_access_token(user_id: str = "PAPER_TRADER_001") -> Optional[str]:
+async def get_manual_access_token(user_id: str = "QSW899") -> Optional[str]:
     """Get stored access token for system use"""
     session = zerodha_sessions.get(user_id)
     if session and session.is_valid():
         return session.access_token
     return None
 
-async def get_kite_instance(user_id: str = "PAPER_TRADER_001") -> Optional[Any]:
+async def get_kite_instance(user_id: str = "QSW899") -> Optional[Any]:
     """Get authenticated KiteConnect instance for system use"""
     session = zerodha_sessions.get(user_id)
     if session and session.is_valid():
         return session.kite
     return None
 
-def get_session_info(user_id: str = "PAPER_TRADER_001") -> Optional[Dict]:
+def get_session_info(user_id: str = "QSW899") -> Optional[Dict]:
     """Get session information"""
     session = zerodha_sessions.get(user_id)
     if session:
