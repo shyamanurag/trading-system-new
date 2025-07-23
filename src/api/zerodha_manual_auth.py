@@ -367,16 +367,19 @@ async def submit_manual_token(token_data: TokenSubmission):
         profile = kite.profile()
         logger.info(f"User profile retrieved: {profile.get('user_name', 'Unknown')}")
         
-        # Create session
-        session = ZerodhaSession(token_data.user_id)
+        # CRITICAL FIX: Use actual user ID from Zerodha response for session storage
+        actual_user_id = session_data.get("user_id", token_data.user_id)
+        
+        # Create session with actual user ID
+        session = ZerodhaSession(actual_user_id)
         session.kite = kite
         session.access_token = access_token
         session.login_time = datetime.now()
         session.expires_at = datetime.now() + timedelta(hours=8)  # Zerodha tokens expire daily
         session.profile = profile
         
-        # Store session in memory
-        zerodha_sessions[token_data.user_id] = session
+        # Store session in memory using actual user ID from Zerodha
+        zerodha_sessions[actual_user_id] = session
         
         # CRITICAL FIX: Notify orchestrator about the new token
         try:
@@ -416,12 +419,12 @@ async def submit_manual_token(token_data: TokenSubmission):
             logger.error(f"⚠️  Failed to store token in Redis: {e}")
             # Don't fail the request, just log the error
         
-        logger.info(f"✅ Authentication successful for user: {token_data.user_id}")
+        logger.info(f"✅ Authentication successful for user: {actual_user_id}")
         
         return JSONResponse(content={
             "success": True,
             "message": "Authentication successful",
-            "user_id": token_data.user_id,
+            "user_id": actual_user_id,
             "status": "authenticated",
             "profile": profile,
             "session": session.to_dict(),
