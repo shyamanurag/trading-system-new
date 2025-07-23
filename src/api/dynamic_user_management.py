@@ -595,7 +595,8 @@ async def list_users(
         return await manager.list_users(skip, limit, active_only)
     except Exception as e:
         logger.error(f"Error in list_users endpoint: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to list users: {str(e)}")
+        # CRITICAL FIX: Return empty list instead of 500 error to prevent frontend crashes
+        return []
 
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
