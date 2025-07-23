@@ -333,7 +333,7 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                     // CRITICAL FIX: Properly parse autonomous trading status
                     setTradingStatus({
                         is_running: data.data.is_active || false,
-                        paper_trading: true, // Always paper trading mode
+                        paper_trading: false, // Live trading mode with real Zerodha account
                         system_ready: data.data.system_ready || false,
                         total_trades: data.data.total_trades || 0,
                         daily_pnl: data.data.daily_pnl || 0,
@@ -353,7 +353,7 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                     const legacyData = await legacyResponse.json();
                     setTradingStatus({
                         is_running: legacyData.is_running || false,
-                        paper_trading: true,
+                        paper_trading: false, // Live trading mode
                         system_ready: legacyData.system_ready || false,
                         last_updated: new Date().toISOString()
                     });
@@ -364,7 +364,7 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
             // Set safe defaults on error
             setTradingStatus({
                 is_running: false,
-                paper_trading: true,
+                paper_trading: false, // Live trading mode
                 system_ready: false,
                 error: error.message,
                 last_updated: new Date().toISOString()
@@ -494,12 +494,12 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
 
                         <Box>
                             <Typography variant="body2" color="text.secondary" gutterBottom>
-                                📊 Default Paper Trader: PAPER_TRADER_001 | 💰 Capital: ₹100,000
+                                📊 Master Trader: QSW899 | 💰 Capital: ₹10,00,000 | 🔴 Live Trading Mode
                             </Typography>
 
-                            <Alert severity="info" sx={{ mb: 2 }}>
+                            <Alert severity="warning" sx={{ mb: 2 }}>
                                 <strong>Daily Setup Required:</strong> Zerodha tokens expire at 6:00 AM IST.
-                                Please refresh your auth token daily for live trading data.
+                                Please refresh your auth token daily for LIVE TRADING operations.
                             </Alert>
 
                             <Box sx={{ display: 'flex', gap: 2, mt: 2, alignItems: 'center' }}>
@@ -512,7 +512,7 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                                         disabled={controlLoading}
                                         sx={{ minWidth: 200 }}
                                     >
-                                        🟡 TRADING ENGAGED - Stop
+                                        🔴 LIVE TRADING ACTIVE - Stop
                                     </Button>
                                 ) : (
                                     <Button
@@ -523,7 +523,7 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                                         disabled={controlLoading}
                                         sx={{ minWidth: 200 }}
                                     >
-                                        ▶️ Start Trading
+                                        ▶️ Start Live Trading
                                     </Button>
                                 )}
 

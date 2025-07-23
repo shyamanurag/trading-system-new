@@ -16,13 +16,13 @@ export const createStandardUser = (overrides = {}) => ({
     username: USER_CONFIG.DISPLAY_NAMES.MASTER,
     display_name: USER_CONFIG.DISPLAY_NAMES.MASTER,
     name: USER_CONFIG.DISPLAY_NAMES.MASTER,
-    email: 'master@trading-system.com',
+    email: 'qsw899@trading-system.com',
     zerodha_client_id: USER_CONFIG.ZERODHA_USER_ID,
     zerodha_user_id: USER_CONFIG.ZERODHA_USER_ID,
-    initial_capital: 1000000,
-    current_balance: 1000000,
-    current_capital: 1000000,
-    capital: 1000000,
+    initial_capital: 10000000,  // 1 crore capital for live trading
+    current_balance: 10000000,
+    current_capital: 10000000,
+    capital: 10000000,
     total_pnl: 0,
     total_trades: 0,
     win_rate: 0,
@@ -94,11 +94,11 @@ export const standardizeUserData = (rawUserData, source = 'api') => {
         zerodha_client_id: rawUserData.zerodha_client_id || rawUserData.client_id || USER_CONFIG.ZERODHA_USER_ID,
         zerodha_user_id: rawUserData.zerodha_user_id || USER_CONFIG.ZERODHA_USER_ID,
 
-        // Financial data
-        initial_capital: rawUserData.initial_capital || rawUserData.capital || 1000000,
-        current_balance: rawUserData.current_balance || rawUserData.current_capital || rawUserData.capital || 1000000,
-        current_capital: rawUserData.current_capital || rawUserData.current_balance || rawUserData.capital || 1000000,
-        capital: rawUserData.capital || rawUserData.current_capital || rawUserData.initial_capital || 1000000,
+        // Financial data (updated for live trading amounts)
+        initial_capital: rawUserData.initial_capital || rawUserData.capital || 10000000,
+        current_balance: rawUserData.current_balance || rawUserData.current_capital || rawUserData.capital || 10000000,
+        current_capital: rawUserData.current_capital || rawUserData.current_balance || rawUserData.capital || 10000000,
+        capital: rawUserData.capital || rawUserData.current_capital || rawUserData.initial_capital || 10000000,
 
         // Trading stats
         total_pnl: rawUserData.total_pnl || rawUserData.totalPnL || 0,
@@ -210,3 +210,4 @@ export const validateUserData = (userData) => {
  * Export all configuration for components that need it
  */
 export { USER_CONFIG } from '../api/config.js';
+

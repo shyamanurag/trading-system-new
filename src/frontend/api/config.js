@@ -4,25 +4,25 @@ const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'wss://algoauto-9gx56.ondigit
 
 // UNIFIED USER CONFIGURATION - Standardizes all user identifiers
 export const USER_CONFIG = {
-    // Primary user identifier (for database operations)
-    PRIMARY_USER_ID: 'PAPER_TRADER_001',
+    // Primary user identifier (now unified with Zerodha user)
+    PRIMARY_USER_ID: 'QSW899',
 
-    // Zerodha broker user ID (for trading operations)
+    // Zerodha broker user ID (same as primary for consistency)
     ZERODHA_USER_ID: 'QSW899',
 
     // Display names for different contexts
     DISPLAY_NAMES: {
-        MASTER: 'Master Trader',
-        PAPER: 'Paper Trading Account',
-        ZERODHA: 'Zerodha Account'
+        MASTER: 'Master Trader (QSW899)',
+        PAPER: 'Live Trading Account',
+        ZERODHA: 'Zerodha Account (QSW899)'
     },
 
-    // User type mappings
+    // User type mappings (unified to use real Zerodha user)
     USER_TYPES: {
-        MASTER: 'PAPER_TRADER_001',
-        PAPER: 'PAPER_TRADER_001',
+        MASTER: 'QSW899',
+        PAPER: 'QSW899',
         ZERODHA: 'QSW899',
-        DATABASE: 'PAPER_TRADER_001'
+        DATABASE: 'QSW899'
     },
 
     // API parameter mappings
