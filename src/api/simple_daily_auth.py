@@ -273,6 +273,43 @@ async def submit_daily_token(
             
             logger.info(f"Real Zerodha authentication successful for user: {user_id}")
             
+            # DYNAMIC USER REGISTRATION: Register this Zerodha user in the system
+            try:
+                from src.api.trading_control import create_or_update_zerodha_user
+                
+                # Get user profile from Zerodha
+                kite.set_access_token(access_token)
+                profile = kite.profile()
+                
+                # Register/update user in the system
+                user_profile = {
+                    "user_name": profile.get("user_name", f"Zerodha User ({user_id})"),
+                    "email": profile.get("email", ""),
+                    "phone": profile.get("phone", ""),
+                    "broker": profile.get("broker", "ZERODHA")
+                }
+                
+                # For master account, include API credentials
+                api_credentials = None
+                master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+                if user_id == master_user_id:
+                    api_credentials = {
+                        "api_key": ZERODHA_API_KEY,
+                        "api_secret": ZERODHA_API_SECRET
+                    }
+                
+                create_or_update_zerodha_user(
+                    zerodha_user_id=user_id,
+                    user_profile=user_profile,
+                    api_credentials=api_credentials
+                )
+                
+                logger.info(f"✅ Dynamically registered Zerodha user: {user_id}")
+                
+            except Exception as reg_error:
+                logger.warning(f"⚠️ Could not register user {user_id}: {reg_error}")
+                # Continue - this is not critical for authentication
+            
         except Exception as zerodha_error:
             # ELIMINATED: Dangerous mock authentication fallback
             # ❌ logger.warning(f"Real Zerodha auth failed: {zerodha_error}, falling back to mock mode")

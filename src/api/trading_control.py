@@ -2,7 +2,7 @@
 Trading Control API - Start/Stop Trading and User Management
 """
 from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 import logging
 import os
@@ -41,15 +41,16 @@ class TradingCommand(BaseModel):
 broker_users = {}
 
 def initialize_default_users():
-    """Initialize default master user on startup to prevent user loss on redeploy"""
+    """Initialize master trading account dynamically based on environment Zerodha user"""
     try:
+        # Get the master Zerodha user ID from environment (this is the primary trading account)
+        master_zerodha_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+        
         # Only add if master user doesn't exist (prevent duplicates)
-        if "PAPER_TRADER_001" not in broker_users:
-            # CRITICAL FIX: Use production deployment credentials (matches app.yaml)
-            # These must match the DigitalOcean environment variables
-            real_api_key = os.getenv('ZERODHA_API_KEY', 'sylcoq492qz6f7ej')  # Production key
-            real_api_secret = os.getenv('ZERODHA_API_SECRET', 'jm3h4iejwnxr4ngmma2qxccpkhevo8sy')  # Production secret
-            real_client_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+        if master_zerodha_user_id not in broker_users:
+            # Use production deployment credentials (matches app.yaml)
+            real_api_key = os.getenv('ZERODHA_API_KEY', 'sylcoq492qz6f7ej')
+            real_api_secret = os.getenv('ZERODHA_API_SECRET', 'jm3h4iejwnxr4ngmma2qxccpkhevo8sy')
             
             # VALIDATION: Ensure we're using the correct production credentials
             if real_api_key != 'sylcoq492qz6f7ej':
@@ -57,23 +58,20 @@ def initialize_default_users():
                 logger.warning("Using production credentials from deployment")
                 real_api_key = 'sylcoq492qz6f7ej'
             
-            if real_client_id != 'QSW899':
-                logger.warning(f"⚠️ User ID mismatch detected: env={real_client_id} vs expected=QSW899")
-                logger.warning("Using working user ID from auth endpoints")
-                real_client_id = 'QSW899'
-            
+            # Create master user with ACTUAL Zerodha user ID as the key
             master_user = {
-                "user_id": "PAPER_TRADER_001",
-                "name": "Paper Trading Account",
+                "user_id": master_zerodha_user_id,  # Use real Zerodha user ID
+                "name": f"Zerodha Account ({master_zerodha_user_id})",
                 "broker": "zerodha",
                 "api_key": real_api_key,
                 "api_secret": real_api_secret,
-                "client_id": real_client_id,
+                "client_id": master_zerodha_user_id,  # Same as user_id for Zerodha
                 "initial_capital": 1000000.0,
                 "current_capital": 1000000.0,
                 "risk_tolerance": "medium",
-                "paper_trading": True,
+                "paper_trading": True,  # Can be toggled per user
                 "is_active": True,
+                "is_master": True,  # Mark as master account
                 "created_at": datetime.now().isoformat(),
                 "total_pnl": 0,
                 "daily_pnl": 0,
@@ -82,16 +80,15 @@ def initialize_default_users():
                 "open_trades": 0
             }
             
-            broker_users["PAPER_TRADER_001"] = master_user
+            broker_users[master_zerodha_user_id] = master_user
             
-            logger.info(f"✅ Using validated API key: {real_api_key[:8]}...")
-            logger.info(f"✅ Using validated client ID: {real_client_id}")
-            logger.info("✅ Credentials match working auth endpoints")
+            logger.info(f"✅ Initialized master Zerodha user: {master_zerodha_user_id}")
+            logger.info(f"✅ Using API key: {real_api_key[:8]}...")
+            logger.info("✅ System ready for multi-user Zerodha trading")
             
-            logger.info("✅ Auto-initialized PAPER_TRADER_001 to prevent user loss on redeploy")
             return True
         else:
-            logger.info("✅ PAPER_TRADER_001 already exists - skipping initialization")
+            logger.info(f"✅ Master user {master_zerodha_user_id} already exists - skipping initialization")
             return True
     except Exception as e:
         logger.error(f"❌ Error initializing default users: {e}")
@@ -103,19 +100,21 @@ try:
     logger.info(f"✅ Default users initialized. Active users: {list(broker_users.keys())}")
 except Exception as e:
     logger.error(f"❌ Failed to initialize default users: {e}")
-    # Force initialization as fallback
-    broker_users["PAPER_TRADER_001"] = {
-        "user_id": "PAPER_TRADER_001",
-        "name": "Paper Trading Account", 
+    # Force initialization as fallback with dynamic user ID
+    master_zerodha_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+    broker_users[master_zerodha_user_id] = {
+        "user_id": master_zerodha_user_id,
+        "name": f"Zerodha Account ({master_zerodha_user_id})", 
         "broker": "zerodha",
         "api_key": os.getenv('ZERODHA_API_KEY', 'sylcoq492qz6f7ej'),
         "api_secret": os.getenv('ZERODHA_API_SECRET', 'jm3h4iejwnxr4ngmma2qxccpkhevo8sy'),
-        "client_id": os.getenv('ZERODHA_USER_ID', 'QSW899'),
+        "client_id": master_zerodha_user_id,
         "initial_capital": 1000000.0,
         "current_capital": 1000000.0,
         "risk_tolerance": "medium",
         "paper_trading": True,
         "is_active": True,
+        "is_master": True,
         "created_at": datetime.now().isoformat(),
         "total_pnl": 0,
         "daily_pnl": 0,
@@ -123,7 +122,102 @@ except Exception as e:
         "win_rate": 0,
         "open_trades": 0
     }
-    logger.info("✅ Forced default user initialization as fallback")
+    logger.info(f"✅ Forced default user initialization as fallback for {master_zerodha_user_id}")
+
+def create_or_update_zerodha_user(zerodha_user_id: str, user_profile: Optional[Dict[str, Any]] = None, api_credentials: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """
+    Dynamically create or update a Zerodha user when they authenticate
+    This enables multi-user support with individual analytics and tracking
+    """
+    try:
+        # Check if user already exists
+        if zerodha_user_id in broker_users:
+            logger.info(f"✅ Zerodha user {zerodha_user_id} already exists, updating profile")
+            existing_user = broker_users[zerodha_user_id]
+            
+            # Update profile information if provided
+            if user_profile:
+                existing_user.update({
+                    "name": user_profile.get("user_name", existing_user["name"]),
+                    "email": user_profile.get("email", ""),
+                    "phone": user_profile.get("phone", ""),
+                    "broker": user_profile.get("broker", "zerodha"),
+                    "last_login": datetime.now().isoformat()
+                })
+            
+            # Update API credentials if provided (for master accounts)
+            if api_credentials and existing_user.get("is_master", False):
+                existing_user.update({
+                    "api_key": api_credentials.get("api_key", existing_user["api_key"]),
+                    "api_secret": api_credentials.get("api_secret", existing_user["api_secret"])
+                })
+            
+            return existing_user
+        
+        # Create new user
+        logger.info(f"✅ Creating new Zerodha user: {zerodha_user_id}")
+        
+        # Determine if this is the master account
+        master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+        is_master = (zerodha_user_id == master_user_id)
+        
+        new_user = {
+            "user_id": zerodha_user_id,
+            "name": user_profile.get("user_name", f"Zerodha User ({zerodha_user_id})") if user_profile else f"Zerodha User ({zerodha_user_id})",
+            "email": user_profile.get("email", "") if user_profile else "",
+            "phone": user_profile.get("phone", "") if user_profile else "",
+            "broker": "zerodha",
+            "client_id": zerodha_user_id,
+            "initial_capital": 1000000.0,  # Default 10L, can be customized per user
+            "current_capital": 1000000.0,
+            "risk_tolerance": "medium",
+            "paper_trading": True,  # Start with paper trading, can be toggled
+            "is_active": True,
+            "is_master": is_master,  # Only master account can execute trades for others
+            "created_at": datetime.now().isoformat(),
+            "last_login": datetime.now().isoformat(),
+            "total_pnl": 0,
+            "daily_pnl": 0,
+            "total_trades": 0,
+            "win_rate": 0,
+            "open_trades": 0,
+            "max_daily_loss": 50000.0,  # Default 50K daily loss limit
+            "max_position_size": 100000.0,  # Default 1L position limit
+            "strategies_enabled": ["volume_profile_scalper", "momentum_surfer"]  # Default strategies
+        }
+        
+        # Add API credentials only for master account
+        if is_master and api_credentials:
+            new_user.update({
+                "api_key": api_credentials.get("api_key", os.getenv('ZERODHA_API_KEY')),
+                "api_secret": api_credentials.get("api_secret", os.getenv('ZERODHA_API_SECRET'))
+            })
+        
+        broker_users[zerodha_user_id] = new_user
+        
+        logger.info(f"✅ Created Zerodha user {zerodha_user_id} (Master: {is_master})")
+        logger.info(f"✅ Total users in system: {len(broker_users)}")
+        
+        return new_user
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to create/update user {zerodha_user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"User creation failed: {e}")
+
+def get_master_user() -> Optional[Dict[str, Any]]:
+    """Get the master Zerodha user (the one that can execute trades)"""
+    for user_id, user_data in broker_users.items():
+        if user_data.get("is_master", False):
+            return user_data
+    return None
+
+def get_user_by_zerodha_id(zerodha_user_id: str) -> Optional[Dict[str, Any]]:
+    """Get user by their Zerodha user ID"""
+    return broker_users.get(zerodha_user_id)
+
+def list_all_zerodha_users() -> List[Dict[str, Any]]:
+    """List all registered Zerodha users"""
+    return list(broker_users.values())
 
 @router.post("/users/broker")
 async def add_broker_user(user: BrokerUser):
@@ -320,6 +414,77 @@ async def initialize_users():
             }
     except Exception as e:
         logger.error(f"Error in manual user initialization: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/users/zerodha/register")
+async def register_zerodha_user_dynamically(request: Dict[str, Any]):
+    """
+    Register a new Zerodha user dynamically when they authenticate
+    This is called automatically by auth endpoints when a new user submits token
+    """
+    try:
+        zerodha_user_id = request.get('zerodha_user_id')
+        if not zerodha_user_id:
+            raise HTTPException(status_code=400, detail="zerodha_user_id is required")
+        
+        # Get user profile from Zerodha if available
+        user_profile = request.get('user_profile', {})
+        api_credentials = request.get('api_credentials', {})
+        
+        # Create or update the user
+        user_data = create_or_update_zerodha_user(
+            zerodha_user_id=zerodha_user_id,
+            user_profile=user_profile,
+            api_credentials=api_credentials
+        )
+        
+        logger.info(f"✅ Successfully registered/updated Zerodha user: {zerodha_user_id}")
+        
+        return {
+            "success": True,
+            "message": f"Zerodha user {zerodha_user_id} registered successfully",
+            "user": user_data,
+            "total_users": len(broker_users)
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error registering Zerodha user: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/users/zerodha/{zerodha_user_id}")
+async def get_zerodha_user_profile(zerodha_user_id: str):
+    """Get profile and analytics for a specific Zerodha user"""
+    try:
+        user_data = get_user_by_zerodha_id(zerodha_user_id)
+        if not user_data:
+            raise HTTPException(status_code=404, detail=f"Zerodha user {zerodha_user_id} not found")
+        
+        return {
+            "success": True,
+            "user": user_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error getting user profile: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/users/zerodha")
+async def list_zerodha_users():
+    """List all registered Zerodha users with their analytics"""
+    try:
+        all_users = list_all_zerodha_users()
+        
+        return {
+            "success": True,
+            "users": all_users,
+            "total_users": len(all_users),
+            "master_user": get_master_user()
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error listing Zerodha users: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/trading/control")

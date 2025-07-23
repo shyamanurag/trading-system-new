@@ -809,38 +809,60 @@ class TradingOrchestrator:
             return None
             
     async def _get_zerodha_credentials_from_trading_control(self):
-        """Get Zerodha credentials from trading_control module and access token from Redis"""
+        """Get Zerodha credentials from trading_control module with dynamic user support"""
         try:
-            from src.api.trading_control import broker_users
+            from src.api.trading_control import broker_users, get_master_user, get_user_by_zerodha_id
             
-            # Look for PAPER_TRADER_001 or any active user
+            # First try to get the master user (the one that can execute trades)
+            try:
+                master_user = get_master_user()
+                if master_user:
+                    zerodha_user_id = master_user['user_id']  # This is the real Zerodha user ID
+                    credentials = {
+                        'api_key': master_user.get('api_key'),
+                        'api_secret': master_user.get('api_secret'), 
+                        'user_id': zerodha_user_id  # Use real Zerodha user ID
+                    }
+                    
+                    self.logger.info(f"✅ Found master Zerodha user credentials: {zerodha_user_id}")
+                    
+                    # Get access token from Redis using the REAL Zerodha user ID
+                    access_token = await self._get_access_token_from_redis(zerodha_user_id)
+                    if access_token:
+                        credentials['access_token'] = access_token
+                        self.logger.info(f"✅ Retrieved access token from Redis for Zerodha user: {zerodha_user_id}")
+                        return credentials
+                    else:
+                        self.logger.warning(f"⚠️ No access token found in Redis for Zerodha user: {zerodha_user_id}")
+                        # Try alternative patterns for backward compatibility
+                        for alt_user_id in [zerodha_user_id, 'PAPER_TRADER_001', 'PAPER_TRADER_MAIN']:
+                            access_token = await self._get_access_token_from_redis(alt_user_id)
+                            if access_token:
+                                credentials['access_token'] = access_token
+                                self.logger.info(f"✅ Retrieved access token from Redis for alt user: {alt_user_id}")
+                                return credentials
+            except Exception as master_error:
+                self.logger.warning(f"⚠️ Error getting master user: {master_error}")
+            
+            # Fallback: Look for any active Zerodha user
             for user_id, user_data in broker_users.items():
                 if user_data.get('is_active') and user_data.get('broker') == 'zerodha':
+                    zerodha_user_id = user_data.get('client_id', user_id)
                     credentials = {
                         'api_key': user_data.get('api_key'),
-                        'user_id': user_data.get('client_id'),  # client_id is the Zerodha user_id
+                        'user_id': zerodha_user_id,  # client_id is the Zerodha user_id
                         'api_secret': user_data.get('api_secret')
                     }
                     
                     if credentials.get('api_key') and credentials.get('user_id'):
-                        self.logger.info(f"✅ Found Zerodha credentials for user: {user_id}")
+                        self.logger.info(f"✅ Found fallback Zerodha credentials for user: {zerodha_user_id}")
                         
-                        # CRITICAL FIX: Get access token from Redis where frontend stores it
-                        access_token = await self._get_access_token_from_redis(user_id)
+                        # Get access token from Redis
+                        access_token = await self._get_access_token_from_redis(zerodha_user_id)
                         if access_token:
                             credentials['access_token'] = access_token
-                            self.logger.info(f"✅ Retrieved access token from Redis for user: {user_id}")
-                        else:
-                            self.logger.warning(f"⚠️ No access token found in Redis for user: {user_id}")
-                            # Try alternative user IDs that frontend might use
-                            for alt_user_id in ['PAPER_TRADER_001', 'PAPER_TRADER_MAIN']:
-                                access_token = await self._get_access_token_from_redis(alt_user_id)
-                                if access_token:
-                                    credentials['access_token'] = access_token
-                                    self.logger.info(f"✅ Retrieved access token from Redis for alt user: {alt_user_id}")
-                                    break
-                        
-                        return credentials
+                            self.logger.info(f"✅ Retrieved access token from Redis for user: {zerodha_user_id}")
+                            return credentials
                         
             self.logger.warning("⚠️ No active Zerodha users found in trading_control")
             return None
