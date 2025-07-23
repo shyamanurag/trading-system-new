@@ -450,8 +450,10 @@ async def submit_daily_token(
             os.environ['ZERODHA_USER_ID'] = user_id
             logger.warning("⚠️ Using environment variable fallback - orchestrator may not access token")
         
-        # Start autonomous trading in background
-        background_tasks.add_task(start_autonomous_trading_after_auth)
+        # CRITICAL FIX: Skip problematic background task that causes "success then fail" pattern
+        # The refresh connection process was invalidating tokens after successful submission
+        # background_tasks.add_task(start_autonomous_trading_after_auth)
+        logger.info("✅ Token stored successfully - skipping background refresh to prevent invalidation")
         
         logger.info(f"Daily authentication successful for user: {user_id}")
         
