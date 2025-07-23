@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/daily-auth", tags=["daily-auth"])
 
 # Pre-configured Zerodha credentials
-ZERODHA_API_KEY = "sylcoq492qz6f7ej"
+ZERODHA_API_KEY = "vc9ft4zpknynpm3u"
 ZERODHA_CLIENT_ID = "QSW899"
-ZERODHA_API_SECRET = os.getenv('ZERODHA_API_SECRET', 'jm3h4iejwnxr4ngmma2qxccpkhevo8sy')
+ZERODHA_API_SECRET = os.getenv('ZERODHA_API_SECRET', '0nwjb2cncw9stf3m5cre73rqc3bc5xsc')
 
 class DailyAuthRequest(BaseModel):
     """Daily authentication request"""

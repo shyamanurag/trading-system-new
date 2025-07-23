@@ -16,7 +16,7 @@ const ZerodhaManualAuth = () => {
 
             if (response.status === 404) {
                 // Fallback when endpoints not deployed yet
-                setAuthUrl(`https://kite.zerodha.com/connect/login?api_key=${import.meta.env.VITE_ZERODHA_API_KEY || 'sylcoq492qz6f7ej'}`);
+                setAuthUrl(`https://kite.zerodha.com/connect/login?api_key=${import.meta.env.VITE_ZERODHA_API_KEY || 'vc9ft4zpknynpm3u'}`);
                 setInstructions([
                     "1. Click the authorization URL below",
                     "2. Login to Zerodha with your credentials",
@@ -35,7 +35,7 @@ const ZerodhaManualAuth = () => {
         } catch (error) {
             console.error('Failed to fetch auth URL:', error);
             // Fallback URL
-            setAuthUrl('https://kite.zerodha.com/connect/login?api_key=sylcoq492qz6f7ej');
+            setAuthUrl('https://kite.zerodha.com/connect/login?api_key=vc9ft4zpknynpm3u');
             setInstructions([
                 "1. Click the authorization URL below",
                 "2. Login to Zerodha with your credentials",

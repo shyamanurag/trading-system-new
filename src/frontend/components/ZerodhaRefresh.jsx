@@ -163,7 +163,7 @@ const ZerodhaRefresh = () => {
 
     const getLoginUrl = () => {
         // CRITICAL FIX: Use production API key matching backend configuration
-        const apiKey = 'sylcoq492qz6f7ej'; // Production key matching all backend endpoints
+        const apiKey = 'vc9ft4zpknynpm3u'; // Production key matching all backend endpoints
         return `https://kite.trade/connect/login?api_key=${apiKey}&v=3`;
     };
 

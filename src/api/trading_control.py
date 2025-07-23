@@ -49,14 +49,14 @@ def initialize_default_users():
         # Only add if master user doesn't exist (prevent duplicates)
         if master_zerodha_user_id not in broker_users:
             # Use production deployment credentials (matches app.yaml)
-            real_api_key = os.getenv('ZERODHA_API_KEY', 'sylcoq492qz6f7ej')
-            real_api_secret = os.getenv('ZERODHA_API_SECRET', 'jm3h4iejwnxr4ngmma2qxccpkhevo8sy')
+            real_api_key = os.getenv('ZERODHA_API_KEY', 'vc9ft4zpknynpm3u')
+            real_api_secret = os.getenv('ZERODHA_API_SECRET', '0nwjb2cncw9stf3m5cre73rqc3bc5xsc')
             
             # VALIDATION: Ensure we're using the correct production credentials
-            if real_api_key != 'sylcoq492qz6f7ej':
-                logger.warning(f"⚠️ API key mismatch detected: env={real_api_key[:8]}... vs production=sylcoq49...")
+            if real_api_key != 'vc9ft4zpknynpm3u':
+                logger.warning(f"⚠️ API key mismatch detected: env={real_api_key[:8]}... vs production=vc9ft4zp...")
                 logger.warning("Using production credentials from deployment")
-                real_api_key = 'sylcoq492qz6f7ej'
+                real_api_key = 'vc9ft4zpknynpm3u'
             
             # Create master user with ACTUAL Zerodha user ID as the key
             master_user = {
