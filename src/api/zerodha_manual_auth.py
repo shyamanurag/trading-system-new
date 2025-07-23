@@ -48,7 +48,7 @@ zerodha_sessions = {}
 
 class TokenSubmission(BaseModel):
     request_token: str
-    user_id: str = "PAPER_TRADER_001"
+    user_id: str = os.getenv('ZERODHA_USER_ID', 'QSW899')
     
     @validator('request_token')
     def validate_token(cls, v):
@@ -114,9 +114,12 @@ async def get_manual_auth_url():
         )
 
 @router.get("/status")
-async def get_manual_auth_status(user_id: str = "PAPER_TRADER_001"):
+async def get_manual_auth_status(user_id: str = None):
     """Get current authentication status"""
     try:
+        # DYNAMIC USER ID: Use environment variable if not provided
+        if not user_id:
+            user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
         session = zerodha_sessions.get(user_id)
         
         if session and session.is_valid():

@@ -190,7 +190,7 @@ async def repair_token_issue(request: TokenRepairRequest):
         if request.action == "migrate":
             # Migrate token from one user ID to another
             source_id = request.source_user_id
-            target_id = request.target_user_id or os.getenv('ZERODHA_USER_ID', 'PAPER_TRADER_001')
+            target_id = request.target_user_id or os.getenv('ZERODHA_USER_ID', 'QSW899')
             
             if not source_id:
                 # Find any existing token
@@ -278,14 +278,16 @@ async def debug_orchestrator_token_access():
                 "error": "Redis connection failed"
             })
         
-        env_user_id = os.getenv('ZERODHA_USER_ID', 'PAPER_TRADER_001')
+        env_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
         
         # Simulate orchestrator token search
+        # DYNAMIC TOKEN PATTERNS: Use environment-based user ID
+        master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
         token_keys_to_check = [
             f"zerodha:token:{env_user_id}",
-            f"zerodha:token:PAPER_TRADER_001",
+            f"zerodha:token:{master_user_id}",  # Dynamic master user
             f"zerodha:token:PAPER_TRADER_MAIN",
-            f"zerodha:token:QSW899",
+            f"zerodha:token:QSW899",  # Backup specific user
             f"zerodha:{env_user_id}:access_token",
             f"zerodha:access_token",
             f"zerodha_token_{env_user_id}"

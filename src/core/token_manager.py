@@ -17,7 +17,7 @@ class ZerodhaTokenManager:
     def __init__(self):
         self.redis_client: Optional[redis.Redis] = None
         self.redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-        self.user_id = os.getenv('ZERODHA_USER_ID', 'PAPER_TRADER_001')
+        self.user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
         
         # Check if SSL is required (DigitalOcean managed Redis)
         self.ssl_required = (
@@ -82,7 +82,7 @@ class ZerodhaTokenManager:
             # Define all possible token key patterns
             token_keys_to_check = [
                 f"zerodha:token:{target_user_id}",
-                f"zerodha:token:PAPER_TRADER_001",
+                f"zerodha:token:{os.getenv('ZERODHA_USER_ID', 'QSW899')}",
                 f"zerodha:token:PAPER_TRADER_MAIN", 
                 f"zerodha:token:QSW899",
                 f"zerodha:{target_user_id}:access_token",

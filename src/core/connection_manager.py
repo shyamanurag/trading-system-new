@@ -244,7 +244,7 @@ class ConnectionManager:
                     # Check multiple Redis key patterns to find the token
                     token_keys_to_check = [
                         f"zerodha:token:{user_id}",  # Standard pattern with env user_id
-                        f"zerodha:token:PAPER_TRADER_001",  # Frontend user_id pattern
+                        f"zerodha:token:{os.getenv('ZERODHA_USER_ID', 'QSW899')}",  # Dynamic user_id pattern
                         f"zerodha:token:PAPER_TRADER_MAIN",  # Alternative paper trader ID
                         f"zerodha:{user_id}:access_token",  # Alternative pattern
                         f"zerodha:access_token",  # Simple pattern

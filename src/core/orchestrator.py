@@ -835,12 +835,14 @@ class TradingOrchestrator:
                     else:
                         self.logger.warning(f"⚠️ No access token found in Redis for Zerodha user: {zerodha_user_id}")
                         # Try alternative patterns for backward compatibility
-                        for alt_user_id in [zerodha_user_id, 'PAPER_TRADER_001', 'PAPER_TRADER_MAIN']:
-                            access_token = await self._get_access_token_from_redis(alt_user_id)
-                            if access_token:
-                                credentials['access_token'] = access_token
-                                self.logger.info(f"✅ Retrieved access token from Redis for alt user: {alt_user_id}")
-                                return credentials
+                                                    # DYNAMIC FALLBACK: Use environment-based alternatives
+                            master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+                            for alt_user_id in [zerodha_user_id, master_user_id, 'QSW899', 'PAPER_TRADER_MAIN']:
+                                access_token = await self._get_access_token_from_redis(alt_user_id)
+                                if access_token:
+                                    credentials['access_token'] = access_token
+                                    self.logger.info(f"✅ Retrieved access token from Redis for alt user: {alt_user_id}")
+                                    return credentials
             except Exception as master_error:
                 self.logger.warning(f"⚠️ Error getting master user: {master_error}")
             
@@ -898,11 +900,12 @@ class TradingOrchestrator:
                     decode_responses=True
                 )
             
-            # CRITICAL FIX: Try multiple key patterns that frontend uses
+            # DYNAMIC KEY PATTERNS: Use environment-based user ID
+            master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
             token_keys_to_check = [
                 f"zerodha:token:{user_id}",                    # Standard pattern
-                f"zerodha:token:PAPER_TRADER_001",             # Primary user ID pattern
-                f"zerodha:token:QSW899",                       # Direct user ID pattern
+                f"zerodha:token:{master_user_id}",             # Dynamic master user pattern
+                f"zerodha:token:QSW899",                       # Backup specific user ID pattern
                 f"zerodha:access_token",                       # Simple pattern
                 f"zerodha:{user_id}:access_token",             # Alternative pattern
                 f"zerodha_token_{user_id}",                    # Alternative format
@@ -1019,11 +1022,13 @@ class TradingOrchestrator:
                             await self.redis_manager.initialize()
                             
                             # Check multiple Redis key patterns to find the token
+                            # DYNAMIC TOKEN PATTERNS: Use environment-based user ID
+                            master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
                             token_keys_to_check = [
                                 f"zerodha:token:{user_id}",  # Standard pattern with env user_id
-                                f"zerodha:token:PAPER_TRADER_001",  # Frontend user_id pattern
+                                f"zerodha:token:{master_user_id}",  # Dynamic master user pattern
                                 f"zerodha:token:PAPER_TRADER_MAIN",  # Alternative paper trader ID
-                                f"zerodha:token:QSW899",  # Direct user ID from environment
+                                f"zerodha:token:QSW899",  # Backup specific user ID
                                 f"zerodha:{user_id}:access_token",  # Alternative pattern
                                 f"zerodha:access_token",  # Simple pattern
                                 f"zerodha_token_{user_id}",  # Alternative format
@@ -1063,11 +1068,13 @@ class TradingOrchestrator:
                                 redis_client = redis.from_url(redis_url, decode_responses=True)
                             
                             # Check multiple Redis key patterns to find the token
+                            # DYNAMIC TOKEN PATTERNS: Use environment-based user ID
+                            master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
                             token_keys_to_check = [
                                 f"zerodha:token:{user_id}",  # Standard pattern with env user_id
-                                f"zerodha:token:PAPER_TRADER_001",  # Frontend user_id pattern
+                                f"zerodha:token:{master_user_id}",  # Dynamic master user pattern
                                 f"zerodha:token:PAPER_TRADER_MAIN",  # Alternative paper trader ID
-                                f"zerodha:token:QSW899",  # Direct user ID from environment
+                                f"zerodha:token:QSW899",  # Backup specific user ID
                                 f"zerodha:access_token",  # Simple pattern
                                 f"zerodha:{user_id}:access_token",  # Alternative pattern
                                 f"zerodha_token_{user_id}",  # Alternative format

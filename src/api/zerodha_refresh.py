@@ -56,10 +56,12 @@ async def get_refresh_status():
         
         # Check multiple Redis key patterns for token
         user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+        # DYNAMIC USER ID: Use environment variable for master user
+        master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
         token_keys_to_check = [
             f"zerodha:token:{user_id}",
-            f"zerodha:token:PAPER_TRADER_001",
-            f"zerodha:token:QSW899",
+            f"zerodha:token:{master_user_id}",  # Dynamic master user
+            f"zerodha:token:QSW899",  # Backup specific user
             f"zerodha:access_token",
             f"zerodha:{user_id}:access_token",
             f"zerodha_token_{user_id}",
@@ -175,10 +177,12 @@ async def submit_token(request: TokenSubmitRequest):
                     redis_client = redis.from_url(redis_url, decode_responses=True)
                 
                 # Store token with multiple key patterns for compatibility
+                # DYNAMIC TOKEN KEYS: Use actual environment user ID
+                master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
                 token_keys = [
                     f"zerodha:token:{user_id}",
-                    f"zerodha:token:PAPER_TRADER_001",
-                    f"zerodha:token:QSW899",
+                    f"zerodha:token:{master_user_id}",  # Dynamic master user
+                    f"zerodha:token:QSW899",  # Backup specific user
                     f"zerodha:access_token",
                     f"zerodha:{user_id}:access_token",
                     f"zerodha_token_{user_id}",

@@ -347,11 +347,12 @@ async def submit_daily_token(
             else:
                 expiry = tomorrow_6am  # Tomorrow 6 AM
             
-            # CRITICAL FIX: Store token with ALL key patterns that backend searches for
+            # DYNAMIC TOKEN KEYS: Use environment-based user ID for compatibility
+            master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
             token_keys = [
                 f"zerodha:token:{user_id}",                    # Standard user pattern
-                f"zerodha:token:PAPER_TRADER_001",             # Primary user ID pattern
-                f"zerodha:token:QSW899",                       # Direct user ID pattern
+                f"zerodha:token:{master_user_id}",             # Dynamic master user pattern
+                f"zerodha:token:QSW899",                       # Backup specific user ID
                 f"zerodha:access_token",                       # Simple pattern
                 f"zerodha:{user_id}:access_token",             # Alternative pattern
                 f"zerodha_token_{user_id}",                    # Alternative format
