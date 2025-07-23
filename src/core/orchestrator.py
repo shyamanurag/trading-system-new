@@ -1138,9 +1138,10 @@ class TradingOrchestrator:
                     self.logger.warning("Redis package not available - using fallback")
                     redis = None
                 
+                # CRITICAL FIX: Import json outside the redis block to prevent scoping issues
+                import json
+                
                 if redis:
-                    import json
-                    
                     redis_host = os.environ.get('REDIS_HOST', 'localhost')
                     redis_port = int(os.environ.get('REDIS_PORT', 6379))
                     redis_password = os.environ.get('REDIS_PASSWORD')
