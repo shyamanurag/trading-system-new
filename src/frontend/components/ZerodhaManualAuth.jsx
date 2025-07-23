@@ -55,7 +55,7 @@ const ZerodhaManualAuth = () => {
                     success: true,
                     message: "Auth system starting up - endpoints deploying...",
                     authenticated: false,
-                    user_id: "PAPER_TRADER_001",
+                    user_id: "QSW899",
                     note: "Backend deployment in progress"
                 });
                 return;
@@ -69,7 +69,7 @@ const ZerodhaManualAuth = () => {
                 success: false,
                 message: "Connection error - check network",
                 authenticated: false,
-                user_id: "PAPER_TRADER_001"
+                user_id: "QSW899"
             });
         }
     };
@@ -89,7 +89,7 @@ const ZerodhaManualAuth = () => {
                 },
                 body: JSON.stringify({
                     request_token: requestToken.trim(),
-                    user_id: 'PAPER_TRADER_001'
+                    user_id: 'QSW899'
                 })
             });
 
