@@ -72,9 +72,9 @@ def get_truedata_from_redis():
         
         # Parse JSON data
         parsed_data = {}
-        for symbol, data_json in cached_data.items():
+        for symbol, json_data in cached_data.items():
             try:
-                parsed_data[symbol] = json.loads(data_json)
+                parsed_data[symbol] = json.loads(json_data)
             except json.JSONDecodeError:
                 logger.warning(f"⚠️ Invalid JSON for symbol {symbol}")
                 continue
