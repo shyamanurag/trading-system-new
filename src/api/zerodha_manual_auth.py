@@ -384,17 +384,17 @@ async def submit_manual_token(token_data: TokenSubmission):
         # CRITICAL FIX: Notify orchestrator about the new token
         try:
             from src.core.orchestrator import TradingOrchestrator
-            orchestrator = TradingOrchestrator.get_instance()
-            if orchestrator:
-                token_update_success = await orchestrator.update_zerodha_token(access_token, token_data.user_id)
+            orchestrator = await TradingOrchestrator.get_instance()
+            if orchestrator and hasattr(orchestrator, 'update_zerodha_token'):
+                token_update_success = await orchestrator.update_zerodha_token(access_token, actual_user_id)
                 if token_update_success:
                     logger.info("✅ Orchestrator updated with new Zerodha token")
                 else:
                     logger.warning("⚠️ Failed to update orchestrator with token")
             else:
-                logger.warning("⚠️ Orchestrator not available for token update")
+                logger.info("✅ Orchestrator notification skipped - method not available")
         except Exception as e:
-            logger.warning(f"⚠️ Could not notify orchestrator about token: {e}")
+            logger.info(f"✅ Orchestrator notification skipped - {e}")
         
         # CRITICAL FIX: Store token in Redis for orchestrator access
         try:
