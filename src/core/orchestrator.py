@@ -901,6 +901,13 @@ class TradingOrchestrator:
             
             self.logger.warning(f"⚠️ No access token found in Redis for user: {user_id} with any key pattern")
             await redis_client.close()
+            
+            # CRITICAL FIX: Check memory storage as fallback
+            if hasattr(self, '_memory_token_store') and user_id in self._memory_token_store:
+                memory_token = self._memory_token_store[user_id]
+                self.logger.info(f"✅ Found access token in memory for user: {user_id}")
+                return memory_token
+            
             return None
                 
         except Exception as e:
@@ -911,6 +918,36 @@ class TradingOrchestrator:
         """Update Zerodha access token dynamically without restart"""
         try:
             self.logger.info(f"✅ Updating Zerodha access token for user: {user_id}")
+            
+            # CRITICAL FIX: Store token in memory as fallback if Redis fails
+            if not hasattr(self, '_memory_token_store'):
+                self._memory_token_store = {}
+            self._memory_token_store[user_id] = access_token
+            self.logger.info(f"✅ Token stored in memory for user: {user_id}")
+            
+            # Try to store in Redis as well
+            try:
+                import redis.asyncio as redis
+                import os
+                
+                redis_url = os.getenv('REDIS_URL')
+                if redis_url:
+                    redis_client = redis.from_url(
+                        redis_url, 
+                        decode_responses=True,
+                        ssl_cert_reqs=None,
+                        ssl_check_hostname=False
+                    )
+                    
+                    # Store token with expiration (8 hours)
+                    redis_key = f"zerodha:token:{user_id}"
+                    await redis_client.set(redis_key, access_token, ex=28800)  # 8 hours
+                    await redis_client.close()
+                    self.logger.info(f"✅ Token stored in Redis at {redis_key}")
+                else:
+                    self.logger.warning("⚠️ REDIS_URL not available, using memory storage only")
+            except Exception as redis_error:
+                self.logger.warning(f"⚠️ Redis storage failed, using memory storage: {redis_error}")
             
             # Update the token in the existing Zerodha client if available
             if hasattr(self, 'zerodha_client') and self.zerodha_client:
@@ -934,9 +971,11 @@ class TradingOrchestrator:
             await self._initialize_zerodha_client()
             
             self.logger.info(f"✅ Successfully updated Zerodha access token for user: {user_id}")
+            return True
             
         except Exception as e:
             self.logger.error(f"❌ Error updating Zerodha access token: {e}")
+            return False
             
     async def _initialize_zerodha_from_env(self):
         """Initialize Zerodha client from environment variables"""
@@ -1166,9 +1205,9 @@ class TradingOrchestrator:
                     if cached_data:
                         # Parse JSON data
                         parsed_data = {}
-                        for symbol, data_json in cached_data.items():
+                        for symbol, json_data in cached_data.items():
                             try:
-                                parsed_data[symbol] = json.loads(data_json)
+                                parsed_data[symbol] = json.loads(json_data)
                             except json.JSONDecodeError:
                                 continue
                         
