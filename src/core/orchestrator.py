@@ -900,6 +900,28 @@ class TradingOrchestrator:
                     decode_responses=True
                 )
             
+            # CRITICAL TOKEN SYNC FIX: Check ALL possible Redis keys exhaustively
+            self.logger.info(f"🔍 EXHAUSTIVE token search for user: {user_id}")
+            
+            # First, try to get ALL zerodha token keys to see what's actually stored
+            try:
+                all_zerodha_keys = await redis_client.keys("zerodha:token:*")
+                self.logger.info(f"🔍 Found {len(all_zerodha_keys)} zerodha:token:* keys in Redis")
+                for key in all_zerodha_keys:
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    try:
+                        token_value = await redis_client.get(key)
+                        if token_value:
+                            self.logger.info(f"🔍 Key: {key_str} -> Token: {token_value[:10]}...")
+                            # If this is ANY valid token, use it immediately
+                            await redis_client.close()
+                            self.logger.info(f"✅ USING FOUND TOKEN from key: {key_str}")
+                            return token_value
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Error reading key {key_str}: {e}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Error listing zerodha keys: {e}")
+            
             # DYNAMIC KEY PATTERNS: Use environment-based user ID
             master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
             token_keys_to_check = [
