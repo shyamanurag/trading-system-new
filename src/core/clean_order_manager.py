@@ -72,7 +72,7 @@ class OrderManager:
                 'transaction_type': order_data['side'].upper(),
                 'quantity': order_data['quantity'],
                 'order_type': order_data['order_type'].upper(),
-                'product': 'CNC'  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks,
+                'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
                 'validity': 'DAY',
                 'tag': f"OM_{order_id[:8]}"
             }
