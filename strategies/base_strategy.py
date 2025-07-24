@@ -5,7 +5,7 @@ Common functionality for all trading strategies with proper ATR calculation and 
 
 import logging
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import numpy as np
 import pytz  # Add timezone support
 
@@ -265,6 +265,9 @@ class BaseStrategy:
             if not self.validate_signal_levels(entry_price, stop_loss, target, action):
                 return None
             
+            # 🎯 CRITICAL FIX: Convert to options symbol for scalping strategies
+            options_symbol, option_type = self._convert_to_options_symbol(symbol, entry_price, action)
+            
             # Calculate risk metrics
             risk_amount = abs(entry_price - stop_loss)
             reward_amount = abs(target - entry_price)
@@ -273,12 +276,14 @@ class BaseStrategy:
             risk_reward_ratio = reward_amount / risk_amount if risk_amount > 0 else 0
             
             # CRITICAL FIX: Generate unique signal_id for tracking
-            signal_id = f"{self.name}_{symbol}_{int(datetime.now().timestamp())}"
+            signal_id = f"{self.name}_{options_symbol}_{int(datetime.now().timestamp())}"
             
             return {
                 # Core signal fields (consistent naming)
                 'signal_id': signal_id,
-                'symbol': symbol,
+                'symbol': options_symbol,  # 🎯 FIXED: Use options symbol instead of underlying
+                'underlying_symbol': symbol,  # Keep original for reference
+                'option_type': option_type,  # CE or PE
                 'action': action.upper(),  # Use 'action' not 'direction'
                 'quantity': 50,  # Standard lot size
                 'entry_price': round(entry_price, 2),
@@ -312,6 +317,69 @@ class BaseStrategy:
             logger.error(f"Error creating standard signal: {e}")
             return None
     
+    def _convert_to_options_symbol(self, underlying_symbol: str, current_price: float, action: str) -> tuple:
+        """Convert underlying symbol to appropriate options symbol for scalping"""
+        try:
+            # For scalping strategies, convert equity signals to options
+            if underlying_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
+                # Index options - use current levels
+                strike = self._get_atm_strike(underlying_symbol, current_price)
+                option_type = 'CE' if action.upper() == 'BUY' else 'PE'
+                expiry = self._get_next_expiry()
+                options_symbol = f"{underlying_symbol}{expiry}{strike}{option_type}"
+                return options_symbol, option_type
+            else:
+                # Stock options - convert equity to options
+                strike = self._get_atm_strike_for_stock(current_price)
+                option_type = 'CE' if action.upper() == 'BUY' else 'PE'  
+                expiry = self._get_next_expiry()
+                options_symbol = f"{underlying_symbol}{expiry}{strike}{option_type}"
+                return options_symbol, option_type
+                
+        except Exception as e:
+            logger.error(f"Error converting to options symbol: {e}")
+            # Fallback to underlying symbol
+            return underlying_symbol, 'EQUITY'
+    
+    def _get_atm_strike(self, symbol: str, price: float) -> int:
+        """Get ATM strike for index options"""
+        if symbol == 'NIFTY':
+            return round(price / 50) * 50  # Round to nearest 50
+        elif symbol == 'BANKNIFTY':
+            return round(price / 100) * 100  # Round to nearest 100
+        elif symbol == 'FINNIFTY':
+            return round(price / 50) * 50  # Round to nearest 50
+        else:
+            return int(price)
+    
+    def _get_atm_strike_for_stock(self, price: float) -> int:
+        """Get ATM strike for stock options"""
+        if price < 100:
+            return round(price / 5) * 5  # Round to nearest 5
+        elif price < 500:
+            return round(price / 10) * 10  # Round to nearest 10
+        else:
+            return round(price / 50) * 50  # Round to nearest 50
+    
+    def _get_next_expiry(self) -> str:
+        """Get next Thursday expiry in format like 24JAN"""
+        today = datetime.now()
+        # Find next Thursday
+        days_until_thursday = (3 - today.weekday()) % 7
+        if days_until_thursday == 0:  # Today is Thursday
+            days_until_thursday = 7  # Next Thursday
+        
+        next_thursday = today + timedelta(days=days_until_thursday)
+        
+        # Format as 24JAN
+        month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+                      'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+        year_suffix = str(next_thursday.year)[-2:]
+        month_name = month_names[next_thursday.month - 1]
+        day = f"{next_thursday.day:02d}"
+        
+        return f"{day}{month_name}{year_suffix}"
+
     def _is_cooldown_passed(self) -> bool:
         """Check if cooldown period has passed"""
         if not self.last_signal_time:
