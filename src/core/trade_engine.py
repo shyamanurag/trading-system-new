@@ -175,9 +175,9 @@ class TradeEngine:
     async def _try_get_zerodha_client_from_orchestrator(self):
         """Try to get Zerodha client from orchestrator if not set"""
         try:
-            # Try to get from orchestrator singleton
-            from src.core.orchestrator import TradingOrchestrator
-            orchestrator = await TradingOrchestrator.get_instance()
+            # CRITICAL FIX: Use correct function name
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
             
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
                 self.zerodha_client = orchestrator.zerodha_client
@@ -185,6 +185,11 @@ class TradeEngine:
                 return True
             else:
                 self.logger.error("❌ No Zerodha client available in orchestrator")
+                # CRITICAL DEBUG: Log orchestrator state
+                if orchestrator:
+                    self.logger.error(f"❌ Orchestrator exists but zerodha_client is: {getattr(orchestrator, 'zerodha_client', 'MISSING')}")
+                else:
+                    self.logger.error("❌ No orchestrator instance found")
                 return False
                 
         except Exception as e:

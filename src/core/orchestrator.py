@@ -561,9 +561,13 @@ class TradingOrchestrator:
             if not self.zerodha_client:
                 try:
                     self.zerodha_client = await self._initialize_zerodha_client()
-                    self.logger.info("✅ Zerodha client initialized")
+                    if self.zerodha_client:
+                        self.logger.info("✅ Zerodha client initialized successfully")
+                    else:
+                        self.logger.error("❌ Zerodha client initialization returned None")
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Zerodha client initialization failed: {e}")
+                    self.logger.error(f"❌ Zerodha client initialization failed: {e}")
+                    self.zerodha_client = None
             
             # Initialize Zerodha client
             if self.zerodha_client:
@@ -748,15 +752,10 @@ class TradingOrchestrator:
                     
                     # Create Zerodha client
                     from brokers.zerodha import ZerodhaIntegration
-                    from brokers.resilient_zerodha import ResilientZerodhaConnection
                     
                     # Set environment variables for the client
                     os.environ['ZERODHA_API_KEY'] = api_key
                     os.environ['ZERODHA_USER_ID'] = user_id
-                    
-                    # Create proper broker instance and config
-                    from brokers.zerodha import ZerodhaIntegration
-                    from brokers.resilient_zerodha import ResilientZerodhaConnection
                     
                     # Get access token from trading control or environment
                     access_token = zerodha_credentials.get('access_token') or os.getenv('ZERODHA_ACCESS_TOKEN')
@@ -1122,7 +1121,6 @@ class TradingOrchestrator:
                 
                 # Create proper broker instance and config
                 from brokers.zerodha import ZerodhaIntegration
-                from brokers.resilient_zerodha import ResilientZerodhaConnection
                 
                 # Create unified config with built-in resilience features
                 has_valid_credentials = all([api_key, user_id, access_token])
