@@ -780,6 +780,107 @@ async def execute_migration_015():
         logger.error(f"❌ Failed to execute migration 015: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to execute migration 015: {e}")
 
+@router.post("/execute-migration-016")
+async def execute_migration_016():
+    """Execute Migration 016: Add actual_execution column - URGENT FIX"""
+    try:
+        logger.info("🚀 URGENT: Executing Migration 016 to fix actual_execution column")
+        
+        # Get database connection using existing DatabaseManager
+        db_manager = DatabaseManager()
+        if not db_manager.engine:
+            raise HTTPException(status_code=500, detail="Database manager not available")
+        
+        from sqlalchemy import text
+        
+        with db_manager.engine.connect() as conn:
+            # Start transaction
+            trans = conn.begin()
+            
+            try:
+                logger.info("📊 Adding actual_execution column...")
+                conn.execute(text("ALTER TABLE trades ADD COLUMN IF NOT EXISTS actual_execution BOOLEAN DEFAULT FALSE"))
+                
+                logger.info("📊 Adding current_price column...")
+                conn.execute(text("ALTER TABLE trades ADD COLUMN IF NOT EXISTS current_price DECIMAL(10,2)"))
+                
+                logger.info("📊 Adding pnl column...")
+                conn.execute(text("ALTER TABLE trades ADD COLUMN IF NOT EXISTS pnl DECIMAL(12,2) DEFAULT 0.0"))
+                
+                logger.info("📊 Adding pnl_percent column...")
+                conn.execute(text("ALTER TABLE trades ADD COLUMN IF NOT EXISTS pnl_percent DECIMAL(8,4) DEFAULT 0.0"))
+                
+                logger.info("📊 Creating indexes...")
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_trades_actual_execution ON trades(actual_execution)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_trades_current_price ON trades(current_price)"))
+                
+                logger.info("📊 Updating existing trades...")
+                result = conn.execute(text("UPDATE trades SET actual_execution = FALSE WHERE actual_execution IS NULL"))
+                updated_rows = result.rowcount
+                
+                # Create schema_migrations table if it doesn't exist
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS schema_migrations (
+                        version INTEGER PRIMARY KEY,
+                        description TEXT,
+                        executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                
+                # Log the migration
+                conn.execute(text("""
+                    INSERT INTO schema_migrations (version, description, executed_at) 
+                    VALUES (16, 'Add actual_execution and P&L columns for real Zerodha data sync', CURRENT_TIMESTAMP)
+                    ON CONFLICT (version) DO NOTHING
+                """))
+                
+                # Commit transaction
+                trans.commit()
+                
+                # Verify the columns exist
+                result = conn.execute(text("""
+                    SELECT column_name, data_type, is_nullable, column_default
+                    FROM information_schema.columns 
+                    WHERE table_name = 'trades' 
+                    AND column_name IN ('actual_execution', 'current_price', 'pnl', 'pnl_percent')
+                    ORDER BY column_name
+                """))
+                
+                columns = result.fetchall()
+                column_info = [
+                    {
+                        'name': col[0], 
+                        'type': col[1], 
+                        'nullable': col[2], 
+                        'default': col[3]
+                    } for col in columns
+                ]
+                
+                logger.info("✅ Migration 016 executed successfully!")
+                logger.info(f"✅ Updated {updated_rows} existing trades")
+                logger.info(f"✅ Created columns: {[col['name'] for col in column_info]}")
+                
+                return {
+                    "success": True,
+                    "message": "Migration 016 executed successfully - Zerodha sync database fixed!",
+                    "details": {
+                        "updated_trades": updated_rows,
+                        "columns_created": column_info,
+                        "migration_version": 16,
+                        "description": "Add actual_execution and P&L columns for real Zerodha data sync"
+                    },
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+            except Exception as e:
+                trans.rollback()
+                logger.error(f"❌ Migration 016 failed: {e}")
+                raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")
+                
+    except Exception as e:
+        logger.error(f"❌ Database migration error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/status")
 async def database_status() -> Dict[str, Any]:
     """Get current database status and counts"""
