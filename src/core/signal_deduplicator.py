@@ -22,8 +22,8 @@ class SignalDeduplicator:
         self.cleanup_interval = 300  # 5 minutes
         self.last_cleanup = datetime.now()
         
-        # Quality thresholds
-        self.min_confidence_threshold = 0.7  # Minimum 70% confidence
+        # Quality thresholds - MAINTAIN HIGH STANDARDS FOR PROFITABLE TRADING
+        self.min_confidence_threshold = 0.7  # Keep 70% minimum for quality signals
         self.max_signals_per_symbol = 1  # Max 1 signal per symbol per period
         self.deduplication_window = 60  # 60 seconds window
         
