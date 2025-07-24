@@ -93,42 +93,74 @@ class IntelligentSymbolManager:
         logger.info("🛑 Intelligent Symbol Manager stopped")
 
     async def initial_symbol_setup(self):
-        """Setup initial symbols based on market conditions - FIXED: UNDERLYING SYMBOLS FIRST"""
-        logger.info("🔧 Setting up initial symbols - UNDERLYING SYMBOLS for strategy analysis...")
+        """Setup dual symbol system: UNDERLYING (analysis) + OPTIONS/FUTURES (execution)"""
+        logger.info("🔧 Setting up DUAL SYMBOL SYSTEM: Underlying + Options/Futures...")
         
         symbols_to_add = set()
         
-        # PRIORITY 1: Core indices (underlying symbols for strategy analysis)
-        symbols_to_add.update(self.config.core_indices)
-        symbols_to_add.update(self.config.fo_indices)
-        logger.info(f"📊 Priority 1: Added {len(self.config.core_indices + self.config.fo_indices)} indices")
+        # TIER 1: UNDERLYING SYMBOLS (for strategy analysis)
+        underlying_symbols = set()
         
-        # PRIORITY 2: F&O stocks (underlying symbols - strategies convert these to options internally)
-        symbols_to_add.update(self.config.priority_stocks)
-        logger.info(f"📊 Priority 2: Added {len(self.config.priority_stocks)} F&O stocks (underlying symbols)")
+        # Core indices (underlying for analysis)
+        underlying_symbols.update(self.config.core_indices)
+        underlying_symbols.update(self.config.fo_indices)
+        logger.info(f"📊 Tier 1A: Added {len(self.config.core_indices + self.config.fo_indices)} indices (underlying)")
         
-        # CRITICAL FIX: DO NOT add options symbols directly
-        # Strategies expect underlying symbols like 'RELIANCE', 'TCS' and convert them internally
-        # Options symbols like 'NIFTY25JUL251150PE' break strategy analysis
+        # F&O stocks (underlying for analysis)
+        underlying_symbols.update(self.config.priority_stocks)
+        logger.info(f"📊 Tier 1B: Added {len(self.config.priority_stocks)} F&O stocks (underlying)")
         
-        # PRIORITY 3: Additional stocks if capacity remains
-        remaining_capacity = self.config.max_symbols - len(symbols_to_add)
+        # Add underlying symbols to subscription list
+        symbols_to_add.update(underlying_symbols)
+        
+        # TIER 2: OPTIONS/FUTURES SYMBOLS (for execution and pricing)
+        execution_symbols = set()
+        
+        # Generate options for indices (most liquid)
+        current_expiry = self.get_current_monthly_expiry()
+        weekly_expiry = self.get_current_weekly_expiry()
+        
+        for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
+            if index in underlying_symbols:
+                # Monthly options (10 strikes per index to conserve symbols)
+                monthly_options = self.generate_atm_options(index, current_expiry)
+                execution_symbols.update(monthly_options[:10])  # Top 10 strikes
+                
+                # Weekly options for NIFTY and BANKNIFTY (5 strikes each)
+                if index in ['NIFTY', 'BANKNIFTY']:
+                    weekly_options = self.generate_atm_options(index, weekly_expiry, weekly=True)
+                    execution_symbols.update(weekly_options[:5])  # Top 5 strikes
+        
+        logger.info(f"📊 Tier 2A: Generated {len(execution_symbols)} index options")
+        
+        # Generate options for top F&O stocks (limited to conserve symbols)
+        top_fo_stocks = ['RELIANCE', 'TCS', 'INFY', 'HDFC', 'ICICIBANK', 'SBIN']
+        remaining_capacity = self.config.max_symbols - len(symbols_to_add) - len(execution_symbols)
+        
         if remaining_capacity > 0:
-            # Add more underlying stocks, not options
-            additional_stocks = [
-                'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA',
-                'TATAMOTORS', 'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND', 'TITAN', 
-                'BAJFINANCE', 'M&M', 'DRREDDY', 'SUNPHARMA', 'CIPLA'
-            ]
-            symbols_to_add.update(additional_stocks[:remaining_capacity])
-            logger.info(f"📊 Priority 3: Added {min(len(additional_stocks), remaining_capacity)} additional stocks")
+            stock_options_count = 0
+            for stock in top_fo_stocks:
+                if stock in underlying_symbols and stock_options_count < remaining_capacity:
+                    # Generate 2 options per stock (CE and PE at ATM)
+                    stock_options = self.generate_stock_options(stock, current_expiry)
+                    execution_symbols.update(stock_options[:2])  # Just CE and PE at ATM
+                    stock_options_count += 2
+                    
+                    if stock_options_count >= remaining_capacity:
+                        break
+            
+            logger.info(f"📊 Tier 2B: Generated {stock_options_count} stock options")
+        
+        # Add execution symbols to subscription list
+        symbols_to_add.update(execution_symbols)
         
         # Convert to list and ensure we don't exceed limit
         symbols_list = list(symbols_to_add)[:self.config.max_symbols]
         
-        logger.info(f"✅ FIXED: Using {len(symbols_list)} UNDERLYING symbols for strategy analysis")
-        logger.info(f"📊 Strategies will receive symbols like: {symbols_list[:5]}...")
-        logger.info(f"🎯 Strategies will internally convert these to options via _convert_to_options_symbol()")
+        logger.info(f"✅ DUAL SYSTEM ACTIVE: {len(symbols_list)} total symbols")
+        logger.info(f"📈 Underlying symbols: {len(underlying_symbols)} (e.g., {list(underlying_symbols)[:3]})")
+        logger.info(f"⚡ Execution symbols: {len(execution_symbols)} (e.g., {list(execution_symbols)[:3]})")
+        logger.info(f"🎯 STRATEGY FLOW: Analyze underlying → Generate options signals → Execute options trades")
         
         # Wait for TrueData to be connected before subscribing
         max_retries = 10
@@ -342,6 +374,28 @@ class IntelligentSymbolManager:
             # Call and Put options
             options.append(f"{index}{expiry}{strike}CE")
             options.append(f"{index}{expiry}{strike}PE")
+        
+        return options
+
+    def generate_stock_options(self, stock: str, expiry: str) -> List[str]:
+        """Generate ATM option symbols for a stock"""
+        # Simplified ATM calculation
+        atm_levels = {
+            'RELIANCE': [1500, 1550, 1600, 1650, 1700],
+            'TCS': [2000, 2050, 2100, 2150, 2200],
+            'INFY': [500, 550, 600, 650, 700],
+            'HDFC': [1000, 1050, 1100, 1150, 1200],
+            'ICICIBANK': [500, 550, 600, 650, 700],
+            'SBIN': [500, 550, 600, 650, 700]
+        }
+        
+        strikes = atm_levels.get(stock, [])
+        options = []
+        
+        for strike in strikes:
+            # Call and Put options
+            options.append(f"{stock}{expiry}{strike}CE")
+            options.append(f"{stock}{expiry}{strike}PE")
         
         return options
 

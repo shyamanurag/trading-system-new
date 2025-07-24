@@ -1542,13 +1542,24 @@ class TradingOrchestrator:
             # On error, don't clear any signals to be safe
 
     def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Transform raw market data into format expected by strategies - FIXED transformation bug"""
+        """Transform and FILTER market data - send only UNDERLYING symbols to strategies"""
         current_time = datetime.now(self.ist_timezone)
         transformed_data = {}
         
         try:
+            # CRITICAL FIX: Filter to send only UNDERLYING symbols to strategies
+            # Strategies will convert these to options internally via _convert_to_options_symbol()
+            underlying_symbols = self._get_underlying_symbols_for_strategies()
+            
+            self.logger.info(f"🔍 Filtering {len(raw_data)} symbols → {len(underlying_symbols)} underlying symbols for strategies")
+            
             for symbol, data in raw_data.items():
                 try:
+                    # CRITICAL FILTER: Only process underlying symbols for strategies
+                    if symbol not in underlying_symbols:
+                        # Skip options symbols, futures, etc. - strategies don't analyze these directly
+                        continue
+                    
                     # Extract price data with fallbacks
                     current_price = data.get('ltp', data.get('close', data.get('price', 0)))
                     volume = data.get('volume', 0)
@@ -1658,7 +1669,9 @@ class TradingOrchestrator:
                     self.logger.warning(f"Failed to transform data for {symbol}: {se}")
                     continue
             
-            self.logger.info(f"🔧 Successfully transformed {len(transformed_data)} symbols with price_change and volume_change")
+            self.logger.info(f"🔧 Transformed {len(transformed_data)} UNDERLYING symbols for strategy analysis")
+            self.logger.info(f"📊 Strategy symbols: {list(transformed_data.keys())[:5]}...")
+            self.logger.info(f"🎯 Options symbols remain available in TrueData cache for execution pricing")
             return transformed_data
             
         except Exception as e:
@@ -1666,65 +1679,27 @@ class TradingOrchestrator:
             # CRITICAL FIX: Instead of returning raw_data, return empty dict to force retry
             return {}
     
-    async def _load_strategies(self):
-        """Load and initialize trading strategies"""
-        try:
-            # Clear existing strategies to prevent duplicates
-            self.strategies.clear()
-            self.active_strategies.clear()
-            
-            # FIXED: Original strategies only - no emergency systems
-            strategy_configs = {
-                'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
-                'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},
-                'volume_profile_scalper': {'name': 'EnhancedVolumeProfileScalper', 'config': {}},
-                'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}},
-                'confluence_amplifier': {'name': 'ConfluenceAmplifier', 'config': {}}
-            }
-            
-            self.logger.info(f"Loading {len(strategy_configs)} trading strategies (news_impact_scalper removed for debugging)...")
-            
-            for strategy_key, strategy_info in strategy_configs.items():
-                try:
-                    # Import strategy class
-                    if strategy_key == 'momentum_surfer':
-                        from strategies.momentum_surfer import EnhancedMomentumSurfer
-                        strategy_instance = EnhancedMomentumSurfer(strategy_info['config'])
-                    elif strategy_key == 'volatility_explosion':
-                        from strategies.volatility_explosion import EnhancedVolatilityExplosion
-                        strategy_instance = EnhancedVolatilityExplosion(strategy_info['config'])
-                    elif strategy_key == 'volume_profile_scalper':
-                        from strategies.volume_profile_scalper import EnhancedVolumeProfileScalper
-                        strategy_instance = EnhancedVolumeProfileScalper(strategy_info['config'])
-                    elif strategy_key == 'regime_adaptive_controller':
-                        from strategies.regime_adaptive_controller import RegimeAdaptiveController
-                        strategy_instance = RegimeAdaptiveController(strategy_info['config'])
-                    elif strategy_key == 'confluence_amplifier':
-                        from strategies.confluence_amplifier import ConfluenceAmplifier
-                        strategy_instance = ConfluenceAmplifier(strategy_info['config'])
-                    else:
-                        continue
-                    
-                    # Initialize strategy
-                    await strategy_instance.initialize()
-                    
-                    # Store strategy instance
-                    self.strategies[strategy_key] = {
-                        'name': strategy_key,
-                        'instance': strategy_instance,
-                        'active': True,
-                        'last_signal': None
-                    }
-                    self.active_strategies.append(strategy_key)
-                    self.logger.info(f"✓ Loaded and initialized strategy: {strategy_key}")
-                    
-                except Exception as e:
-                    self.logger.error(f"✗ Failed to load strategy {strategy_key}: {e}")
-            
-            self.logger.info(f"✓ Successfully loaded {len(self.strategies)}/{len(strategy_configs)} trading strategies")
-            
-        except Exception as e:
-            self.logger.error(f"Error loading strategies: {e}")
+    def _get_underlying_symbols_for_strategies(self) -> set:
+        """Get list of underlying symbols that should be sent to strategies for analysis"""
+        underlying_symbols = set()
+        
+        # Core indices (underlying for analysis)
+        core_indices = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX']
+        fo_indices = ['NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I']
+        underlying_symbols.update(core_indices)
+        underlying_symbols.update(fo_indices)
+        
+        # F&O stocks (underlying for analysis)
+        priority_stocks = [
+            'RELIANCE', 'TCS', 'INFY', 'HDFC', 'ICICIBANK', 'SBIN', 'ITC',
+            'HDFCBANK', 'KOTAKBANK', 'AXISBANK', 'LT', 'WIPRO', 'BHARTIARTL',
+            'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA',
+            'TECHM', 'TATAMOTORS', 'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND'
+        ]
+        underlying_symbols.update(priority_stocks)
+        
+        self.logger.debug(f"📋 Underlying symbols for strategies: {len(underlying_symbols)} symbols")
+        return underlying_symbols
 
     async def start_trading(self) -> bool:
         """Start autonomous trading system"""
