@@ -118,7 +118,7 @@ envs:
   value: QSW899
 - key: ZERODHA_SANDBOX_MODE
   scope: RUN_AND_BUILD_TIME
-  value: "false"
+  value: "true"
 - key: JWT_SECRET
   scope: RUN_AND_BUILD_TIME
   value: K5ewmaPLwWLzqcFa2ne6dLpk_5YbUa1NC-xR9N8ig74TnENXKUnnK1UTs3xcaE8IRIEMYRVSCN-co2vEPTeq9A

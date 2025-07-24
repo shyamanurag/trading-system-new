@@ -34,7 +34,7 @@ app:
 
 # Environment Variables for Trading
 environment:
-  ZERODHA_SANDBOX_MODE: "false"
+  ZERODHA_SANDBOX_MODE: "true"
 
 brokers:
   zerodha:
