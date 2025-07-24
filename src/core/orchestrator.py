@@ -16,6 +16,7 @@ import pytz
 from urllib.parse import urlparse
 import redis
 import json
+import re
 
 # Add project root to Python path for imports
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1644,39 +1645,100 @@ class TradingOrchestrator:
             return {}
     
     def _get_dynamic_underlying_symbols_for_strategies(self) -> set:
-        """Get DYNAMIC list of underlying symbols from autonomous symbol manager"""
+        """Get underlying symbols for strategies with ROBUST FALLBACKS"""
         underlying_symbols = set()
         
         try:
             # DYNAMIC APPROACH: Get current symbols from autonomous symbol manager
             from config.truedata_symbols import get_autonomous_symbol_status, get_complete_fo_symbols
             
-            # Get current autonomous strategy and symbols
-            status = get_autonomous_symbol_status()
-            current_strategy = status.get("current_strategy", "MIXED")
-            
-            # Get all symbols from current autonomous selection
-            all_symbols = get_complete_fo_symbols()
+            # Get current autonomous strategy and symbols with fallback handling
+            try:
+                status = get_autonomous_symbol_status()
+                current_strategy = status.get("current_strategy", "MIXED")
+                
+                # Get all symbols from current autonomous selection (with fallbacks built-in)
+                all_symbols = get_complete_fo_symbols()
+                
+                # CRITICAL FIX: Validate that we got a reasonable symbol list
+                if not all_symbols or len(all_symbols) < 10:
+                    self.logger.warning("❌ Dynamic symbol generation returned invalid list, using static fallback")
+                    raise Exception("Invalid dynamic symbol list")
+                    
+            except Exception as dynamic_error:
+                self.logger.warning(f"⚠️ Dynamic symbol selection failed: {dynamic_error}")
+                self.logger.info("🔄 Using static fallback symbol list")
+                
+                # STATIC FALLBACK: Use known working symbol list
+                all_symbols = [
+                    # Core Indices
+                    'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
+                    
+                    # Top 45 F&O Stocks (Most liquid and reliable)
+                    'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
+                    'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
+                    'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA',
+                    'TECHM', 'TATAMOTORS', 'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND',
+                    'TITAN', 'BAJFINANCE', 'M&M', 'DRREDDY', 'SUNPHARMA', 'CIPLA',
+                    'APOLLOHOSP', 'DIVISLAB', 'HINDUNILVR', 'BRITANNIA', 'DABUR',
+                    'ADANIGREEN', 'ADANITRANS', 'ADANIPOWER', 'JSWSTEEL', 'TATASTEEL',
+                    'HINDALCO', 'VEDL', 'GODREJCP', 'BAJAJFINSV', 'BAJAJ-AUTO',
+                    'HEROMOTOCO', 'EICHERMOT', 'TVSMOTOR', 'INDIGO', 'SPICEJET'
+                ]
+                current_strategy = "STATIC_FALLBACK"
             
             # Filter to get only underlying symbols (not options contracts)
             for symbol in all_symbols:
                 # Include if it's an underlying symbol (not an options contract)
-                if not ('CE' in symbol or 'PE' in symbol):
+                # FIXED: More robust options detection
+                if not self._is_options_contract(symbol):
                     underlying_symbols.add(symbol)
             
-            self.logger.info(f"🤖 DYNAMIC UNDERLYING: {len(underlying_symbols)} symbols from autonomous strategy: {current_strategy}")
+            self.logger.info(f"🤖 UNDERLYING SYMBOLS: {len(underlying_symbols)} symbols from strategy: {current_strategy}")
             self.logger.debug(f"📋 Sample underlying symbols: {list(underlying_symbols)[:10]}")
             
         except Exception as e:
             self.logger.error(f"❌ Failed to get dynamic underlying symbols: {e}")
-            # Fallback to core indices only
+            
+            # FINAL FALLBACK: Minimal core symbols that should always work
             underlying_symbols = {
                 'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
-                'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK'
+                'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
+                'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
+                'MARUTI', 'ASIANPAINT'
             }
-            self.logger.warning(f"🔄 Using fallback underlying symbols: {len(underlying_symbols)} symbols")
+            self.logger.warning(f"🔄 Using MINIMAL fallback underlying symbols: {len(underlying_symbols)} symbols")
         
         return underlying_symbols
+    
+    def _is_options_contract(self, symbol: str) -> bool:
+        """Check if symbol is an options contract (more robust detection)"""
+        if not symbol or not isinstance(symbol, str):
+            return False
+        
+        # CRITICAL FIX: Only consider CE/PE at the END of symbol as options
+        if symbol.endswith('CE') or symbol.endswith('PE'):
+            # Additional check: Options contracts should have expiry patterns
+            # Look for month abbreviations (JAN, FEB, etc.) in the symbol
+            month_patterns = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 
+                             'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+            
+            has_month = any(month in symbol for month in month_patterns)
+            
+            # If it ends with CE/PE AND has a month pattern, it's likely an options contract
+            if has_month:
+                return True
+            
+            # Additional check: If it has numbers before CE/PE, it's likely strike price
+            # Example: NIFTY25JUL24000CE - has numbers (24000) before CE
+            import re
+            has_strike = bool(re.search(r'\d+(?:CE|PE)$', symbol))
+            if has_strike:
+                return True
+        
+        # FIXED: Don't flag stocks that just contain month names (like RELIANCE) as options
+        # Only flag if they actually end with CE/PE and have proper options structure
+        return False
 
     async def _load_strategies(self):
         """Load and initialize trading strategies"""

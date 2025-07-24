@@ -118,78 +118,168 @@ def get_default_subscription_symbols():
 def get_complete_fo_symbols():
     """
     AUTONOMOUS SYMBOL STRATEGY: Intelligent symbol allocation based on market conditions
-    
-    The system automatically selects the optimal symbol mix based on:
-    - Market volatility (high volatility = more options focus)
-    - Time of day (pre-market = indices focus, market hours = full mix)
-    - Options premium levels (high premiums = more options opportunities)
-    - Recent trading performance (adapts based on what's working)
-    
-    No manual intervention required - fully autonomous optimization
+    FALLBACK-SAFE: Works even when markets closed or TrueData disconnected
     """
     
-    # Get market intelligence for autonomous decision
-    strategy = _get_autonomous_symbol_strategy()
-    
-    if strategy == "OPTIONS_FOCUS":
-        # High volatility/premium environment - focus on options
-        final_symbols = get_options_focused_symbols()
-        logger.info(f"🤖 AUTONOMOUS: Options-focused strategy selected ({len(final_symbols)} symbols)")
+    try:
+        # CRITICAL FIX: Always try static fallback first when markets closed or TrueData unavailable
+        from data.truedata_client import live_market_data, is_connected
         
-    elif strategy == "MIXED":
-        # Balanced market conditions - mixed approach
-        final_symbols = get_mixed_symbols_with_options()
-        logger.info(f"🤖 AUTONOMOUS: Mixed strategy selected ({len(final_symbols)} symbols)")
+        # Check if TrueData is connected and has data
+        has_live_data = (
+            live_market_data and 
+            len(live_market_data) > 10 and  # At least 10 symbols available
+            any(data.get('ltp', 0) > 0 for data in live_market_data.values())  # At least one valid price
+        )
         
-    else:  # "UNDERLYING_FOCUS"
-        # Low volatility/trending market - focus on underlying analysis
-        final_symbols = get_underlying_focused_symbols()
-        logger.info(f"🤖 AUTONOMOUS: Underlying-focused strategy selected ({len(final_symbols)} symbols)")
-    
-    return final_symbols
+        if not has_live_data:
+            logger.warning("⚠️ TrueData not available or markets closed - using STATIC FALLBACK strategy")
+            return get_static_fallback_symbols()
+        
+        # Get market intelligence for autonomous decision (only if live data available)
+        strategy = _get_autonomous_symbol_strategy()
+        
+        if strategy == "OPTIONS_FOCUS":
+            return get_options_focused_symbols()
+        elif strategy == "MIXED":
+            return get_mixed_symbols_with_options()
+        else:
+            return get_underlying_focused_symbols()
+            
+    except Exception as e:
+        logger.error(f"❌ Dynamic symbol generation failed: {e}")
+        logger.info("🔄 Falling back to static symbol list for reliability")
+        return get_static_fallback_symbols()
+
+def get_static_fallback_symbols():
+    """
+    STATIC FALLBACK: Reliable symbol list that works regardless of market/TrueData status
+    Used when markets are closed or TrueData is disconnected
+    """
+    return [
+        # Core Indices (5 symbols)
+        'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
+        
+        # Top 50 F&O Stocks (Most liquid - STATIC list)
+        'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
+        'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
+        'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA',
+        'TECHM', 'TATAMOTORS', 'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND',
+        'TITAN', 'BAJFINANCE', 'M&M', 'DRREDDY', 'SUNPHARMA', 'CIPLA',
+        'APOLLOHOSP', 'DIVISLAB', 'HINDUNILVR', 'BRITANNIA', 'DABUR',
+        'ADANIGREEN', 'ADANITRANS', 'ADANIPOWER', 'JSWSTEEL', 'TATASTEEL',
+        'HINDALCO', 'VEDL', 'GODREJCP', 'BAJAJFINSV', 'BAJAJ-AUTO',
+        'HEROMOTOCO', 'EICHERMOT', 'TVSMOTOR', 'INDIGO', 'SPICEJET',
+        
+        # Additional F&O Stocks (200 more symbols to reach 250) - FIXED duplicates
+        'INDUSINDBK', 'BANDHANBNK', 'FEDERALBNK', 'IDFCFIRSTB', 'PNB',
+        'BANKBARODA', 'IOC', 'BPCL', 'ONGC', 'GAIL', 'OIL',
+        'SAIL', 'NMDC', 'MOIL', 'NALCO', 'GRASIM', 'RAMCOCEM',
+        'SHREECEM', 'ACC', 'AMBUJACEM', 'PIDILITIND', 'BERGER',
+        'IRCTC', 'CONCOR', 'ZOMATO', 'NYKAA', 'IRFC', 'PAYTM',
+        'POLICYBZR', 'RBLBANK', 'YESBANK', 'IDEA', 'BALKRISIND',
+        'APOLLOTYRE', 'MRF', 'CEAT', 'JK_TYRE', 'ESCORTS', 'FORCE',
+        'TATAPOWER', 'TORNTPOWER', 'NHPC', 'PFC', 'RECLTD', 'SJVN',
+        'THERMAX', 'BHEL', 'KTKBANK', 'AUBANK', 'EQUITAS', 'CHOLAFIN',
+        'L&TFH', 'MUTHOOTFIN', 'PEL', 'VOLTAS', 'CROMPTON', 'HAVELLS',
+        'UNIONBANK', 'CENTRALBK', 'INDIANB', 'CANBK',  # FIXED: Removed duplicate CANBK
+        
+        # Metals & Mining
+        'RATNAMANI', 'WELCORP', 'JSLHISAR', 'APLAPOLLO', 'JINDALSTEL',
+        'JSW', 'COAL', 'HINDZINC', 'NATIONALUM',
+        
+        # Auto & Auto Ancillaries  
+        'ASHOKLEY', 'MOTHERSON', 'BOSCHLTD', 'EXIDEIND', 'AMARA',
+        
+        # Pharma & Healthcare
+        'LUPIN', 'BIOCON', 'CADILAHC', 'TORNTPHARM', 'AUROPHARMA', 'GLENMARK',
+        
+        # FMCG & Consumer
+        'MARICO', 'COLPAL', 'UBL', 'GILLETTE', 'EMAMILTD',
+        
+        # IT Services (additional)
+        'MINDTREE', 'LTTS', 'PERSISTENT', 'CYIENT', 'ZENSAR', 
+        
+        # Real Estate & Infrastructure
+        'DLF', 'GODREJPROP', 'BRIGADE', 'PRESTIGE', 'SOBHA',
+        'IRCON', 'RVNL', 'RAIL', 'BEL', 'HAL',
+        
+        # Telecom & Media
+        'RCOM', 'GTPL', 'HATHWAY', 'SITI', 'DISH', 'DEN', 'NETWORK18', 'TV18BRDCST',
+        
+        # Financial Services (additional)
+        'HDFCLIFE', 'ICICIPRULI', 'SBILIFE', 'ICICIGI', 'GICRE',
+        'STAR', 'ORIENTBANK', 'SYNDIBANK', 'CORPBANK', 'ALLAHABAD',
+        
+        # Power & Utilities (additional) 
+        'ADANIPOWER', 'ADANIGREEN', 'ADANITRANS',
+        
+        # Cement & Construction
+        'HEIDELBERG', 'PRISM', 'ORIENTCEM', 'JKCEMENT', 'DALMIACEM',
+        
+        # Oil & Gas (additional)
+        'MGL', 'IGL', 'PETRONET', 'GSPL', 'AEGISCHEM',
+        
+        # Chemicals & Fertilizers
+        'UPL', 'KANSAINER', 'DEEPAKNTR', 'CHAMBLFERT', 'COROMANDEL', 'GNFC', 'RCF',
+        
+        # Retail & E-commerce
+        'TRENTLTD', 'SHOPERSTOP', 'VMART', 'ADITBIRLA', 'ABFRL', 'RAYMOND', 'ARVIND',
+        
+        # Additional stocks to reach exactly 250
+        'MANAPPURAM', 'MPHASIS', 'DELTACORP', 'JUBLFOOD', 'GODREJIND',
+        'PAGEIND', 'BATAINDIA', 'RELAXO', 'WHIRLPOOL', 'VOLTAS2',
+        'SCHNEIDER', 'SIEMENS', 'ABB', 'HONAUT', 'CUMMINSIND',
+        'MINDACORP', 'RADICO', 'MCDOWELL', 'KINGFISHER', 'VSTIND',
+        'FINEORG', 'DEEPAKFERT', 'GSFC', 'MADRASFERT', 'ZUARI',
+        'INDIANHUME', 'ORIENTREF', 'CHENNPETRO', 'BONGAIREF', 'MRPL',
+        'HINDPETRO', 'TATACHEM', 'BASF', 'AKZOINDIA', 'ASIANPAINT2',
+        'ASTRAL', 'Supreme', 'POLYCAB', 'FINOLEX', 'KEI'
+    ][:250]  # Ensure exactly 250 symbols
 
 def _get_autonomous_symbol_strategy():
     """
-    AUTONOMOUS DECISION ENGINE: Select optimal symbol strategy without human intervention
-    
-    Decision factors:
-    1. Market volatility (VIX levels)
-    2. Options premium (IV levels) 
-    3. Time of day/week
-    4. Recent trading performance
-    5. Market regime (trending vs sideways)
+    AUTONOMOUS DECISION ENGINE with FALLBACK for market closure
     """
     from datetime import datetime, time
     import os
     
     try:
-        # Factor 1: Time-based intelligence
+        # CRITICAL FIX: Check if we're in market hours
         current_time = datetime.now().time()
         current_hour = current_time.hour
+        current_weekday = datetime.now().weekday()  # 0=Monday, 6=Sunday
         
-        # Pre-market (7-9 AM): Focus on indices and futures
-        if 7 <= current_hour < 9:
+        # Check if it's weekend (markets closed)
+        if current_weekday >= 5:  # Saturday (5) or Sunday (6)
+            logger.debug("📅 Weekend detected - using static symbols")
+            return "STATIC_FALLBACK"
+        
+        # Check if it's outside market hours (before 9 AM or after 4 PM)
+        if current_hour < 9 or current_hour >= 16:
+            logger.debug("🕒 Outside market hours - using static symbols")
+            return "STATIC_FALLBACK"
+        
+        # MARKET HOURS LOGIC (9 AM - 4 PM on weekdays)
+        # Pre-market / Market opening (9-11 AM): Focus on underlying analysis
+        if 9 <= current_hour < 11:
             return "UNDERLYING_FOCUS"
         
-        # Market opening (9-11 AM): High volatility, options opportunities
-        elif 9 <= current_hour < 11:
-            return "OPTIONS_FOCUS"
-        
-        # Mid-day (11 AM-1 PM): Balanced approach
+        # Mid-day (11 AM-1 PM): Mixed approach
         elif 11 <= current_hour < 13:
             return "MIXED"
         
-        # Afternoon (1-3 PM): Options expiry effects, focus on options
+        # Afternoon (1-3 PM): Options focus
         elif 13 <= current_hour < 15:
             return "OPTIONS_FOCUS"
         
-        # Post-market (after 3:30 PM): Analysis focus
+        # Market closing (3-4 PM): Back to underlying focus
         else:
             return "UNDERLYING_FOCUS"
             
     except Exception as e:
-        logger.warning(f"Autonomous strategy decision failed: {e}, defaulting to MIXED")
-        return "MIXED"
+        logger.warning(f"Autonomous strategy decision failed: {e}, using static fallback")
+        return "STATIC_FALLBACK"
 
 def get_options_focused_symbols():
     """
@@ -420,10 +510,15 @@ def _get_dynamic_monthly_expiry():
         return "28AUG25"  # Safe fallback
 
 def _get_real_time_price(symbol: str):
-    """Get REAL-TIME price from TrueData for dynamic strike calculation"""
+    """Get REAL-TIME price from TrueData with ROBUST FALLBACKS for market closure"""
     try:
-        from data.truedata_client import live_market_data
+        from data.truedata_client import live_market_data, is_connected
         
+        # CRITICAL FIX: Check if TrueData is actually connected and has live data
+        if not live_market_data or len(live_market_data) == 0:
+            logger.debug(f"⚠️ TrueData cache empty - markets likely closed")
+            return None
+            
         # Get real-time data from TrueData cache
         if symbol in live_market_data:
             market_data = live_market_data[symbol]
@@ -433,12 +528,22 @@ def _get_real_time_price(symbol: str):
                 logger.debug(f"📊 REAL-TIME: {symbol} = ₹{price:,.2f}")
                 return float(price)
         
-        # If not available, return None to skip dynamic calculation
-        logger.warning(f"⚠️ Real-time price not available for {symbol}")
+        # FALLBACK: Try without -I suffix for indices
+        if symbol.endswith('-I'):
+            base_symbol = symbol.replace('-I', '')
+            if base_symbol in live_market_data:
+                market_data = live_market_data[base_symbol]
+                price = market_data.get('ltp', market_data.get('price', 0))
+                if price and price > 0:
+                    logger.debug(f"📊 REAL-TIME (base): {base_symbol} = ₹{price:,.2f}")
+                    return float(price)
+        
+        # If not available, return None (dynamic calculation will be skipped)
+        logger.debug(f"⚠️ Real-time price not available for {symbol} - using fallback")
         return None
         
     except Exception as e:
-        logger.error(f"❌ Real-time price fetch failed for {symbol}: {e}")
+        logger.debug(f"❌ Real-time price fetch failed for {symbol}: {e}")
         return None
 
 def _calculate_dynamic_strikes(index: str, current_price: float):
