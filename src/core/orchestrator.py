@@ -1701,6 +1701,66 @@ class TradingOrchestrator:
         self.logger.debug(f"📋 Underlying symbols for strategies: {len(underlying_symbols)} symbols")
         return underlying_symbols
 
+    async def _load_strategies(self):
+        """Load and initialize trading strategies"""
+        try:
+            # Clear existing strategies to prevent duplicates
+            self.strategies.clear()
+            self.active_strategies.clear()
+            
+            # FIXED: Original strategies only - no emergency systems
+            strategy_configs = {
+                'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
+                'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},
+                'volume_profile_scalper': {'name': 'EnhancedVolumeProfileScalper', 'config': {}},
+                'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}},
+                'confluence_amplifier': {'name': 'ConfluenceAmplifier', 'config': {}}
+            }
+            
+            self.logger.info(f"Loading {len(strategy_configs)} trading strategies (news_impact_scalper removed for debugging)...")
+            
+            for strategy_key, strategy_info in strategy_configs.items():
+                try:
+                    # Import strategy class
+                    if strategy_key == 'momentum_surfer':
+                        from strategies.momentum_surfer import EnhancedMomentumSurfer
+                        strategy_instance = EnhancedMomentumSurfer(strategy_info['config'])
+                    elif strategy_key == 'volatility_explosion':
+                        from strategies.volatility_explosion import EnhancedVolatilityExplosion
+                        strategy_instance = EnhancedVolatilityExplosion(strategy_info['config'])
+                    elif strategy_key == 'volume_profile_scalper':
+                        from strategies.volume_profile_scalper import EnhancedVolumeProfileScalper
+                        strategy_instance = EnhancedVolumeProfileScalper(strategy_info['config'])
+                    elif strategy_key == 'regime_adaptive_controller':
+                        from strategies.regime_adaptive_controller import RegimeAdaptiveController
+                        strategy_instance = RegimeAdaptiveController(strategy_info['config'])
+                    elif strategy_key == 'confluence_amplifier':
+                        from strategies.confluence_amplifier import ConfluenceAmplifier
+                        strategy_instance = ConfluenceAmplifier(strategy_info['config'])
+                    else:
+                        continue
+                    
+                    # Initialize strategy
+                    await strategy_instance.initialize()
+                    
+                    # Store strategy instance
+                    self.strategies[strategy_key] = {
+                        'name': strategy_key,
+                        'instance': strategy_instance,
+                        'active': True,
+                        'last_signal': None
+                    }
+                    self.active_strategies.append(strategy_key)
+                    self.logger.info(f"✓ Loaded and initialized strategy: {strategy_key}")
+                    
+                except Exception as e:
+                    self.logger.error(f"✗ Failed to load strategy {strategy_key}: {e}")
+            
+            self.logger.info(f"✓ Successfully loaded {len(self.strategies)}/{len(strategy_configs)} trading strategies")
+            
+        except Exception as e:
+            self.logger.error(f"Error loading strategies: {e}")
+
     async def start_trading(self) -> bool:
         """Start autonomous trading system"""
         try:
