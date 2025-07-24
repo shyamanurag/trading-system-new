@@ -153,12 +153,14 @@ class DatabaseConfig:
                 if 'ondigitalocean.com' in self.database_url or 'sslmode=require' in self.database_url:
                     connect_args['sslmode'] = 'require'
                 
+                # CRITICAL FIX: Drastically reduce connection pool for DigitalOcean limits
                 self.postgres_engine = create_engine(
                     self.database_url,
-                    pool_size=10,
-                    max_overflow=20,
+                    pool_size=1,          # EMERGENCY FIX: Minimum possible
+                    max_overflow=2,       # EMERGENCY FIX: Very small overflow  
                     pool_pre_ping=True,
-                    pool_recycle=3600,
+                    pool_recycle=900,     # 15 minutes - shorter recycle
+                    pool_timeout=10,      # Faster timeout to prevent hanging
                     connect_args=connect_args
                 )
                 logger.info("PostgreSQL database configured with SSL requirements")

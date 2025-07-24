@@ -128,9 +128,39 @@ class DatabaseSchemaManager:
         'updated_at': {'type': 'TIMESTAMP', 'nullable': False, 'default': 'CURRENT_TIMESTAMP'}
     }
     
-    def __init__(self, database_url: str):
+    def __init__(self, database_url: str = None):
         self.database_url = database_url
-        self.engine = create_engine(database_url)
+        # CRITICAL FIX: Use shared database manager instead of creating new engine
+        # This prevents connection pool exhaustion on DigitalOcean
+        self._engine = None
+        
+    def _get_engine(self):
+        """Get shared database engine to prevent connection pool exhaustion"""
+        if self._engine is None:
+            try:
+                # Try to get shared engine from database manager
+                from .database import db_manager
+                self._engine = db_manager.get_shared_engine()
+                logger.info("✅ Using shared database engine to prevent connection exhaustion")
+            except Exception as e:
+                logger.warning(f"Could not get shared engine, creating new one: {e}")
+                if self.database_url:
+                    # Emergency fallback - create minimal connection pool
+                    self._engine = create_engine(
+                        self.database_url,
+                        pool_size=1,      # Minimal pool
+                        max_overflow=0,   # No overflow
+                        pool_pre_ping=True,
+                        pool_timeout=5
+                    )
+                else:
+                    raise RuntimeError("No database URL provided and shared engine unavailable")
+        return self._engine
+        
+    @property 
+    def engine(self):
+        """Property to access the database engine"""
+        return self._get_engine()
         
     def ensure_schema(self) -> Dict[str, Any]:
         """Ensure all tables exist with precise schema"""

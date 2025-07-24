@@ -50,20 +50,18 @@ class DatabaseManager:
                 
             logger.info(f"Using connect_args: {connect_args}")
             
-            # FIXED: Optimize for DigitalOcean connection limits
-            # Use small pool size to stay under DigitalOcean connection limits
+            # CRITICAL FIX: Drastically reduce connection pool for DigitalOcean limits
+            # DigitalOcean has very limited connection slots - use minimal connections
             self.engine = create_engine(
                 database_url,
-                pool_size=3,          # Reduced from 10 
-                max_overflow=5,       # Reduced from 20
+                pool_size=1,          # EMERGENCY FIX: Minimum possible
+                max_overflow=2,       # EMERGENCY FIX: Very small overflow
                 pool_pre_ping=True,
-                pool_recycle=1800,    # 30 minutes instead of 1 hour
-                pool_timeout=15,      # Faster timeout
+                pool_recycle=900,     # 15 minutes - shorter recycle
+                pool_timeout=10,      # Faster timeout to prevent hanging
                 connect_args=connect_args,
                 echo=False,
-                # CRITICAL FIX: Remove invalid parameter that breaks database initialization
                 pool_reset_on_return='commit'
-                # pool_recycle_on_invalidate=True  # ❌ REMOVED: This parameter doesn't exist in SQLAlchemy
             )
             
             # Test connection
