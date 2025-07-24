@@ -361,12 +361,23 @@ class ZerodhaIntegration:
                 **zerodha_params
             )
             
-            if order_response and 'order_id' in order_response:
-                order_id = order_response['order_id']
-                logger.info(f"✅ REAL Zerodha order placed successfully: {order_id}")
-                return order_id
+            # CRITICAL FIX: Handle both string order ID and dict response formats
+            if order_response:
+                # Check if response is a direct order ID string
+                if isinstance(order_response, str) and order_response.strip():
+                    order_id = order_response.strip()
+                    logger.info(f"✅ REAL Zerodha order placed successfully: {order_id}")
+                    return order_id
+                # Check if response is a dict with order_id key
+                elif isinstance(order_response, dict) and 'order_id' in order_response:
+                    order_id = order_response['order_id']
+                    logger.info(f"✅ REAL Zerodha order placed successfully: {order_id}")
+                    return order_id
+                else:
+                    logger.error(f"❌ Unexpected order response format: {order_response}")
+                    return None
             else:
-                logger.error(f"❌ Zerodha order failed: {order_response}")
+                logger.error(f"❌ Zerodha order failed: No response")
                 return None
                 
         except Exception as e:
