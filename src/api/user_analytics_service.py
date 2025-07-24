@@ -19,7 +19,12 @@ import json
 import redis.asyncio as redis
 import os
 
-from ..models.trading_models import User, Trade, Position, Order
+from ..models.trading_models import User, TradingTrade, TradingPosition, Order
+
+# Create an alias for compatibility with the rest of the code
+Trade = TradingTrade
+Position = TradingPosition
+
 from ..config.database import DatabaseConfig
 
 logger = logging.getLogger(__name__)
@@ -395,7 +400,7 @@ class UserAnalyticsService:
             symbol = trade.symbol
             symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
         
-        return max(symbol_counts, key=symbol_counts.get) if symbol_counts else "N/A"
+        return max(symbol_counts, key=lambda x: symbol_counts[x]) if symbol_counts else "N/A"
     
     def _get_most_profitable_strategy(self, trades: List[Trade]) -> str:
         """Get most profitable trading strategy"""
@@ -408,7 +413,7 @@ class UserAnalyticsService:
                 strategy = trade.strategy
                 strategy_pnl[strategy] = strategy_pnl.get(strategy, 0) + float(trade.pnl)
         
-        return max(strategy_pnl, key=strategy_pnl.get) if strategy_pnl else "N/A"
+        return max(strategy_pnl, key=lambda x: strategy_pnl[x]) if strategy_pnl else "N/A"
     
     async def _get_peak_balance(self, user_id: int) -> float:
         """Get peak balance from Redis cache or calculate"""

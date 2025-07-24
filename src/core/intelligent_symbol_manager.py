@@ -410,3 +410,49 @@ class AutonomousSymbolManager:
             'manual_intervention_required': False,
             'next_evaluation': datetime.now() + timedelta(seconds=self.config.strategy_switch_interval)
         } 
+
+# Global instance
+_autonomous_symbol_manager = None
+
+async def start_intelligent_symbol_management():
+    """
+    Start the intelligent symbol management system
+    This function is called by main.py during startup
+    """
+    global _autonomous_symbol_manager
+    
+    try:
+        if _autonomous_symbol_manager is None:
+            logger.info("🤖 Starting Intelligent Symbol Management System...")
+            
+            # Create and initialize the autonomous symbol manager
+            _autonomous_symbol_manager = AutonomousSymbolManager()
+            await _autonomous_symbol_manager.start()
+            
+            logger.info("✅ Intelligent Symbol Management System started successfully")
+            return True
+        else:
+            logger.info("⚠️ Intelligent Symbol Management already running")
+            return True
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to start Intelligent Symbol Management: {e}")
+        return False
+
+async def get_intelligent_symbol_manager() -> Optional[AutonomousSymbolManager]:
+    """Get the global autonomous symbol manager instance"""
+    return _autonomous_symbol_manager
+
+async def stop_intelligent_symbol_management():
+    """Stop the intelligent symbol management system"""
+    global _autonomous_symbol_manager
+    
+    try:
+        if _autonomous_symbol_manager:
+            await _autonomous_symbol_manager.stop()
+            _autonomous_symbol_manager = None
+            logger.info("🛑 Intelligent Symbol Management System stopped")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error stopping Intelligent Symbol Management: {e}")
+        return False 
