@@ -219,7 +219,7 @@ class TradeEngine:
                     'transaction_type': signal_action,  # ✅ FIXED: Backup field  
                     'side': signal_action,  # ✅ FIXED: Another backup field
                     'order_type': 'MARKET',
-                    'product': 'MIS',  # Intraday
+                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
                     'validity': 'DAY'
                 }
                 
@@ -512,7 +512,7 @@ class TradeEngine:
             'price': signal.get('entry_price'),
             'entry_price': signal.get('entry_price'),
             'order_type': signal.get('order_type', 'MARKET'),
-            'product': signal.get('product', 'MIS'),
+            'product': signal.get('product', 'CNC'),  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
             'validity': signal.get('validity', 'DAY'),
             'tag': 'ALGO_TRADE',
             'user_id': signal.get('user_id', 'system')
