@@ -268,6 +268,9 @@ class BaseStrategy:
             # 🎯 CRITICAL FIX: Convert to options symbol for scalping strategies
             options_symbol, option_type = self._convert_to_options_symbol(symbol, entry_price, action)
             
+            # 🎯 CRITICAL FIX: Always BUY options (no selling due to margin requirements)
+            final_action = 'BUY'  # Force all options signals to be BUY
+            
             # Calculate risk metrics
             risk_amount = abs(entry_price - stop_loss)
             reward_amount = abs(target - entry_price)
@@ -284,7 +287,7 @@ class BaseStrategy:
                 'symbol': options_symbol,  # 🎯 FIXED: Use options symbol instead of underlying
                 'underlying_symbol': symbol,  # Keep original for reference
                 'option_type': option_type,  # CE or PE
-                'action': action.upper(),  # Use 'action' not 'direction'
+                'action': final_action.upper(),  # Always BUY for options (no selling due to margin)
                 'quantity': 50,  # Standard lot size
                 'entry_price': round(entry_price, 2),
                 'stop_loss': round(stop_loss, 2),
@@ -320,11 +323,17 @@ class BaseStrategy:
     def _convert_to_options_symbol(self, underlying_symbol: str, current_price: float, action: str) -> tuple:
         """Convert underlying symbol to appropriate options symbol for scalping"""
         try:
-            # For scalping strategies, convert equity signals to options
+            # 🎯 CRITICAL FIX: Only BUY signals for options (no selling due to margin requirements)
+            # Convert equity signals to options BUY signals only
             if underlying_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
                 # Index options - use current levels
                 strike = self._get_atm_strike(underlying_symbol, current_price)
-                option_type = 'CE' if action.upper() == 'BUY' else 'PE'
+                # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
+                if action.upper() == 'BUY':
+                    option_type = 'CE'  # BUY Call when bullish
+                else:  # SELL signal becomes BUY Put
+                    option_type = 'PE'  # BUY Put when bearish
+                    
                 expiry = self._get_next_expiry()
                 options_symbol = f"{underlying_symbol}{expiry}{strike}{option_type}"
                 return options_symbol, option_type
@@ -333,7 +342,12 @@ class BaseStrategy:
                 # CRITICAL FIX: Truncate long symbol names for options
                 truncated_symbol = self._truncate_symbol_for_options(underlying_symbol)
                 strike = self._get_atm_strike_for_stock(current_price)
-                option_type = 'CE' if action.upper() == 'BUY' else 'PE'  
+                # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
+                if action.upper() == 'BUY':
+                    option_type = 'CE'  # BUY Call when bullish
+                else:  # SELL signal becomes BUY Put
+                    option_type = 'PE'  # BUY Put when bearish
+                    
                 expiry = self._get_next_expiry()
                 options_symbol = f"{truncated_symbol}{expiry}{strike}{option_type}"
                 return options_symbol, option_type
