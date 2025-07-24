@@ -570,6 +570,20 @@ class ZerodhaIntegration:
                     await asyncio.sleep(self.retry_delay)
         return {'equity': {'available': {'cash': 0}}}
 
+    async def get_orders(self) -> List[Dict]:
+        """Get orders with retry - CRITICAL for trade sync"""
+        for attempt in range(self.max_retries):
+            try:
+                if self.mock_mode or not self.kite:
+                    # Return mock orders for testing
+                    return []
+                return await self._async_api_call(self.kite.orders)
+            except Exception as e:
+                logger.error(f"❌ Get orders attempt {attempt + 1} failed: {e}")
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay)
+        return []
+
     async def get_account_info(self) -> Dict:
         """Get account info with retry"""
         for attempt in range(self.max_retries):

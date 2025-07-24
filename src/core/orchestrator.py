@@ -1764,6 +1764,16 @@ class TradingOrchestrator:
             else:
                 self.logger.warning("⚠️ Position Monitor not available - auto square-off monitoring disabled")
             
+            # CRITICAL NEW: Start real-time Zerodha data synchronization
+            if self.trade_engine and hasattr(self.trade_engine, 'start_real_time_sync'):
+                try:
+                    await self.trade_engine.start_real_time_sync()
+                    self.logger.info("🔄 Real-time Zerodha sync started - actual trade/position data")
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to start real-time sync: {e}")
+            else:
+                self.logger.warning("⚠️ Real-time sync not available - using local trade data only")
+            
             self.logger.info(f"✅ Autonomous trading started with {len(self.active_strategies)} active strategies")
             return True
             

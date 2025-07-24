@@ -324,12 +324,13 @@ class TradeEngine:
             quantity = trade_record['quantity']
             side = trade_record['side']
             
-            # Get current market price from TrueData
+            # CRITICAL FIX: Get REAL current market price from TrueData
             current_price = await self._get_current_market_price(symbol)
-            if not current_price:
-                current_price = entry_price  # Fallback to entry price
+            if not current_price or current_price <= 0:
+                self.logger.warning(f"⚠️ No real-time price for {symbol}, using entry price as fallback")
+                current_price = entry_price  # Fallback only
             
-            # Calculate P&L
+            # Calculate P&L based on real market movement
             if side.upper() == 'BUY':
                 pnl = (current_price - entry_price) * quantity
             else:  # SELL
@@ -339,19 +340,329 @@ class TradeEngine:
             position_value = entry_price * quantity
             pnl_percent = (pnl / position_value) * 100 if position_value > 0 else 0
             
-            # Update trade record
+            # Update trade record with REAL market data
             trade_record['pnl'] = round(pnl, 2)
             trade_record['pnl_percent'] = round(pnl_percent, 2)
             trade_record['current_price'] = current_price
+            trade_record['entry_price'] = entry_price  # Keep original entry
             
             # Store to database
             await self._store_trade_to_database(trade_record)
             
-            self.logger.info(f"💰 P&L calculated and stored for {symbol}: ₹{pnl:.2f} ({pnl_percent:.2f}%)")
+            # Start background price monitoring for this trade
+            asyncio.create_task(self._monitor_trade_price_updates(trade_record))
+            
+            self.logger.info(f"💰 P&L calculated for {symbol}: Entry ₹{entry_price:.2f} → Current ₹{current_price:.2f} = ₹{pnl:.2f} ({pnl_percent:.2f}%)")
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating and storing P&L: {e}")
-
+    
+    async def _monitor_trade_price_updates(self, trade_record: Dict):
+        """Background task to continuously update trade prices and P&L"""
+        symbol = trade_record['symbol']
+        trade_id = trade_record['trade_id']
+        
+        try:
+            while True:
+                # Get fresh market price
+                current_price = await self._get_current_market_price(symbol)
+                
+                if current_price and current_price > 0:
+                    # Recalculate P&L with new price
+                    entry_price = float(trade_record['price'])
+                    quantity = trade_record['quantity']
+                    side = trade_record['side']
+                    
+                    if side.upper() == 'BUY':
+                        pnl = (current_price - entry_price) * quantity
+                    else:  # SELL
+                        pnl = (entry_price - current_price) * quantity
+                    
+                    position_value = entry_price * quantity
+                    pnl_percent = (pnl / position_value) * 100 if position_value > 0 else 0
+                    
+                    # Update database with new P&L
+                    await self._update_trade_pnl_in_database(trade_id, current_price, pnl, pnl_percent)
+                    
+                    self.logger.debug(f"📊 Updated {symbol}: ₹{current_price:.2f} | P&L: ₹{pnl:.2f} ({pnl_percent:.2f}%)")
+                
+                # Update every 30 seconds during market hours
+                await asyncio.sleep(30)
+                
+        except asyncio.CancelledError:
+            self.logger.info(f"⏹️ Stopped price monitoring for {symbol}")
+        except Exception as e:
+            self.logger.error(f"❌ Error in price monitoring for {symbol}: {e}")
+    
+    async def _update_trade_pnl_in_database(self, trade_id: str, current_price: float, pnl: float, pnl_percent: float):
+        """Update trade P&L in database with real-time data"""
+        try:
+            from src.config.database import get_db
+            db_session = next(get_db())
+            
+            if db_session:
+                from sqlalchemy import text
+                update_query = text("""
+                    UPDATE trades 
+                    SET current_price = :current_price, 
+                        pnl = :pnl, 
+                        pnl_percent = :pnl_percent,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE order_id = :trade_id
+                """)
+                
+                db_session.execute(update_query, {
+                    'current_price': current_price,
+                    'pnl': pnl,
+                    'pnl_percent': pnl_percent,
+                    'trade_id': trade_id
+                })
+                db_session.commit()
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error updating trade P&L in database: {e}")
+            if db_session:
+                db_session.rollback()
+        finally:
+            if db_session:
+                db_session.close()
+    
+    async def sync_actual_zerodha_trades(self):
+        """CRITICAL: Fetch ACTUAL executed trades from Zerodha API"""
+        try:
+            if not self.zerodha_client:
+                self.logger.warning("⚠️ No Zerodha client for trade sync")
+                return
+            
+            self.logger.info("🔄 Syncing actual executed trades from Zerodha...")
+            
+            # Get actual orders from Zerodha API
+            zerodha_orders = await self.zerodha_client.get_orders()
+            
+            if not zerodha_orders:
+                self.logger.warning("⚠️ No orders returned from Zerodha API")
+                return
+            
+            executed_trades = []
+            for order in zerodha_orders:
+                if order.get('status') == 'COMPLETE':
+                    # This is an ACTUAL executed trade
+                    executed_trade = {
+                        'trade_id': order.get('order_id'),
+                        'symbol': order.get('tradingsymbol'),
+                        'side': order.get('transaction_type'),
+                        'quantity': order.get('filled_quantity', order.get('quantity')),
+                        'price': order.get('average_price', order.get('price')),
+                        'status': 'EXECUTED',
+                        'executed_at': order.get('order_timestamp'),
+                        'exchange_time': order.get('exchange_timestamp'),
+                        'actual_execution': True  # Mark as real execution
+                    }
+                    executed_trades.append(executed_trade)
+            
+            self.logger.info(f"✅ Found {len(executed_trades)} actual executed trades from Zerodha")
+            
+            # Update our records with ACTUAL execution data
+            for trade in executed_trades:
+                await self._update_with_actual_execution_data(trade)
+            
+            return executed_trades
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error syncing actual Zerodha trades: {e}")
+            return []
+    
+    async def _update_with_actual_execution_data(self, actual_trade: Dict):
+        """Update internal trade records with ACTUAL execution data from Zerodha"""
+        try:
+            trade_id = actual_trade['trade_id']
+            
+            # Update database with ACTUAL execution data
+            from src.config.database import get_db
+            db_session = next(get_db())
+            
+            if db_session:
+                from sqlalchemy import text
+                
+                # Check if trade exists in our database
+                check_query = text("SELECT order_id FROM trades WHERE order_id = :trade_id")
+                existing = db_session.execute(check_query, {'trade_id': trade_id}).fetchone()
+                
+                if existing:
+                    # Update with actual execution data
+                    update_query = text("""
+                        UPDATE trades 
+                        SET quantity = :quantity,
+                            price = :price,
+                            executed_at = :executed_at,
+                            actual_execution = true,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE order_id = :trade_id
+                    """)
+                    
+                    db_session.execute(update_query, {
+                        'quantity': actual_trade['quantity'],
+                        'price': actual_trade['price'],
+                        'executed_at': actual_trade['executed_at'],
+                        'trade_id': trade_id
+                    })
+                else:
+                    # Insert new ACTUAL trade that we didn't track before
+                    insert_query = text("""
+                        INSERT INTO trades (
+                            order_id, symbol, trade_type, quantity, price,
+                            status, executed_at, actual_execution, user_id
+                        ) VALUES (
+                            :trade_id, :symbol, :side, :quantity, :price,
+                            :status, :executed_at, true, :user_id
+                        )
+                    """)
+                    
+                    db_session.execute(insert_query, {
+                        'trade_id': trade_id,
+                        'symbol': actual_trade['symbol'],
+                        'side': actual_trade['side'],
+                        'quantity': actual_trade['quantity'],
+                        'price': actual_trade['price'],
+                        'status': actual_trade['status'],
+                        'executed_at': actual_trade['executed_at'],
+                        'user_id': 'ZERODHA_SYNC'
+                    })
+                
+                db_session.commit()
+                self.logger.info(f"✅ Updated trade {trade_id} with ACTUAL execution data")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error updating with actual execution data: {e}")
+            if db_session:
+                db_session.rollback()
+        finally:
+            if db_session:
+                db_session.close()
+    
+    async def sync_actual_zerodha_positions(self):
+        """CRITICAL: Fetch ACTUAL positions from Zerodha API for square-off"""
+        try:
+            if not self.zerodha_client:
+                self.logger.warning("⚠️ No Zerodha client for position sync")
+                return {}
+            
+            self.logger.info("🔄 Syncing actual positions from Zerodha for square-off...")
+            
+            # Get ACTUAL positions from Zerodha API
+            positions_data = await self.zerodha_client.get_positions()
+            
+            if not positions_data:
+                self.logger.warning("⚠️ No positions returned from Zerodha API")
+                return {}
+            
+            # Extract net positions (for square-off)
+            net_positions = positions_data.get('net', [])
+            day_positions = positions_data.get('day', [])
+            
+            active_positions = {}
+            
+            # Process net positions (overnight positions)
+            for pos in net_positions:
+                if pos.get('quantity', 0) != 0:  # Only positions with quantity
+                    symbol = pos.get('tradingsymbol')
+                    active_positions[symbol] = {
+                        'symbol': symbol,
+                        'quantity': pos.get('quantity'),
+                        'average_price': pos.get('average_price', 0),
+                        'ltp': pos.get('last_price', 0),
+                        'pnl': pos.get('pnl', 0),
+                        'unrealized_pnl': pos.get('unrealized_pnl', 0),
+                        'position_type': 'net',
+                        'product': pos.get('product'),
+                        'exchange': pos.get('exchange')
+                    }
+            
+            # Process day positions (intraday)
+            for pos in day_positions:
+                if pos.get('quantity', 0) != 0:
+                    symbol = pos.get('tradingsymbol')
+                    active_positions[symbol] = {
+                        'symbol': symbol,
+                        'quantity': pos.get('quantity'),
+                        'average_price': pos.get('average_price', 0),
+                        'ltp': pos.get('last_price', 0),
+                        'pnl': pos.get('pnl', 0),
+                        'unrealized_pnl': pos.get('unrealized_pnl', 0),
+                        'position_type': 'day',
+                        'product': pos.get('product'),
+                        'exchange': pos.get('exchange')
+                    }
+            
+            self.logger.info(f"✅ Found {len(active_positions)} ACTUAL positions from Zerodha")
+            
+            # Update position tracker with ACTUAL positions
+            if self.position_tracker:
+                await self._update_position_tracker_with_actual_data(active_positions)
+            
+            return active_positions
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error syncing actual Zerodha positions: {e}")
+            return {}
+    
+    async def _update_position_tracker_with_actual_data(self, actual_positions: Dict):
+        """Update position tracker with ACTUAL Zerodha position data"""
+        try:
+            for symbol, pos_data in actual_positions.items():
+                await self.position_tracker.update_position(
+                    symbol=symbol,
+                    quantity=pos_data['quantity'],
+                    price=pos_data['average_price'],
+                    side='long' if pos_data['quantity'] > 0 else 'short'
+                )
+                
+                # Update with real-time LTP for P&L calculation
+                if pos_data['ltp'] > 0:
+                    market_data = {symbol: pos_data['ltp']}
+                    await self.position_tracker.update_market_prices(market_data)
+            
+            self.logger.info(f"✅ Updated position tracker with {len(actual_positions)} ACTUAL positions")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error updating position tracker with actual data: {e}")
+    
+    async def start_real_time_sync(self):
+        """Start background tasks for real-time Zerodha data synchronization"""
+        self.logger.info("🚀 Starting real-time Zerodha data synchronization...")
+        
+        # Start trade sync (every 2 minutes)
+        asyncio.create_task(self._periodic_trade_sync())
+        
+        # Start position sync (every 1 minute)  
+        asyncio.create_task(self._periodic_position_sync())
+        
+        self.logger.info("✅ Real-time sync tasks started")
+    
+    async def _periodic_trade_sync(self):
+        """Periodic task to sync actual trades from Zerodha"""
+        while True:
+            try:
+                await self.sync_actual_zerodha_trades()
+                await asyncio.sleep(120)  # Every 2 minutes
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"❌ Error in periodic trade sync: {e}")
+                await asyncio.sleep(120)
+    
+    async def _periodic_position_sync(self):
+        """Periodic task to sync actual positions from Zerodha"""
+        while True:
+            try:
+                await self.sync_actual_zerodha_positions()
+                await asyncio.sleep(60)  # Every 1 minute
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"❌ Error in periodic position sync: {e}")
+                await asyncio.sleep(60)
+    
     async def _get_current_market_price(self, symbol: str) -> Optional[float]:
         """Get current market price from TrueData cache"""
         try:
@@ -362,11 +673,12 @@ class TradeEngine:
                 # Use LTP (Last Traded Price) or Close price
                 return float(market_data.get('ltp', market_data.get('close', 0)))
             
-            # Try Redis cache
-            if hasattr(self, 'redis_client') and self.redis_client:
-                cached_price = await self.redis_client.get(f"price:{symbol}")
-                if cached_price:
-                    return float(cached_price)
+            # Try Redis cache if available
+            # Note: redis_client not available in this context
+            # if hasattr(self, 'redis_client') and self.redis_client:
+            #     cached_price = await self.redis_client.get(f"price:{symbol}")
+            #     if cached_price:
+            #         return float(cached_price)
             
             return None
             
