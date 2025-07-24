@@ -404,7 +404,7 @@ class BaseStrategy:
         # Standard monthly expiry day (25th)
         expiry_day = "25"
         
-                return f"{expiry_day}{month_name}{year_suffix}"
+        return f"{expiry_day}{month_name}{year_suffix}"
     
     def _truncate_symbol_for_options(self, symbol: str) -> str:
         """Truncate symbol names for options format"""
