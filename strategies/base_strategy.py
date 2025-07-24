@@ -385,37 +385,55 @@ class BaseStrategy:
             return int(round(price / 100) * 100)  # Round to nearest 100 for high-priced stocks
       
     def _get_next_expiry(self) -> str:
-        """Get next monthly expiry in correct Zerodha format like 25JUL24"""
+        """Get next monthly expiry in correct Zerodha format - THURSDAY EXPIRY (last Thursday of month)"""
         today = datetime.now()
         
-        # CRITICAL FIX: Use actual current year (was incorrectly hardcoded to 2024)
+        # CRITICAL FIX: Use last Thursday of the month (not fixed 25th)
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
         
         # Use current year and month
         current_month = today.month
-        current_year = today.year  # FIXED: Use actual year (2025)
+        current_year = today.year
         
-        # If we're past 25th of current month, use next month's expiry
-        if today.day > 25:
+        # Find the last Thursday of the current month
+        last_thursday = self._get_last_thursday_of_month(current_year, current_month)
+        
+        # If we're past the last Thursday of current month, use next month's expiry
+        if today.day > last_thursday.day:
             if current_month == 12:
                 current_month = 1
                 current_year += 1
             else:
                 current_month += 1
+            # Recalculate for next month
+            last_thursday = self._get_last_thursday_of_month(current_year, current_month)
         
         year_suffix = str(current_year)[-2:]
         month_name = month_names[current_month - 1]
-        
-        # Use proper monthly expiry format for Zerodha
-        # For July 2025, this should be around last Thursday (31st July is Thursday)
-        # But Zerodha uses simplified format like 31JUL25 for monthly expiry
-        if current_month == 7 and current_year == 2025:
-            expiry_day = "31"  # July 2025 monthly expiry
-        else:
-            expiry_day = "25"  # Default approximation for other months
+        expiry_day = f"{last_thursday.day:02d}"  # Ensure 2-digit format
         
         return f"{expiry_day}{month_name}{year_suffix}"
+    
+    def _get_last_thursday_of_month(self, year: int, month: int) -> datetime:
+        """Get the last Thursday of a given month"""
+        import calendar
+        
+        # Get the last day of the month
+        last_day = calendar.monthrange(year, month)[1]
+        
+        # Find the last Thursday
+        last_date = datetime(year, month, last_day)
+        
+        # Thursday is 3, so we need to go back to find the last Thursday
+        days_back = (last_date.weekday() - 3) % 7  # 3 = Thursday
+        if days_back == 0 and last_date.weekday() == 3:
+            # Already a Thursday
+            return last_date
+        else:
+            # Go back to find the last Thursday
+            last_thursday = last_date - timedelta(days=days_back)
+            return last_thursday
     
     def _truncate_symbol_for_options(self, symbol: str) -> str:
         """Truncate symbol names for options format"""
