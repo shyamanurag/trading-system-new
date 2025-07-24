@@ -385,38 +385,170 @@ class BaseStrategy:
             return int(round(price / 100) * 100)  # Round to nearest 100 for high-priced stocks
       
     def _get_next_expiry(self) -> str:
-        """Get next monthly expiry in correct Zerodha format - THURSDAY EXPIRY (last Thursday of month)"""
+        """DYNAMIC EXPIRY SELECTION: Get optimal expiry based on strategy requirements"""
+        # This method will be called with specific requirements
+        return self._get_optimal_expiry_for_strategy()
+    
+    def _get_optimal_expiry_for_strategy(self, preference: str = "nearest_weekly") -> str:
+        """
+        Get optimal expiry based on strategy requirements
+        
+        Args:
+            preference: "nearest_weekly", "nearest_monthly", "next_weekly", "max_time_decay"
+        """
+        available_expiries = self._get_available_expiries_from_zerodha()
+        
+        if not available_expiries:
+            # Fallback to calculated next Thursday if API unavailable
+            return self._calculate_next_thursday_fallback()
+        
+        today = datetime.now().date()
+        
+        # Filter future expiries only
+        future_expiries = [exp for exp in available_expiries if exp['date'] > today]
+        
+        if not future_expiries:
+            return self._calculate_next_thursday_fallback()
+        
+        # Sort by date
+        future_expiries.sort(key=lambda x: x['date'])
+        
+        # Strategy-based selection
+        if preference == "nearest_weekly":
+            # Prefer weekly expiries (usually nearest)
+            weekly_expiries = [exp for exp in future_expiries if exp.get('is_weekly', True)]
+            return weekly_expiries[0]['formatted'] if weekly_expiries else future_expiries[0]['formatted']
+            
+        elif preference == "nearest_monthly":
+            # Prefer monthly expiries (last Thursday of month)
+            monthly_expiries = [exp for exp in future_expiries if exp.get('is_monthly', False)]
+            return monthly_expiries[0]['formatted'] if monthly_expiries else future_expiries[0]['formatted']
+            
+        elif preference == "next_weekly":
+            # Skip current week, get next week
+            if len(future_expiries) > 1:
+                return future_expiries[1]['formatted']
+            else:
+                return future_expiries[0]['formatted']
+                
+        elif preference == "max_time_decay":
+            # For theta strategies - longer expiry
+            if len(future_expiries) >= 3:
+                return future_expiries[2]['formatted']  # 3rd nearest expiry
+            else:
+                return future_expiries[-1]['formatted']  # Longest available
+        
+        # Default: nearest expiry
+        return future_expiries[0]['formatted']
+    
+    def _get_available_expiries_from_zerodha(self) -> List[Dict]:
+        """
+        Fetch available expiry dates from Zerodha instruments API
+        Returns list of {date: datetime.date, formatted: str, is_weekly: bool, is_monthly: bool}
+        """
+        try:
+            # Get orchestrator instance to access Zerodha client
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if not orchestrator or not orchestrator.zerodha_client:
+                logger.warning("⚠️ Zerodha client not available for expiry lookup")
+                return self._get_fallback_expiries()
+            
+            # Use the new async method - we'll need to handle this synchronously
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            # Try to get expiries for common underlying symbols we trade
+            all_expiries = set()
+            
+            # Get expiries for indices and stocks we commonly trade
+            common_symbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'POWERGRID', 'RELIANCE', 'TCS']
+            
+            for symbol in common_symbols:
+                try:
+                    if loop.is_running():
+                        # If we're already in an async context, use the fallback
+                        expiries = self._get_fallback_expiries()
+                        return expiries
+                    else:
+                        # Run the async method
+                        expiries = loop.run_until_complete(
+                            orchestrator.zerodha_client.get_available_expiries_for_symbol(symbol)
+                        )
+                        
+                        if expiries:
+                            # Use expiries from the first successful symbol lookup
+                            logger.info(f"📅 Using expiries from {symbol}: {len(expiries)} found")
+                            return expiries
+                            
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to get expiries for {symbol}: {e}")
+                    continue
+            
+            # If no expiries found from API, use fallback
+            logger.warning("⚠️ No expiries found from Zerodha API, using fallback")
+            return self._get_fallback_expiries()
+            
+        except Exception as e:
+            logger.error(f"❌ Error fetching available expiries: {e}")
+            return self._get_fallback_expiries()
+    
+    def _get_fallback_expiries(self) -> List[Dict]:
+        """Generate realistic weekly expiries when API is unavailable"""
+        today = datetime.now().date()
+        expiries = []
+        
+        # Add all Thursdays for next 8 weeks
+        current_date = today
+        for weeks_ahead in range(8):
+            # Find next Thursday
+            days_ahead = (3 - current_date.weekday()) % 7  # Thursday = 3
+            if days_ahead == 0 and current_date == today:
+                days_ahead = 7  # If today is Thursday, get next Thursday
+                
+            thursday = current_date + timedelta(days=days_ahead)
+            
+            # Format for Zerodha: 31JUL25
+            month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+                          'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+            formatted = f"{thursday.day:02d}{month_names[thursday.month - 1]}{str(thursday.year)[-2:]}"
+            
+            # Determine if it's monthly (last Thursday of month)
+            next_week = thursday + timedelta(days=7)
+            is_monthly = next_week.month != thursday.month
+            
+            expiries.append({
+                'date': thursday,
+                'formatted': formatted,
+                'is_weekly': True,
+                'is_monthly': is_monthly
+            })
+            
+            current_date = thursday + timedelta(days=1)  # Move to next week
+        
+        logger.info(f"📅 Generated {len(expiries)} fallback expiries: {[e['formatted'] for e in expiries[:3]]}...")
+        return expiries
+    
+    def _calculate_next_thursday_fallback(self) -> str:
+        """Fallback calculation for next Thursday when API is unavailable"""
         today = datetime.now()
         
-        # CRITICAL FIX: Use last Thursday of the month (not fixed 25th)
+        # Find next Thursday
+        days_ahead = (3 - today.weekday()) % 7  # Thursday = 3
+        if days_ahead == 0:
+            days_ahead = 7  # If today is Thursday, get next Thursday
+            
+        next_thursday = today + timedelta(days=days_ahead)
+        
+        # Format for Zerodha
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
         
-        # Use current year and month
-        current_month = today.month
-        current_year = today.year
-        
-        # Find the last Thursday of the current month
-        last_thursday = self._get_last_thursday_of_month(current_year, current_month)
-        
-        # If we're past the last Thursday of current month, use next month's expiry
-        if today.day > last_thursday.day:
-            if current_month == 12:
-                current_month = 1
-                current_year += 1
-            else:
-                current_month += 1
-            # Recalculate for next month
-            last_thursday = self._get_last_thursday_of_month(current_year, current_month)
-        
-        year_suffix = str(current_year)[-2:]
-        month_name = month_names[current_month - 1]
-        expiry_day = f"{last_thursday.day:02d}"  # Ensure 2-digit format
-        
-        return f"{expiry_day}{month_name}{year_suffix}"
+        return f"{next_thursday.day:02d}{month_names[next_thursday.month - 1]}{str(next_thursday.year)[-2:]}"
     
     def _get_last_thursday_of_month(self, year: int, month: int) -> datetime:
-        """Get the last Thursday of a given month"""
+        """Get the last Thursday of a given month - DEPRECATED: Use dynamic expiry selection"""
         import calendar
         
         # Get the last day of the month

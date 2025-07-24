@@ -618,6 +618,155 @@ class ZerodhaIntegration:
                     await asyncio.sleep(self.retry_delay)
         return {}
 
+    async def get_instruments(self, exchange: str = "NFO") -> List[Dict]:
+        """
+        Get instruments data from Zerodha API
+        Returns list of all available contracts for the exchange
+        """
+        for attempt in range(self.max_retries):
+            try:
+                if self.mock_mode or not self.kite:
+                    # Return mock instruments data for testing
+                    return self._get_mock_instruments_data()
+                
+                # Call Zerodha instruments API
+                instruments_data = await self._async_api_call(self.kite.instruments, exchange)
+                
+                if instruments_data:
+                    logger.info(f"✅ Retrieved {len(instruments_data)} instruments from {exchange}")
+                    return instruments_data
+                else:
+                    logger.warning(f"⚠️ No instruments data received from {exchange}")
+                    return []
+                    
+            except Exception as e:
+                logger.error(f"❌ Get instruments attempt {attempt + 1} failed: {e}")
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay)
+        
+        logger.error(f"❌ Failed to get instruments after {self.max_retries} attempts")
+        return []
+
+    def _get_mock_instruments_data(self) -> List[Dict]:
+        """Generate mock instruments data for testing"""
+        today = datetime.now().date()
+        instruments = []
+        
+        # Generate sample options for POWERGRID with various expiries
+        underlying = "POWERGRID"
+        month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+                      'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+        
+        # Generate next 8 weekly expiries
+        current_date = today
+        for weeks_ahead in range(8):
+            # Find next Thursday
+            days_ahead = (3 - current_date.weekday()) % 7  # Thursday = 3
+            if days_ahead == 0 and current_date == today:
+                days_ahead = 7
+                
+            thursday = current_date + timedelta(days=days_ahead)
+            expiry_str = f"{thursday.day:02d}{month_names[thursday.month - 1]}{str(thursday.year)[-2:]}"
+            
+            # Generate options for different strikes around ATM (300)
+            strikes = [250, 275, 300, 325, 350]
+            
+            for strike in strikes:
+                for option_type in ['CE', 'PE']:
+                    symbol = f"{underlying}{expiry_str}{strike}{option_type}"
+                    
+                    instruments.append({
+                        'instrument_token': f"1234{weeks_ahead}{strike}{ord(option_type[0])}",
+                        'exchange_token': f"567{weeks_ahead}{strike}",
+                        'tradingsymbol': symbol,
+                        'name': underlying,
+                        'last_price': 50.0 if option_type == 'CE' else 25.0,
+                        'expiry': thursday.strftime('%Y-%m-%d'),
+                        'strike': float(strike),
+                        'tick_size': 0.05,
+                        'lot_size': 1,
+                        'instrument_type': option_type,
+                        'segment': 'NFO-OPT',
+                        'exchange': 'NFO'
+                    })
+            
+            current_date = thursday + timedelta(days=1)
+        
+        logger.info(f"🧪 Generated {len(instruments)} mock instruments for {underlying}")
+        return instruments
+
+    async def get_available_expiries_for_symbol(self, underlying_symbol: str, exchange: str = "NFO") -> List[Dict]:
+        """
+        Get available expiry dates for a specific underlying symbol
+        Returns list of {date: datetime.date, formatted: str, is_weekly: bool, is_monthly: bool}
+        """
+        try:
+            # Get all instruments for the exchange
+            instruments = await self.get_instruments(exchange)
+            
+            if not instruments:
+                logger.warning(f"⚠️ No instruments data available for {underlying_symbol}")
+                return []
+            
+            # Filter options for the specific underlying
+            options_contracts = []
+            for instrument in instruments:
+                trading_symbol = instrument.get('tradingsymbol', '')
+                instrument_type = instrument.get('instrument_type', '')
+                
+                # Check if it's an option for our underlying
+                if (underlying_symbol.upper() in trading_symbol.upper() and 
+                    instrument_type in ['CE', 'PE'] and
+                    instrument.get('expiry')):
+                    
+                    options_contracts.append(instrument)
+            
+            if not options_contracts:
+                logger.warning(f"⚠️ No options contracts found for {underlying_symbol}")
+                return []
+            
+            # Extract unique expiry dates
+            expiry_dates = set()
+            for contract in options_contracts:
+                expiry_str = contract.get('expiry')
+                if expiry_str:
+                    try:
+                        # Parse expiry date (format: YYYY-MM-DD)
+                        expiry_date = datetime.strptime(expiry_str, '%Y-%m-%d').date()
+                        expiry_dates.add(expiry_date)
+                    except ValueError:
+                        continue
+            
+            # Convert to list and sort
+            sorted_expiries = sorted(list(expiry_dates))
+            
+            # Format for strategy use
+            formatted_expiries = []
+            month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+                          'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+            
+            for expiry_date in sorted_expiries:
+                # Format for Zerodha: 31JUL25
+                formatted = f"{expiry_date.day:02d}{month_names[expiry_date.month - 1]}{str(expiry_date.year)[-2:]}"
+                
+                # Determine if it's monthly (last Thursday of month)
+                next_week = expiry_date + timedelta(days=7)
+                is_monthly = next_week.month != expiry_date.month
+                
+                formatted_expiries.append({
+                    'date': expiry_date,
+                    'formatted': formatted,
+                    'is_weekly': True,
+                    'is_monthly': is_monthly
+                })
+            
+            logger.info(f"📅 Found {len(formatted_expiries)} expiries for {underlying_symbol}: {[e['formatted'] for e in formatted_expiries[:3]]}...")
+            return formatted_expiries
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting expiries for {underlying_symbol}: {e}")
+            return []
+
     def get_connection_status(self) -> Dict:
         """Get detailed connection status"""
         return {
