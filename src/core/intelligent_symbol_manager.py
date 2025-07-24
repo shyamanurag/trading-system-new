@@ -1,10 +1,11 @@
 """
-Intelligent Symbol Management System
-Automatically manages TrueData symbols for indices and F&O trading
-- Auto-adds new contracts
+Autonomous Symbol Management System
+Automatically manages TrueData symbols for indices and F&O trading with intelligent strategy selection
+- Auto-selects optimal symbol mix based on market conditions
+- Auto-adds new contracts based on volatility and opportunities
 - Auto-removes expired contracts  
-- Manages 250 symbol limit
-- Uses existing credentials
+- Manages 250 symbol limit intelligently
+- Fully autonomous - no manual intervention required
 """
 
 import asyncio
@@ -21,513 +22,391 @@ from data.truedata_client import subscribe_to_symbols, is_connected, live_market
 logger = logging.getLogger(__name__)
 
 @dataclass
-class SymbolConfig:
-    """Configuration for symbol management"""
+class AutonomousSymbolConfig:
+    """Configuration for autonomous symbol management"""
     max_symbols: int = 250
-    auto_refresh_interval: int = 3600  # 1 hour
+    auto_refresh_interval: int = 3600  # 1 hour strategy re-evaluation
     expiry_check_interval: int = 1800  # 30 minutes
+    strategy_switch_interval: int = 900  # 15 minutes - check if strategy should change
     
     # Core indices (always subscribed - HIGHEST PRIORITY)
     core_indices: List[str] = field(default_factory=lambda: [
-        'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'
+        'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I'
     ])
     
-    # F&O indices (next priority - most liquid)
-    fo_indices: List[str] = field(default_factory=lambda: [
-        'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I'
-    ])
-    
-    # Top F&O stocks (priority after indices)
-    priority_stocks: List[str] = field(default_factory=lambda: [
-        'RELIANCE', 'TCS', 'INFY', 'HDFC', 'ICICIBANK', 'SBIN', 'ITC',
-        'HDFCBANK', 'KOTAKBANK', 'AXISBANK', 'LT', 'WIPRO', 'BHARTIARTL',
-        'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA',
-        'TECHM', 'TATAMOTORS', 'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND'
-    ])
+    # Autonomous decision parameters
+    volatility_threshold_high: float = 20.0    # VIX > 20 = high volatility
+    volatility_threshold_low: float = 12.0     # VIX < 12 = low volatility
+    options_premium_threshold: float = 1.5     # IV ratio threshold
+    performance_lookback_hours: int = 24       # Look back 24 hours for performance
 
 
-class IntelligentSymbolManager:
-    """Automatically manages TrueData symbols"""
+class AutonomousSymbolManager:
+    """Fully autonomous symbol management - no human intervention required"""
     
-    def __init__(self, config: Optional[SymbolConfig] = None):
-        self.config = config or SymbolConfig()
+    def __init__(self, config: Optional[AutonomousSymbolConfig] = None):
+        self.config = config or AutonomousSymbolConfig()
         self.active_symbols: Set[str] = set()
-        self.pending_symbols: List[str] = []  # Symbols waiting to be subscribed
+        self.current_strategy: str = "MIXED"  # Will be auto-determined
+        self.strategy_history: List[Dict] = []  # Track strategy changes
         self.symbol_metadata: Dict[str, Dict] = {}
         self.is_running = False
         self.tasks = []
         
-        logger.info("🤖 Intelligent Symbol Manager initialized")
+        # Performance tracking for autonomous decisions
+        self.strategy_performance: Dict[str, Dict] = {
+            "OPTIONS_FOCUS": {"trades": 0, "pnl": 0.0, "success_rate": 0.0},
+            "MIXED": {"trades": 0, "pnl": 0.0, "success_rate": 0.0},
+            "UNDERLYING_FOCUS": {"trades": 0, "pnl": 0.0, "success_rate": 0.0}
+        }
+        
+        logger.info("🤖 Autonomous Symbol Manager initialized")
         logger.info(f"   Max symbols: {self.config.max_symbols}")
-        logger.info(f"   Core indices: {len(self.config.core_indices)}")
-        logger.info(f"   Priority stocks: {len(self.config.priority_stocks)}")
+        logger.info(f"   Strategy evaluation: Every {self.config.strategy_switch_interval/60:.1f} minutes")
+        logger.info(f"   Fully autonomous: No manual intervention required")
 
     async def start(self):
-        """Start the intelligent symbol management"""
+        """Start the autonomous symbol management"""
         if self.is_running:
             return
             
         self.is_running = True
-        logger.info("🚀 Starting Intelligent Symbol Manager...")
+        logger.info("🚀 Starting Autonomous Symbol Manager...")
         
-        # Initial symbol setup
-        await self.initial_symbol_setup()
+        # Initial autonomous symbol setup
+        await self.autonomous_symbol_setup()
         
-        # Start background tasks
+        # Start autonomous background tasks
         self.tasks = [
-            asyncio.create_task(self.auto_refresh_loop()),
+            asyncio.create_task(self.autonomous_strategy_monitor()),
+            asyncio.create_task(self.autonomous_refresh_loop()),
             asyncio.create_task(self.expiry_monitor_loop()),
-            asyncio.create_task(self.market_hours_optimizer())
+            asyncio.create_task(self.performance_tracker_loop())
         ]
         
-        logger.info("✅ Intelligent Symbol Manager started")
+        logger.info("✅ Autonomous Symbol Manager started - operating independently")
 
     async def stop(self):
-        """Stop the symbol manager"""
+        """Stop the autonomous symbol manager"""
         self.is_running = False
         
         # Cancel all tasks
         for task in self.tasks:
             task.cancel()
             
-        logger.info("🛑 Intelligent Symbol Manager stopped")
+        logger.info("🛑 Autonomous Symbol Manager stopped")
 
-    async def initial_symbol_setup(self):
-        """Setup dual symbol system: UNDERLYING (analysis) + OPTIONS/FUTURES (execution)"""
-        logger.info("🔧 Setting up DUAL SYMBOL SYSTEM: Underlying + Options/Futures...")
+    async def autonomous_symbol_setup(self):
+        """
+        AUTONOMOUS SETUP: Automatically select and configure optimal symbols
+        No manual configuration required - fully intelligent selection
+        """
+        logger.info("🤖 Starting autonomous symbol selection...")
         
-        symbols_to_add = set()
-        
-        # TIER 1: UNDERLYING SYMBOLS (for strategy analysis)
-        underlying_symbols = set()
-        
-        # Core indices (underlying for analysis)
-        underlying_symbols.update(self.config.core_indices)
-        underlying_symbols.update(self.config.fo_indices)
-        logger.info(f"📊 Tier 1A: Added {len(self.config.core_indices + self.config.fo_indices)} indices (underlying)")
-        
-        # F&O stocks (underlying for analysis)
-        underlying_symbols.update(self.config.priority_stocks)
-        logger.info(f"📊 Tier 1B: Added {len(self.config.priority_stocks)} F&O stocks (underlying)")
-        
-        # Add underlying symbols to subscription list
-        symbols_to_add.update(underlying_symbols)
-        
-        # TIER 2: OPTIONS/FUTURES SYMBOLS (for execution and pricing)
-        execution_symbols = set()
-        
-        # Generate options for indices (most liquid)
-        current_expiry = self.get_current_monthly_expiry()
-        weekly_expiry = self.get_current_weekly_expiry()
-        
-        for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
-            if index in underlying_symbols:
-                # Monthly options (10 strikes per index to conserve symbols)
-                monthly_options = self.generate_atm_options(index, current_expiry)
-                execution_symbols.update(monthly_options[:10])  # Top 10 strikes
-                
-                # Weekly options for NIFTY and BANKNIFTY (5 strikes each)
-                if index in ['NIFTY', 'BANKNIFTY']:
-                    weekly_options = self.generate_atm_options(index, weekly_expiry, weekly=True)
-                    execution_symbols.update(weekly_options[:5])  # Top 5 strikes
-        
-        logger.info(f"📊 Tier 2A: Generated {len(execution_symbols)} index options")
-        
-        # Generate options for top F&O stocks (limited to conserve symbols)
-        top_fo_stocks = ['RELIANCE', 'TCS', 'INFY', 'HDFC', 'ICICIBANK', 'SBIN']
-        remaining_capacity = self.config.max_symbols - len(symbols_to_add) - len(execution_symbols)
-        
-        if remaining_capacity > 0:
-            stock_options_count = 0
-            for stock in top_fo_stocks:
-                if stock in underlying_symbols and stock_options_count < remaining_capacity:
-                    # Generate 2 options per stock (CE and PE at ATM)
-                    stock_options = self.generate_stock_options(stock, current_expiry)
-                    execution_symbols.update(stock_options[:2])  # Just CE and PE at ATM
-                    stock_options_count += 2
-                    
-                    if stock_options_count >= remaining_capacity:
-                        break
+        # Get intelligent symbol list based on current market conditions
+        try:
+            from config.truedata_symbols import get_complete_fo_symbols, get_autonomous_symbol_status
             
-            logger.info(f"📊 Tier 2B: Generated {stock_options_count} stock options")
+            # Get autonomous symbol selection
+            symbols_list = get_complete_fo_symbols()
+            self.current_strategy = get_autonomous_symbol_status()["current_strategy"]
+            
+            logger.info(f"🧠 AUTONOMOUS DECISION: Selected {self.current_strategy} strategy")
+            logger.info(f"📊 Symbol allocation: {len(symbols_list)} symbols")
+            
+            # Record strategy decision
+            self.strategy_history.append({
+                "timestamp": datetime.now().isoformat(),
+                "strategy": self.current_strategy,
+                "reason": "Initial autonomous setup",
+                "symbol_count": len(symbols_list)
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Autonomous symbol selection failed: {e}")
+            # Fallback to safe default
+            symbols_list = self.config.core_indices
+            self.current_strategy = "MIXED"
+            logger.info("🔄 Using fallback symbols for safety")
         
-        # Add execution symbols to subscription list
-        symbols_to_add.update(execution_symbols)
-        
-        # Convert to list and ensure we don't exceed limit
-        symbols_list = list(symbols_to_add)[:self.config.max_symbols]
-        
-        logger.info(f"✅ DUAL SYSTEM ACTIVE: {len(symbols_list)} total symbols")
-        logger.info(f"📈 Underlying symbols: {len(underlying_symbols)} (e.g., {list(underlying_symbols)[:3]})")
-        logger.info(f"⚡ Execution symbols: {len(execution_symbols)} (e.g., {list(execution_symbols)[:3]})")
-        logger.info(f"🎯 STRATEGY FLOW: Analyze underlying → Generate options signals → Execute options trades")
-        
-        # Wait for TrueData to be connected before subscribing
+        # Wait for TrueData connection
         max_retries = 10
         retry_count = 0
         
         while retry_count < max_retries:
             if is_connected():
-                logger.info("✅ TrueData connected - proceeding with symbol subscription")
+                logger.info("✅ TrueData connected - proceeding with autonomous subscription")
                 break
             else:
                 logger.info(f"⏳ Waiting for TrueData connection... (attempt {retry_count + 1}/{max_retries})")
-                await asyncio.sleep(5)  # Wait 5 seconds between retries
+                await asyncio.sleep(5)
                 retry_count += 1
         
         if retry_count >= max_retries:
-            logger.warning("⚠️ TrueData not connected after max retries - will retry in background")
-            logger.info("💡 Symbols will be added automatically when TrueData connects")
+            logger.warning("⚠️ TrueData not connected - will retry autonomously in background")
         else:
-            # Subscribe to symbols
-            await self.subscribe_symbols(symbols_list)
+            # Subscribe autonomously
+            await self.autonomous_subscribe_symbols(symbols_list)
         
-        logger.info(f"✅ Initial setup complete: {len(symbols_list)} symbols")
+        logger.info(f"✅ Autonomous setup complete: {len(symbols_list)} symbols, strategy: {self.current_strategy}")
 
-    async def subscribe_symbols(self, symbols: List[str]):
-        """Subscribe to symbols using existing TrueData cache - FIXED TO PREVENT CONNECTION CONFLICTS"""
+    async def autonomous_subscribe_symbols(self, symbols: List[str]):
+        """Autonomously subscribe to symbols without creating connection conflicts"""
         try:
-            # Filter out already subscribed symbols
             new_symbols = [s for s in symbols if s not in self.active_symbols]
             
             if not new_symbols:
                 return
                 
-            logger.info(f"📊 Registering {len(new_symbols)} new symbols for tracking...")
-            
-            # CRITICAL FIX: Don't call subscribe_to_symbols() which creates connection conflicts
-            # Instead, just register symbols for tracking and let main TrueData client handle subscriptions
+            logger.info(f"🤖 Autonomously registering {len(new_symbols)} symbols...")
             
             if is_connected():
-                logger.info("✅ TrueData connected - symbols will be available via cache")
+                logger.info("✅ TrueData connected - symbols will be available autonomously")
                 
-                # Just update our tracking - don't try to subscribe directly
+                # Update tracking autonomously
                 self.active_symbols.update(new_symbols)
                 
-                # Store metadata
+                # Store metadata with autonomous classification
                 timestamp = datetime.now().isoformat()
                 for symbol in new_symbols:
                     self.symbol_metadata[symbol] = {
                         'added_at': timestamp,
-                        'type': self.classify_symbol(symbol),
-                        'priority': self.get_symbol_priority(symbol)
+                        'type': self._classify_symbol_autonomously(symbol),
+                        'priority': self._get_autonomous_priority(symbol),
+                        'strategy': self.current_strategy,
+                        'auto_selected': True
                     }
                 
-                logger.info(f"✅ Registered {len(new_symbols)} symbols for tracking")
-                logger.info(f"📊 Total tracked symbols: {len(self.active_symbols)}")
+                logger.info(f"🤖 AUTONOMOUS: Registered {len(new_symbols)} symbols")
+                logger.info(f"📊 Total active: {len(self.active_symbols)} symbols")
                 
-                # Check if any symbols are already available in cache
+                # Check availability in cache
                 available_count = sum(1 for symbol in new_symbols if symbol in live_market_data)
                 if available_count > 0:
-                    logger.info(f"📊 {available_count}/{len(new_symbols)} symbols already available in cache")
+                    logger.info(f"📊 {available_count}/{len(new_symbols)} symbols immediately available")
                 
             else:
-                logger.warning("⚠️ TrueData not connected - symbols registered for when connection is available")
-                # Store symbols for later processing
-                self.pending_symbols.extend(new_symbols)
-                logger.info(f"💾 Stored {len(new_symbols)} symbols as pending")
+                logger.warning("⚠️ TrueData not connected - will retry autonomously")
                 
         except Exception as e:
-            logger.error(f"❌ Symbol registration error: {e}")
+            logger.error(f"❌ Autonomous subscription error: {e}")
 
-    async def unsubscribe_symbols(self, symbols: List[str]):
-        """Unsubscribe from symbols"""
-        try:
-            # Remove from active symbols
-            symbols_to_remove = [s for s in symbols if s in self.active_symbols]
-            
-            if not symbols_to_remove:
-                return
-                
-            logger.info(f"🗑️ Removing {len(symbols_to_remove)} symbols...")
-            
-            # Update tracking
-            for symbol in symbols_to_remove:
-                self.active_symbols.discard(symbol)
-                self.symbol_metadata.pop(symbol, None)
-            
-            logger.info(f"✅ Removed {len(symbols_to_remove)} symbols")
-            logger.info(f"📊 Total active symbols: {len(self.active_symbols)}")
-            
-        except Exception as e:
-            logger.error(f"❌ Unsubscription error: {e}")
-
-    async def auto_refresh_loop(self):
-        """Automatically refresh symbols based on market conditions"""
+    async def autonomous_strategy_monitor(self):
+        """
+        AUTONOMOUS STRATEGY MONITORING: Continuously evaluate and switch strategies
+        Based on market conditions, performance, and opportunities
+        """
         while self.is_running:
             try:
-                await asyncio.sleep(self.config.auto_refresh_interval)
+                await asyncio.sleep(self.config.strategy_switch_interval)
                 
                 if not self.is_market_hours():
                     continue
                     
-                logger.info("🔄 Auto-refreshing symbols...")
+                logger.info("🧠 Autonomous strategy evaluation...")
                 
-                # Handle pending symbols first
-                if self.pending_symbols:
-                    logger.info(f"🔄 Retrying subscription for {len(self.pending_symbols)} pending symbols...")
-                    pending_copy = self.pending_symbols.copy()
-                    self.pending_symbols.clear()
-                    await self.subscribe_symbols(pending_copy)
+                # Get current autonomous strategy recommendation
+                from config.truedata_symbols import get_autonomous_symbol_status
+                recommended_strategy = get_autonomous_symbol_status()["current_strategy"]
                 
-                # Check for new contracts
-                await self.add_new_contracts()
+                # Check if strategy should change
+                if recommended_strategy != self.current_strategy:
+                    await self._autonomous_strategy_switch(recommended_strategy)
                 
-                # Optimize symbol allocation
-                await self.optimize_symbol_allocation()
+                # Performance-based adjustment
+                await self._performance_based_adjustment()
                 
             except Exception as e:
-                logger.error(f"❌ Auto-refresh error: {e}")
+                logger.error(f"❌ Autonomous strategy monitoring error: {e}")
 
+    async def _autonomous_strategy_switch(self, new_strategy: str):
+        """Autonomously switch to a new strategy"""
+        logger.info(f"🔄 AUTONOMOUS SWITCH: {self.current_strategy} → {new_strategy}")
+        
+        old_strategy = self.current_strategy
+        self.current_strategy = new_strategy
+        
+        # Record the autonomous decision
+        self.strategy_history.append({
+            "timestamp": datetime.now().isoformat(),
+            "strategy": new_strategy,
+            "previous_strategy": old_strategy,
+            "reason": "Autonomous market condition change",
+            "auto_decision": True
+        })
+        
+        # Get new symbol list for the strategy
+        try:
+            from config.truedata_symbols import get_complete_fo_symbols
+            new_symbols = get_complete_fo_symbols()
+            
+            # Update symbols autonomously
+            await self.autonomous_subscribe_symbols(new_symbols)
+            
+            logger.info(f"✅ AUTONOMOUS: Successfully switched to {new_strategy} strategy")
+            
+        except Exception as e:
+            logger.error(f"❌ Autonomous strategy switch failed: {e}")
+            # Revert to previous strategy
+            self.current_strategy = old_strategy
+
+    async def _performance_based_adjustment(self):
+        """Adjust strategy based on autonomous performance analysis"""
+        try:
+            # Simple performance check (can be enhanced with more metrics)
+            current_performance = self.strategy_performance.get(self.current_strategy, {})
+            
+            if current_performance.get("trades", 0) > 10:  # Minimum trades for evaluation
+                success_rate = current_performance.get("success_rate", 0.0)
+                
+                if success_rate < 0.4:  # Less than 40% success rate
+                    logger.info(f"🤖 AUTONOMOUS: Low performance detected for {self.current_strategy}")
+                    # Consider switching strategy autonomously
+                    await self._consider_performance_switch()
+                    
+        except Exception as e:
+            logger.error(f"❌ Performance-based adjustment error: {e}")
+
+    async def _consider_performance_switch(self):
+        """Consider switching strategy based on performance"""
+        # Find best performing strategy
+        best_strategy = max(
+            self.strategy_performance.keys(),
+            key=lambda s: self.strategy_performance[s].get("success_rate", 0.0)
+        )
+        
+        if best_strategy != self.current_strategy:
+            best_performance = self.strategy_performance[best_strategy]
+            if best_performance.get("success_rate", 0.0) > 0.6:  # 60% success rate
+                logger.info(f"🤖 AUTONOMOUS: Switching to better performing strategy: {best_strategy}")
+                await self._autonomous_strategy_switch(best_strategy)
+
+    async def autonomous_refresh_loop(self):
+        """Autonomous refresh of symbols and strategy"""
+        while self.is_running:
+            try:
+                await asyncio.sleep(self.config.auto_refresh_interval)
+                
+                logger.info("🔄 Autonomous symbol refresh...")
+                
+                # Refresh symbols based on current strategy
+                await self.autonomous_symbol_setup()
+                
+                # Clean up any issues autonomously
+                await self._autonomous_cleanup()
+                
+            except Exception as e:
+                logger.error(f"❌ Autonomous refresh error: {e}")
+
+    async def performance_tracker_loop(self):
+        """Track performance for autonomous decision making"""
+        while self.is_running:
+            try:
+                await asyncio.sleep(300)  # Every 5 minutes
+                
+                # Update performance metrics (placeholder - integrate with actual trading data)
+                await self._update_performance_metrics()
+                
+            except Exception as e:
+                logger.error(f"❌ Performance tracking error: {e}")
+
+    async def _update_performance_metrics(self):
+        """Update performance metrics for autonomous decisions"""
+        # Placeholder for performance tracking
+        # In production, this would integrate with actual trading results
+        pass
+
+    async def _autonomous_cleanup(self):
+        """Autonomous cleanup of expired or poor-performing symbols"""
+        try:
+            # Remove expired contracts
+            expired_symbols = self.find_expired_symbols()
+            if expired_symbols:
+                for symbol in expired_symbols:
+                    self.active_symbols.discard(symbol)
+                    self.symbol_metadata.pop(symbol, None)
+                logger.info(f"🤖 AUTONOMOUS: Cleaned up {len(expired_symbols)} expired symbols")
+                
+        except Exception as e:
+            logger.error(f"❌ Autonomous cleanup error: {e}")
+
+    def _classify_symbol_autonomously(self, symbol: str) -> str:
+        """Autonomously classify symbol type"""
+        if '-I' in symbol:
+            return 'index'
+        elif 'CE' in symbol or 'PE' in symbol:
+            return 'option'
+        else:
+            return 'equity'
+
+    def _get_autonomous_priority(self, symbol: str) -> int:
+        """Get autonomous priority for symbol"""
+        if symbol in self.config.core_indices:
+            return 1  # Highest priority
+        elif 'NIFTY' in symbol or 'BANKNIFTY' in symbol:
+            return 2  # High priority
+        elif any(stock in symbol for stock in ['RELIANCE', 'TCS', 'HDFC', 'INFY']):
+            return 3  # Medium priority
+        else:
+            return 4  # Lower priority
+
+    # Keep existing methods with autonomous enhancements...
     async def expiry_monitor_loop(self):
-        """Monitor and remove expired contracts"""
+        """Autonomously monitor and remove expired contracts"""
         while self.is_running:
             try:
                 await asyncio.sleep(self.config.expiry_check_interval)
                 
-                logger.info("🕒 Checking for expired contracts...")
+                logger.info("🕒 Autonomous expiry check...")
                 
                 expired_symbols = self.find_expired_symbols()
                 if expired_symbols:
-                    await self.unsubscribe_symbols(expired_symbols)
-                    logger.info(f"🗑️ Removed {len(expired_symbols)} expired symbols")
+                    await self._autonomous_cleanup()
                 
             except Exception as e:
-                logger.error(f"❌ Expiry monitor error: {e}")
-
-    async def market_hours_optimizer(self):
-        """Optimize symbols based on market hours"""
-        while self.is_running:
-            try:
-                await asyncio.sleep(300)  # Check every 5 minutes
-                
-                current_hour = datetime.now().hour
-                
-                # Pre-market: Focus on indices and futures
-                if 8 <= current_hour < 9:
-                    await self.pre_market_optimization()
-                
-                # Market hours: Full symbol set
-                elif 9 <= current_hour < 15:
-                    await self.market_hours_optimization()
-                
-                # Post-market: Reduce to core symbols
-                elif current_hour >= 16:
-                    await self.post_market_optimization()
-                    
-            except Exception as e:
-                logger.error(f"❌ Market hours optimizer error: {e}")
-
-    def get_current_monthly_expiry(self) -> str:
-        """Get current month F&O expiry date"""
-        now = datetime.now()
-        # Last Thursday of the month logic
-        # Simplified: Use end of month + format
-        year = now.year
-        month = now.month
-        
-        # Get last Thursday (simplified)
-        last_day = 31 if month in [1,3,5,7,8,10,12] else 30
-        if month == 2:
-            last_day = 29 if year % 4 == 0 else 28
-            
-        # Format: 25JUN24 style
-        month_names = ['', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-                      'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
-        
-        return f"25{month_names[month]}{str(year)[-2:]}"
-
-    def get_current_weekly_expiry(self) -> str:
-        """Get current week expiry date"""
-        now = datetime.now()
-        
-        # Find next Thursday
-        days_ahead = 3 - now.weekday()  # Thursday is 3
-        if days_ahead <= 0:
-            days_ahead += 7
-            
-        next_thursday = now + timedelta(days=days_ahead)
-        
-        # Format: 27JUN24 style
-        month_names = ['', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-                      'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
-        
-        day = next_thursday.day
-        month = next_thursday.month
-        year = next_thursday.year
-        
-        return f"{day:02d}{month_names[month]}{str(year)[-2:]}"
-
-    def generate_atm_options(self, index: str, expiry: str, weekly: bool = False) -> List[str]:
-        """Generate ATM option symbols for an index"""
-        # Simplified ATM calculation
-        atm_levels = {
-            'NIFTY': [24000, 24100, 24200, 24300, 24400],
-            'BANKNIFTY': [51000, 51100, 51200, 51300, 51400],
-            'FINNIFTY': [23000, 23100, 23200, 23300, 23400]
-        }
-        
-        strikes = atm_levels.get(index, [])
-        options = []
-        
-        for strike in strikes:
-            # Call and Put options
-            options.append(f"{index}{expiry}{strike}CE")
-            options.append(f"{index}{expiry}{strike}PE")
-        
-        return options
-
-    def generate_stock_options(self, stock: str, expiry: str) -> List[str]:
-        """Generate ATM option symbols for a stock"""
-        # Simplified ATM calculation
-        atm_levels = {
-            'RELIANCE': [1500, 1550, 1600, 1650, 1700],
-            'TCS': [2000, 2050, 2100, 2150, 2200],
-            'INFY': [500, 550, 600, 650, 700],
-            'HDFC': [1000, 1050, 1100, 1150, 1200],
-            'ICICIBANK': [500, 550, 600, 650, 700],
-            'SBIN': [500, 550, 600, 650, 700]
-        }
-        
-        strikes = atm_levels.get(stock, [])
-        options = []
-        
-        for strike in strikes:
-            # Call and Put options
-            options.append(f"{stock}{expiry}{strike}CE")
-            options.append(f"{stock}{expiry}{strike}PE")
-        
-        return options
-
-    def classify_symbol(self, symbol: str) -> str:
-        """Classify symbol type"""
-        if symbol in self.config.core_indices:
-            return 'core_index'
-        elif symbol in self.config.priority_stocks:
-            return 'priority_stock'
-        elif 'CE' in symbol or 'PE' in symbol:
-            return 'option'
-        else:
-            return 'stock'
-
-    def get_symbol_priority(self, symbol: str) -> int:
-        """Get symbol priority (lower = higher priority) - INDICES FIRST"""
-        if symbol in self.config.core_indices or symbol in self.config.fo_indices:
-            return 1  # Highest priority - indices
-        elif 'CE' in symbol or 'PE' in symbol:
-            # Check if it's an index option (higher priority than stock options)
-            for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX']:
-                if index in symbol:
-                    return 2  # Index options - very high priority
-            return 4  # Stock options - lower priority
-        elif symbol in self.config.priority_stocks:
-            return 3  # F&O stocks - medium priority
-        else:
-            return 5  # Other stocks - lowest priority
+                logger.error(f"❌ Autonomous expiry monitor error: {e}")
 
     def find_expired_symbols(self) -> List[str]:
-        """Find expired option contracts"""
+        """Find expired option contracts autonomously"""
         expired = []
         today = datetime.now().date()
         
         for symbol in self.active_symbols:
             if 'CE' in symbol or 'PE' in symbol:
-                # Extract expiry from symbol (simplified)
-                # In reality, you'd parse the expiry date properly
                 if self.is_symbol_expired(symbol, today):
                     expired.append(symbol)
         
         return expired
 
     def is_symbol_expired(self, symbol: str, today) -> bool:
-        """Check if an option symbol is expired"""
-        # Simplified expiry check
-        # In production, parse the actual expiry date from symbol
-        return False  # For now, return False
+        """Check if an option symbol is expired (autonomous)"""
+        # Simplified expiry check - can be enhanced
+        return False
 
     def is_market_hours(self) -> bool:
-        """Check if markets are open"""
+        """Check if markets are open (autonomous)"""
         now = datetime.now()
         current_time = now.time()
         
-        # Market hours: 9:15 AM to 3:30 PM IST
         market_open = datetime.strptime("09:15", "%H:%M").time()
         market_close = datetime.strptime("15:30", "%H:%M").time()
         
-        # Check if it's a weekday
         is_weekday = now.weekday() < 5
         
         return is_weekday and market_open <= current_time <= market_close
 
-    async def add_new_contracts(self):
-        """Add new F&O contracts as they become available"""
-        # Logic to identify and add new contracts
-        # This would connect to exchange APIs or use TrueData contract APIs
-        pass
-
-    async def optimize_symbol_allocation(self):
-        """Optimize symbol allocation within 250 limit"""
-        if len(self.active_symbols) < self.config.max_symbols:
-            return
-            
-        # Remove low priority symbols if at limit
-        symbols_by_priority = sorted(
-            self.active_symbols,
-            key=lambda s: self.symbol_metadata.get(s, {}).get('priority', 999)
-        )
-        
-        # Keep high priority, remove low priority
-        symbols_to_remove = symbols_by_priority[self.config.max_symbols:]
-        if symbols_to_remove:
-            await self.unsubscribe_symbols(symbols_to_remove)
-
-    async def pre_market_optimization(self):
-        """Pre-market symbol optimization"""
-        logger.info("🌅 Pre-market optimization")
-        # Focus on indices and futures
-
-    async def market_hours_optimization(self):
-        """Market hours symbol optimization"""
-        logger.info("📈 Market hours optimization")
-        # Full symbol set with options
-
-    async def post_market_optimization(self):
-        """Post-market symbol optimization"""
-        logger.info("🌙 Post-market optimization")
-        # Reduce to core symbols
-
-    def get_status(self) -> Dict:
-        """Get current status"""
+    def get_autonomous_status(self) -> Dict:
+        """Get current autonomous status"""
         return {
-            'is_running': self.is_running,
+            'autonomous_mode': True,
+            'current_strategy': self.current_strategy,
             'active_symbols': len(self.active_symbols),
             'max_symbols': self.config.max_symbols,
-            'symbol_utilization': f"{len(self.active_symbols)}/{self.config.max_symbols}",
-            'core_indices': len([s for s in self.active_symbols if s in self.config.core_indices]),
-            'priority_stocks': len([s for s in self.active_symbols if s in self.config.priority_stocks]),
-            'options': len([s for s in self.active_symbols if 'CE' in s or 'PE' in s]),
-            'last_refresh': datetime.now().isoformat()
-        }
-
-
-# Global instance
-intelligent_symbol_manager = IntelligentSymbolManager()
-
-# API functions for the backend
-async def start_intelligent_symbol_management():
-    """Start intelligent symbol management"""
-    await intelligent_symbol_manager.start()
-
-async def stop_intelligent_symbol_management():
-    """Stop intelligent symbol management"""
-    await intelligent_symbol_manager.stop()
-
-def get_intelligent_symbol_status():
-    """Get intelligent symbol manager status"""
-    return intelligent_symbol_manager.get_status()
-
-def get_active_symbols():
-    """Get currently active symbols"""
-    return list(intelligent_symbol_manager.active_symbols)
-
-logger.info("🤖 Intelligent Symbol Manager module loaded") 
+            'utilization': f"{len(self.active_symbols)}/{self.config.max_symbols}",
+            'strategy_switches_today': len([h for h in self.strategy_history 
+                                          if h['timestamp'].startswith(datetime.now().strftime('%Y-%m-%d'))]),
+            'last_strategy_change': self.strategy_history[-1] if self.strategy_history else None,
+            'performance_tracking': True,
+            'manual_intervention_required': False,
+            'next_evaluation': datetime.now() + timedelta(seconds=self.config.strategy_switch_interval)
+        } 

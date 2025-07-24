@@ -1547,129 +1547,93 @@ class TradingOrchestrator:
         transformed_data = {}
         
         try:
-            # CRITICAL FIX: Filter to send only UNDERLYING symbols to strategies
-            # Strategies will convert these to options internally via _convert_to_options_symbol()
-            underlying_symbols = self._get_underlying_symbols_for_strategies()
+            # CRITICAL FIX: Use DYNAMIC underlying symbols from autonomous symbol manager
+            underlying_symbols = self._get_dynamic_underlying_symbols_for_strategies()
             
-            self.logger.info(f"🔍 Filtering {len(raw_data)} symbols → {len(underlying_symbols)} underlying symbols for strategies")
+            self.logger.info(f"🔍 Filtering {len(raw_data)} symbols → {len(underlying_symbols)} DYNAMIC underlying symbols for strategies")
             
             for symbol, data in raw_data.items():
                 try:
-                    # CRITICAL FILTER: Only process underlying symbols for strategies
+                    # DYNAMIC FILTERING: Only process symbols that are in our autonomous underlying list
                     if symbol not in underlying_symbols:
-                        # Skip options symbols, futures, etc. - strategies don't analyze these directly
-                        continue
+                        continue  # Skip symbols not in our dynamic underlying list
                     
-                    # Extract price data with fallbacks
-                    current_price = data.get('ltp', data.get('close', data.get('price', 0)))
-                    volume = data.get('volume', 0)
-                    
-                    # Skip if no valid price data
-                    if not current_price or current_price <= 0:
-                        continue
-                    
-                    # Extract OHLC data
-                    high = data.get('high', current_price)
-                    low = data.get('low', current_price)
-                    open_price = data.get('open', current_price)
-                    
-                    # CRITICAL FIX: Use TrueData's changeper directly for price_change
-                    price_change = data.get('changeper', 0)
-                    
-                    # CRITICAL FIX: Safe volume change calculation with proper error handling
-                    volume_change = 0
-                    try:
-                        if symbol in self.market_data_history:
-                            prev_data = self.market_data_history[symbol]
-                            prev_volume = prev_data.get('volume', 0)
-                            
-                            if prev_volume > 0 and volume > 0:
-                                volume_change = ((volume - prev_volume) / prev_volume) * 100
-                        else:
-                            # CRITICAL FIX: Initialize with INTELLIGENT volume estimation for first cycle
-                            # Use TrueData's volume patterns to estimate meaningful volume change
-                            # This enables strategies to generate high-confidence signals from start
-                            
-                            # Get volume trend from TrueData data patterns
-                            raw_volume_data = data.get('volume', 0)
-                            day_volume = data.get('ttq', data.get('total_traded_quantity', raw_volume_data))
-                            
-                            # Calculate volume intensity based on current trading activity
-                            if day_volume and raw_volume_data:
-                                volume_intensity_ratio = raw_volume_data / max(day_volume, 1)
-                                
-                                # Estimate volume change based on market activity patterns
-                                if volume_intensity_ratio > 0.8:  # High activity
-                                    volume_change = min(40 + (volume_intensity_ratio * 20), 80)  # 40-80% range
-                                elif volume_intensity_ratio > 0.5:  # Moderate activity
-                                    volume_change = min(20 + (volume_intensity_ratio * 25), 50)  # 20-50% range
-                                elif volume_intensity_ratio > 0.2:  # Low-moderate activity
-                                    volume_change = min(10 + (volume_intensity_ratio * 15), 30)  # 10-30% range
-                                else:  # Very low activity
-                                    volume_change = max(5, volume_intensity_ratio * 20)  # 5-20% range
-                                
-                                self.logger.info(f"✅ {symbol}: Intelligent volume initialization: {volume_change:.1f}% (intensity: {volume_intensity_ratio:.2f})")
-                            else:
-                                # Fallback: Use changeper as volume activity indicator
-                                price_momentum = abs(float(data.get('changeper', 0)))
-                                if price_momentum > 1.5:  # Strong price movement
-                                    volume_change = 35.0  # Assume high volume with strong moves
-                                elif price_momentum > 0.8:  # Moderate price movement
-                                    volume_change = 25.0  # Assume moderate volume
-                                elif price_momentum > 0.3:  # Weak price movement
-                                    volume_change = 15.0  # Assume low volume
-                                else:  # Minimal movement
-                                    volume_change = 8.0   # Minimal volume change
-                                    
-                                self.logger.info(f"✅ {symbol}: Volume estimated from price momentum: {volume_change:.1f}% (price_change: {price_momentum:.2f}%)")
-                                
-                            # Initialize history for next comparison with CURRENT data only
-                            self.market_data_history[symbol] = {
-                                'close': current_price,
-                                'volume': volume,  # Use actual current volume, not fake historical
-                                'timestamp': current_time.isoformat()
-                            }
-                    except Exception as ve:
-                        # If volume calculation fails, set to 0 but don't fail entire transformation
-                        volume_change = 0
-                        self.logger.warning(f"Volume calculation failed for {symbol}: {ve}")
-                    
-                    # Create strategy-compatible data format
-                    strategy_data = {
-                        'symbol': symbol,
-                        'close': current_price,
-                        'ltp': current_price,
-                        'high': high,
-                        'low': low,
-                        'open': open_price,
-                        'volume': volume,
-                        'price_change': round(float(price_change), 4),  # CRITICAL: Ensure float conversion
-                        'volume_change': round(float(volume_change), 4),  # CRITICAL: Ensure float conversion
-                        'timestamp': data.get('timestamp', current_time.isoformat()),
-                        'change': data.get('change', 0),
-                        'changeper': float(price_change),
-                        'bid': data.get('bid', 0),
-                        'ask': data.get('ask', 0),
-                        'data_quality': data.get('data_quality', {}),
-                        'source': data.get('source', 'TrueData')
-                    }
-                    
-                    transformed_data[symbol] = strategy_data
-                    
-                    # Update historical data for next comparison
-                    self.market_data_history[symbol] = {
-                        'close': current_price,
-                        'volume': volume,
-                        'timestamp': current_time.isoformat()
-                    }
-                    self.last_data_update[symbol] = current_time
-                
-                except Exception as se:
-                    # Log symbol-specific errors but continue with other symbols
-                    self.logger.warning(f"Failed to transform data for {symbol}: {se}")
+                    # Convert TrueData format to strategy format
+                    if isinstance(data, dict):
+                        # Extract price data with multiple fallbacks
+                        ltp = data.get('ltp', data.get('price', data.get('last_price', 0)))
+                        if not ltp or ltp <= 0:
+                            continue
+                        
+                        # Extract volume with multiple fallbacks
+                        volume = 0
+                        volume_fields = ['volume', 'ttq', 'total_traded_quantity', 'vol', 'day_volume']
+                        for field in volume_fields:
+                            vol = data.get(field, 0)
+                            if vol and vol > 0:
+                                volume = int(vol)
+                                break
+                        
+                        # Calculate volume change (required for strategies)
+                        prev_volume = self.market_data_history.get(symbol, {}).get('volume', 0)
+                        volume_change = volume - prev_volume if prev_volume > 0 else 0
+                        volume_change_percent = (volume_change / prev_volume * 100) if prev_volume > 0 else 0
+                        
+                        # Store current data for next comparison
+                        if symbol not in self.market_data_history:
+                            self.market_data_history[symbol] = {}
+                        self.market_data_history[symbol]['volume'] = volume
+                        
+                        # Extract OHLC data with fallbacks
+                        ohlc = {
+                            'open': data.get('open', ltp),
+                            'high': data.get('high', ltp),
+                            'low': data.get('low', ltp),
+                            'close': ltp
+                        }
+                        
+                        # Extract bid/ask with fallbacks
+                        bid = data.get('bid', data.get('best_bid', ltp * 0.999))
+                        ask = data.get('ask', data.get('best_ask', ltp * 1.001))
+                        
+                        # Calculate spread
+                        spread = ask - bid if ask > bid else 0
+                        spread_percent = (spread / ltp * 100) if ltp > 0 else 0
+                        
+                        # Create strategy-compatible data structure
+                        strategy_data = {
+                            'symbol': symbol,
+                            'price': float(ltp),
+                            'ltp': float(ltp),
+                            'volume': volume,
+                            'volume_change': volume_change,
+                            'volume_change_percent': volume_change_percent,
+                            'bid': float(bid),
+                            'ask': float(ask),
+                            'spread': spread,
+                            'spread_percent': spread_percent,
+                            'open': float(ohlc['open']),
+                            'high': float(ohlc['high']),
+                            'low': float(ohlc['low']),
+                            'close': float(ohlc['close']),
+                            'timestamp': current_time.isoformat(),
+                            'data_source': 'truedata',
+                            'market_depth': data.get('market_depth', {}),
+                            'raw_data': data  # Include raw data for debugging
+                        }
+                        
+                        # Add to transformed data
+                        transformed_data[symbol] = strategy_data
+                        
+                        self.logger.debug(f"📊 Transformed {symbol}: ₹{ltp:,.2f} | Vol: {volume:,} (+{volume_change_percent:.1f}%)")
+                        
+                    else:
+                        self.logger.warning(f"⚠️ Invalid data format for {symbol}: {type(data)}")
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Error transforming data for {symbol}: {e}")
                     continue
             
-            self.logger.info(f"🔧 Transformed {len(transformed_data)} UNDERLYING symbols for strategy analysis")
             self.logger.info(f"📊 Strategy symbols: {list(transformed_data.keys())[:5]}...")
             self.logger.info(f"🎯 Options symbols remain available in TrueData cache for execution pricing")
             return transformed_data
@@ -1679,26 +1643,39 @@ class TradingOrchestrator:
             # CRITICAL FIX: Instead of returning raw_data, return empty dict to force retry
             return {}
     
-    def _get_underlying_symbols_for_strategies(self) -> set:
-        """Get list of underlying symbols that should be sent to strategies for analysis"""
+    def _get_dynamic_underlying_symbols_for_strategies(self) -> set:
+        """Get DYNAMIC list of underlying symbols from autonomous symbol manager"""
         underlying_symbols = set()
         
-        # Core indices (underlying for analysis)
-        core_indices = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX']
-        fo_indices = ['NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I']
-        underlying_symbols.update(core_indices)
-        underlying_symbols.update(fo_indices)
+        try:
+            # DYNAMIC APPROACH: Get current symbols from autonomous symbol manager
+            from config.truedata_symbols import get_autonomous_symbol_status, get_complete_fo_symbols
+            
+            # Get current autonomous strategy and symbols
+            status = get_autonomous_symbol_status()
+            current_strategy = status.get("current_strategy", "MIXED")
+            
+            # Get all symbols from current autonomous selection
+            all_symbols = get_complete_fo_symbols()
+            
+            # Filter to get only underlying symbols (not options contracts)
+            for symbol in all_symbols:
+                # Include if it's an underlying symbol (not an options contract)
+                if not ('CE' in symbol or 'PE' in symbol):
+                    underlying_symbols.add(symbol)
+            
+            self.logger.info(f"🤖 DYNAMIC UNDERLYING: {len(underlying_symbols)} symbols from autonomous strategy: {current_strategy}")
+            self.logger.debug(f"📋 Sample underlying symbols: {list(underlying_symbols)[:10]}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to get dynamic underlying symbols: {e}")
+            # Fallback to core indices only
+            underlying_symbols = {
+                'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
+                'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK'
+            }
+            self.logger.warning(f"🔄 Using fallback underlying symbols: {len(underlying_symbols)} symbols")
         
-        # F&O stocks (underlying for analysis)
-        priority_stocks = [
-            'RELIANCE', 'TCS', 'INFY', 'HDFC', 'ICICIBANK', 'SBIN', 'ITC',
-            'HDFCBANK', 'KOTAKBANK', 'AXISBANK', 'LT', 'WIPRO', 'BHARTIARTL',
-            'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA',
-            'TECHM', 'TATAMOTORS', 'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND'
-        ]
-        underlying_symbols.update(priority_stocks)
-        
-        self.logger.debug(f"📋 Underlying symbols for strategies: {len(underlying_symbols)} symbols")
         return underlying_symbols
 
     async def _load_strategies(self):

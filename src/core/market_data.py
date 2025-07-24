@@ -37,38 +37,54 @@ class MarketDataManager:
     """Market data manager that provides real-time market data"""
     
     def __init__(self, symbols: Optional[List[str]] = None, config: Dict[str, Any] = None):
-        """Initialize with EXPANDED F&O symbol set (50+ symbols, expandable to 250)"""
-        # Use expanded symbol list from config
+        """Initialize with DYNAMIC F&O symbol set from autonomous symbol manager"""
+        # Use DYNAMIC symbol list from autonomous configuration
         if symbols is None:
             try:
-                from config.truedata_symbols import get_default_subscription_symbols, get_complete_fo_symbols
+                from config.truedata_symbols import get_complete_fo_symbols, get_autonomous_symbol_status
                 
-                # Start with 50+ symbols, can expand to 250
-                self.symbols = get_default_subscription_symbols()
-                self.expansion_symbols = get_complete_fo_symbols()
+                # Get DYNAMIC symbols from autonomous symbol manager
+                self.symbols = get_complete_fo_symbols()
+                status = get_autonomous_symbol_status()
                 
-                logger.info(f"📊 MarketDataManager initialized with {len(self.symbols)} default symbols")
-                logger.info(f"🚀 Expansion capacity: {len(self.expansion_symbols)} symbols (target: 250)")
+                logger.info(f"🤖 MarketDataManager initialized with DYNAMIC symbol selection")
+                logger.info(f"📊 Autonomous strategy: {status.get('current_strategy', 'UNKNOWN')}")
+                logger.info(f"🚀 Dynamic symbols: {len(self.symbols)} symbols (auto-optimized)")
                 
-                # Enable expansion immediately for 250 symbols
-                if len(self.symbols) < 250:
-                    logger.info(f"🎯 Auto-expanding from {len(self.symbols)} to 250 symbols...")
-                    # Take first 250 symbols from expansion list
-                    expanded_list = self.expansion_symbols[:250]
-                    self.symbols = expanded_list
-                    logger.info(f"✅ Symbol expansion complete: {len(self.symbols)} symbols active")
+                # No expansion needed - already using dynamic approach
+                self.expansion_symbols = []
                 
             except ImportError:
-                logger.warning("⚠️ truedata_symbols config not found, using fallback symbols")
-                # Enhanced fallback with more F&O symbols
-                self.symbols = [
-                    # Core Indices
-                    'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I',
-                    # Top 20 F&O Stocks
-                    'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
-                    'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
-                    'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA', 'TECHM'
-                ]
+                logger.warning("⚠️ Autonomous symbol config not found, using intelligent fallback")
+                # Enhanced fallback with time-based selection
+                from datetime import datetime
+                current_hour = datetime.now().hour
+                
+                if 9 <= current_hour < 11 or 13 <= current_hour < 15:
+                    # High volatility periods - options focus
+                    self.symbols = [
+                        # Core Indices
+                        'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I',
+                        # Top liquid F&O stocks
+                        'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
+                        'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
+                        'POWERGRID', 'NTPC', 'COALINDIA', 'TECHM', 'MARUTI', 'ASIANPAINT'
+                    ]
+                    logger.info(f"🤖 FALLBACK: Options-focused ({len(self.symbols)} symbols)")
+                else:
+                    # Lower volatility - underlying focus
+                    self.symbols = [
+                        # Core Indices
+                        'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I',
+                        # Extended F&O stocks for analysis
+                        'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
+                        'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
+                        'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA',
+                        'TECHM', 'TATAMOTORS', 'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND',
+                        'TITAN', 'BAJFINANCE', 'M&M', 'DRREDDY', 'SUNPHARMA', 'CIPLA'
+                    ]
+                    logger.info(f"🤖 FALLBACK: Underlying-focused ({len(self.symbols)} symbols)")
+                
                 self.expansion_symbols = []
         else:
             self.symbols = symbols
@@ -78,15 +94,15 @@ class MarketDataManager:
         self.market_data_cache = {}
         self.subscription_manager = None
         self.is_streaming = False
-        self.expansion_enabled = True  # Enable expansion by default
+        self.expansion_enabled = False  # Disabled - using dynamic approach instead
         
-        # Auto-subscription settings  
+        # Dynamic settings  
         self.auto_subscribe_enabled = True
-        self.max_symbols = 250  # Set to 250 for F&O expansion
+        self.max_symbols = 250  # Managed by autonomous symbol manager
         
-        logger.info(f"💡 MarketDataManager: {len(self.symbols)} symbols, expansion: {self.expansion_enabled}")
-        logger.info(f"🎯 Target capacity: {self.max_symbols} symbols (F&O Focus)")
-        logger.info(f"📈 Auto-subscription: {self.auto_subscribe_enabled}")
+        logger.info(f"💡 MarketDataManager: {len(self.symbols)} DYNAMIC symbols")
+        logger.info(f"🎯 Autonomous optimization: Symbols auto-adjust based on market conditions")
+        logger.info(f"📈 Real-time symbol management: Powered by AutonomousSymbolManager")
         
     async def start(self):
         """Start the market data manager"""

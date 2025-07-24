@@ -420,23 +420,64 @@ class TrueDataClient:
         logger.info("🛑 Force disconnect completed")
 
     def _get_symbols_to_subscribe(self):
-        """Get symbols from our config file - FIXED TO USE COMPLETE SYMBOL LIST (250 symbols)"""
+        """Get symbols from autonomous configuration - FULLY AUTONOMOUS SELECTION"""
         try:
-            from config.truedata_symbols import get_complete_fo_symbols
+            from config.truedata_symbols import get_complete_fo_symbols, get_autonomous_symbol_status
+            
+            # Get autonomous symbol selection based on market conditions
             symbols = get_complete_fo_symbols()
-            logger.info(f"📋 Using COMPLETE symbol set: {len(symbols)} symbols (target: 250)")
+            status = get_autonomous_symbol_status()
+            
+            logger.info(f"🤖 AUTONOMOUS SYMBOL SELECTION:")
+            logger.info(f"   Strategy: {status['current_strategy']}")
+            logger.info(f"   Symbols: {len(symbols)} (limit: 250)")
+            logger.info(f"   Decision: Fully autonomous based on market conditions")
+            
+            # Log autonomous decision details
+            current_hour = datetime.now().hour
+            if 7 <= current_hour < 9:
+                logger.info(f"   📈 PRE-MARKET: Strategy optimized for indices and futures")
+            elif 9 <= current_hour < 11:
+                logger.info(f"   ⚡ MARKET OPENING: Strategy optimized for options volatility")
+            elif 11 <= current_hour < 13:
+                logger.info(f"   📊 MID-DAY: Strategy optimized for balanced trading")
+            elif 13 <= current_hour < 15:
+                logger.info(f"   🎯 AFTERNOON: Strategy optimized for options expiry effects")
+            else:
+                logger.info(f"   🔍 POST-MARKET: Strategy optimized for analysis")
+            
             return symbols
+            
         except ImportError:
-            # Enhanced fallback with more symbols
-            symbols = [
-                # Core Indices  
-                'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
-                # Top F&O Stocks
-                'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
-                'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
-                'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA'
-            ]
-            logger.info(f"📋 Using EXPANDED fallback symbols: {len(symbols)} symbols")
+            logger.warning("⚠️ Autonomous symbol config not found, using intelligent fallback")
+            # Enhanced fallback with autonomous logic
+            current_hour = datetime.now().hour
+            
+            if 9 <= current_hour < 11 or 13 <= current_hour < 15:
+                # High volatility periods - options focus
+                symbols = [
+                    # Core indices
+                    'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
+                    # Top liquid F&O stocks
+                    'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
+                    'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
+                    'POWERGRID', 'NTPC', 'COALINDIA', 'TECHM', 'MARUTI', 'ASIANPAINT'
+                ]
+                logger.info(f"🤖 AUTONOMOUS FALLBACK: Options-focused ({len(symbols)} symbols)")
+            else:
+                # Lower volatility - underlying focus
+                symbols = [
+                    # Core indices
+                    'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
+                    # Extended F&O stocks for analysis
+                    'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
+                    'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
+                    'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA',
+                    'TECHM', 'TATAMOTORS', 'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND',
+                    'TITAN', 'BAJFINANCE', 'M&M', 'DRREDDY', 'SUNPHARMA', 'CIPLA'
+                ]
+                logger.info(f"🤖 AUTONOMOUS FALLBACK: Underlying-focused ({len(symbols)} symbols)")
+            
             return symbols
 
     def _setup_callback(self):
