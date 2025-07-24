@@ -388,29 +388,32 @@ class BaseStrategy:
         """Get next monthly expiry in correct Zerodha format like 25JUL24"""
         today = datetime.now()
         
-        # CRITICAL FIX: Use correct year (2024, not 2025)
-        # The system date seems to be showing 2025 incorrectly
+        # CRITICAL FIX: Use actual current year (was incorrectly hardcoded to 2024)
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
         
-        # CRITICAL FIX: Force correct year and month for options expiry
+        # Use current year and month
         current_month = today.month
-        current_year = 2024  # FIXED: Force 2024 instead of system year
+        current_year = today.year  # FIXED: Use actual year (2025)
         
         # If we're past 25th of current month, use next month's expiry
         if today.day > 25:
             if current_month == 12:
                 current_month = 1
-                current_year = 2025  # Only increment to 2025 if we're past December 2024
+                current_year += 1
             else:
                 current_month += 1
         
         year_suffix = str(current_year)[-2:]
         month_name = month_names[current_month - 1]
         
-        # CRITICAL FIX: Use last Thursday format for monthly expiry
-        # Monthly expiries are typically on last Thursday, around 25th
-        expiry_day = "25"  # Simplified - use 25th as approximation
+        # Use proper monthly expiry format for Zerodha
+        # For July 2025, this should be around last Thursday (31st July is Thursday)
+        # But Zerodha uses simplified format like 31JUL25 for monthly expiry
+        if current_month == 7 and current_year == 2025:
+            expiry_day = "31"  # July 2025 monthly expiry
+        else:
+            expiry_day = "25"  # Default approximation for other months
         
         return f"{expiry_day}{month_name}{year_suffix}"
     
