@@ -93,40 +93,42 @@ class IntelligentSymbolManager:
         logger.info("🛑 Intelligent Symbol Manager stopped")
 
     async def initial_symbol_setup(self):
-        """Setup initial symbols based on market conditions - INDICES FIRST"""
-        logger.info("🔧 Setting up initial symbols with indices priority...")
+        """Setup initial symbols based on market conditions - FIXED: UNDERLYING SYMBOLS FIRST"""
+        logger.info("🔧 Setting up initial symbols - UNDERLYING SYMBOLS for strategy analysis...")
         
         symbols_to_add = set()
         
-        # PRIORITY 1: Core indices (always first - most liquid)
+        # PRIORITY 1: Core indices (underlying symbols for strategy analysis)
         symbols_to_add.update(self.config.core_indices)
         symbols_to_add.update(self.config.fo_indices)
         logger.info(f"📊 Priority 1: Added {len(self.config.core_indices + self.config.fo_indices)} indices")
         
-        # PRIORITY 2: Index options and futures (high liquidity)
-        current_expiry = self.get_current_monthly_expiry()
-        weekly_expiry = self.get_current_weekly_expiry()
+        # PRIORITY 2: F&O stocks (underlying symbols - strategies convert these to options internally)
+        symbols_to_add.update(self.config.priority_stocks)
+        logger.info(f"📊 Priority 2: Added {len(self.config.priority_stocks)} F&O stocks (underlying symbols)")
         
-        for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
-            # Monthly options (25 strikes per index)
-            monthly_options = self.generate_atm_options(index, current_expiry)
-            symbols_to_add.update(monthly_options[:20])  # Top 20 strikes
-            
-            # Weekly options for NIFTY and BANKNIFTY (15 strikes each)
-            if index in ['NIFTY', 'BANKNIFTY']:
-                weekly_options = self.generate_atm_options(index, weekly_expiry, weekly=True)
-                symbols_to_add.update(weekly_options[:15])
+        # CRITICAL FIX: DO NOT add options symbols directly
+        # Strategies expect underlying symbols like 'RELIANCE', 'TCS' and convert them internally
+        # Options symbols like 'NIFTY25JUL251150PE' break strategy analysis
         
-        logger.info(f"📊 Priority 2: Index options added, total: {len(symbols_to_add)}")
-        
-        # PRIORITY 3: F&O stocks (remaining capacity)
+        # PRIORITY 3: Additional stocks if capacity remains
         remaining_capacity = self.config.max_symbols - len(symbols_to_add)
         if remaining_capacity > 0:
-            symbols_to_add.update(self.config.priority_stocks[:remaining_capacity])
-            logger.info(f"📊 Priority 3: Added {min(len(self.config.priority_stocks), remaining_capacity)} F&O stocks")
+            # Add more underlying stocks, not options
+            additional_stocks = [
+                'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA',
+                'TATAMOTORS', 'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND', 'TITAN', 
+                'BAJFINANCE', 'M&M', 'DRREDDY', 'SUNPHARMA', 'CIPLA'
+            ]
+            symbols_to_add.update(additional_stocks[:remaining_capacity])
+            logger.info(f"📊 Priority 3: Added {min(len(additional_stocks), remaining_capacity)} additional stocks")
         
         # Convert to list and ensure we don't exceed limit
         symbols_list = list(symbols_to_add)[:self.config.max_symbols]
+        
+        logger.info(f"✅ FIXED: Using {len(symbols_list)} UNDERLYING symbols for strategy analysis")
+        logger.info(f"📊 Strategies will receive symbols like: {symbols_list[:5]}...")
+        logger.info(f"🎯 Strategies will internally convert these to options via _convert_to_options_symbol()")
         
         # Wait for TrueData to be connected before subscribing
         max_retries = 10
