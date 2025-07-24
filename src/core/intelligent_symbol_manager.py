@@ -27,12 +27,17 @@ class SymbolConfig:
     auto_refresh_interval: int = 3600  # 1 hour
     expiry_check_interval: int = 1800  # 30 minutes
     
-    # Core indices (always subscribed)
+    # Core indices (always subscribed - HIGHEST PRIORITY)
     core_indices: List[str] = field(default_factory=lambda: [
-        'NIFTY', 'BANKNIFTY', 'FINNIFTY'
+        'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'
     ])
     
-    # Top F&O stocks (priority)
+    # F&O indices (next priority - most liquid)
+    fo_indices: List[str] = field(default_factory=lambda: [
+        'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I'
+    ])
+    
+    # Top F&O stocks (priority after indices)
     priority_stocks: List[str] = field(default_factory=lambda: [
         'RELIANCE', 'TCS', 'INFY', 'HDFC', 'ICICIBANK', 'SBIN', 'ITC',
         'HDFCBANK', 'KOTAKBANK', 'AXISBANK', 'LT', 'WIPRO', 'BHARTIARTL',
@@ -88,29 +93,39 @@ class IntelligentSymbolManager:
         logger.info("🛑 Intelligent Symbol Manager stopped")
 
     async def initial_symbol_setup(self):
-        """Setup initial symbols based on market conditions"""
-        logger.info("🔧 Setting up initial symbols...")
+        """Setup initial symbols based on market conditions - INDICES FIRST"""
+        logger.info("🔧 Setting up initial symbols with indices priority...")
         
-        # Always include core indices
-        symbols_to_add = set(self.config.core_indices)
+        symbols_to_add = set()
         
-        # Add priority stocks
-        symbols_to_add.update(self.config.priority_stocks)
+        # PRIORITY 1: Core indices (always first - most liquid)
+        symbols_to_add.update(self.config.core_indices)
+        symbols_to_add.update(self.config.fo_indices)
+        logger.info(f"📊 Priority 1: Added {len(self.config.core_indices + self.config.fo_indices)} indices")
         
-        # Add current month F&O contracts for indices
+        # PRIORITY 2: Index options and futures (high liquidity)
         current_expiry = self.get_current_monthly_expiry()
-        for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
-            # Add ATM and nearby strikes
-            atm_options = self.generate_atm_options(index, current_expiry)
-            symbols_to_add.update(atm_options[:20])  # Limit per index
-        
-        # Add weekly expiry for current week (indices)
         weekly_expiry = self.get_current_weekly_expiry()
-        for index in ['NIFTY', 'BANKNIFTY']:
-            weekly_options = self.generate_atm_options(index, weekly_expiry, weekly=True)
-            symbols_to_add.update(weekly_options[:10])  # Limit for weekly
         
-        # Respect symbol limit
+        for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
+            # Monthly options (25 strikes per index)
+            monthly_options = self.generate_atm_options(index, current_expiry)
+            symbols_to_add.update(monthly_options[:20])  # Top 20 strikes
+            
+            # Weekly options for NIFTY and BANKNIFTY (15 strikes each)
+            if index in ['NIFTY', 'BANKNIFTY']:
+                weekly_options = self.generate_atm_options(index, weekly_expiry, weekly=True)
+                symbols_to_add.update(weekly_options[:15])
+        
+        logger.info(f"📊 Priority 2: Index options added, total: {len(symbols_to_add)}")
+        
+        # PRIORITY 3: F&O stocks (remaining capacity)
+        remaining_capacity = self.config.max_symbols - len(symbols_to_add)
+        if remaining_capacity > 0:
+            symbols_to_add.update(self.config.priority_stocks[:remaining_capacity])
+            logger.info(f"📊 Priority 3: Added {min(len(self.config.priority_stocks), remaining_capacity)} F&O stocks")
+        
+        # Convert to list and ensure we don't exceed limit
         symbols_list = list(symbols_to_add)[:self.config.max_symbols]
         
         # Wait for TrueData to be connected before subscribing
@@ -340,15 +355,19 @@ class IntelligentSymbolManager:
             return 'stock'
 
     def get_symbol_priority(self, symbol: str) -> int:
-        """Get symbol priority (lower = higher priority)"""
-        if symbol in self.config.core_indices:
-            return 1
-        elif symbol in self.config.priority_stocks:
-            return 2
+        """Get symbol priority (lower = higher priority) - INDICES FIRST"""
+        if symbol in self.config.core_indices or symbol in self.config.fo_indices:
+            return 1  # Highest priority - indices
         elif 'CE' in symbol or 'PE' in symbol:
-            return 3
+            # Check if it's an index option (higher priority than stock options)
+            for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX']:
+                if index in symbol:
+                    return 2  # Index options - very high priority
+            return 4  # Stock options - lower priority
+        elif symbol in self.config.priority_stocks:
+            return 3  # F&O stocks - medium priority
         else:
-            return 4
+            return 5  # Other stocks - lowest priority
 
     def find_expired_symbols(self) -> List[str]:
         """Find expired option contracts"""

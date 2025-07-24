@@ -66,8 +66,8 @@ def initialize_default_users():
                 "api_key": real_api_key,
                 "api_secret": real_api_secret,
                 "client_id": master_zerodha_user_id,  # Same as user_id for Zerodha
-                "initial_capital": 1000000.0,
-                "current_capital": 1000000.0,
+                "initial_capital": 0.0,  # Will be dynamically fetched from Zerodha API
+                "current_capital": 0.0,  # Will be dynamically fetched from Zerodha API
                 "risk_tolerance": "medium",
                 "paper_trading": True,  # Can be toggled per user
                 "is_active": True,
@@ -109,8 +109,8 @@ except Exception as e:
         "api_key": os.getenv('ZERODHA_API_KEY', 'vc9ft4zpknynpm3u'),  # CRITICAL FIX: Use correct production key
         "api_secret": os.getenv('ZERODHA_API_SECRET', '0nwjb2cncw9stf3m5cre73rqc3bc5xsc'),  # CRITICAL FIX: Use correct production secret
         "client_id": master_zerodha_user_id,
-        "initial_capital": 1000000.0,
-        "current_capital": 1000000.0,
+        "initial_capital": 0.0,  # Will be dynamically fetched from Zerodha API
+        "current_capital": 0.0,  # Will be dynamically fetched from Zerodha API
         "risk_tolerance": "medium",
         "paper_trading": True,
         "is_active": True,
@@ -168,8 +168,8 @@ def create_or_update_zerodha_user(zerodha_user_id: str, user_profile: Optional[D
             "phone": user_profile.get("phone", "") if user_profile else "",
             "broker": "zerodha",
             "client_id": zerodha_user_id,
-            "initial_capital": 1000000.0,  # Default 10L, can be customized per user
-            "current_capital": 1000000.0,
+            "initial_capital": 0.0,  # Will be dynamically fetched from Zerodha API
+            "current_capital": 0.0,  # Will be dynamically fetched from Zerodha API
             "risk_tolerance": "medium",
             "paper_trading": True,  # Start with paper trading, can be toggled
             "is_active": True,

@@ -212,7 +212,12 @@ class PositionMonitor:
             if target_exit:
                 exit_conditions.append(target_exit)
             
-            # 4. Risk-based emergency exits
+            # 4. Trailing stop conditions
+            trailing_exit = self._check_trailing_stop_exit(symbol, position)
+            if trailing_exit:
+                exit_conditions.append(trailing_exit)
+            
+            # 5. Risk-based emergency exits
             risk_exit = await self._check_risk_based_exit(symbol, position)
             if risk_exit:
                 exit_conditions.append(risk_exit)
@@ -301,6 +306,64 @@ class PositionMonitor:
                 reason=f'Target achieved: {current_price} <= {target_price}',
                 priority=3  # Normal priority
             )
+        
+        return None
+    
+    def _check_trailing_stop_exit(self, symbol: str, position) -> Optional[ExitCondition]:
+        """Check trailing stop conditions - CRITICAL FEATURE"""
+        if not hasattr(position, 'trailing_stop') or not position.trailing_stop:
+            return None
+        
+        current_price = position.current_price
+        entry_price = position.average_price
+        trailing_stop_price = position.trailing_stop
+        
+        # Update trailing stop if position is profitable
+        if position.side == 'long':
+            # For long positions, trail stop upwards as price rises
+            if current_price > entry_price:
+                # Calculate new trailing stop (e.g., 50% of profit)
+                profit = current_price - entry_price
+                new_trailing_stop = current_price - (profit * 0.3)  # Trail 30% behind current price
+                
+                # Only update if new stop is higher than current
+                if new_trailing_stop > trailing_stop_price:
+                    position.trailing_stop = new_trailing_stop
+                    logger.info(f"📈 Trailing stop updated for {symbol}: ₹{trailing_stop_price:.2f} → ₹{new_trailing_stop:.2f}")
+                    trailing_stop_price = new_trailing_stop
+            
+            # Check if trailing stop is triggered
+            if current_price <= trailing_stop_price:
+                return ExitCondition(
+                    condition_type='trailing_stop',
+                    symbol=symbol,
+                    trigger_price=current_price,
+                    reason=f'Trailing stop triggered: {current_price} <= {trailing_stop_price}',
+                    priority=2  # High priority
+                )
+        
+        elif position.side == 'short':
+            # For short positions, trail stop downwards as price falls
+            if current_price < entry_price:
+                # Calculate new trailing stop
+                profit = entry_price - current_price
+                new_trailing_stop = current_price + (profit * 0.3)  # Trail 30% above current price
+                
+                # Only update if new stop is lower than current
+                if new_trailing_stop < trailing_stop_price:
+                    position.trailing_stop = new_trailing_stop
+                    logger.info(f"📉 Trailing stop updated for {symbol}: ₹{trailing_stop_price:.2f} → ₹{new_trailing_stop:.2f}")
+                    trailing_stop_price = new_trailing_stop
+            
+            # Check if trailing stop is triggered
+            if current_price >= trailing_stop_price:
+                return ExitCondition(
+                    condition_type='trailing_stop',
+                    symbol=symbol,
+                    trigger_price=current_price,
+                    reason=f'Trailing stop triggered: {current_price} >= {trailing_stop_price}',
+                    priority=2  # High priority
+                )
         
         return None
     

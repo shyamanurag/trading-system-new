@@ -378,6 +378,10 @@ class TradingOrchestrator:
         from src.core.position_tracker import ProductionPositionTracker
         self.position_tracker = ProductionPositionTracker()
         
+        # Initialize daily capital sync for dynamic capital management
+        from src.core.daily_capital_sync import DailyCapitalSync
+        self.capital_sync = DailyCapitalSync(self)
+        
         # Initialize performance tracker
         self.performance_tracker = {
             'total_trades': 0,
@@ -1741,6 +1745,14 @@ class TradingOrchestrator:
             if not hasattr(self, '_trading_task') or self._trading_task is None:
                 self._trading_task = asyncio.create_task(self._trading_loop())
                 self.logger.info("🔄 Started trading loop")
+            
+            # CRITICAL FIX: Sync capital before trading starts
+            if self.capital_sync:
+                try:
+                    await self.capital_sync.sync_all_accounts()
+                    self.logger.info("✅ Dynamic capital sync completed - using real broker funds")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Capital sync failed, using defaults: {e}")
             
             # Start Position Monitor for continuous auto square-off
             if self.position_monitor:

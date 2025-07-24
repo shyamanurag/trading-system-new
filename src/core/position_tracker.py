@@ -55,7 +55,7 @@ class ProductionPositionTracker:
         self.is_initialized = False
         
         # Capital management - CRITICAL for RiskManager
-        self.capital = 1000000.0  # Default 10 lakh capital
+        self.capital = 0.0  # Will be dynamically set from broker account
         self.peak_capital = self.capital
         self.previous_capital = self.capital  # For VaR calculations
         

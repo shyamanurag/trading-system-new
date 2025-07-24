@@ -51,6 +51,7 @@ class UserCreateRequest(BaseModel):
         return v
 
 class UserUpdateRequest(BaseModel):
+    """Model for updating user information"""
     full_name: Optional[str] = None
     initial_capital: Optional[float] = None
     current_balance: Optional[float] = None
@@ -59,6 +60,7 @@ class UserUpdateRequest(BaseModel):
     is_active: Optional[bool] = None
 
 class UserResponse(BaseModel):
+    """Model for user response with analytics"""
     id: int
     username: str
     email: str
@@ -67,11 +69,9 @@ class UserResponse(BaseModel):
     current_balance: float
     risk_tolerance: str
     is_active: bool
-    zerodha_client_id: Optional[str]
+    zerodha_client_id: Optional[str] = None
     created_at: datetime
-    updated_at: Optional[datetime]
-    
-    # Analytics
+    updated_at: datetime
     total_trades: int = 0
     winning_trades: int = 0
     total_pnl: float = 0.0
@@ -220,21 +220,56 @@ class DynamicUserManager:
             db.close()
     
     async def list_users(self, skip: int = 0, limit: int = 100, active_only: bool = False) -> List[UserResponse]:
-        """List all users with basic analytics"""
+        """List all users with basic analytics - INCLUDING broker_users"""
         db = self.get_db_session()
         try:
+            # Get database users
             query = db.query(User)
             if active_only:
                 query = query.filter(User.is_active == True)
             
-            users = query.offset(skip).limit(limit).all()
+            db_users = query.offset(skip).limit(limit).all()
             
             # Build responses with analytics
             user_responses = []
-            for user in users:
+            for user in db_users:
                 user_response = await self._build_user_response(user, db)
                 user_responses.append(user_response)
             
+            # CRITICAL FIX: Also include broker_users from trading_control
+            try:
+                from src.api.trading_control import broker_users
+                
+                for user_id, broker_user in broker_users.items():
+                    # Convert broker_user to UserResponse format
+                    broker_user_response = UserResponse(
+                        id=0,  # Virtual ID for broker users
+                        username=broker_user.get('user_id', user_id),
+                        email=broker_user.get('email', ''),
+                        full_name=broker_user.get('name', f"Broker User {user_id}"),
+                        initial_capital=float(broker_user.get('initial_capital', 0)),
+                        current_balance=float(broker_user.get('current_capital', 0)),
+                        risk_tolerance=broker_user.get('risk_tolerance', 'medium'),
+                        is_active=broker_user.get('is_active', True),
+                        zerodha_client_id=broker_user.get('client_id', user_id),
+                        created_at=datetime.fromisoformat(broker_user.get('created_at', datetime.now().isoformat())),
+                        updated_at=datetime.now(),
+                        total_trades=broker_user.get('total_trades', 0),
+                        winning_trades=0,  # Calculate if needed
+                        total_pnl=broker_user.get('total_pnl', 0),
+                        win_rate=broker_user.get('win_rate', 0),
+                        active_positions=broker_user.get('open_trades', 0)
+                    )
+                    user_responses.append(broker_user_response)
+                
+                logger.info(f"✅ Found {len(broker_users)} broker users to include")
+                
+            except ImportError as e:
+                logger.warning(f"⚠️ Could not import broker_users: {e}")
+            except Exception as e:
+                logger.warning(f"⚠️ Error including broker users: {e}")
+            
+            logger.info(f"✅ Total users returned: {len(user_responses)} (DB: {len(db_users)}, Broker: {len(broker_users) if 'broker_users' in locals() else 0})")
             return user_responses
             
         except Exception as e:
