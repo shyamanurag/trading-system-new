@@ -6,11 +6,14 @@ Streamlined daily auth process for pre-configured Zerodha broker
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import logging
 import os
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
+import redis.asyncio as redis
+import asyncio
+import json
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/daily-auth", tags=["daily-auth"])
@@ -329,13 +332,10 @@ async def submit_daily_token(
         
         # CRITICAL FIX: Store token properly in Redis with ALL key patterns used by backend
         try:
-            import redis.asyncio as redis
-            import json
             redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
             redis_client = redis.from_url(redis_url)
             
             # Calculate proper expiry (6 AM next day)
-            from datetime import time
             now = datetime.now()
             tomorrow_6am = datetime.combine(
                 now.date() + timedelta(days=1),
@@ -382,6 +382,59 @@ async def submit_daily_token(
             os.environ['ZERODHA_ACCESS_TOKEN'] = access_token
             os.environ['ZERODHA_USER_ID'] = user_id
             
+            # Store user activity in multi-user system
+            try:
+                # Store in multi-user Redis keys for frontend compatibility
+                await store_user_in_multi_system(
+                    redis_client=redis_client,
+                    user_id=user_id,
+                    user_profile=user_profile,
+                    access_token=access_token
+                )
+            except Exception as multi_error:
+                logger.warning(f"⚠️ Could not store in multi-user system: {multi_error}")
+                # Continue - this is not critical for authentication
+
+async def store_user_in_multi_system(redis_client, user_id: str, user_profile: dict, access_token: str):
+    """Store user information in multi-user Redis keys for frontend compatibility"""
+    try:
+        # Get existing users from multi-user system
+        users_key = "zerodha:multi:users"
+        users_data = await redis_client.get(users_key)
+        users = json.loads(users_data) if users_data else {}
+        
+        # Add/update this user
+        master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+        is_master = (user_id == master_user_id)
+        
+        users[user_id] = {
+            'display_name': user_profile.get("user_name", f"Zerodha User ({user_id})"),
+            'email': user_profile.get("email", ""),
+            'daily_limit': 1000000 if is_master else 100000,
+            'created_at': datetime.now().isoformat(),
+            'is_active': True,
+            'phone': user_profile.get("phone", ""),
+            'broker': user_profile.get("broker", "ZERODHA")
+        }
+        
+        # Save updated users list
+        await redis_client.set(users_key, json.dumps(users))
+        
+        # Store activity information
+        activity_key = f"zerodha:activity:{user_id}"
+        activity_data = {
+            'last_refresh': datetime.now().isoformat(),
+            'user_profile': user_profile,
+            'authentication_method': 'daily_token_submission'
+        }
+        await redis_client.set(activity_key, json.dumps(activity_data))
+        
+                 logger.info(f"✅ Stored user {user_id} in multi-user system")
+         
+     except Exception as e:
+         logger.error(f"❌ Failed to store user in multi-user system: {e}")
+         raise
+
             await redis_client.close()
             
             logger.info(f"✅ Token stored successfully with {len(token_keys)} key patterns for user {user_id}")
@@ -419,7 +472,6 @@ async def start_autonomous_trading_after_auth():
     """Start autonomous trading after successful authentication"""
     try:
         # Wait a moment for token to be processed
-        import asyncio
         await asyncio.sleep(2)
         
         # IMPORTANT: Refresh connections to pick up new token from Redis

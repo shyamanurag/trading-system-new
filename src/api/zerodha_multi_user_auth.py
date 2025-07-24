@@ -642,6 +642,92 @@ async def get_multi_user_status():
         logger.error(f"Status check failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/users-status")
+async def get_users_status():
+    """Get authentication status of all registered users (JSON API for frontend)"""
+    try:
+        redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+        redis_client = await redis.from_url(redis_url)
+        
+        # Get registered users
+        users_key = "zerodha:multi:users"
+        users_data = await redis_client.get(users_key)
+        users = json.loads(users_data) if users_data else {}
+        
+        # Get master user from environment
+        master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+        
+        # Ensure master user is always in the list
+        if master_user_id not in users:
+            users[master_user_id] = {
+                'display_name': f'Master Trader ({master_user_id})',
+                'email': 'master@algoauto.com',
+                'daily_limit': 1000000,
+                'created_at': datetime.now().isoformat(),
+                'is_active': True
+            }
+        
+        users_status = []
+        
+        for user_id, user_data in users.items():
+            # Check authentication status
+            token_key = f"zerodha:token:{user_id}"
+            token_data = await redis_client.get(token_key)
+            
+            # Check activity
+            activity_key = f"zerodha:activity:{user_id}"
+            activity_data = await redis_client.get(activity_key)
+            
+            is_authenticated = bool(token_data)
+            activity_info = json.loads(activity_data) if activity_data else {}
+            
+            # Determine token expiry (Zerodha tokens expire next day at 6 AM IST)
+            token_expiry = None
+            if token_data:
+                # Calculate next 6 AM IST
+                now = datetime.now()
+                next_6am = now.replace(hour=6, minute=0, second=0, microsecond=0)
+                if now.hour >= 6:
+                    next_6am = next_6am + timedelta(days=1)
+                token_expiry = next_6am.isoformat()
+            
+            user_status = {
+                'user_id': user_id,
+                'display_name': user_data.get('display_name', f'User {user_id}'),
+                'email': user_data.get('email', ''),
+                'is_master': user_id == master_user_id,
+                'authenticated': is_authenticated,
+                'token_expiry': token_expiry,
+                'last_refresh': activity_info.get('last_refresh'),
+                'daily_limit': user_data.get('daily_limit', 100000),
+                'status': 'active' if is_authenticated else 'inactive',
+                'is_active': user_data.get('is_active', True)
+            }
+            
+            users_status.append(user_status)
+        
+        await redis_client.close()
+        
+        # Sort with master user first
+        users_status.sort(key=lambda x: (not x['is_master'], x['display_name']))
+        
+        return {
+            "success": True,
+            "users": users_status,
+            "total_users": len(users_status),
+            "authenticated_users": len([u for u in users_status if u['authenticated']])
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting users status: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "users": [],
+            "total_users": 0,
+            "authenticated_users": 0
+        }
+
 @router.post("/execute-trade")
 async def execute_trade_for_user(user_id: str, trade_params: Dict):
     """

@@ -1,5 +1,6 @@
 import {
     CheckCircle,
+    Close,
     Pause,
     PersonAdd,
     PlayArrow,
@@ -17,8 +18,12 @@ import {
     Card,
     CardContent,
     Chip,
+    Dialog,
+    DialogContent,
+    DialogTitle,
     Divider,
     Grid,
+    IconButton,
     LinearProgress,
     List,
     ListItem,
@@ -29,6 +34,7 @@ import {
 import React, { useEffect, useState } from 'react';
 import { API_ENDPOINTS } from '../api/config';
 import fetchWithAuth from '../api/fetchWithAuth';
+import MultiUserAuthDashboard from './MultiUserAuthDashboard';
 import ZerodhaManualAuth from './ZerodhaManualAuth';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app';
@@ -149,6 +155,7 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
     const [tradingStatus, setTradingStatus] = useState(null);
     const [brokerUsers, setBrokerUsers] = useState([]);
     const [showZerodhaAuth, setShowZerodhaAuth] = useState(false);
+    const [showMultiUserAuth, setShowMultiUserAuth] = useState(false);
     const [controlLoading, setControlLoading] = useState(false);
 
     useEffect(() => {
@@ -488,22 +495,23 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                             <Button
                                 variant="contained"
                                 startIcon={<PersonAdd />}
-                                onClick={() => setShowZerodhaAuth(true)}
+                                onClick={() => setShowMultiUserAuth(true)}
                                 color="primary"
-                                sx={{ minWidth: 180 }}
+                                sx={{ minWidth: 200 }}
                             >
-                                🔐 Daily Auth Token
+                                👥 Multi-User Authentication
                             </Button>
                         </Box>
 
                         <Box>
                             <Typography variant="body2" color="text.secondary" gutterBottom>
-                                📊 Master Trader: QSW899 | 💰 Capital: ₹10,00,000 | 🔴 Live Trading Mode
+                                👥 Multi-User System | 🎯 Master: QSW899 | 💰 Capital: ₹10,00,000 | 🔴 Live Trading Mode
                             </Typography>
 
-                            <Alert severity="warning" sx={{ mb: 2 }}>
-                                <strong>Daily Setup Required:</strong> Zerodha tokens expire at 6:00 AM IST.
-                                Please refresh your auth token daily for LIVE TRADING operations.
+                            <Alert severity="info" sx={{ mb: 2 }}>
+                                <strong>Multi-User Authentication:</strong> Each user authenticates with their own Zerodha credentials.
+                                All trades execute through the master account for regulatory compliance.
+                                Tokens expire daily at 6:00 AM IST.
                             </Alert>
 
                             <Box sx={{ display: 'flex', gap: 2, mt: 2, alignItems: 'center' }}>
@@ -917,6 +925,35 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                     </div>
                 </div>
             )}
+
+            {/* Multi-User Authentication Dialog */}
+            <Dialog
+                open={showMultiUserAuth}
+                onClose={() => setShowMultiUserAuth(false)}
+                maxWidth="lg"
+                fullWidth
+                PaperProps={{
+                    sx: { minHeight: '80vh' }
+                }}
+            >
+                <DialogTitle>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="h6">Multi-User Authentication Center</Typography>
+                        <IconButton onClick={() => setShowMultiUserAuth(false)}>
+                            <Close />
+                        </IconButton>
+                    </Box>
+                </DialogTitle>
+                <DialogContent>
+                    <MultiUserAuthDashboard
+                        onAuthComplete={(userId) => {
+                            console.log(`User ${userId} authenticated successfully`);
+                            // Optionally refresh trading status or show success message
+                            fetchTradingStatus();
+                        }}
+                    />
+                </DialogContent>
+            </Dialog>
         </Grid>
     );
 };
