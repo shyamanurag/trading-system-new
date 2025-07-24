@@ -100,14 +100,14 @@ try:
     logger.info(f"✅ Default users initialized. Active users: {list(broker_users.keys())}")
 except Exception as e:
     logger.error(f"❌ Failed to initialize default users: {e}")
-    # Force initialization as fallback with dynamic user ID
+    # CRITICAL FIX: Force initialization as fallback with CORRECT production credentials
     master_zerodha_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
     broker_users[master_zerodha_user_id] = {
         "user_id": master_zerodha_user_id,
         "name": f"Zerodha Account ({master_zerodha_user_id})", 
         "broker": "zerodha",
-        "api_key": os.getenv('ZERODHA_API_KEY', 'sylcoq492qz6f7ej'),
-        "api_secret": os.getenv('ZERODHA_API_SECRET', 'jm3h4iejwnxr4ngmma2qxccpkhevo8sy'),
+        "api_key": os.getenv('ZERODHA_API_KEY', 'vc9ft4zpknynpm3u'),  # CRITICAL FIX: Use correct production key
+        "api_secret": os.getenv('ZERODHA_API_SECRET', '0nwjb2cncw9stf3m5cre73rqc3bc5xsc'),  # CRITICAL FIX: Use correct production secret
         "client_id": master_zerodha_user_id,
         "initial_capital": 1000000.0,
         "current_capital": 1000000.0,
@@ -631,7 +631,7 @@ async def get_trading_status():
 async def get_zerodha_manual_auth_url():
     """Get Zerodha authorization URL for manual token extraction"""
     try:
-        api_key = os.getenv('ZERODHA_API_KEY', 'sylcoq492qz6f7ej')
+        api_key = os.getenv('ZERODHA_API_KEY', 'vc9ft4zpknynpm3u')  # CRITICAL FIX: Use correct production key
         auth_url = f"https://kite.zerodha.com/connect/login?api_key={api_key}"
         
         return {

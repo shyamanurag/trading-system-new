@@ -386,7 +386,8 @@ async def submit_manual_token(token_data: TokenSubmission):
             from src.core.orchestrator import TradingOrchestrator
             orchestrator = await TradingOrchestrator.get_instance()
             if orchestrator and hasattr(orchestrator, 'update_zerodha_token'):
-                token_update_success = await orchestrator.update_zerodha_token(access_token, actual_user_id)
+                # CRITICAL FIX: Correct parameter order - user_id first, then access_token
+                token_update_success = await orchestrator.update_zerodha_token(actual_user_id, access_token)
                 if token_update_success:
                     logger.info("✅ Orchestrator updated with new Zerodha token")
                 else:

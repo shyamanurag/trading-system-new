@@ -990,21 +990,30 @@ class TradingOrchestrator:
             
             # Update the token in the existing Zerodha client if available
             if hasattr(self, 'zerodha_client') and self.zerodha_client:
-                if hasattr(self.zerodha_client, 'broker') and self.zerodha_client.broker:
-                    # Update the access token in the broker integration
-                    self.zerodha_client.broker.access_token = access_token
-                    if hasattr(self.zerodha_client.broker, 'kite') and self.zerodha_client.broker.kite:
-                        self.zerodha_client.broker.kite.access_token = access_token
-                    self.logger.info(f"✅ Updated access token in existing Zerodha client")
+                # CRITICAL FIX: ZerodhaIntegration IS the broker directly, no .broker attribute
+                self.zerodha_client.access_token = access_token
+                if hasattr(self.zerodha_client, 'kite') and self.zerodha_client.kite:
+                    self.zerodha_client.kite.set_access_token(access_token)
+                    self.logger.info(f"✅ Updated KiteConnect access token in Zerodha client")
+                
+                # Use the update_access_token method for proper token handling
+                if hasattr(self.zerodha_client, 'update_access_token'):
+                    await self.zerodha_client.update_access_token(access_token)
+                    self.logger.info(f"✅ Updated access token using ZerodhaIntegration method")
                     
             # Update the token in trade engine if available
             if hasattr(self, 'trade_engine') and self.trade_engine:
                 if hasattr(self.trade_engine, 'zerodha_client') and self.trade_engine.zerodha_client:
-                    if hasattr(self.trade_engine.zerodha_client, 'broker') and self.trade_engine.zerodha_client.broker:
-                        self.trade_engine.zerodha_client.broker.access_token = access_token
-                        if hasattr(self.trade_engine.zerodha_client.broker, 'kite') and self.trade_engine.zerodha_client.broker.kite:
-                            self.trade_engine.zerodha_client.broker.kite.access_token = access_token
-                        self.logger.info(f"✅ Updated access token in trade engine Zerodha client")
+                    # CRITICAL FIX: ZerodhaIntegration IS the broker directly, no .broker attribute
+                    self.trade_engine.zerodha_client.access_token = access_token
+                    if hasattr(self.trade_engine.zerodha_client, 'kite') and self.trade_engine.zerodha_client.kite:
+                        self.trade_engine.zerodha_client.kite.set_access_token(access_token)
+                        self.logger.info(f"✅ Updated KiteConnect access token in trade engine Zerodha client")
+                    
+                    # Use the update_access_token method for proper token handling
+                    if hasattr(self.trade_engine.zerodha_client, 'update_access_token'):
+                        await self.trade_engine.zerodha_client.update_access_token(access_token)
+                        self.logger.info(f"✅ Updated trade engine access token using ZerodhaIntegration method")
             
             # Re-initialize the Zerodha client with the new token
             await self._initialize_zerodha_client()
