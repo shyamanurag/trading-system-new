@@ -214,20 +214,24 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                     throw new Error('Failed to fetch market status');
                 }
             } else {
-                // Use autonomous status as fallback for market detection
-                if (realTradingData?.systemMetrics?.is_active) {
-                    setMarketStatus({
-                        is_market_open: true,
-                        time_to_close_seconds: 3600,
-                        session_type: 'OPEN'
-                    });
-                } else {
-                    setMarketStatus({
-                        is_market_open: false,
-                        time_to_close_seconds: 0,
-                        session_type: 'CLOSED'
-                    });
-                }
+                // Check actual market hours instead of using autonomous status
+                const now = new Date();
+                const currentHour = now.getHours();
+                const currentMinute = now.getMinutes();
+                const currentTime = currentHour * 60 + currentMinute; // Convert to minutes since midnight
+
+                // Indian market hours: 9:15 AM to 3:30 PM (Monday-Friday)
+                const marketOpenTime = 9 * 60 + 15; // 9:15 AM in minutes
+                const marketCloseTime = 15 * 60 + 30; // 3:30 PM in minutes
+                const isWeekend = now.getDay() === 0 || now.getDay() === 6; // Sunday = 0, Saturday = 6
+
+                const isMarketOpen = !isWeekend && currentTime >= marketOpenTime && currentTime <= marketCloseTime;
+
+                setMarketStatus({
+                    is_market_open: isMarketOpen,
+                    time_to_close_seconds: isMarketOpen ? (marketCloseTime - currentTime) * 60 : 0,
+                    session_type: isMarketOpen ? 'OPEN' : 'CLOSED'
+                });
             }
 
             // Process session stats (use real trading data if available)
@@ -582,8 +586,16 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                                         variant="filled"
                                     />
                                     <Chip
-                                        label={tradingStatus?.is_running ? "Auto Trading ACTIVE" : "Auto Trading STOPPED"}
-                                        color={tradingStatus?.is_running ? "primary" : "default"}
+                                        label={
+                                            tradingStatus?.is_running
+                                                ? "Auto Trading ACTIVE"
+                                                : "Auto Trading STOPPED"
+                                        }
+                                        color={
+                                            tradingStatus?.is_running
+                                                ? "primary"
+                                                : "default"
+                                        }
                                         variant="filled"
                                     />
                                 </Box>

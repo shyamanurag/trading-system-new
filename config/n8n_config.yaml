@@ -163,7 +163,7 @@ agents:
 integrations:
   zerodha:
     enabled: true
-    api_key: "sylcoq492qz6f7ej"
+    api_key: "vc9ft4zpknynpm3u"
     api_secret: "${ZERODHA_API_SECRET}"
     webhook:
       path: /zerodha

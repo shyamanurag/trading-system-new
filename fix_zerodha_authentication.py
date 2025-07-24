@@ -17,9 +17,9 @@ import redis.asyncio as redis
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Production Zerodha credentials (from app.yaml)
-PRODUCTION_API_KEY = "sylcoq492qz6f7ej"
-PRODUCTION_API_SECRET = "jm3h4iejwnxr4ngmma2qxccpkhevo8sy"
+# Production Zerodha credentials (CORRECTED to match environment)
+PRODUCTION_API_KEY = "vc9ft4zpknynpm3u"
+PRODUCTION_API_SECRET = "0nwjb2cncw9stf3m5cre73rqc3bc5xsc"
 PRODUCTION_USER_ID = "QSW899"
 
 class ZerodhaAuthenticationFixer:
