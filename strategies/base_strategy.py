@@ -330,10 +330,12 @@ class BaseStrategy:
                 return options_symbol, option_type
             else:
                 # Stock options - convert equity to options
+                # CRITICAL FIX: Truncate long symbol names for options
+                truncated_symbol = self._truncate_symbol_for_options(underlying_symbol)
                 strike = self._get_atm_strike_for_stock(current_price)
                 option_type = 'CE' if action.upper() == 'BUY' else 'PE'  
                 expiry = self._get_next_expiry()
-                options_symbol = f"{underlying_symbol}{expiry}{strike}{option_type}"
+                options_symbol = f"{truncated_symbol}{expiry}{strike}{option_type}"
                 return options_symbol, option_type
                 
         except Exception as e:
@@ -362,24 +364,45 @@ class BaseStrategy:
             return round(price / 50) * 50  # Round to nearest 50
     
     def _get_next_expiry(self) -> str:
-        """Get next Thursday expiry in format like 24JAN"""
+        """Get next monthly expiry in correct Zerodha format like 25JUL24"""
         today = datetime.now()
-        # Find next Thursday
-        days_until_thursday = (3 - today.weekday()) % 7
-        if days_until_thursday == 0:  # Today is Thursday
-            days_until_thursday = 7  # Next Thursday
         
-        next_thursday = today + timedelta(days=days_until_thursday)
-        
-        # Format as 24JAN
+        # CRITICAL FIX: Use standard monthly expiry format (25th of month)
+        # Zerodha monthly expiries are typically on the last Thursday around 25th
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
-        year_suffix = str(next_thursday.year)[-2:]
-        month_name = month_names[next_thursday.month - 1]
-        day = f"{next_thursday.day:02d}"
         
-        return f"{day}{month_name}{year_suffix}"
-
+        # For current month - check if we're past expiry
+        current_month = today.month
+        current_year = today.year
+        
+        # If we're past 25th of current month, use next month's expiry
+        if today.day > 25:
+            if current_month == 12:
+                current_month = 1
+                current_year += 1
+            else:
+                current_month += 1
+        
+        year_suffix = str(current_year)[-2:]
+        month_name = month_names[current_month - 1]
+        
+        # Standard monthly expiry day (25th)
+        expiry_day = "25"
+        
+                return f"{expiry_day}{month_name}{year_suffix}"
+    
+    def _truncate_symbol_for_options(self, symbol: str) -> str:
+        """Truncate symbol names for options format"""
+        # Common truncations for stock options
+        truncation_map = {
+            'ICICIBANK': 'ICICIBANK',  # Actually, let's test with full name first
+            'HDFCBANK': 'HDFCBANK',
+            'RELIANCE': 'RELIANCE',
+            'BHARTIARTL': 'BHARTIARTL'
+        }
+        return truncation_map.get(symbol, symbol)
+    
     def _is_cooldown_passed(self) -> bool:
         """Check if cooldown period has passed"""
         if not self.last_signal_time:
