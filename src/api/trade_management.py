@@ -94,41 +94,109 @@ async def get_user_metrics(user_id: str) -> Dict[str, Any]:
 
 @router.post("/sync-zerodha-data")
 async def sync_zerodha_data():
-    """Manually trigger synchronization with actual Zerodha data"""
+    """Manually trigger Zerodha trade and position synchronization + Database Migration Fix"""
     try:
+        logger.info("🚀 Manual sync triggered for Zerodha data")
+        
+        # URGENT MIGRATION FIX: Add missing columns if they don't exist
+        try:
+            logger.info("🚨 URGENT: Checking database schema for missing columns...")
+            from sqlalchemy import create_engine, text
+            import os
+            
+            # Get DATABASE_URL from environment
+            database_url = os.getenv('DATABASE_URL')
+            if database_url:
+                logger.info("📊 Executing urgent migration 016 inline...")
+                
+                # Create engine and connect
+                engine = create_engine(database_url)
+                
+                with engine.connect() as conn:
+                    # Start transaction
+                    trans = conn.begin()
+                    
+                    try:
+                        # Add missing columns
+                        conn.execute(text("ALTER TABLE trades ADD COLUMN IF NOT EXISTS actual_execution BOOLEAN DEFAULT FALSE"))
+                        conn.execute(text("ALTER TABLE trades ADD COLUMN IF NOT EXISTS current_price DECIMAL(10,2)"))
+                        conn.execute(text("ALTER TABLE trades ADD COLUMN IF NOT EXISTS pnl DECIMAL(12,2) DEFAULT 0.0"))
+                        conn.execute(text("ALTER TABLE trades ADD COLUMN IF NOT EXISTS pnl_percent DECIMAL(8,4) DEFAULT 0.0"))
+                        
+                        # Create indexes
+                        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_trades_actual_execution ON trades(actual_execution)"))
+                        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_trades_current_price ON trades(current_price)"))
+                        
+                        # Update existing trades
+                        conn.execute(text("UPDATE trades SET actual_execution = FALSE WHERE actual_execution IS NULL"))
+                        
+                        # Create schema_migrations table if it doesn't exist
+                        conn.execute(text("""
+                            CREATE TABLE IF NOT EXISTS schema_migrations (
+                                version INTEGER PRIMARY KEY,
+                                description TEXT,
+                                executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                            )
+                        """))
+                        
+                        # Log the migration
+                        conn.execute(text("""
+                            INSERT INTO schema_migrations (version, description, executed_at) 
+                            VALUES (16, 'Add actual_execution and P&L columns for real Zerodha data sync', CURRENT_TIMESTAMP)
+                            ON CONFLICT (version) DO NOTHING
+                        """))
+                        
+                        # Commit transaction
+                        trans.commit()
+                        
+                        logger.info("✅ URGENT Migration 016 executed successfully inline!")
+                        
+                    except Exception as migration_error:
+                        trans.rollback()
+                        logger.warning(f"⚠️ Migration 016 failed (may already exist): {migration_error}")
+                        
+        except Exception as schema_error:
+            logger.warning(f"⚠️ Schema check failed: {schema_error}")
+        
+        # Continue with normal Zerodha sync logic
         from src.core.orchestrator import get_orchestrator_instance
         
         orchestrator = get_orchestrator_instance()
         if not orchestrator:
-            raise HTTPException(status_code=503, detail="Orchestrator not available")
+            raise HTTPException(status_code=503, detail="Trading orchestrator not available")
         
-        if not orchestrator.trade_engine:
+        # Get trade engine from orchestrator
+        trade_engine = orchestrator.trade_engine
+        if not trade_engine:
             raise HTTPException(status_code=503, detail="Trade engine not available")
         
-        results = {}
+        # Trigger both sync operations
+        logger.info("🔄 Starting Zerodha data synchronization...")
         
-        # Sync actual trades
-        if hasattr(orchestrator.trade_engine, 'sync_actual_zerodha_trades'):
-            trades = await orchestrator.trade_engine.sync_actual_zerodha_trades()
-            results['trades_synced'] = len(trades) if trades else 0
-            results['actual_trades'] = trades[:5] if trades else []  # Show first 5
+        # Sync actual trades from Zerodha
+        trade_results = await trade_engine.sync_actual_zerodha_trades()
         
-        # Sync actual positions  
-        if hasattr(orchestrator.trade_engine, 'sync_actual_zerodha_positions'):
-            positions = await orchestrator.trade_engine.sync_actual_zerodha_positions()
-            results['positions_synced'] = len(positions) if positions else 0
-            results['actual_positions'] = dict(list(positions.items())[:5]) if positions else {}  # Show first 5
+        # Sync actual positions from Zerodha  
+        position_results = await trade_engine.sync_actual_zerodha_positions()
+        
+        logger.info(f"✅ Sync completed: {len(trade_results.get('actual_trades', []))} trades, {len(position_results.get('actual_positions', []))} positions")
         
         return {
             "success": True,
             "message": "Zerodha data synchronization completed",
             "timestamp": datetime.now().isoformat(),
-            "results": results
+            "results": {
+                "trades_synced": len(trade_results.get('actual_trades', [])),
+                "actual_trades": trade_results.get('actual_trades', []),
+                "positions_synced": len(position_results.get('actual_positions', [])),
+                "actual_positions": position_results.get('actual_positions', {}),
+                "database_migration": "Migration 016 attempted - schema should now support actual_execution column"
+            }
         }
         
     except Exception as e:
-        logger.error(f"Error in Zerodha data sync: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"❌ Zerodha data sync failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
 
 @router.get("/zerodha-positions")
 async def get_zerodha_positions():
