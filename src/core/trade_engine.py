@@ -172,10 +172,34 @@ class TradeEngine:
         except Exception as e:
             self.logger.error(f"Error tracking signal execution failure: {e}")
     
+    async def _try_get_zerodha_client_from_orchestrator(self):
+        """Try to get Zerodha client from orchestrator if not set"""
+        try:
+            # Try to get from orchestrator singleton
+            from src.core.orchestrator import TradingOrchestrator
+            orchestrator = await TradingOrchestrator.get_instance()
+            
+            if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                self.zerodha_client = orchestrator.zerodha_client
+                self.logger.info("✅ Successfully retrieved Zerodha client from orchestrator")
+                return True
+            else:
+                self.logger.error("❌ No Zerodha client available in orchestrator")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error getting Zerodha client from orchestrator: {e}")
+            return False
+    
     async def _process_paper_signal(self, signal: Dict):
         """Process signal in paper trading mode with REAL Zerodha API and P&L tracking"""
         try:
             self.logger.info(f"📊 Processing paper signal for {signal.get('symbol', 'UNKNOWN')}")
+            
+            # CRITICAL FIX: Attempt to get Zerodha client if not available
+            if not self.zerodha_client:
+                self.logger.warning("⚠️ Zerodha client not set, attempting to retrieve from orchestrator")
+                await self._try_get_zerodha_client_from_orchestrator()
             
             # CRITICAL FIX: Use real Zerodha API even in paper mode
             if self.zerodha_client:
@@ -436,6 +460,11 @@ class TradeEngine:
     async def _process_signal_through_zerodha(self, signal: Dict):
         """Process signal through direct Zerodha integration"""
         try:
+            # CRITICAL FIX: Attempt to get Zerodha client if not available
+            if not self.zerodha_client:
+                self.logger.warning("⚠️ Zerodha client not set, attempting to retrieve from orchestrator")
+                await self._try_get_zerodha_client_from_orchestrator()
+            
             if not self.zerodha_client:
                 self.logger.warning("❌ No Zerodha client available")
                 return None
