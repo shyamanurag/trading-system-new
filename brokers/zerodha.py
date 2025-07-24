@@ -329,20 +329,7 @@ class ZerodhaIntegration:
             symbol = order_params.get('symbol', '')
             quantity = int(order_params.get('quantity', 0))
             
-            # CRITICAL FIX: Implement sandbox mode logic
-            if self.sandbox_mode:
-                logger.info(f"🧪 SANDBOX MODE: Simulating order placement for {symbol} {action} {quantity}")
-                
-                # Generate a fake order ID for sandbox mode
-                import time
-                fake_order_id = f"SANDBOX_{int(time.time() * 1000)}_{symbol}_{action}"
-                
-                logger.info(f"✅ SANDBOX order accepted: {fake_order_id}")
-                logger.info(f"📝 SANDBOX: Order will show as EXECUTED but NO real money/shares traded")
-                
-                return fake_order_id
-            
-            # REAL MODE: Place actual order
+
             # Build Zerodha order parameters
             zerodha_params = {
                 'variety': self.kite.VARIETY_REGULAR,
@@ -367,8 +354,11 @@ class ZerodhaIntegration:
             if trigger_price:
                 zerodha_params['trigger_price'] = float(trigger_price)
             
-            logger.info(f"🔴 REAL MODE: Placing LIVE order: {symbol} {action} {quantity}")
-            logger.warning(f"⚠️ REAL MONEY TRADE: This will use actual funds!")
+            if self.sandbox_mode:
+                logger.info(f"🧪 SANDBOX MODE: Placing order via real API (no NSE execution): {symbol} {action} {quantity}")
+            else:
+                logger.info(f"🔴 REAL MODE: Placing LIVE order: {symbol} {action} {quantity}")
+                logger.warning(f"⚠️ REAL MONEY TRADE: This will use actual funds!")
             
             # Place the REAL order
             order_response = await self._async_api_call(
