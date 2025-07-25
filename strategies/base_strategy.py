@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, time, timedelta
 import numpy as np
 import pytz  # Add timezone support
+import time # Added for time.time()
 
 logger = logging.getLogger(__name__)
 
@@ -259,7 +260,64 @@ class BaseStrategy:
     def create_standard_signal(self, symbol: str, action: str, entry_price: float, 
                               stop_loss: float, target: float, confidence: float, 
                               metadata: Dict) -> Optional[Dict]:
-        """Create standardized signal format for all strategies"""
+        """Create standardized signal format - SUPPORTS EQUITY, FUTURES & OPTIONS"""
+        try:
+            # 🎯 INTELLIGENT SIGNAL TYPE SELECTION based on market conditions and symbol
+            signal_type = self._determine_optimal_signal_type(symbol, entry_price, confidence, metadata)
+            
+            if signal_type == 'OPTIONS':
+                # Convert to options signal
+                return self._create_options_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            elif signal_type == 'FUTURES':
+                # Create futures signal (if available)
+                return self._create_futures_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            else:
+                # Create equity signal (default)
+                return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+                
+        except Exception as e:
+            logger.error(f"Error creating signal for {symbol}: {e}")
+            return None
+    
+    def _determine_optimal_signal_type(self, symbol: str, entry_price: float, confidence: float, metadata: Dict) -> str:
+        """Determine the best signal type based on market conditions"""
+        try:
+            # Factors for signal type selection
+            is_index = symbol.endswith('-I') or symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
+            is_high_confidence = confidence >= 0.8
+            is_scalping = metadata.get('risk_type', '').startswith('SCALPING')
+            volatility_score = metadata.get('volume_score', 0)
+            
+            # 🎯 DECISION LOGIC:
+            # 1. High confidence + Scalping → OPTIONS (leverage)
+            # 2. Index symbols → OPTIONS (standard)
+            # 3. High volatility stocks → OPTIONS
+            # 4. Medium confidence → FUTURES (if available)
+            # 5. Conservative → EQUITY
+            
+            if is_index:
+                logger.info(f"🎯 INDEX SIGNAL: {symbol} → OPTIONS (standard for indices)")
+                return 'OPTIONS'
+            elif is_high_confidence and is_scalping:
+                logger.info(f"🎯 HIGH CONFIDENCE SCALPING: {symbol} → OPTIONS (leverage)")
+                return 'OPTIONS'
+            elif volatility_score >= 0.8 and confidence >= 0.7:
+                logger.info(f"🎯 HIGH VOLATILITY: {symbol} → OPTIONS (opportunity)")
+                return 'OPTIONS'
+            elif confidence >= 0.6:
+                logger.info(f"🎯 MEDIUM CONFIDENCE: {symbol} → EQUITY (conservative)")
+                return 'EQUITY'
+            else:
+                logger.info(f"🎯 LOW CONFIDENCE: {symbol} → EQUITY (safest)")
+                return 'EQUITY'
+                
+        except Exception as e:
+            logger.error(f"Error determining signal type: {e}")
+            return 'EQUITY'  # Safest fallback
+    
+    def _create_options_signal(self, symbol: str, action: str, entry_price: float, 
+                              stop_loss: float, target: float, confidence: float, metadata: Dict) -> Dict:
+        """Create standardized signal format for options"""
         try:
             # 🎯 CRITICAL FIX: Convert to options symbol and force BUY action
             options_symbol, option_type = self._convert_to_options_symbol(symbol, entry_price, action)
@@ -339,6 +397,73 @@ class BaseStrategy:
             
         except Exception as e:
             logger.error(f"Error creating standard signal: {e}")
+            return None
+    
+    def _create_equity_signal(self, symbol: str, action: str, entry_price: float, 
+                             stop_loss: float, target: float, confidence: float, metadata: Dict) -> Optional[Dict]:
+        """Create equity signal with standard parameters"""
+        try:
+            # Validate signal levels
+            if not self.validate_signal_levels(entry_price, stop_loss, target, action):
+                logger.warning(f"Invalid equity signal levels: {symbol}")
+                return None
+            
+            # Calculate risk metrics
+            risk_amount = abs(entry_price - stop_loss)
+            reward_amount = abs(target - entry_price)
+            risk_percent = (risk_amount / entry_price) * 100
+            reward_percent = (reward_amount / entry_price) * 100
+            risk_reward_ratio = reward_amount / risk_amount if risk_amount > 0 else 0
+            
+            # Check minimum risk-reward ratio (2:1)
+            if risk_reward_ratio < 2.0:
+                logger.warning(f"Equity signal below 2:1 ratio: {symbol} ({risk_reward_ratio:.2f})")
+                return None
+            
+            return {
+                'signal_id': f"{self.name}_{symbol}_{int(time.time())}",
+                'symbol': symbol,
+                'action': action.upper(),
+                'quantity': self._get_dynamic_lot_size(symbol, symbol),
+                'entry_price': round(entry_price, 2),
+                'stop_loss': round(stop_loss, 2),
+                'target': round(target, 2),
+                'strategy': self.name,
+                'strategy_name': self.__class__.__name__,
+                'confidence': confidence,
+                'quality_score': confidence,
+                'risk_metrics': {
+                    'risk_amount': round(risk_amount, 2),
+                    'reward_amount': round(reward_amount, 2),
+                    'risk_percent': round(risk_percent, 2),
+                    'reward_percent': round(reward_percent, 2),
+                    'risk_reward_ratio': round(risk_reward_ratio, 2)
+                },
+                'metadata': {
+                    **metadata,
+                    'signal_type': 'EQUITY',
+                    'timestamp': datetime.now().isoformat(),
+                    'strategy_instance': self.__class__.__name__,
+                    'signal_source': 'strategy_engine'
+                },
+                'generated_at': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error creating equity signal: {e}")
+            return None
+    
+    def _create_futures_signal(self, symbol: str, action: str, entry_price: float, 
+                              stop_loss: float, target: float, confidence: float, metadata: Dict) -> Optional[Dict]:
+        """Create futures signal (placeholder for now)"""
+        try:
+            # For now, fallback to equity signal
+            # TODO: Implement proper futures signal creation with correct expiry, etc.
+            logger.info(f"📊 FUTURES signal requested for {symbol} - using equity for now")
+            return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            
+        except Exception as e:
+            logger.error(f"Error creating futures signal: {e}")
             return None
     
     def _convert_to_options_symbol(self, underlying_symbol: str, current_price: float, action: str) -> tuple:
@@ -719,42 +844,61 @@ class BaseStrategy:
             return self._estimate_options_premium_dynamic(fallback_price, option_type, options_symbol)
     
     def _estimate_options_premium_dynamic(self, underlying_price: float, option_type: str, options_symbol: str) -> float:
-        """Dynamically estimate options premium based on market conditions"""
+        """FIXED: Calculate realistic options premium - hundreds for indices, not thousands"""
         try:
             # Extract strike and expiry from options symbol for dynamic calculation
             strike_price = self._extract_strike_from_symbol(options_symbol)
             days_to_expiry = self._calculate_days_to_expiry(options_symbol)
             
-            # Calculate moneyness (how far the option is from ATM)
+            # 🚨 CRITICAL FIX: Realistic premium calculation for different asset types
+            if any(idx in options_symbol for idx in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']):
+                # INDEX OPTIONS: Premium should be ₹10-500 maximum
+                base_premium_percent = 0.002  # 0.2% of underlying (much lower)
+                max_premium = 500  # Maximum ₹500 for index options
+                min_premium = 10   # Minimum ₹10
+            else:
+                # STOCK OPTIONS: Premium should be ₹5-200 maximum  
+                base_premium_percent = 0.015  # 1.5% of underlying
+                max_premium = 200  # Maximum ₹200 for stock options
+                min_premium = 5    # Minimum ₹5
+            
+            # Calculate moneyness (distance from ATM)
             moneyness = abs(underlying_price - strike_price) / underlying_price
             
-            # Calculate time value factor (more time = higher premium)
-            time_value_factor = max(0.1, min(1.0, days_to_expiry / 30))  # 30 days max
+            # Time decay factor (less impact for short-term options)
+            time_value_factor = max(0.1, min(0.5, days_to_expiry / 30))  # Max 50% time value
             
-            # Calculate volatility factor based on recent price movements
-            volatility_factor = self._calculate_dynamic_volatility_factor(underlying_price)
+            # Volatility factor (much lower)
+            volatility_factor = 0.05  # 5% volatility factor (was too high before)
             
-            # Base premium calculation using Black-Scholes approximation
-            intrinsic_value = max(0, underlying_price - strike_price) if option_type == 'CE' else max(0, strike_price - underlying_price)
-            time_value = underlying_price * volatility_factor * time_value_factor * (1 - moneyness)
+            # Base premium calculation - MUCH MORE CONSERVATIVE
+            if option_type == 'CE':
+                intrinsic_value = max(0, underlying_price - strike_price)
+            else:  # PE
+                intrinsic_value = max(0, strike_price - underlying_price)
+            
+            # Time value calculation - REALISTIC
+            time_value = underlying_price * base_premium_percent * time_value_factor * (1 + moneyness)
             
             estimated_premium = intrinsic_value + time_value
             
-            # Dynamic bounds based on underlying price
-            min_premium = underlying_price * 0.001  # 0.1% minimum
-            max_premium = underlying_price * 0.2    # 20% maximum
+            # Apply realistic bounds
             estimated_premium = max(min_premium, min(estimated_premium, max_premium))
             
-            logger.info(f"📊 Dynamic estimation: {option_type} premium = ₹{estimated_premium:.2f}")
+            logger.info(f"📊 REALISTIC Premium: {option_type} = ₹{estimated_premium:.2f}")
             logger.info(f"   Underlying: ₹{underlying_price}, Strike: ₹{strike_price}")
-            logger.info(f"   Days to expiry: {days_to_expiry}, Volatility factor: {volatility_factor:.3f}")
+            logger.info(f"   Intrinsic: ₹{intrinsic_value:.2f}, Time: ₹{time_value:.2f}")
+            logger.info(f"   Days: {days_to_expiry}, Bounds: ₹{min_premium}-₹{max_premium}")
             
             return estimated_premium
             
         except Exception as e:
-            logger.error(f"Error in dynamic estimation: {e}")
-            # Simple fallback based on underlying price percentage
-            return underlying_price * 0.02  # 2% of underlying as fallback
+            logger.error(f"Error in premium calculation: {e}")
+            # Conservative fallback
+            if any(idx in options_symbol for idx in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']):
+                return 50.0  # ₹50 fallback for indices
+            else:
+                return 20.0  # ₹20 fallback for stocks
     
     def _calculate_options_levels(self, options_entry_price: float, original_stop_loss: float, 
                                  original_target: float, option_type: str, action: str) -> tuple:
