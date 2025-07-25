@@ -824,12 +824,20 @@ class TradeEngine:
             'price': signal.get('entry_price'),
             'entry_price': signal.get('entry_price'),
             'order_type': signal.get('order_type', 'MARKET'),
-            'product': signal.get('product', 'CNC'),  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+            'product': self._get_product_type_for_symbol(signal.get('symbol', '')),  # FIXED: Dynamic product type
             'validity': signal.get('validity', 'DAY'),
             'tag': 'ALGO_TRADE',
             'user_id': signal.get('user_id', 'system')
         }
     
+    def _get_product_type_for_symbol(self, symbol: str) -> str:
+        """Get appropriate product type for symbol - FIXED for NFO options"""
+        # 🔧 CRITICAL FIX: NFO options require NRML, not CNC
+        if 'CE' in symbol or 'PE' in symbol:
+            return 'NRML'  # Options must use NRML
+        else:
+            return 'CNC'   # Equity can use CNC
+
     def get_paper_orders(self) -> Dict:
         """Get all paper trading orders"""
         return self.paper_orders
