@@ -136,12 +136,13 @@ MULTI_USER_AUTH_HTML = """
         <div class="add-user-form">
             <h3>➕ Add New User</h3>
             <form action="/zerodha-multi/add-user" method="post">
-                <input type="text" name="user_id" placeholder="Zerodha User ID" required>
-                <input type="text" name="display_name" placeholder="Display Name" required>
-                <input type="email" name="email" placeholder="Email (for notifications)" required>
-                <input type="number" name="daily_limit" placeholder="Daily Trading Limit (₹)" step="1000" required>
+                <input type="text" name="user_id" placeholder="Zerodha User ID (e.g., ABC123)" required>
+                <input type="text" name="display_name" placeholder="Display Name (e.g., John Trader)" required>
                 <button type="submit">Add User</button>
             </form>
+            <p style="font-size: 12px; color: #666; margin-top: 10px;">
+                ℹ️ Only User ID and Name required. Default limits will be applied.
+            </p>
         </div>
     </div>
 </body>
@@ -329,13 +330,18 @@ async def multi_user_dashboard(request: Request):
 
 @router.post("/add-user")
 async def add_user(request: Request):
-    """Add a new user to the system"""
+    """Add a new user to the system with simplified form"""
     try:
         form_data = await request.form()
         user_id = form_data.get('user_id')
         display_name = form_data.get('display_name')
-        email = form_data.get('email')
-        daily_limit = float(form_data.get('daily_limit', 0))
+        
+        # Use defaults for optional fields
+        email = form_data.get('email', f"{user_id}@zerodha-trading.local")  # Default email
+        daily_limit = float(form_data.get('daily_limit', 500000))  # Default 5L limit
+        
+        if not user_id or not display_name:
+            raise Exception("User ID and Display Name are required")
         
         redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
         redis_client = await redis.from_url(redis_url)
@@ -345,7 +351,12 @@ async def add_user(request: Request):
         users_data = await redis_client.get(users_key)
         users = json.loads(users_data) if users_data else {}
         
-        # Add new user
+        # Check if user already exists
+        if user_id in users:
+            await redis_client.close()
+            return RedirectResponse(url=f"/zerodha-multi?error=User {user_id} already exists", status_code=302)
+        
+        # Add new user with defaults
         users[user_id] = {
             'display_name': display_name,
             'email': email,
@@ -359,7 +370,9 @@ async def add_user(request: Request):
         
         await redis_client.close()
         
-        return RedirectResponse(url="/zerodha-multi", status_code=302)
+        logger.info(f"✅ Added new user: {user_id} ({display_name}) with default settings")
+        
+        return RedirectResponse(url=f"/zerodha-multi?success=User {display_name} added successfully", status_code=302)
         
     except Exception as e:
         logger.error(f"Error adding user: {e}")
