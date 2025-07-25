@@ -386,26 +386,67 @@ class BaseStrategy:
         else:
             return int(price)
     
-    def _get_atm_strike_for_stock(self, price: float) -> int:
-        """Get ATM strike for stock options - FIXED with realistic strikes"""
-        # CRITICAL FIX: Use more realistic strike intervals for stocks
-        if price < 50:
-            return int(round(price / 2.5) * 2.5)  # Round to nearest 2.5 for low-priced stocks
-        elif price < 100:
-            return int(round(price / 5) * 5)  # Round to nearest 5
-        elif price < 200:
-            return int(round(price / 10) * 10)  # Round to nearest 10
-        elif price < 500:
-            return int(round(price / 20) * 20)  # Round to nearest 20
-        elif price < 1000:
-            return int(round(price / 50) * 50)  # Round to nearest 50
-        else:
-            return int(round(price / 100) * 100)  # Round to nearest 100 for high-priced stocks
+    def _get_atm_strike_for_stock(self, current_price: float) -> int:
+        """Get ATM strike for stock options with comprehensive debugging"""
+        try:
+            # 🔍 DEBUG: Log current price and strike calculation
+            logger.info(f"🔍 DEBUG: Calculating ATM strike for stock price: ₹{current_price}")
+            
+            # Stock strike intervals (more granular than indices)
+            if current_price <= 100:
+                interval = 2.5
+            elif current_price <= 500:
+                interval = 5
+            elif current_price <= 1000:
+                interval = 10
+            elif current_price <= 2000:
+                interval = 25
+            elif current_price <= 5000:
+                interval = 50
+            elif current_price <= 10000:
+                interval = 100
+            else:
+                interval = 250  # For very high-priced stocks
+            
+            # Round to nearest strike
+            atm_strike = round(current_price / interval) * interval
+            
+            logger.info(f"🎯 STRIKE CALCULATION:")
+            logger.info(f"   Current Price: ₹{current_price}")
+            logger.info(f"   Strike Interval: {interval}")
+            logger.info(f"   ATM Strike: {int(atm_strike)}")
+            
+            return int(atm_strike)
+            
+        except Exception as e:
+            logger.error(f"Error calculating ATM strike for stock: {e}")
+            # Fallback to rounded hundred
+            fallback_strike = round(current_price / 100) * 100
+            logger.warning(f"⚠️ FALLBACK STRIKE: {int(fallback_strike)}")
+            return int(fallback_strike)
       
     def _get_next_expiry(self) -> str:
         """DYNAMIC EXPIRY SELECTION: Get optimal expiry based on strategy requirements"""
-        # This method will be called with specific requirements
-        return self._get_optimal_expiry_for_strategy()
+        # 🔍 DEBUG: Add comprehensive logging for expiry date debugging
+        logger.info(f"🔍 DEBUG: Getting next expiry date...")
+        
+        # Try to get real expiry dates from Zerodha first
+        available_expiries = self._get_available_expiries_from_zerodha()
+        
+        if available_expiries:
+            logger.info(f"✅ Found {len(available_expiries)} expiry dates from Zerodha API")
+            for i, exp in enumerate(available_expiries[:3]):  # Log first 3
+                logger.info(f"   {i+1}. {exp['formatted']} ({exp['date']})")
+            
+            # Use the nearest expiry
+            optimal_expiry = self._get_optimal_expiry_for_strategy()
+            logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
+            return optimal_expiry
+        else:
+            logger.warning("⚠️ No expiry dates from Zerodha API - using fallback calculation")
+            fallback_expiry = self._calculate_next_thursday_fallback()
+            logger.info(f"🎯 FALLBACK EXPIRY: {fallback_expiry}")
+            return fallback_expiry
     
     def _get_optimal_expiry_for_strategy(self, preference: str = "nearest_weekly") -> str:
         """
@@ -563,7 +604,13 @@ class BaseStrategy:
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
         
-        return f"{next_thursday.day:02d}{month_names[next_thursday.month - 1]}{str(next_thursday.year)[-2:]}"
+        expiry_formatted = f"{next_thursday.day:02d}{month_names[next_thursday.month - 1]}{str(next_thursday.year)[-2:]}"
+        
+        logger.info(f"📅 THURSDAY EXPIRY: {expiry_formatted}")
+        logger.info(f"   Next Thursday: {next_thursday.strftime('%A, %B %d, %Y')}")
+        logger.info(f"   Today: {today.strftime('%A, %B %d, %Y')}")
+        
+        return expiry_formatted
     
     def _get_last_thursday_of_month(self, year: int, month: int) -> datetime:
         """Get the last Thursday of a given month - DEPRECATED: Use dynamic expiry selection"""
