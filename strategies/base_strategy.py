@@ -488,8 +488,8 @@ class BaseStrategy:
             zerodha_underlying = get_zerodha_symbol(underlying_symbol)
             
             # 🎯 CRITICAL FIX: Only BUY signals for options (no selling due to margin requirements)
-            # Convert equity signals to options BUY signals only
-            if zerodha_underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
+            # 🔧 IMPORTANT: Only use indices with confirmed options contracts on Zerodha
+            if zerodha_underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:  # REMOVED MIDCPNIFTY - no options
                 # Index options - use current levels
                 strike = self._get_atm_strike(zerodha_underlying, current_price)
                 # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
@@ -503,7 +503,14 @@ class BaseStrategy:
                 # 🔧 CRITICAL FIX: Use Zerodha's exact symbol format
                 # Zerodha format: BANKNIFTY25JUL57100PE (not BANKNIFTY31JUL2557100PE)
                 options_symbol = f"{zerodha_underlying}{expiry}{strike}{option_type}"
+                
+                logger.info(f"🎯 INDEX SIGNAL: {underlying_symbol} → OPTIONS (F&O enabled)")
+                logger.info(f"   Generated: {options_symbol}")
                 return options_symbol, option_type
+            elif zerodha_underlying in ['MIDCPNIFTY', 'SENSEX']:
+                # 🚨 FALLBACK: These indices don't have liquid options - use EQUITY instead
+                logger.warning(f"⚠️ {zerodha_underlying} has limited/no options - using EQUITY signal")
+                return underlying_symbol, 'EQUITY'
             else:
                 # Stock options - convert equity to options using ZERODHA NAME
                 strike = self._get_atm_strike_for_stock(current_price)
