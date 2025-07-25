@@ -1123,3 +1123,45 @@ def get_mixed_symbols_with_options():
     logger.info(f"🎯 READY FOR: Real-time analysis AND dynamic options execution")
     
     return final_symbols 
+
+# 🎯 VERIFIED F&O ENABLED STOCKS ONLY (Options Trading Available)
+# These stocks have confirmed options trading on NSE
+FO_ENABLED_STOCKS = [
+    # Major F&O Stocks (Confirmed Options Available)
+    'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY', 'KOTAKBANK',
+    'HDFC', 'ITC', 'BHARTIARTL', 'LT', 'AXISBANK', 'MARUTI', 
+    'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA',
+    'TECHM', 'TATAMOTORS', 'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND',
+    'TITAN', 'BAJFINANCE', 'M&M', 'DRREDDY', 'SUNPHARMA',
+    'CIPLA', 'APOLLOHOSP', 'DIVISLAB', 'HINDUNILVR', 'BRITANNIA',
+    'DABUR', 'ADANIGREEN', 'ADANITRANS', 'ADANIPOWER', 'JSWSTEEL',
+    'TATASTEEL', 'HINDALCO', 'VEDL', 'GODREJCP', 'BAJAJFINSV',
+    'BAJAJ-AUTO', 'HEROMOTOCO', 'EICHERMOT', 'TVSMOTOR', 'INDIGO'
+]
+
+# 🚨 NON-F&O STOCKS (Cash Only - Use Equity Signals)
+CASH_ONLY_STOCKS = [
+    'WIPRO',  # ❌ No F&O - Use equity only
+    'SBIN',   # ❌ No F&O - Use equity only  
+    'SAIL',   # ❌ No F&O - Use equity only
+    'NMDC',   # ❌ No F&O - Use equity only
+    'SPICEJET', # ❌ No F&O - Use equity only
+    # Add more as discovered
+]
+
+def is_fo_enabled(symbol: str) -> bool:
+    """Check if symbol has F&O trading available"""
+    # Remove -I suffix for index symbols
+    clean_symbol = symbol.replace('-I', '')
+    
+    # All indices have F&O
+    if clean_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX']:
+        return True
+    
+    # Check if stock is in F&O enabled list
+    return clean_symbol in FO_ENABLED_STOCKS
+
+def should_use_equity_only(symbol: str) -> bool:
+    """Check if symbol should only use equity signals"""
+    clean_symbol = symbol.replace('-I', '')
+    return clean_symbol in CASH_ONLY_STOCKS 

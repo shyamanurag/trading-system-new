@@ -280,31 +280,44 @@ class BaseStrategy:
             return None
     
     def _determine_optimal_signal_type(self, symbol: str, entry_price: float, confidence: float, metadata: Dict) -> str:
-        """Determine the best signal type based on market conditions"""
+        """Determine the best signal type based on market conditions and F&O availability"""
         try:
-            # Factors for signal type selection
+            # 🚨 CRITICAL: Check F&O availability first
+            from config.truedata_symbols import is_fo_enabled, should_use_equity_only
+            
+            # Force equity for known cash-only stocks
+            if should_use_equity_only(symbol):
+                logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY (no F&O available)")
+                return 'EQUITY'
+            
+            # Check if F&O is available for this symbol
+            if not is_fo_enabled(symbol):
+                logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY (no options trading)")
+                return 'EQUITY'
+            
+            # Factors for signal type selection (only for F&O enabled symbols)
             is_index = symbol.endswith('-I') or symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
             is_high_confidence = confidence >= 0.8
             is_scalping = metadata.get('risk_type', '').startswith('SCALPING')
             volatility_score = metadata.get('volume_score', 0)
             
-            # 🎯 DECISION LOGIC:
+            # 🎯 DECISION LOGIC FOR F&O ENABLED SYMBOLS:
             # 1. High confidence + Scalping → OPTIONS (leverage)
             # 2. Index symbols → OPTIONS (standard)
             # 3. High volatility stocks → OPTIONS
-            # 4. Medium confidence → FUTURES (if available)
-            # 5. Conservative → EQUITY
+            # 4. Medium confidence → EQUITY (conservative for stocks)
+            # 5. Low confidence → EQUITY (safest)
             
             if is_index:
-                logger.info(f"🎯 INDEX SIGNAL: {symbol} → OPTIONS (standard for indices)")
+                logger.info(f"🎯 INDEX SIGNAL: {symbol} → OPTIONS (F&O enabled)")
                 return 'OPTIONS'
             elif is_high_confidence and is_scalping:
-                logger.info(f"🎯 HIGH CONFIDENCE SCALPING: {symbol} → OPTIONS (leverage)")
+                logger.info(f"🎯 HIGH CONFIDENCE SCALPING: {symbol} → OPTIONS (F&O enabled)")
                 return 'OPTIONS'
-            elif volatility_score >= 0.8 and confidence >= 0.7:
-                logger.info(f"🎯 HIGH VOLATILITY: {symbol} → OPTIONS (opportunity)")
+            elif volatility_score >= 0.8 and confidence >= 0.75:
+                logger.info(f"🎯 HIGH VOLATILITY: {symbol} → OPTIONS (F&O enabled)")
                 return 'OPTIONS'
-            elif confidence >= 0.6:
+            elif confidence >= 0.65:
                 logger.info(f"🎯 MEDIUM CONFIDENCE: {symbol} → EQUITY (conservative)")
                 return 'EQUITY'
             else:

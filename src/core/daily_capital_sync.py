@@ -20,40 +20,43 @@ class DailyCapitalSync:
         self.last_sync_time = None
         self.is_syncing = False
         
-    async def sync_all_accounts(self) -> Dict[str, float]:
-        """Sync capital for all accounts at system startup"""
+    async def sync_all_accounts(self) -> Dict:
+        """Sync capital and margins from all connected Zerodha accounts every morning"""
+        logger.info("🌅 MORNING SYNC: Starting daily capital and margin sync...")
+        
+        sync_results = {
+            'timestamp': datetime.now().isoformat(),
+            'total_accounts': 0,
+            'successful_syncs': 0,
+            'total_available_margin': 0.0,
+            'total_used_margin': 0.0,
+            'account_details': [],
+            'margin_summary': {},
+            'alerts': []
+        }
+        
         try:
-            if self.is_syncing:
-                logger.info("🔄 Capital sync already in progress")
-                return self.account_capitals
-                
-            self.is_syncing = True
-            logger.info("🔄 Starting daily capital synchronization...")
+            # 1. Sync Zerodha accounts
+            zerodha_results = await self._sync_zerodha_accounts()
+            sync_results.update(zerodha_results)
             
-            # Get orchestrator and broker clients
-            if not self.orchestrator:
-                logger.error("❌ No orchestrator available for capital sync")
-                return {}
-                
-            # Sync Zerodha accounts
-            zerodha_capitals = await self._sync_zerodha_accounts()
+            # 2. Check margin utilization and generate alerts
+            margin_alerts = self._analyze_margin_utilization(sync_results)
+            sync_results['alerts'].extend(margin_alerts)
             
-            # Update system capitals
-            await self._update_system_capitals(zerodha_capitals)
+            # 3. Update system components with new capital data
+            await self._update_system_capitals(sync_results)
             
-            self.last_sync_time = datetime.now()
-            self.account_capitals = zerodha_capitals
+            # 4. Log comprehensive summary
+            self._log_daily_sync_summary(sync_results)
             
-            logger.info(f"✅ Capital sync completed for {len(zerodha_capitals)} accounts")
-            logger.info(f"💰 Total system capital: ₹{sum(zerodha_capitals.values()):,.2f}")
-            
-            return zerodha_capitals
+            logger.info(f"✅ MORNING SYNC COMPLETE: {sync_results['successful_syncs']}/{sync_results['total_accounts']} accounts")
+            return sync_results
             
         except Exception as e:
-            logger.error(f"❌ Error during capital sync: {e}")
-            return {}
-        finally:
-            self.is_syncing = False
+            logger.error(f"❌ Daily sync failed: {e}")
+            sync_results['error'] = str(e)
+            return sync_results
     
     async def _sync_zerodha_accounts(self) -> Dict[str, float]:
         """Fetch real available funds from Zerodha accounts"""
@@ -236,3 +239,62 @@ class DailyCapitalSync:
                 
         except Exception as e:
             logger.error(f"❌ Error in daily sync scheduler: {e}") 
+
+    def _analyze_margin_utilization(self, sync_results: Dict) -> List[str]:
+        """Analyze margin utilization and generate alerts"""
+        alerts = []
+        
+        try:
+            total_available = sync_results.get('total_available_margin', 0)
+            total_used = sync_results.get('total_used_margin', 0)
+            
+            if total_available > 0:
+                utilization_percent = (total_used / total_available) * 100
+                
+                # Margin utilization alerts
+                if utilization_percent > 80:
+                    alerts.append(f"🚨 HIGH MARGIN USAGE: {utilization_percent:.1f}% utilized")
+                elif utilization_percent > 60:
+                    alerts.append(f"⚠️ MODERATE MARGIN USAGE: {utilization_percent:.1f}% utilized")
+                else:
+                    alerts.append(f"✅ SAFE MARGIN USAGE: {utilization_percent:.1f}% utilized")
+                
+                # Low margin alerts
+                if total_available < 50000:  # Less than ₹50k available
+                    alerts.append(f"🚨 LOW AVAILABLE MARGIN: ₹{total_available:,.0f}")
+                
+                # Account-specific alerts
+                for account in sync_results.get('account_details', []):
+                    account_available = account.get('available_margin', 0)
+                    if account_available < 10000:  # Less than ₹10k per account
+                        user_id = account.get('user_id', 'Unknown')
+                        alerts.append(f"⚠️ LOW MARGIN - {user_id}: ₹{account_available:,.0f}")
+                        
+        except Exception as e:
+            logger.error(f"Error analyzing margin utilization: {e}")
+            alerts.append(f"❌ Margin analysis failed: {e}")
+        
+        return alerts
+    
+    def _log_daily_sync_summary(self, sync_results: Dict):
+        """Log comprehensive daily sync summary"""
+        try:
+            logger.info("📊 DAILY MARGIN & CAPITAL SUMMARY:")
+            logger.info(f"   Total Accounts: {sync_results['total_accounts']}")
+            logger.info(f"   Successful Syncs: {sync_results['successful_syncs']}")
+            logger.info(f"   Total Available Margin: ₹{sync_results['total_available_margin']:,.0f}")
+            logger.info(f"   Total Used Margin: ₹{sync_results['total_used_margin']:,.0f}")
+            
+            # Account-wise details
+            for account in sync_results.get('account_details', []):
+                user_id = account.get('user_id', 'Unknown')
+                available = account.get('available_margin', 0)
+                used = account.get('used_margin', 0)
+                logger.info(f"   {user_id}: Available=₹{available:,.0f}, Used=₹{used:,.0f}")
+            
+            # Alerts
+            for alert in sync_results.get('alerts', []):
+                logger.warning(f"   {alert}")
+                
+        except Exception as e:
+            logger.error(f"Error logging daily summary: {e}") 
