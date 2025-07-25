@@ -269,6 +269,45 @@ class SimpleTradeEngine:
             'total_signals_processed': len(self.signal_queue) if isinstance(self.signal_queue, list) else 0  # Total signals processed
         }
 
+    def _create_order_from_signal(self, signal: Dict) -> Dict:
+        """Create order parameters from signal - FIXED with dynamic product type"""
+        try:
+            # Extract signal parameters
+            symbol = signal.get('symbol', '')
+            action = signal.get('action', 'BUY').upper()
+            quantity = signal.get('quantity', 50)
+            
+            # Create order parameters with DYNAMIC product type
+            order_data = {
+                'symbol': symbol,
+                'quantity': quantity,
+                'action': action,
+                'transaction_type': action,
+                'order_type': 'MARKET',
+                'product': self._get_product_type_for_symbol(symbol),  # FIXED: Dynamic product type
+                'validity': 'DAY',
+                'tag': 'ALGO_TRADE'
+            }
+            
+            # Add price for limit orders
+            if signal.get('order_type') == 'LIMIT':
+                order_data['order_type'] = 'LIMIT'
+                order_data['price'] = signal.get('entry_price')
+            
+            return order_data
+            
+        except Exception as e:
+            self.logger.error(f"Error creating order from signal: {e}")
+            return {}
+    
+    def _get_product_type_for_symbol(self, symbol: str) -> str:
+        """Get appropriate product type for symbol - FIXED for NFO options"""
+        # 🔧 CRITICAL FIX: NFO options require NRML, not CNC
+        if 'CE' in symbol or 'PE' in symbol:
+            return 'NRML'  # Options must use NRML
+        else:
+            return 'CNC'   # Equity can use CNC
+
 class ProductionRiskManager:
     """Production-level risk manager with proper error handling"""
     
