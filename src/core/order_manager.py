@@ -1402,7 +1402,7 @@ class OrderManager:
                     'transaction_type': 'BUY' if order.side.value == 'BUY' else 'SELL',
                     'quantity': order.quantity,
                     'order_type': 'MARKET',
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -1500,7 +1500,7 @@ class OrderManager:
                     'quantity': order.quantity,
                     'order_type': 'LIMIT',
                     'price': order.price,
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -2141,7 +2141,7 @@ class OrderManager:
                     'transaction_type': 'BUY' if order.side.value == 'BUY' else 'SELL',
                     'quantity': order.quantity,
                     'order_type': 'MARKET',
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -2239,7 +2239,7 @@ class OrderManager:
                     'quantity': order.quantity,
                     'order_type': 'LIMIT',
                     'price': order.price,
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -2880,7 +2880,7 @@ class OrderManager:
                     'transaction_type': 'BUY' if order.side.value == 'BUY' else 'SELL',
                     'quantity': order.quantity,
                     'order_type': 'MARKET',
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -2978,7 +2978,7 @@ class OrderManager:
                     'quantity': order.quantity,
                     'order_type': 'LIMIT',
                     'price': order.price,
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -3619,7 +3619,7 @@ class OrderManager:
                     'transaction_type': 'BUY' if order.side.value == 'BUY' else 'SELL',
                     'quantity': order.quantity,
                     'order_type': 'MARKET',
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -3717,7 +3717,7 @@ class OrderManager:
                     'quantity': order.quantity,
                     'order_type': 'LIMIT',
                     'price': order.price,
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -4358,7 +4358,7 @@ class OrderManager:
                     'transaction_type': 'BUY' if order.side.value == 'BUY' else 'SELL',
                     'quantity': order.quantity,
                     'order_type': 'MARKET',
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -4456,7 +4456,7 @@ class OrderManager:
                     'quantity': order.quantity,
                     'order_type': 'LIMIT',
                     'price': order.price,
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -5097,7 +5097,7 @@ class OrderManager:
                     'transaction_type': 'BUY' if order.side.value == 'BUY' else 'SELL',
                     'quantity': order.quantity,
                     'order_type': 'MARKET',
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -5195,7 +5195,7 @@ class OrderManager:
                     'quantity': order.quantity,
                     'order_type': 'LIMIT',
                     'price': order.price,
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -5836,7 +5836,7 @@ class OrderManager:
                     'transaction_type': 'BUY' if order.side.value == 'BUY' else 'SELL',
                     'quantity': order.quantity,
                     'order_type': 'MARKET',
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -5934,7 +5934,7 @@ class OrderManager:
                     'quantity': order.quantity,
                     'order_type': 'LIMIT',
                     'price': order.price,
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -6575,7 +6575,7 @@ class OrderManager:
                     'transaction_type': 'BUY' if order.side.value == 'BUY' else 'SELL',
                     'quantity': order.quantity,
                     'order_type': 'MARKET',
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -6673,7 +6673,7 @@ class OrderManager:
                     'quantity': order.quantity,
                     'order_type': 'LIMIT',
                     'price': order.price,
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -7314,7 +7314,7 @@ class OrderManager:
                     'transaction_type': 'BUY' if order.side.value == 'BUY' else 'SELL',
                     'quantity': order.quantity,
                     'order_type': 'MARKET',
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -7412,7 +7412,7 @@ class OrderManager:
                     'quantity': order.quantity,
                     'order_type': 'LIMIT',
                     'price': order.price,
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -8053,7 +8053,7 @@ class OrderManager:
                     'transaction_type': 'BUY' if order.side.value == 'BUY' else 'SELL',
                     'quantity': order.quantity,
                     'order_type': 'MARKET',
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
@@ -8151,7 +8151,7 @@ class OrderManager:
                     'quantity': order.quantity,
                     'order_type': 'LIMIT',
                     'price': order.price,
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(order.symbol),  # FIXED: Dynamic product type
                     'validity': 'DAY',
                     'tag': f"ORDER_MANAGER_{order.order_id[:8]}"
                 }
