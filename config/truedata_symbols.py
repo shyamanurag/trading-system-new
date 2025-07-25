@@ -37,6 +37,89 @@ SYMBOL_MAPPING = {
     **EQUITY_SYMBOLS
 }
 
+# 🎯 ZERODHA OFFICIAL SYMBOL MAPPING for Options Trading
+# Maps our internal names to Zerodha's exact instrument names
+ZERODHA_SYMBOL_MAPPING = {
+    # Common variations that cause "instrument does not exist" errors
+    'BAJAJFINSV': 'BAJFINANCE',      # ✅ CRITICAL: Bajaj Financial Services
+    'ADANIPORTS': 'ADANIPORT',       # ✅ CRITICAL: Adani Ports (singular)
+    'BHARTIARTL': 'BHARTI-ART',      # ✅ CRITICAL: Bharti Airtel
+    'KOTAKBANK': 'KOTAKBANK',        # ✅ Keep as is
+    'HDFCBANK': 'HDFCBANK',          # ✅ Keep as is  
+    'ICICIBANK': 'ICICIBANK',        # ✅ Keep as is
+    'AXISBANK': 'AXISBANK',          # ✅ Keep as is
+    'SBIN': 'SBIN',                  # ✅ Keep as is
+    'RELIANCE': 'RELIANCE',          # ✅ Keep as is
+    'TCS': 'TCS',                    # ✅ Keep as is
+    'INFY': 'INFY',                  # ✅ Keep as is
+    'WIPRO': 'WIPRO',                # ✅ Keep as is
+    'HCLTECH': 'HCLTECH',            # ✅ Keep as is
+    'TECHM': 'TECHM',                # ✅ Keep as is
+    'LT': 'LT',                      # ✅ Keep as is
+    'MARUTI': 'MARUTI',              # ✅ Keep as is
+    'M&M': 'M&M',                    # ✅ Keep as is
+    'TATAMOTORS': 'TATAMOTORS',      # ✅ Keep as is
+    'BAJAJ-AUTO': 'BAJAJ-AUTO',      # ✅ Keep as is
+    'HEROMOTOCO': 'HEROMOTOCO',      # ✅ Keep as is
+    'EICHERMOT': 'EICHERMOT',        # ✅ Keep as is
+    'TVSMOTOR': 'TVSMOTOR',          # ✅ Keep as is
+    'POWERGRID': 'POWERGRID',        # ✅ Keep as is
+    'NTPC': 'NTPC',                  # ✅ Keep as is
+    'COALINDIA': 'COALINDIA',        # ✅ Keep as is
+    'IOC': 'IOC',                    # ✅ Keep as is
+    'BPCL': 'BPCL',                  # ✅ Keep as is
+    'ONGC': 'ONGC',                  # ✅ Keep as is
+    'GAIL': 'GAIL',                  # ✅ Keep as is
+    'JSWSTEEL': 'JSWSTEEL',          # ✅ Keep as is
+    'TATASTEEL': 'TATASTEEL',        # ✅ Keep as is
+    'HINDALCO': 'HINDALCO',          # ✅ Keep as is
+    'VEDL': 'VEDL',                  # ✅ Keep as is
+    'SAIL': 'SAIL',                  # ✅ Keep as is
+    'NMDC': 'NMDC',                  # ✅ Keep as is
+    'ULTRACEMCO': 'ULTRACEMCO',      # ✅ Keep as is
+    'SHREECEM': 'SHREECEM',          # ✅ Keep as is
+    'ACC': 'ACC',                    # ✅ Keep as is
+    'AMBUJACEM': 'AMBUJACEM',        # ✅ Keep as is
+    'RAMCOCEM': 'RAMCOCEM',          # ✅ Keep as is
+    'GRASIM': 'GRASIM',              # ✅ Keep as is
+    'ASIANPAINT': 'ASIANPAINT',      # ✅ Keep as is
+    'BERGER': 'BERGER',              # ✅ Keep as is
+    'PIDILITIND': 'PIDILITIND',      # ✅ Keep as is
+    'TITAN': 'TITAN',                # ✅ Keep as is
+    'NESTLEIND': 'NESTLEIND',        # ✅ Keep as is
+    'HINDUNILVR': 'HINDUNILVR',      # ✅ Keep as is
+    'ITC': 'ITC',                    # ✅ Keep as is
+    'BRITANNIA': 'BRITANNIA',        # ✅ Keep as is
+    'DABUR': 'DABUR',                # ✅ Keep as is
+    'GODREJCP': 'GODREJCP',          # ✅ Keep as is
+    'MARICO': 'MARICO',              # ✅ Keep as is
+    'SUNPHARMA': 'SUNPHARMA',        # ✅ Keep as is
+    'CIPLA': 'CIPLA',                # ✅ Keep as is
+    'DRREDDY': 'DRREDDY',            # ✅ Keep as is
+    'APOLLOHOSP': 'APOLLOHOSP',      # ✅ Keep as is
+    'DIVISLAB': 'DIVISLAB',          # ✅ Keep as is
+    'BIOCON': 'BIOCON',              # ✅ Keep as is
+    'ADANIGREEN': 'ADANIGREEN',      # ✅ Keep as is
+    'ADANITRANS': 'ADANITRANS',      # ✅ Keep as is
+    'ADANIPOWER': 'ADANIPOWER',      # ✅ Keep as is
+    'INDIGO': 'INDIGO',              # ✅ Keep as is
+    'SPICEJET': 'SPICEJET',          # ✅ Keep as is
+    
+    # Index symbols (remove -I suffix for Zerodha)
+    'NIFTY-I': 'NIFTY',              # ✅ CRITICAL: Remove -I suffix
+    'BANKNIFTY-I': 'BANKNIFTY',      # ✅ CRITICAL: Remove -I suffix  
+    'FINNIFTY-I': 'FINNIFTY',        # ✅ CRITICAL: Remove -I suffix
+    'MIDCPNIFTY-I': 'MIDCPNIFTY',    # ✅ CRITICAL: Remove -I suffix
+    'SENSEX-I': 'SENSEX',            # ✅ CRITICAL: Remove -I suffix
+}
+
+def get_zerodha_symbol(internal_symbol: str) -> str:
+    """Convert internal symbol to Zerodha's official symbol name"""
+    zerodha_symbol = ZERODHA_SYMBOL_MAPPING.get(internal_symbol, internal_symbol)
+    if zerodha_symbol != internal_symbol:
+        logger.info(f"🔄 ZERODHA MAPPING: {internal_symbol} → {zerodha_symbol}")
+    return zerodha_symbol
+
 # Default symbols to subscribe on connection
 DEFAULT_SYMBOLS = [
     # Core Indices (Always include)

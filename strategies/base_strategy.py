@@ -332,13 +332,17 @@ class BaseStrategy:
             return None
     
     def _convert_to_options_symbol(self, underlying_symbol: str, current_price: float, action: str) -> tuple:
-        """Convert underlying symbol to appropriate options symbol for scalping"""
+        """Convert underlying symbol to options symbol with ZERODHA SYMBOL MAPPING"""
         try:
+            # 🎯 CRITICAL FIX: Convert to Zerodha's official symbol name FIRST
+            from config.truedata_symbols import get_zerodha_symbol
+            zerodha_underlying = get_zerodha_symbol(underlying_symbol)
+            
             # 🎯 CRITICAL FIX: Only BUY signals for options (no selling due to margin requirements)
             # Convert equity signals to options BUY signals only
-            if underlying_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
+            if zerodha_underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
                 # Index options - use current levels
-                strike = self._get_atm_strike(underlying_symbol, current_price)
+                strike = self._get_atm_strike(zerodha_underlying, current_price)
                 # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
                 if action.upper() == 'BUY':
                     option_type = 'CE'  # BUY Call when bullish
@@ -346,12 +350,10 @@ class BaseStrategy:
                     option_type = 'PE'  # BUY Put when bearish
                     
                 expiry = self._get_next_expiry()
-                options_symbol = f"{underlying_symbol}{expiry}{strike}{option_type}"
+                options_symbol = f"{zerodha_underlying}{expiry}{strike}{option_type}"
                 return options_symbol, option_type
             else:
-                # Stock options - convert equity to options
-                # CRITICAL FIX: Truncate long symbol names for options
-                truncated_symbol = self._truncate_symbol_for_options(underlying_symbol)
+                # Stock options - convert equity to options using ZERODHA NAME
                 strike = self._get_atm_strike_for_stock(current_price)
                 # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
                 if action.upper() == 'BUY':
@@ -360,7 +362,12 @@ class BaseStrategy:
                     option_type = 'PE'  # BUY Put when bearish
                     
                 expiry = self._get_next_expiry()
-                options_symbol = f"{truncated_symbol}{expiry}{strike}{option_type}"
+                options_symbol = f"{zerodha_underlying}{expiry}{strike}{option_type}"
+                
+                logger.info(f"🎯 ZERODHA OPTIONS SYMBOL: {underlying_symbol} → {options_symbol}")
+                logger.info(f"   Mapping: {underlying_symbol} → {zerodha_underlying}")
+                logger.info(f"   Strike: {strike}, Expiry: {expiry}, Type: {option_type}")
+                
                 return options_symbol, option_type
                 
         except Exception as e:
