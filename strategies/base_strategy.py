@@ -334,6 +334,12 @@ class BaseStrategy:
         try:
             # 🎯 CRITICAL FIX: Convert to options symbol and force BUY action
             options_symbol, option_type = self._convert_to_options_symbol(symbol, entry_price, action)
+            
+            # 🚨 CRITICAL: Check if signal was rejected (e.g., MIDCPNIFTY, SENSEX)
+            if options_symbol is None or option_type == 'REJECTED':
+                logger.warning(f"⚠️ OPTIONS SIGNAL REJECTED: {symbol} - cannot be traded")
+                return None
+            
             final_action = 'BUY' # Force all options signals to be BUY
             
             # 🔍 CRITICAL DEBUG: Log the complete symbol creation process
@@ -508,9 +514,9 @@ class BaseStrategy:
                 logger.info(f"   Generated: {options_symbol}")
                 return options_symbol, option_type
             elif zerodha_underlying in ['MIDCPNIFTY', 'SENSEX']:
-                # 🚨 FALLBACK: These indices don't have liquid options - use EQUITY instead
-                logger.warning(f"⚠️ {zerodha_underlying} has limited/no options - using EQUITY signal")
-                return underlying_symbol, 'EQUITY'
+                # 🚨 CRITICAL: These indices cannot be traded as equity - SKIP SIGNAL
+                logger.warning(f"⚠️ {zerodha_underlying} cannot be traded as equity - SIGNAL REJECTED")
+                return None, 'REJECTED'
             else:
                 # Stock options - convert equity to options using ZERODHA NAME
                 strike = self._get_atm_strike_for_stock(current_price)
