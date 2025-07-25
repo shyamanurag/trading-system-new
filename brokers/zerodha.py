@@ -312,82 +312,95 @@ class ZerodhaIntegration:
             return None
 
     async def _place_order_impl(self, order_params: Dict) -> Optional[str]:
-        """Internal order placement implementation"""
-        try:
-            # Validate order parameters
-            if not self._validate_order_params(order_params):
-                logger.error("❌ Order validation failed")
+        """Place order implementation with retries and proper error handling"""
+        symbol = order_params.get('symbol', '')
+        
+        # 🔍 CRITICAL VALIDATION: Check if options symbol exists before placing order
+        if 'CE' in symbol or 'PE' in symbol:
+            logger.info(f"🔍 VALIDATING OPTIONS SYMBOL: {symbol}")
+            symbol_exists = await self.validate_options_symbol(symbol)
+            if not symbol_exists:
+                logger.error(f"❌ SYMBOL VALIDATION FAILED: {symbol} does not exist in Zerodha NFO")
                 return None
-            
-            # Check connection
-            if not self.kite or not self.access_token or not self.is_connected:
-                logger.error("❌ Zerodha order rejected: No valid connection")
-                return None
-            
-            # Map signal parameters to Zerodha API format
-            action = self._get_transaction_type(order_params)
-            symbol = order_params.get('symbol', '')
-            quantity = int(order_params.get('quantity', 0))
-            
-
-            # Build Zerodha order parameters
-            zerodha_params = {
-                'variety': self.kite.VARIETY_REGULAR,
-                'exchange': self._get_exchange_for_symbol(symbol),
-                'tradingsymbol': self._map_symbol_to_exchange(symbol),
-                'transaction_type': action,
-                'quantity': quantity,
-                'product': order_params.get('product', self.kite.PRODUCT_CNC),  # CRITICAL FIX: Use CNC instead of MIS for SPECIALITY stocks
-                'order_type': order_params.get('order_type', self.kite.ORDER_TYPE_MARKET),
-                'validity': order_params.get('validity', self.kite.VALIDITY_DAY),
-                'tag': order_params.get('tag', 'ALGO_TRADE')
-            }
-            
-            # Add price for limit orders
-            if zerodha_params['order_type'] != self.kite.ORDER_TYPE_MARKET:
-                price = order_params.get('price') or order_params.get('entry_price')
-                if price:
-                    zerodha_params['price'] = float(price)
-            
-            # Add trigger price for stop loss orders
-            trigger_price = order_params.get('trigger_price') or order_params.get('stop_loss')
-            if trigger_price:
-                zerodha_params['trigger_price'] = float(trigger_price)
-            
-            if self.sandbox_mode:
-                logger.info(f"🧪 SANDBOX MODE: Placing order via real API (no NSE execution): {symbol} {action} {quantity}")
-            else:
-                logger.info(f"🔴 REAL MODE: Placing LIVE order: {symbol} {action} {quantity}")
-                logger.warning(f"⚠️ REAL MONEY TRADE: This will use actual funds!")
-            
-            # Place the REAL order
-            order_response = await self._async_api_call(
-                self.kite.place_order,
-                **zerodha_params
-            )
-            
-            # CRITICAL FIX: Handle both string order ID and dict response formats
-            if order_response:
-                # Check if response is a direct order ID string
-                if isinstance(order_response, str) and order_response.strip():
-                    order_id = order_response.strip()
-                    logger.info(f"✅ REAL Zerodha order placed successfully: {order_id}")
-                    return order_id
-                # Check if response is a dict with order_id key
-                elif isinstance(order_response, dict) and 'order_id' in order_response:
-                    order_id = order_response['order_id']
-                    logger.info(f"✅ REAL Zerodha order placed successfully: {order_id}")
-                    return order_id
-                else:
-                    logger.error(f"❌ Unexpected order response format: {order_response}")
+        
+        for attempt in range(self.max_retries):
+            try:
+                if self.mock_mode or not self.kite:
+                    return f"MOCK_ORDER_{symbol}_{int(time.time())}"
+                # Validate order parameters
+                if not self._validate_order_params(order_params):
+                    logger.error("❌ Order validation failed")
                     return None
-            else:
-                logger.error(f"❌ Zerodha order failed: No response")
-                return None
                 
-        except Exception as e:
-            logger.error(f"❌ Error placing REAL order: {e}")
-            raise  # Re-raise for retry logic
+                # Check connection
+                if not self.kite or not self.access_token or not self.is_connected:
+                    logger.error("❌ Zerodha order rejected: No valid connection")
+                    return None
+                
+                # Map signal parameters to Zerodha API format
+                action = self._get_transaction_type(order_params)
+                # symbol = order_params.get('symbol', '') # This line is removed as symbol is now validated
+                quantity = int(order_params.get('quantity', 0))
+                
+
+                # Build Zerodha order parameters
+                zerodha_params = {
+                    'variety': self.kite.VARIETY_REGULAR,
+                    'exchange': self._get_exchange_for_symbol(symbol),
+                    'tradingsymbol': self._map_symbol_to_exchange(symbol),
+                    'transaction_type': action,
+                    'quantity': quantity,
+                    'product': order_params.get('product', self.kite.PRODUCT_CNC),  # CRITICAL FIX: Use CNC instead of MIS for SPECIALITY stocks
+                    'order_type': order_params.get('order_type', self.kite.ORDER_TYPE_MARKET),
+                    'validity': order_params.get('validity', self.kite.VALIDITY_DAY),
+                    'tag': order_params.get('tag', 'ALGO_TRADE')
+                }
+                
+                # Add price for limit orders
+                if zerodha_params['order_type'] != self.kite.ORDER_TYPE_MARKET:
+                    price = order_params.get('price') or order_params.get('entry_price')
+                    if price:
+                        zerodha_params['price'] = float(price)
+                
+                # Add trigger price for stop loss orders
+                trigger_price = order_params.get('trigger_price') or order_params.get('stop_loss')
+                if trigger_price:
+                    zerodha_params['trigger_price'] = float(trigger_price)
+                
+                if self.sandbox_mode:
+                    logger.info(f"🧪 SANDBOX MODE: Placing order via real API (no NSE execution): {symbol} {action} {quantity}")
+                else:
+                    logger.info(f"🔴 REAL MODE: Placing LIVE order: {symbol} {action} {quantity}")
+                    logger.warning(f"⚠️ REAL MONEY TRADE: This will use actual funds!")
+                
+                # Place the REAL order
+                order_response = await self._async_api_call(
+                    self.kite.place_order,
+                    **zerodha_params
+                )
+                
+                # CRITICAL FIX: Handle both string order ID and dict response formats
+                if order_response:
+                    # Check if response is a direct order ID string
+                    if isinstance(order_response, str) and order_response.strip():
+                        order_id = order_response.strip()
+                        logger.info(f"✅ REAL Zerodha order placed successfully: {order_id}")
+                        return order_id
+                    # Check if response is a dict with order_id key
+                    elif isinstance(order_response, dict) and 'order_id' in order_response:
+                        order_id = order_response['order_id']
+                        logger.info(f"✅ REAL Zerodha order placed successfully: {order_id}")
+                        return order_id
+                    else:
+                        logger.error(f"❌ Unexpected order response format: {order_response}")
+                        return None
+                else:
+                    logger.error(f"❌ Zerodha order failed: No response")
+                    return None
+                    
+            except Exception as e:
+                logger.error(f"❌ Error placing REAL order: {e}")
+                raise  # Re-raise for retry logic
 
     async def _async_api_call(self, func, *args, **kwargs):
         """Execute synchronous API call in thread pool"""
@@ -766,6 +779,49 @@ class ZerodhaIntegration:
         except Exception as e:
             logger.error(f"❌ Error getting expiries for {underlying_symbol}: {e}")
             return []
+
+    async def validate_options_symbol(self, options_symbol: str) -> bool:
+        """Validate if options symbol exists in Zerodha instruments before placing order"""
+        try:
+            # Get all NFO instruments
+            instruments = await self.get_instruments("NFO")
+            
+            if not instruments:
+                logger.warning("⚠️ No NFO instruments available for validation")
+                return False
+            
+            # Check if our options symbol exists
+            for instrument in instruments:
+                trading_symbol = instrument.get('tradingsymbol', '')
+                if trading_symbol == options_symbol:
+                    logger.info(f"✅ VALIDATED: {options_symbol} exists in Zerodha NFO")
+                    logger.info(f"   Details: Strike={instrument.get('strike')}, Expiry={instrument.get('expiry')}")
+                    return True
+            
+            # If not found, log similar symbols for debugging
+            logger.error(f"❌ SYMBOL NOT FOUND: {options_symbol}")
+            
+            # Extract base symbol to find similar ones
+            base_symbol = options_symbol.split('31JUL25')[0] if '31JUL25' in options_symbol else options_symbol[:10]
+            similar_symbols = []
+            
+            for instrument in instruments[:100]:  # Check first 100 for performance
+                trading_symbol = instrument.get('tradingsymbol', '')
+                if base_symbol in trading_symbol and ('CE' in trading_symbol or 'PE' in trading_symbol):
+                    similar_symbols.append(trading_symbol)
+                    
+            if similar_symbols:
+                logger.info(f"🔍 SIMILAR SYMBOLS FOUND for {base_symbol}:")
+                for i, sym in enumerate(similar_symbols[:5]):  # Show first 5
+                    logger.info(f"   {i+1}. {sym}")
+            else:
+                logger.warning(f"⚠️ NO SIMILAR SYMBOLS FOUND for {base_symbol}")
+                
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error validating options symbol {options_symbol}: {e}")
+            return False
 
     def get_connection_status(self) -> Dict:
         """Get detailed connection status"""

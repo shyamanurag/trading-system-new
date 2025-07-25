@@ -44,11 +44,15 @@ ZERODHA_SYMBOL_MAPPING = {
     'BAJAJFINSV': 'BAJFINANCE',      # ✅ CRITICAL: Bajaj Financial Services
     'ADANIPORTS': 'ADANIPORT',       # ✅ CRITICAL: Adani Ports (singular)
     'BHARTIARTL': 'BHARTI-ART',      # ✅ CRITICAL: Bharti Airtel
-    'KOTAKBANK': 'KOTAKBANK',        # ✅ Keep as is
+    'ULTRACEMCO': 'ULTRACEMCO',      # ✅ TESTING: Ultra Tech Cement (might need change)
+    'ICICIBANK': 'ICICIBANK',        # ✅ TESTING: ICICI Bank (might need change)
+    
+    # Additional potential mappings for common symbols
+    'TATASTEEL': 'TATASTEEL',        # ✅ Keep as is (testing)
     'HDFCBANK': 'HDFCBANK',          # ✅ Keep as is  
-    'ICICIBANK': 'ICICIBANK',        # ✅ Keep as is
     'AXISBANK': 'AXISBANK',          # ✅ Keep as is
     'SBIN': 'SBIN',                  # ✅ Keep as is
+    'KOTAKBANK': 'KOTAKBANK',        # ✅ Keep as is
     'RELIANCE': 'RELIANCE',          # ✅ Keep as is
     'TCS': 'TCS',                    # ✅ Keep as is
     'INFY': 'INFY',                  # ✅ Keep as is
@@ -71,12 +75,10 @@ ZERODHA_SYMBOL_MAPPING = {
     'ONGC': 'ONGC',                  # ✅ Keep as is
     'GAIL': 'GAIL',                  # ✅ Keep as is
     'JSWSTEEL': 'JSWSTEEL',          # ✅ Keep as is
-    'TATASTEEL': 'TATASTEEL',        # ✅ Keep as is
     'HINDALCO': 'HINDALCO',          # ✅ Keep as is
     'VEDL': 'VEDL',                  # ✅ Keep as is
     'SAIL': 'SAIL',                  # ✅ Keep as is
     'NMDC': 'NMDC',                  # ✅ Keep as is
-    'ULTRACEMCO': 'ULTRACEMCO',      # ✅ Keep as is
     'SHREECEM': 'SHREECEM',          # ✅ Keep as is
     'ACC': 'ACC',                    # ✅ Keep as is
     'AMBUJACEM': 'AMBUJACEM',        # ✅ Keep as is
