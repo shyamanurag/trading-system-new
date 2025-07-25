@@ -790,6 +790,17 @@ class ZerodhaIntegration:
                 logger.warning("⚠️ No NFO instruments available for validation")
                 return False
             
+            # 🔍 DEBUG: Log first 5 actual options symbols for reference
+            logger.info(f"🔍 DEBUG: First 5 NFO options symbols from Zerodha:")
+            options_count = 0
+            for instrument in instruments:
+                trading_symbol = instrument.get('tradingsymbol', '')
+                if 'CE' in trading_symbol or 'PE' in trading_symbol:
+                    logger.info(f"   {trading_symbol} (Strike: {instrument.get('strike')})")
+                    options_count += 1
+                    if options_count >= 5:
+                        break
+            
             # Check if our options symbol exists
             for instrument in instruments:
                 trading_symbol = instrument.get('tradingsymbol', '')
@@ -805,7 +816,7 @@ class ZerodhaIntegration:
             base_symbol = options_symbol.split('31JUL25')[0] if '31JUL25' in options_symbol else options_symbol[:10]
             similar_symbols = []
             
-            for instrument in instruments[:100]:  # Check first 100 for performance
+            for instrument in instruments:
                 trading_symbol = instrument.get('tradingsymbol', '')
                 if base_symbol in trading_symbol and ('CE' in trading_symbol or 'PE' in trading_symbol):
                     similar_symbols.append(trading_symbol)
