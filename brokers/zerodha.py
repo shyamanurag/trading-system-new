@@ -401,16 +401,6 @@ class ZerodhaIntegration:
             except Exception as e:
                 error_msg = str(e)
                 logger.error(f"❌ Error placing REAL order: {error_msg}")
-                
-                # 🎯 CRITICAL FIX: Record NFO errors for segment availability detection
-                if "NFO is disabled" in error_msg or "segment activation" in error_msg:
-                    try:
-                        from strategies.base_strategy import BaseStrategy
-                        BaseStrategy.record_nfo_error()
-                        logger.warning(f"⚠️ NFO ERROR RECORDED: System will fallback to equity-only mode")
-                    except Exception as record_error:
-                        logger.debug(f"Could not record NFO error: {record_error}")
-                
                 return None
 
     async def _async_api_call(self, func, *args, **kwargs):

@@ -265,11 +265,7 @@ class BaseStrategy:
             # 🎯 INTELLIGENT SIGNAL TYPE SELECTION based on market conditions and symbol
             signal_type = self._determine_optimal_signal_type(symbol, entry_price, confidence, metadata)
             
-            # 🎯 CRITICAL FIX: Handle signal rejection when NFO is disabled for indices
-            if signal_type == 'REJECTED':
-                logger.info(f"🎯 SIGNAL SKIPPED: {symbol} - Indices require F&O trading (NFO segment)")
-                return None
-            elif signal_type == 'OPTIONS':
+            if signal_type == 'OPTIONS':
                 # Convert to options signal
                 return self._create_options_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
             elif signal_type == 'FUTURES':
@@ -289,9 +285,6 @@ class BaseStrategy:
             # 🚨 CRITICAL: Check F&O availability first
             from config.truedata_symbols import is_fo_enabled, should_use_equity_only
             
-            # 🎯 CRITICAL FIX: Check if NFO segment is available before routing to options
-            nfo_available = self._check_nfo_segment_availability()
-            
             # Force equity for known cash-only stocks
             if should_use_equity_only(symbol):
                 logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY (no F&O available)")
@@ -302,17 +295,7 @@ class BaseStrategy:
                 logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY (no options trading)")
                 return 'EQUITY'
             
-            # 🎯 CRITICAL FIX: If NFO segment is disabled, route F&O stocks to equity but skip indices
-            if not nfo_available:
-                is_index = symbol.endswith('-I') or symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX']
-                if is_index:
-                    logger.info(f"🎯 NFO DISABLED: {symbol} → SKIPPED (indices only trade F&O, no equity fallback)")
-                    return 'REJECTED'  # Special marker for rejection
-                else:
-                    logger.info(f"🎯 NFO DISABLED: {symbol} → EQUITY (fallback for F&O stock)")
-                    return 'EQUITY'
-            
-            # Factors for signal type selection (only for F&O enabled symbols with NFO active)
+            # Factors for signal type selection (F&O enabled symbols)
             is_index = symbol.endswith('-I') or symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
             is_high_confidence = confidence >= 0.8
             is_scalping = metadata.get('risk_type', '').startswith('SCALPING')
@@ -344,87 +327,6 @@ class BaseStrategy:
         except Exception as e:
             logger.error(f"Error determining signal type: {e}")
             return 'EQUITY'  # Safest fallback
-    
-    def _check_nfo_segment_availability(self) -> bool:
-        """Check if NFO segment is available on the Zerodha account"""
-        try:
-            # Check if we have a record of recent NFO failures
-            import time
-            current_time = time.time()
-            
-            # Use class-level cache to avoid repeated API calls
-            if not hasattr(self.__class__, '_nfo_check_cache'):
-                self.__class__._nfo_check_cache = {'status': True, 'last_check': 0}
-            
-            cache = self.__class__._nfo_check_cache
-            
-            # Check cache validity (5 minutes)
-            if current_time - cache['last_check'] < 300:
-                return cache['status']
-            
-            # Try to get broker profile to check NFO segment
-            try:
-                from src.api.trading_control import get_master_user
-                master_user = get_master_user()
-                
-                if master_user and hasattr(master_user, 'zerodha_client'):
-                    client = master_user.zerodha_client
-                    if client and hasattr(client, 'get_profile'):
-                        profile = client.get_profile()
-                        if profile:
-                            # Check if NFO is in enabled products
-                            products = profile.get('products', [])
-                            nfo_enabled = 'NFO' in products or 'NRML' in products or 'MIS' in products
-                            
-                            # Update cache
-                            cache['status'] = nfo_enabled
-                            cache['last_check'] = current_time
-                            
-                            if not nfo_enabled:
-                                logger.warning(f"⚠️ NFO SEGMENT DISABLED: Products available: {products}")
-                            else:
-                                logger.info(f"✅ NFO SEGMENT AVAILABLE: Products: {products}")
-                            
-                            return nfo_enabled
-            except Exception as profile_error:
-                logger.debug(f"Unable to check NFO segment via profile: {profile_error}")
-            
-            # Fallback: Check for recent NFO errors in logs/memory
-            # This is a simple heuristic - if we've had NFO errors recently, assume it's disabled
-            if hasattr(self.__class__, '_recent_nfo_errors'):
-                recent_errors = self.__class__._recent_nfo_errors
-                # If we've had NFO errors in the last 10 minutes, assume it's disabled
-                if any(current_time - error_time < 600 for error_time in recent_errors):
-                    cache['status'] = False
-                    cache['last_check'] = current_time
-                    logger.warning(f"⚠️ NFO ASSUMED DISABLED: Recent NFO errors detected")
-                    return False
-            
-            # Default: Assume NFO is available
-            cache['status'] = True
-            cache['last_check'] = current_time
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error checking NFO availability: {e}")
-            return True  # Assume available on error to avoid blocking all options
-    
-    @classmethod
-    def record_nfo_error(cls):
-        """Record an NFO error for segment availability detection"""
-        import time
-        if not hasattr(cls, '_recent_nfo_errors'):
-            cls._recent_nfo_errors = []
-        
-        cls._recent_nfo_errors.append(time.time())
-        
-        # Keep only recent errors (last hour)
-        current_time = time.time()
-        cls._recent_nfo_errors = [t for t in cls._recent_nfo_errors if current_time - t < 3600]
-        
-        # Force cache refresh
-        if hasattr(cls, '_nfo_check_cache'):
-            cls._nfo_check_cache['last_check'] = 0
     
     def _create_options_signal(self, symbol: str, action: str, entry_price: float, 
                               stop_loss: float, target: float, confidence: float, metadata: Dict) -> Dict:
