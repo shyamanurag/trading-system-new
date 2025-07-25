@@ -267,7 +267,7 @@ class BaseStrategy:
             
             # 🎯 CRITICAL FIX: Handle signal rejection when NFO is disabled for indices
             if signal_type == 'REJECTED':
-                logger.warning(f"⚠️ SIGNAL REJECTED: {symbol} - Cannot trade indices when NFO is disabled")
+                logger.info(f"🎯 SIGNAL SKIPPED: {symbol} - Indices require F&O trading (NFO segment)")
                 return None
             elif signal_type == 'OPTIONS':
                 # Convert to options signal
@@ -306,7 +306,7 @@ class BaseStrategy:
             if not nfo_available:
                 is_index = symbol.endswith('-I') or symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX']
                 if is_index:
-                    logger.warning(f"⚠️ NFO DISABLED: {symbol} → SIGNAL REJECTED (indices cannot be traded as equity)")
+                    logger.info(f"🎯 NFO DISABLED: {symbol} → SKIPPED (indices only trade F&O, no equity fallback)")
                     return 'REJECTED'  # Special marker for rejection
                 else:
                     logger.info(f"🎯 NFO DISABLED: {symbol} → EQUITY (fallback for F&O stock)")
