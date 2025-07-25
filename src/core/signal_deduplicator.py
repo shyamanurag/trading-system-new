@@ -22,10 +22,10 @@ class SignalDeduplicator:
         self.cleanup_interval = 300  # 5 minutes
         self.last_cleanup = datetime.now()
         
-        # Quality thresholds - MAINTAIN HIGH STANDARDS FOR PROFITABLE TRADING
-        self.min_confidence_threshold = 0.7  # Keep 70% minimum for quality signals
-        self.max_signals_per_symbol = 1  # Max 1 signal per symbol per period
-        self.deduplication_window = 60  # 60 seconds window
+        # Quality thresholds - BALANCED FOR PRODUCTION TRADING
+        self.min_confidence_threshold = 0.65  # Slightly lowered to capture 0.65 confidence signals
+        self.max_signals_per_symbol = 2  # Allow 2 signals per symbol per period 
+        self.deduplication_window = 30  # Reduced to 30 seconds window
         
     def process_signals(self, signals: List[Dict]) -> List[Dict]:
         """Process and deduplicate signals, return only high-quality unique signals"""
@@ -54,18 +54,26 @@ class SignalDeduplicator:
     def _filter_by_quality(self, signals: List[Dict]) -> List[Dict]:
         """Filter signals by quality thresholds"""
         quality_signals = []
+        rejection_stats = {
+            'low_confidence': 0,
+            'missing_fields': 0,
+            'invalid_prices': 0,
+            'poor_risk_reward': 0
+        }
         
         for signal in signals:
             confidence = signal.get('confidence', 0)
             
             # Check minimum confidence
             if confidence < self.min_confidence_threshold:
-                logger.debug(f"❌ Signal rejected - low confidence: {signal['symbol']} ({confidence:.2f})")
+                rejection_stats['low_confidence'] += 1
+                logger.debug(f"❌ Signal rejected - low confidence: {signal['symbol']} ({confidence:.2f} < {self.min_confidence_threshold})")
                 continue
             
             # Check for required fields
             required_fields = ['symbol', 'action', 'entry_price', 'stop_loss', 'target']
             if not all(field in signal for field in required_fields):
+                rejection_stats['missing_fields'] += 1
                 logger.debug(f"❌ Signal rejected - missing fields: {signal.get('symbol', 'UNKNOWN')}")
                 continue
             
@@ -75,6 +83,7 @@ class SignalDeduplicator:
             target = signal.get('target', 0)
             
             if not all([entry_price > 0, stop_loss > 0, target > 0]):
+                rejection_stats['invalid_prices'] += 1
                 logger.debug(f"❌ Signal rejected - invalid prices: {signal['symbol']}")
                 continue
             
@@ -87,15 +96,24 @@ class SignalDeduplicator:
                 reward = entry_price - target
             
             if risk <= 0 or reward <= 0:
+                rejection_stats['invalid_prices'] += 1
                 logger.debug(f"❌ Signal rejected - invalid risk/reward: {signal['symbol']}")
                 continue
             
             risk_reward_ratio = reward / risk
-            if risk_reward_ratio < 1.0:  # Minimum 1:1 risk-reward
-                logger.debug(f"❌ Signal rejected - poor risk/reward: {signal['symbol']} ({risk_reward_ratio:.2f})")
+            if risk_reward_ratio < 2.0:  # STRICT: Minimum 2:1 profit-to-loss ratio for quality trading
+                rejection_stats['poor_risk_reward'] += 1
+                logger.debug(f"❌ Signal rejected - poor risk/reward: {signal['symbol']} ({risk_reward_ratio:.2f} < 2.0)")
                 continue
             
             quality_signals.append(signal)
+        
+        # Log summary of rejections
+        if any(rejection_stats.values()):
+            logger.info(f"📊 Quality Filter Results: {len(quality_signals)} passed, {sum(rejection_stats.values())} rejected")
+            for reason, count in rejection_stats.items():
+                if count > 0:
+                    logger.info(f"   - {reason}: {count} signals")
         
         return quality_signals
     
