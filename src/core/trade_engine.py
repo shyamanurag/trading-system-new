@@ -219,7 +219,7 @@ class TradeEngine:
                     'transaction_type': signal_action,  # ✅ FIXED: Backup field  
                     'side': signal_action,  # ✅ FIXED: Another backup field
                     'order_type': 'MARKET',
-                    'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                    'product': self._get_product_type_for_symbol(signal.get('symbol', '')),  # FIXED: Dynamic product type
                     'validity': 'DAY'
                 }
                 
