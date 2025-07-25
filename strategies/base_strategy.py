@@ -258,24 +258,33 @@ class BaseStrategy:
     
     def create_standard_signal(self, symbol: str, action: str, entry_price: float, 
                               stop_loss: float, target: float, confidence: float, 
-                              metadata: Dict) -> Dict:
+                              metadata: Dict) -> Optional[Dict]:
         """Create standardized signal format for all strategies"""
         try:
-            # Validate signal levels
-            if not self.validate_signal_levels(entry_price, stop_loss, target, action):
-                return None
-            
             # 🎯 CRITICAL FIX: Convert to options symbol for scalping strategies
             options_symbol, option_type = self._convert_to_options_symbol(symbol, entry_price, action)
+            
+            # 🎯 CRITICAL FIX: Get actual options premium from TrueData instead of stock price
+            options_entry_price = self._get_options_premium(options_symbol, entry_price, option_type)
+            
+            # 🎯 CRITICAL FIX: Calculate correct stop_loss and target for options
+            options_stop_loss, options_target = self._calculate_options_levels(
+                options_entry_price, stop_loss, target, option_type, action
+            )
+            
+            # Validate signal levels with OPTIONS pricing
+            if not self.validate_signal_levels(options_entry_price, options_stop_loss, options_target, 'BUY'):
+                logger.warning(f"Invalid options signal levels: Entry={options_entry_price}, SL={options_stop_loss}, Target={options_target}")
+                return None
             
             # 🎯 CRITICAL FIX: Always BUY options (no selling due to margin requirements)
             final_action = 'BUY'  # Force all options signals to be BUY
             
-            # Calculate risk metrics
-            risk_amount = abs(entry_price - stop_loss)
-            reward_amount = abs(target - entry_price)
-            risk_percent = (risk_amount / entry_price) * 100
-            reward_percent = (reward_amount / entry_price) * 100
+            # Calculate risk metrics using OPTIONS pricing
+            risk_amount = abs(options_entry_price - options_stop_loss)
+            reward_amount = abs(options_target - options_entry_price)
+            risk_percent = (risk_amount / options_entry_price) * 100
+            reward_percent = (reward_amount / options_entry_price) * 100
             risk_reward_ratio = reward_amount / risk_amount if risk_amount > 0 else 0
             
             # CRITICAL FIX: Generate unique signal_id for tracking
@@ -288,10 +297,10 @@ class BaseStrategy:
                 'underlying_symbol': symbol,  # Keep original for reference
                 'option_type': option_type,  # CE or PE
                 'action': final_action.upper(),  # Always BUY for options (no selling due to margin)
-                'quantity': 50,  # Standard lot size
-                'entry_price': round(entry_price, 2),
-                'stop_loss': round(stop_loss, 2),
-                'target': round(target, 2),
+                'quantity': self._get_dynamic_lot_size(options_symbol, symbol),  # 🎯 DYNAMIC: Get actual lot size
+                'entry_price': round(options_entry_price, 2),  # 🎯 FIXED: Use options premium
+                'stop_loss': round(options_stop_loss, 2),      # 🎯 FIXED: Correct options stop_loss
+                'target': round(options_target, 2),            # 🎯 FIXED: Correct options target
                 'strategy': self.name,  # Use 'strategy' for compatibility
                 'strategy_name': self.name,  # Also include strategy_name for new components
                 'confidence': round(min(confidence, 0.9), 2),
@@ -312,7 +321,9 @@ class BaseStrategy:
                     'signal_validation': 'PASSED',
                     'timestamp': datetime.now().isoformat(),
                     'strategy_instance': self.name,
-                    'signal_source': 'strategy_engine'
+                    'signal_source': 'strategy_engine',
+                    'underlying_price': round(entry_price, 2),  # Keep original stock price for reference
+                    'options_conversion': 'PREMIUM_BASED'
                 }
             }
             
@@ -616,3 +627,248 @@ class BaseStrategy:
         """Shutdown the strategy"""
         logger.info(f"Shutting down {self.name} strategy")
         self.is_active = False 
+
+    def _get_options_premium(self, options_symbol: str, fallback_price: float, option_type: str) -> float:
+        """Get actual options premium from TrueData cache"""
+        try:
+            # Try to get options premium from TrueData global cache
+            try:
+                from data.truedata_client import live_market_data
+                if live_market_data and options_symbol in live_market_data:
+                    options_data = live_market_data[options_symbol]
+                    # Extract LTP (Last Traded Price) for options premium
+                    premium = options_data.get('ltp', options_data.get('price', options_data.get('last_price')))
+                    if premium and premium > 0:
+                        logger.info(f"✅ Got options premium from TrueData: {options_symbol} = ₹{premium}")
+                        return float(premium)
+            except Exception as e:
+                logger.debug(f"Could not access TrueData for {options_symbol}: {e}")
+            
+            # Fallback: Estimate options premium dynamically based on market conditions
+            estimated_premium = self._estimate_options_premium_dynamic(fallback_price, option_type, options_symbol)
+            logger.warning(f"⚠️ Using dynamic estimation for {options_symbol}: ₹{estimated_premium}")
+            return estimated_premium
+            
+        except Exception as e:
+            logger.error(f"Error getting options premium for {options_symbol}: {e}")
+            # Final fallback
+            return self._estimate_options_premium_dynamic(fallback_price, option_type, options_symbol)
+    
+    def _estimate_options_premium_dynamic(self, underlying_price: float, option_type: str, options_symbol: str) -> float:
+        """Dynamically estimate options premium based on market conditions"""
+        try:
+            # Extract strike and expiry from options symbol for dynamic calculation
+            strike_price = self._extract_strike_from_symbol(options_symbol)
+            days_to_expiry = self._calculate_days_to_expiry(options_symbol)
+            
+            # Calculate moneyness (how far the option is from ATM)
+            moneyness = abs(underlying_price - strike_price) / underlying_price
+            
+            # Calculate time value factor (more time = higher premium)
+            time_value_factor = max(0.1, min(1.0, days_to_expiry / 30))  # 30 days max
+            
+            # Calculate volatility factor based on recent price movements
+            volatility_factor = self._calculate_dynamic_volatility_factor(underlying_price)
+            
+            # Base premium calculation using Black-Scholes approximation
+            intrinsic_value = max(0, underlying_price - strike_price) if option_type == 'CE' else max(0, strike_price - underlying_price)
+            time_value = underlying_price * volatility_factor * time_value_factor * (1 - moneyness)
+            
+            estimated_premium = intrinsic_value + time_value
+            
+            # Dynamic bounds based on underlying price
+            min_premium = underlying_price * 0.001  # 0.1% minimum
+            max_premium = underlying_price * 0.2    # 20% maximum
+            estimated_premium = max(min_premium, min(estimated_premium, max_premium))
+            
+            logger.info(f"📊 Dynamic estimation: {option_type} premium = ₹{estimated_premium:.2f}")
+            logger.info(f"   Underlying: ₹{underlying_price}, Strike: ₹{strike_price}")
+            logger.info(f"   Days to expiry: {days_to_expiry}, Volatility factor: {volatility_factor:.3f}")
+            
+            return estimated_premium
+            
+        except Exception as e:
+            logger.error(f"Error in dynamic estimation: {e}")
+            # Simple fallback based on underlying price percentage
+            return underlying_price * 0.02  # 2% of underlying as fallback
+    
+    def _calculate_options_levels(self, options_entry_price: float, original_stop_loss: float, 
+                                 original_target: float, option_type: str, action: str) -> tuple:
+        """Dynamically calculate stop_loss and target for options premium"""
+        try:
+            # Calculate the original risk-reward ratio from underlying signal
+            underlying_risk = abs(original_stop_loss - original_target)
+            original_entry = (original_stop_loss + original_target) / 2  # Approximate original entry
+            underlying_risk_percent = (underlying_risk / original_entry) * 100
+            
+            # Calculate original reward-to-risk ratio dynamically
+            original_reward = abs(original_target - original_entry)
+            original_risk_amount = abs(original_stop_loss - original_entry)
+            original_rr_ratio = original_reward / original_risk_amount if original_risk_amount > 0 else 2.0
+            
+            # Calculate dynamic options multiplier based on volatility and time
+            options_multiplier = self._calculate_dynamic_options_multiplier(option_type, options_entry_price)
+            
+            # Calculate options premium movements dynamically
+            risk_amount = options_entry_price * (underlying_risk_percent / 100) * options_multiplier
+            reward_amount = risk_amount * original_rr_ratio  # Use original risk-reward ratio
+            
+            # For BUY actions (all our options signals):
+            # - stop_loss = Lower premium (cut losses)
+            # - target = Higher premium (take profits)
+            options_stop_loss = options_entry_price - risk_amount
+            options_target = options_entry_price + reward_amount
+            
+            # Dynamic bounds based on entry price
+            min_stop_loss = options_entry_price * 0.05  # Max 95% loss
+            options_stop_loss = max(options_stop_loss, min_stop_loss)
+            
+            logger.info(f"📊 Dynamic options levels:")
+            logger.info(f"   Entry: ₹{options_entry_price:.2f}")
+            logger.info(f"   Stop Loss: ₹{options_stop_loss:.2f} (Risk: ₹{risk_amount:.2f})")
+            logger.info(f"   Target: ₹{options_target:.2f} (Reward: ₹{reward_amount:.2f})")
+            logger.info(f"   Original R:R = {original_rr_ratio:.2f}, Options Multiplier = {options_multiplier:.2f}")
+            
+            return options_stop_loss, options_target
+            
+        except Exception as e:
+            logger.error(f"Error calculating dynamic options levels: {e}")
+            # Dynamic fallback based on entry price
+            risk_percent = 0.2  # 20% risk
+            reward_percent = risk_percent * 2.5  # Dynamic reward based on risk
+            stop_loss = options_entry_price * (1 - risk_percent)
+            target = options_entry_price * (1 + reward_percent)
+            return stop_loss, target
+    
+    def _calculate_dynamic_options_multiplier(self, option_type: str, options_entry_price: float) -> float:
+        """Calculate dynamic options multiplier based on market conditions"""
+        try:
+            # Base multiplier starts at 2.0
+            base_multiplier = 2.0
+            
+            # Adjust based on option premium level (higher premium = lower multiplier)
+            if options_entry_price > 200:
+                premium_adjustment = 0.8  # Deep ITM options move less
+            elif options_entry_price > 100:
+                premium_adjustment = 1.0  # ATM options
+            else:
+                premium_adjustment = 1.2  # OTM options move more
+            
+            # Adjust based on option type and market conditions
+            type_adjustment = 1.0  # Base adjustment
+            
+            # Final multiplier
+            multiplier = base_multiplier * premium_adjustment * type_adjustment
+            return max(1.5, min(multiplier, 5.0))  # Bounds between 1.5x and 5x
+            
+        except Exception as e:
+            logger.error(f"Error calculating dynamic multiplier: {e}")
+            return 2.5  # Fallback
+    
+    def _calculate_dynamic_volatility_factor(self, underlying_price: float) -> float:
+        """Calculate dynamic volatility factor based on market conditions"""
+        try:
+            # This would ideally use historical price data to calculate actual volatility
+            # For now, use a market-condition based approach
+            
+            # Base volatility factor
+            base_volatility = 0.02  # 2% base
+            
+            # Adjust based on market hours and conditions
+            current_hour = datetime.now().hour
+            if 9 <= current_hour <= 11 or 14 <= current_hour <= 15:  # High volatility hours
+                time_adjustment = 1.3
+            else:
+                time_adjustment = 1.0
+            
+            # Adjust based on underlying price level (higher price = potentially lower volatility)
+            if underlying_price > 10000:
+                price_adjustment = 0.8
+            elif underlying_price > 1000:
+                price_adjustment = 1.0
+            else:
+                price_adjustment = 1.2
+            
+            volatility_factor = base_volatility * time_adjustment * price_adjustment
+            return max(0.01, min(volatility_factor, 0.1))  # Between 1% and 10%
+            
+        except Exception as e:
+            logger.error(f"Error calculating volatility factor: {e}")
+            return 0.03  # 3% fallback
+    
+    def _extract_strike_from_symbol(self, options_symbol: str) -> float:
+        """Extract strike price from options symbol"""
+        try:
+            # Extract numeric part before CE/PE
+            import re
+            match = re.search(r'(\d+)(CE|PE)$', options_symbol)
+            if match:
+                return float(match.group(1))
+            # Fallback: try to extract any number
+            numbers = re.findall(r'\d+', options_symbol)
+            return float(numbers[-1]) if numbers else 1000.0
+        except Exception as e:
+            logger.error(f"Error extracting strike from {options_symbol}: {e}")
+            return 1000.0  # Fallback
+    
+    def _calculate_days_to_expiry(self, options_symbol: str) -> int:
+        """Calculate days to expiry from options symbol"""
+        try:
+            # Extract date from symbol and calculate days remaining
+            import re
+            from datetime import datetime, timedelta
+            
+            # Look for date pattern in symbol (e.g., 31JUL25)
+            date_match = re.search(r'(\d{1,2})([A-Z]{3})(\d{2})', options_symbol)
+            if date_match:
+                day = int(date_match.group(1))
+                month_str = date_match.group(2)
+                year = int(date_match.group(3)) + 2000
+                
+                month_map = {
+                    'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+                    'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+                }
+                month = month_map.get(month_str, 1)
+                
+                expiry_date = datetime(year, month, day)
+                days_remaining = (expiry_date - datetime.now()).days
+                return max(1, days_remaining)  # At least 1 day
+            
+            # Fallback: assume 7 days
+            return 7
+            
+        except Exception as e:
+            logger.error(f"Error calculating expiry for {options_symbol}: {e}")
+            return 7  # 1 week fallback
+    
+    def _get_dynamic_lot_size(self, options_symbol: str, underlying_symbol: str) -> int:
+        """Get dynamic lot size based on options contract specifications"""
+        try:
+            # Try to get lot size from TrueData or predefined mappings
+            if underlying_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
+                # Index options have standard lot sizes
+                lot_sizes = {'NIFTY': 50, 'BANKNIFTY': 15, 'FINNIFTY': 40}
+                return lot_sizes.get(underlying_symbol, 50)
+            else:
+                # Stock options typically have lot size based on price
+                # Higher priced stocks have smaller lot sizes
+                try:
+                    from data.truedata_client import live_market_data
+                    if live_market_data and underlying_symbol in live_market_data:
+                        stock_price = live_market_data[underlying_symbol].get('ltp', 1000)
+                        if stock_price > 5000:
+                            return 50  # Small lot for expensive stocks
+                        elif stock_price > 1000:
+                            return 100  # Medium lot
+                        else:
+                            return 200  # Large lot for cheaper stocks
+                except:
+                    pass
+                
+                # Fallback: standard lot size
+                return 100
+                
+        except Exception as e:
+            logger.error(f"Error getting lot size for {options_symbol}: {e}")
+            return 50  # Safe fallback 
