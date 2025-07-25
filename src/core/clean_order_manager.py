@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional
 import json
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ class OrderManager:
                 'transaction_type': order_data['side'].upper(),
                 'quantity': order_data['quantity'],
                 'order_type': order_data['order_type'].upper(),
-                'product': 'CNC',  # CRITICAL FIX: Use CNC to avoid SPECIALITY blocks
+                'product': self._get_product_type_for_symbol(order_data['symbol']),  # FIXED: Dynamic product type
                 'validity': 'DAY',
                 'tag': f"OM_{order_id[:8]}"
             }
@@ -179,3 +180,15 @@ class OrderManager:
             "active_users": len(self.active_orders),
             "total_active_orders": sum(len(orders) for orders in self.active_orders.values())
         } 
+
+    def _get_product_type_for_symbol(self, symbol: str) -> str:
+        """Get appropriate product type for symbol - FIXED for NFO options"""
+        # 🔧 CRITICAL FIX: NFO options require NRML, not CNC
+        if 'CE' in symbol or 'PE' in symbol:
+            return 'NRML'  # Options must use NRML
+        else:
+            return 'CNC'   # Equity can use CNC
+
+    def get_order_status(self, order_id: str) -> Optional[Dict]:
+        """Get status of a specific order"""
+        return self.orders.get(order_id) 

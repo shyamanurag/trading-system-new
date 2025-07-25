@@ -409,17 +409,24 @@ class AutonomousSymbolManager:
             'performance_tracking': True,
             'manual_intervention_required': False,
             'next_evaluation': datetime.now() + timedelta(seconds=self.config.strategy_switch_interval)
-        } 
+        }
+    
+    def get_status(self) -> Dict:
+        """Get current status (alias for get_autonomous_status)"""
+        return self.get_autonomous_status()
 
 # Global instance
 _autonomous_symbol_manager = None
+
+# Alias for API compatibility
+intelligent_symbol_manager = None
 
 async def start_intelligent_symbol_management():
     """
     Start the intelligent symbol management system
     This function is called by main.py during startup
     """
-    global _autonomous_symbol_manager
+    global _autonomous_symbol_manager, intelligent_symbol_manager
     
     try:
         if _autonomous_symbol_manager is None:
@@ -428,6 +435,9 @@ async def start_intelligent_symbol_management():
             # Create and initialize the autonomous symbol manager
             _autonomous_symbol_manager = AutonomousSymbolManager()
             await _autonomous_symbol_manager.start()
+            
+            # Update API alias
+            intelligent_symbol_manager = _autonomous_symbol_manager
             
             logger.info("✅ Intelligent Symbol Management System started successfully")
             return True
@@ -442,6 +452,27 @@ async def start_intelligent_symbol_management():
 async def get_intelligent_symbol_manager() -> Optional[AutonomousSymbolManager]:
     """Get the global autonomous symbol manager instance"""
     return _autonomous_symbol_manager
+
+async def get_intelligent_symbol_status():
+    """Get current status of the intelligent symbol manager"""
+    global _autonomous_symbol_manager
+    
+    if _autonomous_symbol_manager:
+        return _autonomous_symbol_manager.get_status()
+    else:
+        return {
+            'status': 'not_running',
+            'message': 'Intelligent Symbol Manager not initialized'
+        }
+
+async def get_active_symbols():
+    """Get list of currently active symbols"""
+    global _autonomous_symbol_manager
+    
+    if _autonomous_symbol_manager:
+        return list(_autonomous_symbol_manager.active_symbols)
+    else:
+        return []
 
 async def stop_intelligent_symbol_management():
     """Stop the intelligent symbol management system"""
