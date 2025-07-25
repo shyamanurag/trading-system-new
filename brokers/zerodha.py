@@ -790,16 +790,37 @@ class ZerodhaIntegration:
                 logger.warning("⚠️ No NFO instruments available for validation")
                 return False
             
-            # 🔍 DEBUG: Log first 5 actual options symbols for reference
-            logger.info(f"🔍 DEBUG: First 5 NFO options symbols from Zerodha:")
+            # 🔍 DEBUG: Log BANKNIFTY specific symbols for format analysis
+            logger.info(f"🔍 DEBUG: Searching for BANKNIFTY options symbols in {len(instruments)} NFO instruments")
+            banknifty_symbols = []
+            nifty_symbols = []
             options_count = 0
+            
             for instrument in instruments:
                 trading_symbol = instrument.get('tradingsymbol', '')
-                if 'CE' in trading_symbol or 'PE' in trading_symbol:
-                    logger.info(f"   {trading_symbol} (Strike: {instrument.get('strike')})")
-                    options_count += 1
-                    if options_count >= 5:
-                        break
+                
+                # Collect BANKNIFTY examples
+                if 'BANKNIFTY' in trading_symbol and ('CE' in trading_symbol or 'PE' in trading_symbol):
+                    banknifty_symbols.append(f"{trading_symbol} (Strike: {instrument.get('strike')}, Expiry: {instrument.get('expiry')})")
+                
+                # Collect NIFTY examples for comparison
+                if 'NIFTY' in trading_symbol and 'BANKNIFTY' not in trading_symbol and ('CE' in trading_symbol or 'PE' in trading_symbol):
+                    nifty_symbols.append(f"{trading_symbol} (Strike: {instrument.get('strike')}, Expiry: {instrument.get('expiry')})")
+                
+                options_count += 1
+                if len(banknifty_symbols) >= 10 and len(nifty_symbols) >= 5:
+                    break
+            
+            # Log actual Zerodha symbol formats
+            logger.info(f"🔍 DEBUG: Found {len(banknifty_symbols)} BANKNIFTY options:")
+            for i, symbol in enumerate(banknifty_symbols[:10]):
+                logger.info(f"   BANKNIFTY #{i+1}: {symbol}")
+            
+            logger.info(f"🔍 DEBUG: Found {len(nifty_symbols)} NIFTY options for comparison:")
+            for i, symbol in enumerate(nifty_symbols[:5]):
+                logger.info(f"   NIFTY #{i+1}: {symbol}")
+            
+            logger.info(f"🔍 DEBUG: Looking for our symbol: {options_symbol}")
             
             # Check if our options symbol exists
             for instrument in instruments:
@@ -819,15 +840,17 @@ class ZerodhaIntegration:
             for instrument in instruments:
                 trading_symbol = instrument.get('tradingsymbol', '')
                 if base_symbol in trading_symbol and ('CE' in trading_symbol or 'PE' in trading_symbol):
-                    similar_symbols.append(trading_symbol)
-                    
+                    similar_symbols.append(f"{trading_symbol} (Strike: {instrument.get('strike')})")
+                    if len(similar_symbols) >= 10:
+                        break
+            
             if similar_symbols:
-                logger.info(f"🔍 SIMILAR SYMBOLS FOUND for {base_symbol}:")
-                for i, sym in enumerate(similar_symbols[:5]):  # Show first 5
-                    logger.info(f"   {i+1}. {sym}")
+                logger.warning(f"⚠️ Found {len(similar_symbols)} similar symbols for {base_symbol}:")
+                for i, sym in enumerate(similar_symbols[:10]):
+                    logger.warning(f"   Similar #{i+1}: {sym}")
             else:
                 logger.warning(f"⚠️ NO SIMILAR SYMBOLS FOUND for {base_symbol}")
-                
+            
             return False
             
         except Exception as e:
