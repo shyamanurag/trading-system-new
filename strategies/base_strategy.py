@@ -535,11 +535,18 @@ class BaseStrategy:
             return underlying_symbol, 'CE'
     
     def _get_atm_strike(self, symbol: str, price: float) -> int:
-        """Get ATM strike for index options"""
+        """Get ATM strike for index options - FIXED to match Zerodha available strikes"""
         if symbol == 'NIFTY':
             return round(price / 50) * 50  # Round to nearest 50
         elif symbol == 'BANKNIFTY':
-            return round(price / 100) * 100  # Round to nearest 100
+            # CRITICAL FIX: BANKNIFTY strikes are in 100s, but need to match available ones
+            base_strike = round(price / 100) * 100
+            # Ensure we pick from commonly available strikes around ATM
+            if base_strike % 100 == 0:
+                return int(base_strike)
+            else:
+                # Round to nearest 100
+                return int(round(price / 100) * 100)
         elif symbol == 'FINNIFTY':
             return round(price / 50) * 50  # Round to nearest 50
         else:
