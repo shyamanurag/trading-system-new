@@ -450,10 +450,14 @@ class ZerodhaIntegration:
         return symbol
 
     def _get_exchange_for_symbol(self, symbol: str) -> str:
-        """Get appropriate exchange for symbol"""
-        if symbol.endswith('-I'):
-            return 'NSE'  # Indices
-        return 'NSE'  # Default to NSE for equities
+        """Get appropriate exchange for symbol - FIXED for options"""
+        # 🔧 CRITICAL FIX: Options contracts (CE/PE) trade on NFO, not NSE
+        if 'CE' in symbol or 'PE' in symbol:
+            return 'NFO'  # Options contracts
+        elif symbol.endswith('-I'):
+            return 'NSE'  # Indices on NSE
+        else:
+            return 'NSE'  # Default to NSE for equities
 
     async def _initialize_websocket(self):
         """Initialize WebSocket connection for real-time data"""
