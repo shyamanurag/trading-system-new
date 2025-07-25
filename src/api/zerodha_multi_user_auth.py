@@ -642,9 +642,32 @@ async def get_multi_user_status():
         logger.error(f"Status check failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/health")
+async def health_check():
+    """Simple health check for multi-user auth system"""
+    try:
+        return {
+            "status": "healthy",
+            "service": "zerodha-multi-user-auth",
+            "timestamp": datetime.now().isoformat(),
+            "endpoints": [
+                "/zerodha-multi/health",
+                "/zerodha-multi/users-status",
+                "/zerodha-multi/status"
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.get("/users-status")
 async def get_users_status():
     """Get authentication status of all registered users (JSON API for frontend)"""
+    redis_client = None
     try:
         redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
         redis_client = await redis.from_url(redis_url)
@@ -706,8 +729,6 @@ async def get_users_status():
             
             users_status.append(user_status)
         
-        await redis_client.close()
-        
         # Sort with master user first
         users_status.sort(key=lambda x: (not x['is_master'], x['display_name']))
         
@@ -727,6 +748,13 @@ async def get_users_status():
             "total_users": 0,
             "authenticated_users": 0
         }
+    finally:
+        # Ensure Redis connection is always closed
+        if redis_client:
+            try:
+                await redis_client.close()
+            except Exception as e:
+                logger.warning(f"Error closing Redis connection: {e}")
 
 @router.post("/execute-trade")
 async def execute_trade_for_user(user_id: str, trade_params: Dict):

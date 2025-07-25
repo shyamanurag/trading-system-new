@@ -53,13 +53,35 @@ const MultiUserAuthDashboard = ({ onAuthComplete }) => {
     const fetchUsers = async () => {
         try {
             setLoading(true);
+            setError(null); // Clear previous errors
 
             // Get users from multi-user auth system
             const response = await fetch('/zerodha-multi/users-status');
+
             if (response.ok) {
                 const data = await response.json();
+                console.log('Users data received:', data);
                 setUsers(data.users || []);
             } else {
+                console.error('API response not OK:', response.status, response.statusText);
+                const errorText = await response.text();
+                console.error('Error response body:', errorText);
+
+                // Try health check to diagnose connectivity
+                try {
+                    const healthResponse = await fetch('/zerodha-multi/health');
+                    if (healthResponse.ok) {
+                        const healthData = await healthResponse.json();
+                        console.log('Health check passed:', healthData);
+                        setError(`API Error: ${response.status} ${response.statusText} (Service is healthy)`);
+                    } else {
+                        setError(`API Error: ${response.status} ${response.statusText} (Health check also failed)`);
+                    }
+                } catch (healthError) {
+                    console.error('Health check failed:', healthError);
+                    setError(`API Error: ${response.status} ${response.statusText} (Cannot reach service)`);
+                }
+
                 // Fallback: Create master user entry
                 setUsers([{
                     user_id: 'QSW899',
@@ -75,7 +97,20 @@ const MultiUserAuthDashboard = ({ onAuthComplete }) => {
             }
         } catch (error) {
             console.error('Error fetching users:', error);
-            setError('Failed to load user authentication status');
+            setError(`Failed to load user authentication status: ${error.message || error}`);
+
+            // Fallback: Create master user entry when complete failure
+            setUsers([{
+                user_id: 'QSW899',
+                display_name: 'Master Trader (QSW899)',
+                email: 'master@algoauto.com',
+                is_master: true,
+                authenticated: false,
+                token_expiry: null,
+                last_refresh: null,
+                daily_limit: 1000000,
+                status: 'inactive'
+            }]);
         } finally {
             setLoading(false);
         }
