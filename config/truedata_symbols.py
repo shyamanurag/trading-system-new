@@ -1136,13 +1136,14 @@ FO_ENABLED_STOCKS = [
     'CIPLA', 'APOLLOHOSP', 'DIVISLAB', 'HINDUNILVR', 'BRITANNIA',
     'DABUR', 'ADANIGREEN', 'ADANITRANS', 'ADANIPOWER', 'JSWSTEEL',
     'TATASTEEL', 'HINDALCO', 'VEDL', 'GODREJCP', 'BAJAJFINSV',
-    'BAJAJ-AUTO', 'HEROMOTOCO', 'EICHERMOT', 'TVSMOTOR', 'INDIGO'
+    'BAJAJ-AUTO', 'HEROMOTOCO', 'EICHERMOT', 'TVSMOTOR', 'INDIGO',
+    # 🔧 CRITICAL FIX: WIPRO and SBIN DO have F&O (user corrected)
+    'WIPRO', 'SBIN'
 ]
 
 # 🚨 NON-F&O STOCKS (Cash Only - Use Equity Signals)
 CASH_ONLY_STOCKS = [
-    'WIPRO',  # ❌ No F&O - Use equity only
-    'SBIN',   # ❌ No F&O - Use equity only  
+    # 🔧 REMOVED: WIPRO and SBIN - they DO have F&O on NSE
     'SAIL',   # ❌ No F&O - Use equity only
     'NMDC',   # ❌ No F&O - Use equity only
     'SPICEJET', # ❌ No F&O - Use equity only
