@@ -859,16 +859,38 @@ class BaseStrategy:
             return 0.03  # 3% fallback
     
     def _extract_strike_from_symbol(self, options_symbol: str) -> float:
-        """Extract strike price from options symbol"""
+        """Extract strike price from options symbol - FIXED to avoid date contamination"""
         try:
-            # Extract numeric part before CE/PE
+            # 🚨 CRITICAL FIX: Extract only strike, not date+strike
+            # Pattern: SYMBOL + DATE(31JUL25) + STRIKE + TYPE(CE/PE)
             import re
-            match = re.search(r'(\d+)(CE|PE)$', options_symbol)
-            if match:
-                return float(match.group(1))
-            # Fallback: try to extract any number
-            numbers = re.findall(r'\d+', options_symbol)
-            return float(numbers[-1]) if numbers else 1000.0
+            
+            # First remove symbol name to isolate date+strike+type
+            # Look for date pattern followed by strike and CE/PE
+            date_strike_match = re.search(r'(\d{1,2}[A-Z]{3}\d{2})(\d+)(CE|PE)$', options_symbol)
+            
+            if date_strike_match:
+                date_part = date_strike_match.group(1)  # e.g., "31JUL25"
+                strike_part = date_strike_match.group(2)  # e.g., "2000"
+                option_type = date_strike_match.group(3)  # e.g., "PE"
+                
+                logger.info(f"🔍 STRIKE EXTRACTION: {options_symbol}")
+                logger.info(f"   Date: {date_part}, Strike: {strike_part}, Type: {option_type}")
+                
+                return float(strike_part)
+            
+            # Fallback: If pattern doesn't match, try original method but with warning
+            logger.warning(f"⚠️ Fallback strike extraction for {options_symbol}")
+            fallback_match = re.search(r'(\d+)(CE|PE)$', options_symbol)
+            if fallback_match:
+                extracted_value = float(fallback_match.group(1))
+                logger.warning(f"   Fallback extracted: {extracted_value}")
+                return extracted_value
+                
+            # Final fallback
+            logger.error(f"❌ Could not extract strike from {options_symbol}")
+            return 1000.0  # Safe fallback
+            
         except Exception as e:
             logger.error(f"Error extracting strike from {options_symbol}: {e}")
             return 1000.0  # Fallback
