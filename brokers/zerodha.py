@@ -350,7 +350,7 @@ class ZerodhaIntegration:
                     'tradingsymbol': self._map_symbol_to_exchange(symbol),
                     'transaction_type': action,
                     'quantity': quantity,
-                    'product': order_params.get('product', self.kite.PRODUCT_CNC),  # CRITICAL FIX: Use CNC instead of MIS for SPECIALITY stocks
+                    'product': self._get_product_type_for_symbol(symbol, order_params),  # FIXED: Dynamic product type
                     'order_type': order_params.get('order_type', self.kite.ORDER_TYPE_MARKET),
                     'validity': order_params.get('validity', self.kite.VALIDITY_DAY),
                     'tag': order_params.get('tag', 'ALGO_TRADE')
@@ -448,6 +448,18 @@ class ZerodhaIntegration:
         if symbol.endswith('-I'):
             return symbol.replace('-I', '')  # NIFTY-I -> NIFTY
         return symbol
+
+    def _get_product_type_for_symbol(self, symbol: str, order_params: Dict) -> str:
+        """Get appropriate product type for symbol - FIXED for NFO options"""
+        # Check if user explicitly specified product type
+        if 'product' in order_params:
+            return order_params['product']
+        
+        # 🔧 CRITICAL FIX: NFO options require NRML, not CNC
+        if 'CE' in symbol or 'PE' in symbol:
+            return 'NRML'  # Options must use NRML
+        else:
+            return 'CNC'   # Equity can use CNC
 
     def _get_exchange_for_symbol(self, symbol: str) -> str:
         """Get appropriate exchange for symbol - FIXED for options"""
