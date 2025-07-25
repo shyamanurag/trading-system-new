@@ -85,8 +85,68 @@ LIQUID_STOCKS = [
 ]
 
 def get_truedata_symbol(standard_symbol: str) -> str:
-    """Convert standard symbol to TrueData format"""
-    return SYMBOL_MAPPING.get(standard_symbol, standard_symbol)
+    """Convert standard symbol to TrueData format - SUPPORTS OPTIONS SYMBOLS"""
+    # Handle options symbols (CE/PE) - pass through as-is for TrueData
+    if _is_options_symbol(standard_symbol):
+        logger.debug(f"🎯 OPTIONS SYMBOL: {standard_symbol} (pass through)")
+        return standard_symbol  # TrueData should handle options symbols directly
+    
+    # Handle underlying symbols with mapping
+    mapped_symbol = SYMBOL_MAPPING.get(standard_symbol, standard_symbol)
+    logger.debug(f"🔄 UNDERLYING SYMBOL: {standard_symbol} → {mapped_symbol}")
+    return mapped_symbol
+
+def _is_options_symbol(symbol: str) -> bool:
+    """Check if symbol is an options contract (CE/PE)"""
+    import re
+    # Pattern: SYMBOL + DATE + STRIKE + CE/PE (e.g., MARUTI31JUL2512500PE)
+    options_pattern = r'^[A-Z]+\d{1,2}[A-Z]{3}\d{2}\d+[CP]E$'
+    return bool(re.match(options_pattern, symbol))
+
+def _extract_underlying_from_options(options_symbol: str) -> str:
+    """Extract underlying symbol from options symbol"""
+    import re
+    try:
+        # Pattern to extract underlying symbol (letters before date)
+        match = re.match(r'^([A-Z]+)', options_symbol)
+        if match:
+            underlying = match.group(1)
+            logger.debug(f"🎯 Extracted underlying: {options_symbol} → {underlying}")
+            return underlying
+        return options_symbol  # Fallback
+    except Exception as e:
+        logger.error(f"Error extracting underlying from {options_symbol}: {e}")
+        return options_symbol
+
+def is_premium_data(symbol: str, data_value: float) -> bool:
+    """Determine if data value represents options premium vs underlying price"""
+    if not _is_options_symbol(symbol):
+        return False  # Underlying symbols are not premium data
+    
+    # For options symbols, check if value looks like premium (typically under ₹1000)
+    # vs underlying price (typically above ₹1000 for expensive stocks)
+    if data_value < 1000:
+        logger.debug(f"📊 PREMIUM DATA: {symbol} = ₹{data_value} (options premium)")
+        return True
+    else:
+        logger.warning(f"⚠️ HIGH VALUE: {symbol} = ₹{data_value} (might be underlying price instead of premium)")
+        return True  # Still treat as premium but log warning
+
+def validate_options_premium(symbol: str, premium: float) -> bool:
+    """Validate that options premium value is reasonable"""
+    if not _is_options_symbol(symbol):
+        return True  # Underlying symbols don't need premium validation
+    
+    # Reasonable premium bounds
+    if premium < 0.1:
+        logger.warning(f"⚠️ Very low premium: {symbol} = ₹{premium}")
+        return False
+    elif premium > 2000:
+        logger.warning(f"⚠️ Very high premium: {symbol} = ₹{premium} (might be underlying price)")
+        return False
+    
+    logger.debug(f"✅ Valid premium: {symbol} = ₹{premium}")
+    return True
 
 def get_display_name(truedata_symbol: str) -> str:
     """Get display name for TrueData symbol"""

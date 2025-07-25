@@ -181,11 +181,11 @@ class MarketDataManager:
         return data
     
     def _get_real_data_from_truedata(self, symbol: str) -> tuple[Optional[float], int, dict]:
-        """Get REAL price, volume, and OHLC data using proper symbol mapping"""
+        """Get REAL price, volume, and OHLC data using proper symbol mapping - OPTIONS PREMIUM AWARE"""
         try:
             # Import TrueData client and symbol mapping
             from data.truedata_client import live_market_data, subscribe_to_symbols
-            from config.truedata_symbols import get_truedata_symbol
+            from config.truedata_symbols import get_truedata_symbol, is_premium_data, validate_options_premium, _is_options_symbol
             
             # STEP 1: Convert to proper TrueData symbol format
             truedata_symbol = get_truedata_symbol(symbol)
@@ -200,6 +200,18 @@ class MarketDataManager:
                 if not ltp or ltp <= 0:
                     logger.warning(f"⚠️ Invalid LTP for {truedata_symbol}: {ltp}")
                     return None, 0, {}
+                
+                # CRITICAL FIX: Validate options premium
+                if _is_options_symbol(symbol):
+                    if not validate_options_premium(symbol, ltp):
+                        logger.error(f"❌ Invalid options premium for {symbol}: ₹{ltp}")
+                        return None, 0, {}
+                    
+                    # Log that we successfully got options premium
+                    logger.info(f"✅ OPTIONS PREMIUM: {symbol} = ₹{ltp:.2f} (validated)")
+                else:
+                    # Log underlying price
+                    logger.debug(f"📊 UNDERLYING PRICE: {symbol} = ₹{ltp:.2f}")
                 
                 # Extract volume (try multiple fields)
                 volume = 0
@@ -218,7 +230,9 @@ class MarketDataManager:
                     'close': ltp
                 }
                 
-                logger.info(f"📊 REAL TrueData: {symbol} ({truedata_symbol}) = ₹{ltp:,.2f} | Vol: {volume:,} | OHLC: O:{ohlc['open']:.2f} H:{ohlc['high']:.2f} L:{ohlc['low']:.2f}")
+                # Enhanced logging for options vs underlying
+                data_type = "OPTIONS PREMIUM" if _is_options_symbol(symbol) else "UNDERLYING"
+                logger.info(f"📊 {data_type}: {symbol} = ₹{ltp:,.2f} | Vol: {volume:,} | OHLC: O:{ohlc['open']:.2f} H:{ohlc['high']:.2f} L:{ohlc['low']:.2f}")
                 return float(ltp), volume, ohlc
             
             # STEP 3: If mapped symbol not found, try direct symbol
@@ -226,7 +240,13 @@ class MarketDataManager:
                 symbol_data = live_market_data[symbol]
                 ltp = symbol_data.get('ltp', 0)
                 if ltp and ltp > 0:
-                    logger.info(f"📊 REAL TrueData (direct): {symbol} = ₹{ltp:,.2f}")
+                    # Validate options premium for direct symbol too
+                    if _is_options_symbol(symbol) and not validate_options_premium(symbol, ltp):
+                        logger.error(f"❌ Invalid options premium (direct) for {symbol}: ₹{ltp}")
+                        return None, 0, {}
+                    
+                    data_type = "OPTIONS PREMIUM" if _is_options_symbol(symbol) else "UNDERLYING"
+                    logger.info(f"📊 {data_type} (direct): {symbol} = ₹{ltp:,.2f}")
                     return float(ltp), symbol_data.get('volume', 0), {'open': ltp, 'high': ltp, 'low': ltp, 'close': ltp}
             
             # STEP 4: AUTO-SUBSCRIBE if symbol not found but is valid
@@ -236,13 +256,6 @@ class MarketDataManager:
             # Instead, just log that symbol is missing and let main TrueData client handle it
             logger.info(f"📝 SYMBOL MISSING: {truedata_symbol} - will be available when main TrueData client subscribes")
             # Return None for now, symbol may become available later
-            return None, 0, {}
-            
-            # STEP 5: Debug available symbols if not found
-            available_symbols = list(live_market_data.keys())[:10]  # Show first 10
-            logger.warning(f"⚠️ Symbol {symbol} (mapped to {truedata_symbol}) not found in TrueData")
-            logger.debug(f"📋 Available symbols sample: {available_symbols}")
-            
             return None, 0, {}
             
         except ImportError as e:

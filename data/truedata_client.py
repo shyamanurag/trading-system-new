@@ -484,7 +484,7 @@ class TrueDataClient:
         """Setup callback for live data processing"""
         @self.td_obj.trade_callback
         def on_tick_data(tick_data):
-            """Process tick data from TrueData with Redis caching - FIXED field mapping"""
+            """Process tick data from TrueData with Redis caching - OPTIONS PREMIUM AWARE"""
             try:
                 # DEBUG: Log all available attributes to understand TrueData schema
                 if hasattr(tick_data, '__dict__'):
@@ -502,6 +502,21 @@ class TrueDataClient:
                 if ltp <= 0:
                     logger.warning(f"⚠️ Invalid LTP for {symbol}: {ltp}")
                     return
+                
+                # CRITICAL FIX: Validate options premium data
+                try:
+                    from config.truedata_symbols import _is_options_symbol, validate_options_premium
+                    
+                    if _is_options_symbol(symbol):
+                        if not validate_options_premium(symbol, ltp):
+                            logger.error(f"❌ INVALID OPTIONS PREMIUM: {symbol} = ₹{ltp} (filtering out)")
+                            return
+                        logger.debug(f"✅ VALID OPTIONS PREMIUM: {symbol} = ₹{ltp}")
+                    else:
+                        logger.debug(f"📊 UNDERLYING PRICE: {symbol} = ₹{ltp}")
+                        
+                except ImportError:
+                    logger.warning("⚠️ Could not import options validation - proceeding without validation")
                 
                 # Extract OHLC data - FIXED: Better fallback logic
                 high = getattr(tick_data, 'high', None)
