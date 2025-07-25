@@ -318,24 +318,24 @@ class BaseStrategy:
             is_scalping = metadata.get('risk_type', '').startswith('SCALPING')
             volatility_score = metadata.get('volume_score', 0)
             
-            # 🎯 DECISION LOGIC FOR F&O ENABLED SYMBOLS:
-            # 1. High confidence + Scalping → OPTIONS (leverage)
-            # 2. Index symbols → OPTIONS (standard)
-            # 3. High volatility stocks → OPTIONS
-            # 4. Medium confidence → EQUITY (conservative for stocks)
+            # 🎯 DECISION LOGIC FOR F&O ENABLED SYMBOLS (BALANCED APPROACH):
+            # 1. Index symbols → OPTIONS (standard)
+            # 2. Very high confidence (0.85+) + Scalping → OPTIONS (leverage)
+            # 3. High volatility stocks + Very high confidence → OPTIONS
+            # 4. Medium-High confidence (0.65-0.84) → EQUITY (balanced approach)
             # 5. Low confidence → EQUITY (safest)
             
             if is_index:
                 logger.info(f"🎯 INDEX SIGNAL: {symbol} → OPTIONS (F&O enabled)")
                 return 'OPTIONS'
-            elif is_high_confidence and is_scalping:
-                logger.info(f"🎯 HIGH CONFIDENCE SCALPING: {symbol} → OPTIONS (F&O enabled)")
+            elif is_high_confidence and confidence >= 0.85 and is_scalping:  # Only very high confidence scalping
+                logger.info(f"🎯 VERY HIGH CONFIDENCE SCALPING: {symbol} → OPTIONS (F&O enabled)")
                 return 'OPTIONS'
-            elif volatility_score >= 0.8 and confidence >= 0.75:
-                logger.info(f"🎯 HIGH VOLATILITY: {symbol} → OPTIONS (F&O enabled)")
+            elif volatility_score >= 0.9 and confidence >= 0.85:  # Higher thresholds for options
+                logger.info(f"🎯 VERY HIGH VOLATILITY: {symbol} → OPTIONS (F&O enabled)")
                 return 'OPTIONS'
             elif confidence >= 0.65:
-                logger.info(f"🎯 MEDIUM CONFIDENCE: {symbol} → EQUITY (conservative)")
+                logger.info(f"🎯 MEDIUM+ CONFIDENCE: {symbol} → EQUITY (balanced trading)")
                 return 'EQUITY'
             else:
                 logger.info(f"🎯 LOW CONFIDENCE: {symbol} → EQUITY (safest)")
