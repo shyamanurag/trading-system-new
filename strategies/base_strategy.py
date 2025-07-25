@@ -480,7 +480,8 @@ class BaseStrategy:
             return None
     
     def _convert_to_options_symbol(self, underlying_symbol: str, current_price: float, action: str) -> tuple:
-        """Convert underlying symbol to options symbol with ZERODHA SYMBOL MAPPING"""
+        """Convert equity signal to options symbol with BUY-only approach - FIXED SYMBOL FORMAT"""
+        
         try:
             # 🎯 CRITICAL FIX: Convert to Zerodha's official symbol name FIRST
             from config.truedata_symbols import get_zerodha_symbol
@@ -498,6 +499,9 @@ class BaseStrategy:
                     option_type = 'PE'  # BUY Put when bearish
                     
                 expiry = self._get_next_expiry()
+                
+                # 🔧 CRITICAL FIX: Use Zerodha's exact symbol format
+                # Zerodha format: BANKNIFTY25JUL57100PE (not BANKNIFTY31JUL2557100PE)
                 options_symbol = f"{zerodha_underlying}{expiry}{strike}{option_type}"
                 return options_symbol, option_type
             else:
@@ -510,6 +514,8 @@ class BaseStrategy:
                     option_type = 'PE'  # BUY Put when bearish
                     
                 expiry = self._get_next_expiry()
+                
+                # 🔧 CRITICAL FIX: Use Zerodha's exact symbol format for stocks too
                 options_symbol = f"{zerodha_underlying}{expiry}{strike}{option_type}"
                 
                 logger.info(f"🎯 ZERODHA OPTIONS SYMBOL: {underlying_symbol} → {options_symbol}")
@@ -517,11 +523,9 @@ class BaseStrategy:
                 logger.info(f"   Strike: {strike}, Expiry: {expiry}, Type: {option_type}")
                 
                 return options_symbol, option_type
-                
         except Exception as e:
             logger.error(f"Error converting to options symbol: {e}")
-            # Fallback to underlying symbol
-            return underlying_symbol, 'EQUITY'
+            return underlying_symbol, 'CE'
     
     def _get_atm_strike(self, symbol: str, price: float) -> int:
         """Get ATM strike for index options"""
@@ -598,7 +602,7 @@ class BaseStrategy:
     
     def _get_optimal_expiry_for_strategy(self, preference: str = "nearest_weekly") -> str:
         """
-        Get optimal expiry based on strategy requirements
+        Get optimal expiry based on strategy requirements - FIXED ZERODHA FORMAT
         
         Args:
             preference: "nearest_weekly", "nearest_monthly", "next_weekly", "max_time_decay"
@@ -620,33 +624,41 @@ class BaseStrategy:
         # Sort by date
         future_expiries.sort(key=lambda x: x['date'])
         
-        # Strategy-based selection
         if preference == "nearest_weekly":
-            # Prefer weekly expiries (usually nearest)
-            weekly_expiries = [exp for exp in future_expiries if exp.get('is_weekly', True)]
-            return weekly_expiries[0]['formatted'] if weekly_expiries else future_expiries[0]['formatted']
-            
+            # Get the nearest expiry (usually weekly)
+            nearest = future_expiries[0]
         elif preference == "nearest_monthly":
-            # Prefer monthly expiries (last Thursday of month)
+            # Try to find monthly expiry (usually last Thursday of month)
             monthly_expiries = [exp for exp in future_expiries if exp.get('is_monthly', False)]
-            return monthly_expiries[0]['formatted'] if monthly_expiries else future_expiries[0]['formatted']
-            
+            nearest = monthly_expiries[0] if monthly_expiries else future_expiries[0]
         elif preference == "next_weekly":
-            # Skip current week, get next week
-            if len(future_expiries) > 1:
-                return future_expiries[1]['formatted']
-            else:
-                return future_expiries[0]['formatted']
-                
-        elif preference == "max_time_decay":
-            # For theta strategies - longer expiry
-            if len(future_expiries) >= 3:
-                return future_expiries[2]['formatted']  # 3rd nearest expiry
-            else:
-                return future_expiries[-1]['formatted']  # Longest available
+            # Get second nearest (skip current week if very close to expiry)
+            nearest = future_expiries[1] if len(future_expiries) > 1 else future_expiries[0]
+        else:  # max_time_decay
+            # Choose expiry with optimal time decay (not too near, not too far)
+            optimal_days = 7  # 1 week optimal
+            best_expiry = future_expiries[0]
+            best_diff = abs((best_expiry['date'] - today).days - optimal_days)
+            
+            for expiry in future_expiries:
+                days_diff = abs((expiry['date'] - today).days - optimal_days)
+                if days_diff < best_diff:
+                    best_diff = days_diff
+                    best_expiry = expiry
+            nearest = best_expiry
         
-        # Default: nearest expiry
-        return future_expiries[0]['formatted']
+        # 🔧 CRITICAL FIX: Convert to Zerodha format (25JUL instead of 31JUL25)
+        exp_date = nearest['date']
+        month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+                      'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+        
+        # Zerodha format: 25JUL (YY + MMM)
+        zerodha_expiry = f"{str(exp_date.year)[-2:]}{month_names[exp_date.month - 1]}"
+        
+        logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
+        logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
+        
+        return zerodha_expiry
     
     def _get_available_expiries_from_zerodha(self) -> List[Dict]:
         """
@@ -738,7 +750,7 @@ class BaseStrategy:
         return expiries
     
     def _calculate_next_thursday_fallback(self) -> str:
-        """Fallback calculation for next Thursday when API is unavailable"""
+        """Fallback calculation for next Thursday when API is unavailable - FIXED ZERODHA FORMAT"""
         today = datetime.now()
         
         # Find next Thursday
@@ -748,15 +760,18 @@ class BaseStrategy:
             
         next_thursday = today + timedelta(days=days_ahead)
         
-        # Format for Zerodha
+        # 🔧 CRITICAL FIX: Format for Zerodha - their format is 25JUL (not 31JUL25)
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
         
-        expiry_formatted = f"{next_thursday.day:02d}{month_names[next_thursday.month - 1]}{str(next_thursday.year)[-2:]}"
+        # Zerodha format: 25JUL (YY + MMM, not DD + MMM + YY)
+        expiry_formatted = f"{str(next_thursday.year)[-2:]}{month_names[next_thursday.month - 1]}"
         
-        logger.info(f"📅 THURSDAY EXPIRY: {expiry_formatted}")
+        logger.info(f"📅 ZERODHA EXPIRY FORMAT: {expiry_formatted}")
         logger.info(f"   Next Thursday: {next_thursday.strftime('%A, %B %d, %Y')}")
         logger.info(f"   Today: {today.strftime('%A, %B %d, %Y')}")
+        logger.info(f"   OLD FORMAT would be: {next_thursday.day:02d}{month_names[next_thursday.month - 1]}{str(next_thursday.year)[-2:]}")
+        logger.info(f"   NEW ZERODHA FORMAT: {expiry_formatted}")
         
         return expiry_formatted
     
