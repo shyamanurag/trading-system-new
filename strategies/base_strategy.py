@@ -261,11 +261,21 @@ class BaseStrategy:
                               metadata: Dict) -> Optional[Dict]:
         """Create standardized signal format for all strategies"""
         try:
-            # 🎯 CRITICAL FIX: Convert to options symbol for scalping strategies
+            # 🎯 CRITICAL FIX: Convert to options symbol and force BUY action
             options_symbol, option_type = self._convert_to_options_symbol(symbol, entry_price, action)
+            final_action = 'BUY' # Force all options signals to be BUY
+            
+            # 🔍 CRITICAL DEBUG: Log the complete symbol creation process
+            logger.info(f"🔍 SYMBOL CREATION DEBUG:")
+            logger.info(f"   Original: {symbol} → Options: {options_symbol}")
+            logger.info(f"   Type: {option_type}, Action: {final_action}")
+            logger.info(f"   Entry Price: ₹{entry_price} (underlying)")
             
             # 🎯 CRITICAL FIX: Get actual options premium from TrueData instead of stock price
             options_entry_price = self._get_options_premium(options_symbol, entry_price, option_type)
+            
+            # 🔍 DEBUG: Log premium fetching
+            logger.info(f"   Options Premium: ₹{options_entry_price} (vs underlying ₹{entry_price})")
             
             # 🎯 CRITICAL FIX: Calculate correct stop_loss and target for options
             options_stop_loss, options_target = self._calculate_options_levels(
