@@ -748,9 +748,16 @@ class TradingOrchestrator:
             # CRITICAL FIX: Get credentials from trading_control first
             zerodha_credentials = await self._get_zerodha_credentials_from_trading_control()
             
+            logger.info(f"🔍 DEBUG: Credentials from trading_control: {zerodha_credentials}")
+            
             if zerodha_credentials:
                 api_key = zerodha_credentials.get('api_key')
                 user_id = zerodha_credentials.get('user_id')
+                access_token = zerodha_credentials.get('access_token')
+                
+                logger.info(f"🔍 DEBUG: API Key: {api_key[:8] if api_key else None}")
+                logger.info(f"🔍 DEBUG: User ID: {user_id if user_id else None}")
+                logger.info(f"🔍 DEBUG: Access Token: {access_token[:10] if access_token else None}")
                 
                 if api_key and user_id:
                     self.logger.info(f"✅ Using Zerodha credentials from trading_control: API Key: {api_key[:8]}..., User ID: {user_id}")
@@ -761,9 +768,6 @@ class TradingOrchestrator:
                     # Set environment variables for the client
                     os.environ['ZERODHA_API_KEY'] = api_key
                     os.environ['ZERODHA_USER_ID'] = user_id
-                    
-                    # Get access token from trading control or environment
-                    access_token = zerodha_credentials.get('access_token') or os.getenv('ZERODHA_ACCESS_TOKEN')
                     
                     # Create broker instance with proper config dictionary
                     has_valid_credentials = all([api_key, user_id, access_token])
@@ -788,7 +792,8 @@ class TradingOrchestrator:
                     # Create unified broker instance with built-in resilience
                     unified_config = {**zerodha_config, **resilient_config}
                     zerodha_client = ZerodhaIntegration(unified_config)
-                    self.logger.info("✅ Zerodha client initialized with full credentials")
+                    logger.info(f"✅ Zerodha client initialized in {'REAL' if not zerodha_config['mock_mode'] else 'MOCK'} mode")
+                    logger.info(f"   Sandbox: {'ON' if zerodha_config['sandbox_mode'] else 'OFF'}")
                     return zerodha_client
                 else:
                     self.logger.error("❌ Incomplete Zerodha credentials from trading_control")
