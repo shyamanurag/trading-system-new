@@ -74,7 +74,7 @@ class ZerodhaAnalyticsService:
             logger.error(f"❌ Error getting comprehensive analytics: {e}")
             return ZerodhaAnalytics()
     
-    async def get_daily_report(self, report_date: date = None) -> Dict:
+    async def get_daily_report(self, report_date: Optional[date] = None) -> Dict:
         """Get daily trading report from Zerodha"""
         try:
             if not report_date:
@@ -501,7 +501,10 @@ class ZerodhaAnalyticsService:
             total_value = sum(t['quantity'] * t['price'] for t in daily_trades)
             
             # Calculate P&L (simplified)
-            daily_pnl = sum(await self._calculate_symbol_pnl([t]) for t in daily_trades)
+            daily_pnl = 0.0
+            for trade in daily_trades:
+                trade_pnl = await self._calculate_symbol_pnl([trade])
+                daily_pnl += trade_pnl
             
             return {
                 'total_trades': total_trades,
