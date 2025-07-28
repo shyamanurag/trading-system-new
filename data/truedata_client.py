@@ -53,8 +53,11 @@ def setup_redis_client():
         )
         
         # Test connection
-        redis_client.ping()
-        logger.info(f"✅ TrueData Redis connected: {redis_url[:50]}...")
+        if redis_client:
+            redis_client.ping()
+            logger.info(f"✅ TrueData Redis connected: {redis_url[:50]}...")
+        else:
+            logger.warning("⚠️ Redis client is None")
         
     except Exception as e:
         logger.warning(f"⚠️ TrueData Redis connection failed: {e}")
@@ -65,6 +68,80 @@ def setup_redis_client():
 
 # Call setup at module level
 setup_redis_client()
+
+def safe_json_serialize(obj):
+    """Safely serialize objects to JSON, handling complex types and circular references"""
+    try:
+        # Handle datetime objects
+        if hasattr(obj, 'isoformat'):
+            return obj.isoformat()
+        
+        # Handle numeric types
+        if isinstance(obj, (int, float)):
+            return obj
+        
+        # Handle strings
+        if isinstance(obj, str):
+            return obj
+        
+        # Handle None
+        if obj is None:
+            return None
+        
+        # Handle lists and tuples
+        if isinstance(obj, (list, tuple)):
+            return [safe_json_serialize(item) for item in obj]
+        
+        # Handle dictionaries
+        if isinstance(obj, dict):
+            return {str(k): safe_json_serialize(v) for k, v in obj.items()}
+        
+        # For other objects, convert to string representation
+        return str(obj)
+        
+    except Exception as e:
+        logger.warning(f"⚠️ JSON serialization error: {e}")
+        return str(obj)
+
+def create_safe_market_data(market_data):
+    """Create a safe version of market data for Redis storage"""
+    try:
+        # Create a clean copy with only serializable data
+        safe_data = {
+            'symbol': str(market_data.get('symbol', '')),
+            'ltp': float(market_data.get('ltp', 0)),
+            'close': float(market_data.get('close', 0)),
+            'high': float(market_data.get('high', 0)),
+            'low': float(market_data.get('low', 0)),
+            'open': float(market_data.get('open', 0)),
+            'volume': float(market_data.get('volume', 0)),
+            'change': float(market_data.get('change', 0)),
+            'changeper': float(market_data.get('changeper', 0)),
+            'change_percent': float(market_data.get('change_percent', 0)),
+            'bid': float(market_data.get('bid', 0)),
+            'ask': float(market_data.get('ask', 0)),
+            'timestamp': str(market_data.get('timestamp', '')),
+            'source': str(market_data.get('source', '')),
+            'deployment_id': str(market_data.get('deployment_id', '')),
+            'data_quality': {
+                'has_ohlc': bool(market_data.get('data_quality', {}).get('has_ohlc', False)),
+                'has_volume': bool(market_data.get('data_quality', {}).get('has_volume', False)),
+                'has_change_percent': bool(market_data.get('data_quality', {}).get('has_change_percent', False)),
+                'calculated_change_percent': bool(market_data.get('data_quality', {}).get('calculated_change_percent', False))
+            }
+        }
+        
+        return safe_data
+        
+    except Exception as e:
+        logger.error(f"❌ Error creating safe market data: {e}")
+        # Return minimal safe data
+        return {
+            'symbol': str(market_data.get('symbol', '')),
+            'ltp': 0.0,
+            'timestamp': datetime.now().isoformat(),
+            'error': 'Data serialization failed'
+        }
 
 class TrueDataClient:
     """Advanced TrueData client with deployment overlap handling"""
@@ -482,6 +559,10 @@ class TrueDataClient:
 
     def _setup_callback(self):
         """Setup callback for live data processing"""
+        if not self.td_obj:
+            logger.error("❌ TrueData object is None - cannot setup callback")
+            return
+            
         @self.td_obj.trade_callback
         def on_tick_data(tick_data):
             """Process tick data from TrueData with Redis caching - OPTIONS PREMIUM AWARE"""
@@ -610,19 +691,22 @@ class TrueDataClient:
                 # CRITICAL: Also store in Redis for cross-process access
                 if redis_client:
                     try:
+                        # Create safe version of market data for Redis storage
+                        safe_market_data = create_safe_market_data(market_data)
+                        
                         # Store individual symbol data (JSON serialized to handle nested dicts)
-                        redis_client.set(f"truedata:symbol:{symbol}", json.dumps(market_data))
+                        redis_client.set(f"truedata:symbol:{symbol}", json.dumps(safe_market_data))
                         redis_client.expire(f"truedata:symbol:{symbol}", 300)  # 5 minutes
                         
                         # Store in combined cache
-                        redis_client.hset("truedata:live_cache", symbol, json.dumps(market_data))
+                        redis_client.hset("truedata:live_cache", symbol, json.dumps(safe_market_data))
                         redis_client.expire("truedata:live_cache", 300)  # 5 minutes
                         
                         # Update symbol count
                         redis_client.set("truedata:symbol_count", len(live_market_data))
                         
                         # Store raw tick data for analysis
-                        redis_client.lpush(f"truedata:ticks:{symbol}", json.dumps(market_data))
+                        redis_client.lpush(f"truedata:ticks:{symbol}", json.dumps(safe_market_data))
                         redis_client.ltrim(f"truedata:ticks:{symbol}", 0, 100)  # Keep last 100 ticks
                         
                     except Exception as redis_error:
