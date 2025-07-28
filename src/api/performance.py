@@ -90,12 +90,47 @@ async def get_trades(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/performance/metrics", response_model=Dict[str, Any])
-async def get_performance_metrics(
-    orchestrator: TradingOrchestrator = Depends()
-):
-    """Get comprehensive performance metrics"""
+async def get_performance_metrics():
+    """Get comprehensive performance metrics from Zerodha"""
     try:
-        metrics = await orchestrator.metrics_service.get_all_metrics()
+        # Get Zerodha client
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        if not orchestrator or not orchestrator.zerodha_client:
+            return {
+                "success": False,
+                "message": "Zerodha client not available",
+                "data": {}
+            }
+        
+        # Use Zerodha analytics service
+        from src.core.zerodha_analytics import get_zerodha_analytics_service
+        analytics_service = await get_zerodha_analytics_service(orchestrator.zerodha_client)
+        
+        # Get comprehensive analytics
+        analytics = await analytics_service.get_comprehensive_analytics(30)  # Last 30 days
+        
+        metrics = {
+            'total_trades': analytics.total_trades,
+            'winning_trades': analytics.winning_trades,
+            'losing_trades': analytics.losing_trades,
+            'win_rate': analytics.win_rate,
+            'total_pnl': analytics.total_pnl,
+            'daily_pnl': analytics.daily_pnl,
+            'weekly_pnl': analytics.weekly_pnl,
+            'monthly_pnl': analytics.monthly_pnl,
+            'avg_win': analytics.avg_win,
+            'avg_loss': analytics.avg_loss,
+            'max_win': analytics.max_win,
+            'max_loss': analytics.max_loss,
+            'active_positions': analytics.active_positions,
+            'net_balance': analytics.net_balance,
+            'available_margin': analytics.available_margin,
+            'used_margin': analytics.used_margin,
+            'source': 'ZERODHA_API'
+        }
+        
         return {
             "success": True,
             "message": "Performance metrics retrieved successfully",

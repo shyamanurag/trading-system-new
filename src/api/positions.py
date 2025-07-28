@@ -17,70 +17,74 @@ router = APIRouter(prefix="/api/v1", tags=["positions"])
 
 @router.get("/positions")
 async def get_current_positions(db: Session = Depends(get_db)):
-    """Get current trading positions with REAL-TIME P&L from position tracker"""
+    """Get current trading positions directly from Zerodha"""
     try:
-        # 🎯 CRITICAL FIX: Get REAL-TIME positions from orchestrator instead of static database
+        # 🎯 CRITICAL FIX: Get positions directly from Zerodha instead of faulty database
         try:
-            from src.core.orchestrator import get_orchestrator
-            orchestrator = await get_orchestrator()
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
             
-            if orchestrator and hasattr(orchestrator, 'position_tracker') and orchestrator.position_tracker:
-                # Get real-time positions with current market prices and P&L
-                positions_dict = await orchestrator.position_tracker.get_all_positions()
-                
-                position_list = []
-                for symbol, position in positions_dict.items():
-                    try:
-                        # Get current market price for real-time P&L
-                        try:
-                            from src.api.market_data import get_live_data_for_symbol
-                            live_data = get_live_data_for_symbol(symbol)
-                            current_price = live_data.get('ltp', position.current_price)
-                        except:
-                            current_price = position.current_price
-                        
-                        # Calculate real-time P&L
-                        if position.side == 'long':
-                            unrealized_pnl = (current_price - position.average_price) * position.quantity
-                        else:
-                            unrealized_pnl = (position.average_price - current_price) * position.quantity
-                        
-                        # Calculate P&L percentage
-                        position_value = position.average_price * position.quantity
-                        pnl_percent = (unrealized_pnl / position_value) * 100 if position_value > 0 else 0
-                        
-                        position_list.append({
-                            "symbol": symbol,
-                            "quantity": abs(position.quantity),
-                            "side": "LONG" if position.quantity > 0 else "SHORT",
-                            "entry_price": round(position.average_price, 2),
-                            "current_price": round(current_price, 2),  # 🎯 REAL CURRENT PRICE
-                            "current_pnl": round(unrealized_pnl, 2),    # 🎯 REAL P&L
-                            "pnl_percent": round(pnl_percent, 2),       # 🎯 REAL P&L %
-                            "strategies": getattr(position, 'strategy', 'Unknown'),
-                            "trade_count": 1,
-                            "last_updated": datetime.now().isoformat()  # 🎯 REAL-TIME UPDATE
-                        })
-                    except Exception as pos_error:
-                        logger.error(f"Error processing position {symbol}: {pos_error}")
-                        continue
-                
-                # Calculate summary
-                total_pnl = sum(pos["current_pnl"] for pos in position_list)
-                
-                return {
-                    "success": True,
-                    "data": {
-                        "positions": position_list,
-                        "summary": {
-                            "total_positions": len(position_list),
-                            "total_pnl": round(total_pnl, 2),
-                            "long_positions": len([p for p in position_list if p["side"] == "LONG"]),
-                            "short_positions": len([p for p in position_list if p["side"] == "SHORT"])
-                        }
-                    },
-                    "source": "REAL_TIME_POSITION_TRACKER"  # 🎯 INDICATE REAL-TIME SOURCE
-                }
+            if not orchestrator or not orchestrator.zerodha_client:
+                raise HTTPException(status_code=503, detail="Zerodha client not available")
+            
+            # Use Zerodha analytics service
+            from src.core.zerodha_analytics import get_zerodha_analytics_service
+            analytics_service = await get_zerodha_analytics_service(orchestrator.zerodha_client)
+            
+            # Get positions analytics from Zerodha
+            positions_analytics = await analytics_service.get_positions_analytics()
+            
+            if 'error' in positions_analytics:
+                raise HTTPException(status_code=500, detail=positions_analytics['error'])
+            
+            # Process Zerodha positions
+            position_list = []
+            positions_data = positions_analytics.get('positions', {})
+            
+            for position in positions_data.get('net', []):
+                try:
+                    symbol = position.get('tradingsymbol', 'UNKNOWN')
+                    quantity = position.get('quantity', 0)
+                    average_price = position.get('average_price', 0)
+                    last_price = position.get('last_price', average_price)
+                    unrealized_pnl = position.get('unrealised_pnl', 0)
+                    
+                    # Calculate P&L percentage
+                    position_value = average_price * abs(quantity)
+                    pnl_percent = (unrealized_pnl / position_value) * 100 if position_value > 0 else 0
+                    
+                    position_list.append({
+                        "symbol": symbol,
+                        "quantity": abs(quantity),
+                        "side": "LONG" if quantity > 0 else "SHORT",
+                        "entry_price": round(average_price, 2),
+                        "current_price": round(last_price, 2),
+                        "current_pnl": round(unrealized_pnl, 2),
+                        "pnl_percent": round(pnl_percent, 2),
+                        "strategies": "Zerodha Position",
+                        "trade_count": 1,
+                        "last_updated": datetime.now().isoformat()
+                    })
+                except Exception as pos_error:
+                    logger.error(f"Error processing Zerodha position {symbol}: {pos_error}")
+                    continue
+            
+            # Calculate summary
+            total_pnl = sum(pos["current_pnl"] for pos in position_list)
+            
+            return {
+                "success": True,
+                "data": {
+                    "positions": position_list,
+                    "summary": {
+                        "total_positions": len(position_list),
+                        "total_pnl": round(total_pnl, 2),
+                        "long_positions": len([p for p in position_list if p["side"] == "LONG"]),
+                        "short_positions": len([p for p in position_list if p["side"] == "SHORT"])
+                    }
+                },
+                "source": "ZERODHA_API"  # 🎯 INDICATE ZERODHA SOURCE
+            }
                 
         except Exception as orchestrator_error:
             logger.warning(f"Real-time position tracker not available: {orchestrator_error}")
