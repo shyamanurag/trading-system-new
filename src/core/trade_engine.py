@@ -250,8 +250,50 @@ class TradeEngine:
                     'user_id': 'PAPER_TRADER_001'
                 }
                 
-                # Update position tracker
+                # Update position tracker with stop loss and target
                 if self.position_tracker:
+                    # Get stop loss and target from signal
+                    stop_loss_price = signal.get('stop_loss', 0)
+                    target_price = signal.get('target', 0)
+                    
+                    # Calculate stop loss and target if not provided
+                    if not stop_loss_price and execution_price > 0:
+                        # Default 2% stop loss for equity, 15% for options
+                        symbol_str = str(symbol)
+                        if 'CE' in symbol_str or 'PE' in symbol_str:
+                            stop_loss_percent = 0.15  # 15% for options
+                        else:
+                            stop_loss_percent = 0.02  # 2% for equity
+                        
+                        if action == 'BUY':
+                            stop_loss_price = execution_price * (1 - stop_loss_percent)
+                        else:  # SELL
+                            stop_loss_price = execution_price * (1 + stop_loss_percent)
+                    
+                    if not target_price and execution_price > 0:
+                        # Default 4% target for equity, 30% for options
+                        if 'CE' in symbol_str or 'PE' in symbol_str:
+                            target_percent = 0.30  # 30% for options
+                        else:
+                            target_percent = 0.04  # 4% for equity
+                        
+                        if action == 'BUY':
+                            target_price = execution_price * (1 + target_percent)
+                        else:  # SELL
+                            target_price = execution_price * (1 - target_percent)
+                    
+                    # Update position with stop loss and target
+                    position = await self.position_tracker.get_position(symbol)
+                    if position:
+                        position.stop_loss = stop_loss_price
+                        position.target = target_price
+                        position.trailing_stop = stop_loss_price  # Initialize trailing stop
+                        
+                        self.logger.info(f"🎯 Position risk levels set for {symbol}:")
+                        self.logger.info(f"   Entry: ₹{execution_price:.2f}")
+                        self.logger.info(f"   Stop Loss: ₹{stop_loss_price:.2f}")
+                        self.logger.info(f"   Target: ₹{target_price:.2f}")
+                    
                     await self.position_tracker.update_position(
                         symbol=trade_record['symbol'],
                         quantity=trade_record['quantity'],

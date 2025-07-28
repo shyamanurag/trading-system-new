@@ -26,6 +26,11 @@ class Position:
     entry_time: datetime
     last_updated: datetime
     
+    # Risk management fields for auto square-off
+    stop_loss: Optional[float] = None
+    target: Optional[float] = None
+    trailing_stop: Optional[float] = None
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert position to dictionary"""
         return {
@@ -37,7 +42,10 @@ class Position:
             'unrealized_pnl': self.unrealized_pnl,
             'side': self.side,
             'entry_time': self.entry_time.isoformat(),
-            'last_updated': self.last_updated.isoformat()
+            'last_updated': self.last_updated.isoformat(),
+            'stop_loss': self.stop_loss,
+            'target': self.target,
+            'trailing_stop': self.trailing_stop
         }
 
 class ProductionPositionTracker:
@@ -134,7 +142,10 @@ class ProductionPositionTracker:
                     unrealized_pnl=0.0,
                     side=side,
                     entry_time=now,
-                    last_updated=now
+                    last_updated=now,
+                    stop_loss=None,  # Will be set by trade engine
+                    target=None,     # Will be set by trade engine
+                    trailing_stop=None  # Will be set by trade engine
                 )
                 self.positions[symbol] = position
             
