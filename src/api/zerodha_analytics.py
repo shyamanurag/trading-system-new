@@ -291,3 +291,63 @@ async def sync_positions_with_zerodha(
     except Exception as e:
         logger.error(f"❌ Error syncing positions: {e}")
         raise HTTPException(status_code=500, detail=str(e)) 
+
+@router.get("/debug-orders")
+async def debug_zerodha_orders(
+    zerodha_client = Depends(get_zerodha_client)
+):
+    """Debug endpoint to see raw Zerodha orders data"""
+    try:
+        logger.info("🔍 Debugging Zerodha orders...")
+        
+        # Get raw orders from Zerodha
+        orders = await zerodha_client.get_orders()
+        
+        logger.info(f"📋 Raw orders from Zerodha: {len(orders) if orders else 0}")
+        
+        # Process and categorize orders
+        order_stats = {
+            'total_orders': len(orders) if orders else 0,
+            'by_status': {},
+            'today_orders': 0,
+            'recent_orders': [],
+            'sample_orders': orders[:5] if orders else []  # First 5 orders for inspection
+        }
+        
+        if orders:
+            # Count by status
+            for order in orders:
+                status = order.get('status', 'UNKNOWN')
+                order_stats['by_status'][status] = order_stats['by_status'].get(status, 0) + 1
+                
+                # Check if order is from today
+                try:
+                    order_timestamp = order.get('order_timestamp', '')
+                    if order_timestamp:
+                        order_date = datetime.fromisoformat(order_timestamp.replace('Z', '+00:00'))
+                        if order_date.date() == datetime.now().date():
+                            order_stats['today_orders'] += 1
+                            order_stats['recent_orders'].append({
+                                'order_id': order.get('order_id'),
+                                'symbol': order.get('tradingsymbol'),
+                                'status': order.get('status'),
+                                'side': order.get('transaction_type'),
+                                'quantity': order.get('quantity'),
+                                'price': order.get('price'),
+                                'timestamp': order_timestamp
+                            })
+                except Exception as e:
+                    logger.warning(f"Error parsing order timestamp: {e}")
+        
+        return {
+            'success': True,
+            'data': order_stats,
+            'zerodha_connected': zerodha_client.is_connected if zerodha_client else False,
+            'message': f"Found {order_stats['total_orders']} total orders, {order_stats['today_orders']} today",
+            'source': 'ZERODHA_API_DEBUG',
+            'timestamp': datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error debugging Zerodha orders: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) 

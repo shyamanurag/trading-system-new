@@ -196,17 +196,32 @@ class ZerodhaAnalyticsService:
             if not orders:
                 return []
             
-            # Filter for completed orders in the specified period
+            # Filter for ALL orders in the specified period (not just COMPLETE)
             end_date = datetime.now()
             start_date = end_date - timedelta(days=days)
             
             filtered_orders = []
             for order in orders:
-                order_date = datetime.fromisoformat(order.get('order_timestamp', '').replace('Z', '+00:00'))
-                if start_date <= order_date <= end_date and order.get('status') == 'COMPLETE':
+                try:
+                    order_timestamp = order.get('order_timestamp', '')
+                    if order_timestamp:
+                        order_date = datetime.fromisoformat(order_timestamp.replace('Z', '+00:00'))
+                        if start_date <= order_date <= end_date:
+                            filtered_orders.append(order)
+                except Exception as e:
+                    logger.warning(f"Error parsing order timestamp {order_timestamp}: {e}")
+                    # Include order anyway if timestamp parsing fails
                     filtered_orders.append(order)
             
-            logger.info(f"📋 Retrieved {len(filtered_orders)} completed orders from Zerodha")
+            logger.info(f"📋 Retrieved {len(filtered_orders)} orders from Zerodha (all statuses)")
+            
+            # Log order status breakdown
+            status_counts = {}
+            for order in filtered_orders:
+                status = order.get('status', 'UNKNOWN')
+                status_counts[status] = status_counts.get(status, 0) + 1
+            logger.info(f"📊 Order status breakdown: {status_counts}")
+            
             return filtered_orders
             
         except Exception as e:
