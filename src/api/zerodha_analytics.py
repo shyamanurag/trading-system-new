@@ -364,8 +364,6 @@ async def get_zerodha_connection_status(
         status_info = {
             'client_available': zerodha_client is not None,
             'is_connected': False,
-            'mock_mode': False,
-            'sandbox_mode': False,
             'has_api_key': False,
             'has_access_token': False,
             'user_id': None,
@@ -376,8 +374,6 @@ async def get_zerodha_connection_status(
         if zerodha_client:
             status_info.update({
                 'is_connected': getattr(zerodha_client, 'is_connected', False),
-                'mock_mode': getattr(zerodha_client, 'mock_mode', False),
-                'sandbox_mode': getattr(zerodha_client, 'sandbox_mode', False),
                 'has_api_key': bool(getattr(zerodha_client, 'api_key', None)),
                 'has_access_token': bool(getattr(zerodha_client, 'access_token', None)),
                 'user_id': getattr(zerodha_client, 'user_id', None),
@@ -385,19 +381,17 @@ async def get_zerodha_connection_status(
             })
             
             # Get account info if connected
-            if status_info['is_connected'] and not status_info['mock_mode']:
+            if status_info['is_connected']:
                 try:
                     account_info = await zerodha_client.get_account_info()
                     status_info['connection_details'] = account_info
                 except Exception as e:
                     status_info['connection_details'] = {'error': str(e)}
         
-        # Determine why orders might be empty
+        # Determine connection issues
         diagnosis = []
         if not status_info['client_available']:
             diagnosis.append("❌ Zerodha client not available")
-        elif status_info['mock_mode']:
-            diagnosis.append("⚠️ Zerodha client in MOCK MODE - will return empty orders")
         elif not status_info['is_connected']:
             diagnosis.append("❌ Zerodha client not connected")
         elif not status_info['has_access_token']:
@@ -405,7 +399,7 @@ async def get_zerodha_connection_status(
         elif not status_info['has_api_key']:
             diagnosis.append("❌ No API key configured")
         else:
-            diagnosis.append("✅ Zerodha client appears to be properly configured")
+            diagnosis.append("✅ Zerodha client properly configured for real trading")
         
         return {
             'success': True,

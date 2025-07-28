@@ -817,8 +817,9 @@ class TradingOrchestrator:
                         'api_key': api_key,
                         'user_id': user_id,
                         'access_token': access_token,
-                        'mock_mode': not has_valid_credentials,  # False when we have all credentials
-                        'sandbox_mode': os.getenv('ZERODHA_SANDBOX_MODE', 'true').lower() == 'true'  # Default to sandbox for safety
+                        'allow_token_update': True,
+                        'max_retries': 3,
+                        'retry_delay': 5
                     }
                     
                     # Create config for resilient connection
@@ -834,8 +835,8 @@ class TradingOrchestrator:
                     # Create unified broker instance with built-in resilience
                     unified_config = {**zerodha_config, **resilient_config}
                     zerodha_client = ZerodhaIntegration(unified_config)
-                    logger.info(f"✅ Zerodha client initialized in {'REAL' if not zerodha_config['mock_mode'] else 'MOCK'} mode")
-                    logger.info(f"   Sandbox: {'ON' if zerodha_config['sandbox_mode'] else 'OFF'}")
+                    logger.info(f"✅ Zerodha client initialized for REAL trading")
+                    logger.info(f"   Connection: LIVE TRADING MODE")
                     return zerodha_client
                 else:
                     self.logger.error("❌ Incomplete Zerodha credentials from trading_control")
@@ -1182,8 +1183,6 @@ class TradingOrchestrator:
                     'api_key': api_key,
                     'user_id': user_id,
                     'access_token': access_token,  # Can be None initially
-                    'mock_mode': not has_api_credentials,  # Only require API credentials, not token
-                    'sandbox_mode': os.getenv('ZERODHA_SANDBOX_MODE', 'true').lower() == 'true',
                     'allow_token_update': True,  # Allow token to be set later
                     # Built-in resilience configuration
                     'max_retries': 3,
@@ -1200,9 +1199,10 @@ class TradingOrchestrator:
                         self.logger.info(f"✅ Zerodha initializing with token for user {user_id}: {access_token[:10]}...")
                     else:
                         self.logger.info(f"🔧 Zerodha initializing WITHOUT token for user {user_id} - will accept token from frontend")
-                    self.logger.info("🔄 Zerodha will use REAL API with built-in resilience")
+                    self.logger.info("🔄 Zerodha using REAL API for live trading")
                 else:
-                    self.logger.warning(f"❌ Missing Zerodha API credentials - running in mock mode")
+                    self.logger.error(f"❌ Missing Zerodha API credentials - cannot initialize")
+                    raise ValueError("Missing required Zerodha API credentials")
                 
                 # Create unified broker instance with built-in resilience
                 zerodha_client = ZerodhaIntegration(unified_config)

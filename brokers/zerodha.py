@@ -40,9 +40,7 @@ class ZerodhaIntegration:
         self.access_token = config.get('access_token')
         self.pin = config.get('pin')
         
-        # Configuration
-        self.mock_mode = config.get('mock_mode', False)
-        self.sandbox_mode = config.get('sandbox_mode', False)
+        # Configuration - REMOVED mock_mode and sandbox_mode
         self.allow_token_update = config.get('allow_token_update', True)
         
         # Resilience configuration
@@ -70,7 +68,7 @@ class ZerodhaIntegration:
         self.ws_last_reconnect = None
         self.ticker = None
         
-        # Initialize KiteConnect for REAL trading
+        # Initialize KiteConnect for REAL trading ONLY
         if self.api_key and KiteConnect:
             self.kite = KiteConnect(api_key=self.api_key)
             logger.info("🔴 Zerodha initialized for REAL trading")
@@ -82,8 +80,10 @@ class ZerodhaIntegration:
                 logger.info("🔧 Zerodha initialized without token - awaiting frontend authentication")
         else:
             self.kite = None
-            logger.warning("Zerodha API key not provided or KiteConnect not available")
-            self.mock_mode = True  # Force mock mode if no API key
+            if not self.api_key:
+                logger.error("❌ Zerodha API key not provided - cannot initialize client")
+            if not KiteConnect:
+                logger.error("❌ KiteConnect not available - please install kiteconnect package")
             
         # Start background monitoring
         asyncio.create_task(self._background_monitoring())
@@ -326,8 +326,9 @@ class ZerodhaIntegration:
         
         for attempt in range(self.max_retries):
             try:
-                if self.mock_mode or not self.kite:
-                    return f"MOCK_ORDER_{symbol}_{int(time.time())}"
+                if not self.kite:
+                    logger.error("❌ Zerodha order rejected: KiteConnect not initialized")
+                    return None
                 # Validate order parameters
                 if not self._validate_order_params(order_params):
                     logger.error("❌ Order validation failed")
@@ -368,11 +369,8 @@ class ZerodhaIntegration:
                 if trigger_price:
                     zerodha_params['trigger_price'] = float(trigger_price)
                 
-                if self.sandbox_mode:
-                    logger.info(f"🧪 SANDBOX MODE: Placing order via real API (no NSE execution): {symbol} {action} {quantity}")
-                else:
-                    logger.info(f"🔴 REAL MODE: Placing LIVE order: {symbol} {action} {quantity}")
-                    logger.warning(f"⚠️ REAL MONEY TRADE: This will use actual funds!")
+                logger.info(f"🔴 REAL MODE: Placing LIVE order: {symbol} {action} {quantity}")
+                logger.warning(f"⚠️ REAL MONEY TRADE: This will use actual funds!")
                 
                 # Place the REAL order
                 order_response = await self._async_api_call(
@@ -483,13 +481,13 @@ class ZerodhaIntegration:
     async def _initialize_websocket(self):
         """Initialize WebSocket connection for real-time data"""
         try:
-            if self.mock_mode:
-                self.ticker_connected = True
-                logger.info("✅ Mock WebSocket connection established")
-            else:
-                if not KiteTicker or not self.api_key or not self.access_token:
-                    logger.warning("⚠️ WebSocket unavailable - missing KiteTicker or credentials")
-                    return
+            if not self.kite:
+                logger.warning("⚠️ WebSocket unavailable - KiteConnect not initialized")
+                return
+                
+            if not KiteTicker or not self.api_key or not self.access_token:
+                logger.warning("⚠️ WebSocket unavailable - missing KiteTicker or credentials")
+                return
                     
                 self.ticker = KiteTicker(self.api_key, self.access_token)
                 self.ticker.on_ticks = self._on_ticks
@@ -573,7 +571,7 @@ class ZerodhaIntegration:
         """Get positions with retry"""
         for attempt in range(self.max_retries):
             try:
-                if self.mock_mode or not self.kite:
+                if not self.kite:
                     return {'net': [], 'day': []}
                 return await self._async_api_call(self.kite.positions)
             except Exception as e:
@@ -586,7 +584,7 @@ class ZerodhaIntegration:
         """Get holdings with retry"""
         for attempt in range(self.max_retries):
             try:
-                if self.mock_mode or not self.kite:
+                if not self.kite:
                     return {'holdings': []}
                 return await self._async_api_call(self.kite.holdings)
             except Exception as e:
@@ -599,7 +597,7 @@ class ZerodhaIntegration:
         """Get margins with retry"""
         for attempt in range(self.max_retries):
             try:
-                if self.mock_mode or not self.kite:
+                if not self.kite:
                     return {'equity': {'available': {'cash': 100000}}}
                 return await self._async_api_call(self.kite.margins)
             except Exception as e:
@@ -612,8 +610,8 @@ class ZerodhaIntegration:
         """Get orders with retry - CRITICAL for trade sync"""
         for attempt in range(self.max_retries):
             try:
-                if self.mock_mode or not self.kite:
-                    # Return mock orders for testing
+                if not self.kite:
+                    logger.warning("⚠️ Cannot get orders - KiteConnect not initialized")
                     return []
                 return await self._async_api_call(self.kite.orders)
             except Exception as e:
@@ -629,27 +627,20 @@ class ZerodhaIntegration:
                 if not self.is_connected or not self.kite:
                     return {}
                 
-                if self.mock_mode:
+                profile = await self._async_api_call(self.kite.profile)
+                if profile:
                     return {
-                        'user_id': self.user_id or 'MOCK_USER',
+                        'user_id': profile.get('user_id', self.user_id),
+                        'user_name': profile.get('user_name', ''),
+                        'email': profile.get('email', ''),
                         'broker': 'Zerodha',
+                        'exchanges': profile.get('exchanges', []),
+                        'products': profile.get('products', ['CNC', 'MIS', 'NRML']),
+                        'order_types': profile.get('order_types', ['MARKET', 'LIMIT', 'SL', 'SL-M']),
+                        'last_updated': datetime.now().isoformat(),
                         'connection_status': 'connected'
                     }
-                else:
-                    profile = await self._async_api_call(self.kite.profile)
-                    if profile:
-                        return {
-                            'user_id': profile.get('user_id', self.user_id),
-                            'user_name': profile.get('user_name', ''),
-                            'email': profile.get('email', ''),
-                            'broker': 'Zerodha',
-                            'exchanges': profile.get('exchanges', []),
-                            'products': profile.get('products', ['CNC', 'MIS', 'NRML']),
-                            'order_types': profile.get('order_types', ['MARKET', 'LIMIT', 'SL', 'SL-M']),
-                            'last_updated': datetime.now().isoformat(),
-                            'connection_status': 'connected'
-                        }
-                    return {}
+                return {}
             except Exception as e:
                 logger.error(f"❌ Get account info attempt {attempt + 1} failed: {e}")
                 if attempt < self.max_retries - 1:
@@ -663,7 +654,7 @@ class ZerodhaIntegration:
         """
         for attempt in range(self.max_retries):
             try:
-                if self.mock_mode or not self.kite:
+                if not self.kite:
                     # Return mock instruments data for testing
                     return self._get_mock_instruments_data()
                 
@@ -888,7 +879,7 @@ class ZerodhaIntegration:
             'name': 'zerodha',
             'state': self.connection_state.value,
             'is_connected': self.is_connected,
-            'mock_mode': self.mock_mode,
+            'mock_mode': False, # REMOVED mock_mode
             'last_health_check': self.last_health_check.isoformat() if self.last_health_check else None,
             'last_error': self.last_error,
             'reconnect_attempts': self.reconnect_attempts,

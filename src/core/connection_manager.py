@@ -274,36 +274,27 @@ class ConnectionManager:
                 except Exception as redis_error:
                     logger.warning(f"Could not check Redis for stored token: {redis_error}")
             
-            # Create config with mock mode if no credentials
-            paper_trading_enabled = os.getenv('PAPER_TRADING', 'false').lower() == 'true'
+            # Create config with real trading only
+            api_key = os.getenv('ZERODHA_API_KEY')
+            user_id = os.getenv('ZERODHA_USER_ID')
             
             # CRITICAL FIX: Allow initialization without access token
-            has_api_credentials = all([
-                os.getenv('ZERODHA_API_KEY'),
-                os.getenv('ZERODHA_API_SECRET'),
-                user_id
-            ])
+            has_api_credentials = all([api_key, user_id])
             
             zerodha_config = {
-                'api_key': os.getenv('ZERODHA_API_KEY'),
-                'api_secret': os.getenv('ZERODHA_API_SECRET'),
+                'api_key': api_key,
                 'user_id': user_id,
-                'access_token': access_token,  # Can be None initially
-                'mock_mode': not has_api_credentials,  # Only require API credentials, not token
-                'sandbox_mode': os.getenv('ZERODHA_SANDBOX_MODE', 'true').lower() == 'true',
-                'allow_token_update': True  # Allow token to be set later
+                'access_token': access_token,
+                'allow_token_update': True,
+                'max_retries': 3,
+                'retry_delay': 5,
+                'health_check_interval': 30,
+                'order_rate_limit': 1.0
             }
             
-            # Log token status for debugging (without exposing actual token)
-            if has_api_credentials:
-                if access_token:
-                    logger.info(f"✅ Zerodha token available for user {user_id}: {access_token[:10]}...")
-                    logger.info("🔄 Zerodha will run in LIVE mode with real API credentials")
-                else:
-                    logger.info(f"🔧 Zerodha initializing for user {user_id} - awaiting token from frontend authentication")
-                    logger.info("💡 Token will be provided through frontend daily auth workflow")
-            else:
-                logger.warning(f"❌ Missing Zerodha API credentials - running in mock mode")
+            if not has_api_credentials:
+                logger.error(f"❌ Missing Zerodha API credentials - cannot initialize")
+                raise ValueError("Missing required Zerodha API credentials")
             
             zerodha = ZerodhaIntegration(zerodha_config)
             await zerodha.initialize()

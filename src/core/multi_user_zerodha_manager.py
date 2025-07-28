@@ -79,17 +79,18 @@ class MultiUserZerodhaManager:
         """Add a new user trading session"""
         try:
             # Create Zerodha configuration
-            zerodha_config = {
+            session_config = {
                 'api_key': api_key,
                 'api_secret': api_secret,
                 'user_id': client_id,
                 'access_token': access_token,
-                'mock_mode': not access_token,  # Use mock mode if no access token
-                'sandbox_mode': os.getenv('ZERODHA_SANDBOX_MODE', 'true').lower() == 'true'
+                'allow_token_update': True,
+                'max_retries': 3,
+                'retry_delay': 5
             }
             
             # Create Zerodha client
-            zerodha_client = ZerodhaIntegration(zerodha_config)
+            zerodha_client = ZerodhaIntegration(session_config)
             
             # Create resilient connection
             resilient_config = {
@@ -112,7 +113,7 @@ class MultiUserZerodhaManager:
                 api_key=api_key,
                 client_id=client_id,
                 access_token=access_token,
-                session_config=zerodha_config
+                session_config=session_config
             )
             
             # Store session
@@ -330,12 +331,10 @@ class MultiUserZerodhaManager:
             # Update session
             session.access_token = access_token
             session.session_config['access_token'] = access_token
-            session.session_config['mock_mode'] = False  # Enable real trading
             
             # Update Zerodha client
             if session.zerodha_client:
                 session.zerodha_client.access_token = access_token
-                session.zerodha_client.mock_mode = False
                 
                 # Set access token in KiteConnect if available
                 if hasattr(session.zerodha_client, 'kite') and session.zerodha_client.kite:

@@ -43,8 +43,8 @@ brokers:
     base_url: https://api.kite.trade
     name: zerodha
     rate_limit_per_minute: 60
-    sandbox_mode: true
     timeout_seconds: 30
+    real_trading_mode: true
 compliance:
   # Trading Rate Limits
   max_trades_per_second: 7

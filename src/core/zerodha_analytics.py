@@ -190,42 +190,86 @@ class ZerodhaAnalyticsService:
                 logger.warning("⚠️ Zerodha client not connected")
                 return []
             
+            logger.info(f"📋 Fetching orders from Zerodha for last {days} days...")
+            
             # Get orders from Zerodha
             orders = await self.zerodha_client.get_orders()
             
             if not orders:
+                logger.warning("⚠️ No orders returned from Zerodha API")
                 return []
             
-            # Filter for ALL orders in the specified period (not just COMPLETE)
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=days)
+            logger.info(f"📋 Raw orders from Zerodha: {len(orders)}")
+            
+            # For today's orders, use a more inclusive date range
+            now = datetime.now()
+            if days == 1:
+                # For daily analytics, get orders from start of today
+                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                end_date = now + timedelta(hours=1)  # Include next hour for timezone buffer
+                logger.info(f"🕐 Daily filter: {start_date} to {end_date}")
+            else:
+                # For longer periods, use the original logic
+                end_date = now
+                start_date = end_date - timedelta(days=days)
+                logger.info(f"🕐 Period filter: {start_date} to {end_date}")
             
             filtered_orders = []
+            today_orders = []
+            
             for order in orders:
                 try:
                     order_timestamp = order.get('order_timestamp', '')
                     if order_timestamp:
-                        order_date = datetime.fromisoformat(order_timestamp.replace('Z', '+00:00'))
+                        # Handle different timestamp formats
+                        try:
+                            if 'T' in order_timestamp:
+                                order_date = datetime.fromisoformat(order_timestamp.replace('Z', '+00:00'))
+                            else:
+                                # Handle date-only format
+                                order_date = datetime.strptime(order_timestamp, '%Y-%m-%d %H:%M:%S')
+                        except ValueError:
+                            # Try alternative parsing
+                            order_date = datetime.fromisoformat(order_timestamp.split('.')[0])
+                        
+                        # Check if order is in our date range
                         if start_date <= order_date <= end_date:
                             filtered_orders.append(order)
+                        
+                        # Also track today's orders specifically
+                        if order_date.date() == now.date():
+                            today_orders.append(order)
+                            
+                    else:
+                        # Include orders without timestamps (safety net)
+                        filtered_orders.append(order)
+                        logger.warning(f"⚠️ Order {order.get('order_id')} has no timestamp")
+                        
                 except Exception as e:
                     logger.warning(f"Error parsing order timestamp {order_timestamp}: {e}")
                     # Include order anyway if timestamp parsing fails
                     filtered_orders.append(order)
             
-            logger.info(f"📋 Retrieved {len(filtered_orders)} orders from Zerodha (all statuses)")
+            logger.info(f"📋 Filtered orders: {len(filtered_orders)} (from {len(orders)} total)")
+            logger.info(f"📅 Today's orders: {len(today_orders)}")
             
-            # Log order status breakdown
-            status_counts = {}
-            for order in filtered_orders:
-                status = order.get('status', 'UNKNOWN')
-                status_counts[status] = status_counts.get(status, 0) + 1
-            logger.info(f"📊 Order status breakdown: {status_counts}")
+            # Log order status breakdown for today's orders
+            if today_orders:
+                status_counts = {}
+                for order in today_orders:
+                    status = order.get('status', 'UNKNOWN')
+                    status_counts[status] = status_counts.get(status, 0) + 1
+                    # Log sample order details
+                    if len(status_counts) <= 3:  # Log first few orders
+                        logger.info(f"📊 Order sample: {order.get('order_id')} | {order.get('tradingsymbol')} | {status} | {order.get('transaction_type')} | {order.get('quantity')}")
+                
+                logger.info(f"📊 Today's order status breakdown: {status_counts}")
             
+            # Return all filtered orders (not just today's)
             return filtered_orders
             
         except Exception as e:
-            logger.error(f"❌ Error getting Zerodha orders: {e}")
+            logger.error(f"❌ Error getting Zerodha orders: {e}", exc_info=True)
             return []
     
     async def _get_zerodha_orders_for_date(self, target_date: date) -> List[Dict]:
@@ -369,8 +413,8 @@ class ZerodhaAnalyticsService:
             analytics.win_rate = (winning_trades / analytics.total_trades * 100) if analytics.total_trades > 0 else 0.0
             
             # Calculate average wins and losses
-            analytics.avg_win = np.mean(wins) if wins else 0.0
-            analytics.avg_loss = np.mean(losses) if losses else 0.0
+            analytics.avg_win = float(np.mean(wins)) if wins else 0.0
+            analytics.avg_loss = float(np.mean(losses)) if losses else 0.0
             analytics.max_win = max(wins) if wins else 0.0
             analytics.max_loss = min(losses) if losses else 0.0
             
