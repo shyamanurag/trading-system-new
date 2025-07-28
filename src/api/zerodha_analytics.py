@@ -351,3 +351,71 @@ async def debug_zerodha_orders(
     except Exception as e:
         logger.error(f"❌ Error debugging Zerodha orders: {e}")
         raise HTTPException(status_code=500, detail=str(e)) 
+
+@router.get("/connection-status")
+async def get_zerodha_connection_status(
+    zerodha_client = Depends(get_zerodha_client)
+):
+    """Get detailed Zerodha connection status"""
+    try:
+        logger.info("🔍 Checking Zerodha connection status...")
+        
+        # Get client status
+        status_info = {
+            'client_available': zerodha_client is not None,
+            'is_connected': False,
+            'mock_mode': False,
+            'sandbox_mode': False,
+            'has_api_key': False,
+            'has_access_token': False,
+            'user_id': None,
+            'connection_details': {},
+            'last_error': None
+        }
+        
+        if zerodha_client:
+            status_info.update({
+                'is_connected': getattr(zerodha_client, 'is_connected', False),
+                'mock_mode': getattr(zerodha_client, 'mock_mode', False),
+                'sandbox_mode': getattr(zerodha_client, 'sandbox_mode', False),
+                'has_api_key': bool(getattr(zerodha_client, 'api_key', None)),
+                'has_access_token': bool(getattr(zerodha_client, 'access_token', None)),
+                'user_id': getattr(zerodha_client, 'user_id', None),
+                'last_error': getattr(zerodha_client, 'last_error', None)
+            })
+            
+            # Get account info if connected
+            if status_info['is_connected'] and not status_info['mock_mode']:
+                try:
+                    account_info = await zerodha_client.get_account_info()
+                    status_info['connection_details'] = account_info
+                except Exception as e:
+                    status_info['connection_details'] = {'error': str(e)}
+        
+        # Determine why orders might be empty
+        diagnosis = []
+        if not status_info['client_available']:
+            diagnosis.append("❌ Zerodha client not available")
+        elif status_info['mock_mode']:
+            diagnosis.append("⚠️ Zerodha client in MOCK MODE - will return empty orders")
+        elif not status_info['is_connected']:
+            diagnosis.append("❌ Zerodha client not connected")
+        elif not status_info['has_access_token']:
+            diagnosis.append("❌ No access token available")
+        elif not status_info['has_api_key']:
+            diagnosis.append("❌ No API key configured")
+        else:
+            diagnosis.append("✅ Zerodha client appears to be properly configured")
+        
+        return {
+            'success': True,
+            'data': status_info,
+            'diagnosis': diagnosis,
+            'message': "Zerodha connection status retrieved",
+            'source': 'ZERODHA_CONNECTION_DIAGNOSTIC',
+            'timestamp': datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error checking Zerodha connection status: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) 
