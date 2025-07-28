@@ -101,9 +101,9 @@ class SignalDeduplicator:
                 continue
             
             risk_reward_ratio = reward / risk
-            if risk_reward_ratio < 2.0:  # STRICT: Minimum 2:1 profit-to-loss ratio for quality trading
+            if risk_reward_ratio < 1.5:  # ADJUSTED: Minimum 1.5:1 profit-to-loss ratio for current market
                 rejection_stats['poor_risk_reward'] += 1
-                logger.debug(f"❌ Signal rejected - poor risk/reward: {signal['symbol']} ({risk_reward_ratio:.2f} < 2.0)")
+                logger.debug(f"❌ Signal rejected - poor risk/reward: {signal['symbol']} ({risk_reward_ratio:.2f} < 1.5)")
                 continue
             
             quality_signals.append(signal)
