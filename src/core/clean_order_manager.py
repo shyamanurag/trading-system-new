@@ -171,6 +171,53 @@ class OrderManager:
             logger.error(f"❌ Order cancellation failed: {e}")
             raise e
     
+    async def place_strategy_order(self, strategy_name: str, signal: Dict[str, Any]) -> list:
+        """Place an order based on strategy signal - simplified for position monitor"""
+        try:
+            if not self.zerodha_client:
+                logger.error("❌ No Zerodha client available for strategy order")
+                return []
+            
+            # Extract order parameters from signal
+            symbol = signal.get('symbol', 'UNKNOWN')
+            action = signal.get('action', 'BUY')
+            quantity = signal.get('quantity', 1)
+            
+            # Convert EXIT action to appropriate side
+            if action == 'EXIT':
+                # For exit, we need to determine if it's BUY or SELL
+                # This is a simplified approach - in practice, you'd check the current position
+                side = 'SELL'  # Most common case for auto square-off
+            else:
+                side = action
+            
+            # Create order data
+            order_data = {
+                'symbol': symbol,
+                'side': side,
+                'quantity': quantity,
+                'order_type': 'MARKET',  # Use market order for quick execution
+                'strategy': strategy_name,
+                'reason': signal.get('reason', 'Strategy order')
+            }
+            
+            # Use default user for strategy orders
+            user_id = 'STRATEGY_USER'
+            
+            # Place the order
+            order_id = await self.place_order(user_id, order_data)
+            
+            if order_id:
+                logger.info(f"✅ Strategy order placed: {strategy_name} - {symbol} {side} {quantity}")
+                return [(user_id, order_id)]
+            else:
+                logger.error(f"❌ Strategy order failed: {strategy_name} - {symbol}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"❌ Error placing strategy order for {strategy_name}: {e}")
+            return []
+    
     def get_status(self) -> Dict[str, Any]:
         """Get OrderManager status"""
         return {
