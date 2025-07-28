@@ -402,13 +402,12 @@ class TradeEngine:
             
             if db_session:
                 from sqlalchemy import text
-                # FIXED: Remove current_price update since trades table doesn't have this column
+                # FIXED: Remove current_price and updated_at updates since trades table doesn't have these columns
                 # Only update pnl and pnl_percent fields which exist in the schema
                 update_query = text("""
                     UPDATE trades 
                     SET pnl = :pnl, 
-                        pnl_percent = :pnl_percent,
-                        updated_at = CURRENT_TIMESTAMP
+                        pnl_percent = :pnl_percent
                     WHERE order_id = :trade_id
                 """)
                 
