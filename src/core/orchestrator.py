@@ -301,12 +301,15 @@ class SimpleTradeEngine:
             return {}
     
     def _get_product_type_for_symbol(self, symbol: str) -> str:
-        """Get appropriate product type for symbol - FIXED for NFO options"""
+        """Get appropriate product type for symbol - FIXED for short selling"""
         # 🔧 CRITICAL FIX: NFO options require NRML, not CNC
         if 'CE' in symbol or 'PE' in symbol:
             return 'NRML'  # Options must use NRML
         else:
-            return 'CNC'   # Equity can use CNC
+            # 🔧 CRITICAL FIX: Use MIS for SELL orders to enable short selling
+            # Note: This method doesn't have access to order_params, so we'll use MIS for all equity orders
+            # The actual decision will be made in the broker layer
+            return 'MIS'  # Margin Intraday Square-off for short selling capability
 
 class ProductionRiskManager:
     """Production-level risk manager with proper error handling"""

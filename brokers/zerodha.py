@@ -451,16 +451,23 @@ class ZerodhaIntegration:
         return symbol
 
     def _get_product_type_for_symbol(self, symbol: str, order_params: Dict) -> str:
-        """Get appropriate product type for symbol - FIXED for NFO options"""
+        """Get appropriate product type for symbol - FIXED for short selling"""
         # Check if user explicitly specified product type
         if 'product' in order_params:
             return order_params['product']
+        
+        # Get transaction type to determine if it's a SELL order
+        action = self._get_transaction_type(order_params)
         
         # 🔧 CRITICAL FIX: NFO options require NRML, not CNC
         if 'CE' in symbol or 'PE' in symbol:
             return 'NRML'  # Options must use NRML
         else:
-            return 'CNC'   # Equity can use CNC
+            # 🔧 CRITICAL FIX: Use MIS for SELL orders to enable short selling
+            if action == 'SELL':
+                return 'MIS'  # Margin Intraday Square-off for short selling
+            else:
+                return 'CNC'   # Cash and Carry for BUY orders
 
     def _get_exchange_for_symbol(self, symbol: str) -> str:
         """Get appropriate exchange for symbol - FIXED for options"""
