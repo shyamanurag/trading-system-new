@@ -197,120 +197,78 @@ class TradeEngine:
             return False
     
     async def _process_paper_signal(self, signal: Dict):
-        """Process signal in paper trading mode with REAL Zerodha API and P&L tracking"""
+        """Process paper trading signal - ONLY store if actually executed by Zerodha"""
         try:
-            self.logger.info(f"📊 Processing paper signal for {signal.get('symbol', 'UNKNOWN')}")
+            symbol = signal.get('symbol')
+            action = signal.get('action', 'BUY')
+            quantity = signal.get('quantity', 50)
+            strategy = signal.get('strategy', 'unknown')
             
-            # CRITICAL FIX: Attempt to get Zerodha client if not available
-            if not self.zerodha_client:
-                self.logger.warning("⚠️ Zerodha client not set, attempting to retrieve from orchestrator")
-                await self._try_get_zerodha_client_from_orchestrator()
+            self.logger.info(f"📊 Processing paper signal for {symbol}")
+            self.logger.info(f"🔄 Signal: {symbol} {action} → Order: {symbol} {action}")
             
-            # CRITICAL FIX: Use real Zerodha API even in paper mode
-            if self.zerodha_client:
-                # CRITICAL FIX: Map signal 'action' to order 'action' correctly
-                signal_action = signal.get('action', 'BUY').upper()
+            # CRITICAL FIX: Only execute if Zerodha client is available
+            if not self.zerodha_client or not self.zerodha_client.is_connected:
+                self.logger.error("❌ CRITICAL: Zerodha client not available - NO FALLBACK EXECUTION")
+                self.logger.error("❌ NO FALLBACK EXECUTION - Real broker required for all trades")
+                self.logger.error("🚨 SYSTEM DESIGNED TO FAIL WHEN BROKER UNAVAILABLE - FIX ZERODHA CONNECTION")
+                return None
+            
+            # Place order via Zerodha (real execution)
+            order_params = {
+                'symbol': symbol,
+                'action': action,
+                'quantity': quantity,
+                'order_type': 'MARKET',
+                'strategy': strategy
+            }
+            
+            result = await self.zerodha_client.place_order(order_params)
+            
+            # CRITICAL FIX: Only store trades that were ACTUALLY executed by Zerodha
+            if result and isinstance(result, str):
+                # ZerodhaIntegration returns order_id string directly - this means REAL execution
+                order_id = result
+                execution_price = signal.get('entry_price', 0)
                 
-                # Create order for Zerodha API (sandbox mode)
-                order_data = {
-                    'symbol': signal.get('symbol'),
-                    'quantity': signal.get('quantity', 50),
-                    'action': signal_action,  # ✅ FIXED: Use 'action' from signal
-                    'transaction_type': signal_action,  # ✅ FIXED: Backup field  
-                    'side': signal_action,  # ✅ FIXED: Another backup field
-                    'order_type': 'MARKET',
-                    'product': self._get_product_type_for_symbol(signal.get('symbol', '')),  # FIXED: Dynamic product type
-                    'validity': 'DAY'
+                # CRITICAL FIX: Never store trades with zero or invalid prices
+                if not execution_price or execution_price <= 0:
+                    self.logger.error(f"❌ INVALID EXECUTION PRICE: {execution_price} for {symbol}")
+                    self.logger.error("❌ REJECTED: Cannot store trade with zero/invalid price - violates no-mock-data policy")
+                    return None
+                
+                # CRITICAL FIX: Only create trade record for REAL Zerodha executions
+                trade_record = {
+                    'trade_id': order_id,
+                    'symbol': symbol,
+                    'side': action,
+                    'quantity': quantity,
+                    'price': execution_price,
+                    'strategy': strategy,
+                    'status': 'EXECUTED',  # ✅ REAL execution confirmed by Zerodha
+                    'executed_at': datetime.now(),
+                    'user_id': 'PAPER_TRADER_001',
+                    'actual_execution': True  # ✅ Mark as actual execution
                 }
                 
-                self.logger.info(f"🔄 Signal: {signal.get('symbol')} {signal_action} → Order: {signal.get('symbol')} {signal_action}")
+                # Update position tracker
+                if self.position_tracker:
+                    await self.position_tracker.update_position(
+                        symbol=trade_record['symbol'],
+                        quantity=trade_record['quantity'],
+                        price=execution_price,
+                        side=trade_record['side'].lower()
+                    )
                 
-                # Place order through Zerodha (sandbox)
-                result = await self.zerodha_client.place_order(order_data)
+                # CRITICAL FIX: Calculate real P&L and store to database
+                await self._calculate_and_store_trade_pnl(trade_record)
                 
-                # CRITICAL FIX: Handle string order_id returned by ZerodhaIntegration  
-                if result and isinstance(result, str):
-                    # ZerodhaIntegration returns order_id string directly
-                    order_id = result
-                    execution_price = signal.get('entry_price', 0)
-                    
-                    # CRITICAL FIX: Never store trades with zero or invalid prices
-                    if not execution_price or execution_price <= 0:
-                        self.logger.error(f"❌ INVALID EXECUTION PRICE: {execution_price} for {signal.get('symbol')}")
-                        self.logger.error("❌ REJECTED: Cannot store trade with zero/invalid price - violates no-mock-data policy")
-                        return None
-                    
-                    # Create trade record with real execution data  
-                    trade_record = {
-                        'trade_id': order_id,
-                        'symbol': signal.get('symbol'),
-                        'side': signal_action,  # ✅ FIXED: Use correct action
-                        'quantity': signal.get('quantity', 50),
-                        'price': execution_price,
-                        'strategy': signal.get('strategy', 'unknown'),
-                        'status': 'EXECUTED',
-                        'executed_at': datetime.now(),
-                        'user_id': 'PAPER_TRADER_001'
-                    }
-                    
-                    # Update position tracker
-                    if self.position_tracker:
-                        await self.position_tracker.update_position(
-                            symbol=trade_record['symbol'],
-                            quantity=trade_record['quantity'],
-                            price=execution_price,
-                            side=trade_record['side'].lower()
-                        )
-                    
-                    # CRITICAL FIX: Calculate real P&L and store to database
-                    await self._calculate_and_store_trade_pnl(trade_record)
-                    
-                    self.logger.info(f"✅ Paper trade executed via Zerodha API: {order_id}")
-                    return trade_record
-                elif result and isinstance(result, dict) and result.get('success'):
-                    # Handle dict format (backward compatibility)
-                    order_id = result.get('order_id', f"PAPER_{int(time.time())}")
-                    execution_price = result.get('price', signal.get('entry_price', 0))
-                    
-                    # Similar processing as above for dict format...
-                    trade_record = {
-                        'trade_id': order_id,
-                        'symbol': signal.get('symbol'),
-                        'side': signal_action,
-                        'quantity': signal.get('quantity', 50),
-                        'price': execution_price,
-                        'strategy': signal.get('strategy', 'unknown'),
-                        'status': 'EXECUTED',
-                        'executed_at': datetime.now(),
-                        'user_id': 'PAPER_TRADER_001'
-                    }
-                    
-                    if self.position_tracker:
-                        await self.position_tracker.update_position(
-                            symbol=trade_record['symbol'],
-                            quantity=trade_record['quantity'],
-                            price=execution_price,
-                            side=trade_record['side'].lower()
-                        )
-                    
-                    await self._calculate_and_store_trade_pnl(trade_record)
-                    self.logger.info(f"✅ Paper trade executed via Zerodha API: {order_id}")
-                    return trade_record
-                
-            # ENHANCED SAFETY: Handle Zerodha failures with graceful degradation
-            self.logger.error("❌ CRITICAL: Zerodha client not available - NO FALLBACK EXECUTION")
-            
-            # RULE #8: Don't suggest bypasses—fix root causes
-            # RULE #1: Never put mock/demo data in production trading system
-            self.logger.error("❌ NO FALLBACK EXECUTION - Real broker required for all trades")
-            self.logger.error(f"❌ Signal REJECTED: {signal.get('symbol')} {signal.get('side')} {signal.get('quantity')}")
-            self.logger.error("🚨 SYSTEM DESIGNED TO FAIL WHEN BROKER UNAVAILABLE - FIX ZERODHA CONNECTION")
-            
-            # Track failed execution
-            self._track_signal_execution_failed(signal, "Zerodha client unavailable - NO FALLBACK ALLOWED")
-            
-            # CRITICAL: Raise exception to make failure visible
-            raise Exception(f"BROKER CONNECTION FAILED: {signal.get('symbol')} - No fallback execution allowed per Rule #8")
+                self.logger.info(f"✅ Paper trade executed via Zerodha API: {order_id}")
+                return trade_record
+            else:
+                # CRITICAL FIX: Don't store failed or non-executed trades
+                self.logger.warning(f"⚠️ Signal not executed: {symbol} {action} - No Zerodha execution")
+                return None
                 
         except Exception as e:
             self.logger.error(f"❌ Error processing paper signal: {e}")
@@ -329,6 +287,17 @@ class TradeEngine:
             if not current_price or current_price <= 0:
                 self.logger.warning(f"⚠️ No real-time price for {symbol}, using entry price as fallback")
                 current_price = entry_price  # Fallback only
+            
+            # CRITICAL FIX: Ensure we have different prices for meaningful P&L calculation
+            if current_price == entry_price:
+                self.logger.warning(f"⚠️ Same price for {symbol}: Entry ₹{entry_price} = Current ₹{current_price}")
+                # Try to get a different price from market data
+                from data.truedata_client import live_market_data
+                if symbol in live_market_data:
+                    market_data = live_market_data[symbol]
+                    if 'ltp' in market_data and market_data['ltp'] != entry_price:
+                        current_price = market_data['ltp']
+                        self.logger.info(f"✅ Updated current price for {symbol}: ₹{current_price}")
             
             # Calculate P&L based on real market movement
             if side.upper() == 'BUY':
