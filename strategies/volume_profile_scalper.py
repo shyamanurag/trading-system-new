@@ -19,13 +19,13 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
         
         # REALISTIC parameters (prevent false signals on market noise)
         self.volume_thresholds = {
-            'high_volume': 40,      # 40% volume increase (meaningful)
-            'moderate_volume': 25,   # 25% volume increase (significant)
-            'low_volume': 15,        # 15% volume increase (minimum)
+            'high_volume': 20,      # 20% volume increase (reduced from 40% for current market)
+            'moderate_volume': 12,   # 12% volume increase (reduced from 25% for current market)
+            'low_volume': 8,         # 8% volume increase (reduced from 15% for current market)
             'price_confirmation': {
-                'strong': 0.20,     # 0.20% price movement (realistic)
-                'moderate': 0.12,   # 0.12% price movement (realistic)
-                'weak': 0.08        # 0.08% price movement (realistic)
+                'strong': 0.08,     # 0.08% price movement (reduced from 0.20% for current market)
+                'moderate': 0.05,   # 0.05% price movement (reduced from 0.12% for current market)
+                'weak': 0.03        # 0.03% price movement (reduced from 0.08% for current market)
             }
         }
         
@@ -59,12 +59,17 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
             if not self._is_scalping_cooldown_passed():
                 return
                 
+            # Check signal rate limits
+            if not self._check_signal_rate_limits():
+                return
+                
             # Process market data and generate signals
             signals = self._generate_signals(data)
             
             # FIXED: Only store signals for orchestrator collection - no direct execution
             for signal in signals:
                 self.current_positions[signal['symbol']] = signal
+                self._increment_signal_counters()  # Track signal generation
                 logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
                            f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
             

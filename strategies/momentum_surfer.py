@@ -19,11 +19,11 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         # BALANCED momentum thresholds (generate signals for P&L testing)
         self.momentum_thresholds = {
-            'strong_positive': 0.15,    # 0.15% price increase (balanced for testing)
-            'moderate_positive': 0.10,  # 0.10% price increase (balanced for testing)
-            'strong_negative': -0.15,   # 0.15% price decrease (balanced for testing)
-            'moderate_negative': -0.10, # 0.10% price decrease (balanced for testing)
-            'volume_threshold': 20      # 20% volume increase (meaningful)
+            'strong_positive': 0.08,    # 0.08% price increase (reduced from 0.15% for current market)
+            'moderate_positive': 0.05,  # 0.05% price increase (reduced from 0.10% for current market)
+            'strong_negative': -0.08,   # 0.08% price decrease (reduced from -0.15% for current market)
+            'moderate_negative': -0.05, # 0.05% price decrease (reduced from -0.10% for current market)
+            'volume_threshold': 10      # 10% volume increase (reduced from 20% for current market)
         }
         
         # REALISTIC ATR multipliers (balanced risk management)
@@ -56,12 +56,17 @@ class EnhancedMomentumSurfer(BaseStrategy):
             if not self._is_scalping_cooldown_passed():
                 return
                 
+            # Check signal rate limits
+            if not self._check_signal_rate_limits():
+                return
+                
             # Process market data and generate signals
             signals = self._generate_signals(data)
             
             # FIXED: Only store signals for orchestrator collection - no direct execution
             for signal in signals:
                 self.current_positions[signal['symbol']] = signal
+                self._increment_signal_counters()  # Track signal generation
                 logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
                            f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
             

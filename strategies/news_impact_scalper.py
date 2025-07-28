@@ -21,16 +21,16 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         # REALISTIC momentum thresholds (prevent false signals on market noise)
         self.momentum_thresholds = {
             'extreme_momentum': {
-                'price_change': 0.35,    # 0.35% rapid price change (realistic)
-                'volume_spike': 60       # 60% volume spike (realistic)
+                'price_change': 0.15,    # 0.15% rapid price change (reduced from 0.35% for current market)
+                'volume_spike': 30       # 30% volume spike (reduced from 60% for current market)
             },
             'strong_momentum': {
-                'price_change': 0.25,    # 0.25% rapid price change (realistic)
-                'volume_spike': 45       # 45% volume spike (realistic)
+                'price_change': 0.10,    # 0.10% rapid price change (reduced from 0.25% for current market)
+                'volume_spike': 20       # 20% volume spike (reduced from 45% for current market)
             },
             'moderate_momentum': {
-                'price_change': 0.18,    # 0.18% rapid price change (realistic)
-                'volume_spike': 30       # 30% volume spike (realistic)
+                'price_change': 0.06,    # 0.06% rapid price change (reduced from 0.18% for current market)
+                'volume_spike': 15       # 15% volume spike (reduced from 30% for current market)
             }
         }
         

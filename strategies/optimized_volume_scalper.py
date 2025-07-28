@@ -30,13 +30,13 @@ class OptimizedVolumeScalper(BaseStrategy):
         
         # REALISTIC volume thresholds (prevent false signals on market noise)
         self.volume_thresholds = {
-            'high_volume': 45,       # 45% volume increase (realistic)
-            'moderate_volume': 30,   # 30% volume increase (realistic)
-            'low_volume': 20,        # 20% volume increase (realistic)
+            'high_volume': 22,       # 22% volume increase (reduced from 45% for current market)
+            'moderate_volume': 15,   # 15% volume increase (reduced from 30% for current market)
+            'low_volume': 10,        # 10% volume increase (reduced from 20% for current market)
             'price_confirmation': {
-                'strong': 0.15,      # 0.15% price movement (realistic)
-                'moderate': 0.10,    # 0.10% price movement (realistic)
-                'weak': 0.08         # 0.08% price movement (realistic)
+                'strong': 0.08,      # 0.08% price movement (reduced from 0.15% for current market)
+                'moderate': 0.05,    # 0.05% price movement (reduced from 0.10% for current market)
+                'weak': 0.03         # 0.03% price movement (reduced from 0.08% for current market)
             }
         }
         

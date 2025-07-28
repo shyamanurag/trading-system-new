@@ -24,9 +24,16 @@ class BaseStrategy:
         self.last_signal_time = None
         self.signal_cooldown = config.get('signal_cooldown_seconds', 1)
         
-        # SCALPING-OPTIMIZED cooldown controls
-        self.scalping_cooldown = config.get('scalping_cooldown_seconds', 15)  # Default 15 seconds
-        self.symbol_cooldowns = {}  # Symbol-specific cooldowns
+        # CRITICAL: Signal rate limiting to prevent flooding
+        self.max_signals_per_hour = 50  # Maximum 50 signals per hour (manageable)
+        self.max_signals_per_strategy = 10  # Maximum 10 signals per strategy per hour
+        self.signals_generated_this_hour = 0
+        self.strategy_signals_this_hour = 0
+        self.hour_start_time = datetime.now()
+        
+        # Enhanced cooldown control
+        self.scalping_cooldown = 30  # 30 seconds between signals
+        self.symbol_cooldowns = {}   # Symbol-specific cooldowns
         
         # Historical data for proper ATR calculation
         self.historical_data = {}  # symbol -> list of price data
@@ -39,6 +46,33 @@ class BaseStrategy:
         
         time_since_last = (datetime.now() - self.last_signal_time).total_seconds()
         return time_since_last >= self.scalping_cooldown
+    
+    def _check_signal_rate_limits(self) -> bool:
+        """Check if signal generation is allowed based on rate limits"""
+        current_time = datetime.now()
+        
+        # Reset hourly counters if hour has passed
+        if (current_time - self.hour_start_time).total_seconds() >= 3600:
+            self.signals_generated_this_hour = 0
+            self.strategy_signals_this_hour = 0
+            self.hour_start_time = current_time
+        
+        # Check global hourly limit
+        if self.signals_generated_this_hour >= self.max_signals_per_hour:
+            logger.debug(f"⚠️ Hourly signal limit reached: {self.signals_generated_this_hour}/{self.max_signals_per_hour}")
+            return False
+        
+        # Check strategy-specific hourly limit
+        if self.strategy_signals_this_hour >= self.max_signals_per_strategy:
+            logger.debug(f"⚠️ Strategy signal limit reached: {self.strategy_signals_this_hour}/{self.max_signals_per_strategy}")
+            return False
+        
+        return True
+    
+    def _increment_signal_counters(self):
+        """Increment signal counters when a signal is generated"""
+        self.signals_generated_this_hour += 1
+        self.strategy_signals_this_hour += 1
     
     def _is_symbol_scalping_cooldown_passed(self, symbol: str, cooldown_seconds: int = 30) -> bool:
         """Check if symbol-specific SCALPING cooldown has passed"""
