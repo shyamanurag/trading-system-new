@@ -432,87 +432,49 @@ async def get_orders(
 async def get_trades(
     orchestrator: Any = Depends(get_orchestrator)
 ):
-    """Get today's trades"""
+    """Get today's trades from Zerodha"""
     try:
-        # Get today's trades from database
-        from datetime import date
-        today = date.today()
-        
-        # Try to get trades from database
-        try:
-            from src.core.database import get_db
-            db_session = next(get_db())
-            if db_session:
-                # Get trades for today with optional PnL columns
-                from sqlalchemy import text
-                query = text("""
-                    SELECT trade_id, symbol, trade_type, quantity, price, 
-                           strategy, commission, executed_at,
-                           COALESCE(pnl, 0) as pnl,
-                           COALESCE(pnl_percent, 0) as pnl_percent,
-                           COALESCE(status, 'EXECUTED') as status
-                    FROM trades 
-                    WHERE DATE(executed_at) = :today
-                    ORDER BY executed_at DESC
-                """)
-                result = db_session.execute(query, {"today": today})
-                trades = []
-                for row in result:
-                    # For paper trades, calculate simple P&L if not stored
-                    pnl = float(row.pnl) if row.pnl else 0
-                    pnl_percent = float(row.pnl_percent) if row.pnl_percent else 0
-                    
-                    # If it's a paper trade with no P&L stored, calculate basic P&L
-                    # For paper trading, we'll show 0 P&L initially (can be enhanced later)
-                    if str(row.trade_id).startswith('PAPER_') and pnl == 0 and pnl_percent == 0:
-                        # REMOVED: Fake random P&L generation
-                        # Instead, trigger real-time P&L calculation
-                        try:
-                            from src.core.pnl_calculator import get_pnl_calculator
-                            calculator = await get_pnl_calculator(None)  # Will get from global instance
-                            if calculator:
-                                # This will be updated by the background P&L calculator
-                                pass
-                        except Exception:
-                            pass
-                    
-                    trades.append({
-                        "trade_id": row.trade_id,
-                        "symbol": row.symbol,
-                        "trade_type": row.trade_type,
-                        "quantity": row.quantity,
-                        "price": float(row.price),
-                        "pnl": pnl,  # Real P&L from database
-                        "pnl_percent": pnl_percent,  # Real P&L percentage
-                        "status": row.status,
-                        "strategy": row.strategy,
-                        "commission": float(row.commission) if row.commission else 0,
-                        "executed_at": row.executed_at.isoformat()
-                    })
-                
-                return {
-                    "success": True,
-                    "message": f"Found {len(trades)} trades for today",
-                    "data": trades,
-                    "timestamp": datetime.now().isoformat()
-                }
-            else:
-                logger.warning("Database session not available")
-                return {
-                    "success": True,
-                    "message": "No trades found (database unavailable)",
-                    "data": [],
-                    "timestamp": datetime.now().isoformat()
-                }
-        except Exception as db_error:
-            logger.warning(f"Database query failed: {db_error}")
-            # Return empty list if database fails
+        # Get Zerodha client
+        if not orchestrator or not orchestrator.zerodha_client:
             return {
-                "success": True,
-                "message": "No trades found (database unavailable)",
-                "data": [],
-                "timestamp": datetime.now().isoformat()
+                "success": False,
+                "trades": [],
+                "message": "Zerodha client not available",
+                "source": "ZERODHA_API"
             }
+        
+        # Use Zerodha analytics service
+        from src.core.zerodha_analytics import get_zerodha_analytics_service
+        analytics_service = await get_zerodha_analytics_service(orchestrator.zerodha_client)
+        
+        # Get today's trades from Zerodha
+        trades = await analytics_service.get_trade_history(1)  # Last 1 day
+        
+        # Format trades for dashboard
+        formatted_trades = []
+        for trade in trades:
+            formatted_trades.append({
+                "trade_id": trade.get('order_id', 'UNKNOWN'),
+                "symbol": trade.get('symbol', 'UNKNOWN'),
+                "trade_type": trade.get('side', 'UNKNOWN').lower(),
+                "quantity": trade.get('quantity', 0),
+                "price": trade.get('price', 0),
+                "pnl": 0,  # Will be calculated by Zerodha analytics
+                "pnl_percent": 0,  # Will be calculated by Zerodha analytics
+                "status": trade.get('status', 'EXECUTED'),
+                "strategy": "Zerodha Trade",
+                "commission": 0,
+                "executed_at": trade.get('timestamp', datetime.now().isoformat())
+            })
+        
+        return {
+            "success": True,
+            "trades": formatted_trades,
+            "count": len(formatted_trades),
+            "message": f"Retrieved {len(formatted_trades)} trades from Zerodha",
+            "source": "ZERODHA_API",
+            "timestamp": datetime.now().isoformat()
+        }
             
     except Exception as e:
         logger.error(f"Error getting trades: {str(e)}")

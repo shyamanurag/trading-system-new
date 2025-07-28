@@ -335,38 +335,61 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                 'active_strategies': []
             }
         
-        # Calculate additional metrics
-        total_trades = autonomous_status.get('total_trades', 0)
-        daily_pnl = autonomous_status.get('daily_pnl', 0.0)
-        active_positions_raw = autonomous_status.get('active_positions', [])
-        # Handle both integer and list types for active_positions
-        if isinstance(active_positions_raw, int):
-            active_positions_count = active_positions_raw
-            active_positions = []
-        else:
-            active_positions_count = len(active_positions_raw)
-            active_positions = active_positions_raw
-        is_active = autonomous_status.get('is_active', False)
-        
-        # ELIMINATED: Mock 70% win rate and fake success metrics
-        # 
-        # ELIMINATED FAKE DATA GENERATORS:
-        # ❌ Mock 70% win rate (win_rate = 70.0)
-        # ❌ Fake estimated wins (total_trades * 0.7)
-        # ❌ Fake estimated losses calculation
-        # 
-        # REAL IMPLEMENTATION NEEDED:
-        # - Calculate real win rate from actual trade outcomes
-        # - Count actual winning and losing trades from database
-        # - Use real performance metrics from trade history
-        
-        logger.error("CRITICAL: Win rate calculation requires real trade outcome data")
-        logger.error("Mock 70% win rate ELIMINATED for safety")
-        
-        # SAFETY: Return 0 instead of fake win rate
-        win_rate = 0.0
-        estimated_wins = 0
-        estimated_losses = 0
+        # Get Zerodha analytics for accurate data
+        try:
+            if orchestrator and orchestrator.zerodha_client:
+                from src.core.zerodha_analytics import get_zerodha_analytics_service
+                analytics_service = await get_zerodha_analytics_service(orchestrator.zerodha_client)
+                
+                # Get comprehensive analytics from Zerodha
+                analytics = await analytics_service.get_comprehensive_analytics(1)  # Last 1 day
+                
+                # Use Zerodha data instead of autonomous status
+                total_trades = analytics.total_trades
+                daily_pnl = analytics.daily_pnl
+                active_positions_count = analytics.active_positions
+                win_rate = analytics.win_rate
+                estimated_wins = analytics.winning_trades
+                estimated_losses = analytics.losing_trades
+                
+                logger.info(f"📊 Using Zerodha analytics: {total_trades} trades, ₹{daily_pnl:.2f} P&L, {win_rate:.1f}% win rate")
+            else:
+                # Fallback to autonomous status
+                total_trades = autonomous_status.get('total_trades', 0)
+                daily_pnl = autonomous_status.get('daily_pnl', 0.0)
+                active_positions_raw = autonomous_status.get('active_positions', [])
+                # Handle both integer and list types for active_positions
+                if isinstance(active_positions_raw, int):
+                    active_positions_count = active_positions_raw
+                    active_positions = []
+                else:
+                    active_positions_count = len(active_positions_raw)
+                    active_positions = active_positions_raw
+                is_active = autonomous_status.get('is_active', False)
+                
+                # SAFETY: Return 0 instead of fake win rate
+                win_rate = 0.0
+                estimated_wins = 0
+                estimated_losses = 0
+        except Exception as e:
+            logger.error(f"❌ Error getting Zerodha analytics: {e}")
+            # Fallback to autonomous status
+            total_trades = autonomous_status.get('total_trades', 0)
+            daily_pnl = autonomous_status.get('daily_pnl', 0.0)
+            active_positions_raw = autonomous_status.get('active_positions', [])
+            # Handle both integer and list types for active_positions
+            if isinstance(active_positions_raw, int):
+                active_positions_count = active_positions_raw
+                active_positions = []
+            else:
+                active_positions_count = len(active_positions_raw)
+                active_positions = active_positions_raw
+            is_active = autonomous_status.get('is_active', False)
+            
+            # SAFETY: Return 0 instead of fake win rate
+            win_rate = 0.0
+            estimated_wins = 0
+            estimated_losses = 0
         
         # Market status - use safe fallback if orchestrator not available
         try:
