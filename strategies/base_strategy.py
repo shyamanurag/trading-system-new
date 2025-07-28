@@ -468,9 +468,11 @@ class BaseStrategy:
             reward_percent = (reward_amount / entry_price) * 100
             risk_reward_ratio = reward_amount / risk_amount if risk_amount > 0 else 0
             
-            # Check minimum risk-reward ratio (2:1)
-            if risk_reward_ratio < 2.0:
-                logger.warning(f"Equity signal below 2:1 ratio: {symbol} ({risk_reward_ratio:.2f})")
+            # Check minimum risk-reward ratio (adjusted for current market conditions)
+            # Reduced from 2.0 to 1.5 for current low volatility market
+            min_risk_reward_ratio = 1.5  # Adjusted for current market conditions
+            if risk_reward_ratio < min_risk_reward_ratio:
+                logger.warning(f"Equity signal below {min_risk_reward_ratio}:1 ratio: {symbol} ({risk_reward_ratio:.2f})")
                 return None
             
             return {
