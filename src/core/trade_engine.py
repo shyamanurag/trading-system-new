@@ -247,8 +247,7 @@ class TradeEngine:
                     'strategy': strategy,
                     'status': 'EXECUTED',  # ✅ REAL execution confirmed by Zerodha
                     'executed_at': datetime.now(),
-                    'user_id': 'PAPER_TRADER_001',
-                    'actual_execution': True  # ✅ Mark as actual execution
+                    'user_id': 'PAPER_TRADER_001'
                 }
                 
                 # Update position tracker
@@ -423,8 +422,7 @@ class TradeEngine:
                         'price': order.get('average_price', order.get('price')),
                         'status': 'EXECUTED',
                         'executed_at': order.get('order_timestamp'),
-                        'exchange_time': order.get('exchange_timestamp'),
-                        'actual_execution': True  # Mark as real execution
+                        'exchange_time': order.get('exchange_timestamp')
                     }
                     executed_trades.append(executed_trade)
             
@@ -463,7 +461,6 @@ class TradeEngine:
                         SET quantity = :quantity,
                             price = :price,
                             executed_at = :executed_at,
-                            actual_execution = true,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE order_id = :trade_id
                     """)
@@ -479,10 +476,10 @@ class TradeEngine:
                     insert_query = text("""
                         INSERT INTO trades (
                             order_id, symbol, trade_type, quantity, price,
-                            status, executed_at, actual_execution, user_id
+                            status, executed_at, user_id
                         ) VALUES (
                             :trade_id, :symbol, :side, :quantity, :price,
-                            :status, :executed_at, true, :user_id
+                            :status, :executed_at, :user_id
                         )
                     """)
                     
