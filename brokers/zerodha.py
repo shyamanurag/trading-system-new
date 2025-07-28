@@ -316,7 +316,8 @@ class ZerodhaIntegration:
         symbol = order_params.get('symbol', '')
         
         # 🔍 CRITICAL VALIDATION: Check if options symbol exists before placing order
-        if 'CE' in symbol or 'PE' in symbol:
+        # FIXED: Only validate symbols that actually end with CE or PE (not just contain them)
+        if symbol.endswith('CE') or symbol.endswith('PE'):
             logger.info(f"🔍 VALIDATING OPTIONS SYMBOL: {symbol}")
             symbol_exists = await self.validate_options_symbol(symbol)
             if not symbol_exists:
