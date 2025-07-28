@@ -135,6 +135,18 @@ class PositionMonitor:
                 # Update position prices
                 if market_data:
                     await self.position_tracker.update_market_prices(market_data)
+                    logger.debug(f"📊 Updated market prices for {len(market_data)} symbols")
+                
+                # Log current position status for debugging
+                for symbol, position in positions.items():
+                    if position.side == 'long':
+                        pnl = (position.current_price - position.average_price) * position.quantity
+                        pnl_percent = ((position.current_price - position.average_price) / position.average_price) * 100
+                    else:
+                        pnl = (position.average_price - position.current_price) * position.quantity
+                        pnl_percent = ((position.average_price - position.current_price) / position.average_price) * 100
+                    
+                    logger.debug(f"📊 {symbol}: ₹{position.current_price:.2f} | P&L: ₹{pnl:.2f} ({pnl_percent:.1f}%) | SL: ₹{getattr(position, 'stop_loss', 'N/A')} | TGT: ₹{getattr(position, 'target', 'N/A')} | TS: ₹{getattr(position, 'trailing_stop', 'N/A')}")
                 
                 # Check exit conditions for all positions
                 exit_conditions = await self._evaluate_exit_conditions(positions, now_ist)
@@ -254,63 +266,109 @@ class PositionMonitor:
         return None
     
     def _check_stop_loss_exit(self, symbol: str, position) -> Optional[ExitCondition]:
-        """Check stop loss conditions"""
+        """Check stop loss conditions with enhanced logging"""
         if not hasattr(position, 'stop_loss') or not position.stop_loss:
             return None
         
         current_price = position.current_price
         stop_loss_price = position.stop_loss
+        entry_price = position.average_price
+        
+        # Ensure we have valid prices
+        if not current_price or current_price <= 0:
+            return None
+        
+        # Calculate current P&L
+        if position.side == 'long':
+            current_pnl = (current_price - entry_price) * position.quantity
+            current_pnl_percent = ((current_price - entry_price) / entry_price) * 100
+        else:
+            current_pnl = (entry_price - current_price) * position.quantity
+            current_pnl_percent = ((entry_price - current_price) / entry_price) * 100
         
         # Check if stop loss is triggered
         if position.side == 'long' and current_price <= stop_loss_price:
+            logger.warning(f"🚨 STOP LOSS TRIGGERED - {symbol}:")
+            logger.warning(f"   Entry: ₹{entry_price:.2f} → Current: ₹{current_price:.2f}")
+            logger.warning(f"   Stop Loss: ₹{stop_loss_price:.2f}")
+            logger.warning(f"   Loss: ₹{current_pnl:.2f} ({current_pnl_percent:.1f}%)")
+            
             return ExitCondition(
                 condition_type='stop_loss',
                 symbol=symbol,
                 trigger_price=current_price,
-                reason=f'Stop loss triggered: {current_price} <= {stop_loss_price}',
+                reason=f'Stop loss triggered: {current_price:.2f} <= {stop_loss_price:.2f} (Loss: ₹{abs(current_pnl):.2f})',
                 priority=2  # High priority
             )
         elif position.side == 'short' and current_price >= stop_loss_price:
+            logger.warning(f"🚨 STOP LOSS TRIGGERED - {symbol}:")
+            logger.warning(f"   Entry: ₹{entry_price:.2f} → Current: ₹{current_price:.2f}")
+            logger.warning(f"   Stop Loss: ₹{stop_loss_price:.2f}")
+            logger.warning(f"   Loss: ₹{current_pnl:.2f} ({current_pnl_percent:.1f}%)")
+            
             return ExitCondition(
                 condition_type='stop_loss',
                 symbol=symbol,
                 trigger_price=current_price,
-                reason=f'Stop loss triggered: {current_price} >= {stop_loss_price}',
+                reason=f'Stop loss triggered: {current_price:.2f} >= {stop_loss_price:.2f} (Loss: ₹{abs(current_pnl):.2f})',
                 priority=2  # High priority
             )
         
         return None
     
     def _check_target_exit(self, symbol: str, position) -> Optional[ExitCondition]:
-        """Check target conditions"""
+        """Check target conditions with enhanced logging"""
         if not hasattr(position, 'target') or not position.target:
             return None
         
         current_price = position.current_price
         target_price = position.target
+        entry_price = position.average_price
+        
+        # Ensure we have valid prices
+        if not current_price or current_price <= 0:
+            return None
+        
+        # Calculate current P&L
+        if position.side == 'long':
+            current_pnl = (current_price - entry_price) * position.quantity
+            current_pnl_percent = ((current_price - entry_price) / entry_price) * 100
+        else:
+            current_pnl = (entry_price - current_price) * position.quantity
+            current_pnl_percent = ((entry_price - current_price) / entry_price) * 100
         
         # Check if target is achieved
         if position.side == 'long' and current_price >= target_price:
+            logger.info(f"🎯 TARGET ACHIEVED - {symbol}:")
+            logger.info(f"   Entry: ₹{entry_price:.2f} → Current: ₹{current_price:.2f}")
+            logger.info(f"   Target: ₹{target_price:.2f}")
+            logger.info(f"   Profit: ₹{current_pnl:.2f} ({current_pnl_percent:.1f}%)")
+            
             return ExitCondition(
                 condition_type='target',
                 symbol=symbol,
                 trigger_price=current_price,
-                reason=f'Target achieved: {current_price} >= {target_price}',
+                reason=f'Target achieved: {current_price:.2f} >= {target_price:.2f} (Profit: ₹{current_pnl:.2f})',
                 priority=3  # Normal priority
             )
         elif position.side == 'short' and current_price <= target_price:
+            logger.info(f"🎯 TARGET ACHIEVED - {symbol}:")
+            logger.info(f"   Entry: ₹{entry_price:.2f} → Current: ₹{current_price:.2f}")
+            logger.info(f"   Target: ₹{target_price:.2f}")
+            logger.info(f"   Profit: ₹{current_pnl:.2f} ({current_pnl_percent:.1f}%)")
+            
             return ExitCondition(
                 condition_type='target',
                 symbol=symbol,
                 trigger_price=current_price,
-                reason=f'Target achieved: {current_price} <= {target_price}',
+                reason=f'Target achieved: {current_price:.2f} <= {target_price:.2f} (Profit: ₹{current_pnl:.2f})',
                 priority=3  # Normal priority
             )
         
         return None
     
     def _check_trailing_stop_exit(self, symbol: str, position) -> Optional[ExitCondition]:
-        """Check trailing stop conditions - CRITICAL FEATURE"""
+        """Check trailing stop conditions - ENHANCED IMPLEMENTATION"""
         if not hasattr(position, 'trailing_stop') or not position.trailing_stop:
             return None
         
@@ -318,50 +376,92 @@ class PositionMonitor:
         entry_price = position.average_price
         trailing_stop_price = position.trailing_stop
         
-        # Update trailing stop if position is profitable
+        # Ensure we have valid prices
+        if not current_price or current_price <= 0:
+            logger.warning(f"⚠️ Invalid current price for {symbol}: {current_price}")
+            return None
+        
+        # Calculate current P&L for position
+        if position.side == 'long':
+            current_pnl = (current_price - entry_price) * position.quantity
+            current_pnl_percent = ((current_price - entry_price) / entry_price) * 100
+        else:
+            current_pnl = (entry_price - current_price) * position.quantity
+            current_pnl_percent = ((entry_price - current_price) / entry_price) * 100
+        
+        # Update trailing stop if position is profitable (at least 1% profit)
         if position.side == 'long':
             # For long positions, trail stop upwards as price rises
-            if current_price > entry_price:
-                # Calculate new trailing stop (e.g., 50% of profit)
+            if current_price > entry_price and current_pnl_percent > 1.0:  # At least 1% profit
+                # Calculate new trailing stop - more conservative approach
                 profit = current_price - entry_price
-                new_trailing_stop = current_price - (profit * 0.3)  # Trail 30% behind current price
+                # Trail 40% behind current price for better protection
+                new_trailing_stop = current_price - (profit * 0.4)
+                
+                # Ensure new stop is at least 1% above entry to lock in some profit
+                min_profitable_stop = entry_price * 1.01
+                new_trailing_stop = max(new_trailing_stop, min_profitable_stop)
                 
                 # Only update if new stop is higher than current
                 if new_trailing_stop > trailing_stop_price:
+                    old_trailing_stop = trailing_stop_price
                     position.trailing_stop = new_trailing_stop
-                    logger.info(f"📈 Trailing stop updated for {symbol}: ₹{trailing_stop_price:.2f} → ₹{new_trailing_stop:.2f}")
                     trailing_stop_price = new_trailing_stop
+                    
+                    logger.info(f"📈 TRAILING STOP UPDATED - {symbol}:")
+                    logger.info(f"   Current Price: ₹{current_price:.2f}")
+                    logger.info(f"   P&L: ₹{current_pnl:.2f} ({current_pnl_percent:.1f}%)")
+                    logger.info(f"   Trailing Stop: ₹{old_trailing_stop:.2f} → ₹{new_trailing_stop:.2f}")
             
             # Check if trailing stop is triggered
             if current_price <= trailing_stop_price:
+                logger.warning(f"🚨 TRAILING STOP TRIGGERED - {symbol}:")
+                logger.warning(f"   Entry: ₹{entry_price:.2f} → Current: ₹{current_price:.2f}")
+                logger.warning(f"   Trailing Stop: ₹{trailing_stop_price:.2f}")
+                logger.warning(f"   Final P&L: ₹{current_pnl:.2f} ({current_pnl_percent:.1f}%)")
+                
                 return ExitCondition(
                     condition_type='trailing_stop',
                     symbol=symbol,
                     trigger_price=current_price,
-                    reason=f'Trailing stop triggered: {current_price} <= {trailing_stop_price}',
+                    reason=f'Trailing stop triggered: {current_price:.2f} <= {trailing_stop_price:.2f} (P&L: {current_pnl:.2f})',
                     priority=2  # High priority
                 )
         
         elif position.side == 'short':
             # For short positions, trail stop downwards as price falls
-            if current_price < entry_price:
+            if current_price < entry_price and current_pnl_percent > 1.0:  # At least 1% profit
                 # Calculate new trailing stop
                 profit = entry_price - current_price
-                new_trailing_stop = current_price + (profit * 0.3)  # Trail 30% above current price
+                new_trailing_stop = current_price + (profit * 0.4)  # Trail 40% above current price
+                
+                # Ensure new stop is at least 1% below entry to lock in some profit
+                max_profitable_stop = entry_price * 0.99
+                new_trailing_stop = min(new_trailing_stop, max_profitable_stop)
                 
                 # Only update if new stop is lower than current
                 if new_trailing_stop < trailing_stop_price:
+                    old_trailing_stop = trailing_stop_price
                     position.trailing_stop = new_trailing_stop
-                    logger.info(f"📉 Trailing stop updated for {symbol}: ₹{trailing_stop_price:.2f} → ₹{new_trailing_stop:.2f}")
                     trailing_stop_price = new_trailing_stop
+                    
+                    logger.info(f"📉 TRAILING STOP UPDATED - {symbol}:")
+                    logger.info(f"   Current Price: ₹{current_price:.2f}")
+                    logger.info(f"   P&L: ₹{current_pnl:.2f} ({current_pnl_percent:.1f}%)")
+                    logger.info(f"   Trailing Stop: ₹{old_trailing_stop:.2f} → ₹{new_trailing_stop:.2f}")
             
             # Check if trailing stop is triggered
             if current_price >= trailing_stop_price:
+                logger.warning(f"🚨 TRAILING STOP TRIGGERED - {symbol}:")
+                logger.warning(f"   Entry: ₹{entry_price:.2f} → Current: ₹{current_price:.2f}")
+                logger.warning(f"   Trailing Stop: ₹{trailing_stop_price:.2f}")
+                logger.warning(f"   Final P&L: ₹{current_pnl:.2f} ({current_pnl_percent:.1f}%)")
+                
                 return ExitCondition(
                     condition_type='trailing_stop',
                     symbol=symbol,
                     trigger_price=current_price,
-                    reason=f'Trailing stop triggered: {current_price} >= {trailing_stop_price}',
+                    reason=f'Trailing stop triggered: {current_price:.2f} >= {trailing_stop_price:.2f} (P&L: {current_pnl:.2f})',
                     priority=2  # High priority
                 )
         
