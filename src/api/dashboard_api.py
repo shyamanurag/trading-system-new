@@ -347,10 +347,16 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                 # Use Zerodha data instead of autonomous status
                 total_trades = analytics.total_trades
                 daily_pnl = analytics.daily_pnl
-                active_positions_count = analytics.active_positions
+                active_positions_count = analytics.active_positions  # Real count from Zerodha
                 win_rate = analytics.win_rate
                 estimated_wins = analytics.winning_trades
                 estimated_losses = analytics.losing_trades
+                
+                # Force sync position tracker with Zerodha data
+                if orchestrator.trade_engine and orchestrator.trade_engine.position_tracker:
+                    await orchestrator.trade_engine.sync_actual_zerodha_positions()
+                    real_position_count = await orchestrator.trade_engine.position_tracker.get_position_count()
+                    logger.info(f"🔄 Position tracker shows {real_position_count} positions after Zerodha sync")
                 
                 logger.info(f"📊 Using Zerodha analytics: {total_trades} trades, ₹{daily_pnl:.2f} P&L, {win_rate:.1f}% win rate")
             else:

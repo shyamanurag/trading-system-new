@@ -252,3 +252,42 @@ async def get_real_time_status(
     except Exception as e:
         logger.error(f"❌ Error getting real-time status: {e}")
         raise HTTPException(status_code=500, detail=str(e)) 
+
+@router.post("/sync-positions")
+async def sync_positions_with_zerodha(
+    zerodha_client = Depends(get_zerodha_client)
+):
+    """Force sync internal position tracker with Zerodha positions"""
+    try:
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        if not orchestrator or not orchestrator.trade_engine:
+            raise HTTPException(status_code=503, detail="Trade engine not available")
+        
+        # Force sync positions from Zerodha
+        logger.info("🔄 Force syncing positions with Zerodha...")
+        actual_positions = await orchestrator.trade_engine.sync_actual_zerodha_positions()
+        
+        # Get position counts
+        zerodha_count = len(actual_positions)
+        internal_count = 0
+        if orchestrator.trade_engine.position_tracker:
+            internal_count = await orchestrator.trade_engine.position_tracker.get_position_count()
+        
+        return {
+            'success': True,
+            'data': {
+                'zerodha_positions': zerodha_count,
+                'internal_positions': internal_count,
+                'synced': zerodha_count == internal_count,
+                'actual_positions': actual_positions
+            },
+            'message': f"Synced {zerodha_count} positions from Zerodha",
+            'source': 'ZERODHA_API',
+            'timestamp': datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error syncing positions: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) 

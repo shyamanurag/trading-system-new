@@ -566,7 +566,7 @@ class TradeEngine:
             
             # Update position tracker with ACTUAL positions
             if self.position_tracker:
-                await self._update_position_tracker_with_actual_data(active_positions)
+                await self.position_tracker.sync_with_zerodha_positions(active_positions)
             
             return active_positions
             
