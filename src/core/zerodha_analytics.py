@@ -377,8 +377,28 @@ class ZerodhaAnalyticsService:
                 logger.warning("⚠️ No trades found for analytics calculation")
                 return analytics
             
-            # Calculate trade statistics
-            analytics.total_trades = len(trades)
+            logger.info(f"📊 Calculating analytics from {len(trades)} trades")
+            
+            # Log trade status breakdown for debugging
+            status_counts = {}
+            executed_trades = []
+            for trade in trades:
+                status = trade.get('status', 'UNKNOWN')
+                status_counts[status] = status_counts.get(status, 0) + 1
+                
+                # Count all trades with valid prices as "executed" regardless of status
+                if trade.get('price', 0) > 0:
+                    executed_trades.append(trade)
+            
+            logger.info(f"📋 Trade status breakdown: {status_counts}")
+            logger.info(f"✅ Trades with valid prices (considered executed): {len(executed_trades)}")
+            
+            # Calculate trade statistics from executed trades
+            analytics.total_trades = len(executed_trades)
+            
+            if analytics.total_trades == 0:
+                logger.warning("⚠️ No executed trades found (no trades with valid prices)")
+                return analytics
             
             # Calculate P&L (simplified - in real implementation, you'd need to match buy/sell pairs)
             total_pnl = 0.0
@@ -389,7 +409,7 @@ class ZerodhaAnalyticsService:
             
             # Group trades by symbol to calculate P&L
             symbol_trades = {}
-            for trade in trades:
+            for trade in executed_trades:
                 symbol = trade['symbol']
                 if symbol not in symbol_trades:
                     symbol_trades[symbol] = []
@@ -412,6 +432,8 @@ class ZerodhaAnalyticsService:
             analytics.losing_trades = losing_trades
             analytics.win_rate = (winning_trades / analytics.total_trades * 100) if analytics.total_trades > 0 else 0.0
             
+            logger.info(f"📈 Analytics summary: {analytics.total_trades} trades, ₹{analytics.total_pnl:.2f} P&L, {analytics.win_rate:.1f}% win rate")
+            
             # Calculate average wins and losses
             analytics.avg_win = float(np.mean(wins)) if wins else 0.0
             analytics.avg_loss = float(np.mean(losses)) if losses else 0.0
@@ -426,7 +448,7 @@ class ZerodhaAnalyticsService:
             month_start = end_date - timedelta(days=30)
             
             # Calculate period-specific P&L (simplified)
-            analytics.daily_pnl = total_pnl * 0.1  # Placeholder - would need actual daily calculation
+            analytics.daily_pnl = total_pnl if days == 1 else total_pnl * 0.1  # Use full P&L for daily
             analytics.weekly_pnl = total_pnl * 0.3  # Placeholder
             analytics.monthly_pnl = total_pnl * 0.7  # Placeholder
             
@@ -440,15 +462,18 @@ class ZerodhaAnalyticsService:
             analytics.net_balance = analytics.available_margin - analytics.used_margin
             
             # Trading activity
-            if trades:
-                analytics.last_trade_time = max(trade['timestamp'] for trade in trades)
+            if executed_trades:
+                timestamps = [trade.get('timestamp') for trade in executed_trades if trade.get('timestamp')]
+                if timestamps:
+                    analytics.last_trade_time = max(timestamps)
                 analytics.trading_days = days
                 analytics.avg_trades_per_day = analytics.total_trades / days
             
+            logger.info(f"🎯 Final analytics: {analytics.total_trades} trades, ₹{analytics.daily_pnl:.2f} daily P&L")
             return analytics
             
         except Exception as e:
-            logger.error(f"❌ Error calculating analytics: {e}")
+            logger.error(f"❌ Error calculating analytics: {e}", exc_info=True)
             return ZerodhaAnalytics()
     
     async def _calculate_symbol_pnl(self, symbol_trades: List[Dict]) -> float:
