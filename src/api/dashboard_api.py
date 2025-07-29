@@ -21,23 +21,45 @@ router = APIRouter()
 async def get_real_zerodha_balance(orchestrator) -> float:
     """Get actual Zerodha wallet balance for dashboard display"""
     try:
-        if not orchestrator or not orchestrator.zerodha_client:
-            logger.warning("⚠️ No Zerodha client available for balance check")
+        logger.info("💰 Attempting to get real Zerodha balance...")
+        
+        if not orchestrator:
+            logger.warning("⚠️ No orchestrator provided for balance check")
+            return 0.0
+            
+        if not orchestrator.zerodha_client:
+            logger.warning("⚠️ Orchestrator has no zerodha_client for balance check")
             return 0.0
         
+        logger.info("📊 Calling get_margins() on Zerodha client...")
         # Get real margins from Zerodha
         margins = await orchestrator.zerodha_client.get_margins()
+        
         if not margins:
-            logger.warning("⚠️ Failed to fetch margins from Zerodha")
+            logger.warning("⚠️ get_margins() returned None/empty from Zerodha")
             return 0.0
         
+        logger.info(f"📊 Raw margins response from Zerodha: {margins}")
+        
         # Extract available cash
-        available_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
+        equity_data = margins.get('equity', {})
+        logger.info(f"📊 Equity data: {equity_data}")
+        
+        available_data = equity_data.get('available', {})
+        logger.info(f"📊 Available data: {available_data}")
+        
+        available_cash = available_data.get('cash', 0)
+        logger.info(f"💰 Extracted available cash: ₹{available_cash}")
+        
+        if available_cash == 0:
+            logger.warning("⚠️ Available cash is 0 - this might indicate an issue with Zerodha API response")
+            
         logger.info(f"💰 Real Zerodha Balance for Dashboard: ₹{available_cash:,.2f}")
         return float(available_cash)
         
     except Exception as e:
         logger.error(f"❌ Error fetching real Zerodha balance: {e}")
+        logger.error(f"❌ Exception details: {type(e).__name__}: {str(e)}")
         return 0.0
 
 @router.get("/health/detailed")
@@ -369,16 +391,24 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                 if not today_orders:
                     today_orders = []
                 
+                logger.info(f"📊 Raw Zerodha orders count: {len(today_orders)}")
+                
                 # Get current positions directly from Zerodha
                 current_positions = await orchestrator.zerodha_client.get_positions()
                 if not current_positions:
                     current_positions = []
+                
+                logger.info(f"📊 Raw Zerodha positions count: {len(current_positions)}")
                 
                 # Filter for actual trades (completed orders)
                 completed_orders = [
                     order for order in today_orders 
                     if order.get('status') == 'COMPLETE'
                 ]
+                
+                logger.info(f"📊 Completed orders count: {len(completed_orders)}")
+                if completed_orders:
+                    logger.info(f"📊 Sample completed order: {completed_orders[0]}")
                 
                 # Calculate metrics from actual Zerodha data
                 total_trades = len(completed_orders)
@@ -393,6 +423,9 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                         # Add P&L from this position
                         pnl = position.get('pnl', 0) or 0
                         daily_pnl += float(pnl)
+                        logger.info(f"📊 Position {position.get('tradingsymbol', 'UNKNOWN')}: Qty={position.get('quantity', 0)}, P&L=₹{pnl}")
+                
+                logger.info(f"📊 Active positions: {active_positions_count}, Total P&L: ₹{daily_pnl:.2f}")
                 
                 # Calculate win rate from completed orders (simplified)
                 winning_trades = 0

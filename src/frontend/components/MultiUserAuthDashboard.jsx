@@ -37,7 +37,7 @@ const MultiUserAuthDashboard = ({ onAuthComplete }) => {
             setLoading(true);
             setError(null);
 
-            // Get users from multi-user auth system
+            // Get users from multi-user auth system - FIXED: Correct endpoint
             const response = await fetch('/zerodha-multi/users-status');
 
             if (response.ok) {
