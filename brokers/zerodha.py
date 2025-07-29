@@ -44,16 +44,16 @@ class ZerodhaIntegration:
         self.max_retries = 3
         self.retry_delay = 2
         
-        # Rate limiting and semaphore
-        self.order_semaphore = asyncio.Semaphore(1)  # Limit concurrent orders
-        self.order_rate_limit = config.get('order_rate_limit', 1.0)  # 1 order per second
+        # Rate limiting (ONLY add what's needed for order_semaphore error)
+        self.order_semaphore = asyncio.Semaphore(1)
         self.last_order_time = 0
+        self.order_rate_limit = 1.0  # Used in place_order method
         
-        # WebSocket and monitoring attributes
+        # WebSocket attributes (only if used in the code)
         self.ticker = None
-        self.health_check_interval = config.get('health_check_interval', 30)
-        self.ws_reconnect_delay = config.get('ws_reconnect_delay', 5)
-        self.ws_max_reconnect_attempts = config.get('ws_max_reconnect_attempts', 10)
+        self.health_check_interval = 30
+        self.ws_reconnect_delay = 5
+        self.ws_max_reconnect_attempts = 10
         
         # 🚨 FIX: Add instruments caching to prevent rate limiting
         self._instruments_cache = {}
@@ -904,12 +904,3 @@ class ZerodhaIntegration:
         market_close = now.replace(hour=15, minute=30, second=0)
         
         return market_open <= now <= market_close
-
-    @property
-    def is_connected(self) -> bool:
-        """Check if Zerodha is connected and ready"""
-        return (
-            self.connection_state == ConnectionState.CONNECTED and
-            self.kite is not None and
-            self.access_token is not None
-        )
