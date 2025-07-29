@@ -637,6 +637,26 @@ class TradingOrchestrator:
                 if not self.zerodha_client:
                     self.logger.error("❌ Zerodha client is None")
             
+            # 🚨 CRITICAL FIX: Initialize OrderManager with Zerodha client AFTER Zerodha is ready
+            if hasattr(self, 'order_manager') and self.order_manager and self.zerodha_client:
+                try:
+                    await self.order_manager.initialize(
+                        zerodha_client=self.zerodha_client,
+                        redis_client=self.redis_manager,
+                        risk_manager=self.risk_manager
+                    )
+                    self.logger.info("✅ OrderManager initialized with Zerodha client for strategy orders")
+                except Exception as e:
+                    self.logger.error(f"❌ OrderManager initialization with Zerodha client failed: {e}")
+            else:
+                self.logger.error("❌ Cannot initialize OrderManager - missing components")
+                if not hasattr(self, 'order_manager'):
+                    self.logger.error("❌ OrderManager not found")
+                if not self.order_manager:
+                    self.logger.error("❌ OrderManager is None")
+                if not self.zerodha_client:
+                    self.logger.error("❌ Zerodha client is None")
+            
             # Initialize Position Monitor for continuous auto square-off
             try:
                 from src.core.position_monitor import PositionMonitor
