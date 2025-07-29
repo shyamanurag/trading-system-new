@@ -223,6 +223,11 @@ class TradeEngine:
             self.logger.info(f"📊 Processing paper signal for {symbol}")
             self.logger.info(f"🔄 Signal: {symbol} {action} → Order: {symbol} {action}")
             
+            # 🚨 CRITICAL FIX: Attempt to get Zerodha client if not available
+            if not self.zerodha_client:
+                self.logger.warning("⚠️ Zerodha client not set, attempting to retrieve from orchestrator")
+                await self._try_get_zerodha_client_from_orchestrator()
+            
             # CRITICAL FIX: Only execute if Zerodha client is available
             if not self.zerodha_client or not self.zerodha_client.is_connected:
                 self.logger.error("❌ CRITICAL: Zerodha client not available - NO FALLBACK EXECUTION")
