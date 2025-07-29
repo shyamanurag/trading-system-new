@@ -381,21 +381,31 @@ async def submit_manual_token(token_data: TokenSubmission):
         # Store session in memory using actual user ID from Zerodha
         zerodha_sessions[actual_user_id] = session
         
-        # CRITICAL FIX: Notify orchestrator about the new token
+        # CRITICAL FIX: Update ALL Zerodha client instances with new token
         try:
             from src.core.orchestrator import TradingOrchestrator
             orchestrator = await TradingOrchestrator.get_instance()
-            if orchestrator and hasattr(orchestrator, 'update_zerodha_token'):
-                # CRITICAL FIX: Correct parameter order - user_id first, then access_token
-                token_update_success = await orchestrator.update_zerodha_token(actual_user_id, access_token)
-                if token_update_success:
-                    logger.info("✅ Orchestrator updated with new Zerodha token")
+            if orchestrator:
+                # First try the comprehensive update method
+                if hasattr(orchestrator, 'update_all_zerodha_tokens'):
+                    token_update_success = await orchestrator.update_all_zerodha_tokens(access_token, actual_user_id)
+                    if token_update_success:
+                        logger.info("✅ ALL Zerodha client instances updated with new token")
+                    else:
+                        logger.warning("⚠️ Failed to update all Zerodha clients with token")
+                # Fallback to single client update
+                elif hasattr(orchestrator, 'update_zerodha_token'):
+                    token_update_success = await orchestrator.update_zerodha_token(actual_user_id, access_token)
+                    if token_update_success:
+                        logger.info("✅ Orchestrator updated with new Zerodha token")
+                    else:
+                        logger.warning("⚠️ Failed to update orchestrator with token")
                 else:
-                    logger.warning("⚠️ Failed to update orchestrator with token")
+                    logger.info("✅ Orchestrator notification skipped - method not available")
             else:
-                logger.info("✅ Orchestrator notification skipped - method not available")
+                logger.warning("⚠️ Orchestrator instance not available")
         except Exception as e:
-            logger.info(f"✅ Orchestrator notification skipped - {e}")
+            logger.warning(f"⚠️ Orchestrator notification failed - {e}")
         
         # CRITICAL FIX: Store token in Redis for orchestrator access
         try:

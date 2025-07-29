@@ -2341,6 +2341,56 @@ class TradingOrchestrator:
             self.logger.error(f"Error determining risk status: {e}")
             return 'unknown'
 
+    async def update_all_zerodha_tokens(self, access_token: str, user_id: str):
+        """
+        Update access token across ALL Zerodha client instances in the system
+        This prevents health check failures from stale credentials
+        """
+        self.logger.info(f"🔄 Updating ALL Zerodha tokens for user: {user_id}")
+        
+        try:
+            # 1. Update primary orchestrator client
+            if self.zerodha_client:
+                await self.zerodha_client.update_access_token(access_token)
+                self.logger.info("✅ Updated orchestrator Zerodha client token")
+            
+            # 2. Update trade engine client if exists
+            if hasattr(self, 'trade_engine') and self.trade_engine and hasattr(self.trade_engine, 'zerodha_client'):
+                if self.trade_engine.zerodha_client:
+                    await self.trade_engine.zerodha_client.update_access_token(access_token)
+                    self.logger.info("✅ Updated trade engine Zerodha client token")
+            
+            # 3. Update connection manager instances if they exist
+            try:
+                from src.core.connection_manager import get_connection_manager
+                conn_manager = get_connection_manager()
+                if conn_manager and hasattr(conn_manager, 'zerodha_client') and conn_manager.zerodha_client:
+                    await conn_manager.zerodha_client.update_access_token(access_token)
+                    self.logger.info("✅ Updated connection manager Zerodha client token")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not update connection manager token: {e}")
+            
+            # 4. Update multi-user manager instances if they exist
+            try:
+                from src.core.multi_user_zerodha_manager import get_multi_user_manager
+                multi_manager = get_multi_user_manager()
+                if multi_manager:
+                    await multi_manager.update_user_token(user_id, access_token)
+                    self.logger.info("✅ Updated multi-user manager Zerodha client token")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not update multi-user manager token: {e}")
+            
+            # 5. Update environment variables for any future clients
+            os.environ['ZERODHA_ACCESS_TOKEN'] = access_token
+            self.logger.info("✅ Updated environment variable ZERODHA_ACCESS_TOKEN")
+            
+            self.logger.info("🎯 ALL Zerodha client tokens updated successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error updating all Zerodha tokens: {e}")
+            return False
+
 
 # Global function to get orchestrator instance
 async def get_orchestrator() -> TradingOrchestrator:
