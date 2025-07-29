@@ -57,6 +57,17 @@ class ZerodhaIntegration:
         else:
             logger.warning("⚠️ Zerodha credentials incomplete")
 
+    def _initialize_kite(self):
+        """Initialize KiteConnect instance"""
+        try:
+            from kiteconnect import KiteConnect
+            self.kite = KiteConnect(api_key=self.api_key)
+            self.kite.set_access_token(self.access_token)
+            logger.info("✅ KiteConnect instance initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize KiteConnect: {e}")
+            self.kite = None
+
     async def initialize(self) -> bool:
         """Initialize the Zerodha connection with retries"""
         logger.info("🔄 Initializing Zerodha connection...")
