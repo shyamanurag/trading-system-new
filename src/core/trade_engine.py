@@ -247,7 +247,7 @@ class TradeEngine:
                     'strategy': strategy,
                     'status': 'EXECUTED',  # ✅ REAL execution confirmed by Zerodha
                     'executed_at': datetime.now(),
-                    'user_id': 'PAPER_TRADER_001'
+                    'user_id': os.environ.get('ZERODHA_USER_ID', 'QSW899')  # Dynamic user ID
                 }
                 
                 # Update position tracker with stop loss and target
@@ -692,9 +692,10 @@ class TradeEngine:
                     )
                 """)
                 
-                # Get user_id (ensure it exists)
-                user_query = text("SELECT id FROM users WHERE username = 'PAPER_TRADER_001' LIMIT 1")
-                user_result = db_session.execute(user_query)
+                # Get user_id dynamically (ensure it exists)
+                dynamic_username = os.environ.get('ZERODHA_USER_ID', 'QSW899')
+                user_query = text("SELECT id FROM users WHERE broker_user_id = :broker_user_id LIMIT 1")
+                user_result = db_session.execute(user_query, {'broker_user_id': dynamic_username})
                 user_row = user_result.fetchone()
                 user_id = user_row.id if user_row else 1
                 

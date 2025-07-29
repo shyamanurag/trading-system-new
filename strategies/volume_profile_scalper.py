@@ -17,32 +17,34 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
         super().__init__(config)
         self.name = "EnhancedVolumeProfileScalper"
         
-        # REALISTIC parameters (prevent false signals on market noise)
+        # STRICT CASH SEGMENT THRESHOLDS (prevent opening second false signals)
         self.volume_thresholds = {
-            'high_volume': 20,      # 20% volume increase (reduced from 40% for current market)
-            'moderate_volume': 12,   # 12% volume increase (reduced from 25% for current market)
-            'low_volume': 8,         # 8% volume increase (reduced from 15% for current market)
+            'high_volume': 50,      # 50% volume increase (much stricter for cash segment)
+            'moderate_volume': 35,   # 35% volume increase (much stricter for cash segment)
+            'low_volume': 25,        # 25% volume increase (much stricter for cash segment)
             'price_confirmation': {
-                'strong': 0.08,     # 0.08% price movement (reduced from 0.20% for current market)
-                'moderate': 0.05,   # 0.05% price movement (reduced from 0.12% for current market)
-                'weak': 0.03        # 0.03% price movement (reduced from 0.08% for current market)
+                'strong': 0.15,     # 0.15% price movement (stricter for cash segment profitability)
+                'moderate': 0.10,   # 0.10% price movement (stricter for cash segment profitability)
+                'weak': 0.08        # 0.08% price movement (stricter for cash segment profitability)
             }
         }
         
-        # REALISTIC ATR multipliers (balanced risk management)
+        # STRICTER ATR multipliers for cash segment reliability
         self.atr_multipliers = {
-            'high_volume': 1.8,     # 1.8x ATR for high volume
-            'moderate_volume': 1.5,  # 1.5x ATR for moderate volume
-            'low_volume': 1.2       # 1.2x ATR for low volume
+            'high_volume': 2.2,     # 2.2x ATR for high volume (more conservative)
+            'moderate_volume': 1.8,  # 1.8x ATR for moderate volume (more conservative)
+            'low_volume': 1.5       # 1.5x ATR for low volume (more conservative)
         }
         
-        # Enhanced cooldown control
-        self.scalping_cooldown = 20  # 20 seconds between signals
+        # Enhanced cooldown control with market opening protection
+        self.scalping_cooldown = 60  # 60 seconds between signals (longer cooldown)
         self.symbol_cooldowns = {}   # Symbol-specific cooldowns
+        self.market_opening_protection = 900  # 15 minutes protection after market opening
         
-        # Signal quality filters
-        self.min_confidence_threshold = 0.7  # Minimum 70% confidence
+        # Stricter signal quality filters
+        self.min_confidence_threshold = 0.8  # Minimum 80% confidence (higher threshold)
         self.volume_confirmation_required = True  # Require volume confirmation
+        self.min_market_minutes = 15  # Don't trade until 15 minutes after market open
     
     async def initialize(self):
         """Initialize the strategy"""
@@ -55,6 +57,10 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
             return
             
         try:
+            # MARKET OPENING PROTECTION: Don't trade in first 15 minutes
+            if not self._is_market_ready_for_trading():
+                return
+                
             # Check SCALPING cooldown
             if not self._is_scalping_cooldown_passed():
                 return
@@ -79,6 +85,22 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
                 
         except Exception as e:
             logger.error(f"Error in {self.name} strategy: {str(e)}")
+    
+    def _is_market_ready_for_trading(self) -> bool:
+        """Check if market has been open long enough for reliable volume data"""
+        now = datetime.now()
+        market_open_time = now.replace(hour=9, minute=15, second=0, microsecond=0)
+        
+        # If before market open, don't trade
+        if now < market_open_time:
+            return False
+            
+        # If within first 15 minutes of market opening, don't trade
+        minutes_since_open = (now - market_open_time).total_seconds() / 60
+        if minutes_since_open < self.min_market_minutes:
+            return False
+            
+        return True
     
     def _is_scalping_cooldown_passed(self) -> bool:
         """Check if SCALPING cooldown period has passed"""
