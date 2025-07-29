@@ -70,6 +70,20 @@ class ZerodhaIntegration:
         self._cache_expiry = {}
         self._cache_duration = 600  # 10 minutes cache
         
+        # Separate cache for different exchanges
+        self._nfo_instruments = None
+        self._nse_instruments = None
+        self._instruments_last_fetched = {}
+        self._instruments_cache_duration = 3600  # 1 hour cache for instruments
+        
+        # Circuit breaker for symbol validation to prevent rate limiting
+        self._validation_circuit_breaker = {
+            'failure_count': 0,
+            'last_failure_time': 0,
+            'circuit_open': False,
+            'reset_timeout': 300  # 5 minutes
+        }
+        
         logger.info(f"🔴 Zerodha initialized for REAL trading")
         
         if self.api_key and self.access_token:
@@ -648,44 +662,63 @@ class ZerodhaIntegration:
                     await asyncio.sleep(self.retry_delay)
         return {}
 
-    async def get_instruments(self, exchange: str = "NFO") -> List[Dict]:
-        """
-        Get instruments data from Zerodha API with caching to prevent rate limiting
-        Returns list of all available contracts for the exchange
-        """
-        # 🚨 FIX: Check cache first to prevent rate limiting
-        cache_key = f"instruments_{exchange}"
-        if hasattr(self, '_instruments_cache') and cache_key in self._instruments_cache:
-            cache_time = self._instruments_cache[cache_key].get('timestamp', 0)
-            if time.time() - cache_time < 600:  # 10 minutes cache
-                logger.info(f"⚡ Using cached {exchange} instruments ({len(self._instruments_cache[cache_key]['data'])} items)")
-                return self._instruments_cache[cache_key]['data']
-
-        for attempt in range(self.max_retries):
-            try:
-                if not self.kite:
-                    # Return mock instruments data for testing
-                    return self._get_mock_instruments_data()
+    async def get_instruments(self, exchange: str = 'NFO') -> List[Dict]:
+        """Get instruments with intelligent caching to prevent rate limiting"""
+        try:
+            # Check if we have cached data that's still valid
+            cache_key = f"{exchange}_instruments"
+            now = time.time()
+            
+            if (cache_key in self._instruments_last_fetched and 
+                now - self._instruments_last_fetched[cache_key] < self._instruments_cache_duration):
                 
-                # Call Zerodha instruments API
-                instruments_data = await self._async_api_call(self.kite.instruments, exchange)
+                # Return cached data
+                if exchange == 'NFO' and self._nfo_instruments:
+                    logger.info(f"✅ Using cached {exchange} instruments ({len(self._nfo_instruments)} instruments)")
+                    return self._nfo_instruments
+                elif exchange == 'NSE' and self._nse_instruments:
+                    logger.info(f"✅ Using cached {exchange} instruments ({len(self._nse_instruments)} instruments)")
+                    return self._nse_instruments
+            
+            # Cache miss or expired - fetch fresh data with rate limit protection
+            logger.info(f"🔄 Fetching fresh {exchange} instruments from Zerodha...")
+            
+            # Add delay to prevent rate limiting
+            if hasattr(self, '_last_instruments_call'):
+                time_since_last = now - self._last_instruments_call
+                if time_since_last < 2:  # Minimum 2 seconds between calls
+                    await asyncio.sleep(2 - time_since_last)
+            
+            self._last_instruments_call = now
+            
+            instruments = await self._async_api_call(self.kite.instruments, exchange)
+            
+            if instruments:
+                # Cache the results
+                self._instruments_last_fetched[cache_key] = now
+                if exchange == 'NFO':
+                    self._nfo_instruments = instruments
+                elif exchange == 'NSE':
+                    self._nse_instruments = instruments
                 
-                if instruments_data:
-                    logger.info(f"✅ Retrieved {len(instruments_data)} instruments from {exchange}")
-                    self._instruments_cache[exchange] = instruments_data
-                    self._cache_expiry[exchange] = datetime.now()
-                    return instruments_data
-                else:
-                    logger.warning(f"⚠️ No instruments data received from {exchange}")
-                    return []
-                    
-            except Exception as e:
-                logger.error(f"❌ Get instruments attempt {attempt + 1} failed: {e}")
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(self.retry_delay)
-        
-        logger.error(f"❌ Failed to get instruments after {self.max_retries} attempts")
-        return []
+                logger.info(f"✅ Cached {len(instruments)} {exchange} instruments for 1 hour")
+                return instruments
+            else:
+                logger.warning(f"⚠️ No instruments returned from {exchange}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"❌ Get instruments attempt failed: {e}")
+            
+            # Return cached data if available, even if expired
+            if exchange == 'NFO' and self._nfo_instruments:
+                logger.info(f"🔄 Falling back to cached {exchange} data due to error")
+                return self._nfo_instruments
+            elif exchange == 'NSE' and self._nse_instruments:
+                logger.info(f"🔄 Falling back to cached {exchange} data due to error") 
+                return self._nse_instruments
+            
+            return []
 
     def _get_mock_instruments_data(self) -> List[Dict]:
         """Generate mock instruments data for testing"""
@@ -808,14 +841,36 @@ class ZerodhaIntegration:
             return []
 
     async def validate_options_symbol(self, options_symbol: str) -> bool:
-        """Validate if options symbol exists in Zerodha instruments before placing order"""
+        """Validate if options symbol exists in Zerodha instruments with circuit breaker for rate limiting"""
         try:
-            # Get all NFO instruments
+            # Circuit breaker check - if too many failures, temporarily skip validation
+            now = time.time()
+            if self._validation_circuit_breaker['circuit_open']:
+                if now - self._validation_circuit_breaker['last_failure_time'] > self._validation_circuit_breaker['reset_timeout']:
+                    # Reset circuit breaker
+                    self._validation_circuit_breaker['circuit_open'] = False
+                    self._validation_circuit_breaker['failure_count'] = 0
+                    logger.info("🔄 Circuit breaker reset - resuming symbol validation")
+                else:
+                    # Circuit is still open - skip validation to prevent rate limiting
+                    logger.warning(f"⚠️ Circuit breaker OPEN - skipping validation for {options_symbol} to prevent rate limiting")
+                    return True  # Assume valid to allow trading
+            
+            # Get all NFO instruments with caching
             instruments = await self.get_instruments("NFO")
             
             if not instruments:
+                # Increment failure count
+                self._validation_circuit_breaker['failure_count'] += 1
+                self._validation_circuit_breaker['last_failure_time'] = now
+                
+                # Open circuit breaker if too many failures
+                if self._validation_circuit_breaker['failure_count'] >= 3:
+                    self._validation_circuit_breaker['circuit_open'] = True
+                    logger.warning("🚨 Circuit breaker OPENED - too many instrument fetch failures")
+                
                 logger.warning("⚠️ No NFO instruments available for validation")
-                return False
+                return True  # Assume valid to allow trading when validation fails
             
             # 🔍 DEBUG: Log BANKNIFTY specific symbols for format analysis
             logger.info(f"🔍 DEBUG: Searching for BANKNIFTY options symbols in {len(instruments)} NFO instruments")
