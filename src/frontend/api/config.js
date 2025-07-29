@@ -128,8 +128,11 @@ export const API_ENDPOINTS = {
 
     // Dashboard endpoints
     DASHBOARD_SUMMARY: createEndpoint('/api/v1/dashboard/summary'),
-    DAILY_PNL: createEndpoint('/api/v1/monitoring/daily-pnl'),
-    RECOMMENDATIONS: createEndpoint('/api/v1/elite', true),
+    DAILY_PNL: createEndpoint('/api/v1/dashboard/daily-pnl'),
+    RECOMMENDATIONS: createEndpoint('/api/v1/recommendations'),
+
+    // BALANCE FIX: Real-time balance endpoint
+    REALTIME_BALANCE: createEndpoint('/api/balance/realtime'),
     ELITE_RECOMMENDATIONS: createEndpoint('/api/v1/elite', true),
     DASHBOARD_DATA: createEndpoint('/api/v1/dashboard/data'),
 

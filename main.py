@@ -1545,6 +1545,80 @@ async def get_trades():
             "timestamp": datetime.now().isoformat()
         }
 
+# ADDITIONAL FIX: Direct /api/trades/live endpoint for LiveTradesDashboardPolling.jsx
+@app.get("/api/trades/live", tags=["trades"])
+async def get_live_trades_direct():
+    """Get live trades - Direct endpoint for frontend components calling /api/trades/live"""
+    try:
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        if not orchestrator or not orchestrator.zerodha_client:
+            logger.warning("Zerodha client not available for live trades")
+            return []
+        
+        # Get ACTUAL live trades from Zerodha API
+        logger.info("📋 Fetching live orders from Zerodha API (direct endpoint)...")
+        orders = await orchestrator.zerodha_client.get_orders()
+        
+        if not orders:
+            return []
+        
+        # Filter today's executed orders and format as live trades
+        live_trades = []
+        today = datetime.now().date()
+        
+        for order in orders:
+            try:
+                # Only include executed orders from today
+                if order.get('status') != 'COMPLETE':
+                    continue
+                
+                order_date_str = order.get('order_timestamp', '')
+                if order_date_str:
+                    order_date = datetime.fromisoformat(order_date_str.replace('Z', '+00:00')).date()
+                    if order_date != today:
+                        continue
+                
+                symbol = order.get('tradingsymbol', 'UNKNOWN')
+                side = order.get('transaction_type', 'UNKNOWN')
+                quantity = order.get('filled_quantity', 0)
+                price = order.get('average_price', 0)
+                
+                # Enhanced format for live display (matches LiveTradesDashboardPolling.jsx expectations)
+                trade_info = {
+                    "id": order.get('order_id', 'UNKNOWN'),
+                    "trade_id": order.get('order_id', 'UNKNOWN'),
+                    "symbol": symbol,
+                    "side": side.lower(),
+                    "trade_type": side.lower(),
+                    "quantity": quantity,
+                    "entry_price": price,
+                    "current_price": price,  # For executed trades, current = entry
+                    "price": price,
+                    "pnl": 0,
+                    "pnl_percent": 0,
+                    "status": "EXECUTED",
+                    "strategy": "Zerodha",
+                    "commission": 0,
+                    "entry_time": order.get('order_timestamp'),
+                    "executed_at": order.get('order_timestamp'),
+                    "timestamp": order.get('order_timestamp')
+                }
+                
+                live_trades.append(trade_info)
+                
+            except Exception as order_error:
+                logger.warning(f"Error processing live order: {order_error}")
+                continue
+        
+        logger.info(f"📊 Retrieved {len(live_trades)} live trades from Zerodha (direct)")
+        return live_trades
+        
+    except Exception as e:
+        logger.error(f"Error getting live trades: {str(e)}")
+        return []
+
 @app.get("/api/v1/strategies", tags=["strategies"])  
 async def redirect_strategies():
     """Redirect to autonomous strategies endpoint"""
@@ -1867,3 +1941,104 @@ if __name__ == "__main__":
         access_log=True,
         workers=workers if not reload else 1  # Can't use multiple workers with reload
     )
+
+# ADDITIONAL FIX: Direct /api/users/metrics endpoint for LiveTradesDashboardPolling.jsx
+@app.get("/api/users/metrics", tags=["users"])
+async def get_user_metrics_direct():
+    """Get user metrics - Direct endpoint for frontend components calling /api/users/metrics"""
+    try:
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        if not orchestrator:
+            logger.warning("Orchestrator not available for user metrics")
+            return {}
+        
+        # Get actual user metrics
+        metrics = {
+            "total_users": 1,  # At least the main trading user
+            "active_users": 1 if orchestrator.zerodha_client else 0,
+            "total_trades_today": 0,
+            "total_pnl_today": 0.0,
+            "last_updated": datetime.now().isoformat()
+        }
+        
+        # If we have Zerodha client, get actual trade count
+        if orchestrator.zerodha_client:
+            try:
+                orders = await orchestrator.zerodha_client.get_orders()
+                if orders:
+                    today = datetime.now().date()
+                    today_orders = [
+                        order for order in orders 
+                        if order.get('status') == 'COMPLETE' and
+                        order.get('order_timestamp') and
+                        datetime.fromisoformat(order.get('order_timestamp').replace('Z', '+00:00')).date() == today
+                    ]
+                    metrics["total_trades_today"] = len(today_orders)
+                    logger.info(f"📊 User metrics: {len(today_orders)} trades today")
+            except Exception as e:
+                logger.warning(f"Could not fetch trade count for metrics: {e}")
+        
+        return metrics
+        
+    except Exception as e:
+        logger.error(f"Error getting user metrics: {str(e)}")
+        return {
+            "total_users": 0,
+            "active_users": 0,
+            "total_trades_today": 0,
+            "total_pnl_today": 0.0,
+            "error": str(e),
+            "last_updated": datetime.now().isoformat()
+        }
+
+# BALANCE FIX: Direct real-time Zerodha balance endpoint for frontend
+@app.get("/api/balance/realtime", tags=["balance"])
+async def get_realtime_balance():
+    """Get real-time Zerodha wallet balance for frontend display"""
+    try:
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        if not orchestrator or not orchestrator.zerodha_client:
+            return {
+                "success": False,
+                "balance": 0.0,
+                "message": "Zerodha client not available",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Get real-time balance from Zerodha
+        margins = await orchestrator.zerodha_client.get_margins()
+        
+        if not margins:
+            return {
+                "success": False,
+                "balance": 0.0,
+                "message": "Failed to fetch balance from Zerodha",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Extract available cash (this is the reduced balance after positions)
+        available_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
+        
+        return {
+            "success": True,
+            "balance": available_cash,
+            "current_balance": available_cash,
+            "current_capital": available_cash,
+            "capital": available_cash,
+            "message": f"Real-time balance: ₹{available_cash:,.2f}",
+            "source": "ZERODHA_API",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting real-time balance: {str(e)}")
+        return {
+            "success": False,
+            "balance": 0.0,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }

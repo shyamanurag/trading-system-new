@@ -94,11 +94,11 @@ export const standardizeUserData = (rawUserData, source = 'api') => {
         zerodha_client_id: rawUserData.zerodha_client_id || rawUserData.client_id || USER_CONFIG.ZERODHA_USER_ID,
         zerodha_user_id: rawUserData.zerodha_user_id || USER_CONFIG.ZERODHA_USER_ID,
 
-        // Financial data (updated for live trading amounts)
-        initial_capital: rawUserData.initial_capital || rawUserData.capital || 10000000,
-        current_balance: rawUserData.current_balance || rawUserData.current_capital || rawUserData.capital || 10000000,
-        current_capital: rawUserData.current_capital || rawUserData.current_balance || rawUserData.capital || 10000000,
-        capital: rawUserData.capital || rawUserData.current_capital || rawUserData.initial_capital || 10000000,
+        // Financial data (FIXED: Use real-time data instead of hardcoded fallbacks)
+        initial_capital: rawUserData.initial_capital || rawUserData.capital || 0,
+        current_balance: rawUserData.current_balance || rawUserData.current_capital || rawUserData.capital || 0,
+        current_capital: rawUserData.current_capital || rawUserData.current_balance || rawUserData.capital || 0,
+        capital: rawUserData.capital || rawUserData.current_capital || rawUserData.initial_capital || 0,
 
         // Trading stats
         total_pnl: rawUserData.total_pnl || rawUserData.totalPnL || 0,

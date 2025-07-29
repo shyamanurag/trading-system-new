@@ -519,8 +519,7 @@ class TradeEngine:
                         UPDATE trades 
                         SET quantity = :quantity,
                             price = :price,
-                            executed_at = :executed_at,
-                            updated_at = CURRENT_TIMESTAMP
+                            executed_at = :executed_at
                         WHERE order_id = :trade_id
                     """)
                     
