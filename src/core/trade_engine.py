@@ -522,7 +522,7 @@ class TradeEngine:
                         'price': actual_trade['price'],
                         'status': actual_trade['status'],
                         'executed_at': actual_trade['executed_at'],
-                        'user_id': 'ZERODHA_SYNC'
+                        'user_id': 1  # Changed from 'ZERODHA_SYNC' to 1
                     })
                 
                 db_session.commit()
