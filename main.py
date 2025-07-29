@@ -1458,19 +1458,73 @@ async def trading_status_endpoint():
 # Frontend-Backend Integration Fixes - Direct Trades Endpoint
 @app.get("/api/v1/trades/", tags=["trades"])
 async def get_trades():
-    """Get all trades - Direct endpoint instead of redirect"""
+    """Get all trades - FIXED: Now fetches actual trades from Zerodha"""
     try:
-        from src.core.orchestrator import get_orchestrator
-        orchestrator = await get_orchestrator()
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
         
-        if orchestrator and hasattr(orchestrator, 'trade_engine'):
-            # Get trades from orchestrator's trade engine
-            trades = getattr(orchestrator.trade_engine, 'trades', [])
+        if orchestrator and orchestrator.zerodha_client:
+            # 🚨 CRITICAL FIX: Get ACTUAL trades from Zerodha API like autonomous/trades does
+            logger.info("📋 Fetching today's orders from Zerodha API for frontend...")
+            orders = await orchestrator.zerodha_client.get_orders()
+            
+            if not orders:
+                return {
+                    "success": True,
+                    "trades": [],
+                    "count": 0,
+                    "message": "No orders found in Zerodha",
+                    "source": "ZERODHA_API",
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            # Filter today's orders and format as trades (same logic as autonomous/trades)
+            formatted_trades = []
+            today = datetime.now().date()
+            
+            for order in orders:
+                try:
+                    # Only include executed orders from today
+                    if order.get('status') != 'COMPLETE':
+                        continue
+                    
+                    order_date_str = order.get('order_timestamp', '')
+                    if order_date_str:
+                        order_date = datetime.fromisoformat(order_date_str.replace('Z', '+00:00')).date()
+                        if order_date != today:
+                            continue
+                    
+                    symbol = order.get('tradingsymbol', 'UNKNOWN')
+                    side = order.get('transaction_type', 'UNKNOWN')
+                    quantity = order.get('filled_quantity', 0)
+                    price = order.get('average_price', 0)
+                    
+                    trade_info = {
+                        "trade_id": order.get('order_id', 'UNKNOWN'),
+                        "symbol": symbol,
+                        "trade_type": side.lower(),
+                        "quantity": quantity,
+                        "price": price,
+                        "pnl": 0,  # Calculate if needed
+                        "pnl_percent": 0,
+                        "status": "EXECUTED",
+                        "strategy": "Zerodha",
+                        "commission": 0,
+                        "executed_at": order.get('order_timestamp')
+                    }
+                    
+                    formatted_trades.append(trade_info)
+                    
+                except Exception as order_error:
+                    logger.warning(f"Error processing order: {order_error}")
+                    continue
+            
             return {
                 "success": True,
-                "trades": trades,
-                "count": len(trades),
-                "message": f"Retrieved {len(trades)} trades",
+                "trades": formatted_trades,
+                "count": len(formatted_trades),
+                "message": f"Retrieved {len(formatted_trades)} actual trades from Zerodha",
+                "source": "ZERODHA_API",
                 "timestamp": datetime.now().isoformat()
             }
         else:
@@ -1478,7 +1532,7 @@ async def get_trades():
                 "success": True,
                 "trades": [],
                 "count": 0,
-                "message": "No trades available - orchestrator not initialized",
+                "message": "Zerodha client not available",
                 "timestamp": datetime.now().isoformat()
             }
     except Exception as e:
