@@ -229,8 +229,15 @@ class TradeEngine:
                 await self._try_get_zerodha_client_from_orchestrator()
             
             # CRITICAL FIX: Only execute if Zerodha client is available
-            if not self.zerodha_client or not self.zerodha_client.is_connected:
-                self.logger.error("❌ CRITICAL: Zerodha client not available - NO FALLBACK EXECUTION")
+            if not self.zerodha_client:
+                self.logger.error("❌ CRITICAL: Zerodha client is None - NO FALLBACK EXECUTION")
+                self.logger.error("❌ NO FALLBACK EXECUTION - Real broker required for all trades") 
+                self.logger.error("🚨 SYSTEM DESIGNED TO FAIL WHEN BROKER UNAVAILABLE - FIX ZERODHA CONNECTION")
+                return None
+            elif not self.zerodha_client.is_connected:
+                self.logger.error(f"❌ CRITICAL: Zerodha client not connected - State: {getattr(self.zerodha_client, 'connection_state', 'UNKNOWN')}")
+                self.logger.error(f"❌ Kite object: {self.zerodha_client.kite is not None}")
+                self.logger.error(f"❌ Access token: {self.zerodha_client.access_token is not None}")
                 self.logger.error("❌ NO FALLBACK EXECUTION - Real broker required for all trades")
                 self.logger.error("🚨 SYSTEM DESIGNED TO FAIL WHEN BROKER UNAVAILABLE - FIX ZERODHA CONNECTION")
                 return None
