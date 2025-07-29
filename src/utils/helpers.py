@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 def get_atm_strike(spot_price: float) -> int:
     """
     Get At-The-Money (ATM) strike price for given spot price.
-    Rounds to nearest 50 for NIFTY and 100 for BANKNIFTY.
+    FIXED: Uses Zerodha's actual intervals - 100 for indices, 50 for stocks.
     
     Args:
         spot_price: Current spot price
@@ -26,17 +26,18 @@ def get_atm_strike(spot_price: float) -> int:
     Returns:
         ATM strike price rounded to appropriate interval
     """
-    # For NIFTY, round to nearest 50
-    if spot_price < 20000:  # Likely NIFTY
-        return int(round(spot_price / 50) * 50)
-    # For BANKNIFTY, round to nearest 100
-    else:
+    # 🚨 CRITICAL FIX: Based on user feedback "for indices only in 100"
+    # All indices use 100-point intervals in Zerodha
+    if spot_price > 10000:  # Likely index (NIFTY ~24000, BANKNIFTY ~56000)
         return int(round(spot_price / 100) * 100)
+    else:  # Stock options use 50-point intervals
+        return int(round(spot_price / 50) * 50)
 
 
 def get_strike_with_offset(spot_price: float, offset: int, option_type: str) -> int:
     """
     Get strike price with offset from ATM.
+    FIXED: Uses correct intervals based on Zerodha requirements.
     
     Args:
         spot_price: Current spot price
@@ -48,11 +49,11 @@ def get_strike_with_offset(spot_price: float, offset: int, option_type: str) -> 
     """
     atm_strike = get_atm_strike(spot_price)
     
-    # Determine strike interval based on price range
-    if spot_price < 20000:  # NIFTY
-        strike_interval = 50
-    else:  # BANKNIFTY
+    # 🚨 CRITICAL FIX: Determine strike interval based on Zerodha requirements
+    if spot_price > 10000:  # Index
         strike_interval = 100
+    else:  # Stock
+        strike_interval = 50
     
     # Calculate offset strike
     if option_type.upper() == 'CE':

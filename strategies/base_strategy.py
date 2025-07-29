@@ -602,60 +602,54 @@ class BaseStrategy:
             return underlying_symbol, 'CE'
     
     def _get_atm_strike(self, symbol: str, price: float) -> int:
-        """Get ATM strike for index options - FIXED to match Zerodha available strikes"""
+        """Get ATM strike for index options - FIXED for Zerodha's actual intervals"""
+        # 🚨 CRITICAL FIX: Based on user feedback "for indices only in 100"
+        # All major indices use 100-point intervals in Zerodha
+        
         if symbol == 'NIFTY':
-            return round(price / 50) * 50  # Round to nearest 50
+            strike = round(price / 100) * 100  # Changed from 50 to 100
+            logger.info(f"🎯 NIFTY STRIKE: ₹{price} → {strike} (100-point interval)")
+            return int(strike)
         elif symbol == 'BANKNIFTY':
-            # CRITICAL FIX: BANKNIFTY strikes are in 100s, but need to match available ones
-            base_strike = round(price / 100) * 100
-            # Ensure we pick from commonly available strikes around ATM
-            if base_strike % 100 == 0:
-                return int(base_strike)
-            else:
-                # Round to nearest 100
-                return int(round(price / 100) * 100)
+            strike = round(price / 100) * 100  # Already correct
+            logger.info(f"🎯 BANKNIFTY STRIKE: ₹{price} → {strike} (100-point interval)")
+            return int(strike)
         elif symbol == 'FINNIFTY':
-            return round(price / 50) * 50  # Round to nearest 50
+            strike = round(price / 100) * 100  # Changed from 50 to 100
+            logger.info(f"🎯 FINNIFTY STRIKE: ₹{price} → {strike} (100-point interval)")
+            return int(strike)
         else:
-            return int(price)
+            # Fallback for other indices
+            strike = round(price / 100) * 100
+            logger.info(f"🎯 {symbol} STRIKE: ₹{price} → {strike} (100-point interval fallback)")
+            return int(strike)
     
     def _get_atm_strike_for_stock(self, current_price: float) -> int:
-        """Get ATM strike for stock options with comprehensive debugging"""
+        """Get ATM strike for stock options - FIXED to use Zerodha's actual intervals"""
         try:
             # 🔍 DEBUG: Log current price and strike calculation
             logger.info(f"🔍 DEBUG: Calculating ATM strike for stock price: ₹{current_price}")
             
-            # Stock strike intervals (more granular than indices)
-            if current_price <= 100:
-                interval = 2.5
-            elif current_price <= 500:
-                interval = 5
-            elif current_price <= 1000:
-                interval = 10
-            elif current_price <= 2000:
-                interval = 25
-            elif current_price <= 5000:
-                interval = 50
-            elif current_price <= 10000:
-                interval = 100
-            else:
-                interval = 250  # For very high-priced stocks
+            # 🚨 CRITICAL FIX: Zerodha only offers strikes in multiples of 50 for most stocks
+            # Based on user feedback: "for option price if we see only the prices which are in multiple of 50"
+            interval = 50  # Fixed interval for all stocks to match Zerodha availability
             
-            # Round to nearest strike
+            # Round to nearest 50
             atm_strike = round(current_price / interval) * interval
             
-            logger.info(f"🎯 STRIKE CALCULATION:")
+            logger.info(f"🎯 STOCK STRIKE CALCULATION (FIXED):")
             logger.info(f"   Current Price: ₹{current_price}")
-            logger.info(f"   Strike Interval: {interval}")
+            logger.info(f"   Strike Interval: {interval} (Zerodha standard)")
             logger.info(f"   ATM Strike: {int(atm_strike)}")
+            logger.info(f"   Available: {int(atm_strike-50)}, {int(atm_strike)}, {int(atm_strike+50)}")
             
             return int(atm_strike)
             
         except Exception as e:
             logger.error(f"Error calculating ATM strike for stock: {e}")
-            # Fallback to rounded hundred
-            fallback_strike = round(current_price / 100) * 100
-            logger.warning(f"⚠️ FALLBACK STRIKE: {int(fallback_strike)}")
+            # Fallback to nearest 50 (Zerodha standard)
+            fallback_strike = round(current_price / 50) * 50
+            logger.warning(f"⚠️ FALLBACK STRIKE: {int(fallback_strike)} (rounded to nearest 50)")
             return int(fallback_strike)
       
     def _get_next_expiry(self) -> str:

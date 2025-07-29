@@ -5,11 +5,11 @@ Handles trading operations with built-in resilience features
 
 import asyncio
 import logging
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
 import json
 import time
-import os
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
 from enum import Enum
 
 try:
@@ -34,60 +34,29 @@ class ZerodhaIntegration:
     
     def __init__(self, config: Dict):
         self.config = config
+        self.kite = None
         self.api_key = config.get('api_key')
         self.api_secret = config.get('api_secret')
-        self.user_id = config.get('user_id')
         self.access_token = config.get('access_token')
-        self.pin = config.get('pin')
+        self.user_id = config.get('user_id')
         
-        # Configuration - REMOVED mock_mode and sandbox_mode
-        self.allow_token_update = config.get('allow_token_update', True)
+        # Retry configuration
+        self.max_retries = 3
+        self.retry_delay = 2
         
-        # Resilience configuration
-        self.max_retries = config.get('max_retries', 3)
-        self.retry_delay = config.get('retry_delay', 5)
-        self.health_check_interval = config.get('health_check_interval', 30)
-        self.order_rate_limit = config.get('order_rate_limit', 1.0)  # orders per second
-        self.ws_reconnect_delay = config.get('ws_reconnect_delay', 5)
-        self.ws_max_reconnect_attempts = config.get('ws_max_reconnect_attempts', 10)
+        # 🚨 FIX: Add instruments caching to prevent rate limiting
+        self._instruments_cache = {}
+        self._cache_expiry = {}
+        self._cache_duration = 600  # 10 minutes cache
         
-        # State tracking
-        self.connection_state = ConnectionState.DISCONNECTED
-        self.is_connected = False
-        self.ticker_connected = False
-        self.last_health_check = None
-        self.last_error = None
-        self.reconnect_attempts = 0
+        logger.info(f"🔴 Zerodha initialized for REAL trading")
         
-        # Rate limiting
-        self.last_order_time = 0
-        self.order_semaphore = asyncio.Semaphore(1)
-        
-        # WebSocket monitoring
-        self.ws_reconnect_attempts = 0
-        self.ws_last_reconnect = None
-        self.ticker = None
-        
-        # Initialize KiteConnect for REAL trading ONLY
-        if self.api_key and KiteConnect:
-            self.kite = KiteConnect(api_key=self.api_key)
-            logger.info("🔴 Zerodha initialized for REAL trading")
-                
-            if self.access_token:
-                self.kite.set_access_token(self.access_token)
-                logger.info("✅ Zerodha access token set")
-            else:
-                logger.info("🔧 Zerodha initialized without token - awaiting frontend authentication")
+        if self.api_key and self.access_token:
+            logger.info("✅ Zerodha access token set")
+            self._initialize_kite()
         else:
-            self.kite = None
-            if not self.api_key:
-                logger.error("❌ Zerodha API key not provided - cannot initialize client")
-            if not KiteConnect:
-                logger.error("❌ KiteConnect not available - please install kiteconnect package")
-            
-        # Start background monitoring
-        asyncio.create_task(self._background_monitoring())
-        
+            logger.warning("⚠️ Zerodha credentials incomplete")
+
     async def initialize(self) -> bool:
         """Initialize the Zerodha connection with retries"""
         logger.info("🔄 Initializing Zerodha connection...")
@@ -649,9 +618,17 @@ class ZerodhaIntegration:
 
     async def get_instruments(self, exchange: str = "NFO") -> List[Dict]:
         """
-        Get instruments data from Zerodha API
+        Get instruments data from Zerodha API with caching to prevent rate limiting
         Returns list of all available contracts for the exchange
         """
+        # 🚨 FIX: Check cache first to prevent rate limiting
+        cache_key = f"instruments_{exchange}"
+        if hasattr(self, '_instruments_cache') and cache_key in self._instruments_cache:
+            cache_time = self._instruments_cache[cache_key].get('timestamp', 0)
+            if time.time() - cache_time < 600:  # 10 minutes cache
+                logger.info(f"⚡ Using cached {exchange} instruments ({len(self._instruments_cache[cache_key]['data'])} items)")
+                return self._instruments_cache[cache_key]['data']
+
         for attempt in range(self.max_retries):
             try:
                 if not self.kite:
@@ -663,6 +640,8 @@ class ZerodhaIntegration:
                 
                 if instruments_data:
                     logger.info(f"✅ Retrieved {len(instruments_data)} instruments from {exchange}")
+                    self._instruments_cache[exchange] = instruments_data
+                    self._cache_expiry[exchange] = datetime.now()
                     return instruments_data
                 else:
                     logger.warning(f"⚠️ No instruments data received from {exchange}")

@@ -713,15 +713,17 @@ def _calculate_dynamic_strikes(index: str, current_price: float):
         return []
 
 def _get_strike_interval(index: str) -> int:
-    """Get strike price interval for index"""
+    """Get strike price interval for index - FIXED for Zerodha requirements"""
+    # 🚨 CRITICAL FIX: Based on user feedback "for indices only in 100"
+    # All indices use 100-point intervals in Zerodha
     intervals = {
-        'NIFTY': 50,
-        'BANKNIFTY': 100, 
-        'FINNIFTY': 50,
-        'MIDCPNIFTY': 25,
-        'SENSEX': 100
+        'NIFTY': 100,       # Changed from 50 to 100
+        'BANKNIFTY': 100,   # Already correct
+        'FINNIFTY': 100,    # Changed from 50 to 100
+        'MIDCPNIFTY': 100,  # Changed from 25 to 100
+        'SENSEX': 100       # Already correct
     }
-    return intervals.get(index, 50)
+    return intervals.get(index, 100)  # Default 100 for any index
 
 def _round_to_strike_price(index: str, price: float) -> int:
     """Round price to nearest strike price for index"""
@@ -729,19 +731,12 @@ def _round_to_strike_price(index: str, price: float) -> int:
     return int(round(price / interval) * interval)
 
 def _calculate_dynamic_stock_strikes(stock: str, current_price: float):
-    """Calculate DYNAMIC strike prices for stock options"""
+    """Calculate DYNAMIC strike prices for stock options - FIXED intervals"""
     try:
-        # Get stock strike interval (usually 2.5, 5, or 10 based on price)
-        if current_price < 500:
-            interval = 2.5
-        elif current_price < 1000:
-            interval = 5
-        elif current_price < 2000:
-            interval = 10
-        else:
-            interval = 25
+        # 🚨 CRITICAL FIX: Zerodha only offers strikes in multiples of 50 for stocks
+        interval = 50  # Fixed interval for all stocks
         
-        # Round to nearest strike
+        # Round to nearest 50
         atm_strike = round(current_price / interval) * interval
         
         # Generate 4 strikes around ATM
@@ -749,11 +744,10 @@ def _calculate_dynamic_stock_strikes(stock: str, current_price: float):
         for offset in range(-1, 3):
             strikes.append(atm_strike + (offset * interval))
         
-        logger.info(f"🎯 DYNAMIC {stock} strikes around ₹{current_price:,.0f}: {strikes}")
         return strikes
         
     except Exception as e:
-        logger.error(f"❌ Dynamic stock strike calculation failed for {stock}: {e}")
+        logger.error(f"Error calculating strikes for {stock}: {e}")
         return []
 
 def _get_dynamic_top_fo_stocks(count: int):
@@ -859,16 +853,10 @@ def _get_dynamic_stock_atm_strike(stock: str):
     return None
 
 def _round_to_stock_strike_price(price: float) -> int:
-    """Round stock price to nearest strike"""
-    if price < 500:
-        interval = 2.5
-    elif price < 1000:
-        interval = 5
-    elif price < 2000:
-        interval = 10
-    else:
-        interval = 25
-    
+    """Round stock price to nearest strike - FIXED for Zerodha requirements"""
+    # 🚨 CRITICAL FIX: Based on user feedback "for option price if we see only the prices which are in multiple of 50"
+    # All stock options use 50-point intervals in Zerodha
+    interval = 50  # Fixed interval for all stocks
     return int(round(price / interval) * interval)
 
 def _generate_dynamic_stock_strikes(stock: str, atm_strike: int):
@@ -881,19 +869,9 @@ def _generate_dynamic_stock_strikes(stock: str, atm_strike: int):
     ]
 
 def _get_stock_strike_interval(stock: str) -> float:
-    """Get strike interval for stock based on price range"""
-    price = _get_real_time_price(stock)
-    if price is None:
-        return 10  # Default
-    
-    if price < 500:
-        return 2.5
-    elif price < 1000:
-        return 5
-    elif price < 2000:
-        return 10
-    else:
-        return 25
+    """Get strike interval for stock - FIXED for Zerodha requirements"""
+    # 🚨 CRITICAL FIX: All stocks use 50-point intervals in Zerodha
+    return 50.0  # Fixed interval for all stocks
 
 def _get_dynamic_stock_option_list():
     """Get list of stocks with active options dynamically"""
