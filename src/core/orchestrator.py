@@ -1436,8 +1436,20 @@ class TradingOrchestrator:
             # Process all collected signals through deduplicator and trade engine
             if all_signals:
                 # Apply signal deduplication and quality filtering
-                self.logger.info(f"🔍 Deduplicating {len(all_signals)} raw signals")
-                filtered_signals = signal_deduplicator.process_signals(all_signals)
+                try:
+                    # 🚨 DEBUG: Check if all_signals contains coroutines
+                    for i, signal in enumerate(all_signals):
+                        if hasattr(signal, '__await__'):
+                            self.logger.error(f"❌ FOUND COROUTINE at index {i}: {type(signal)} - {signal}")
+                            all_signals[i] = {}  # Replace with empty dict to prevent crash
+                    
+                    self.logger.info(f"🔍 Deduplicating {len(all_signals)} raw signals")
+                except Exception as e:
+                    self.logger.error(f"❌ Error in signal deduplication preparation: {e}")
+                    self.logger.error(f"all_signals type: {type(all_signals)}, contents: {all_signals[:3] if len(all_signals) > 3 else all_signals}")
+                    return
+                
+                filtered_signals = await signal_deduplicator.process_signals(all_signals)
                 
                 if filtered_signals:
                     if self.trade_engine:
