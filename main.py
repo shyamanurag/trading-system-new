@@ -1510,7 +1510,23 @@ async def get_trades():
                         "status": "EXECUTED",
                         "strategy": "Zerodha",
                         "commission": 0,
-                        "executed_at": order.get('order_timestamp')
+                        "executed_at": order.get('order_timestamp'),
+                        
+                        # ENHANCED TRADE DETAILS FIX: Add more financial information
+                        "entry_price": price,
+                        "current_price": price,  # For executed trades, current = entry initially
+                        "side": side.lower(),
+                        "order_type": order.get('order_type', 'MARKET'),
+                        "product": order.get('product', 'MIS'),
+                        "exchange": order.get('exchange', 'NSE'),
+                        "invested_amount": price * quantity,
+                        "current_value": price * quantity,
+                        "unrealized_pnl": 0,
+                        "realized_pnl": 0,
+                        "total_pnl": 0,
+                        "day_change": 0,
+                        "day_change_percent": 0,
+                        "source": "ZERODHA_API"
                     }
                     
                     formatted_trades.append(trade_info)
@@ -2042,3 +2058,6 @@ async def get_realtime_balance():
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
+
+# FastAPI Trading System - Rate Limiting Fix Applied
+# Auto-deploys on DigitalOcean App Platform - Push triggers restart
