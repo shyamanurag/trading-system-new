@@ -19,120 +19,83 @@ router = APIRouter(prefix="/api/v1", tags=["positions"])
 async def get_current_positions(db: Session = Depends(get_db)):
     """Get current trading positions directly from Zerodha"""
     try:
-        # 🎯 CRITICAL FIX: Get positions directly from Zerodha instead of faulty database
-        try:
-            from src.core.orchestrator import get_orchestrator_instance
-            orchestrator = get_orchestrator_instance()
-            
-            if not orchestrator or not orchestrator.zerodha_client:
-                raise HTTPException(status_code=503, detail="Zerodha client not available")
-            
-            # Use Zerodha analytics service
-            from src.core.zerodha_analytics import get_zerodha_analytics_service
-            analytics_service = await get_zerodha_analytics_service(orchestrator.zerodha_client)
-            
-            # Get positions analytics from Zerodha
-            positions_analytics = await analytics_service.get_positions_analytics()
-            
-            if 'error' in positions_analytics:
-                raise HTTPException(status_code=500, detail=positions_analytics['error'])
-            
-            # Process Zerodha positions
-            position_list = []
-            positions_data = positions_analytics.get('positions', {})
-            
-            for position in positions_data.get('net', []):
-                try:
-                    symbol = position.get('tradingsymbol', 'UNKNOWN')
-                    quantity = position.get('quantity', 0)
-                    average_price = position.get('average_price', 0)
-                    last_price = position.get('last_price', average_price)
-                    unrealized_pnl = position.get('unrealised_pnl', 0)
-                    
-                    # Calculate P&L percentage
-                    position_value = average_price * abs(quantity)
-                    pnl_percent = (unrealized_pnl / position_value) * 100 if position_value > 0 else 0
-                    
-                    position_list.append({
-                        "symbol": symbol,
-                        "quantity": abs(quantity),
-                        "side": "LONG" if quantity > 0 else "SHORT",
-                        "entry_price": round(average_price, 2),
-                        "current_price": round(last_price, 2),
-                        "current_pnl": round(unrealized_pnl, 2),
-                        "pnl_percent": round(pnl_percent, 2),
-                        "strategies": "Zerodha Position",
-                        "trade_count": 1,
-                        "last_updated": datetime.now().isoformat()
-                    })
-                except Exception as pos_error:
-                    logger.error(f"Error processing Zerodha position {symbol}: {pos_error}")
-                    continue
-            
-            # Calculate summary
-            total_pnl = sum(pos["current_pnl"] for pos in position_list)
-            
+        # 🎯 CRITICAL FIX: Get positions directly from Zerodha
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        if not orchestrator or not orchestrator.zerodha_client:
+            raise HTTPException(status_code=503, detail="Zerodha client not available")
+        
+        # Get real positions data from Zerodha API
+        logger.info("📊 Fetching real positions from Zerodha API...")
+        positions_data = await orchestrator.zerodha_client.get_positions()
+        
+        if not positions_data:
+            logger.warning("⚠️ No positions data returned from Zerodha")
             return {
                 "success": True,
                 "data": {
-                    "positions": position_list,
+                    "positions": [],
                     "summary": {
-                        "total_positions": len(position_list),
-                        "total_pnl": round(total_pnl, 2),
-                        "long_positions": len([p for p in position_list if p["side"] == "LONG"]),
-                        "short_positions": len([p for p in position_list if p["side"] == "SHORT"])
+                        "total_positions": 0,
+                        "total_pnl": 0.0,
+                        "long_positions": 0,
+                        "short_positions": 0
                     }
                 },
-                "source": "ZERODHA_API"  # 🎯 INDICATE ZERODHA SOURCE
+                "source": "ZERODHA_API"
             }
-                
-        except Exception as orchestrator_error:
-            logger.warning(f"Real-time position tracker not available: {orchestrator_error}")
         
-        # 🎯 FALLBACK: Database aggregation only if real-time tracker fails
-        positions_query = text("""
-            SELECT 
-                symbol,
-                SUM(CASE WHEN trade_type = 'buy' THEN quantity ELSE -quantity END) as net_quantity,
-                AVG(CASE WHEN trade_type = 'buy' THEN price ELSE NULL END) as avg_buy_price,
-                AVG(CASE WHEN trade_type = 'sell' THEN price ELSE NULL END) as avg_sell_price,
-                SUM(pnl) as total_pnl,
-                AVG(pnl_percent) as avg_pnl_percent,
-                MAX(executed_at) as last_trade_time,
-                STRING_AGG(DISTINCT strategy, ', ') as strategies,
-                COUNT(*) as trade_count
-            FROM trades 
-            WHERE DATE(executed_at) = CURRENT_DATE
-            AND status = 'EXECUTED'
-            GROUP BY symbol
-            HAVING SUM(CASE WHEN trade_type = 'buy' THEN quantity ELSE -quantity END) != 0
-            ORDER BY MAX(executed_at) DESC
-        """)
-        
-        result = db.execute(positions_query)
-        positions = result.fetchall()
-        
+        # Process Zerodha net positions
         position_list = []
-        for pos in positions:
-            # Determine position side
-            side = "LONG" if pos.net_quantity > 0 else "SHORT"
-            entry_price = pos.avg_buy_price if pos.avg_buy_price else pos.avg_sell_price
-            
-            position_list.append({
-                "symbol": pos.symbol,
-                "quantity": abs(pos.net_quantity),
-                "side": side,
-                "entry_price": float(entry_price) if entry_price else 0,
-                "current_price": float(entry_price) if entry_price else 0,  # Static fallback
-                "current_pnl": float(pos.total_pnl) if pos.total_pnl else 0,
-                "pnl_percent": float(pos.avg_pnl_percent) if pos.avg_pnl_percent else 0,
-                "strategies": pos.strategies,
-                "trade_count": pos.trade_count,
-                "last_updated": pos.last_trade_time.isoformat() if pos.last_trade_time else None
-            })
+        net_positions = positions_data.get('net', [])
+        
+        logger.info(f"📊 Processing {len(net_positions)} net positions from Zerodha")
+        
+        for position in net_positions:
+            try:
+                symbol = position.get('tradingsymbol', 'UNKNOWN')
+                quantity = position.get('quantity', 0)
+                
+                # Skip positions with zero quantity
+                if quantity == 0:
+                    continue
+                
+                average_price = position.get('average_price', 0)
+                last_price = position.get('last_price', average_price)
+                unrealized_pnl = position.get('unrealised_pnl', 0)
+                
+                # Calculate P&L percentage
+                position_value = average_price * abs(quantity)
+                pnl_percent = (unrealized_pnl / position_value) * 100 if position_value > 0 else 0
+                
+                position_info = {
+                    "symbol": symbol,
+                    "quantity": abs(quantity),
+                    "side": "LONG" if quantity > 0 else "SHORT",
+                    "entry_price": round(average_price, 2),
+                    "current_price": round(last_price, 2),
+                    "current_pnl": round(unrealized_pnl, 2),
+                    "pnl_percent": round(pnl_percent, 2),
+                    "strategies": "Zerodha Position",
+                    "trade_count": 1,
+                    "last_updated": datetime.now().isoformat()
+                }
+                
+                position_list.append(position_info)
+                
+                logger.info(f"📊 Position: {symbol} | Qty: {quantity} | P&L: ₹{unrealized_pnl:.2f} ({pnl_percent:.2f}%)")
+                
+            except Exception as pos_error:
+                logger.error(f"Error processing Zerodha position {symbol}: {pos_error}")
+                continue
         
         # Calculate summary
         total_pnl = sum(pos["current_pnl"] for pos in position_list)
+        long_count = len([p for p in position_list if p["side"] == "LONG"])
+        short_count = len([p for p in position_list if p["side"] == "SHORT"])
+        
+        logger.info(f"📊 POSITIONS SUMMARY: {len(position_list)} positions, ₹{total_pnl:.2f} total P&L")
         
         return {
             "success": True,
@@ -141,28 +104,16 @@ async def get_current_positions(db: Session = Depends(get_db)):
                 "summary": {
                     "total_positions": len(position_list),
                     "total_pnl": round(total_pnl, 2),
-                    "long_positions": len([p for p in position_list if p["side"] == "LONG"]),
-                    "short_positions": len([p for p in position_list if p["side"] == "SHORT"])
+                    "long_positions": long_count,
+                    "short_positions": short_count
                 }
             },
-            "source": "DATABASE_FALLBACK"  # 🎯 INDICATE FALLBACK SOURCE
+            "source": "ZERODHA_API"
         }
-        
+            
     except Exception as e:
-        logger.error(f"Error getting positions: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "data": {
-                "positions": [],
-                "summary": {
-                    "total_positions": 0,
-                    "total_pnl": 0,
-                    "long_positions": 0,
-                    "short_positions": 0
-                }
-            }
-        }
+        logger.error(f"❌ Error fetching positions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch positions: {str(e)}")
 
 @router.get("/positions/summary")
 async def get_positions_summary(db: Session = Depends(get_db)):

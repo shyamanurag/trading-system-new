@@ -443,29 +443,82 @@ async def get_trades(
                 "source": "ZERODHA_API"
             }
         
-        # Use Zerodha analytics service
-        from src.core.zerodha_analytics import get_zerodha_analytics_service
-        analytics_service = await get_zerodha_analytics_service(orchestrator.zerodha_client)
+        # Get orders directly from Zerodha API
+        logger.info("📋 Fetching today's orders from Zerodha API...")
+        orders = await orchestrator.zerodha_client.get_orders()
         
-        # Get today's trades from Zerodha
-        trades = await analytics_service.get_trade_history(1)  # Last 1 day
+        if not orders:
+            logger.warning("⚠️ No orders returned from Zerodha API")
+            return {
+                "success": True,
+                "trades": [],
+                "count": 0,
+                "message": "No orders found in Zerodha",
+                "source": "ZERODHA_API",
+                "timestamp": datetime.now().isoformat()
+            }
         
-        # Format trades for dashboard
+        # Filter today's orders and format as trades
         formatted_trades = []
-        for trade in trades:
-            formatted_trades.append({
-                "trade_id": trade.get('order_id', 'UNKNOWN'),
-                "symbol": trade.get('symbol', 'UNKNOWN'),
-                "trade_type": trade.get('side', 'UNKNOWN').lower(),
-                "quantity": trade.get('quantity', 0),
-                "price": trade.get('price', 0),
-                "pnl": 0,  # Will be calculated by Zerodha analytics
-                "pnl_percent": 0,  # Will be calculated by Zerodha analytics
-                "status": trade.get('status', 'EXECUTED'),
-                "strategy": "Zerodha Trade",
-                "commission": 0,
-                "executed_at": trade.get('timestamp', datetime.now().isoformat())
-            })
+        today = datetime.now().date()
+        
+        logger.info(f"📋 Processing {len(orders)} orders from Zerodha...")
+        
+        for order in orders:
+            try:
+                # Get order timestamp
+                order_timestamp = order.get('order_timestamp', '')
+                if order_timestamp:
+                    try:
+                        if 'T' in order_timestamp:
+                            order_date = datetime.fromisoformat(order_timestamp.replace('Z', '+00:00'))
+                        else:
+                            order_date = datetime.strptime(order_timestamp, '%Y-%m-%d %H:%M:%S')
+                        
+                        # Only include today's orders
+                        if order_date.date() != today:
+                            continue
+                    except:
+                        # Include orders with unparseable timestamps
+                        pass
+                
+                # Only include completed orders
+                status = order.get('status', '')
+                if status not in ['COMPLETE', 'EXECUTED']:
+                    continue
+                
+                symbol = order.get('tradingsymbol', 'UNKNOWN')
+                quantity = order.get('quantity', 0)
+                price = order.get('average_price', order.get('price', 0))
+                side = order.get('transaction_type', 'UNKNOWN')
+                
+                # Calculate basic P&L (for completed orders)
+                pnl = 0
+                pnl_percent = 0
+                
+                trade_info = {
+                    "trade_id": order.get('order_id', 'UNKNOWN'),
+                    "symbol": symbol,
+                    "trade_type": side.lower(),
+                    "quantity": quantity,
+                    "price": price,
+                    "pnl": pnl,
+                    "pnl_percent": pnl_percent,
+                    "status": status,
+                    "strategy": "Manual/Zerodha",
+                    "commission": 0,  # Zerodha doesn't provide this in orders API
+                    "executed_at": order_timestamp
+                }
+                
+                formatted_trades.append(trade_info)
+                
+                logger.info(f"📊 Trade: {symbol} | {side} | Qty: {quantity} | Price: ₹{price}")
+                
+            except Exception as order_error:
+                logger.warning(f"Error processing order: {order_error}")
+                continue
+        
+        logger.info(f"📊 TRADES SUMMARY: {len(formatted_trades)} trades found for today")
         
         return {
             "success": True,
