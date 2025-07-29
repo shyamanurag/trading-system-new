@@ -55,6 +55,16 @@ class ZerodhaIntegration:
         self.ws_reconnect_delay = 5
         self.ws_max_reconnect_attempts = 10
         
+        # Connection state tracking
+        self.connection_state = ConnectionState.DISCONNECTED
+        self.is_connected = False
+        self.ticker_connected = False
+        self.last_health_check = None
+        self.last_error = None
+        self.reconnect_attempts = 0
+        self.ws_reconnect_attempts = 0
+        self.ws_last_reconnect = None
+        
         # 🚨 FIX: Add instruments caching to prevent rate limiting
         self._instruments_cache = {}
         self._cache_expiry = {}
