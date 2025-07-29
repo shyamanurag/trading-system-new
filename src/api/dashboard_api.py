@@ -18,6 +18,28 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+async def get_real_zerodha_balance(orchestrator) -> float:
+    """Get actual Zerodha wallet balance for dashboard display"""
+    try:
+        if not orchestrator or not orchestrator.zerodha_client:
+            logger.warning("⚠️ No Zerodha client available for balance check")
+            return 0.0
+        
+        # Get real margins from Zerodha
+        margins = await orchestrator.zerodha_client.get_margins()
+        if not margins:
+            logger.warning("⚠️ Failed to fetch margins from Zerodha")
+            return 0.0
+        
+        # Extract available cash
+        available_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
+        logger.info(f"💰 Real Zerodha Balance for Dashboard: ₹{available_cash:,.2f}")
+        return float(available_cash)
+        
+    except Exception as e:
+        logger.error(f"❌ Error fetching real Zerodha balance: {e}")
+        return 0.0
+
 @router.get("/health/detailed")
 async def get_detailed_health():
     """Get REAL system health status - NO FAKE DATA"""
@@ -428,7 +450,7 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                 "daily_pnl": round(daily_pnl, 2),
                 "active_users": 1 if autonomous_status.get('system_ready') else 0,  # Show 1 user when system is ready
                 "total_pnl": round(daily_pnl, 2),  # Same as daily for now
-                "aum": 1000000.0,  # Paper trading capital
+                "aum": await get_real_zerodha_balance(orchestrator),  # REAL Zerodha wallet balance
                 "daily_volume": round(abs(daily_pnl) * 10, 2),  # Estimated volume
                 "market_status": "OPEN" if market_open else "CLOSED",
                 "system_health": "HEALTHY",

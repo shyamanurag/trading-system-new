@@ -505,7 +505,7 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
 
                         <Box>
                             <Typography variant="body2" color="text.secondary" gutterBottom>
-                                👥 Multi-User System | 🎯 Master: QSW899 | 💰 Capital: ₹10,00,000 | 🔴 Live Trading Mode
+                                👥 Multi-User System | 🎯 Master: QSW899 | 💰 Capital: ₹{dashboardData?.system_metrics?.aum?.toLocaleString('en-IN') || '0'} | 🔴 Live Trading Mode
                             </Typography>
 
                             <Alert severity="info" sx={{ mb: 2 }}>
