@@ -123,26 +123,33 @@ class RegimeAdaptiveController:
             # Calculate aggregate market metrics from all symbols
             total_volume = 0
             total_price_change = 0
+            total_ltp = 0
             symbol_count = 0
             
             for symbol, symbol_data in data.items():
                 if isinstance(symbol_data, dict):
                     volume = symbol_data.get('volume', 0)
                     price_change = symbol_data.get('price_change', 0)
+                    # 🚨 CRITICAL FIX: Get LTP for close price calculation
+                    ltp = symbol_data.get('ltp', 0) or symbol_data.get('close', 0)
                     
                     total_volume += volume
                     total_price_change += abs(price_change)
+                    total_ltp += ltp
                     symbol_count += 1
             
             if symbol_count > 0:
                 avg_volatility = total_price_change / symbol_count
                 avg_volume = total_volume / symbol_count
+                # 🚨 CRITICAL FIX: Calculate average close price for regime analysis
+                avg_close = total_ltp / symbol_count
                 
-                # Store for regime analysis
+                # Store for regime analysis with close price included
                 regime_data = {
                     'timestamp': timestamp,
                     'volatility': avg_volatility,
                     'volume': avg_volume,
+                    'close': avg_close,  # 🚨 FIX: Add close field for technical analysis
                     'symbol_count': symbol_count
                 }
                 

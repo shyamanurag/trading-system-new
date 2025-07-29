@@ -541,8 +541,16 @@ class ZerodhaIntegration:
         for attempt in range(self.max_retries):
             try:
                 if not self.kite:
+                    logger.error("❌ KiteConnect not initialized - cannot get positions")
                     return {'net': [], 'day': []}
-                return await self._async_api_call(self.kite.positions)
+                if not self.access_token:
+                    logger.error("❌ No access token - cannot get positions")
+                    return {'net': [], 'day': []}
+                    
+                logger.info(f"📊 Getting positions from Zerodha (attempt {attempt + 1})")
+                result = await self._async_api_call(self.kite.positions)
+                logger.info(f"✅ Got positions: {len(result.get('net', []))} net, {len(result.get('day', []))} day")
+                return result
             except Exception as e:
                 logger.error(f"❌ Get positions attempt {attempt + 1} failed: {e}")
                 if attempt < self.max_retries - 1:
@@ -554,8 +562,16 @@ class ZerodhaIntegration:
         for attempt in range(self.max_retries):
             try:
                 if not self.kite:
+                    logger.error("❌ KiteConnect not initialized - cannot get holdings")
                     return {'holdings': []}
-                return await self._async_api_call(self.kite.holdings)
+                if not self.access_token:
+                    logger.error("❌ No access token - cannot get holdings")
+                    return {'holdings': []}
+                    
+                logger.info(f"📊 Getting holdings from Zerodha (attempt {attempt + 1})")
+                result = await self._async_api_call(self.kite.holdings)
+                logger.info(f"✅ Got {len(result)} holdings")
+                return result
             except Exception as e:
                 logger.error(f"❌ Get holdings attempt {attempt + 1} failed: {e}")
                 if attempt < self.max_retries - 1:
@@ -567,8 +583,16 @@ class ZerodhaIntegration:
         for attempt in range(self.max_retries):
             try:
                 if not self.kite:
+                    logger.error("❌ KiteConnect not initialized - cannot get margins")
                     return {'equity': {'available': {'cash': 100000}}}
-                return await self._async_api_call(self.kite.margins)
+                if not self.access_token:
+                    logger.error("❌ No access token - cannot get margins")
+                    return {'equity': {'available': {'cash': 100000}}}
+                    
+                logger.info(f"📊 Getting margins from Zerodha (attempt {attempt + 1})")
+                result = await self._async_api_call(self.kite.margins)
+                logger.info(f"✅ Got margins: ₹{result.get('equity', {}).get('available', {}).get('cash', 0)}")
+                return result
             except Exception as e:
                 logger.error(f"❌ Get margins attempt {attempt + 1} failed: {e}")
                 if attempt < self.max_retries - 1:
@@ -580,9 +604,16 @@ class ZerodhaIntegration:
         for attempt in range(self.max_retries):
             try:
                 if not self.kite:
-                    logger.warning("⚠️ Cannot get orders - KiteConnect not initialized")
+                    logger.error("❌ KiteConnect not initialized - cannot get orders")
                     return []
-                return await self._async_api_call(self.kite.orders)
+                if not self.access_token:
+                    logger.error("❌ No access token - cannot get orders")
+                    return []
+                    
+                logger.info(f"📊 Getting orders from Zerodha (attempt {attempt + 1})")
+                result = await self._async_api_call(self.kite.orders)
+                logger.info(f"✅ Got {len(result)} orders")
+                return result
             except Exception as e:
                 logger.error(f"❌ Get orders attempt {attempt + 1} failed: {e}")
                 if attempt < self.max_retries - 1:

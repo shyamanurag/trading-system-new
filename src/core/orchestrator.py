@@ -2361,6 +2361,37 @@ class TradingOrchestrator:
         self.logger.info(f"🔄 Updating ALL Zerodha tokens for user: {user_id}")
         
         try:
+            # 🚨 CRITICAL FIX: Initialize zerodha_client if it doesn't exist
+            if not self.zerodha_client:
+                self.logger.warning("⚠️ No Zerodha client exists - creating new one with token")
+                try:
+                    # Get API credentials from environment
+                    api_key = os.environ.get('ZERODHA_API_KEY')
+                    api_secret = os.environ.get('ZERODHA_API_SECRET')
+                    
+                    if api_key and user_id:
+                        from brokers.zerodha import ZerodhaIntegration
+                        
+                        # Create new zerodha client with token
+                        zerodha_config = {
+                            'api_key': api_key,
+                            'user_id': user_id,
+                            'access_token': access_token,
+                            'allow_token_update': True,
+                            'max_retries': 3,
+                            'retry_delay': 5,
+                            'health_check_interval': 30,
+                            'order_rate_limit': 1.0
+                        }
+                        
+                        self.zerodha_client = ZerodhaIntegration(zerodha_config)
+                        self.logger.info("✅ Created new Zerodha client with fresh token")
+                    else:
+                        self.logger.error("❌ Cannot create Zerodha client - missing API credentials")
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to create new Zerodha client: {e}")
+            
             # 1. Update primary orchestrator client
             if self.zerodha_client:
                 await self.zerodha_client.update_access_token(access_token)
@@ -2371,6 +2402,10 @@ class TradingOrchestrator:
                 if self.trade_engine.zerodha_client:
                     await self.trade_engine.zerodha_client.update_access_token(access_token)
                     self.logger.info("✅ Updated trade engine Zerodha client token")
+                else:
+                    # 🚨 CRITICAL FIX: Set trade engine zerodha client if missing
+                    self.trade_engine.zerodha_client = self.zerodha_client
+                    self.logger.info("✅ Assigned orchestrator Zerodha client to trade engine")
             
             # 3. Update connection manager instances if they exist
             try:
@@ -2395,6 +2430,12 @@ class TradingOrchestrator:
             # 5. Update environment variables for any future clients
             os.environ['ZERODHA_ACCESS_TOKEN'] = access_token
             self.logger.info("✅ Updated environment variable ZERODHA_ACCESS_TOKEN")
+            
+            # 🚨 CRITICAL FIX: Verify trade engine has zerodha client access
+            if hasattr(self, 'trade_engine') and self.trade_engine:
+                if not self.trade_engine.zerodha_client and self.zerodha_client:
+                    self.trade_engine.zerodha_client = self.zerodha_client
+                    self.logger.info("✅ FINAL FIX: Ensured trade engine has Zerodha client access")
             
             self.logger.info("🎯 ALL Zerodha client tokens updated successfully")
             return True

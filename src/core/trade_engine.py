@@ -119,6 +119,8 @@ class TradeEngine:
                     execution_results.append(result)
                     # TRACK: Signal executed successfully
                     self._track_signal_executed(signal)
+                    # 🚨 CRITICAL FIX: Mark signal as executed to prevent duplicates across deploys
+                    await self._mark_signal_executed_in_deduplicator(signal)
                     self.logger.info(f"✅ Signal executed: {signal.get('symbol')} {signal.get('action')}")
                 else:
                     execution_results.append(None)
@@ -195,6 +197,20 @@ class TradeEngine:
         except Exception as e:
             self.logger.error(f"❌ Error getting Zerodha client from orchestrator: {e}")
             return False
+    
+    async def _mark_signal_executed_in_deduplicator(self, signal: Dict):
+        """Mark signal as executed in deduplicator to prevent duplicates across deploys"""
+        try:
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if orchestrator and hasattr(orchestrator, 'signal_deduplicator'):
+                await orchestrator.signal_deduplicator.mark_signal_executed(signal)
+            else:
+                self.logger.warning("⚠️ Signal deduplicator not available - cannot mark signal as executed")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error marking signal as executed: {e}")
     
     async def _process_paper_signal(self, signal: Dict):
         """Process paper trading signal - ONLY store if actually executed by Zerodha"""

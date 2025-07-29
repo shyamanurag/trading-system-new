@@ -26,11 +26,92 @@ class SignalDeduplicator:
         self.min_confidence_threshold = 0.65  # Slightly lowered to capture 0.65 confidence signals
         self.max_signals_per_symbol = 2  # Allow 2 signals per symbol per period 
         self.deduplication_window = 30  # Reduced to 30 seconds window
+
+        # 🚨 CRITICAL FIX: Redis persistence for executed signals across deploys
+        self.redis_client = None
+        self._init_redis_connection()
         
-    def process_signals(self, signals: List[Dict]) -> List[Dict]:
+    def _init_redis_connection(self):
+        """Initialize Redis connection for persistent signal tracking"""
+        try:
+            import redis.asyncio as redis
+            import os
+            redis_url = os.getenv('REDIS_URL')
+            if redis_url:
+                self.redis_client = redis.from_url(
+                    redis_url, 
+                    decode_responses=True,
+                    ssl_cert_reqs=None,
+                    ssl_check_hostname=False
+                )
+                logger.info("✅ Signal deduplicator Redis connection initialized")
+            else:
+                logger.warning("⚠️ No REDIS_URL - signal deduplication will be memory-only")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to init Redis for signal deduplication: {e}")
+        
+    async def _check_signal_already_executed(self, signal: Dict) -> bool:
+        """Check if this signal was already executed today (across deploys)"""
+        try:
+            if not self.redis_client:
+                return False
+                
+            symbol = signal.get('symbol')
+            action = signal.get('action', 'BUY')
+            
+            # Check if signal was executed in last 24 hours
+            today = datetime.now().strftime('%Y-%m-%d')
+            executed_key = f"executed_signals:{today}:{symbol}:{action}"
+            
+            executed_count = await self.redis_client.get(executed_key)
+            if executed_count and int(executed_count) > 0:
+                logger.warning(f"🚫 DUPLICATE SIGNAL BLOCKED: {symbol} {action} already executed {executed_count} times today")
+                return True
+                
+            return False
+            
+        except Exception as e:
+            logger.error(f"❌ Error checking executed signals in Redis: {e}")
+            return False
+    
+    async def mark_signal_executed(self, signal: Dict):
+        """Mark signal as executed to prevent future duplicates"""
+        try:
+            if not self.redis_client:
+                return
+                
+            symbol = signal.get('symbol')
+            action = signal.get('action', 'BUY')
+            
+            # Increment execution count for today
+            today = datetime.now().strftime('%Y-%m-%d')
+            executed_key = f"executed_signals:{today}:{symbol}:{action}"
+            
+            await self.redis_client.incr(executed_key)
+            await self.redis_client.expire(executed_key, 86400)  # 24 hours
+            
+            logger.info(f"✅ Marked signal as executed: {symbol} {action}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error marking signal as executed: {e}")
+        
+    async def process_signals(self, signals: List[Dict]) -> List[Dict]:
         """Process and deduplicate signals, return only high-quality unique signals"""
         if not signals:
             return []
+        
+        # 🚨 CRITICAL FIX: Check for already executed signals first
+        filtered_signals = []
+        for signal in signals:
+            if await self._check_signal_already_executed(signal):
+                continue  # Skip this signal - already executed
+            filtered_signals.append(signal)
+        
+        if len(filtered_signals) < len(signals):
+            logger.info(f"🚫 BLOCKED {len(signals) - len(filtered_signals)} duplicate signals from previous executions")
+        
+        # Continue with normal processing
+        signals = filtered_signals
         
         # Clean up old signals periodically
         self._cleanup_old_signals()
