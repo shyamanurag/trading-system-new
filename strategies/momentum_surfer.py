@@ -210,23 +210,13 @@ class EnhancedMomentumSurfer(BaseStrategy):
         elif price_change <= thresholds['moderate_negative']:
             momentum_score -= 2
         
-        # Volume confirmation (must be significant)
+        # Volume confirmation (FIXED: Make volume additive, not penalty-based)
         if volume_change > thresholds['volume_threshold']:
             momentum_score += 1 if momentum_score > 0 else -1
-        else:
-            # Penalize low volume moves (likely noise)
-            momentum_score = int(momentum_score * 0.5)
+        # REMOVED: Penalty for low volume - let price momentum drive signals
         
-        # Trend confirmation filter
-        if trend_data:
-            trend_strength = trend_data.get('trend_strength', 0)
-            if abs(trend_strength) < 0.1:  # Weak trend
-                momentum_score = int(momentum_score * 0.7)  # Reduce score
-        
-        # Market volatility filter
-        volatility = trend_data.get('volatility', 0) if trend_data else 0
-        if volatility > 2.0:  # High volatility market
-            momentum_score = int(momentum_score * 0.8)  # Reduce score in choppy markets
+        # REMOVED: Trend confirmation penalty - too restrictive for scalping
+        # REMOVED: Market volatility penalty - we WANT volatility for scalping
         
         # Determine signal strength and action (stricter criteria)
         if momentum_score >= 3:
@@ -271,32 +261,26 @@ class EnhancedMomentumSurfer(BaseStrategy):
         elif momentum_analysis['signal_strength'] == 'moderate_momentum':
             base_confidence = 0.5
         
-        # Boost confidence for meaningful price change (not noise)
-        if abs(price_change) >= 0.2:  # Meaningful move
-            price_boost = min(abs(price_change) / 1.0, 0.25)  # Up to 25% boost
+        # FIXED: Boost confidence for meaningful price change (realistic thresholds)
+        if abs(price_change) >= 0.08:  # 0.08% move (aligned with strategy thresholds)
+            price_boost = min(abs(price_change) / 0.5, 0.25)  # Up to 25% boost for 0.5% move
         else:
-            price_boost = 0  # No boost for small moves
+            price_boost = 0  # No boost for very small moves
         
         # Boost confidence for significant volume
-        if volume_change >= 25:  # Significant volume
-            volume_boost = min(volume_change / 100, 0.15)  # Up to 15% boost
+        if volume_change >= 20:
+            volume_boost = min(volume_change / 100, 0.2)  # Up to 20% boost
+        elif volume_change >= 10:
+            volume_boost = min(volume_change / 200, 0.1)  # Up to 10% boost
         else:
-            volume_boost = 0  # No boost for low volume
+            volume_boost = 0
         
-        # Trend alignment boost
-        trend_boost = 0
-        if trend_data:
-            trend_strength = trend_data.get('trend_strength', 0)
-            if abs(trend_strength) > 0.3:  # Strong trend
-                trend_boost = 0.1
+        # REMOVED: Trend confirmation boost - too complex for scalping
         
-        # Market condition penalty
-        market_penalty = 0
-        if trend_data:
-            volatility = trend_data.get('volatility', 0)
-            if volatility > 2.0:  # High volatility/choppy market
-                market_penalty = 0.2
+        # REMOVED: Time-based penalty - scalping should be fast
         
-        final_confidence = base_confidence + price_boost + volume_boost + trend_boost - market_penalty
+        # Calculate final confidence
+        final_confidence = base_confidence + price_boost + volume_boost
         
-        return max(0.1, min(final_confidence, 0.95))  # Cap between 10% and 95%
+        # Cap confidence at 95%
+        return min(final_confidence, 0.95)

@@ -739,7 +739,7 @@ router_configs = [
     ('error_monitoring', '/api/v1/errors', ('error-monitoring',)),
     ('database_health', '/api/v1/db-health', ('database-health',)),
     ('database_admin', '', ('database-admin',)),  # CRITICAL FIX: Mount database admin router
-    ('dashboard', '/api/v1/dashboard', ('dashboard',)),
+    ('dashboard', '', ('dashboard',)),
     ('reports', '', ('reports',)),  # Already has /api/reports prefix
     ('system_status', '', ('system-status',)),  # Has full paths in router
     ('system_config', '/api/v1', ('system-config',)),  # System configuration endpoints

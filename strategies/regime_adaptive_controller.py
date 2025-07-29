@@ -91,34 +91,70 @@ class RegimeAdaptiveController:
         """Initialize the strategy"""
         logger.info(f"Initializing {self.__class__.__name__} strategy")
         self._initialize_strategy()
+        # CRITICAL FIX: Set strategy to active
+        self.is_active = True
+        logger.info(f"✅ {self.name} strategy activated successfully")
         return True
     
     async def on_market_data(self, data: Dict):
-        """Handle incoming market data and generate signals"""
+        """Handle incoming market data and update regime analysis"""
         if not self.is_active:
             return
             
         try:
-            # Check SCALPING cooldown
-            if not self._is_scalping_cooldown_passed():
-                return
-                
-            # Process market data and generate signals
-            signals = self._generate_signals(data)
+            # Add data to historical buffer for regime analysis
+            await self._process_market_data_for_regime(data)
             
-            # FIXED: Only store signals for orchestrator collection - no direct execution
-            for signal in signals:
-                self.current_positions[signal['symbol']] = signal
-                logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
-                           f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
+            # Update market regime based on accumulated data
+            await self.update_regime()
             
-            # Update last signal time if signals generated
-            if signals:
-                self.last_signal_time = datetime.now()
-                
+            # Note: This strategy doesn't generate trading signals directly
+            # It acts as a meta-controller that adjusts other strategies
+            
         except Exception as e:
             logger.error(f"Error in {self.name} strategy: {str(e)}")
-        
+    
+    async def _process_market_data_for_regime(self, data: Dict):
+        """Process market data for regime analysis"""
+        try:
+            # Extract market metrics for regime detection
+            timestamp = datetime.now()
+            
+            # Calculate aggregate market metrics from all symbols
+            total_volume = 0
+            total_price_change = 0
+            symbol_count = 0
+            
+            for symbol, symbol_data in data.items():
+                if isinstance(symbol_data, dict):
+                    volume = symbol_data.get('volume', 0)
+                    price_change = symbol_data.get('price_change', 0)
+                    
+                    total_volume += volume
+                    total_price_change += abs(price_change)
+                    symbol_count += 1
+            
+            if symbol_count > 0:
+                avg_volatility = total_price_change / symbol_count
+                avg_volume = total_volume / symbol_count
+                
+                # Store for regime analysis
+                regime_data = {
+                    'timestamp': timestamp,
+                    'volatility': avg_volatility,
+                    'volume': avg_volume,
+                    'symbol_count': symbol_count
+                }
+                
+                self.historical_data.append(regime_data)
+                
+                # Keep only recent data
+                if len(self.historical_data) > self.max_history:
+                    self.historical_data.pop(0)
+                    
+        except Exception as e:
+            logger.error(f"Error processing market data for regime: {e}")
+    
     async def update_regime(self) -> MarketRegime:
         """Update market regime based on accumulated historical data - FIXED"""
         try:

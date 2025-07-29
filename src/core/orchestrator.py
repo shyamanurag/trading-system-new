@@ -1627,10 +1627,16 @@ class TradingOrchestrator:
                         volume_change = volume - prev_volume if prev_volume > 0 else 0
                         volume_change_percent = (volume_change / prev_volume * 100) if prev_volume > 0 else 0
                         
+                        # CRITICAL FIX: Calculate price change (required for strategies but was missing!)
+                        prev_price = self.market_data_history.get(symbol, {}).get('price', 0)
+                        price_change = ltp - prev_price if prev_price > 0 else 0
+                        price_change_percent = (price_change / prev_price * 100) if prev_price > 0 else 0
+                        
                         # Store current data for next comparison
                         if symbol not in self.market_data_history:
                             self.market_data_history[symbol] = {}
                         self.market_data_history[symbol]['volume'] = volume
+                        self.market_data_history[symbol]['price'] = ltp
                         
                         # Extract OHLC data with fallbacks
                         ohlc = {
@@ -1656,6 +1662,8 @@ class TradingOrchestrator:
                             'volume': volume,
                             'volume_change': volume_change,
                             'volume_change_percent': volume_change_percent,
+                            'price_change': price_change,
+                            'price_change_percent': price_change_percent,
                             'bid': float(bid),
                             'ask': float(ask),
                             'spread': spread,
@@ -1799,11 +1807,12 @@ class TradingOrchestrator:
                 'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
                 'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},
                 'volume_profile_scalper': {'name': 'EnhancedVolumeProfileScalper', 'config': {}},
+                'news_impact_scalper': {'name': 'EnhancedNewsImpactScalper', 'config': {}},
                 'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}},
                 'confluence_amplifier': {'name': 'ConfluenceAmplifier', 'config': {}}
             }
             
-            self.logger.info(f"Loading {len(strategy_configs)} trading strategies (news_impact_scalper removed for debugging)...")
+            self.logger.info(f"Loading {len(strategy_configs)} trading strategies...")
             
             for strategy_key, strategy_info in strategy_configs.items():
                 try:
@@ -1817,6 +1826,9 @@ class TradingOrchestrator:
                     elif strategy_key == 'volume_profile_scalper':
                         from strategies.volume_profile_scalper import EnhancedVolumeProfileScalper
                         strategy_instance = EnhancedVolumeProfileScalper(strategy_info['config'])
+                    elif strategy_key == 'news_impact_scalper':
+                        from strategies.news_impact_scalper import EnhancedNewsImpactScalper
+                        strategy_instance = EnhancedNewsImpactScalper(strategy_info['config'])
                     elif strategy_key == 'regime_adaptive_controller':
                         from strategies.regime_adaptive_controller import RegimeAdaptiveController
                         strategy_instance = RegimeAdaptiveController(strategy_info['config'])

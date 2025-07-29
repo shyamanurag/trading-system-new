@@ -294,6 +294,41 @@ async def truedata_websocket(websocket, symbol: str):
         logger.error(f"WebSocket error for symbol {symbol}: {e}")
         await websocket.close(code=1011, reason="Internal error")
 
+@router.get("/cache/inspect")
+async def inspect_cache():
+    """Inspect current cache state for debugging"""
+    try:
+        from data.truedata_client import live_market_data, truedata_connection_status
+        
+        # Get sample data
+        sample_symbols = list(live_market_data.keys())[:5]
+        sample_data = {}
+        for symbol in sample_symbols:
+            data = live_market_data.get(symbol, {})
+            sample_data[symbol] = {
+                'ltp': data.get('ltp', 0),
+                'volume': data.get('volume', 0),
+                'change_percent': data.get('change_percent', 0),
+                'timestamp': data.get('timestamp', 'unknown'),
+                'has_ohlc': data.get('data_quality', {}).get('has_ohlc', False)
+            }
+        
+        return {
+            "success": True,
+            "cache_size": len(live_market_data),
+            "connection_status": truedata_connection_status,
+            "sample_data": sample_data,
+            "all_symbols": list(live_market_data.keys()),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "cache_size": 0
+        }
+
 @router.get("/debug/client-internals")
 async def debug_client_internals():
     """Debug TrueData client internals"""
