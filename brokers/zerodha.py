@@ -44,6 +44,17 @@ class ZerodhaIntegration:
         self.max_retries = 3
         self.retry_delay = 2
         
+        # Rate limiting and semaphore
+        self.order_semaphore = asyncio.Semaphore(1)  # Limit concurrent orders
+        self.order_rate_limit = config.get('order_rate_limit', 1.0)  # 1 order per second
+        self.last_order_time = 0
+        
+        # WebSocket and monitoring attributes
+        self.ticker = None
+        self.health_check_interval = config.get('health_check_interval', 30)
+        self.ws_reconnect_delay = config.get('ws_reconnect_delay', 5)
+        self.ws_max_reconnect_attempts = config.get('ws_max_reconnect_attempts', 10)
+        
         # 🚨 FIX: Add instruments caching to prevent rate limiting
         self._instruments_cache = {}
         self._cache_expiry = {}
