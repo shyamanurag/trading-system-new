@@ -521,10 +521,34 @@ class BaseStrategy:
             logger.error(f"Error creating futures signal: {e}")
             return None
     
+    def _get_real_market_price(self, symbol: str) -> Optional[float]:
+        """Get real market price from TrueData cache to ensure accurate strike calculation"""
+        try:
+            from data.truedata_client import live_market_data
+            if live_market_data and symbol in live_market_data:
+                stock_price = live_market_data[symbol].get('ltp', 0)
+                logger.debug(f"📊 Real market price for {symbol}: ₹{stock_price}")
+                return float(stock_price) if stock_price > 0 else None
+            else:
+                logger.warning(f"⚠️ No real market data available for {symbol}")
+                return None
+        except Exception as e:
+            logger.error(f"Error getting real market price for {symbol}: {e}")
+            return None
+
     def _convert_to_options_symbol(self, underlying_symbol: str, current_price: float, action: str) -> tuple:
         """Convert equity signal to options symbol with BUY-only approach - FIXED SYMBOL FORMAT"""
         
         try:
+            # 🚨 CRITICAL FIX: Get REAL market price instead of using entry_price which might be wrong
+            real_market_price = self._get_real_market_price(underlying_symbol)
+            if real_market_price and real_market_price > 0:
+                actual_price = real_market_price
+                logger.info(f"🔍 PRICE CORRECTION: Using real market price ₹{actual_price:.2f} instead of ₹{current_price:.2f}")
+            else:
+                actual_price = current_price
+                logger.warning(f"⚠️ Using passed price ₹{actual_price:.2f} (real price unavailable)")
+            
             # 🎯 CRITICAL FIX: Convert to Zerodha's official symbol name FIRST
             from config.truedata_symbols import get_zerodha_symbol
             zerodha_underlying = get_zerodha_symbol(underlying_symbol)
@@ -533,7 +557,7 @@ class BaseStrategy:
             # 🔧 IMPORTANT: Only use indices with confirmed options contracts on Zerodha
             if zerodha_underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:  # REMOVED MIDCPNIFTY - no options
                 # Index options - use current levels
-                strike = self._get_atm_strike(zerodha_underlying, current_price)
+                strike = self._get_atm_strike(zerodha_underlying, actual_price)
                 # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
                 if action.upper() == 'BUY':
                     option_type = 'CE'  # BUY Call when bullish
@@ -555,7 +579,7 @@ class BaseStrategy:
                 return None, 'REJECTED'
             else:
                 # Stock options - convert equity to options using ZERODHA NAME
-                strike = self._get_atm_strike_for_stock(current_price)
+                strike = self._get_atm_strike_for_stock(actual_price)
                 # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
                 if action.upper() == 'BUY':
                     option_type = 'CE'  # BUY Call when bullish
@@ -570,6 +594,7 @@ class BaseStrategy:
                 logger.info(f"🎯 ZERODHA OPTIONS SYMBOL: {underlying_symbol} → {options_symbol}")
                 logger.info(f"   Mapping: {underlying_symbol} → {zerodha_underlying}")
                 logger.info(f"   Strike: {strike}, Expiry: {expiry}, Type: {option_type}")
+                logger.info(f"   Used Price: ₹{actual_price:.2f} (real market price)")
                 
                 return options_symbol, option_type
         except Exception as e:
