@@ -214,6 +214,14 @@ class TradeEngine:
                 self.logger.error("🚨 SYSTEM DESIGNED TO FAIL WHEN BROKER UNAVAILABLE - FIX ZERODHA CONNECTION")
                 return None
             
+            # CRITICAL: Check actual Zerodha wallet balance before placing order
+            estimated_order_value = signal.get('entry_price', 100) * quantity
+            
+            if not await self._check_available_capital(estimated_order_value):
+                self.logger.error(f"❌ ORDER REJECTED: Insufficient Zerodha wallet balance for {symbol}")
+                self.logger.error(f"❌ Required: ₹{estimated_order_value:,.2f} - Check your Zerodha account balance")
+                return None
+            
             # Place order via Zerodha (real execution)
             order_params = {
                 'symbol': symbol,
@@ -829,6 +837,42 @@ class TradeEngine:
             # Note: This method doesn't have access to order_params, so we'll use MIS for all equity orders
             # The actual decision will be made in the broker layer
             return 'MIS'  # Margin Intraday Square-off for short selling capability
+
+    async def _check_available_capital(self, order_value: float) -> bool:
+        """
+        Check actual Zerodha wallet balance before placing trades
+        CRITICAL: Uses real broker data, not hardcoded amounts
+        """
+        try:
+            if not self.zerodha_client:
+                self.logger.error("❌ Cannot check capital - Zerodha client not available")
+                return False
+            
+            # Get actual margin data from Zerodha
+            margins = await self.zerodha_client.get_margins()
+            
+            if not margins:
+                self.logger.error("❌ Failed to fetch margin data from Zerodha")
+                return False
+            
+            # Extract available cash from Zerodha margins
+            available_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
+            
+            self.logger.info(f"💰 Zerodha Wallet Balance: ₹{available_cash:,.2f}")
+            self.logger.info(f"📊 Required for Order: ₹{order_value:,.2f}")
+            
+            # Check if sufficient balance available
+            if available_cash >= order_value:
+                self.logger.info(f"✅ Sufficient balance available: ₹{available_cash:,.2f} >= ₹{order_value:,.2f}")
+                return True
+            else:
+                self.logger.error(f"❌ Insufficient balance: ₹{available_cash:,.2f} < ₹{order_value:,.2f}")
+                self.logger.error(f"❌ ORDER REJECTED: Need ₹{order_value - available_cash:,.2f} more")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error checking available capital: {e}")
+            return False
 
     def get_paper_orders(self) -> Dict:
         """Get all paper trading orders"""

@@ -8,6 +8,7 @@ import asyncio
 from datetime import datetime, time
 from typing import Dict, Any, List, Optional
 import json
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -59,53 +60,52 @@ class DailyCapitalSync:
             return sync_results
     
     async def _sync_zerodha_accounts(self) -> Dict[str, float]:
-        """Fetch real available funds from Zerodha accounts"""
+        """
+        Sync capital from actual Zerodha accounts - REAL WALLET BALANCE
+        ELIMINATED: All hardcoded capital amounts
+        """
         try:
-            zerodha_capitals = {}
+            logger.info("🔄 Syncing capital from REAL Zerodha accounts...")
             
-            # Get Zerodha client from orchestrator
-            if (not self.orchestrator or 
-                not hasattr(self.orchestrator, 'zerodha_client') or 
-                not self.orchestrator.zerodha_client):
-                logger.error("❌ No Zerodha client available")
+            # Get orchestrator to access Zerodha client
+            from src.core.orchestrator import get_orchestrator
+            orchestrator = await get_orchestrator()
+            
+            if not orchestrator or not orchestrator.zerodha_client:
+                logger.error("❌ Cannot sync capital - Zerodha client not available")
                 return {}
-                
-            zerodha_client = self.orchestrator.zerodha_client
             
-            # Get real margins from Zerodha API
-            logger.info("🔍 Fetching real margins from Zerodha API...")
-            margins_data = await zerodha_client.get_margins()
+            # Get actual margins from Zerodha
+            margins = await orchestrator.zerodha_client.get_margins()
             
-            if margins_data and 'equity' in margins_data:
-                available_cash = margins_data['equity'].get('available', {}).get('cash', 0)
-                
-                # Get user ID
-                user_id = zerodha_client.user_id or 'ZERODHA_USER'
-                zerodha_capitals[user_id] = float(available_cash)
-                
-                logger.info(f"✅ Zerodha account {user_id}: ₹{available_cash:,.2f} available")
-                
-                # Check if this is significantly different from hardcoded value
-                hardcoded_capital = 1000000.0
-                if abs(available_cash - hardcoded_capital) > 10000:  # More than 10K difference
-                    logger.warning(f"⚠️ SIGNIFICANT DIFFERENCE:")
-                    logger.warning(f"   Hardcoded: ₹{hardcoded_capital:,.2f}")
-                    logger.warning(f"   Real Available: ₹{available_cash:,.2f}")
-                    logger.warning(f"   Using REAL amount for position sizing!")
-                
-            else:
-                logger.error("❌ Could not fetch margins from Zerodha")
-                
-                # Fallback to hardcoded for testing
-                fallback_capital = 1000000.0
-                user_id = zerodha_client.user_id or 'ZERODHA_USER'
-                zerodha_capitals[user_id] = fallback_capital
-                logger.warning(f"⚠️ Using fallback capital: ₹{fallback_capital:,.2f}")
+            if not margins:
+                logger.error("❌ Failed to fetch margin data from Zerodha")
+                return {}
             
-            return zerodha_capitals
+            # Extract real available capital
+            available_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
+            total_margin = margins.get('equity', {}).get('available', {}).get('collateral', 0)
+            
+            # Use actual Zerodha user ID from environment
+            user_id = os.environ.get('ZERODHA_USER_ID', 'QSW899')
+            
+            # Store real capital data
+            capital_data = {
+                user_id: available_cash
+            }
+            
+            logger.info(f"💰 REAL Zerodha Capital Synced:")
+            logger.info(f"   User: {user_id}")
+            logger.info(f"   Available Cash: ₹{available_cash:,.2f}")
+            logger.info(f"   Total Margin: ₹{total_margin:,.2f}")
+            logger.info("🚫 ELIMINATED: All hardcoded capital amounts")
+            
+            return capital_data
             
         except Exception as e:
-            logger.error(f"❌ Error fetching Zerodha margins: {e}")
+            logger.error(f"❌ Error syncing Zerodha accounts: {e}")
+            # SAFETY: Return empty dict instead of hardcoded fallback
+            logger.error("🚨 SAFETY: No fallback to hardcoded capital - real broker data required")
             return {}
     
     async def _update_system_capitals(self, account_capitals: Dict[str, float]):
