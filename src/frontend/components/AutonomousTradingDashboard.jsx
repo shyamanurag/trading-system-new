@@ -157,15 +157,24 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
     const [showZerodhaAuth, setShowZerodhaAuth] = useState(false);
     const [showMultiUserAuth, setShowMultiUserAuth] = useState(false);
     const [controlLoading, setControlLoading] = useState(false);
+    const [dashboardData, setDashboardData] = useState({
+        system_metrics: {
+            aum: 0,
+            total_trades: 0,
+            daily_pnl: 0
+        }
+    });
 
     useEffect(() => {
         fetchAutonomousData();
         fetchTradingStatus();
         fetchBrokerUsers();
+        fetchDashboardData();
         // Auto-refresh every 2 minutes so the UI does not interrupt user interactions
         const interval = setInterval(() => {
             fetchAutonomousData();
             fetchTradingStatus();
+            fetchDashboardData();
         }, 120000); // 120 000 ms = 2 minutes
         return () => clearInterval(interval);
     }, []);
@@ -392,6 +401,32 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
             }
         } catch (err) {
             console.error('Error fetching broker users:', err);
+        }
+    };
+
+    const fetchDashboardData = async () => {
+        try {
+            const response = await fetchWithAuth(API_ENDPOINTS.DASHBOARD_SUMMARY.url);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    setDashboardData(data);
+                } else {
+                    throw new Error('Failed to fetch dashboard data');
+                }
+            } else {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+        } catch (err) {
+            console.error('Error fetching dashboard data:', err);
+            // Set fallback data with safe structure
+            setDashboardData({
+                system_metrics: {
+                    aum: 0,
+                    total_trades: 0,
+                    daily_pnl: 0
+                }
+            });
         }
     };
 
