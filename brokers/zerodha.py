@@ -904,3 +904,12 @@ class ZerodhaIntegration:
         market_close = now.replace(hour=15, minute=30, second=0)
         
         return market_open <= now <= market_close
+
+    @property
+    def is_connected(self) -> bool:
+        """Check if Zerodha is connected and ready"""
+        return (
+            self.connection_state == ConnectionState.CONNECTED and
+            self.kite is not None and
+            self.access_token is not None
+        )
