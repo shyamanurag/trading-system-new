@@ -463,11 +463,8 @@ class ZerodhaIntegration:
         if 'CE' in symbol or 'PE' in symbol:
             return 'NRML'  # Options must use NRML
         else:
-            # 🔧 CRITICAL FIX: Use MIS for SELL orders to enable short selling
-            if action == 'SELL':
-                return 'MIS'  # Margin Intraday Square-off for short selling
-            else:
-                return 'CNC'   # Cash and Carry for BUY orders
+            # 🚨 INTRADAY ONLY FIX: Use MIS for ALL equity orders (BUY and SELL)
+            return 'MIS'  # Margin Intraday Square-off for ALL orders - auto square-off at 3:30 PM
 
     def _get_exchange_for_symbol(self, symbol: str) -> str:
         """Get appropriate exchange for symbol - FIXED for options"""

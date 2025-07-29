@@ -250,6 +250,11 @@ class TradeEngine:
                 self.logger.error(f"❌ Required: ₹{estimated_order_value:,.2f} - Check your Zerodha account balance")
                 return None
             
+            # CRITICAL: Check for existing position BEFORE placing order
+            if await self._check_existing_position(symbol, action):
+                self.logger.error(f"❌ DUPLICATE ORDER BLOCKED: Existing position found for {symbol} {action}")
+                return None
+            
             # Place order via Zerodha (real execution)
             order_params = {
                 'symbol': symbol,
@@ -899,6 +904,37 @@ class TradeEngine:
                 
         except Exception as e:
             self.logger.error(f"❌ Error checking available capital: {e}")
+            return False
+
+    async def _check_existing_position(self, symbol: str, action: str) -> bool:
+        """
+        Check if there is an existing open position for the given symbol and action.
+        This prevents placing duplicate orders for the same symbol.
+        """
+        try:
+            if not self.position_tracker:
+                self.logger.warning("⚠️ Position tracker not available, cannot check for existing position.")
+                return False
+
+            # Get current position for the symbol
+            current_position = await self.position_tracker.get_position(symbol)
+
+            if current_position:
+                # If a position exists, check if it matches the action
+                if action.upper() == 'BUY' and current_position.quantity > 0:
+                    self.logger.warning(f"⚠️ Existing BUY position found for {symbol}. Current: {current_position.quantity}")
+                    return True
+                elif action.upper() == 'SELL' and current_position.quantity < 0:
+                    self.logger.warning(f"⚠️ Existing SELL position found for {symbol}. Current: {current_position.quantity}")
+                    return True
+                else:
+                    self.logger.info(f"✅ No duplicate order for {symbol} {action}. Current position: {current_position.quantity}")
+                    return False
+            else:
+                self.logger.info(f"✅ No existing position for {symbol} {action}.")
+                return False
+        except Exception as e:
+            self.logger.error(f"❌ Error checking for existing position: {e}")
             return False
 
     def get_paper_orders(self) -> Dict:

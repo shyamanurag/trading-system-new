@@ -78,8 +78,28 @@ async def get_current_positions(db: Session = Depends(get_db)):
                     "current_pnl": round(unrealized_pnl, 2),
                     "pnl_percent": round(pnl_percent, 2),
                     "strategies": "Zerodha Position",
-                    "trade_count": 1,
-                    "last_updated": datetime.now().isoformat()
+                    
+                    # ENHANCED P&L DISPLAY FIX: Add more detailed financial data
+                    "unrealized_pnl": round(unrealized_pnl, 2),
+                    "realized_pnl": 0.0,  # This would need to be calculated from trade history
+                    "total_pnl": round(unrealized_pnl, 2),
+                    "position_value": round(position_value, 2),
+                    "invested_amount": round(average_price * abs(quantity), 2),
+                    "current_value": round(last_price * abs(quantity), 2),
+                    
+                    # Market data
+                    "last_updated": position.get('last_price_timestamp', ''),
+                    "exchange": position.get('exchange', 'NSE'),
+                    "product": position.get('product', 'MIS'),
+                    
+                    # Risk metrics
+                    "day_change": round(last_price - average_price, 2),
+                    "day_change_percent": round(((last_price - average_price) / average_price) * 100, 2) if average_price > 0 else 0,
+                    
+                    # Status flags
+                    "is_active": True,
+                    "status": "OPEN",
+                    "source": "ZERODHA_API"
                 }
                 
                 position_list.append(position_info)

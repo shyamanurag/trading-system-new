@@ -141,6 +141,11 @@ class AutonomousEliteScanner:
                                 
                                 # Filter by confidence
                                 if signal.get('confidence', 0) >= self.min_confidence:
+                                    # CRITICAL FIX: Validate expiry for options before adding signal
+                                    if self._is_option_expired(signal.get('symbol', '')):
+                                        logger.warning(f"🚫 EXPIRED OPTION BLOCKED: {signal['symbol']} - skipping signal")
+                                        continue
+                                    
                                     # CRITICAL FIX: Copy signal instead of consuming it
                                     all_signals.append(signal.copy())
                                     signals_generated += 1
@@ -297,6 +302,67 @@ class AutonomousEliteScanner:
         else:  # LONG position
             distance = abs(primary_target - entry_price)
             return round(primary_target + (distance * 1.0), 2)
+
+
+    def _is_option_expired(self, symbol: str) -> bool:
+        """
+        Check if an option symbol is expired based on current date.
+        Returns True if option is expired and should not be traded.
+        """
+        try:
+            if not symbol or ('CE' not in symbol and 'PE' not in symbol):
+                return False  # Not an option
+            
+            from datetime import datetime
+            today = datetime.now().date()
+            
+            # Extract date from option symbol (assuming format like SYMBOL25JUL1000CE)
+            import re
+            date_pattern = r'(\d{2})([A-Z]{3})'
+            match = re.search(date_pattern, symbol)
+            
+            if not match:
+                logger.warning(f"⚠️ Could not extract expiry date from symbol: {symbol}")
+                return False
+            
+            day = int(match.group(1))
+            month_abbr = match.group(2)
+            
+            # Map month abbreviations
+            month_map = {
+                'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+                'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+            }
+            
+            if month_abbr not in month_map:
+                logger.warning(f"⚠️ Unknown month abbreviation in symbol: {symbol}")
+                return False
+            
+            month = month_map[month_abbr]
+            year = today.year  # Assume current year
+            
+            # Create expiry date
+            try:
+                from datetime import date
+                expiry_date = date(year, month, day)
+                
+                # If expiry date is in the past, the option is expired
+                is_expired = expiry_date < today
+                
+                if is_expired:
+                    logger.info(f"🚫 EXPIRED OPTION: {symbol} expired on {expiry_date}")
+                else:
+                    logger.debug(f"✅ VALID OPTION: {symbol} expires on {expiry_date}")
+                
+                return is_expired
+                
+            except ValueError as e:
+                logger.warning(f"⚠️ Invalid date for symbol {symbol}: {e}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"❌ Error checking option expiry for {symbol}: {e}")
+            return False
 
 # Global scanner instance
 autonomous_scanner = AutonomousEliteScanner()
