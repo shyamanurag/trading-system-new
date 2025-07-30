@@ -43,7 +43,7 @@ ZERODHA_SYMBOL_MAPPING = {
     # Common variations that cause "instrument does not exist" errors
     'BAJAJFINSV': 'BAJFINANCE',      # ✅ CRITICAL: Bajaj Financial Services
     'ADANIPORTS': 'ADANIPORT',       # ✅ CRITICAL: Adani Ports (singular)
-    'BHARTIARTL': 'BHARTI-ART',      # ✅ CRITICAL: Bharti Airtel
+    'BHARTIARTL': 'BHARTIARTL',      # 🚨 FIXED: Use exact symbol, not BHARTI-ART
     'ULTRACEMCO': 'ULTRACEMCO',      # ✅ TESTING: Ultra Tech Cement (might need change)
     'ICICIBANK': 'ICICIBANK',        # ✅ TESTING: ICICI Bank (might need change)
     

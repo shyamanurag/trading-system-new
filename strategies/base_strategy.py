@@ -749,8 +749,8 @@ class BaseStrategy:
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
         
-        # Zerodha format: 25JUL (YY + MMM)
-        zerodha_expiry = f"{str(exp_date.year)[-2:]}{month_names[exp_date.month - 1]}"
+        # 🚨 CRITICAL FIX: Zerodha format is 31JUL25 (DD + MMM + YY), NOT 25JUL (YY + MMM)
+        zerodha_expiry = f"{exp_date.day:02d}{month_names[exp_date.month - 1]}{str(exp_date.year)[-2:]}"
         
         logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
         logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
@@ -861,8 +861,8 @@ class BaseStrategy:
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
         
-        # Zerodha format: 25JUL (YY + MMM, not DD + MMM + YY)
-        expiry_formatted = f"{str(next_thursday.year)[-2:]}{month_names[next_thursday.month - 1]}"
+        # 🚨 CRITICAL FIX: Zerodha format is 31JUL25 (DD + MMM + YY), NOT 25JUL (YY + MMM)
+        expiry_formatted = f"{next_thursday.day:02d}{month_names[next_thursday.month - 1]}{str(next_thursday.year)[-2:]}"
         
         logger.info(f"📅 ZERODHA EXPIRY FORMAT: {expiry_formatted}")
         logger.info(f"   Next Thursday: {next_thursday.strftime('%A, %B %d, %Y')}")
@@ -1242,10 +1242,18 @@ class BaseStrategy:
             cost_per_lot = base_lot_size * entry_price
             max_affordable_lots = int(max_capital_per_trade / cost_per_lot) if cost_per_lot > 0 else 0
             
-            # Ensure at least 1 lot if affordable, maximum 5 lots for risk management
+            # 🚨 CRITICAL FIX: Always allow at least 1 lot for affordable options (up to 50% capital)
             if max_affordable_lots <= 0:
-                logger.warning(f"💰 {options_symbol}: Cannot afford even 1 lot (₹{cost_per_lot:,.0f} > ₹{max_capital_per_trade:,.0f})")
-                return 0  # Cannot afford any lots
+                # Check if we can afford 1 lot with 50% of available capital (less conservative)
+                if cost_per_lot <= (available_capital * 0.5):
+                    logger.info(f"💰 {options_symbol}: Using 50% capital threshold - allowing 1 lot (₹{cost_per_lot:,.0f})")
+                    num_lots = 1
+                    final_quantity = num_lots * base_lot_size
+                    logger.info(f"💰 OVERRIDE: {options_symbol}: {num_lots} lots × {base_lot_size} = {final_quantity} qty (₹{final_quantity * entry_price:,.0f})")
+                    return final_quantity
+                else:
+                    logger.warning(f"💰 {options_symbol}: Cannot afford even 1 lot (₹{cost_per_lot:,.0f} > ₹{available_capital * 0.5:,.0f})")
+                    return 0  # Cannot afford any lots
             
             # Limit to maximum 5 lots for risk management
             num_lots = min(max_affordable_lots, 5)
