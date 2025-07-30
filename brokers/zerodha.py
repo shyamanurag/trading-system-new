@@ -361,6 +361,12 @@ class ZerodhaIntegration:
                 
 
                 # Build Zerodha order parameters
+                # 🚨 CRITICAL FIX: Use LIMIT orders for stock options to avoid Zerodha blocking
+                default_order_type = self.kite.ORDER_TYPE_MARKET
+                if symbol and (symbol.endswith('CE') or symbol.endswith('PE')) and not any(index in symbol for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']):
+                    default_order_type = self.kite.ORDER_TYPE_LIMIT
+                    logger.info(f"🔧 Auto-switching to LIMIT order for stock option: {symbol}")
+                
                 zerodha_params = {
                     'variety': self.kite.VARIETY_REGULAR,
                     'exchange': self._get_exchange_for_symbol(symbol),
@@ -368,7 +374,7 @@ class ZerodhaIntegration:
                     'transaction_type': action,
                     'quantity': quantity,
                     'product': self._get_product_type_for_symbol(symbol, order_params),  # FIXED: Dynamic product type
-                    'order_type': order_params.get('order_type', self.kite.ORDER_TYPE_MARKET),
+                    'order_type': order_params.get('order_type', default_order_type),
                     'validity': order_params.get('validity', self.kite.VALIDITY_DAY),
                     'tag': order_params.get('tag', 'ALGO_TRADE')
                 }

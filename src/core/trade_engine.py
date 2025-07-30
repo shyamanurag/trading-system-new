@@ -251,18 +251,35 @@ class TradeEngine:
                 return None
             
             # CRITICAL: Check for existing position BEFORE placing order
-            if await self._check_existing_position(symbol, action):
+            if symbol and await self._check_existing_position(symbol, action):
                 self.logger.error(f"❌ DUPLICATE ORDER BLOCKED: Existing position found for {symbol} {action}")
                 return None
             
             # Place order via Zerodha (real execution)
+            # 🚨 CRITICAL FIX: Use LIMIT orders for stock options to avoid Zerodha blocking
+            order_type = 'MARKET'  # Default to MARKET
+            if symbol:  # Add null check for symbol
+                if (symbol.endswith('CE') or symbol.endswith('PE')) and not any(index in symbol for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']):
+                    order_type = 'LIMIT'
+            
             order_params = {
                 'symbol': symbol,
                 'action': action,
                 'quantity': quantity,
-                'order_type': 'MARKET',
+                'order_type': order_type,
                 'strategy': strategy
             }
+            
+            # Add price for LIMIT orders (stock options)
+            if order_type == 'LIMIT' and symbol:
+                # Use entry price from signal or calculate a reasonable limit price
+                limit_price = signal.get('entry_price', 0)
+                if limit_price > 0:
+                    order_params['price'] = limit_price
+                    self.logger.info(f"🔧 Using LIMIT order for stock option: {symbol} @ ₹{limit_price}")
+                else:
+                    self.logger.warning(f"⚠️ No entry price for LIMIT order: {symbol} - using MARKET as fallback")
+                    order_params['order_type'] = 'MARKET'
             
             result = await self.zerodha_client.place_order(order_params)
             

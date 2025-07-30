@@ -19,13 +19,13 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
         
         # STRICT CASH SEGMENT THRESHOLDS (prevent opening second false signals)
         self.volume_thresholds = {
-            'high_volume': 50,      # 50% volume increase (much stricter for cash segment)
-            'moderate_volume': 35,   # 35% volume increase (much stricter for cash segment)
-            'low_volume': 25,        # 25% volume increase (much stricter for cash segment)
+            'high_volume': 75,      # 75% volume increase (much stricter - increased from 50%)
+            'moderate_volume': 55,   # 55% volume increase (much stricter - increased from 35%)
+            'low_volume': 40,        # 40% volume increase (much stricter - increased from 25%)
             'price_confirmation': {
-                'strong': 0.15,     # 0.15% price movement (stricter for cash segment profitability)
-                'moderate': 0.10,   # 0.10% price movement (stricter for cash segment profitability)
-                'weak': 0.08        # 0.08% price movement (stricter for cash segment profitability)
+                'strong': 0.25,     # 0.25% price movement (stricter - increased from 0.15%)
+                'moderate': 0.18,   # 0.18% price movement (stricter - increased from 0.10%)
+                'weak': 0.12        # 0.12% price movement (stricter - increased from 0.08%)
             }
         }
         
@@ -42,7 +42,7 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
         self.market_opening_protection = 900  # 15 minutes protection after market opening
         
         # Stricter signal quality filters
-        self.min_confidence_threshold = 0.8  # Minimum 80% confidence (higher threshold)
+        self.min_confidence_threshold = 0.9  # Minimum 90% confidence (increased from 80%)
         self.volume_confirmation_required = True  # Require volume confirmation
         self.min_market_minutes = 15  # Don't trade until 15 minutes after market open
     

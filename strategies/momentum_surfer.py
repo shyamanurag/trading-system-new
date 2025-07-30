@@ -19,11 +19,11 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         # BALANCED momentum thresholds (generate signals for P&L testing)
         self.momentum_thresholds = {
-            'strong_positive': 0.08,    # 0.08% price increase (reduced from 0.15% for current market)
-            'moderate_positive': 0.05,  # 0.05% price increase (reduced from 0.10% for current market)
-            'strong_negative': -0.08,   # 0.08% price decrease (reduced from -0.15% for current market)
-            'moderate_negative': -0.05, # 0.05% price decrease (reduced from -0.10% for current market)
-            'volume_threshold': 10      # 10% volume increase (reduced from 20% for current market)
+            'strong_positive': 0.15,    # 0.15% price increase (increased from 0.08% for selectivity)
+            'moderate_positive': 0.10,  # 0.10% price increase (increased from 0.05% for selectivity)
+            'strong_negative': -0.15,   # 0.15% price decrease (increased from -0.08% for selectivity)
+            'moderate_negative': -0.10, # 0.10% price decrease (increased from -0.05% for selectivity)
+            'volume_threshold': 25      # 25% volume increase (increased from 10% for selectivity)
         }
         
         # REALISTIC ATR multipliers (balanced risk management)
@@ -34,11 +34,11 @@ class EnhancedMomentumSurfer(BaseStrategy):
         }
         
         # Enhanced cooldown control
-        self.scalping_cooldown = 30  # 30 seconds between signals
+        self.scalping_cooldown = 60  # 60 seconds between signals (increased from 30s for selectivity)
         self.symbol_cooldowns = {}   # Symbol-specific cooldowns
         
         # Signal quality filters
-        self.min_confidence_threshold = 0.7  # Minimum 70% confidence
+        self.min_confidence_threshold = 0.85  # Minimum 85% confidence (increased from 70%)
         self.trend_confirmation_periods = 3   # Require 3 periods of trend confirmation
     
     async def initialize(self):
