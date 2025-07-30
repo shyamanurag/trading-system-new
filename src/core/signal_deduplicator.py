@@ -45,15 +45,19 @@ class SignalDeduplicator:
                     ssl_check_hostname=False
                 )
                 logger.info("✅ Signal deduplicator Redis connection initialized")
+                logger.info(f"🔗 Redis URL configured: {redis_url[:20]}...")  # Log first 20 chars for debugging
             else:
                 logger.warning("⚠️ No REDIS_URL - signal deduplication will be memory-only")
+                logger.warning("🚨 CRITICAL: Without Redis, duplicate signals across deployments CANNOT be prevented!")
         except Exception as e:
-            logger.warning(f"⚠️ Failed to init Redis for signal deduplication: {e}")
+            logger.error(f"❌ Failed to init Redis for signal deduplication: {e}")
+            logger.error("🚨 CRITICAL: Redis connection failed - duplicate execution protection disabled!")
         
     async def _check_signal_already_executed(self, signal: Dict) -> bool:
         """Check if this signal was already executed today (across deploys)"""
         try:
             if not self.redis_client:
+                logger.warning(f"🚨 NO REDIS CLIENT: Cannot check for duplicate signal {signal.get('symbol')} - allowing execution")
                 return False
                 
             symbol = signal.get('symbol')
@@ -63,21 +67,27 @@ class SignalDeduplicator:
             today = datetime.now().strftime('%Y-%m-%d')
             executed_key = f"executed_signals:{today}:{symbol}:{action}"
             
+            logger.info(f"🔍 CHECKING DUPLICATE: {executed_key}")
             executed_count = await self.redis_client.get(executed_key)
+            
             if executed_count and int(executed_count) > 0:
                 logger.warning(f"🚫 DUPLICATE SIGNAL BLOCKED: {symbol} {action} already executed {executed_count} times today")
+                logger.warning(f"🔑 Redis key: {executed_key}")
                 return True
+            else:
+                logger.info(f"✅ SIGNAL ALLOWED: {symbol} {action} - no previous executions found")
+                return False
                 
-            return False
-            
         except Exception as e:
             logger.error(f"❌ Error checking executed signals in Redis: {e}")
+            logger.error(f"🚨 REDIS CHECK FAILED for {signal.get('symbol')} - ALLOWING execution (risky)")
             return False
     
     async def mark_signal_executed(self, signal: Dict):
         """Mark signal as executed to prevent future duplicates"""
         try:
             if not self.redis_client:
+                logger.error(f"🚨 NO REDIS CLIENT: Cannot mark signal {signal.get('symbol')} as executed - DUPLICATE RISK!")
                 return
                 
             symbol = signal.get('symbol')
@@ -87,14 +97,19 @@ class SignalDeduplicator:
             today = datetime.now().strftime('%Y-%m-%d')
             executed_key = f"executed_signals:{today}:{symbol}:{action}"
             
-            await self.redis_client.incr(executed_key)
+            logger.info(f"📝 MARKING AS EXECUTED: {executed_key}")
+            current_count = await self.redis_client.incr(executed_key)
             await self.redis_client.expire(executed_key, 86400)  # 24 hours
             
-            logger.info(f"✅ Marked signal as executed: {symbol} {action}")
+            logger.info(f"✅ Marked signal as executed: {symbol} {action} (count: {current_count})")
+            
+            if current_count > 1:
+                logger.warning(f"⚠️ MULTIPLE EXECUTIONS DETECTED: {symbol} {action} now executed {current_count} times today!")
             
         except Exception as e:
-            logger.error(f"❌ Error marking signal as executed: {e}")
-        
+            logger.error(f"❌ Error marking signal as executed in Redis: {e}")
+            logger.error(f"🚨 FAILED TO MARK {signal.get('symbol')} as executed - FUTURE DUPLICATES POSSIBLE!")
+    
     async def process_signals(self, signals: List[Dict]) -> List[Dict]:
         """Process and deduplicate signals, return only high-quality unique signals"""
         if not signals:
