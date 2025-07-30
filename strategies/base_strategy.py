@@ -69,7 +69,7 @@ class BaseStrategy:
         
         return True
     
-    def _check_capital_affordability(self, symbol: str, quantity: int, price: float, available_capital: float = 49233.5) -> bool:
+    def _check_capital_affordability(self, symbol: str, quantity: int, price: float, available_capital: float) -> bool:
         """Check if signal is affordable with available capital - CRITICAL FIX for 1,237 failures"""
         required_capital = price * quantity
         

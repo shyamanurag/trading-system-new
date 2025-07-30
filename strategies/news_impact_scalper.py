@@ -46,8 +46,8 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         self.symbol_cooldowns = {}   # Symbol-specific cooldowns
         self.symbol_cooldown_duration = 40  # 40 seconds per symbol
         
-        # Signal quality filters
-        self.min_confidence = 0.7  # Minimum 70% confidence required
+        # Signal quality filters (configurable from config)
+        self.min_confidence_threshold = config.get('min_confidence_threshold', 0.85)  # Dynamic threshold
         
     async def on_market_data(self, data: Dict):
         """Handle incoming market data and generate signals"""
@@ -69,15 +69,16 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             # Apply STRICTER signal quality filters to reduce volume
             quality_signals = []
             for signal in signals:
-                # Only keep highest confidence signals (0.85+)
+                # Only keep highest confidence signals (using dynamic threshold)
                 confidence = signal.get('confidence', 0)
-                if confidence >= 0.85:
+                min_confidence = self.min_confidence_threshold
+                if confidence >= min_confidence:
                     quality_signals.append(signal)
                     self.current_positions[signal['symbol']] = signal
                     logger.info(f"🚨 {self.name} HIGH-QUALITY SIGNAL: {signal['symbol']} {signal['action']} "
                                f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
                 else:
-                    logger.debug(f"📉 {self.name} SIGNAL REJECTED: {signal['symbol']} low confidence ({confidence:.2f} < 0.85)")
+                    logger.debug(f"📉 {self.name} SIGNAL REJECTED: {signal['symbol']} low confidence ({confidence:.2f} < {min_confidence})")
             
             # Update signals to only include high-quality ones
             signals = quality_signals

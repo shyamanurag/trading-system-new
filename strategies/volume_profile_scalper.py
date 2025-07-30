@@ -41,8 +41,8 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
         self.symbol_cooldowns = {}   # Symbol-specific cooldowns
         self.market_opening_protection = 900  # 15 minutes protection after market opening
         
-        # Stricter signal quality filters
-        self.min_confidence_threshold = 0.9  # Minimum 90% confidence (increased from 80%)
+        # Stricter signal quality filters (configurable from config)
+        self.min_confidence_threshold = config.get('min_confidence_threshold', 0.80)  # Dynamic threshold
         self.volume_confirmation_required = True  # Require volume confirmation
         self.min_market_minutes = 15  # Don't trade until 15 minutes after market open
     
@@ -78,16 +78,17 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
             # Apply STRICTER quality filters to reduce signal volume
             quality_signals = []
             for signal in signals:
-                # Only keep highest confidence signals (0.80+) 
+                # Only keep highest confidence signals (using dynamic threshold)
                 confidence = signal.get('confidence', 0)
-                if confidence >= 0.80:
+                min_confidence = self.min_confidence_threshold
+                if confidence >= min_confidence:
                     quality_signals.append(signal)
                     self.current_positions[signal['symbol']] = signal
                     self._increment_signal_counters()  # Track signal generation
                     logger.info(f"🚨 {self.name} HIGH-QUALITY SIGNAL: {signal['symbol']} {signal['action']} "
                                f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
                 else:
-                    logger.debug(f"📉 {self.name} SIGNAL REJECTED: {signal['symbol']} low confidence ({confidence:.2f} < 0.80)")
+                    logger.debug(f"📉 {self.name} SIGNAL REJECTED: {signal['symbol']} low confidence ({confidence:.2f} < {min_confidence})")
             
             # Log filtering results
             if len(quality_signals) < original_signal_count:

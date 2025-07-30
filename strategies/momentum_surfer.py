@@ -37,8 +37,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
         self.scalping_cooldown = 60  # 60 seconds between signals (increased from 30s for selectivity)
         self.symbol_cooldowns = {}   # Symbol-specific cooldowns
         
-        # Signal quality filters
-        self.min_confidence_threshold = 0.85  # Minimum 85% confidence (increased from 70%)
+        # Signal quality filters (configurable from config)
+        self.min_confidence_threshold = config.get('min_confidence_threshold', 0.85)  # Dynamic threshold
         self.trend_confirmation_periods = 3   # Require 3 periods of trend confirmation
     
     async def initialize(self):
@@ -69,16 +69,17 @@ class EnhancedMomentumSurfer(BaseStrategy):
             # Apply STRICTER quality filters to reduce signal volume
             quality_signals = []
             for signal in signals:
-                # Only keep highest confidence signals (0.85+)
+                # Only keep highest confidence signals (using dynamic threshold)
                 confidence = signal.get('confidence', 0)
-                if confidence >= 0.85:
+                min_confidence = self.min_confidence_threshold
+                if confidence >= min_confidence:
                     quality_signals.append(signal)
                     self.current_positions[signal['symbol']] = signal
                     self._increment_signal_counters()  # Track signal generation
                     logger.info(f"🚨 {self.name} HIGH-QUALITY SIGNAL: {signal['symbol']} {signal['action']} "
                                f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
                 else:
-                    logger.debug(f"📉 {self.name} SIGNAL REJECTED: {signal['symbol']} low confidence ({confidence:.2f} < 0.85)")
+                    logger.debug(f"📉 {self.name} SIGNAL REJECTED: {signal['symbol']} low confidence ({confidence:.2f} < {min_confidence})")
             
             # Log filtering results
             if len(quality_signals) < original_signal_count:
