@@ -127,14 +127,23 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
         return time_since_last >= self.scalping_cooldown
     
     def _generate_signals(self, data: Dict) -> List[Dict]:
-        """Generate trading signals based on market data"""
+        """Generate trading signals based on market data - ANTI-BOMBARDMENT VERSION"""
         signals = []
         
         try:
-            # Extract symbols from market data
-            symbols = list(data.keys()) if isinstance(data, dict) else []
+            # 🚨 CRITICAL FIX: LIMIT TO HIGH-VALUE SYMBOLS ONLY (not all market data)
+            symbols = self._get_priority_symbols(data)
+            logger.debug(f"📊 {self.name}: Processing {len(symbols)} priority symbols (filtered from {len(data)} total)")
+            
+            # 🎯 HARD LIMIT: Maximum 3 signals per cycle (volume strategy should be selective)
+            max_signals_per_cycle = 3
             
             for symbol in symbols:
+                # Hard limit to prevent signal bombardment
+                if len(signals) >= max_signals_per_cycle:
+                    logger.info(f"🚫 {self.name}: Reached max signals limit ({max_signals_per_cycle}) - stopping bombardment")
+                    break
+                    
                 symbol_data = data.get(symbol, {})
                 if not symbol_data:
                     continue
@@ -149,11 +158,42 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
                     signals.append(signal)
                     # Update symbol cooldown
                     self.symbol_cooldowns[symbol] = datetime.now()
+                    logger.debug(f"✅ {self.name}: Generated signal {len(signals)}/{max_signals_per_cycle} for {symbol}")
                     
         except Exception as e:
             logger.error(f"Error generating signals: {e}")
             
         return signals
+    
+    def _get_priority_symbols(self, data: Dict) -> List[str]:
+        """Get priority symbols for volume trading - focus on high-volume, liquid stocks"""
+        try:
+            # VOLUME STRATEGY: Focus on stocks with consistently high volume
+            priority_symbols = [
+                # High-volume NIFTY 50 stocks
+                'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN',
+                'INFY', 'BHARTIARTL', 'LT', 'MARUTI', 'AXISBANK',
+                'BAJFINANCE', 'KOTAKBANK', 'TITAN', 'ASIANPAINT', 'HCLTECH',
+                # Index symbols (always high volume)
+                'NIFTY', 'BANKNIFTY', 'FINNIFTY'
+            ]
+            
+            # Filter based on current volume (volume strategy needs active trading)
+            available_symbols = []
+            for symbol in priority_symbols:
+                if symbol in data and data[symbol]:
+                    symbol_data = data[symbol]
+                    volume = symbol_data.get('volume', 0)
+                    if volume > 500000:  # Minimum 5 lakh volume for volume strategy
+                        available_symbols.append(symbol)
+            
+            logger.debug(f"🎯 {self.name}: Selected {len(available_symbols)} high-volume symbols")
+            return available_symbols[:10]  # Limit to top 10 for volume strategy
+            
+        except Exception as e:
+            logger.error(f"Error filtering volume symbols: {e}")
+            # Fallback: Use first 5 symbols
+            return list(data.keys())[:5]
     
     def _is_symbol_scalping_cooldown_passed(self, symbol: str) -> bool:
         """Check if symbol-specific scalping cooldown has passed"""

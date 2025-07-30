@@ -18,19 +18,19 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         super().__init__(config)
         self.name = "EnhancedNewsImpactScalper"
         
-        # REALISTIC momentum thresholds (prevent false signals on market noise)
+        # 🚨 ULTRA-STRICT momentum thresholds - NEWS EVENTS ONLY!
         self.momentum_thresholds = {
             'extreme_momentum': {
-                'price_change': 0.15,    # 0.15% rapid price change (reduced from 0.35% for current market)
-                'volume_spike': 30       # 30% volume spike (reduced from 60% for current market)
+                'price_change': 1.0,     # 1.0% rapid price change (REAL NEWS ONLY)
+                'volume_spike': 200      # 200% volume spike (MAJOR NEWS EVENTS)
             },
             'strong_momentum': {
-                'price_change': 0.10,    # 0.10% rapid price change (reduced from 0.25% for current market)
-                'volume_spike': 20       # 20% volume spike (reduced from 45% for current market)
+                'price_change': 0.75,    # 0.75% rapid price change (SIGNIFICANT NEWS)
+                'volume_spike': 150      # 150% volume spike (STRONG NEWS IMPACT)
             },
             'moderate_momentum': {
-                'price_change': 0.06,    # 0.06% rapid price change (reduced from 0.18% for current market)
-                'volume_spike': 15       # 15% volume spike (reduced from 30% for current market)
+                'price_change': 0.50,    # 0.50% rapid price change (MINOR NEWS)
+                'volume_spike': 100      # 100% volume spike (ELEVATED ACTIVITY)
             }
         }
         
@@ -105,14 +105,25 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         return time_since_last >= self.scalping_cooldown
     
     def _generate_signals(self, data: Dict) -> List[Dict]:
-        """Generate trading signals based on market data"""
+        """Generate trading signals based on market data - OPTIMIZED FOR QUALITY OVER QUANTITY"""
         signals = []
         
         try:
-            # Extract symbols from market data
-            symbols = list(data.keys()) if isinstance(data, dict) else []
+            # 🚨 CRITICAL FIX: LIMIT TO HIGH-VALUE SYMBOLS ONLY (not all market data)
+            # Filter to only process liquid, high-value stocks
+            symbols = self._get_priority_symbols(data)
+            logger.debug(f"📊 {self.name}: Processing {len(symbols)} priority symbols (filtered from {len(data)} total)")
+            
+            # 🎯 FURTHER LIMIT: Maximum 5 signals per cycle to prevent bombardment
+            max_signals_per_cycle = 5
+            processed_count = 0
             
             for symbol in symbols:
+                # Hard limit to prevent signal bombardment
+                if len(signals) >= max_signals_per_cycle:
+                    logger.info(f"🚫 {self.name}: Reached max signals limit ({max_signals_per_cycle}) - stopping to prevent bombardment")
+                    break
+                    
                 symbol_data = data.get(symbol, {})
                 if not symbol_data:
                     continue
@@ -121,17 +132,53 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 if not self._is_symbol_scalping_cooldown_passed(symbol):
                     continue
                     
+                processed_count += 1
+                
                 # Generate signal for this symbol
                 signal = self._analyze_rapid_momentum(symbol, symbol_data)
                 if signal:
                     signals.append(signal)
                     # Update symbol cooldown
                     self.symbol_cooldowns[symbol] = datetime.now()
+                    logger.debug(f"✅ {self.name}: Generated signal {len(signals)}/{max_signals_per_cycle} for {symbol}")
                     
         except Exception as e:
             logger.error(f"Error generating signals: {e}")
             
         return signals
+    
+    def _get_priority_symbols(self, data: Dict) -> List[str]:
+        """Get priority symbols for trading - focus on liquid, high-value stocks only"""
+        try:
+            # 🎯 PRECISION OVER SPEED: Only trade high-quality, liquid symbols
+            priority_symbols = [
+                # NIFTY 50 high-liquidity stocks
+                'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'HINDUNILVR',
+                'INFY', 'KOTAKBANK', 'LT', 'SBIN', 'BHARTIARTL',
+                'ASIANPAINT', 'MARUTI', 'AXISBANK', 'TITAN', 'NESTLEIND',
+                'BAJFINANCE', 'HCLTECH', 'WIPRO', 'M&M', 'ADANIPORT',
+                # Index symbols
+                'NIFTY', 'BANKNIFTY', 'FINNIFTY'
+            ]
+            
+            # Filter to only symbols present in current market data
+            available_symbols = []
+            for symbol in priority_symbols:
+                if symbol in data and data[symbol]:
+                    # Additional filter: Only symbols with sufficient volume
+                    symbol_data = data[symbol]
+                    volume = symbol_data.get('volume', 0)
+                    if volume > 100000:  # Minimum 1 lakh volume for liquidity
+                        available_symbols.append(symbol)
+            
+            logger.debug(f"🎯 {self.name}: Selected {len(available_symbols)} high-liquidity symbols from {len(priority_symbols)} priority list")
+            return available_symbols[:15]  # Limit to top 15 even from priority list
+            
+        except Exception as e:
+            logger.error(f"Error filtering priority symbols: {e}")
+            # Fallback: Use first 10 symbols from data
+            all_symbols = list(data.keys())
+            return all_symbols[:10]  # Emergency fallback with hard limit
     
     def _is_symbol_scalping_cooldown_passed(self, symbol: str) -> bool:
         """Check if symbol-specific scalping cooldown has passed"""
@@ -227,36 +274,27 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             momentum_score = 4
             signal_strength = 'extreme_momentum'
         
-        # Check for strong momentum
+        # Check for strong momentum - STRICT REQUIREMENTS (NO FALLBACKS)
         elif abs(price_change) >= thresholds['strong_momentum']['price_change']:
             strong = thresholds['strong_momentum']
             if volume_change >= strong['volume_spike']:
                 momentum_score = 3
                 signal_strength = 'strong_momentum'
-            elif volume_change >= strong['volume_spike'] * 0.7:  # 70% of threshold
-                momentum_score = 2.5
-                signal_strength = 'strong_momentum'
+            # REMOVED: No fallback logic - either meets threshold or doesn't
         
-        # Check for moderate momentum
+        # Check for moderate momentum - STRICT REQUIREMENTS (NO FALLBACKS)
         elif abs(price_change) >= thresholds['moderate_momentum']['price_change']:
             moderate = thresholds['moderate_momentum']
             if volume_change >= moderate['volume_spike']:
                 momentum_score = 2
                 signal_strength = 'moderate_momentum'
-            elif volume_change >= moderate['volume_spike'] * 0.8:  # 80% of threshold
-                momentum_score = 1.5
-                signal_strength = 'moderate_momentum'
+            # REMOVED: No 80% fallback logic - either meets threshold or doesn't
         
-        # Additional scoring for very high volume without extreme price movement
-        if volume_change >= 40 and abs(price_change) >= 0.08:  # High volume with decent price move
-            if signal_strength == 'none':
-                momentum_score = 1.5
-                signal_strength = 'moderate_momentum'
-            else:
-                momentum_score += 0.5  # Boost existing signal
+        # REMOVED: Additional scoring for high volume - too weak and causing bombardment
+        # Old logic: volume_change >= 40 and price_change >= 0.08 was generating signals on normal noise
         
-        # Require minimum score for signal generation
-        if momentum_score < 1.5:
+        # Require HIGHER minimum score for signal generation (anti-bombardment)
+        if momentum_score < 2.0:  # Increased from 1.5 to 2.0 - only strong signals
             signal_strength = 'none'
         
         return {

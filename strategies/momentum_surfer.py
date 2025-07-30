@@ -102,14 +102,23 @@ class EnhancedMomentumSurfer(BaseStrategy):
         return time_since_last >= self.scalping_cooldown
     
     def _generate_signals(self, data: Dict) -> List[Dict]:
-        """Generate trading signals based on market data"""
+        """Generate trading signals based on market data - ANTI-BOMBARDMENT VERSION"""
         signals = []
         
         try:
-            # Extract symbols from market data
-            symbols = list(data.keys()) if isinstance(data, dict) else []
+            # 🚨 CRITICAL FIX: LIMIT TO HIGH-VALUE SYMBOLS ONLY (not all market data)
+            symbols = self._get_priority_symbols(data)
+            logger.debug(f"📊 {self.name}: Processing {len(symbols)} priority symbols (filtered from {len(data)} total)")
+            
+            # 🎯 HARD LIMIT: Maximum 4 signals per cycle (momentum should be selective)
+            max_signals_per_cycle = 4
             
             for symbol in symbols:
+                # Hard limit to prevent signal bombardment
+                if len(signals) >= max_signals_per_cycle:
+                    logger.info(f"🚫 {self.name}: Reached max signals limit ({max_signals_per_cycle}) - stopping bombardment")
+                    break
+                    
                 symbol_data = data.get(symbol, {})
                 if not symbol_data:
                     continue
@@ -124,11 +133,44 @@ class EnhancedMomentumSurfer(BaseStrategy):
                     signals.append(signal)
                     # Update symbol cooldown
                     self.symbol_cooldowns[symbol] = datetime.now()
+                    logger.debug(f"✅ {self.name}: Generated signal {len(signals)}/{max_signals_per_cycle} for {symbol}")
                     
         except Exception as e:
             logger.error(f"Error generating signals: {e}")
             
         return signals
+    
+    def _get_priority_symbols(self, data: Dict) -> List[str]:
+        """Get priority symbols for momentum trading - focus on trending stocks"""
+        try:
+            # MOMENTUM STRATEGY: Focus on stocks with strong price momentum
+            priority_symbols = [
+                # High-momentum NIFTY 50 stocks
+                'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY',
+                'BAJFINANCE', 'BHARTIARTL', 'LT', 'SBIN', 'MARUTI',
+                'AXISBANK', 'KOTAKBANK', 'TITAN', 'HCLTECH', 'WIPRO',
+                # Index symbols (momentum leaders)
+                'NIFTY', 'BANKNIFTY', 'FINNIFTY'
+            ]
+            
+            # Filter based on price movement and volume
+            available_symbols = []
+            for symbol in priority_symbols:
+                if symbol in data and data[symbol]:
+                    symbol_data = data[symbol]
+                    price_change = abs(symbol_data.get('price_change', 0))
+                    volume = symbol_data.get('volume', 0)
+                    # Only symbols with some momentum and decent volume
+                    if price_change > 0.05 and volume > 200000:  # 0.05% movement + 2 lakh volume
+                        available_symbols.append(symbol)
+            
+            logger.debug(f"🎯 {self.name}: Selected {len(available_symbols)} momentum symbols")
+            return available_symbols[:12]  # Limit to top 12 for momentum strategy
+            
+        except Exception as e:
+            logger.error(f"Error filtering momentum symbols: {e}")
+            # Fallback: Use first 6 symbols
+            return list(data.keys())[:6]
     
     def _is_symbol_scalping_cooldown_passed(self, symbol: str) -> bool:
         """Check if symbol-specific scalping cooldown has passed"""
