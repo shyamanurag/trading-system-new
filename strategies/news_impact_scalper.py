@@ -62,11 +62,24 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             # Process market data and generate signals
             signals = self._generate_signals(data)
             
-            # CRITICAL FIX: Store signals in current_positions IMMEDIATELY for orchestrator
+            # 🚨 CRITICAL: Apply capital filtering before storing signals
+            affordable_signals = []
             for signal in signals:
-                self.current_positions[signal['symbol']] = signal
-                logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
-                           f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
+                symbol = signal['symbol']
+                entry_price = signal.get('entry_price', 0)
+                quantity = signal.get('quantity', 50)  # Default quantity
+                
+                # Check if signal is affordable with available capital
+                if self._check_capital_affordability(symbol, quantity, entry_price):
+                    affordable_signals.append(signal)
+                    self.current_positions[signal['symbol']] = signal
+                    logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
+                               f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
+                else:
+                    logger.debug(f"💰 {self.name} SIGNAL FILTERED: {symbol} unaffordable (₹{entry_price * quantity:,.0f})")
+            
+            # Update signals to only include affordable ones
+            signals = affordable_signals
             
             # Execute trades based on signals (backup method)
             if signals:
