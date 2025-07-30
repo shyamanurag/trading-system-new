@@ -33,8 +33,8 @@ class SignalDeduplicator:
         self._init_redis_connection()
         
         # 🚨 DEPLOYMENT CACHE CLEARING: Clear old signals after deployment
-        import asyncio
-        asyncio.create_task(self._clear_signal_cache_on_startup())
+        # Don't create async task during init - will be called manually when event loop is ready
+        self._startup_cleanup_pending = True
 
     async def _clear_signal_cache_on_startup(self):
         """Clear deployment cache on startup to prevent duplicate signals"""
@@ -79,6 +79,12 @@ class SignalDeduplicator:
             
         except Exception as e:
             logger.error(f"❌ Error clearing deployment cache: {e}")
+
+    async def ensure_startup_cleanup(self):
+        """Ensure startup cleanup is run when event loop is available"""
+        if getattr(self, '_startup_cleanup_pending', False):
+            self._startup_cleanup_pending = False
+            await self._clear_signal_cache_on_startup()
 
     async def clear_all_executed_signals(self):
         """Clear all executed signals cache - can be called manually"""
