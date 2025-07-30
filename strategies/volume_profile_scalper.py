@@ -72,15 +72,30 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
             # Process market data and generate signals
             signals = self._generate_signals(data)
             
-            # FIXED: Only store signals for orchestrator collection - no direct execution
+            # 🎯 QUALITY OVER QUANTITY: Be more selective with signals
+            original_signal_count = len(signals)
+            
+            # Apply STRICTER quality filters to reduce signal volume
+            quality_signals = []
             for signal in signals:
-                self.current_positions[signal['symbol']] = signal
-                self._increment_signal_counters()  # Track signal generation
-                logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
-                           f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
+                # Only keep highest confidence signals (0.80+) 
+                confidence = signal.get('confidence', 0)
+                if confidence >= 0.80:
+                    quality_signals.append(signal)
+                    self.current_positions[signal['symbol']] = signal
+                    self._increment_signal_counters()  # Track signal generation
+                    logger.info(f"🚨 {self.name} HIGH-QUALITY SIGNAL: {signal['symbol']} {signal['action']} "
+                               f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
+                else:
+                    logger.debug(f"📉 {self.name} SIGNAL REJECTED: {signal['symbol']} low confidence ({confidence:.2f} < 0.80)")
+            
+            # Log filtering results
+            if len(quality_signals) < original_signal_count:
+                filtered_count = original_signal_count - len(quality_signals)
+                logger.warning(f"🎯 {self.name} QUALITY FILTER: {filtered_count}/{original_signal_count} signals rejected (low confidence)")
             
             # Update last signal time if signals generated
-            if signals:
+            if quality_signals:
                 self.last_signal_time = datetime.now()
                 
         except Exception as e:

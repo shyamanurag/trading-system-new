@@ -62,38 +62,34 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             # Process market data and generate signals
             signals = self._generate_signals(data)
             
-            # 🚨 CRITICAL: Apply capital filtering before storing signals
+            # 🎯 QUALITY OVER QUANTITY: Reduce signal generation volume
+            # Instead of generating 35+ signals, be more selective
             original_signal_count = len(signals)
-            affordable_signals = []
-            available_capital = 49233.5  # Current balance
             
+            # Apply STRICTER signal quality filters to reduce volume
+            quality_signals = []
             for signal in signals:
-                symbol = signal['symbol']
-                entry_price = signal.get('entry_price', 0)
-                quantity = signal.get('quantity', 50)  # Get actual quantity from signal
-                required_capital = entry_price * quantity
-                
-                # STRICT CAPITAL CHECK: Filter out unaffordable signals
-                if required_capital <= available_capital and required_capital <= (available_capital * 0.8):
-                    affordable_signals.append(signal)
+                # Only keep highest confidence signals (0.85+)
+                confidence = signal.get('confidence', 0)
+                if confidence >= 0.85:
+                    quality_signals.append(signal)
                     self.current_positions[signal['symbol']] = signal
-                    logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
-                               f"Entry: ₹{signal['entry_price']:.2f}, Quantity: {quantity}, Cost: ₹{required_capital:,.0f}")
+                    logger.info(f"🚨 {self.name} HIGH-QUALITY SIGNAL: {signal['symbol']} {signal['action']} "
+                               f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
                 else:
-                    logger.warning(f"💰 {self.name} SIGNAL FILTERED: {symbol} UNAFFORDABLE - "
-                                  f"Needs ₹{required_capital:,.0f} > Available ₹{available_capital:,.0f} (Quantity: {quantity})")
+                    logger.debug(f"📉 {self.name} SIGNAL REJECTED: {signal['symbol']} low confidence ({confidence:.2f} < 0.85)")
             
-            # Update signals to only include affordable ones
-            signals = affordable_signals
+            # Update signals to only include high-quality ones
+            signals = quality_signals
             
             # Log filtering results
-            if len(affordable_signals) < original_signal_count:
-                filtered_count = original_signal_count - len(affordable_signals)
-                logger.warning(f"🚫 {self.name} FILTERED {filtered_count}/{original_signal_count} signals due to insufficient capital")
+            if len(quality_signals) < original_signal_count:
+                filtered_count = original_signal_count - len(quality_signals)
+                logger.warning(f"🎯 {self.name} QUALITY FILTER: {filtered_count}/{original_signal_count} signals rejected (low confidence)")
             
             # Execute trades based on signals (backup method)
-            if signals:
-                await self._execute_trades(signals)
+            if quality_signals:
+                await self._execute_trades(quality_signals)
                 self.last_signal_time = datetime.now()
                 
         except Exception as e:
