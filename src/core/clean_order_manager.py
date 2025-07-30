@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import json
 import time
+from .order_rate_limiter import OrderRateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,9 @@ class OrderManager:
         # Simple storage
         self.active_orders: Dict[str, set] = {}
         self.order_history: Dict[str, list] = {}
+        
+        # Initialize order rate limiter to prevent retry loops
+        self.rate_limiter = OrderRateLimiter()
         
         logger.info("OrderManager initialized - NO FALLBACKS")
     
@@ -67,6 +71,16 @@ class OrderManager:
                 if not risk_valid:
                     raise Exception("Order failed risk validation")
             
+            # 🛡️ Check order rate limits to prevent retry loops
+            rate_check = await self.rate_limiter.can_place_order(
+                order_data['symbol'], 
+                order_data['side'], 
+                order_data['quantity'], 
+                order_data.get('price', 0)
+            )
+            if not rate_check['allowed']:
+                raise Exception(f"Order rate limited: {rate_check['message']}")
+            
             # Place order via Zerodha
             zerodha_params = {
                 'symbol': order_data['symbol'],
@@ -82,6 +96,15 @@ class OrderManager:
                 zerodha_params['price'] = order_data['price']
             
             broker_order_id = await self.zerodha_client.place_order(zerodha_params)
+            
+            # 📊 Record order attempt in rate limiter
+            order_success = bool(broker_order_id)
+            await self.rate_limiter.record_order_attempt(
+                rate_check['signature'], 
+                order_success, 
+                order_data['symbol'], 
+                "Order placement failed" if not order_success else None
+            )
             
             if not broker_order_id:
                 raise Exception("Zerodha order placement failed")

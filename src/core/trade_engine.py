@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 from src.core.paper_trading_user_manager import PaperTradingUserManager
 from src.core.database_schema_manager import DatabaseSchemaManager
+from src.core.order_rate_limiter import OrderRateLimiter
 from sqlalchemy import text
 
 class TradeEngine:
@@ -23,6 +24,9 @@ class TradeEngine:
         self.db_config = db_config
         self.order_manager = order_manager
         self.position_tracker = position_tracker
+        
+        # Initialize order rate limiter to prevent retry loops
+        self.rate_limiter = OrderRateLimiter()
         self.performance_tracker = performance_tracker
         self.notification_manager = notification_manager
         self.logger = logging.getLogger(__name__)
@@ -106,10 +110,23 @@ class TradeEngine:
             return []
         
         self.logger.info(f"🔍 Processing {len(signals)} signals for execution")
+        
+        # 🚨 CRITICAL FIX: Add batch rate limiting to prevent API overwhelming
+        if len(signals) > 5:
+            self.logger.warning(f"⚠️ LARGE BATCH DETECTED: {len(signals)} signals - applying strict rate limiting")
+            batch_delay = 2.0  # 2 seconds between orders for large batches
+        else:
+            batch_delay = 1.0  # 1 second for normal batches
+            
         execution_results = []
         
-        for signal in signals:
+        for i, signal in enumerate(signals):
             try:
+                # 🚨 BATCH RATE LIMITING: Add delay between signals to prevent API overwhelm
+                if i > 0:  # Skip delay for first signal
+                    self.logger.info(f"⏱️ BATCH RATE LIMIT: Waiting {batch_delay}s before processing signal {i+1}/{len(signals)}")
+                    await asyncio.sleep(batch_delay)
+                
                 if self.paper_trading_enabled:
                     result = await self._process_paper_signal(signal)
                 else:
@@ -121,22 +138,25 @@ class TradeEngine:
                     self._track_signal_executed(signal)
                     # 🚨 CRITICAL FIX: Mark signal as executed to prevent duplicates across deploys
                     await self._mark_signal_executed_in_deduplicator(signal)
-                    self.logger.info(f"✅ Signal executed: {signal.get('symbol')} {signal.get('action')}")
+                    self.logger.info(f"✅ Signal executed: {signal.get('symbol')} {signal.get('action')} ({i+1}/{len(signals)})")
                 else:
                     execution_results.append(None)
                     # TRACK: Signal execution failed
                     self._track_signal_execution_failed(signal, "Execution returned None")
-                    self.logger.error(f"❌ Signal execution failed: {signal.get('symbol')} {signal.get('action')}")
+                    self.logger.error(f"❌ Signal execution failed: {signal.get('symbol')} {signal.get('action')} ({i+1}/{len(signals)})")
                     
             except Exception as e:
                 execution_results.append(None)
                 # TRACK: Signal execution failed with exception
                 self._track_signal_execution_failed(signal, str(e))
-                self.logger.error(f"❌ Signal processing failed: {signal.get('symbol')} {signal.get('action')} - {e}")
+                self.logger.error(f"❌ Signal processing failed: {signal.get('symbol')} {signal.get('action')} - {e} ({i+1}/{len(signals)})")
         
         # Update pending signals list
         if hasattr(self, 'pending_signals'):
             self.pending_signals.extend([s for s, r in zip(signals, execution_results) if r is None])
+        
+        successful_executions = len([r for r in execution_results if r is not None])
+        self.logger.info(f"📊 BATCH COMPLETED: {successful_executions}/{len(signals)} signals executed successfully")
         
         return execution_results
     
@@ -255,6 +275,13 @@ class TradeEngine:
                 self.logger.error(f"❌ DUPLICATE ORDER BLOCKED: Existing position found for {symbol} {action}")
                 return None
             
+            # 🛡️ CRITICAL: Check order rate limits to prevent retry loops
+            rate_check = await self.rate_limiter.can_place_order(symbol, action, quantity, signal.get('entry_price', 0))
+            if not rate_check['allowed']:
+                self.logger.error(f"🚫 ORDER RATE LIMITED: {rate_check['message']}")
+                self.logger.error(f"🚫 Reason: {rate_check['reason']}")
+                return None
+            
             # Place order via Zerodha (real execution)
             # 🚨 CRITICAL FIX: Use LIMIT orders for stock options to avoid Zerodha blocking
             order_type = 'MARKET'  # Default to MARKET
@@ -283,8 +310,17 @@ class TradeEngine:
             
             result = await self.zerodha_client.place_order(order_params)
             
+            # 📊 Record order attempt in rate limiter
+            order_success = result and isinstance(result, str)
+            await self.rate_limiter.record_order_attempt(
+                rate_check['signature'], 
+                order_success, 
+                symbol, 
+                str(result) if not order_success else None
+            )
+            
             # CRITICAL FIX: Only store trades that were ACTUALLY executed by Zerodha
-            if result and isinstance(result, str):
+            if order_success:
                 # ZerodhaIntegration returns order_id string directly - this means REAL execution
                 order_id = result
                 execution_price = signal.get('entry_price', 0)

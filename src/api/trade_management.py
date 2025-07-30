@@ -400,4 +400,50 @@ async def get_zerodha_orders():
         
     except Exception as e:
         logger.error(f"Error getting Zerodha orders: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/rate-limiter/status")
+async def get_rate_limiter_status():
+    """Get order rate limiter status - CRITICAL: Monitor to prevent 1,708 order repeat"""
+    try:
+        from src.core.orchestrator import get_orchestrator_instance
+        
+        orchestrator = get_orchestrator_instance()
+        
+        # Check if orchestrator has rate limiter
+        rate_limiter = None
+        if orchestrator and hasattr(orchestrator, 'order_manager') and orchestrator.order_manager:
+            if hasattr(orchestrator.order_manager, 'rate_limiter'):
+                rate_limiter = orchestrator.order_manager.rate_limiter
+        
+        # Also check trade engine
+        if not rate_limiter and orchestrator and hasattr(orchestrator, 'trade_engine') and orchestrator.trade_engine:
+            if hasattr(orchestrator.trade_engine, 'rate_limiter'):
+                rate_limiter = orchestrator.trade_engine.rate_limiter
+        
+        if rate_limiter:
+            status = rate_limiter.get_status()
+            return {
+                "success": True,
+                "message": "Rate limiter status retrieved successfully", 
+                "timestamp": datetime.now().isoformat(),
+                "data": {
+                    "rate_limiter_active": True,
+                    "limits": status,
+                    "protection_status": "🛡️ ACTIVE - Preventing order loops"
+                }
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Rate limiter not found - System vulnerable to retry loops",
+                "timestamp": datetime.now().isoformat(),
+                "data": {
+                    "rate_limiter_active": False,
+                    "protection_status": "⚠️ NOT ACTIVE - Risk of excessive orders"
+                }
+            }
+        
+    except Exception as e:
+        logger.error(f"Error getting rate limiter status: {e}")
         raise HTTPException(status_code=500, detail=str(e)) 
