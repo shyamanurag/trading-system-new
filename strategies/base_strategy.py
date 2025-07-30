@@ -571,15 +571,15 @@ class BaseStrategy:
             # 🎯 CRITICAL FIX: Only BUY signals for options (no selling due to margin requirements)
             # 🔧 IMPORTANT: Only use indices with confirmed options contracts on Zerodha
             if zerodha_underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:  # REMOVED MIDCPNIFTY - no options
-                # Index options - use current levels
-                strike = self._get_atm_strike(zerodha_underlying, actual_price)
+                # Index options - use volume-based strike selection for liquidity
+                expiry = self._get_next_expiry()
+                strike = self._get_volume_based_strike(zerodha_underlying, actual_price, expiry, action)
+                
                 # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
                 if action.upper() == 'BUY':
                     option_type = 'CE'  # BUY Call when bullish
                 else:  # SELL signal becomes BUY Put
                     option_type = 'PE'  # BUY Put when bearish
-                    
-                expiry = self._get_next_expiry()
                 
                 # 🔧 CRITICAL FIX: Use Zerodha's exact symbol format
                 # Zerodha format: BANKNIFTY25JUL57100PE (not BANKNIFTY31JUL2557100PE)
@@ -594,14 +594,15 @@ class BaseStrategy:
                 return None, 'REJECTED'
             else:
                 # Stock options - convert equity to options using ZERODHA NAME
-                strike = self._get_atm_strike_for_stock(actual_price)
+                # 🎯 USER REQUIREMENT: Volume-based strike selection for liquidity
+                expiry = self._get_next_expiry()
+                strike = self._get_volume_based_strike(zerodha_underlying, actual_price, expiry, action)
+                
                 # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
                 if action.upper() == 'BUY':
                     option_type = 'CE'  # BUY Call when bullish
                 else:  # SELL signal becomes BUY Put
                     option_type = 'PE'  # BUY Put when bearish
-                    
-                expiry = self._get_next_expiry()
                 
                 # 🔧 CRITICAL FIX: Use Zerodha's exact symbol format for stocks too
                 options_symbol = f"{zerodha_underlying}{expiry}{strike}{option_type}"
@@ -722,8 +723,14 @@ class BaseStrategy:
             monthly_expiries = [exp for exp in future_expiries if exp.get('is_monthly', False)]
             nearest = monthly_expiries[0] if monthly_expiries else future_expiries[0]
         elif preference == "next_weekly":
-            # Get second nearest (skip current week if very close to expiry)
-            nearest = future_expiries[1] if len(future_expiries) > 1 else future_expiries[0]
+            # 🎯 USER REQUIREMENT: Next expiry minimum (not nearest)
+            # Skip the nearest expiry and use the next one for better liquidity
+            if len(future_expiries) > 1:
+                nearest = future_expiries[1]  # Second expiry (next minimum)
+                logger.info(f"✅ Selected NEXT expiry (not nearest) for liquidity: {nearest['formatted']}")
+            else:
+                nearest = future_expiries[0]  # Fallback if only one available
+                logger.warning(f"⚠️ Only one expiry available, using: {nearest['formatted']}")
         else:  # max_time_decay
             # Choose expiry with optimal time decay (not too near, not too far)
             optimal_days = 7  # 1 week optimal
@@ -1261,4 +1268,95 @@ class BaseStrategy:
             return 49233.5  # Fallback to current known balance
         except Exception as e:
             logger.error(f"Error getting available capital: {e}")
-            return 49233.5  # Safe fallback 
+            return 49233.5  # Safe fallback
+    
+    def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
+        """🎯 USER REQUIREMENT: Select strike based on volume - highest or second highest for liquidity"""
+        try:
+            # First get ATM strike as baseline
+            atm_strike = self._get_atm_strike_for_stock(current_price)
+            
+            # Get available strikes around ATM (3 strikes above and below)
+            strike_interval = 50 if underlying_symbol not in ['NIFTY', 'BANKNIFTY', 'FINNIFTY'] else (50 if underlying_symbol == 'NIFTY' else 100)
+            
+            candidate_strikes = []
+            for i in range(-3, 4):  # 7 strikes total around ATM
+                strike = atm_strike + (i * strike_interval)
+                if strike > 0:  # Only positive strikes
+                    candidate_strikes.append(strike)
+            
+            logger.info(f"💰 VOLUME-BASED STRIKE SELECTION for {underlying_symbol}")
+            logger.info(f"   Current Price: ₹{current_price:.2f}, ATM: {atm_strike}")
+            logger.info(f"   Evaluating strikes: {candidate_strikes}")
+            
+            # Try to get volume data from market data (TrueData)
+            volume_data = self._get_strikes_volume_data(underlying_symbol, candidate_strikes, expiry, action)
+            
+            if volume_data:
+                # Sort by volume (highest first)
+                sorted_by_volume = sorted(volume_data.items(), key=lambda x: x[1]['volume'], reverse=True)
+                
+                # Log volume analysis
+                logger.info(f"📊 VOLUME ANALYSIS:")
+                for i, (strike, data) in enumerate(sorted_by_volume[:3]):
+                    logger.info(f"   #{i+1}: Strike {strike} - Volume: {data['volume']:,} - Premium: ₹{data.get('premium', 'N/A')}")
+                
+                # USER REQUIREMENT: Use highest or second highest volume for liquidity
+                if len(sorted_by_volume) >= 2:
+                    # Use second highest for better execution (avoid over-crowded strikes)
+                    selected_strike = sorted_by_volume[1][0]
+                    selected_data = sorted_by_volume[1][1]
+                    logger.info(f"✅ SELECTED: Strike {selected_strike} (2nd highest volume: {selected_data['volume']:,})")
+                else:
+                    # Fallback to highest volume
+                    selected_strike = sorted_by_volume[0][0]
+                    selected_data = sorted_by_volume[0][1]
+                    logger.info(f"✅ SELECTED: Strike {selected_strike} (highest volume: {selected_data['volume']:,})")
+                
+                return selected_strike
+            else:
+                # Fallback to ATM if volume data not available
+                logger.warning(f"⚠️ Volume data not available for {underlying_symbol}, using ATM strike: {atm_strike}")
+                return atm_strike
+                
+        except Exception as e:
+            logger.error(f"Error in volume-based strike selection: {e}")
+            # Fallback to ATM
+            atm_strike = self._get_atm_strike_for_stock(current_price)
+            logger.warning(f"⚠️ Fallback to ATM strike: {atm_strike}")
+            return atm_strike
+    
+    def _get_strikes_volume_data(self, underlying_symbol: str, strikes: List[int], expiry: str, action: str) -> Dict:
+        """Get volume data for strikes from market data sources"""
+        try:
+            # Try to get volume data from TrueData cache
+            from data.truedata_client import live_market_data
+            
+            volume_data = {}
+            option_type = 'CE' if action.upper() == 'BUY' else 'PE'
+            
+            for strike in strikes:
+                # Build options symbol
+                options_symbol = f"{underlying_symbol}{expiry}{strike}{option_type}"
+                
+                if live_market_data and options_symbol in live_market_data:
+                    market_data = live_market_data[options_symbol]
+                    volume = market_data.get('volume', 0)
+                    premium = market_data.get('ltp', market_data.get('price', 0))
+                    
+                    volume_data[strike] = {
+                        'volume': volume,
+                        'premium': premium,
+                        'symbol': options_symbol
+                    }
+                    
+            if volume_data:
+                logger.info(f"✅ Retrieved volume data for {len(volume_data)} strikes from TrueData")
+                return volume_data
+            else:
+                logger.warning(f"⚠️ No volume data found in TrueData for {underlying_symbol} options")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Error getting volume data: {e}")
+            return {} 
