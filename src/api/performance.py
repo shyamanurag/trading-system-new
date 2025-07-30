@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from ..models.responses import BaseResponse, TradeResponse, PositionResponse
 from ..core.orchestrator import TradingOrchestrator
+from ..core.dependencies import get_orchestrator
 import logging
 
 router = APIRouter()
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 @router.get("/performance/daily-pnl", response_model=BaseResponse)
 async def get_daily_pnl(
     date: datetime = None,
-    orchestrator: TradingOrchestrator = Depends()
+    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
 ):
     """Get daily PnL metrics"""
     try:
@@ -30,7 +31,7 @@ async def get_daily_pnl(
 
 @router.get("/performance/positions", response_model=List[PositionResponse])
 async def get_positions(
-    orchestrator: TradingOrchestrator = Depends()
+    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
 ):
     """Get current positions"""
     try:
@@ -59,7 +60,7 @@ async def get_positions(
 async def get_trades(
     start_date: datetime = None,
     end_date: datetime = None,
-    orchestrator: TradingOrchestrator = Depends()
+    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
 ):
     """Get trade history"""
     try:
@@ -142,7 +143,7 @@ async def get_performance_metrics():
 
 @router.get("/performance/risk", response_model=Dict[str, Any])
 async def get_risk_metrics(
-    orchestrator: TradingOrchestrator = Depends()
+    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
 ):
     """Get risk metrics"""
     try:

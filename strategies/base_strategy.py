@@ -1189,7 +1189,7 @@ class BaseStrategy:
             return 7  # 1 week fallback
     
     def _get_dynamic_lot_size(self, options_symbol: str, underlying_symbol: str) -> int:
-        """Get dynamic lot size based on options contract specifications"""
+        """Get dynamic lot size based on options contract specifications AND capital constraints"""
         try:
             # UPDATED LOT SIZES as per Zerodha requirements (March 2025 onwards)
             if underlying_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
@@ -1197,26 +1197,26 @@ class BaseStrategy:
                 lot_sizes = {'NIFTY': 75, 'BANKNIFTY': 25, 'FINNIFTY': 40}  # Updated NIFTY from 50->75, BANKNIFTY from 15->25
                 return lot_sizes.get(underlying_symbol, 75)
             else:
-                # Stock options have specific lot sizes - use conservative approach
-                # Most stock options now have lot sizes of 750 or similar multiples
+                # 🚨 CAPITAL-AWARE LOT SIZING: Reduce lot sizes for expensive options
+                # The problem: 750 qty × ₹200 premium = ₹150,000 > ₹49,233 available
                 try:
                     from data.truedata_client import live_market_data
                     if live_market_data and underlying_symbol in live_market_data:
                         stock_price = live_market_data[underlying_symbol].get('ltp', 1000)
-                        # Use 750 as standard lot size for most stock options (as per BAJFINANCE error)
+                        # 🎯 CRITICAL: Use much smaller lot sizes to fit available capital
                         if stock_price > 10000:
-                            return 375  # Half lot for very expensive stocks
+                            return 50   # Very small lot for very expensive stocks (was 375)
                         elif stock_price > 3000:
-                            return 750  # Standard lot for expensive stocks (BAJFINANCE requirement)
+                            return 100  # Small lot for expensive stocks (was 750) 
                         elif stock_price > 1000:
-                            return 750  # Standard lot for medium-priced stocks
+                            return 150  # Medium lot for medium-priced stocks (was 750)
                         else:
-                            return 1500  # Larger lot for cheaper stocks
+                            return 200  # Larger lot for cheaper stocks (was 1500)
                 except:
                     pass
                 
-                # Fallback: use 750 as standard lot size for stock options
-                return 750
+                # Fallback: use capital-friendly lot size 
+                return 100  # Capital-friendly fallback (was 750)
                 
         except Exception as e:
             logger.error(f"Error getting lot size for {options_symbol}: {e}")
