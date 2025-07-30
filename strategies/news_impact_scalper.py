@@ -63,23 +63,33 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             signals = self._generate_signals(data)
             
             # 🚨 CRITICAL: Apply capital filtering before storing signals
+            original_signal_count = len(signals)
             affordable_signals = []
+            available_capital = 49233.5  # Current balance
+            
             for signal in signals:
                 symbol = signal['symbol']
                 entry_price = signal.get('entry_price', 0)
-                quantity = signal.get('quantity', 50)  # Default quantity
+                quantity = signal.get('quantity', 50)  # Get actual quantity from signal
+                required_capital = entry_price * quantity
                 
-                # Check if signal is affordable with available capital
-                if self._check_capital_affordability(symbol, quantity, entry_price):
+                # STRICT CAPITAL CHECK: Filter out unaffordable signals
+                if required_capital <= available_capital and required_capital <= (available_capital * 0.8):
                     affordable_signals.append(signal)
                     self.current_positions[signal['symbol']] = signal
                     logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
-                               f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
+                               f"Entry: ₹{signal['entry_price']:.2f}, Quantity: {quantity}, Cost: ₹{required_capital:,.0f}")
                 else:
-                    logger.debug(f"💰 {self.name} SIGNAL FILTERED: {symbol} unaffordable (₹{entry_price * quantity:,.0f})")
+                    logger.warning(f"💰 {self.name} SIGNAL FILTERED: {symbol} UNAFFORDABLE - "
+                                  f"Needs ₹{required_capital:,.0f} > Available ₹{available_capital:,.0f} (Quantity: {quantity})")
             
             # Update signals to only include affordable ones
             signals = affordable_signals
+            
+            # Log filtering results
+            if len(affordable_signals) < original_signal_count:
+                filtered_count = original_signal_count - len(affordable_signals)
+                logger.warning(f"🚫 {self.name} FILTERED {filtered_count}/{original_signal_count} signals due to insufficient capital")
             
             # Execute trades based on signals (backup method)
             if signals:
