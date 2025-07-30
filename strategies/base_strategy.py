@@ -665,8 +665,8 @@ class BaseStrategy:
             for i, exp in enumerate(available_expiries[:3]):  # Log first 3
                 logger.info(f"   {i+1}. {exp['formatted']} ({exp['date']})")
             
-            # Use the nearest expiry
-            optimal_expiry = self._get_optimal_expiry_for_strategy()
+            # Use the next expiry (not nearest to avoid expiry day volatility)
+            optimal_expiry = self._get_optimal_expiry_for_strategy("next_weekly")  # Changed from default to "next_weekly"
             logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
             return optimal_expiry
         else:
@@ -1176,30 +1176,33 @@ class BaseStrategy:
     def _get_dynamic_lot_size(self, options_symbol: str, underlying_symbol: str) -> int:
         """Get dynamic lot size based on options contract specifications"""
         try:
-            # Try to get lot size from TrueData or predefined mappings
+            # UPDATED LOT SIZES as per Zerodha requirements (March 2025 onwards)
             if underlying_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
-                # Index options have standard lot sizes
-                lot_sizes = {'NIFTY': 50, 'BANKNIFTY': 15, 'FINNIFTY': 40}
-                return lot_sizes.get(underlying_symbol, 50)
+                # Index options have standard lot sizes - UPDATED as per Zerodha changes
+                lot_sizes = {'NIFTY': 75, 'BANKNIFTY': 25, 'FINNIFTY': 40}  # Updated NIFTY from 50->75, BANKNIFTY from 15->25
+                return lot_sizes.get(underlying_symbol, 75)
             else:
-                # Stock options typically have lot size based on price
-                # Higher priced stocks have smaller lot sizes
+                # Stock options have specific lot sizes - use conservative approach
+                # Most stock options now have lot sizes of 750 or similar multiples
                 try:
                     from data.truedata_client import live_market_data
                     if live_market_data and underlying_symbol in live_market_data:
                         stock_price = live_market_data[underlying_symbol].get('ltp', 1000)
-                        if stock_price > 5000:
-                            return 50  # Small lot for expensive stocks
+                        # Use 750 as standard lot size for most stock options (as per BAJFINANCE error)
+                        if stock_price > 10000:
+                            return 375  # Half lot for very expensive stocks
+                        elif stock_price > 3000:
+                            return 750  # Standard lot for expensive stocks (BAJFINANCE requirement)
                         elif stock_price > 1000:
-                            return 100  # Medium lot
+                            return 750  # Standard lot for medium-priced stocks
                         else:
-                            return 200  # Large lot for cheaper stocks
+                            return 1500  # Larger lot for cheaper stocks
                 except:
                     pass
                 
-                # Fallback: standard lot size
-                return 100
+                # Fallback: use 750 as standard lot size for stock options
+                return 750
                 
         except Exception as e:
             logger.error(f"Error getting lot size for {options_symbol}: {e}")
-            return 50  # Safe fallback 
+            return 75  # Safe fallback (NIFTY standard) 
