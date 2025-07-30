@@ -6,6 +6,7 @@ Implements signal quality scoring and filtering
 """
 
 import logging
+import asyncio
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -30,6 +31,80 @@ class SignalDeduplicator:
         # 🚨 CRITICAL FIX: Redis persistence for executed signals across deploys
         self.redis_client = None
         self._init_redis_connection()
+        
+        # 🚨 DEPLOYMENT CACHE CLEARING: Clear old signals after deployment
+        import asyncio
+        asyncio.create_task(self._clear_signal_cache_on_startup())
+
+    async def _clear_signal_cache_on_startup(self):
+        """Clear deployment cache on startup to prevent duplicate signals"""
+        try:
+            # Wait a bit for Redis connection to be ready
+            await asyncio.sleep(2)
+            
+            if not self.redis_client:
+                logger.warning("⚠️ No Redis client - cannot clear deployment cache")
+                return
+            
+            # Check if this is a fresh deployment (no cache clearing in last 5 minutes)
+            cache_clear_key = "last_cache_clear"
+            last_clear = await self.redis_client.get(cache_clear_key)
+            
+            if last_clear:
+                import time
+                time_since_clear = time.time() - float(last_clear)
+                if time_since_clear < 300:  # 5 minutes
+                    logger.info(f"⏭️ Skipping cache clear - last cleared {time_since_clear:.0f}s ago")
+                    return
+            
+            logger.info("🧹 DEPLOYMENT STARTUP: Clearing signal execution cache (preserving order tracking)")
+            
+            # Clear ONLY executed signals deduplication cache for today
+            today = datetime.now().strftime('%Y-%m-%d')
+            pattern = f"executed_signals:{today}:*"
+            
+            keys = await self.redis_client.keys(pattern)
+            if keys:
+                deleted = await self.redis_client.delete(*keys)
+                logger.info(f"✅ Cleared {deleted} signal execution cache entries (not order tracking)")
+                logger.info("🔒 Order tracking & position data preserved for square-off trades")
+            else:
+                logger.info("ℹ️ No signal execution cache found - clean slate confirmed")
+            
+            # Mark cache as cleared
+            import time
+            await self.redis_client.set(cache_clear_key, str(time.time()), ex=3600)  # 1 hour expiry
+            
+            logger.info("🚀 Signal processing cache cleared - ready for fresh signals")
+            
+        except Exception as e:
+            logger.error(f"❌ Error clearing deployment cache: {e}")
+
+    async def clear_all_executed_signals(self):
+        """Clear all executed signals cache - can be called manually"""
+        try:
+            if not self.redis_client:
+                logger.error("❌ No Redis client available")
+                return 0
+            
+            # Clear executed signals for last 3 days
+            total_cleared = 0
+            for days_back in range(3):
+                date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+                pattern = f"executed_signals:{date}:*"
+                
+                keys = await self.redis_client.keys(pattern)
+                if keys:
+                    deleted = await self.redis_client.delete(*keys)
+                    total_cleared += deleted
+                    logger.info(f"🧹 Cleared {deleted} executed signals for {date}")
+            
+            logger.info(f"✅ Total executed signals cleared: {total_cleared}")
+            return total_cleared
+            
+        except Exception as e:
+            logger.error(f"❌ Error clearing executed signals: {e}")
+            return 0
         
     def _init_redis_connection(self):
         """Initialize Redis connection for persistent signal tracking"""
