@@ -406,20 +406,73 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
 
     const fetchDashboardData = async () => {
         try {
-            const response = await fetchWithAuth(API_ENDPOINTS.DASHBOARD_SUMMARY.url);
-            if (response.ok) {
-                const data = await response.json();
-                if (data.success) {
-                    setDashboardData(data);
-                } else {
-                    throw new Error('Failed to fetch dashboard data');
+            // FIXED: Fetch real-time data from multiple sources
+            const [tradesResponse, userMetricsResponse, balanceResponse] = await Promise.all([
+                fetchWithAuth('/api/trades/live').catch(() => null), // Live Zerodha trades
+                fetchWithAuth('/api/users/metrics').catch(() => null), // Live user metrics
+                fetchWithAuth('/api/balance/realtime').catch(() => null) // Live balance
+            ]);
+
+            let totalTrades = 0;
+            let dailyPnl = 0;
+            let totalBalance = 0;
+
+            // Process trades data
+            if (tradesResponse && tradesResponse.ok) {
+                const tradesData = await tradesResponse.json();
+                if (Array.isArray(tradesData)) {
+                    totalTrades = tradesData.length;
+                    console.log(`🔍 Found ${totalTrades} live trades from Zerodha`);
                 }
-            } else {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
+
+            // Process user metrics
+            if (userMetricsResponse && userMetricsResponse.ok) {
+                const userMetrics = await userMetricsResponse.json();
+                if (userMetrics.trade_count) {
+                    totalTrades = Math.max(totalTrades, userMetrics.trade_count);
+                }
+                if (userMetrics.daily_pnl !== undefined) {
+                    dailyPnl = userMetrics.daily_pnl;
+                }
+            }
+
+            // Process balance data
+            if (balanceResponse && balanceResponse.ok) {
+                const balanceData = await balanceResponse.json();
+                if (balanceData.available_cash) {
+                    totalBalance = balanceData.available_cash;
+                }
+            }
+
+            // Set real data
+            setDashboardData({
+                system_metrics: {
+                    aum: totalBalance,
+                    total_trades: totalTrades,
+                    daily_pnl: dailyPnl
+                }
+            });
+
+            console.log(`📊 Dashboard updated: ${totalTrades} trades, ₹${dailyPnl} P&L, ₹${totalBalance} balance`);
+
         } catch (err) {
             console.error('Error fetching dashboard data:', err);
-            // Set fallback data with safe structure
+            // Fallback to trying the original endpoint
+            try {
+                const response = await fetchWithAuth(API_ENDPOINTS.DASHBOARD_SUMMARY.url);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        setDashboardData(data);
+                        return;
+                    }
+                }
+            } catch (fallbackErr) {
+                console.warn('Fallback dashboard endpoint also failed:', fallbackErr);
+            }
+
+            // Set safe fallback data
             setDashboardData({
                 system_metrics: {
                     aum: 0,

@@ -104,7 +104,8 @@ export const API_ENDPOINTS = {
     BROKER_USERS: createEndpoint('/api/v1/control/users/broker'),
 
     // UNIFIED Trading endpoints - All use PRIMARY_USER_ID for consistency
-    TRADES: createEndpoint('/api/v1/trades', true),
+    TRADES: createEndpoint('/api/trades/live', true), // FIXED: Use live Zerodha trades
+    TRADES_BACKUP: createEndpoint('/api/v1/trades', true), // Fallback to database
     POSITIONS: createEndpoint('/api/v1/positions', true),
     ORDERS: createEndpoint('/api/v1/orders', true),
     // Added missing endpoints for complete coverage
@@ -133,6 +134,8 @@ export const API_ENDPOINTS = {
 
     // BALANCE FIX: Real-time balance endpoint
     REALTIME_BALANCE: createEndpoint('/api/balance/realtime'),
+    // USER METRICS FIX: Use direct Zerodha endpoint
+    USER_METRICS: createEndpoint('/api/users/metrics'),
     ELITE_RECOMMENDATIONS: createEndpoint('/api/v1/elite', true),
     DASHBOARD_DATA: createEndpoint('/api/v1/dashboard/data'),
 
