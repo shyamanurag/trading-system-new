@@ -1196,86 +1196,163 @@ class BaseStrategy:
             return 7  # 1 week fallback
     
     def _get_dynamic_lot_size(self, options_symbol: str, underlying_symbol: str) -> int:
-        """Get CORRECT exchange-defined lot sizes - never modify exchange requirements"""
+        """🎯 FULLY DYNAMIC: Fetch actual F&O lot sizes from Zerodha instruments API"""
         try:
-            # EXCHANGE-DEFINED LOT SIZES (cannot be changed - these are official)
+            # Try to get actual lot size from Zerodha instruments API
+            actual_lot_size = self._fetch_zerodha_lot_size(underlying_symbol)
+            if actual_lot_size:
+                logger.info(f"✅ DYNAMIC LOT SIZE: {underlying_symbol} = {actual_lot_size} (from Zerodha API)")
+                return actual_lot_size
+            
+            # Fallback: EXCHANGE-DEFINED LOT SIZES (official NSE values)
             if underlying_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
                 # Index options have standard lot sizes as per NSE
                 lot_sizes = {'NIFTY': 75, 'BANKNIFTY': 25, 'FINNIFTY': 40}  
-                return lot_sizes.get(underlying_symbol, 75)
+                fallback_size = lot_sizes.get(underlying_symbol, 75)
+                logger.info(f"📋 FALLBACK LOT SIZE: {underlying_symbol} = {fallback_size} (NSE standard)")
+                return fallback_size
             else:
-                # Stock options have exchange-defined lot sizes - fetch from market data
-                try:
-                    from data.truedata_client import live_market_data
-                    if live_market_data and underlying_symbol in live_market_data:
-                        stock_price = live_market_data[underlying_symbol].get('ltp', 1000)
-                        # CORRECT EXCHANGE LOT SIZES for major stocks (as per NSE/BSE)
-                        if stock_price > 10000:
-                            return 375   # Standard lot for very expensive stocks (e.g., MRF)
-                        elif stock_price > 3000:
-                            return 750   # Standard lot for expensive stocks (e.g., BAJFINANCE)
-                        elif stock_price > 1000:
-                            return 750   # Standard lot for medium-priced stocks
-                        else:
-                            return 1500  # Standard lot for cheaper stocks
-                except:
-                    pass
-                
-                # Fallback: use standard stock option lot size
-                return 750  # Standard NSE stock option lot size
+                # Stock options: Use NSE standard of 750 for most stocks
+                fallback_size = 750  # Standard NSE stock option lot size
+                logger.info(f"📋 FALLBACK LOT SIZE: {underlying_symbol} = {fallback_size} (NSE stock standard)")
+                return fallback_size
                 
         except Exception as e:
-            logger.error(f"Error getting lot size for {options_symbol}: {e}")
+            logger.error(f"Error getting dynamic lot size for {options_symbol}: {e}")
             return 75  # Safe fallback
     
-    def _get_capital_constrained_quantity(self, options_symbol: str, underlying_symbol: str, entry_price: float) -> int:
-        """Calculate quantity based on capital constraints - limit NUMBER OF LOTS, not lot size"""
+    def _fetch_zerodha_lot_size(self, underlying_symbol: str) -> int:
+        """🎯 DYNAMIC: Fetch actual lot size from Zerodha instruments API"""
         try:
-            # Get the correct exchange-defined lot size
+            # Get orchestrator instance to access Zerodha client
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if not orchestrator or not orchestrator.zerodha_client:
+                logger.debug(f"⚠️ Zerodha client not available for lot size lookup: {underlying_symbol}")
+                return None
+            
+            # Try to get instruments data
+            if hasattr(orchestrator.zerodha_client, 'kite') and orchestrator.zerodha_client.kite:
+                try:
+                    # Get NFO instruments (F&O contracts)
+                    instruments = orchestrator.zerodha_client.kite.instruments('NFO')
+                    
+                    # Look for the underlying symbol in F&O instruments
+                    for instrument in instruments:
+                        trading_symbol = instrument.get('tradingsymbol', '')
+                        segment = instrument.get('segment', '')
+                        
+                        # Match underlying symbol (e.g., NIFTY, RELIANCE, etc.)
+                        if (underlying_symbol in trading_symbol and 
+                            segment == 'NFO-OPT' and  # Options only
+                            ('CE' in trading_symbol or 'PE' in trading_symbol)):
+                            
+                            lot_size = instrument.get('lot_size', 0)
+                            if lot_size > 0:
+                                logger.info(f"✅ ZERODHA LOT SIZE: {underlying_symbol} = {lot_size}")
+                                return lot_size
+                    
+                    logger.debug(f"🔍 No F&O lot size found for {underlying_symbol} in Zerodha instruments")
+                    return None
+                    
+                except Exception as e:
+                    logger.debug(f"⚠️ Error fetching Zerodha instruments for {underlying_symbol}: {e}")
+                    return None
+            else:
+                logger.debug(f"⚠️ Zerodha KiteConnect not initialized for lot size lookup")
+                return None
+                
+        except Exception as e:
+            logger.debug(f"Error fetching Zerodha lot size for {underlying_symbol}: {e}")
+            return None
+    
+    def _get_capital_constrained_quantity(self, options_symbol: str, underlying_symbol: str, entry_price: float) -> int:
+        """🎯 DYNAMIC F&O: Always use 1 lot for F&O contracts, respecting capital limits"""
+        try:
+            # 🎯 USER REQUEST: Dynamic F&O quantity = 1 lot
             base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
             
-            # Capital constraint: Maximum 80% of available capital per trade (dynamic)
+            # Get real-time available capital
             available_capital = self._get_available_capital()
-            max_capital_per_trade = available_capital * 0.8  # 80% max per trade
             
-            # Calculate how many lots we can afford
+            # Calculate cost for 1 lot
             cost_per_lot = base_lot_size * entry_price
-            max_affordable_lots = int(max_capital_per_trade / cost_per_lot) if cost_per_lot > 0 else 0
             
-            # 🚨 CRITICAL FIX: Always allow at least 1 lot for affordable options (up to 50% capital)
-            if max_affordable_lots <= 0:
-                # Check if we can afford 1 lot with 50% of available capital (less conservative)
-                if cost_per_lot <= (available_capital * 0.5):
-                    logger.info(f"💰 {options_symbol}: Using 50% capital threshold - allowing 1 lot (₹{cost_per_lot:,.0f})")
-                    num_lots = 1
-                    final_quantity = num_lots * base_lot_size
-                    logger.info(f"💰 OVERRIDE: {options_symbol}: {num_lots} lots × {base_lot_size} = {final_quantity} qty (₹{final_quantity * entry_price:,.0f})")
-                    return final_quantity
-                else:
-                    logger.warning(f"💰 {options_symbol}: Cannot afford even 1 lot (₹{cost_per_lot:,.0f} > ₹{available_capital * 0.5:,.0f})")
-                    return 0  # Cannot afford any lots
+            # 🎯 DYNAMIC CAPITAL CHECK: Can we afford 1 lot?
+            max_capital_per_trade = available_capital * 0.6  # 60% max per trade (balanced approach)
             
-            # Limit to maximum 5 lots for risk management
-            num_lots = min(max_affordable_lots, 5)
-            final_quantity = num_lots * base_lot_size
-            
-            logger.info(f"💰 {options_symbol}: {num_lots} lots × {base_lot_size} = {final_quantity} qty (₹{final_quantity * entry_price:,.0f})")
-            return final_quantity
+            if cost_per_lot <= max_capital_per_trade:
+                # Affordable with normal threshold
+                logger.info(f"✅ F&O ORDER: {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
+                logger.info(f"   💰 Cost: ₹{cost_per_lot:,.0f} / Available: ₹{available_capital:,.0f} ({cost_per_lot/available_capital:.1%})")
+                return base_lot_size
+            elif cost_per_lot <= (available_capital * 0.8):
+                # Affordable with higher threshold (80%)
+                logger.info(f"✅ F&O ORDER (HIGH COST): {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
+                logger.info(f"   💰 Cost: ₹{cost_per_lot:,.0f} / Available: ₹{available_capital:,.0f} ({cost_per_lot/available_capital:.1%})")
+                return base_lot_size
+            else:
+                # Too expensive - cannot afford 1 lot
+                logger.warning(f"❌ F&O REJECTED: {underlying_symbol} too expensive (₹{cost_per_lot:,.0f} > 80% of ₹{available_capital:,.0f})")
+                return 0  # Signal will be filtered out
             
         except Exception as e:
-            logger.error(f"Error calculating capital-constrained quantity: {e}")
-            # Fallback: use 1 lot of the base lot size
-            base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
-            return base_lot_size
+            logger.error(f"Error calculating F&O quantity: {e}")
+            # Fallback: return 1 lot size
+            try:
+                base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
+                logger.info(f"📋 FALLBACK F&O: {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
+                return base_lot_size
+            except:
+                return 75  # Ultimate fallback
     
     def _get_available_capital(self) -> float:
-        """Get available capital dynamically (will be overridden by orchestrator/trading engine)"""
+        """🎯 DYNAMIC: Get available capital from Zerodha margins API in real-time"""
         try:
-            # Try to get real-time capital from orchestrator/zerodha
-            # This is a placeholder - the actual implementation will fetch from Zerodha API
-            return 49233.5  # Fallback to current known balance
+            # Try to get real-time capital from Zerodha margins API
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if orchestrator and orchestrator.zerodha_client:
+                try:
+                    # Try to get margins (available cash) from Zerodha
+                    if hasattr(orchestrator.zerodha_client, 'get_margins'):
+                        # Use async method if available
+                        import asyncio
+                        loop = asyncio.get_event_loop()
+                        
+                        if loop.is_running():
+                            # If already in async context, use fallback
+                            logger.debug("⚠️ Already in async context, using cached capital")
+                            return 49233.5  # Use cached value
+                        else:
+                            # Run async method to get live margins
+                            margins = loop.run_until_complete(orchestrator.zerodha_client.get_margins())
+                            if margins and isinstance(margins, (int, float)) and margins > 0:
+                                logger.info(f"✅ DYNAMIC CAPITAL: ₹{margins:,.2f} (live from Zerodha)")
+                                return float(margins)
+                    
+                    # Fallback: Try sync method if available
+                    if hasattr(orchestrator.zerodha_client, 'kite') and orchestrator.zerodha_client.kite:
+                        try:
+                            margins = orchestrator.zerodha_client.kite.margins()
+                            equity_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
+                            if equity_cash > 0:
+                                logger.info(f"✅ DYNAMIC CAPITAL: ₹{equity_cash:,.2f} (from Zerodha equity margins)")
+                                return float(equity_cash)
+                        except Exception as margin_error:
+                            logger.debug(f"⚠️ Error fetching Zerodha margins: {margin_error}")
+                            
+                except Exception as zerodha_error:
+                    logger.debug(f"⚠️ Error accessing Zerodha for capital: {zerodha_error}")
+            
+            # Fallback to cached/estimated value
+            logger.debug("📋 Using fallback capital (Zerodha not available)")
+            return 49233.5  # Current known balance as fallback
+            
         except Exception as e:
-            logger.error(f"Error getting available capital: {e}")
+            logger.error(f"Error getting dynamic available capital: {e}")
             return 49233.5  # Safe fallback
     
     def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
