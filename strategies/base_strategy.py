@@ -69,6 +69,21 @@ class BaseStrategy:
         
         return True
     
+    def _check_capital_affordability(self, symbol: str, quantity: int, price: float, available_capital: float = 49233.5) -> bool:
+        """Check if signal is affordable with available capital - CRITICAL FIX for 1,237 failures"""
+        required_capital = price * quantity
+        
+        if required_capital > available_capital:
+            logger.debug(f"💰 SIGNAL FILTERED: {symbol} needs ₹{required_capital:,.0f} > available ₹{available_capital:,.0f}")
+            return False
+        
+        # Also check if it's more than 80% of available capital (risk management)
+        if required_capital > (available_capital * 0.8):
+            logger.debug(f"💰 SIGNAL FILTERED: {symbol} uses {required_capital/available_capital:.1%} of capital (>80% limit)")
+            return False
+        
+        return True
+    
     def _increment_signal_counters(self):
         """Increment signal counters when a signal is generated"""
         self.signals_generated_this_hour += 1

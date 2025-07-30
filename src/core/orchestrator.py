@@ -1440,6 +1440,13 @@ class TradingOrchestrator:
                         if signals_generated == 0:
                             self.logger.info(f"📝 {strategy_key}: No signals generated (normal operation)")
                         else:
+                            # 🚨 CRITICAL: Log excessive signal generation for analysis
+                            if signals_generated > 5:
+                                self.logger.warning(f"⚠️ EXCESSIVE SIGNALS: {strategy_key} generated {signals_generated} signals in one cycle")
+                                self.logger.warning(f"⚠️ This strategy may need signal generation limits or logic review")
+                            
+                            self.logger.info(f"📊 {strategy_key}: Generated {signals_generated} signals")
+                            
                             # Clear signals after collection (correct behavior)
                             # Signals should be void if execution fails
                             for symbol in list(strategy_instance.current_positions.keys()):
