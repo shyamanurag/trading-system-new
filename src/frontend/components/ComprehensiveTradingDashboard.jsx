@@ -182,25 +182,23 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                         // FIXED: Use REAL daily P&L data from API - NO MOCK DATA
                         // Fetch actual historical P&L data from performance API
                         try {
-                            const response = await fetch('/api/v1/performance/daily-pnl', {
-                                headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
-                            });
+                            const response = await fetchWithAuth('/api/v1/performance/daily-pnl-history');
                             if (response.ok) {
                                 const historicalData = await response.json();
-                                dashboardData.dailyPnL = historicalData.daily_pnl_history || [
-                                    { date: new Date().toISOString().split('T')[0], pnl: realTrading.daily_pnl || 0, trades: realTrading.total_trades || 0 }
+                                dashboardData.dailyPnL = historicalData.daily_history || [
+                                    { date: new Date().toISOString().split('T')[0], total_pnl: realTrading.daily_pnl || 0, trades: realTrading.total_trades || 0 }
                                 ];
                             } else {
                                 // If no historical data available, show only today's real data
                                 dashboardData.dailyPnL = [
-                                    { date: new Date().toISOString().split('T')[0], pnl: realTrading.daily_pnl || 0, trades: realTrading.total_trades || 0 }
+                                    { date: new Date().toISOString().split('T')[0], total_pnl: realTrading.daily_pnl || 0, trades: realTrading.total_trades || 0 }
                                 ];
                             }
                         } catch (error) {
                             console.error('Error fetching historical P&L:', error);
                             // Fallback to today's real data only
                             dashboardData.dailyPnL = [
-                                { date: new Date().toISOString().split('T')[0], pnl: realTrading.daily_pnl || 0, trades: realTrading.total_trades || 0 }
+                                { date: new Date().toISOString().split('T')[0], total_pnl: realTrading.daily_pnl || 0, trades: realTrading.total_trades || 0 }
                             ];
                         }
                     }

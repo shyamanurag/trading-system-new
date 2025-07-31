@@ -130,9 +130,7 @@ const UserPerformanceDashboard = ({ tradingData }) => {
 
                 // FIXED: Fetch REAL users from API - NO MOCK DATA
                 try {
-                    const usersResponse = await fetch('/api/v1/users/active', {
-                        headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
-                    });
+                    const usersResponse = await fetchWithAuth('/api/v1/users/active');
                     
                     if (usersResponse.ok) {
                         const realUsers = await usersResponse.json();
@@ -169,9 +167,7 @@ const UserPerformanceDashboard = ({ tradingData }) => {
 
                 // FIXED: Fetch REAL daily P&L data from API - NO MOCK DATA
                 try {
-                    const dailyPnLResponse = await fetch('/api/v1/performance/daily-pnl-history', {
-                        headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
-                    });
+                    const dailyPnLResponse = await fetchWithAuth('/api/v1/performance/daily-pnl-history');
                     
                     if (dailyPnLResponse.ok) {
                         const realDailyData = await dailyPnLResponse.json();

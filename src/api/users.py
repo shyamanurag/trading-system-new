@@ -15,6 +15,59 @@ def get_database_operations():
     # In a real application, this should be moved to a shared database module.
     return None
 
+@router.get("/active", summary="Get active trading users")
+async def get_active_users():
+    """Get REAL active trading users from Zerodha broker system"""
+    try:
+        logger.info("🔍 Fetching REAL active users from Zerodha system")
+        
+        # Import here to avoid circular imports
+        from src.core.database import get_db_connection
+        
+        async with get_db_connection() as conn:
+            query = """
+            SELECT user_id, username, email, created_at, 
+                   zerodha_client_id, initial_capital, status 
+            FROM users 
+            WHERE status = 'active' 
+            AND zerodha_client_id IS NOT NULL
+            ORDER BY created_at DESC
+            """
+            
+            result = await conn.fetch(query)
+            
+            users = []
+            for row in result:
+                users.append({
+                    'user_id': row['user_id'],
+                    'username': row['username'], 
+                    'email': row['email'],
+                    'zerodha_client_id': row['zerodha_client_id'],
+                    'initial_capital': float(row['initial_capital']) if row['initial_capital'] else 0,
+                    'status': row['status'],
+                    'created_at': row['created_at'].isoformat() if row['created_at'] else None
+                })
+            
+            logger.info(f"✅ Found {len(users)} active trading users")
+            
+            return {
+                "success": True,
+                "users": users,
+                "total_users": len(users),
+                "timestamp": datetime.now().isoformat(),
+                "source": "real_database"
+            }
+            
+    except Exception as e:
+        logger.error(f"Error fetching active users: {e}")
+        return {
+            "success": False,
+            "users": [],
+            "total_users": 0,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.get("/", summary="Get all users")
 async def get_users():
     """Fetch all registered trading users with their basic information"""

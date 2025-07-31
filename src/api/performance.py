@@ -29,6 +29,63 @@ async def get_daily_pnl(
         logger.error(f"Error getting daily PnL: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/performance/daily-pnl-history")
+async def get_daily_pnl_history(
+    days: int = 30,
+    orchestrator: TradingOrchestrator = Depends(get_orchestrator)
+):
+    """Get historical daily PnL data for charts"""
+    try:
+        logger.info(f"📊 Fetching {days} days of historical P&L data")
+        
+        # Import here to avoid circular imports  
+        from src.core.database import get_db_connection
+        
+        async with get_db_connection() as conn:
+            query = """
+            SELECT DATE(created_at) as date,
+                   SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END) as profit,
+                   SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END) as loss,
+                   SUM(pnl) as total_pnl,
+                   COUNT(*) as trades
+            FROM paper_trades 
+            WHERE created_at >= NOW() - INTERVAL %s DAY
+            AND status = 'executed'
+            GROUP BY DATE(created_at)
+            ORDER BY date DESC
+            """
+            
+            result = await conn.fetch(query, days)
+            
+            daily_history = []
+            for row in result:
+                daily_history.append({
+                    'date': row['date'].isoformat() if row['date'] else None,
+                    'total_pnl': float(row['total_pnl']) if row['total_pnl'] else 0,
+                    'profit': float(row['profit']) if row['profit'] else 0,
+                    'loss': float(row['loss']) if row['loss'] else 0,
+                    'trades': int(row['trades']) if row['trades'] else 0
+                })
+            
+            logger.info(f"✅ Retrieved {len(daily_history)} days of P&L history")
+            
+            return {
+                "success": True,
+                "daily_history": daily_history,
+                "total_days": len(daily_history),
+                "timestamp": datetime.now().isoformat(),
+                "source": "real_database"
+            }
+            
+    except Exception as e:
+        logger.error(f"Error getting daily P&L history: {e}")
+        return {
+            "success": False,
+            "daily_history": [],
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.get("/performance/positions", response_model=List[PositionResponse])
 async def get_positions(
     orchestrator: TradingOrchestrator = Depends(get_orchestrator)
@@ -155,4 +212,5 @@ async def get_risk_metrics(
         }
     except Exception as e:
         logger.error(f"Error getting risk metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e)) 
         raise HTTPException(status_code=500, detail=str(e)) 

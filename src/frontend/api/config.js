@@ -94,9 +94,10 @@ export const API_ENDPOINTS = {
     REFRESH_TOKEN: createEndpoint('/api/auth/refresh-token'),
     USER_PROFILE: createEndpoint('/api/auth/me'),
 
-    // UNIFIED User Management endpoints - All use PRIMARY_USER_ID
-    USERS: createEndpoint('/api/v1/users/performance', true),
-    USER_PERFORMANCE: createEndpoint('/api/v1/users/performance'),
+    // UNIFIED User Management endpoints - Fixed to match backend routes
+    USERS: createEndpoint('/api/v1/users', true),
+    USERS_ACTIVE: createEndpoint('/users/active'),
+    USER_PERFORMANCE: createEndpoint('/api/v1/user-analytics/user'),
     USER_CURRENT: createEndpoint('/api/v1/users/current'),
     USER_ANALYTICS: createEndpoint('/api/v1/user-analytics'),
 
@@ -113,7 +114,10 @@ export const API_ENDPOINTS = {
     STRATEGIES: createEndpoint('/api/v1/strategies'),
     AUTONOMOUS: createEndpoint('/api/v1/autonomous'),
 
-    // Trading control endpoints
+    // Trading control endpoints - Fixed for autonomous trading
+    AUTONOMOUS_START: createEndpoint('/api/v1/autonomous/start'),
+    AUTONOMOUS_STOP: createEndpoint('/api/v1/autonomous/stop'),
+    AUTONOMOUS_STATUS: createEndpoint('/api/v1/autonomous/status'),
     TRADING_CONTROL: createEndpoint('/api/v1/control/trading/control'),
     TRADING_STATUS: createEndpoint('/api/v1/control/trading/status'),
 
@@ -127,9 +131,10 @@ export const API_ENDPOINTS = {
     STRATEGIES: createEndpoint('/api/v1/autonomous/strategies'),
     STRATEGY_PERFORMANCE: createEndpoint('/api/v1/strategies/performance'),
 
-    // Dashboard endpoints
-    DASHBOARD_SUMMARY: createEndpoint('/api/v1/dashboard/summary'),
-    DAILY_PNL: createEndpoint('/api/v1/dashboard/daily-pnl'),
+    // Dashboard endpoints - Fixed to match backend routes
+    DASHBOARD_SUMMARY: createEndpoint('/api/dashboard/summary'),
+    DAILY_PNL: createEndpoint('/api/v1/performance/daily-pnl'),
+    DAILY_PNL_HISTORY: createEndpoint('/api/v1/performance/daily-pnl-history'),
     RECOMMENDATIONS: createEndpoint('/api/v1/recommendations'),
 
     // BALANCE FIX: Real-time balance endpoint
