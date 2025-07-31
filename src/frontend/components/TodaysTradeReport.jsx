@@ -84,7 +84,7 @@ const TodaysTradeReport = () => {
                 // FIXED: Get REAL trades from the trading system API endpoints
                 try {
                     // Try to get real trades from the autonomous trading API
-                    const tradesResponse = await fetch('/api/v1/autonomous/trades');
+                    const tradesResponse = await fetchWithAuth('/api/v1/autonomous/trades');
                     if (tradesResponse.ok) {
                         const tradesData = await tradesResponse.json();
                         if (tradesData.success && tradesData.data) {
