@@ -822,8 +822,8 @@ class BaseStrategy:
             orchestrator = get_orchestrator_instance()
             
             if not orchestrator or not orchestrator.zerodha_client:
-                logger.warning("⚠️ Zerodha client not available for expiry lookup")
-                return self._get_fallback_expiries()
+                logger.error("❌ Zerodha client not available for expiry lookup - NO FALLBACK")
+                return []
             
             # Use the new async method - we'll need to handle this synchronously
             import asyncio
@@ -838,9 +838,9 @@ class BaseStrategy:
             for symbol in common_symbols:
                 try:
                     if loop.is_running():
-                        # If we're already in an async context, use the fallback
-                        expiries = self._get_fallback_expiries()
-                        return expiries
+                        # If we're already in an async context, FORCE real Zerodha data 
+                        logger.error("❌ Cannot get real expiry dates in async context - NO FALLBACK")
+                        return []
                     else:
                         # Run the async method
                         expiries = loop.run_until_complete(
@@ -856,13 +856,13 @@ class BaseStrategy:
                     logger.warning(f"⚠️ Failed to get expiries for {symbol}: {e}")
                     continue
             
-            # If no expiries found from API, use fallback
-            logger.warning("⚠️ No expiries found from Zerodha API, using fallback")
-            return self._get_fallback_expiries()
+            # If no expiries found from API, REJECT signal
+            logger.error("❌ No expiries found from Zerodha API - NO FALLBACK")
+            return []
             
         except Exception as e:
             logger.error(f"❌ Error fetching available expiries: {e}")
-            return self._get_fallback_expiries()
+            return []
     
     def _get_fallback_expiries(self) -> List[Dict]:
         """Generate realistic weekly expiries when API is unavailable"""
