@@ -99,6 +99,17 @@ async def receive_zerodha_webhook(data: Dict[str, Any], request: Request):
         logger.error(f"Error processing Zerodha webhook: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# 🔧 FIX: Add GET handler for webhook endpoint debugging
+@router.get("/webhooks/zerodha")
+async def zerodha_webhook_info(request: Request):
+    """Webhook endpoint info (for debugging 405 errors)"""
+    return {
+        "message": "Zerodha webhook endpoint active",
+        "method": "POST required for webhook data",
+        "status": "ready",
+        "client_ip": request.client.host if request.client else "unknown"
+    }
+
 # News & Events Webhooks
 @router.post("/webhooks/news-feed")
 async def receive_news(data: Dict[str, Any], request: Request):
