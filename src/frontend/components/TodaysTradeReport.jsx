@@ -87,8 +87,8 @@ const TodaysTradeReport = () => {
                     const tradesResponse = await fetchWithAuth('/api/v1/autonomous/trades');
                     if (tradesResponse.ok) {
                         const tradesData = await tradesResponse.json();
-                        if (tradesData.success && tradesData.data) {
-                            trades = tradesData.data.map(trade => ({
+                        if (tradesData.success && tradesData.trades) {
+                            trades = tradesData.trades.map(trade => ({
                                 id: trade.trade_id,
                                 symbol: trade.symbol,
                                 side: trade.trade_type || trade.side,
@@ -102,6 +102,15 @@ const TodaysTradeReport = () => {
                                 strategy: trade.strategy,
                                 commission: trade.commission || 0
                             }));
+                            
+                            // CRITICAL FIX: Update summary with REAL trade count and P&L
+                            console.log(`🎯 Found ${trades.length} REAL trades from Zerodha API`);
+                            const totalPnL = trades.reduce((sum, trade) => sum + (trade.pnl || 0), 0);
+                            const winningTrades = trades.filter(trade => (trade.pnl || 0) > 0).length;
+                            
+                            summary.total_trades = trades.length;
+                            summary.daily_pnl = totalPnL;
+                            summary.win_rate = trades.length > 0 ? ((winningTrades / trades.length) * 100) : 0;
                         }
                     }
                 } catch (tradesError) {
