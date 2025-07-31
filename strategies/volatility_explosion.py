@@ -87,7 +87,7 @@ class EnhancedVolatilityExplosion(BaseStrategy):
         time_since_last = (datetime.now() - self.last_signal_time).total_seconds()
         return time_since_last >= self.scalping_cooldown
     
-    def _generate_signals(self, data: Dict) -> List[Dict]:
+    async def _generate_signals(self, data: Dict) -> List[Dict]:
         """Generate trading signals based on market data"""
         signals = []
         
@@ -105,7 +105,7 @@ class EnhancedVolatilityExplosion(BaseStrategy):
                     continue
                     
                 # Generate signal for this symbol
-                signal = self._analyze_volatility(symbol, symbol_data)
+                signal = await self._analyze_volatility(symbol, symbol_data)
                 if signal:
                     signals.append(signal)
                     # Update symbol cooldown
@@ -125,7 +125,7 @@ class EnhancedVolatilityExplosion(BaseStrategy):
         time_since = (datetime.now() - last_signal).total_seconds()
         return time_since >= 45  # 45 seconds per symbol for volatility
     
-    def _analyze_volatility(self, symbol: str, data: Dict) -> Optional[Dict]:
+    async def _analyze_volatility(self, symbol: str, data: Dict) -> Optional[Dict]:
         """Analyze volatility patterns with SCALPING optimization"""
         try:
             # Extract price data
