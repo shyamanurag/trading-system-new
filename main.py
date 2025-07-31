@@ -1566,6 +1566,7 @@ async def get_trades():
 async def get_user_metrics_direct():
     """Get live user metrics directly from Zerodha"""
     try:
+        from src.core.orchestrator import get_orchestrator_instance
         orchestrator = get_orchestrator_instance()
         
         if not orchestrator or not orchestrator.zerodha_client:
@@ -1597,6 +1598,7 @@ async def get_user_metrics_direct():
 async def get_realtime_balance():
     """Get real-time balance from Zerodha"""
     try:
+        from src.core.orchestrator import get_orchestrator_instance
         orchestrator = get_orchestrator_instance()
         
         if not orchestrator or not orchestrator.zerodha_client:
@@ -2061,6 +2063,75 @@ async def get_user_metrics_direct():
                         datetime.fromisoformat(order.get('order_timestamp').replace('Z', '+00:00')).date() == today
                     ]
                     metrics["total_trades_today"] = len(today_orders)
+                    logger.info(f"📊 User metrics: {len(today_orders)} trades today")
+            except Exception as e:
+                logger.warning(f"Could not fetch trade count for metrics: {e}")
+        
+        return metrics
+        
+    except Exception as e:
+        logger.error(f"Error getting user metrics: {str(e)}")
+        return {
+            "total_users": 0,
+            "active_users": 0,
+            "total_trades_today": 0,
+            "total_pnl_today": 0.0,
+            "error": str(e),
+            "last_updated": datetime.now().isoformat()
+        }
+
+# BALANCE FIX: Direct real-time Zerodha balance endpoint for frontend
+@app.get("/api/balance/realtime", tags=["balance"])
+async def get_realtime_balance():
+    """Get real-time Zerodha wallet balance for frontend display"""
+    try:
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        if not orchestrator or not orchestrator.zerodha_client:
+            return {
+                "success": False,
+                "balance": 0.0,
+                "message": "Zerodha client not available",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Get real-time balance from Zerodha
+        margins = await orchestrator.zerodha_client.get_margins()
+        
+        if not margins:
+            return {
+                "success": False,
+                "balance": 0.0,
+                "message": "Failed to fetch balance from Zerodha",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Extract available cash (this is the reduced balance after positions)
+        available_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
+        
+        return {
+            "success": True,
+            "balance": available_cash,
+            "current_balance": available_cash,
+            "current_capital": available_cash,
+            "capital": available_cash,
+            "message": f"Real-time balance: ₹{available_cash:,.2f}",
+            "source": "ZERODHA_API",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting real-time balance: {str(e)}")
+        return {
+            "success": False,
+            "balance": 0.0,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+# FastAPI Trading System - Rate Limiting Fix Applied
+# Auto-deploys on DigitalOcean App Platform - Push triggers restart
                     logger.info(f"📊 User metrics: {len(today_orders)} trades today")
             except Exception as e:
                 logger.warning(f"Could not fetch trade count for metrics: {e}")
