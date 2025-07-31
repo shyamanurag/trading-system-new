@@ -583,6 +583,9 @@ class BaseStrategy:
             if zerodha_underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:  # REMOVED MIDCPNIFTY - no options
                 # Index options - use volume-based strike selection for liquidity
                 expiry = self._get_next_expiry()
+                if not expiry:
+                    logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
+                    return None, 'REJECTED'
                 strike = self._get_volume_based_strike(zerodha_underlying, actual_price, expiry, action)
                 
                 # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
@@ -606,6 +609,9 @@ class BaseStrategy:
                 # Stock options - convert equity to options using ZERODHA NAME
                 # 🎯 USER REQUIREMENT: Volume-based strike selection for liquidity
                 expiry = self._get_next_expiry()
+                if not expiry:
+                    logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
+                    return None, 'REJECTED'
                 strike = self._get_volume_based_strike(zerodha_underlying, actual_price, expiry, action)
                 
                 # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
@@ -729,10 +735,8 @@ class BaseStrategy:
             logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
             return optimal_expiry
         else:
-            logger.warning("⚠️ No expiry dates from Zerodha API - using fallback calculation")
-            fallback_expiry = self._calculate_next_thursday_fallback()
-            logger.info(f"🎯 FALLBACK EXPIRY: {fallback_expiry}")
-            return fallback_expiry
+            logger.error("❌ No expiry dates from Zerodha API - REJECTING SIGNAL (no fallback)")
+            return None
     
     def _get_optimal_expiry_for_strategy(self, preference: str = "nearest_weekly") -> str:
         """
@@ -744,10 +748,9 @@ class BaseStrategy:
         available_expiries = self._get_available_expiries_from_zerodha()
         
         if not available_expiries:
-            # 🚨 CRITICAL FIX: Use real-time calculation based on today's date
-            logger.warning("⚠️ No expiries from API - calculating next available Thursday")
-            fallback_expiry = self._calculate_next_thursday_fallback()
-            return fallback_expiry
+            # 🚨 NO FALLBACK: Return None if no real expiries from Zerodha API
+            logger.error("❌ No expiries from Zerodha API - REJECTING SIGNAL (no fallback)")
+            return None
         
         today = datetime.now().date()
         
@@ -759,10 +762,9 @@ class BaseStrategy:
         future_expiries = [exp for exp in available_expiries if exp['date'] >= cutoff_date]
         
         if not future_expiries:
-            # 🚨 CRITICAL FIX: If no future expiries found, calculate next Thursday
-            logger.warning("⚠️ No future expiries found - calculating next Thursday")
-            fallback_expiry = self._calculate_next_thursday_fallback()
-            return fallback_expiry
+            # 🚨 NO FALLBACK: Return None if no future expiries found
+            logger.error("❌ No future expiries found in Zerodha API - REJECTING SIGNAL (no fallback)")
+            return None
         
         # Sort by date
         future_expiries.sort(key=lambda x: x['date'])
@@ -801,8 +803,8 @@ class BaseStrategy:
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
         
-        # 🚨 CRITICAL FIX: Zerodha format is 25JUL (DD + MMM), NOT 14AUG25 (DD + MMM + YY)
-        zerodha_expiry = f"{exp_date.day:02d}{month_names[exp_date.month - 1]}"
+        # 🚨 CRITICAL FIX: Zerodha format is 14AUG25 (DD + MMM + YY), NOT 14AUG (DD + MMM)
+        zerodha_expiry = f"{exp_date.day:02d}{month_names[exp_date.month - 1]}{str(exp_date.year)[-2:]}"
         
         logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
         logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
@@ -877,7 +879,7 @@ class BaseStrategy:
                 
             thursday = current_date + timedelta(days=days_ahead)
             
-            # Format for Zerodha: 31JUL25
+            # Format for Zerodha: 14AUG25
             month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                           'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
             formatted = f"{thursday.day:02d}{month_names[thursday.month - 1]}{str(thursday.year)[-2:]}"
@@ -919,8 +921,8 @@ class BaseStrategy:
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
         
-        # 🚨 CRITICAL FIX: Zerodha format is 25JUL (DD + MMM), NOT 31JUL25 (DD + MMM + YY)
-        expiry_formatted = f"{next_thursday.day:02d}{month_names[next_thursday.month - 1]}"
+        # 🚨 CRITICAL FIX: Zerodha format is 14AUG25 (DD + MMM + YY), NOT 14AUG (DD + MMM)
+        expiry_formatted = f"{next_thursday.day:02d}{month_names[next_thursday.month - 1]}{str(next_thursday.year)[-2:]}"
         
         logger.info(f"📅 ZERODHA EXPIRY FORMAT: {expiry_formatted}")
         logger.info(f"   Next Thursday: {next_thursday.strftime('%A, %B %d, %Y')}")
