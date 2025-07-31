@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from ..models.responses import BaseResponse, TradeResponse, PositionResponse
 from ..core.orchestrator import TradingOrchestrator
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/daily-pnl", response_model=BaseResponse)
 async def get_daily_pnl(
-    date: datetime = None,
+    date: Optional[str] = None,
     orchestrator: TradingOrchestrator = Depends(get_orchestrator)
 ):
     """Get daily PnL metrics"""
@@ -19,7 +19,23 @@ async def get_daily_pnl(
         if not date:
             date = datetime.utcnow()
         
-        metrics = await orchestrator.metrics_service.get_daily_pnl(date)
+        # Get real daily performance from trade manager
+        try:
+            if hasattr(orchestrator, 'trade_manager') and orchestrator.trade_manager:
+                # Get today's trades for metrics
+                today = datetime.utcnow().date()
+                daily_trades = await orchestrator.trade_manager.get_daily_trades(today)
+                total_pnl = sum(trade.get('realized_pnl', 0) for trade in daily_trades)
+                metrics = {
+                    "daily_pnl": total_pnl,
+                    "total_trades": len(daily_trades),
+                    "win_rate": 0.0  # Calculate later if needed
+                }
+            else:
+                metrics = {"daily_pnl": 0.0, "total_trades": 0, "win_rate": 0.0}
+        except Exception as e:
+            logger.warning(f"Could not get daily performance: {e}")
+            metrics = {"daily_pnl": 0.0, "total_trades": 0, "win_rate": 0.0}
         return BaseResponse(
             success=True,
             message="Daily PnL retrieved successfully",

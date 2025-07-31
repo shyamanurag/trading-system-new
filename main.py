@@ -1886,7 +1886,9 @@ async def get_live_trades_direct():
                 
             except Exception as order_error:
                 logger.warning(f"Error processing live order: {order_error}")
-                logger.debug(f"Problematic order data: {order}")
+                logger.warning(f"Problematic order data: {order}")
+                logger.warning(f"filled_quantity type: {type(order.get('filled_quantity'))}, value: {order.get('filled_quantity')}")
+                logger.warning(f"average_price type: {type(order.get('average_price'))}, value: {order.get('average_price')}")
                 continue
         
         logger.info(f"📊 Retrieved {len(live_trades)} live trades from Zerodha (direct)")
@@ -2197,28 +2199,6 @@ async def test_signal_generation():
         logger.error(f"Error testing signal generation: {e}")
         raise HTTPException(status_code=500, detail=f"Signal generation test failed: {str(e)}")
 
-# Main execution
-if __name__ == "__main__":
-    # Get configuration from environment
-    host = os.getenv('API_HOST', '0.0.0.0')
-    port = int(os.getenv('PORT', os.getenv('API_PORT', '8000')))
-    reload = os.getenv('API_DEBUG', 'false').lower() == 'true'
-    workers = int(os.getenv('API_WORKERS', '1'))
-    
-    logger.info(f"Starting AlgoAuto Trading System on {host}:{port}")
-    logger.info(f"Debug mode: {reload}, Workers: {workers}")
-    
-    # Run with uvicorn
-    uvicorn.run(
-        "main:app",
-        host=host,
-        port=port,
-        reload=reload,
-        log_level=log_level.lower(),
-        access_log=True,
-        workers=workers if not reload else 1  # Can't use multiple workers with reload
-    )
-
 # DASHBOARD FIX: Direct dashboard summary endpoint
 @app.get("/api/dashboard/summary", tags=["dashboard"])
 async def get_dashboard_summary_direct():
@@ -2261,159 +2241,25 @@ async def get_dashboard_summary_direct():
             "timestamp": datetime.now().isoformat()
         }
 
-# ADDITIONAL FIX: Direct /api/users/metrics endpoint for LiveTradesDashboardPolling.jsx
-@app.get("/api/users/metrics", tags=["users"])
-async def get_user_metrics_direct():
-    """Get user metrics - Direct endpoint for frontend components calling /api/users/metrics"""
-    try:
-        from src.core.orchestrator import get_orchestrator_instance
-        orchestrator = get_orchestrator_instance()
-        
-        if not orchestrator:
-            logger.warning("Orchestrator not available for user metrics")
-            return {}
-        
-        # Get actual user metrics
-        metrics = {
-            "total_users": 1,  # At least the main trading user
-            "active_users": 1 if orchestrator.zerodha_client else 0,
-            "total_trades_today": 0,
-            "total_pnl_today": 0.0,
-            "last_updated": datetime.now().isoformat()
-        }
-        
-        # If we have Zerodha client, get actual trade count
-        if orchestrator.zerodha_client:
-            try:
-                orders = await orchestrator.zerodha_client.get_orders()
-                if orders:
-                    today = datetime.now().date()
-                    today_orders = [
-                        order for order in orders 
-                        if order.get('status') == 'COMPLETE' and
-                        order.get('order_timestamp') and
-                        datetime.fromisoformat(order.get('order_timestamp').replace('Z', '+00:00')).date() == today
-                    ]
-                    metrics["total_trades_today"] = len(today_orders)
-                    logger.info(f"📊 User metrics: {len(today_orders)} trades today")
-            except Exception as e:
-                logger.warning(f"Could not fetch trade count for metrics: {e}")
-        
-        return metrics
-        
-    except Exception as e:
-        logger.error(f"Error getting user metrics: {str(e)}")
-        return {
-            "total_users": 0,
-            "active_users": 0,
-            "total_trades_today": 0,
-            "total_pnl_today": 0.0,
-            "error": str(e),
-            "last_updated": datetime.now().isoformat()
-        }
+# Main execution
+if __name__ == "__main__":
+    # Get configuration from environment
+    host = os.getenv('API_HOST', '0.0.0.0')
+    port = int(os.getenv('PORT', os.getenv('API_PORT', '8000')))
+    reload = os.getenv('API_DEBUG', 'false').lower() == 'true'
+    workers = int(os.getenv('API_WORKERS', '1'))
+    
+    logger.info(f"Starting AlgoAuto Trading System on {host}:{port}")
+    logger.info(f"Debug mode: {reload}, Workers: {workers}")
+    
+    # Run with uvicorn
+    uvicorn.run(
+        "main:app",
+        host=host,
+        port=port,
+        reload=reload,
+        log_level=log_level.lower(),
+        access_log=True,
+        workers=workers if not reload else 1  # Can't use multiple workers with reload
+    )
 
-# BALANCE FIX: Direct real-time Zerodha balance endpoint for frontend
-@app.get("/api/balance/realtime", tags=["balance"])
-async def get_realtime_balance():
-    """Get real-time Zerodha wallet balance for frontend display"""
-    try:
-        from src.core.orchestrator import get_orchestrator_instance
-        orchestrator = get_orchestrator_instance()
-        
-        if not orchestrator or not orchestrator.zerodha_client:
-            return {
-                "success": False,
-                "balance": 0.0,
-                "message": "Zerodha client not available",
-                "timestamp": datetime.now().isoformat()
-            }
-        
-        # Get real-time balance from Zerodha
-        margins = await orchestrator.zerodha_client.get_margins()
-        
-        if not margins:
-            return {
-                "success": False,
-                "balance": 0.0,
-                "message": "Failed to fetch balance from Zerodha",
-                "timestamp": datetime.now().isoformat()
-            }
-        
-        # Extract available cash (this is the reduced balance after positions)
-        available_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
-        
-        return {
-            "success": True,
-            "balance": available_cash,
-            "current_balance": available_cash,
-            "current_capital": available_cash,
-            "capital": available_cash,
-            "message": f"Real-time balance: ₹{available_cash:,.2f}",
-            "source": "ZERODHA_API",
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting real-time balance: {str(e)}")
-        return {
-            "success": False,
-            "balance": 0.0,
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
-
-# FastAPI Trading System - Rate Limiting Fix Applied
-# Auto-deploys on DigitalOcean App Platform - Push triggers restart
-
-# BALANCE FIX: Direct real-time Zerodha balance endpoint for frontend
-@app.get("/api/balance/realtime", tags=["balance"])
-async def get_realtime_balance():
-    """Get real-time Zerodha wallet balance for frontend display"""
-    try:
-        from src.core.orchestrator import get_orchestrator_instance
-        orchestrator = get_orchestrator_instance()
-        
-        if not orchestrator or not orchestrator.zerodha_client:
-            return {
-                "success": False,
-                "balance": 0.0,
-                "message": "Zerodha client not available",
-                "timestamp": datetime.now().isoformat()
-            }
-        
-        # Get real-time balance from Zerodha
-        margins = await orchestrator.zerodha_client.get_margins()
-        
-        if not margins:
-            return {
-                "success": False,
-                "balance": 0.0,
-                "message": "Failed to fetch balance from Zerodha",
-                "timestamp": datetime.now().isoformat()
-            }
-        
-        # Extract available cash (this is the reduced balance after positions)
-        available_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
-        
-        return {
-            "success": True,
-            "balance": available_cash,
-            "current_balance": available_cash,
-            "current_capital": available_cash,
-            "capital": available_cash,
-            "message": f"Real-time balance: ₹{available_cash:,.2f}",
-            "source": "ZERODHA_API",
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting real-time balance: {str(e)}")
-        return {
-            "success": False,
-            "balance": 0.0,
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
-
-# FastAPI Trading System - Rate Limiting Fix Applied
-# Auto-deploys on DigitalOcean App Platform - Push triggers restart
