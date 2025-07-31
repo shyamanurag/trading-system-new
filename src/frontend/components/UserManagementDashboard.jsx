@@ -280,7 +280,7 @@ const UserManagementDashboard = ({ tradingData }) => {
                 client_id: newUserData.zerodhaClientId,
                 initial_capital: newUserData.initialCapital,
                 risk_tolerance: newUserData.riskLevel,
-                paper_trading: true
+                paper_trading: false
             };
 
             const response = await fetchWithAuth(API_ENDPOINTS.BROKER_USERS.url, {

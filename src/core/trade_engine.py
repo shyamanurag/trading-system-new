@@ -1156,36 +1156,3 @@ class TradeEngine:
             except:
                 pass
             return False 
-                'order_id': trade_data.get('order_id'),
-                'pnl': trade_data.get('pnl', 0.0),
-                'strategy': trade_data.get('strategy'),
-                'created_at': datetime.now()
-            }
-            
-            # Save to database
-            async with self.db_config.get_session() as session:
-                # Use text query for precise control
-                insert_query = text("""
-                    INSERT INTO paper_trades (
-                        user_id, symbol, action, quantity, price, timestamp,
-                        status, order_id, pnl, strategy, created_at
-                    ) VALUES (
-                        :user_id, :symbol, :action, :quantity, :price, :timestamp,
-                        :status, :order_id, :pnl, :strategy, :created_at
-                    )
-                """)
-                
-                await session.execute(insert_query, paper_trade)
-                await session.commit()
-                
-                self.logger.info(f"Paper trade saved: {trade_data['symbol']} {trade_data['action']} {trade_data['quantity']}@{trade_data['price']}")
-                return True
-                
-        except Exception as e:
-            self.logger.error(f"Error saving paper trade: {e}")
-            # Try to rollback if possible
-            try:
-                await session.rollback()
-            except:
-                pass
-            return False 

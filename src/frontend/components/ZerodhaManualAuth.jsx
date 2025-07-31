@@ -125,7 +125,7 @@ const ZerodhaManualAuth = () => {
             const data = await response.json();
 
             if (data.success) {
-                alert(`Connection successful!\nUser: ${data.profile.user_name}\nSample NIFTY LTP: ${data.sample_data.ltp}`);
+                alert(`🔴 LIVE CONNECTION SUCCESSFUL!\nUser: ${data.profile.user_name}\nReal-time market access enabled`);
             } else {
                 alert('Connection test failed: ' + data.message);
             }

@@ -634,11 +634,11 @@ const AutonomousTradingDashboard = ({ userInfo, tradingData }) => {
                                     sx={{ fontWeight: 'bold' }}
                                 />
 
-                                {tradingStatus?.paper_trading && (
+                                {!tradingStatus?.paper_trading && (
                                     <Chip
-                                        label="📝 Paper Trading Mode"
-                                        color="info"
-                                        variant="outlined"
+                                        label="🔴 LIVE TRADING MODE"
+                                        color="error"
+                                        variant="filled"
                                     />
                                 )}
 

@@ -209,9 +209,9 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                 }
             }
 
-            // FALLBACK: Show realistic paper trading defaults if no real data available
+            // FALLBACK: Show realistic live trading defaults if no real data available
             if (dashboardData.systemMetrics.totalTrades === 0) {
-                console.log('🔄 Using fallback paper trading metrics');
+                console.log('🔄 Using fallback live trading metrics');
 
                 // Try to get real capital from system config
                 let systemCapital = 0;
@@ -234,10 +234,10 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                     dailyVolume: 0
                 };
 
-                // Show paper trading info in alerts
+                // Show live trading info in alerts
                 dashboardData.alerts = [{
-                    type: 'info',
-                    message: `Paper Trading Mode Active - ₹${systemCapital.toLocaleString()} virtual capital available`,
+                    type: 'warning',
+                    message: `🔴 LIVE TRADING ACTIVE - ₹${systemCapital.toLocaleString()} REAL capital at risk`,
                     time: new Date().toLocaleTimeString()
                 }];
             }

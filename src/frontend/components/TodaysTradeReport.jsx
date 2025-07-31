@@ -290,7 +290,7 @@ const TodaysTradeReport = () => {
                 <Alert severity="info" sx={{ mb: 2 }}>
                     <Typography variant="body1">
                         📊 No trades executed today. This could mean:
-                        <br />• Trading system is using mock/simulation mode
+                        <br />🔴 Live trading system active but no opportunities found
                         <br />• Market conditions don't meet strategy criteria
                         <br />• System was restarted and lost temporary data
                     </Typography>
