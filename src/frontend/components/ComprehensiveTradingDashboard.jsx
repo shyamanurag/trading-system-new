@@ -866,13 +866,13 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                         <Card sx={{ p: 2, textAlign: 'center', bgcolor: 'primary.main', color: 'white' }}>
                             <Typography variant="h6">Portfolio Value</Typography>
                             <Typography variant="h4" sx={{ my: 1 }}>
-                                {formatCurrency(dashboardData.systemMetrics.aum + (dashboardData.systemMetrics.totalPnL || 0))}
+                                {formatCurrency(safeNumber(dashboardData.systemMetrics?.aum, 0) + safeNumber(dashboardData.systemMetrics?.totalPnL, 0))}
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
                                 Total Assets Under Management
                             </Typography>
                             <Typography variant="body2" color="success.main">
-                                {formatPercent(dashboardData.systemMetrics.aum > 0 ? ((dashboardData.systemMetrics.totalPnL || 0) / dashboardData.systemMetrics.aum) * 100 : 0)}
+                                {formatPercent(safeNumber(dashboardData.systemMetrics?.aum, 0) > 0 ? (safeNumber(dashboardData.systemMetrics?.totalPnL, 0) / safeNumber(dashboardData.systemMetrics?.aum, 1)) * 100 : 0)}
                             </Typography>
                         </Card>
                     </Grid>
@@ -880,7 +880,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                         <Card sx={{ p: 2, textAlign: 'center', bgcolor: 'success.main', color: 'white' }}>
                             <Typography variant="h6">Total Returns</Typography>
                             <Typography variant="h4" sx={{ my: 1 }}>
-                                {formatPercent(dashboardData.systemMetrics.aum > 0 ? ((dashboardData.systemMetrics.totalPnL || 0) / dashboardData.systemMetrics.aum) * 100 : 0)}
+                                {formatPercent(safeNumber(dashboardData.systemMetrics?.aum, 0) > 0 ? (safeNumber(dashboardData.systemMetrics?.totalPnL, 0) / safeNumber(dashboardData.systemMetrics?.aum, 1)) * 100 : 0)}
                             </Typography>
                             <Typography variant="body2">Since inception</Typography>
                         </Card>
@@ -889,7 +889,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                         <Card sx={{ p: 2, textAlign: 'center', bgcolor: 'info.main', color: 'white' }}>
                             <Typography variant="h6">Sharpe Ratio</Typography>
                             <Typography variant="h4" sx={{ my: 1 }}>
-                                {(((dashboardData.systemMetrics.successRate || 70) / 100) * 2.5).toFixed(2)}
+                                {(((safeNumber(dashboardData.systemMetrics?.successRate, 70)) / 100) * 2.5).toFixed(2)}
                             </Typography>
                             <Typography variant="body2">Risk-adjusted returns</Typography>
                         </Card>
@@ -903,25 +903,25 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 <ListItem>
                                     <ListItemText
                                         primary="Total Trades"
-                                        secondary={`${dashboardData.systemMetrics.totalTrades || 0} executed`}
+                                        secondary={`${safeNumber(dashboardData.systemMetrics?.totalTrades, 0)} executed`}
                                     />
                                 </ListItem>
                                 <ListItem>
                                     <ListItemText
                                         primary="Success Rate"
-                                        secondary={`${dashboardData.systemMetrics.successRate || 0}% winning trades`}
+                                        secondary={`${safeNumber(dashboardData.systemMetrics?.successRate, 0)}% winning trades`}
                                     />
                                 </ListItem>
                                 <ListItem>
                                     <ListItemText
                                         primary="Average Trade"
-                                        secondary={formatCurrency((dashboardData.systemMetrics.totalPnL || 0) / Math.max(1, dashboardData.systemMetrics.totalTrades || 1))}
+                                        secondary={formatCurrency(safeNumber(dashboardData.systemMetrics?.totalPnL, 0) / Math.max(1, safeNumber(dashboardData.systemMetrics?.totalTrades, 1)))}
                                     />
                                 </ListItem>
                                 <ListItem>
                                     <ListItemText
                                         primary="Daily Volume"
-                                        secondary={formatCurrency(dashboardData.systemMetrics.dailyVolume || 0)}
+                                        secondary={formatCurrency(safeNumber(dashboardData.systemMetrics?.dailyVolume, 0))}
                                     />
                                 </ListItem>
                             </List>
@@ -934,7 +934,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 <ListItem>
                                     <ListItemText
                                         primary="Paper Trading Mode"
-                                        secondary={`Risk-free testing with ₹${dashboardData.systemMetrics.aum?.toLocaleString() || '0'} virtual capital`}
+                                        secondary={`Risk-free testing with ₹${safeNumber(dashboardData.systemMetrics?.aum, 0).toLocaleString()} virtual capital`}
                                     />
                                 </ListItem>
                                 <ListItem>
@@ -952,7 +952,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 <ListItem>
                                     <ListItemText
                                         primary="Active Users"
-                                        secondary={`${dashboardData.systemMetrics.activeUsers || 0} autonomous traders`}
+                                        secondary={`${safeNumber(dashboardData.systemMetrics?.activeUsers, 0)} autonomous traders`}
                                     />
                                 </ListItem>
                             </List>
@@ -977,7 +977,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 <ListItem>
                                     <ListItemText
                                         primary="Daily Loss Limit"
-                                        secondary={`₹50,000 (Used: ${formatCurrency(Math.max(0, -(dashboardData.systemMetrics.totalPnL || 0)))})`}
+                                        secondary={`₹50,000 (Used: ${formatCurrency(Math.max(0, -safeNumber(dashboardData.systemMetrics?.totalPnL, 0)))})`}
                                     />
                                 </ListItem>
                                 <ListItem>
@@ -995,7 +995,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 <ListItem>
                                     <ListItemText
                                         primary="Success Rate Target"
-                                        secondary={`65% minimum (Current: ${dashboardData.systemMetrics.successRate || 0}%)`}
+                                        secondary={`65% minimum (Current: ${safeNumber(dashboardData.systemMetrics?.successRate, 0)}%)`}
                                     />
                                 </ListItem>
                             </List>
@@ -1041,7 +1041,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 <Grid item xs={12} md={3}>
                                     <Box sx={{ textAlign: 'center', p: 2 }}>
                                         <Typography variant="h4" color="primary.main">
-                                            {dashboardData.systemMetrics.aum > 0 ? ((Math.abs(dashboardData.systemMetrics.totalPnL || 0) / dashboardData.systemMetrics.aum) * 100).toFixed(1) : '0.0'}%
+                                            {safeNumber(dashboardData.systemMetrics?.aum, 0) > 0 ? ((Math.abs(safeNumber(dashboardData.systemMetrics?.totalPnL, 0)) / safeNumber(dashboardData.systemMetrics?.aum, 1)) * 100).toFixed(1) : '0.0'}%
                                         </Typography>
                                         <Typography variant="body2">Capital at Risk</Typography>
                                     </Box>
@@ -1049,7 +1049,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 <Grid item xs={12} md={3}>
                                     <Box sx={{ textAlign: 'center', p: 2 }}>
                                         <Typography variant="h4" color="warning.main">
-                                            {dashboardData.systemMetrics.activeUsers || 0}
+                                            {safeNumber(dashboardData.systemMetrics?.activeUsers, 0)}
                                         </Typography>
                                         <Typography variant="body2">Active Positions</Typography>
                                     </Box>
@@ -1057,7 +1057,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                                 <Grid item xs={12} md={3}>
                                     <Box sx={{ textAlign: 'center', p: 2 }}>
                                         <Typography variant="h4" color="success.main">
-                                            {dashboardData.systemMetrics.successRate || 0}%
+                                            {safeNumber(dashboardData.systemMetrics?.successRate, 0)}%
                                         </Typography>
                                         <Typography variant="body2">Win Rate</Typography>
                                     </Box>
