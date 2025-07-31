@@ -38,15 +38,24 @@ class DailyCapitalSync:
         
         try:
             # 1. Sync Zerodha accounts
-            zerodha_results = await self._sync_zerodha_accounts()
-            sync_results.update(zerodha_results)
+            zerodha_capital_data = await self._sync_zerodha_accounts()
+            
+            # Update sync results with account info
+            if zerodha_capital_data:
+                sync_results['total_accounts'] = len(zerodha_capital_data)
+                sync_results['successful_syncs'] = len(zerodha_capital_data)
+                sync_results['total_available_margin'] = sum(float(cap) for cap in zerodha_capital_data.values())
+                sync_results['account_details'] = [
+                    {'user_id': user_id, 'available_capital': float(capital)}
+                    for user_id, capital in zerodha_capital_data.items()
+                ]
             
             # 2. Check margin utilization and generate alerts
             margin_alerts = self._analyze_margin_utilization(sync_results)
             sync_results['alerts'].extend(margin_alerts)
             
-            # 3. Update system components with new capital data
-            await self._update_system_capitals(sync_results)
+            # 3. Update system components with new capital data (pass only the capital dict)
+            await self._update_system_capitals(zerodha_capital_data)
             
             # 4. Log comprehensive summary
             self._log_daily_sync_summary(sync_results)
@@ -111,7 +120,16 @@ class DailyCapitalSync:
     async def _update_system_capitals(self, account_capitals: Dict[str, float]):
         """Update system components with real capital amounts"""
         try:
-            total_capital = sum(account_capitals.values())
+            # Ensure all values are float before summing
+            safe_capitals = {}
+            for user_id, capital in account_capitals.items():
+                try:
+                    safe_capitals[user_id] = float(capital)
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid capital value for {user_id}: {capital}, using 0")
+                    safe_capitals[user_id] = 0.0
+            
+            total_capital = sum(safe_capitals.values())
             
             if not self.orchestrator:
                 logger.error("❌ No orchestrator available for capital updates")
@@ -137,7 +155,7 @@ class DailyCapitalSync:
                 logger.info(f"✅ Updated Risk Manager capital: ₹{total_capital:,.2f}")
             
             # Update individual account capitals
-            for user_id, capital in account_capitals.items():
+            for user_id, capital in safe_capitals.items():
                 await self._update_user_capital(user_id, capital)
                 
         except Exception as e:
