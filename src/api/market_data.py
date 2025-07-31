@@ -18,7 +18,7 @@ import time # Added for retry logic
 sys.path.insert(0, os.path.abspath('.'))
 
 # Import symbol mapping for TrueData
-from config.truedata_symbols import get_truedata_symbol
+from config.truedata_symbols import get_zerodha_symbol
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -168,7 +168,7 @@ def get_live_data_for_symbol(symbol: str) -> dict:
     """Get live data for a specific symbol via direct cache access"""
     try:
         # Use symbol mapping to convert NIFTY -> NIFTY-I
-        mapped_symbol = get_truedata_symbol(symbol.upper())
+        mapped_symbol = get_zerodha_symbol(symbol.upper())
         logger.debug(f"🔧 Symbol mapping: {symbol} -> {mapped_symbol}")
         
         # Get data from live cache
