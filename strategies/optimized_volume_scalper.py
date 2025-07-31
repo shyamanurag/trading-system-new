@@ -64,7 +64,7 @@ class OptimizedVolumeScalper(BaseStrategy):
                 return
                 
             # Process market data for scalping signals
-            signals = self._generate_scalping_signals(data)
+            signals = await self._generate_scalping_signals(data)
             
             # Execute trades with position tracking
             if signals:
@@ -151,7 +151,7 @@ class OptimizedVolumeScalper(BaseStrategy):
         except Exception as e:
             logger.error(f"Error executing time-based exit for {symbol}: {e}")
     
-    def _generate_scalping_signals(self, data: Dict) -> List[Dict]:
+    async def _generate_scalping_signals(self, data: Dict) -> List[Dict]:
         """Generate scalping signals with optimized parameters"""
         signals = []
         
@@ -168,7 +168,7 @@ class OptimizedVolumeScalper(BaseStrategy):
                     continue
                     
                 # Generate scalping signal
-                signal = self._analyze_scalping_volume(symbol, symbol_data)
+                signal = await self._analyze_scalping_volume(symbol, symbol_data)
                 if signal:
                     signals.append(signal)
                     
@@ -186,7 +186,7 @@ class OptimizedVolumeScalper(BaseStrategy):
         time_since = (datetime.now() - last_signal).total_seconds()
         return time_since >= self.symbol_cooldown
     
-    def _analyze_scalping_volume(self, symbol: str, data: Dict) -> Optional[Dict]:
+    async def _analyze_scalping_volume(self, symbol: str, data: Dict) -> Optional[Dict]:
         """Analyze volume for scalping with optimized parameters"""
         try:
             # Extract price data

@@ -1,3 +1,6 @@
+# RESTORED: Strategies must be loaded at deployment time
+# Fixed async/await issues in all strategies before restoring imports
+
 from .momentum_surfer import EnhancedMomentumSurfer
 from .volatility_explosion import EnhancedVolatilityExplosion
 from .volume_profile_scalper import EnhancedVolumeProfileScalper

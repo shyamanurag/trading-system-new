@@ -60,7 +60,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 return
                 
             # Process market data and generate signals
-            signals = self._generate_signals(data)
+            signals = await self._generate_signals(data)
             
             # 🎯 QUALITY OVER QUANTITY: Reduce signal generation volume
             # Instead of generating 35+ signals, be more selective
@@ -104,7 +104,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         time_since_last = (datetime.now() - self.last_signal_time).total_seconds()
         return time_since_last >= self.scalping_cooldown
     
-    def _generate_signals(self, data: Dict) -> List[Dict]:
+    async def _generate_signals(self, data: Dict) -> List[Dict]:
         """Generate trading signals based on market data - OPTIMIZED FOR QUALITY OVER QUANTITY"""
         signals = []
         
@@ -135,7 +135,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 processed_count += 1
                 
                 # Generate signal for this symbol
-                signal = self._analyze_rapid_momentum(symbol, symbol_data)
+                signal = await self._analyze_rapid_momentum(symbol, symbol_data)
                 if signal:
                     signals.append(signal)
                     # Update symbol cooldown
@@ -189,7 +189,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         time_since = (datetime.now() - last_signal).total_seconds()
         return time_since >= 20  # 20 seconds per symbol (fastest for news)
     
-    def _analyze_rapid_momentum(self, symbol: str, data: Dict) -> Optional[Dict]:
+    async def _analyze_rapid_momentum(self, symbol: str, data: Dict) -> Optional[Dict]:
         """Analyze rapid momentum movements with SCALPING optimization"""
         try:
             # Extract price data
@@ -232,7 +232,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             confidence = self._calculate_confidence(momentum_analysis, price_change, volume_change)
             
             # Create standardized signal
-                            signal = await self.create_standard_signal(
+            signal = await self.create_standard_signal(
                 symbol=symbol,
                 action=action,
                 entry_price=current_price,

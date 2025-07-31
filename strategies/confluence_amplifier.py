@@ -74,7 +74,7 @@ class ConfluenceAmplifier(BaseStrategy):
                 return []
             
             # Analyze confluence and generate amplified signals
-            confluent_signals = self._analyze_confluence(data)
+            confluent_signals = await self._analyze_confluence(data)
             
             return confluent_signals
             
@@ -138,7 +138,7 @@ class ConfluenceAmplifier(BaseStrategy):
             logger.error(f"Error parsing signal timestamp: {e}")
             return datetime.now() - timedelta(hours=self.signal_decay_hours + 1)
     
-    def _analyze_confluence(self, current_market_data: Dict) -> List[Dict]:
+    async def _analyze_confluence(self, current_market_data: Dict) -> List[Dict]:
         """Analyze signal confluence and generate amplified signals"""
         try:
             confluent_signals = []
@@ -176,7 +176,7 @@ class ConfluenceAmplifier(BaseStrategy):
                 
                 if confluence_analysis['confluence_strength'] >= self.confluence_threshold:
                     # Create amplified signal
-                    amplified_signal = self._create_amplified_signal(
+                    amplified_signal = await self._create_amplified_signal(
                         group_signals, confluence_analysis, current_market_data
                     )
                     
@@ -231,7 +231,7 @@ class ConfluenceAmplifier(BaseStrategy):
             logger.error(f"Error calculating group confluence: {e}")
             return {'confluence_strength': 0.0}
     
-    def _create_amplified_signal(self, group_signals: List[Dict], confluence_analysis: Dict, 
+    async def _create_amplified_signal(self, group_signals: List[Dict], confluence_analysis: Dict, 
                                 current_market_data: Dict) -> Optional[Dict]:
         """Create an amplified signal based on confluence"""
         try:

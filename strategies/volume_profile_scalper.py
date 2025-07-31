@@ -126,7 +126,7 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
         time_since_last = (datetime.now() - self.last_signal_time).total_seconds()
         return time_since_last >= self.scalping_cooldown
     
-    def _generate_signals(self, data: Dict) -> List[Dict]:
+    async def _generate_signals(self, data: Dict) -> List[Dict]:
         """Generate trading signals based on market data - ANTI-BOMBARDMENT VERSION"""
         signals = []
         
@@ -153,7 +153,7 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
                     continue
                     
                 # Generate signal for this symbol
-                signal = self._analyze_volume_profile(symbol, symbol_data)
+                signal = await self._analyze_volume_profile(symbol, symbol_data)
                 if signal:
                     signals.append(signal)
                     # Update symbol cooldown
@@ -204,7 +204,7 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
         time_since = (datetime.now() - last_signal).total_seconds()
         return time_since >= 30  # 30 seconds per symbol
     
-    def _analyze_volume_profile(self, symbol: str, data: Dict) -> Optional[Dict]:
+    async def _analyze_volume_profile(self, symbol: str, data: Dict) -> Optional[Dict]:
         """Analyze volume profile and generate signal if conditions are met"""
         try:
             # Extract price data
