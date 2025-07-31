@@ -853,12 +853,110 @@ async def list_routes():
         "login_endpoint": "/auth/login"
     }
 
-# Add redirects for frontend compatibility
+# FRONTEND-BACKEND INTEGRATION FIX: Real dashboard endpoints
 @app.get("/api/v1/dashboard/summary", tags=["dashboard"]) 
-async def redirect_dashboard_summary():
-    """Redirect frontend's expected dashboard path to actual endpoint"""
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/api/v1/dashboard/dashboard/summary", status_code=307)
+async def get_dashboard_summary():
+    """Get dashboard summary data that frontend expects"""
+    try:
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        # Get basic trading data
+        total_trades = 0
+        daily_pnl = 0.0
+        active_positions = 0
+        
+        if orchestrator and orchestrator.zerodha_client:
+            try:
+                # Get live orders for trade count
+                orders = await orchestrator.zerodha_client.get_orders()
+                if orders:
+                    today = datetime.now().date()
+                    total_trades = len([o for o in orders if o.get('status') == 'COMPLETE' and 
+                                      datetime.fromisoformat(o.get('order_timestamp', '').replace('Z', '+00:00')).date() == today])
+                
+                # Get positions
+                positions = await orchestrator.zerodha_client.get_positions()
+                if positions:
+                    active_positions = len([p for p in positions if float(p.get('quantity', 0)) != 0])
+                    daily_pnl = sum(float(p.get('pnl', 0)) for p in positions)
+            except Exception as e:
+                logger.warning(f"Error fetching trading data: {e}")
+        
+        return {
+            "success": True,
+            "data": {
+                "total_trades": total_trades,
+                "daily_pnl": daily_pnl,
+                "active_positions": active_positions,
+                "total_users": 1,
+                "system_status": "online",
+                "last_updated": datetime.now().isoformat()
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting dashboard summary: {e}")
+        return {
+            "success": False,
+            "data": {
+                "total_trades": 0,
+                "daily_pnl": 0.0,
+                "active_positions": 0,
+                "total_users": 0,
+                "system_status": "error",
+                "error": str(e),
+                "last_updated": datetime.now().isoformat()
+            }
+        }
+
+@app.get("/api/v1/dashboard/daily-pnl", tags=["dashboard"])
+async def get_daily_pnl():
+    """Get daily PnL data that frontend expects"""
+    try:
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        daily_pnl = 0.0
+        pnl_breakdown = []
+        
+        if orchestrator and orchestrator.zerodha_client:
+            try:
+                positions = await orchestrator.zerodha_client.get_positions()
+                if positions:
+                    for pos in positions:
+                        pnl = float(pos.get('pnl', 0))
+                        if pnl != 0:
+                            pnl_breakdown.append({
+                                "symbol": pos.get('tradingsymbol', 'UNKNOWN'),
+                                "pnl": pnl,
+                                "quantity": float(pos.get('quantity', 0))
+                            })
+                    daily_pnl = sum(float(p.get('pnl', 0)) for p in positions)
+            except Exception as e:
+                logger.warning(f"Error fetching PnL data: {e}")
+        
+        return {
+            "success": True,
+            "data": {
+                "total_pnl": daily_pnl,
+                "breakdown": pnl_breakdown,
+                "date": datetime.now().date().isoformat(),
+                "last_updated": datetime.now().isoformat()
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting daily PnL: {e}")
+        return {
+            "success": False,
+            "data": {
+                "total_pnl": 0.0,
+                "breakdown": [],
+                "error": str(e),
+                "last_updated": datetime.now().isoformat()
+            }
+        }
 
 @app.post("/api/auth/login", tags=["auth"])
 async def redirect_login(request: Request):
