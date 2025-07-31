@@ -1003,29 +1003,9 @@ class BaseStrategy:
         self.is_active = False 
 
     def _get_options_premium(self, options_symbol: str, fallback_price: float, option_type: str) -> float:
-        """Get actual options premium - FIRST from Zerodha, then TrueData, then estimate"""
+        """Get actual options premium - PRIMARY from TrueData, SECONDARY from Zerodha for validation only"""
         try:
-            # 🎯 PRIMARY: Get real options premium from Zerodha API
-            try:
-                from src.core.orchestrator import get_orchestrator_instance
-                orchestrator = get_orchestrator_instance()
-                
-                if orchestrator and orchestrator.zerodha_client:
-                    import asyncio
-                    # Get real LTP from Zerodha
-                    real_ltp = asyncio.create_task(orchestrator.zerodha_client.get_options_ltp(options_symbol))
-                    premium = asyncio.get_event_loop().run_until_complete(real_ltp)
-                    
-                    if premium and premium > 0:
-                        logger.info(f"✅ REAL ZERODHA LTP: {options_symbol} = ₹{premium}")
-                        return float(premium)
-                    else:
-                        logger.warning(f"⚠️ Zerodha LTP returned zero or None for {options_symbol}")
-                        
-            except Exception as e:
-                logger.debug(f"Could not get Zerodha LTP for {options_symbol}: {e}")
-            
-            # 🎯 SECONDARY: Try to get options premium from TrueData cache
+            # 🎯 PRIMARY: Get options premium from TrueData cache (USER PREFERENCE)
             try:
                 from data.truedata_client import live_market_data
                 from config.options_symbol_mapping import convert_zerodha_to_truedata_options
@@ -1046,7 +1026,26 @@ class BaseStrategy:
             except Exception as e:
                 logger.debug(f"Could not access TrueData for {options_symbol}: {e}")
             
-            # 🎯 FALLBACK: Estimate options premium dynamically based on market conditions
+            # 🎯 SECONDARY: Fallback to Zerodha API only if TrueData unavailable
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                
+                if orchestrator and orchestrator.zerodha_client:
+                    import asyncio
+                    # Get real LTP from Zerodha
+                    real_ltp = asyncio.create_task(orchestrator.zerodha_client.get_options_ltp(options_symbol))
+                    premium = asyncio.get_event_loop().run_until_complete(real_ltp)
+                    
+                    if premium and premium > 0:
+                        logger.info(f"✅ FALLBACK ZERODHA LTP: {options_symbol} = ₹{premium}")
+                        return float(premium)
+                    else:
+                        logger.warning(f"⚠️ Zerodha LTP returned zero or None for {options_symbol}")
+            except Exception as e:
+                logger.debug(f"Could not get Zerodha LTP for {options_symbol}: {e}")
+            
+            # 🎯 FINAL FALLBACK: Estimate options premium dynamically based on market conditions
             estimated_premium = self._estimate_options_premium_dynamic(fallback_price, option_type, options_symbol)
             logger.warning(f"⚠️ Using dynamic estimation for {options_symbol}: ₹{estimated_premium}")
             return estimated_premium
