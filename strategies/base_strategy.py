@@ -312,7 +312,7 @@ class BaseStrategy:
             logger.error(f"Error validating signal levels: {e}")
             return False
     
-    def create_standard_signal(self, symbol: str, action: str, entry_price: float, 
+    async def create_standard_signal(self, symbol: str, action: str, entry_price: float, 
                               stop_loss: float, target: float, confidence: float, 
                               metadata: Dict) -> Optional[Dict]:
         """Create standardized signal format - SUPPORTS EQUITY, FUTURES & OPTIONS"""
@@ -322,7 +322,7 @@ class BaseStrategy:
             
             if signal_type == 'OPTIONS':
                 # Convert to options signal
-                return self._create_options_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+                return await self._create_options_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
             elif signal_type == 'FUTURES':
                 # Create futures signal (if available)
                 return self._create_futures_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
