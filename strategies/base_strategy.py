@@ -1223,8 +1223,8 @@ class BaseStrategy:
             # Pattern: TCS + 14AUG + 3000 + CE (no year in new format)
             import re
             
-            # First try new format: SYMBOL + DDMMM + STRIKE + TYPE
-            date_strike_match = re.search(r'(\d{1,2}[A-Z]{3})(\d+)(CE|PE)$', options_symbol)
+            # First try format with year: SYMBOL + DDMMMYY + STRIKE + TYPE  
+            date_strike_match = re.search(r'(\d{1,2}[A-Z]{3}\d{2})(\d+)(CE|PE)$', options_symbol)
             
             if date_strike_match:
                 date_part = date_strike_match.group(1)  # e.g., "14AUG"
@@ -1236,8 +1236,8 @@ class BaseStrategy:
                 
                 return float(strike_part)
             
-            # Fallback for old format: SYMBOL + DDMMMYY + STRIKE + TYPE
-            old_date_strike_match = re.search(r'(\d{1,2}[A-Z]{3}\d{2})(\d+)(CE|PE)$', options_symbol)
+            # Fallback for format without year: SYMBOL + DDMMM + STRIKE + TYPE
+            old_date_strike_match = re.search(r'(\d{1,2}[A-Z]{3})(\d+)(CE|PE)$', options_symbol)
             
             if old_date_strike_match:
                 date_part = old_date_strike_match.group(1)  # e.g., "14AUG25"

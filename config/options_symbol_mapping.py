@@ -45,8 +45,8 @@ def convert_expiry_to_truedata_format(expiry: str) -> str:
         import re
         from datetime import datetime
         
-        # Parse Zerodha expiry: 14AUG
-        match = re.search(r'^(\d{1,2})([A-Z]{3})$', expiry)
+        # Parse Zerodha expiry: 14AUG or 14AUG25
+        match = re.search(r'^(\d{1,2})([A-Z]{3})(?:\d{2})?$', expiry)
         if match:
             day = int(match.group(1))
             month_str = match.group(2)
