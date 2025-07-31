@@ -523,7 +523,16 @@ class TrueDataClient:
             else:
                 logger.info(f"   🔍 POST-MARKET: Strategy optimized for analysis")
             
-            return symbols
+            # 🎯 CRITICAL FIX: Add options symbols for real-time options data
+            options_symbols = self._get_dynamic_options_symbols(symbols)
+            all_symbols = symbols + options_symbols
+            
+            logger.info(f"📊 FINAL SUBSCRIPTION LIST:")
+            logger.info(f"   Underlying: {len(symbols)} symbols")
+            logger.info(f"   Options: {len(options_symbols)} symbols") 
+            logger.info(f"   Total: {len(all_symbols)} symbols (TrueData limit: 250)")
+            
+            return all_symbols
             
         except ImportError:
             logger.warning("⚠️ Autonomous symbol config not found, using intelligent fallback")
@@ -555,7 +564,7 @@ class TrueDataClient:
                 ]
                 logger.info(f"🤖 AUTONOMOUS FALLBACK: Underlying-focused ({len(symbols)} symbols)")
             
-                        # 🎯 CRITICAL FIX: Add options symbols for real-time options data
+            # 🎯 CRITICAL FIX: Add options symbols for real-time options data
             options_symbols = self._get_dynamic_options_symbols(symbols)
             all_symbols = symbols + options_symbols
             
