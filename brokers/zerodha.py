@@ -959,7 +959,7 @@ class ZerodhaIntegration:
             
         except Exception as e:
             logger.error(f"Error validating options symbol {options_symbol}: {e}")
-                        return False
+            return False
     
     async def get_options_ltp(self, options_symbol: str) -> Optional[float]:
         """Get real-time LTP for options symbol from Zerodha"""

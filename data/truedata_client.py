@@ -12,7 +12,7 @@ import time
 import signal
 import atexit
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import json
 import redis
 

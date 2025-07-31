@@ -295,27 +295,6 @@ def _edit_distance(s1: str, s2: str) -> int:
         previous_row = current_row
     
     return previous_row[-1]
-TrueData Symbol Mapping Configuration
-🎯 DYNAMIC SYMBOL MAPPING - Auto-detects TrueData vs Zerodha differences
-"""
-
-from typing import List
-import logging
-
-logger = logging.getLogger(__name__)
-
-# 🎯 DYNAMIC ZERODHA SYMBOL MAPPING - Auto-detects TrueData vs Zerodha differences
-ZERODHA_SYMBOL_MAPPING = {
-    # 🎯 CRITICAL MAPPINGS ONLY - Rest will be auto-detected
-    'BAJAJFINSV': 'BAJFINANCE',      # ✅ CRITICAL: Different company name
-    'ADANIPORTS': 'ADANIPORT',       # ✅ CRITICAL: Plural vs singular
-    
-    # Index mappings (these are consistent)  
-    'NIFTY-I': 'NIFTY',              # ✅ CRITICAL: Remove -I suffix
-    'BANKNIFTY-I': 'BANKNIFTY',      # ✅ CRITICAL: Remove -I suffix
-    'FINNIFTY-I': 'FINNIFTY',        # ✅ CRITICAL: Remove -I suffix
-    'MIDCPNIFTY-I': 'MIDCPNIFTY',    # ✅ CRITICAL: Remove -I suffix
-    'SENSEX-I': 'SENSEX',            # ✅ CRITICAL: Remove -I suffix
     
     # Everything else will be auto-detected dynamically
 }
