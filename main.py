@@ -2141,22 +2141,6 @@ async def get_realtime_balance():
 
 # FastAPI Trading System - Rate Limiting Fix Applied
 # Auto-deploys on DigitalOcean App Platform - Push triggers restart
-                    logger.info(f"📊 User metrics: {len(today_orders)} trades today")
-            except Exception as e:
-                logger.warning(f"Could not fetch trade count for metrics: {e}")
-        
-        return metrics
-        
-    except Exception as e:
-        logger.error(f"Error getting user metrics: {str(e)}")
-        return {
-            "total_users": 0,
-            "active_users": 0,
-            "total_trades_today": 0,
-            "total_pnl_today": 0.0,
-            "error": str(e),
-            "last_updated": datetime.now().isoformat()
-        }
 
 # BALANCE FIX: Direct real-time Zerodha balance endpoint for frontend
 @app.get("/api/balance/realtime", tags=["balance"])
