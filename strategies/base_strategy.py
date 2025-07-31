@@ -1268,44 +1268,54 @@ class BaseStrategy:
             return None
     
     def _get_capital_constrained_quantity(self, options_symbol: str, underlying_symbol: str, entry_price: float) -> int:
-        """🎯 DYNAMIC F&O: Always use 1 lot for F&O contracts, respecting capital limits"""
+        """🎯 SMART QUANTITY: F&O uses lots, Equity uses shares based on capital"""
         try:
-            # 🎯 USER REQUEST: Dynamic F&O quantity = 1 lot
-            base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
+            # Check if this is F&O (options) or equity
+            is_options = (options_symbol != underlying_symbol or 
+                         'CE' in options_symbol or 'PE' in options_symbol)
             
             # Get real-time available capital
             available_capital = self._get_available_capital()
             
-            # Calculate cost for 1 lot
-            cost_per_lot = base_lot_size * entry_price
-            
-            # 🎯 DYNAMIC CAPITAL CHECK: Can we afford 1 lot?
-            max_capital_per_trade = available_capital * 0.6  # 60% max per trade (balanced approach)
-            
-            if cost_per_lot <= max_capital_per_trade:
-                # Affordable with normal threshold
-                logger.info(f"✅ F&O ORDER: {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
-                logger.info(f"   💰 Cost: ₹{cost_per_lot:,.0f} / Available: ₹{available_capital:,.0f} ({cost_per_lot/available_capital:.1%})")
-                return base_lot_size
-            elif cost_per_lot <= (available_capital * 0.8):
-                # Affordable with higher threshold (80%)
-                logger.info(f"✅ F&O ORDER (HIGH COST): {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
-                logger.info(f"   💰 Cost: ₹{cost_per_lot:,.0f} / Available: ₹{available_capital:,.0f} ({cost_per_lot/available_capital:.1%})")
-                return base_lot_size
+            if is_options:
+                # 🎯 F&O: Use lot-based calculation
+                base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
+                cost_per_lot = base_lot_size * entry_price
+                
+                # Check affordability
+                max_capital_per_trade = available_capital * 0.6  # 60% max per trade
+                
+                if cost_per_lot <= max_capital_per_trade:
+                    logger.info(f"✅ F&O ORDER: {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
+                    logger.info(f"   💰 Cost: ₹{cost_per_lot:,.0f} / Available: ₹{available_capital:,.0f}")
+                    return base_lot_size
+                elif cost_per_lot <= (available_capital * 0.8):
+                    logger.info(f"✅ F&O ORDER (HIGH COST): {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
+                    return base_lot_size
+                else:
+                    logger.warning(f"❌ F&O REJECTED: {underlying_symbol} too expensive (₹{cost_per_lot:,.0f} > 80% of ₹{available_capital:,.0f})")
+                    return 0
             else:
-                # Too expensive - cannot afford 1 lot
-                logger.warning(f"❌ F&O REJECTED: {underlying_symbol} too expensive (₹{cost_per_lot:,.0f} > 80% of ₹{available_capital:,.0f})")
-                return 0  # Signal will be filtered out
+                # 🎯 EQUITY: Use share-based calculation
+                max_capital_per_trade = available_capital * 0.3  # 30% max per equity trade
+                max_shares = int(max_capital_per_trade / entry_price)
+                
+                # Minimum viable quantity for equity
+                min_shares = max(1, int(5000 / entry_price))  # At least ₹5000 worth
+                final_quantity = max(min_shares, min(max_shares, 100))  # Between min and 100 shares
+                
+                cost = final_quantity * entry_price
+                logger.info(f"✅ EQUITY ORDER: {underlying_symbol} = {final_quantity} shares")
+                logger.info(f"   💰 Cost: ₹{cost:,.0f} / Available: ₹{available_capital:,.0f} ({cost/available_capital:.1%})")
+                return final_quantity
             
         except Exception as e:
-            logger.error(f"Error calculating F&O quantity: {e}")
-            # Fallback: return 1 lot size
-            try:
-                base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
-                logger.info(f"📋 FALLBACK F&O: {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
-                return base_lot_size
-            except:
-                return 75  # Ultimate fallback
+            logger.error(f"Error calculating quantity: {e}")
+            # Fallback based on signal type
+            if 'CE' in options_symbol or 'PE' in options_symbol:
+                return 75  # F&O fallback
+            else:
+                return 10  # Equity fallback
     
     def _get_available_capital(self) -> float:
         """🎯 DYNAMIC: Get available capital from Zerodha margins API in real-time"""

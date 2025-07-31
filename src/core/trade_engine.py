@@ -940,8 +940,8 @@ class TradeEngine:
                 self.logger.error("❌ Failed to fetch margin data from Zerodha")
                 return False
             
-            # Extract available cash from Zerodha margins
-            available_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
+            # Extract available cash from Zerodha margins - FIXED: Use correct field path  
+            available_cash = float(margins.get('equity', {}).get('available', {}).get('live_balance', 0))
             
             self.logger.info(f"💰 Zerodha Wallet Balance: ₹{available_cash:,.2f}")
             self.logger.info(f"📊 Required for Order: ₹{order_value:,.2f}")

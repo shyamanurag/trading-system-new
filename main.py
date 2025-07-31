@@ -1562,6 +1562,66 @@ async def get_trades():
         }
 
 # ADDITIONAL FIX: Direct /api/trades/live endpoint for LiveTradesDashboardPolling.jsx
+@app.get("/api/users/metrics", tags=["users"])
+async def get_user_metrics_direct():
+    """Get live user metrics directly from Zerodha"""
+    try:
+        orchestrator = get_orchestrator_instance()
+        
+        if not orchestrator or not orchestrator.zerodha_client:
+            logger.warning("Zerodha client not available for user metrics")
+            return {"equity": {"used": 0, "available": 0, "total": 0}}
+        
+        # Get live margins
+        margins = await orchestrator.zerodha_client.get_margins()
+        if not margins:
+            return {"equity": {"used": 0, "available": 0, "total": 0}}
+        
+        total_balance = float(margins.get('equity', {}).get('available', {}).get('live_balance', 0))
+        used_margin = float(margins.get('equity', {}).get('utilised', {}).get('total', 0))
+        available_balance = total_balance - used_margin
+        
+        return {
+            "equity": {
+                "used": used_margin,
+                "available": available_balance,
+                "total": total_balance
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting user metrics: {str(e)}")
+        return {"equity": {"used": 0, "available": 0, "total": 0}}
+
+@app.get("/api/balance/realtime", tags=["balance"])
+async def get_realtime_balance():
+    """Get real-time balance from Zerodha"""
+    try:
+        orchestrator = get_orchestrator_instance()
+        
+        if not orchestrator or not orchestrator.zerodha_client:
+            logger.warning("Zerodha client not available for balance")
+            return {"balance": 0, "used": 0, "available": 0}
+        
+        # Get live margins
+        margins = await orchestrator.zerodha_client.get_margins()
+        if not margins:
+            return {"balance": 0, "used": 0, "available": 0}
+        
+        total_balance = float(margins.get('equity', {}).get('available', {}).get('live_balance', 0))
+        used_margin = float(margins.get('equity', {}).get('utilised', {}).get('total', 0))
+        available_balance = total_balance - used_margin
+        
+        return {
+            "balance": total_balance,
+            "used": used_margin,
+            "available": available_balance
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting realtime balance: {str(e)}")
+        return {"balance": 0, "used": 0, "available": 0}
+
 @app.get("/api/trades/live", tags=["trades"])
 async def get_live_trades_direct():
     """Get live trades - Direct endpoint for frontend components calling /api/trades/live"""

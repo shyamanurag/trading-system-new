@@ -24,6 +24,45 @@ ZERODHA_SYMBOL_MAPPING = {
     # Everything else will be auto-detected dynamically
 }
 
+def is_fo_enabled(symbol: str) -> bool:
+    """🎯 CHECK: Whether F&O trading is enabled for a symbol"""
+    # List of symbols with F&O enabled (major stocks and indices)
+    fo_symbols = {
+        'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX',
+        'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
+        'INFY', 'KOTAKBANK', 'LT', 'AXISBANK', 'MARUTI', 'ASIANPAINT',
+        'TECHM', 'ADANIPORT', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO'
+    }
+    
+    # Remove suffixes for comparison
+    clean_symbol = symbol.replace('-I', '').replace('25', '').replace('26', '')
+    return clean_symbol in fo_symbols
+
+def should_use_equity_only(symbol: str) -> bool:
+    """🎯 CHECK: Whether to use equity only (no F&O) for a symbol"""
+    # For symbols without F&O or during market hours restrictions
+    return not is_fo_enabled(symbol)
+
+def _is_options_symbol(symbol: str) -> bool:
+    """🎯 CHECK: Whether symbol is an options contract"""
+    return ('CE' in symbol or 'PE' in symbol) and any(x in symbol for x in ['25', '26', '27'])
+
+def validate_options_premium(symbol: str, price: float) -> bool:
+    """🎯 VALIDATE: Options premium is within reasonable bounds"""
+    if not _is_options_symbol(symbol):
+        return True  # Not options, no validation needed
+    
+    # Options premium validation rules
+    if price <= 0:
+        return False
+    if price > 1000:  # Max premium threshold
+        logger.warning(f"⚠️ High options premium: {symbol} = ₹{price}")
+        return True  # Allow but warn
+    if price < 0.05:  # Min premium threshold
+        return False
+    
+    return True
+
 def get_zerodha_symbol(internal_symbol: str) -> str:
     """🎯 DYNAMIC: Convert internal symbol to Zerodha's official symbol with auto-detection"""
     # First check static mappings

@@ -19,7 +19,6 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from brokers.zerodha import ZerodhaIntegration
-from brokers.resilient_zerodha import ResilientZerodhaConnection
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,7 @@ class UserTradingSession:
     user_id: int
     username: str
     zerodha_client: Optional[ZerodhaIntegration]
-    resilient_client: Optional[ResilientZerodhaConnection]
+    resilient_client: Optional[ZerodhaIntegration] = None  # Use ZerodhaIntegration instead of removed ResilientZerodhaConnection
     is_connected: bool = False
     last_activity: Optional[datetime] = None
     api_key: Optional[str] = None
@@ -102,7 +101,7 @@ class MultiUserZerodhaManager:
                 'ws_max_reconnect_attempts': 10
             }
             
-            resilient_client = ResilientZerodhaConnection(zerodha_client, resilient_config)
+            resilient_client = ZerodhaIntegration(resilient_config)
             
             # Create session
             session = UserTradingSession(
@@ -305,13 +304,13 @@ class MultiUserZerodhaManager:
         
         # Get connection details from resilient client
         if session.resilient_client:
-            connection_status = session.resilient_client.connection_status
-            status.update({
+            connection_status = session.resilient_client.get_connection_status()  # Use method instead of attribute
+            status['resilient_stats'] = {
                 'connection_state': connection_status.get('state'),
                 'last_connected': connection_status.get('last_connected'),
                 'reconnect_attempts': connection_status.get('reconnect_attempts', 0),
                 'latency_ms': connection_status.get('latency_ms')
-            })
+            }
         
         return status
     
