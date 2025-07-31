@@ -666,10 +666,37 @@ class TrueDataClient:
             return ['07AUG', '14AUG']  # Fallback
     
     def _get_atm_strikes(self, underlying: str) -> List[int]:
-        """Get ATM strikes for an underlying symbol"""
+        """Get DYNAMIC ATM strikes based on current market price"""
         try:
-            # This is a simplified version - in reality we'd get current price
-            # and calculate ATM strikes dynamically
+            # 🎯 CRITICAL FIX: Get real-time price and calculate ATM dynamically
+            # Use self.live_market_data instead of importing
+            
+            # Try to get current market price for dynamic ATM calculation
+            current_price = None
+            underlying_symbol = underlying if underlying not in ['NIFTY', 'BANKNIFTY', 'FINNIFTY'] else f"{underlying}-I"
+            
+            if hasattr(self, 'live_market_data') and self.live_market_data and underlying_symbol in self.live_market_data:
+                current_price = self.live_market_data[underlying_symbol].get('ltp', 0)
+                logger.info(f"📊 DYNAMIC ATM: {underlying} current price = ₹{current_price}")
+            
+            if current_price and current_price > 0:
+                # Calculate ATM dynamically based on current price
+                if underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
+                    # Index strikes (100-point intervals)
+                    interval = 100 if underlying == 'NIFTY' else 100
+                    atm_strike = round(current_price / interval) * interval
+                    strikes = [atm_strike - 200, atm_strike - 100, atm_strike, atm_strike + 100, atm_strike + 200]
+                else:
+                    # Stock strikes (50-point intervals typically)
+                    interval = 50
+                    atm_strike = round(current_price / interval) * interval
+                    strikes = [atm_strike - 100, atm_strike - 50, atm_strike, atm_strike + 50, atm_strike + 100]
+                
+                logger.info(f"✅ DYNAMIC STRIKES for {underlying}: ATM={atm_strike}, Range={strikes}")
+                return strikes
+            
+            # Fallback to static strikes if no real-time price available
+            logger.warning(f"⚠️ No real-time price for {underlying}, using static strikes")
             
             if underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
                 # Index strikes (wider range, 100-point intervals)
@@ -680,13 +707,13 @@ class TrueDataClient:
                 }
                 return base_strikes.get(underlying, [25000])
             else:
-                # Stock strikes (50-point intervals typically)
+                # Stock strikes (50-point intervals typically) - UPDATED with recent ranges
                 base_prices = {
-                    'RELIANCE': [1400, 1450, 1500, 1550, 1600],
-                    'TCS': [2950, 3000, 3050, 3100, 3150],
-                    'HDFCBANK': [1950, 2000, 2050, 2100, 2150],
-                    'ICICIBANK': [1400, 1450, 1500, 1550, 1600],
-                    'INFY': [1750, 1800, 1850, 1900, 1950]
+                    'RELIANCE': [1350, 1400, 1450, 1500, 1550],      # Updated for current levels
+                    'TCS': [2950, 3000, 3050, 3100, 3150],           # Current levels good
+                    'HDFCBANK': [1950, 2000, 2050, 2100, 2150],      # Current levels good
+                    'ICICIBANK': [1400, 1450, 1500, 1550, 1600],     # Current levels good
+                    'INFY': [1750, 1800, 1850, 1900, 1950]           # Current levels good
                 }
                 return base_prices.get(underlying, [1000, 1050, 1100, 1150, 1200])
                 

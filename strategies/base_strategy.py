@@ -1018,13 +1018,21 @@ class BaseStrategy:
             # 🎯 SECONDARY: Try to get options premium from TrueData cache
             try:
                 from data.truedata_client import live_market_data
-                if live_market_data and options_symbol in live_market_data:
-                    options_data = live_market_data[options_symbol]
+                from config.options_symbol_mapping import convert_zerodha_to_truedata_options
+                
+                # Convert Zerodha format to TrueData format for lookup
+                truedata_symbol = convert_zerodha_to_truedata_options(options_symbol)
+                logger.debug(f"🔄 Format conversion: {options_symbol} -> {truedata_symbol}")
+                
+                if live_market_data and truedata_symbol in live_market_data:
+                    options_data = live_market_data[truedata_symbol]
                     # Extract LTP (Last Traded Price) for options premium
                     premium = options_data.get('ltp', options_data.get('price', options_data.get('last_price')))
                     if premium and premium > 0:
-                        logger.info(f"✅ Got options premium from TrueData: {options_symbol} = ₹{premium}")
+                        logger.info(f"✅ Got options premium from TrueData: {options_symbol} ({truedata_symbol}) = ₹{premium}")
                         return float(premium)
+                else:
+                    logger.debug(f"📊 TrueData lookup failed: {truedata_symbol} not in cache")
             except Exception as e:
                 logger.debug(f"Could not access TrueData for {options_symbol}: {e}")
             
