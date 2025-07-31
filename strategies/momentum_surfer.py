@@ -61,7 +61,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 return
                 
             # Process market data and generate signals
-            signals = self._generate_signals(data)
+            signals = await self._generate_signals(data)
             
             # 🎯 QUALITY OVER QUANTITY: Be more selective with signals  
             original_signal_count = len(signals)
@@ -101,7 +101,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
         time_since_last = (datetime.now() - self.last_signal_time).total_seconds()
         return time_since_last >= self.scalping_cooldown
     
-    def _generate_signals(self, data: Dict) -> List[Dict]:
+    async def _generate_signals(self, data: Dict) -> List[Dict]:
         """Generate trading signals based on market data - ANTI-BOMBARDMENT VERSION"""
         signals = []
         
@@ -128,7 +128,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                     continue
                     
                 # Generate signal for this symbol
-                signal = self._analyze_momentum(symbol, symbol_data)
+                signal = await self._analyze_momentum(symbol, symbol_data)
                 if signal:
                     signals.append(signal)
                     # Update symbol cooldown
@@ -181,7 +181,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
         time_since = (datetime.now() - last_signal).total_seconds()
         return time_since >= 60  # 60 seconds per symbol for momentum
     
-    def _analyze_momentum(self, symbol: str, data: Dict) -> Optional[Dict]:
+    async def _analyze_momentum(self, symbol: str, data: Dict) -> Optional[Dict]:
         """Analyze momentum with SCALPING optimization"""
         try:
             # Extract price data
@@ -307,41 +307,6 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 'action': 'HOLD',
                 'score': momentum_score
             }
-    
-    def _calculate_confidence(self, momentum_analysis: Dict, price_change: float, 
-                             volume_change: float, trend_data: Optional[Dict] = None) -> float:
-        """Calculate signal confidence with enhanced quality scoring"""
-        base_confidence = 0.4  # Lower base confidence
-        
-        # Boost confidence for strong momentum
-        if momentum_analysis['signal_strength'] == 'strong_momentum':
-            base_confidence = 0.7
-        elif momentum_analysis['signal_strength'] == 'moderate_momentum':
-            base_confidence = 0.5
-        
-        # FIXED: Boost confidence for meaningful price change (realistic thresholds)
-        if abs(price_change) >= 0.08:  # 0.08% move (aligned with strategy thresholds)
-            price_boost = min(abs(price_change) / 0.5, 0.25)  # Up to 25% boost for 0.5% move
-        else:
-            price_boost = 0  # No boost for very small moves
-        
-        # Boost confidence for significant volume
-        if volume_change >= 20:
-            volume_boost = min(volume_change / 100, 0.2)  # Up to 20% boost
-        elif volume_change >= 10:
-            volume_boost = min(volume_change / 200, 0.1)  # Up to 10% boost
-        else:
-            volume_boost = 0
-        
-        # REMOVED: Trend confirmation boost - too complex for scalping
-        
-        # REMOVED: Time-based penalty - scalping should be fast
-        
-        # Calculate final confidence
-        final_confidence = base_confidence + price_boost + volume_boost
-        
-        # Cap confidence at 95%
-        return min(final_confidence, 0.95)
     
     def _calculate_confidence(self, momentum_analysis: Dict, price_change: float, 
                              volume_change: float, trend_data: Optional[Dict] = None) -> float:
