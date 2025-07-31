@@ -295,9 +295,6 @@ def _edit_distance(s1: str, s2: str) -> int:
         previous_row = current_row
     
     return previous_row[-1]
-    
-    # Everything else will be auto-detected dynamically
-}
 
 def is_fo_enabled(symbol: str) -> bool:
     """🎯 CHECK: Whether F&O trading is enabled for a symbol"""
