@@ -57,6 +57,11 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
             return
             
         try:
+            # ========================================
+            # CRITICAL: MANAGE EXISTING POSITIONS FIRST
+            # ========================================
+            await self.manage_existing_positions(data)
+            
             # MARKET OPENING PROTECTION: Don't trade in first 15 minutes
             if not self._is_market_ready_for_trading():
                 return
@@ -69,8 +74,8 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
             if not self._check_signal_rate_limits():
                 return
                 
-            # Process market data and generate signals
-            signals = self._generate_signals(data)
+            # Process market data and generate NEW signals (only if no existing positions)
+            signals = await self._generate_signals(data)
             
             # 🎯 QUALITY OVER QUANTITY: Be more selective with signals
             original_signal_count = len(signals)

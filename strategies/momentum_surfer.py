@@ -52,6 +52,11 @@ class EnhancedMomentumSurfer(BaseStrategy):
             return
             
         try:
+            # ========================================
+            # CRITICAL: MANAGE EXISTING POSITIONS FIRST
+            # ========================================
+            await self.manage_existing_positions(data)
+            
             # Check SCALPING cooldown
             if not self._is_scalping_cooldown_passed():
                 return
@@ -60,7 +65,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             if not self._check_signal_rate_limits():
                 return
                 
-            # Process market data and generate signals
+            # Process market data and generate NEW signals (only if no existing positions)
             signals = await self._generate_signals(data)
             
             # 🎯 QUALITY OVER QUANTITY: Be more selective with signals  

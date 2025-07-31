@@ -23,6 +23,10 @@ class AutonomousEliteScanner:
         self.cache_duration_seconds = 30
         self.strategies = {}
         
+        # CRITICAL: Failed Order Management
+        self.failed_orders_cache = []  # Store failed orders with ≥9 confidence
+        self.failed_orders_max_age_hours = 24  # Keep failed orders for 24 hours
+        
     async def initialize_strategies(self):
         """Initialize the same 6 strategies used by the main trading system"""
         try:
@@ -168,8 +172,15 @@ class AutonomousEliteScanner:
                 if recommendation:
                     elite_recommendations.append(recommendation)
             
+            # CRITICAL: Add failed orders with ≥9 confidence as elite recommendations
+            failed_order_recommendations = self.get_failed_orders_as_recommendations()
+            elite_recommendations.extend(failed_order_recommendations)
+            
             self.last_scan_time = datetime.now()
-            logger.info(f"🎯 Elite scan completed: {len(elite_recommendations)} recommendations from {len(all_signals)} real strategy signals")
+            total_strategy_signals = len(all_signals)
+            total_failed_orders = len(failed_order_recommendations)
+            logger.info(f"🎯 Elite scan completed: {len(elite_recommendations)} recommendations "
+                       f"({total_strategy_signals} from strategies + {total_failed_orders} failed orders)")
             logger.info(f"🔄 Signals preserved for main orchestrator to execute trades")
             
             return elite_recommendations
@@ -364,6 +375,66 @@ class AutonomousEliteScanner:
             logger.error(f"❌ Error checking option expiry for {symbol}: {e}")
             return False
 
+    def add_failed_order(self, signal: Dict):
+        """Add failed order to elite recommendations if confidence ≥9"""
+        try:
+            confidence = signal.get('confidence', 0)
+            if confidence >= 9.0:
+                failed_order = {
+                    'signal': signal,
+                    'failed_at': datetime.now(),
+                    'reason': 'EXECUTION_FAILED',
+                    'status': 'AVAILABLE_FOR_ELITE'
+                }
+                self.failed_orders_cache.append(failed_order)
+                
+                # Clean up old failed orders
+                self._cleanup_old_failed_orders()
+                
+                logger.info(f"📋 ELITE: Added failed order {signal['symbol']} with confidence {confidence:.1f} to elite recommendations")
+                
+        except Exception as e:
+            logger.error(f"Error adding failed order to elite cache: {e}")
+    
+    def _cleanup_old_failed_orders(self):
+        """Remove failed orders older than max age"""
+        try:
+            cutoff_time = datetime.now() - timedelta(hours=self.failed_orders_max_age_hours)
+            self.failed_orders_cache = [
+                order for order in self.failed_orders_cache 
+                if order['failed_at'] > cutoff_time
+            ]
+        except Exception as e:
+            logger.error(f"Error cleaning up failed orders: {e}")
+    
+    def get_failed_orders_as_recommendations(self) -> List[Dict]:
+        """Get failed orders as elite recommendations"""
+        try:
+            self._cleanup_old_failed_orders()
+            
+            recommendations = []
+            for failed_order in self.failed_orders_cache:
+                signal = failed_order['signal']
+                recommendations.append({
+                    'symbol': signal.get('symbol'),
+                    'action': signal.get('action'),
+                    'entry_price': signal.get('entry_price'),
+                    'stop_loss': signal.get('stop_loss'),
+                    'target': signal.get('target'),
+                    'confidence': signal.get('confidence'),
+                    'strategy': signal.get('strategy', 'FAILED_ORDER_RECOVERY'),
+                    'signal_type': 'FAILED_ORDER_ELITE',
+                    'failed_at': failed_order['failed_at'].isoformat(),
+                    'age_hours': (datetime.now() - failed_order['failed_at']).total_seconds() / 3600,
+                    'recommendation_reason': f"High confidence signal ({signal.get('confidence', 0):.1f}/10) failed execution - manual review recommended"
+                })
+            
+            return recommendations
+            
+        except Exception as e:
+            logger.error(f"Error getting failed orders as recommendations: {e}")
+            return []
+
 # Global scanner instance
 autonomous_scanner = AutonomousEliteScanner()
 
@@ -412,6 +483,52 @@ async def get_elite_recommendations():
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
+
+@router.post("/add-failed-order")
+async def add_failed_order_to_elite(signal: Dict):
+    """Add failed order to elite recommendations if confidence ≥9"""
+    try:
+        confidence = signal.get('confidence', 0)
+        
+        if confidence < 9.0:
+            return {
+                "success": False,
+                "message": f"Order confidence {confidence:.1f} below minimum 9.0 for elite recommendations",
+                "added_to_elite": False
+            }
+        
+        # Add to elite recommendations
+        autonomous_scanner.add_failed_order(signal)
+        
+        return {
+            "success": True,
+            "message": f"Failed order for {signal.get('symbol')} added to elite recommendations",
+            "confidence": confidence,
+            "added_to_elite": True,
+            "symbol": signal.get('symbol'),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error adding failed order to elite: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add order to elite recommendations")
+
+@router.get("/failed-orders")
+async def get_failed_orders():
+    """Get all failed orders in elite recommendations"""
+    try:
+        failed_orders = autonomous_scanner.get_failed_orders_as_recommendations()
+        
+        return {
+            "success": True,
+            "failed_orders": failed_orders,
+            "total_count": len(failed_orders),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting failed orders: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve failed orders")
 
 @router.post("/force-scan")
 async def force_autonomous_scan():

@@ -55,11 +55,16 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             return
             
         try:
+            # ========================================
+            # CRITICAL: MANAGE EXISTING POSITIONS FIRST
+            # ========================================
+            await self.manage_existing_positions(data)
+            
             # Check SCALPING cooldown
             if not self._is_scalping_cooldown_passed():
                 return
                 
-            # Process market data and generate signals
+            # Process market data and generate NEW signals (only if no existing positions)
             signals = await self._generate_signals(data)
             
             # 🎯 QUALITY OVER QUANTITY: Reduce signal generation volume
@@ -349,16 +354,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                     logger.error(f"❌ {self.name} trade execution failed")
                 
         except Exception as e:
-            logger.error(f"Error executing trades: {e}") 
-        
-        # Require HIGHER minimum score for signal generation (anti-bombardment)
-        if momentum_score < 2.0:  # Increased from 1.5 to 2.0 - only strong signals
-            signal_strength = 'none'
-        
-        return {
-            'signal_strength': signal_strength,
-            'score': momentum_score
-        }
+            logger.error(f"Error executing trades: {e}")
     
     def _calculate_confidence(self, momentum_analysis: Dict, price_change: float, 
                              volume_change: float) -> float:

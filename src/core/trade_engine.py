@@ -180,7 +180,7 @@ class TradeEngine:
             self.logger.error(f"Error tracking signal execution: {e}")
     
     def _track_signal_execution_failed(self, signal: Dict, reason: str):
-        """Track failed signal execution"""
+        """Track failed signal execution and route high-confidence orders to elite recommendations"""
         try:
             # Get orchestrator instance to update stats
             from src.core.orchestrator import get_orchestrator_instance
@@ -190,9 +190,50 @@ class TradeEngine:
                 orchestrator._track_signal_failed(signal, reason)
             else:
                 self.logger.error(f"📊 EXECUTION FAILED: {signal.get('symbol')} - {reason}")
+            
+            # CRITICAL: Route high-confidence failed orders to Elite Recommendations
+            confidence = signal.get('confidence', 0)
+            if confidence >= 9.0:
+                self._route_failed_order_to_elite(signal, reason)
                 
         except Exception as e:
             self.logger.error(f"Error tracking signal execution failure: {e}")
+    
+    def _route_failed_order_to_elite(self, signal: Dict, reason: str):
+        """Route failed high-confidence order to Elite Recommendations"""
+        try:
+            import requests
+            import asyncio
+            
+            # Prepare failed order data
+            failed_order_data = {
+                **signal,
+                'failure_reason': reason,
+                'failed_at': datetime.now().isoformat(),
+                'routed_to_elite': True
+            }
+            
+            # Try to send to Elite Recommendations API
+            try:
+                response = requests.post(
+                    'http://localhost:8000/api/elite-recommendations/add-failed-order',
+                    json=failed_order_data,
+                    timeout=5
+                )
+                
+                if response.status_code == 200:
+                    self.logger.info(f"📋 ELITE ROUTED: Failed order {signal.get('symbol')} "
+                                   f"(confidence: {signal.get('confidence', 0):.1f}) added to Elite Recommendations")
+                else:
+                    self.logger.warning(f"Failed to route {signal.get('symbol')} to Elite API: {response.status_code}")
+                    
+            except requests.exceptions.RequestException as e:
+                self.logger.warning(f"Elite API unavailable for {signal.get('symbol')}: {e}")
+                # Continue without Elite routing - not critical for execution
+                
+        except Exception as e:
+            self.logger.error(f"Error routing failed order to elite: {e}")
+            # Don't let this failure affect main execution flow
     
     async def _try_get_zerodha_client_from_orchestrator(self):
         """Try to get Zerodha client from orchestrator if not set"""
@@ -1082,6 +1123,39 @@ class TradeEngine:
                 'price': trade_data.get('price'),
                 'timestamp': trade_data.get('timestamp', datetime.now()),
                 'status': trade_data.get('status', 'executed'),
+                'order_id': trade_data.get('order_id'),
+                'pnl': trade_data.get('pnl', 0.0),
+                'strategy': trade_data.get('strategy'),
+                'created_at': datetime.now()
+            }
+            
+            # Save to database
+            async with self.db_config.get_session() as session:
+                # Use text query for precise control
+                insert_query = text("""
+                    INSERT INTO paper_trades (
+                        user_id, symbol, action, quantity, price, timestamp,
+                        status, order_id, pnl, strategy, created_at
+                    ) VALUES (
+                        :user_id, :symbol, :action, :quantity, :price, :timestamp,
+                        :status, :order_id, :pnl, :strategy, :created_at
+                    )
+                """)
+                
+                await session.execute(insert_query, paper_trade)
+                await session.commit()
+                
+                self.logger.info(f"Paper trade saved: {trade_data['symbol']} {trade_data['action']} {trade_data['quantity']}@{trade_data['price']}")
+                return True
+                
+        except Exception as e:
+            self.logger.error(f"Error saving paper trade: {e}")
+            # Try to rollback if possible
+            try:
+                await session.rollback()
+            except:
+                pass
+            return False 
                 'order_id': trade_data.get('order_id'),
                 'pnl': trade_data.get('pnl', 0.0),
                 'strategy': trade_data.get('strategy'),

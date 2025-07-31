@@ -43,11 +43,16 @@ class ConfluenceAmplifier(BaseStrategy):
             return
             
         try:
+            # ========================================
+            # CRITICAL: MANAGE EXISTING POSITIONS FIRST
+            # ========================================
+            await self.manage_existing_positions(data)
+            
             # Check SCALPING cooldown
             if not self._is_scalping_cooldown_passed():
                 return
                 
-            # Process market data and generate signals
+            # Process market data and generate NEW signals (only if no existing positions)
             signals = self._generate_signals(data)
             
             # FIXED: Only store signals for orchestrator collection - no direct execution
@@ -74,7 +79,7 @@ class ConfluenceAmplifier(BaseStrategy):
                 return []
             
             # Analyze confluence and generate amplified signals
-            confluent_signals = await self._analyze_confluence(data)
+            confluent_signals = self._analyze_confluence(data)
             
             return confluent_signals
             

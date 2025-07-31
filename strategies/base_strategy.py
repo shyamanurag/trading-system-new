@@ -39,6 +39,17 @@ class BaseStrategy:
         self.historical_data = {}  # symbol -> list of price data
         self.max_history = 50  # Keep last 50 data points per symbol
         
+        # CRITICAL: Position Management System
+        self.active_positions = {}  # symbol -> position data with strategy linkage
+        self.position_metadata = {}  # symbol -> strategy-specific position data
+        self.trailing_stops = {}  # symbol -> trailing stop data
+        self.position_entry_times = {}  # symbol -> entry timestamp
+        
+        # Position deduplication and management flags
+        self.max_position_age_hours = 24  # Auto-close positions after 24 hours
+        self.trailing_stop_percentage = 0.5  # 0.5% trailing stop
+        self.profit_lock_percentage = 1.0  # Lock profit at 1%
+        
     def _is_scalping_cooldown_passed(self) -> bool:
         """Check if SCALPING cooldown period has passed"""
         if not self.last_signal_time:
@@ -88,6 +99,215 @@ class BaseStrategy:
         """Increment signal counters when a signal is generated"""
         self.signals_generated_this_hour += 1
         self.strategy_signals_this_hour += 1
+    
+    # ========================================
+    # CRITICAL: POSITION MANAGEMENT SYSTEM
+    # ========================================
+    
+    def has_existing_position(self, symbol: str) -> bool:
+        """Check if strategy already has active position in symbol - PREVENTS DUPLICATES"""
+        return symbol in self.active_positions
+    
+    async def manage_existing_positions(self, market_data: Dict):
+        """Manage all existing positions with trailing stops and exit logic"""
+        try:
+            positions_to_exit = []
+            
+            for symbol, position in self.active_positions.items():
+                if symbol not in market_data:
+                    continue
+                    
+                current_price = market_data[symbol].get('ltp', 0)
+                if current_price == 0:
+                    continue
+                
+                # Check if position should be exited
+                exit_decision = await self.should_exit_position(symbol, current_price, position)
+                
+                if exit_decision['should_exit']:
+                    positions_to_exit.append({
+                        'symbol': symbol,
+                        'reason': exit_decision['reason'],
+                        'current_price': current_price,
+                        'position': position
+                    })
+                else:
+                    # Update trailing stop if position is profitable
+                    await self.update_trailing_stop(symbol, current_price, position)
+                    
+            # Execute position exits
+            for exit_data in positions_to_exit:
+                await self.exit_position(exit_data['symbol'], exit_data['current_price'], exit_data['reason'])
+                
+        except Exception as e:
+            logger.error(f"Error managing existing positions: {e}")
+    
+    async def should_exit_position(self, symbol: str, current_price: float, position: Dict) -> Dict:
+        """Determine if position should be exited based on trailing stops, targets, time"""
+        try:
+            entry_price = position.get('entry_price', 0)
+            action = position.get('action', 'BUY')
+            stop_loss = position.get('stop_loss', 0)
+            target = position.get('target', 0)
+            
+            # Check stop loss
+            if action == 'BUY' and current_price <= stop_loss:
+                return {'should_exit': True, 'reason': 'STOP_LOSS_HIT'}
+            elif action == 'SELL' and current_price >= stop_loss:
+                return {'should_exit': True, 'reason': 'STOP_LOSS_HIT'}
+            
+            # Check target
+            if action == 'BUY' and current_price >= target:
+                return {'should_exit': True, 'reason': 'TARGET_HIT'}
+            elif action == 'SELL' and current_price <= target:
+                return {'should_exit': True, 'reason': 'TARGET_HIT'}
+            
+            # Check trailing stop
+            if symbol in self.trailing_stops:
+                trailing_stop = self.trailing_stops[symbol]['stop_price']
+                if action == 'BUY' and current_price <= trailing_stop:
+                    return {'should_exit': True, 'reason': 'TRAILING_STOP_HIT'}
+                elif action == 'SELL' and current_price >= trailing_stop:
+                    return {'should_exit': True, 'reason': 'TRAILING_STOP_HIT'}
+            
+            # Check position age (auto-close old positions)
+            entry_time = self.position_entry_times.get(symbol)
+            if entry_time:
+                age_hours = (datetime.now() - entry_time).total_seconds() / 3600
+                if age_hours > self.max_position_age_hours:
+                    return {'should_exit': True, 'reason': 'POSITION_EXPIRED'}
+            
+            return {'should_exit': False, 'reason': 'HOLD'}
+            
+        except Exception as e:
+            logger.error(f"Error evaluating exit for {symbol}: {e}")
+            return {'should_exit': False, 'reason': 'ERROR'}
+    
+    async def update_trailing_stop(self, symbol: str, current_price: float, position: Dict):
+        """Update trailing stop for profitable positions"""
+        try:
+            action = position.get('action', 'BUY')
+            entry_price = position.get('entry_price', 0)
+            
+            # Calculate profit percentage
+            if action == 'BUY':
+                profit_pct = ((current_price - entry_price) / entry_price) * 100
+            else:
+                profit_pct = ((entry_price - current_price) / entry_price) * 100
+            
+            # Only set trailing stop if position is profitable
+            if profit_pct > self.profit_lock_percentage:
+                
+                # Calculate trailing stop price
+                if action == 'BUY':
+                    trailing_stop_price = current_price * (1 - self.trailing_stop_percentage / 100)
+                else:
+                    trailing_stop_price = current_price * (1 + self.trailing_stop_percentage / 100)
+                
+                # Update trailing stop if it's better than current
+                if symbol not in self.trailing_stops:
+                    self.trailing_stops[symbol] = {
+                        'stop_price': trailing_stop_price,
+                        'last_update': datetime.now(),
+                        'highest_profit': profit_pct
+                    }
+                    logger.info(f"🎯 {self.name}: Set trailing stop for {symbol} at ₹{trailing_stop_price:.2f} (profit: {profit_pct:.2f}%)")
+                else:
+                    current_trailing = self.trailing_stops[symbol]
+                    
+                    # Update if new trailing stop is better
+                    if ((action == 'BUY' and trailing_stop_price > current_trailing['stop_price']) or
+                        (action == 'SELL' and trailing_stop_price < current_trailing['stop_price'])):
+                        
+                        self.trailing_stops[symbol].update({
+                            'stop_price': trailing_stop_price,
+                            'last_update': datetime.now(),
+                            'highest_profit': max(profit_pct, current_trailing['highest_profit'])
+                        })
+                        logger.info(f"🎯 {self.name}: Updated trailing stop for {symbol} to ₹{trailing_stop_price:.2f} (profit: {profit_pct:.2f}%)")
+                        
+        except Exception as e:
+            logger.error(f"Error updating trailing stop for {symbol}: {e}")
+    
+    async def exit_position(self, symbol: str, exit_price: float, reason: str):
+        """Exit position and clean up tracking data"""
+        try:
+            if symbol in self.active_positions:
+                position = self.active_positions[symbol]
+                entry_price = position.get('entry_price', 0)
+                action = position.get('action', 'BUY')
+                
+                # Calculate realized P&L
+                if action == 'BUY':
+                    pnl_pct = ((exit_price - entry_price) / entry_price) * 100
+                else:
+                    pnl_pct = ((entry_price - exit_price) / entry_price) * 100
+                
+                # Log position exit
+                logger.info(f"🚪 {self.name}: EXITING {symbol} at ₹{exit_price:.2f} | "
+                           f"Entry: ₹{entry_price:.2f} | P&L: {pnl_pct:.2f}% | Reason: {reason}")
+                
+                # Clean up position tracking
+                del self.active_positions[symbol]
+                if symbol in self.position_metadata:
+                    del self.position_metadata[symbol]
+                if symbol in self.trailing_stops:
+                    del self.trailing_stops[symbol]
+                if symbol in self.position_entry_times:
+                    del self.position_entry_times[symbol]
+                
+                # Create exit signal for execution
+                exit_signal = {
+                    'symbol': symbol,
+                    'action': 'SELL' if action == 'BUY' else 'BUY',  # Opposite action to close
+                    'entry_price': exit_price,
+                    'stop_loss': 0,  # No stop loss for exit signal
+                    'target': exit_price,
+                    'confidence': 10.0,  # High confidence for exits
+                    'quantity': position.get('quantity', 1),
+                    'strategy': self.name,
+                    'signal_type': 'POSITION_EXIT',
+                    'exit_reason': reason,
+                    'original_entry_price': entry_price,
+                    'realized_pnl_pct': pnl_pct,
+                    'metadata': {
+                        'position_exit': True,
+                        'exit_reason': reason,
+                        'holding_time_hours': (datetime.now() - self.position_entry_times.get(symbol, datetime.now())).total_seconds() / 3600
+                    }
+                }
+                
+                # Store exit signal for orchestrator collection
+                self.current_positions[f"{symbol}_EXIT"] = exit_signal
+                
+        except Exception as e:
+            logger.error(f"Error exiting position for {symbol}: {e}")
+    
+    def record_position_entry(self, symbol: str, signal: Dict):
+        """Record position entry for tracking and management"""
+        try:
+            # Store active position data
+            self.active_positions[symbol] = {
+                'entry_price': signal.get('entry_price', 0),
+                'action': signal.get('action', 'BUY'),
+                'stop_loss': signal.get('stop_loss', 0),
+                'target': signal.get('target', 0),
+                'confidence': signal.get('confidence', 0),
+                'quantity': signal.get('quantity', 1),
+                'strategy': self.name,
+                'entry_time': datetime.now()
+            }
+            
+            # Store entry time for age tracking
+            self.position_entry_times[symbol] = datetime.now()
+            
+            # Store strategy-specific metadata
+            self.position_metadata[symbol] = signal.get('metadata', {})
+            
+            logger.info(f"📈 {self.name}: POSITION ENTERED {symbol} {signal.get('action')} at ₹{signal.get('entry_price', 0):.2f}")
+            
+        except Exception as e:
+            logger.error(f"Error recording position entry for {symbol}: {e}")
     
     def _is_symbol_scalping_cooldown_passed(self, symbol: str, cooldown_seconds: int = 30) -> bool:
         """Check if symbol-specific SCALPING cooldown has passed"""
@@ -317,6 +537,20 @@ class BaseStrategy:
                               metadata: Dict) -> Optional[Dict]:
         """Create standardized signal format - SUPPORTS EQUITY, FUTURES & OPTIONS"""
         try:
+            # ========================================
+            # CRITICAL: POSITION DEDUPLICATION CHECK
+            # ========================================
+            if self.has_existing_position(symbol):
+                logger.info(f"🚫 {self.name}: DUPLICATE SIGNAL PREVENTED for {symbol} - Position already exists")
+                return None
+            
+            # ========================================
+            # CRITICAL: CONFIDENCE FILTERING
+            # ========================================
+            if confidence < 9.0:
+                logger.info(f"🗑️ {self.name}: LOW CONFIDENCE SIGNAL SCRAPPED for {symbol} - Confidence: {confidence:.1f}/10")
+                return None
+            
             # 🎯 INTELLIGENT SIGNAL TYPE SELECTION based on market conditions and symbol
             signal_type = self._determine_optimal_signal_type(symbol, entry_price, confidence, metadata)
             
@@ -500,7 +734,7 @@ class BaseStrategy:
                 logger.warning(f"Equity signal below {min_risk_reward_ratio}:1 ratio: {symbol} ({risk_reward_ratio:.2f})")
                 return None
             
-            return {
+            signal = {
                 'signal_id': f"{self.name}_{symbol}_{int(time.time())}",
                 'symbol': symbol,
                 'action': action.upper(),
@@ -528,6 +762,11 @@ class BaseStrategy:
                 },
                 'generated_at': datetime.now().isoformat()
             }
+            
+            # CRITICAL: Record position entry for management
+            self.record_position_entry(symbol, signal)
+            
+            return signal
             
         except Exception as e:
             logger.error(f"Error creating equity signal: {e}")
