@@ -342,29 +342,6 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         # Cap confidence at 95%
         return min(final_confidence, 0.95)
-            return {
-                'signal_strength': 'moderate_momentum',
-                'action': 'BUY',
-                'score': momentum_score
-            }
-        elif momentum_score <= -3:
-            return {
-                'signal_strength': 'strong_momentum',
-                'action': 'SELL',
-                'score': momentum_score
-            }
-        elif momentum_score <= -2:
-            return {
-                'signal_strength': 'moderate_momentum',
-                'action': 'SELL',
-                'score': momentum_score
-            }
-        else:
-            return {
-                'signal_strength': 'none',
-                'action': 'HOLD',
-                'score': momentum_score
-            }
     
     def _calculate_confidence(self, momentum_analysis: Dict, price_change: float, 
                              volume_change: float, trend_data: Optional[Dict] = None) -> float:
