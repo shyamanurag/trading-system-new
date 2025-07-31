@@ -383,12 +383,12 @@ class BaseStrategy:
             logger.error(f"Error determining signal type: {e}")
             return 'EQUITY'  # Safest fallback
     
-    def _create_options_signal(self, symbol: str, action: str, entry_price: float, 
+    async def _create_options_signal(self, symbol: str, action: str, entry_price: float, 
                               stop_loss: float, target: float, confidence: float, metadata: Dict) -> Dict:
         """Create standardized signal format for options"""
         try:
             # 🎯 CRITICAL FIX: Convert to options symbol and force BUY action
-            options_symbol, option_type = self._convert_to_options_symbol(symbol, entry_price, action)
+            options_symbol, option_type = await self._convert_to_options_symbol(symbol, entry_price, action)
             
             # 🚨 CRITICAL: Check if signal was rejected (e.g., MIDCPNIFTY, SENSEX)
             if options_symbol is None or option_type == 'REJECTED':
@@ -561,7 +561,7 @@ class BaseStrategy:
             logger.error(f"Error getting real market price for {symbol}: {e}")
             return None
 
-    def _convert_to_options_symbol(self, underlying_symbol: str, current_price: float, action: str) -> tuple:
+    async def _convert_to_options_symbol(self, underlying_symbol: str, current_price: float, action: str) -> tuple:
         """Convert equity signal to options symbol with BUY-only approach - FIXED SYMBOL FORMAT"""
         
         try:
@@ -582,7 +582,7 @@ class BaseStrategy:
             # 🔧 IMPORTANT: Only use indices with confirmed options contracts on Zerodha
             if zerodha_underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:  # REMOVED MIDCPNIFTY - no options
                 # Index options - use volume-based strike selection for liquidity
-                expiry = self._get_next_expiry()
+                expiry = await self._get_next_expiry()
                 if not expiry:
                     logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
                     return None, 'REJECTED'
@@ -608,7 +608,7 @@ class BaseStrategy:
             else:
                 # Stock options - convert equity to options using ZERODHA NAME
                 # 🎯 USER REQUIREMENT: Volume-based strike selection for liquidity
-                expiry = self._get_next_expiry()
+                expiry = await self._get_next_expiry()
                 if not expiry:
                     logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
                     return None, 'REJECTED'
@@ -717,13 +717,13 @@ class BaseStrategy:
             logger.warning(f"⚠️ FALLBACK STRIKE: {int(fallback_strike)} (rounded to nearest 50)")
             return int(fallback_strike)
       
-    def _get_next_expiry(self) -> str:
+    async def _get_next_expiry(self) -> str:
         """DYNAMIC EXPIRY SELECTION: Get optimal expiry based on strategy requirements"""
         # 🔍 DEBUG: Add comprehensive logging for expiry date debugging
         logger.info(f"🔍 DEBUG: Getting next expiry date...")
         
         # Try to get real expiry dates from Zerodha first
-        available_expiries = self._get_available_expiries_from_zerodha()
+        available_expiries = await self._get_available_expiries_from_zerodha()
         
         if available_expiries:
             logger.info(f"✅ Found {len(available_expiries)} expiry dates from Zerodha API")
@@ -731,21 +731,21 @@ class BaseStrategy:
                 logger.info(f"   {i+1}. {exp['formatted']} ({exp['date']})")
             
             # Use the next expiry (not nearest to avoid expiry day volatility)
-            optimal_expiry = self._get_optimal_expiry_for_strategy("next_weekly")  # Changed from default to "next_weekly"
+            optimal_expiry = await self._get_optimal_expiry_for_strategy("next_weekly")  # Changed from default to "next_weekly"
             logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
             return optimal_expiry
         else:
             logger.error("❌ No expiry dates from Zerodha API - REJECTING SIGNAL (no fallback)")
             return None
     
-    def _get_optimal_expiry_for_strategy(self, preference: str = "nearest_weekly") -> str:
+    async def _get_optimal_expiry_for_strategy(self, preference: str = "nearest_weekly") -> str:
         """
         Get optimal expiry based on strategy requirements - FIXED ZERODHA FORMAT
         
         Args:
             preference: "nearest_weekly", "nearest_monthly", "next_weekly", "max_time_decay"
         """
-        available_expiries = self._get_available_expiries_from_zerodha()
+        available_expiries = await self._get_available_expiries_from_zerodha()
         
         if not available_expiries:
             # 🚨 NO FALLBACK: Return None if no real expiries from Zerodha API
@@ -811,7 +811,7 @@ class BaseStrategy:
         
         return zerodha_expiry
     
-    def _get_available_expiries_from_zerodha(self) -> List[Dict]:
+    async def _get_available_expiries_from_zerodha(self) -> List[Dict]:
         """
         Fetch available expiry dates from Zerodha instruments API
         Returns list of {date: datetime.date, formatted: str, is_weekly: bool, is_monthly: bool}
@@ -837,10 +837,24 @@ class BaseStrategy:
             
             for symbol in common_symbols:
                 try:
+                    # 🎯 CRITICAL FIX: Handle both sync and async contexts properly
                     if loop.is_running():
-                        # If we're already in an async context, FORCE real Zerodha data 
-                        logger.error("❌ Cannot get real expiry dates in async context - NO FALLBACK")
-                        return []
+                        # We're in async context - use asyncio.create_task() instead
+                        import asyncio
+                        try:
+                            # Create a new task to avoid "cannot be called from a running event loop"
+                            task = asyncio.create_task(
+                                orchestrator.zerodha_client.get_available_expiries_for_symbol(symbol)
+                            )
+                            # Get the result - this works in async context
+                            expiries = await task
+                            
+                            if expiries:
+                                logger.info(f"📅 Using expiries from {symbol}: {len(expiries)} found")
+                                return expiries
+                        except Exception as async_err:
+                            logger.warning(f"⚠️ Async expiry fetch failed for {symbol}: {async_err}")
+                            continue
                     else:
                         # Run the async method
                         expiries = loop.run_until_complete(
