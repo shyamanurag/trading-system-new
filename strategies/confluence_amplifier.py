@@ -261,7 +261,7 @@ class ConfluenceAmplifier(BaseStrategy):
             consensus_target = np.mean(targets)
             
             # Create amplified signal using base strategy format
-            amplified_signal = self.create_standard_signal(
+            amplified_signal = await self.create_standard_signal(
                 symbol=symbol,
                 action=base_signal.get('action', 'BUY'),
                 entry_price=current_price,  # Use current price for immediate execution

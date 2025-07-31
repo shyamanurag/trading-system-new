@@ -173,7 +173,7 @@ class EnhancedVolatilityExplosion(BaseStrategy):
             confidence = self._calculate_confidence(volatility_analysis, current_volatility_ratio, historical_volatility)
             
             # Create standardized signal
-            signal = self.create_standard_signal(
+            signal = await self.create_standard_signal(
                 symbol=symbol,
                 action=action,
                 entry_price=current_price,

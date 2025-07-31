@@ -247,7 +247,7 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
             confidence = self._calculate_confidence(volume_analysis, volume_change, price_change)
             
             # Create standardized signal
-            signal = self.create_standard_signal(
+            signal = await self.create_standard_signal(
                 symbol=symbol,
                 action=action,
                 entry_price=current_price,
@@ -311,6 +311,62 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
                 volume_score = 0
                 signal_strength = 'none'
         else:
+            volume_score = 0
+            signal_strength = 'none'
+        
+        # Require minimum volume score for signal generation
+        if volume_score < 1:
+            signal_strength = 'none'
+        
+        return {
+            'signal_strength': signal_strength,
+            'score': volume_score
+        }
+    
+    def _calculate_confidence(self, volume_analysis: Dict, volume_change: float, 
+                             price_change: float) -> float:
+        """Calculate signal confidence based on volume analysis"""
+        base_confidence = 0.4
+        
+        # Boost confidence for strong volume
+        if volume_analysis['signal_strength'] == 'high_volume':
+            base_confidence = 0.7
+        elif volume_analysis['signal_strength'] == 'moderate_volume':
+            base_confidence = 0.6
+        elif volume_analysis['signal_strength'] == 'low_volume':
+            base_confidence = 0.5
+        
+        # Boost confidence for strong volume change
+        volume_boost = min(volume_change / 100, 0.15)  # Up to 15% boost
+        
+        # Boost confidence for price confirmation
+        price_boost = min(abs(price_change) / 0.3, 0.15)  # Up to 15% boost
+        
+        final_confidence = base_confidence + volume_boost + price_boost
+        
+        return min(final_confidence, 0.9)  # Cap at 90%
+    
+    async def _execute_trades(self, signals: List[Dict]):
+        """Execute trades based on generated signals - FIXED TO ACTUALLY EXECUTE"""
+        try:
+            for signal in signals:
+                logger.info(f"🚀 {self.name} EXECUTING TRADE: {signal['symbol']} {signal['action']} "
+                           f"Entry: ₹{signal['entry_price']:.2f}, "
+                           f"SL: ₹{signal['stop_loss']:.2f}, "
+                           f"Target: ₹{signal['target']:.2f}, "
+                           f"Confidence: {signal['confidence']:.2f}")
+                
+                # FIXED: Actually send signal to trade engine instead of just logging
+                success = await self.send_to_trade_engine(signal)
+                
+                if success:
+                    self.current_positions[signal['symbol']] = signal
+                    logger.info(f"✅ {self.name} trade executed successfully")
+                else:
+                    logger.error(f"❌ {self.name} trade execution failed")
+                
+        except Exception as e:
+            logger.error(f"Error executing trades: {e}") 
             volume_score = 0
             signal_strength = 'none'
         

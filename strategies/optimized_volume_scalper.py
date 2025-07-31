@@ -229,7 +229,7 @@ class OptimizedVolumeScalper(BaseStrategy):
             confidence = self._calculate_scalping_confidence(volume_analysis, volume_change, price_change)
             
             # Create scalping signal
-            signal = self.create_standard_signal(
+            signal = await self.create_standard_signal(
                 symbol=symbol,
                 action=action,
                 entry_price=current_price,

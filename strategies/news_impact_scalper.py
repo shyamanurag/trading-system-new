@@ -232,7 +232,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             confidence = self._calculate_confidence(momentum_analysis, price_change, volume_change)
             
             # Create standardized signal
-            signal = self.create_standard_signal(
+                            signal = await self.create_standard_signal(
                 symbol=symbol,
                 action=action,
                 entry_price=current_price,
@@ -292,6 +292,64 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         
         # REMOVED: Additional scoring for high volume - too weak and causing bombardment
         # Old logic: volume_change >= 40 and price_change >= 0.08 was generating signals on normal noise
+        
+        # Require HIGHER minimum score for signal generation (anti-bombardment)
+        if momentum_score < 2.0:  # Increased from 1.5 to 2.0 - only strong signals
+            signal_strength = 'none'
+        
+        return {
+            'signal_strength': signal_strength,
+            'score': momentum_score
+        }
+    
+    def _calculate_confidence(self, momentum_analysis: Dict, price_change: float, 
+                             volume_change: float) -> float:
+        """Calculate signal confidence based on momentum analysis"""
+        base_confidence = 0.4
+        
+        # Boost confidence for strong momentum
+        if momentum_analysis['signal_strength'] == 'extreme_momentum':
+            base_confidence = 0.85
+        elif momentum_analysis['signal_strength'] == 'strong_momentum':
+            base_confidence = 0.75
+        elif momentum_analysis['signal_strength'] == 'moderate_momentum':
+            base_confidence = 0.6
+        
+        # Boost confidence for strong price movement
+        price_boost = min(abs(price_change) / 0.5, 0.1)  # Up to 10% boost
+        
+        # Boost confidence for volume confirmation
+        volume_boost = min(volume_change / 100, 0.1)  # Up to 10% boost
+        
+        # Penalize if volume is too low relative to price movement
+        if volume_change < 15 and abs(price_change) > 0.15:
+            base_confidence *= 0.8  # 20% penalty for weak volume confirmation
+        
+        final_confidence = base_confidence + price_boost + volume_boost
+        
+        return min(final_confidence, 0.9)  # Cap at 90%
+    
+    async def _execute_trades(self, signals: List[Dict]):
+        """Execute trades based on generated signals - FIXED TO ACTUALLY EXECUTE"""
+        try:
+            for signal in signals:
+                logger.info(f"🚀 {self.name} EXECUTING TRADE: {signal['symbol']} {signal['action']} "
+                           f"Entry: ₹{signal['entry_price']:.2f}, "
+                           f"SL: ₹{signal['stop_loss']:.2f}, "
+                           f"Target: ₹{signal['target']:.2f}, "
+                           f"Confidence: {signal['confidence']:.2f}")
+                
+                # FIXED: Actually send signal to trade engine instead of just logging
+                success = await self.send_to_trade_engine(signal)
+                
+                if success:
+                    self.current_positions[signal['symbol']] = signal
+                    logger.info(f"✅ {self.name} trade executed successfully")
+                else:
+                    logger.error(f"❌ {self.name} trade execution failed")
+                
+        except Exception as e:
+            logger.error(f"Error executing trades: {e}") 
         
         # Require HIGHER minimum score for signal generation (anti-bombardment)
         if momentum_score < 2.0:  # Increased from 1.5 to 2.0 - only strong signals
