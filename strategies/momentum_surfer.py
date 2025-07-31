@@ -224,7 +224,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             confidence = self._calculate_confidence(momentum_analysis, price_change, volume_change, data or {})
             
             # Create standardized signal
-                            signal = await self.create_standard_signal(
+            signal = await self.create_standard_signal(
                 symbol=symbol,
                 action=action,
                 entry_price=current_price,
