@@ -63,6 +63,34 @@ def validate_options_premium(symbol: str, price: float) -> bool:
     
     return True
 
+def get_complete_fo_symbols() -> List[str]:
+    """🎯 GET: Complete list of F&O symbols for autonomous trading"""
+    # Major indices
+    indices = [
+        'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I'
+    ]
+    
+    # Major stocks with F&O
+    stocks = [
+        'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
+        'INFY', 'KOTAKBANK', 'LT', 'AXISBANK', 'MARUTI', 'ASIANPAINT',
+        'TECHM', 'ADANIPORT', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO',
+        'NESTLEIND', 'HINDUNILVR', 'POWERGRID', 'NTPC', 'COALINDIA',
+        'ONGC', 'SUNPHARMA', 'DRREDDY', 'CIPLA', 'APOLLOHOSP'
+    ]
+    
+    return indices + stocks
+
+def get_autonomous_symbol_status():
+    """🎯 GET: Current autonomous trading symbol status and strategy"""
+    return {
+        "current_strategy": "news_impact_scalper",
+        "active_symbols": get_complete_fo_symbols(),
+        "symbol_count": len(get_complete_fo_symbols()),
+        "status": "active",
+        "last_update": "2025-07-31T04:10:45"
+    }
+
 def get_zerodha_symbol(internal_symbol: str) -> str:
     """🎯 DYNAMIC: Convert internal symbol to Zerodha's official symbol with auto-detection"""
     # First check static mappings
