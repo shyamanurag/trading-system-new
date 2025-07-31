@@ -1496,8 +1496,17 @@ async def get_trades():
                     
                     symbol = order.get('tradingsymbol', 'UNKNOWN')
                     side = order.get('transaction_type', 'UNKNOWN')
-                    quantity = order.get('filled_quantity', 0)
-                    price = order.get('average_price', 0)
+                    
+                    # 🚨 FIX: Convert Zerodha string values to numbers
+                    try:
+                        quantity = int(float(order.get('filled_quantity', 0)))
+                    except (ValueError, TypeError):
+                        quantity = 0
+                        
+                    try:
+                        price = float(order.get('average_price', 0))
+                    except (ValueError, TypeError):
+                        price = 0.0
                     
                     trade_info = {
                         "trade_id": order.get('order_id', 'UNKNOWN'),
