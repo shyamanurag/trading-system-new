@@ -35,7 +35,7 @@ const BrokerUserSetup = ({ open, onClose, onUserAdded }) => {
         client_id: '',
         initial_capital: 1000000,
         risk_tolerance: 'medium',
-        paper_trading: true
+        paper_trading: false
     });
 
     const steps = ['User Information', 'Broker Credentials', 'Trading Settings'];
@@ -85,7 +85,7 @@ const BrokerUserSetup = ({ open, onClose, onUserAdded }) => {
                         client_id: '',
                         initial_capital: 1000000,
                         risk_tolerance: 'medium',
-                        paper_trading: true
+                        paper_trading: false
                     });
                     setActiveStep(0);
                     setSuccess(false);
@@ -135,7 +135,7 @@ const BrokerUserSetup = ({ open, onClose, onUserAdded }) => {
                     <Grid container spacing={3}>
                         <Grid item xs={12}>
                             <Alert severity="info" sx={{ mb: 2 }}>
-                                Enter your Zerodha Kite Connect API credentials. These will be used for paper trading.
+                                Enter your Zerodha Kite Connect API credentials. These will be used for LIVE REAL MONEY trading.
                             </Alert>
                         </Grid>
                         <Grid item xs={12}>
@@ -184,7 +184,7 @@ const BrokerUserSetup = ({ open, onClose, onUserAdded }) => {
                                 type="number"
                                 value={formData.initial_capital}
                                 onChange={handleChange('initial_capital')}
-                                helperText="Starting capital for paper trading"
+                                helperText="REAL starting capital for live trading"
                             />
                         </Grid>
                         <Grid item xs={12}>
@@ -205,15 +205,16 @@ const BrokerUserSetup = ({ open, onClose, onUserAdded }) => {
                             <FormControlLabel
                                 control={
                                     <Switch
-                                        checked={formData.paper_trading}
-                                        onChange={handleChange('paper_trading')}
-                                        color="primary"
+                                        checked={!formData.paper_trading}
+                                        onChange={() => {}} // Disabled - always live trading
+                                        color="error"
+                                        disabled={true}
                                     />
                                 }
-                                label="Paper Trading Mode"
+                                label="🔴 LIVE TRADING MODE (Real Money)"
                             />
-                            <Typography variant="caption" display="block" color="text.secondary">
-                                Keep this enabled to trade with virtual money
+                            <Typography variant="caption" display="block" color="error">
+                                ⚠️ REAL MONEY AT RISK - Live market execution
                             </Typography>
                         </Grid>
                     </Grid>

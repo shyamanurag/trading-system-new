@@ -179,18 +179,30 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                             }
                         }
 
-                        // Create mock daily P&L trend for chart (showing progression)
-                        const today = new Date();
-                        const baseAmount = Math.max(1000, Math.abs(realTrading.daily_pnl || 0));
-                        dashboardData.dailyPnL = [
-                            { date: new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], pnl: baseAmount * 0.1, trades: Math.max(1, Math.floor(realTrading.total_trades * 0.1)) },
-                            { date: new Date(today.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], pnl: baseAmount * 0.25, trades: Math.max(1, Math.floor(realTrading.total_trades * 0.25)) },
-                            { date: new Date(today.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], pnl: baseAmount * 0.4, trades: Math.max(1, Math.floor(realTrading.total_trades * 0.4)) },
-                            { date: new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], pnl: baseAmount * 0.6, trades: Math.max(1, Math.floor(realTrading.total_trades * 0.6)) },
-                            { date: new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], pnl: baseAmount * 0.8, trades: Math.max(1, Math.floor(realTrading.total_trades * 0.8)) },
-                            { date: new Date(today.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], pnl: baseAmount * 0.95, trades: Math.max(1, Math.floor(realTrading.total_trades * 0.95)) },
-                            { date: today.toISOString().split('T')[0], pnl: realTrading.daily_pnl || 0, trades: realTrading.total_trades || 0 }
-                        ];
+                        // FIXED: Use REAL daily P&L data from API - NO MOCK DATA
+                        // Fetch actual historical P&L data from performance API
+                        try {
+                            const response = await fetch('/api/v1/performance/daily-pnl', {
+                                headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                            });
+                            if (response.ok) {
+                                const historicalData = await response.json();
+                                dashboardData.dailyPnL = historicalData.daily_pnl_history || [
+                                    { date: new Date().toISOString().split('T')[0], pnl: realTrading.daily_pnl || 0, trades: realTrading.total_trades || 0 }
+                                ];
+                            } else {
+                                // If no historical data available, show only today's real data
+                                dashboardData.dailyPnL = [
+                                    { date: new Date().toISOString().split('T')[0], pnl: realTrading.daily_pnl || 0, trades: realTrading.total_trades || 0 }
+                                ];
+                            }
+                        } catch (error) {
+                            console.error('Error fetching historical P&L:', error);
+                            // Fallback to today's real data only
+                            dashboardData.dailyPnL = [
+                                { date: new Date().toISOString().split('T')[0], pnl: realTrading.daily_pnl || 0, trades: realTrading.total_trades || 0 }
+                            ];
+                        }
                     }
                 } catch (parseError) {
                     console.warn('Error parsing autonomous trading data:', parseError);
@@ -933,8 +945,8 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                             <List>
                                 <ListItem>
                                     <ListItemText
-                                        primary="Paper Trading Mode"
-                                        secondary={`Risk-free testing with ₹${safeNumber(dashboardData.systemMetrics?.aum, 0).toLocaleString()} virtual capital`}
+                                        primary="Live Trading Mode"
+                                        secondary={`Real money trading with ₹${safeNumber(dashboardData.systemMetrics?.aum, 0).toLocaleString()} active capital`}
                                     />
                                 </ListItem>
                                 <ListItem>
@@ -1007,8 +1019,8 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                             <List>
                                 <ListItem>
                                     <ListItemText
-                                        primary="Paper Trading"
-                                        secondary="Zero real money risk - virtual capital only"
+                                        primary="Real Trading"
+                                        secondary="Live market execution - actual money at risk"
                                     />
                                 </ListItem>
                                 <ListItem>

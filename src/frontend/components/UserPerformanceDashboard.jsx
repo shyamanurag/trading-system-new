@@ -128,24 +128,32 @@ const UserPerformanceDashboard = ({ tradingData }) => {
             if (realTradingData?.systemMetrics?.totalTrades > 0) {
                 const trading = realTradingData.systemMetrics;
 
-                // Create mock users based on real trading data
-                const mockUsers = [{
-                    user_id: 'AUTONOMOUS_TRADER_001',
-                    name: 'Autonomous Trading System',
-                    email: 'autonomous@trading.com',
-                    avatar: '🤖',
-                    initial_capital: 1000000,
-                    current_capital: 1000000 + (trading.totalPnL || 0),
-                    total_pnl: trading.totalPnL || 0,
-                    daily_pnl: trading.totalPnL || 0,
-                    win_rate: trading.successRate || 0,
-                    total_trades: trading.totalTrades || 0,
-                    is_active: trading.activeUsers > 0,
-                    open_trades: trading.activeUsers || 0
-                }];
-
-                setUsers(mockUsers);
-                setSelectedUser(mockUsers[0]);
+                // FIXED: Fetch REAL users from API - NO MOCK DATA
+                try {
+                    const usersResponse = await fetch('/api/v1/users/active', {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                    });
+                    
+                    if (usersResponse.ok) {
+                        const realUsers = await usersResponse.json();
+                        if (realUsers.users && realUsers.users.length > 0) {
+                            setUsers(realUsers.users);
+                            setSelectedUser(realUsers.users[0]);
+                        } else {
+                            // No users found - show empty state instead of mock data
+                            setUsers([]);
+                            setSelectedUser(null);
+                        }
+                    } else {
+                        console.error('Failed to fetch real users');
+                        setUsers([]);
+                        setSelectedUser(null);
+                    }
+                } catch (error) {
+                    console.error('Error fetching real users:', error);
+                    setUsers([]);
+                    setSelectedUser(null);
+                }
 
                 // Set summary metrics from real data
                 setSummaryMetrics({
@@ -159,18 +167,32 @@ const UserPerformanceDashboard = ({ tradingData }) => {
                     aumGrowth: ((trading.totalPnL || 0) / 1000000) * 100
                 });
 
-                // Create mock daily P&L data
-                const today = new Date();
-                const dailyData = Array.from({ length: 7 }, (_, index) => {
-                    const date = new Date(today.getTime() - (6 - index) * 24 * 60 * 60 * 1000);
-                    const progress = (index + 1) / 7;
-                    return {
-                        date: date.toISOString().split('T')[0],
-                        total_pnl: (trading.totalPnL || 0) * progress,
-                        trades: Math.floor((trading.totalTrades || 0) * progress)
-                    };
-                });
-                setDailyPnL(dailyData);
+                // FIXED: Fetch REAL daily P&L data from API - NO MOCK DATA
+                try {
+                    const dailyPnLResponse = await fetch('/api/v1/performance/daily-pnl-history', {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                    });
+                    
+                    if (dailyPnLResponse.ok) {
+                        const realDailyData = await dailyPnLResponse.json();
+                        setDailyPnL(realDailyData.daily_history || []);
+                    } else {
+                        // No historical data - show only today's real data
+                        setDailyPnL([{
+                            date: new Date().toISOString().split('T')[0],
+                            total_pnl: trading.totalPnL || 0,
+                            trades: trading.totalTrades || 0
+                        }]);
+                    }
+                } catch (error) {
+                    console.error('Error fetching daily P&L history:', error);
+                    // Fallback to today's real data only
+                    setDailyPnL([{
+                        date: new Date().toISOString().split('T')[0],
+                        total_pnl: trading.totalPnL || 0,
+                        trades: trading.totalTrades || 0
+                    }]);
+                }
 
             } else {
                 // Fallback to original endpoints
