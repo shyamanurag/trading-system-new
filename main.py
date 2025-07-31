@@ -1840,15 +1840,25 @@ async def get_live_trades_direct():
                 symbol = order.get('tradingsymbol', 'UNKNOWN')
                 side = order.get('transaction_type', 'UNKNOWN')
                 
-                # 🚨 FIX: Convert Zerodha string values to numbers
+                # 🚨 FIX: Convert Zerodha string values to numbers with better error handling
                 try:
-                    quantity = int(float(order.get('filled_quantity', 0)))
-                except (ValueError, TypeError):
+                    filled_qty = order.get('filled_quantity', 0)
+                    if filled_qty is None or filled_qty == '':
+                        quantity = 0
+                    else:
+                        quantity = int(float(str(filled_qty)))
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"Quantity conversion error for {filled_qty}: {e}")
                     quantity = 0
                     
                 try:
-                    price = float(order.get('average_price', 0))
-                except (ValueError, TypeError):
+                    avg_price = order.get('average_price', 0)
+                    if avg_price is None or avg_price == '':
+                        price = 0.0
+                    else:
+                        price = float(str(avg_price))
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"Price conversion error for {avg_price}: {e}")
                     price = 0.0
                 
                 # Enhanced format for live display (matches LiveTradesDashboardPolling.jsx expectations)
@@ -1876,6 +1886,7 @@ async def get_live_trades_direct():
                 
             except Exception as order_error:
                 logger.warning(f"Error processing live order: {order_error}")
+                logger.debug(f"Problematic order data: {order}")
                 continue
         
         logger.info(f"📊 Retrieved {len(live_trades)} live trades from Zerodha (direct)")
