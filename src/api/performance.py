@@ -9,7 +9,7 @@ import logging
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.get("/performance/daily-pnl", response_model=BaseResponse)
+@router.get("/daily-pnl", response_model=BaseResponse)
 async def get_daily_pnl(
     date: datetime = None,
     orchestrator: TradingOrchestrator = Depends(get_orchestrator)
@@ -29,7 +29,7 @@ async def get_daily_pnl(
         logger.error(f"Error getting daily PnL: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/performance/daily-pnl-history")
+@router.get("/daily-pnl-history")
 async def get_daily_pnl_history(
     days: int = 30,
     orchestrator: TradingOrchestrator = Depends(get_orchestrator)
@@ -86,7 +86,7 @@ async def get_daily_pnl_history(
             "timestamp": datetime.now().isoformat()
         }
 
-@router.get("/performance/positions", response_model=List[PositionResponse])
+@router.get("/positions", response_model=List[PositionResponse])
 async def get_positions(
     orchestrator: TradingOrchestrator = Depends(get_orchestrator)
 ):
@@ -113,7 +113,7 @@ async def get_positions(
         logger.error(f"Error getting positions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/performance/trades", response_model=List[TradeResponse])
+@router.get("/trades", response_model=List[TradeResponse])
 async def get_trades(
     start_date: datetime = None,
     end_date: datetime = None,
@@ -147,7 +147,7 @@ async def get_trades(
         logger.error(f"Error getting trades: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/performance/metrics", response_model=Dict[str, Any])
+@router.get("/metrics", response_model=Dict[str, Any])
 async def get_performance_metrics():
     """Get comprehensive performance metrics from Zerodha"""
     try:
@@ -198,7 +198,7 @@ async def get_performance_metrics():
         logger.error(f"Error getting performance metrics: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/performance/risk", response_model=Dict[str, Any])
+@router.get("/risk", response_model=Dict[str, Any])
 async def get_risk_metrics(
     orchestrator: TradingOrchestrator = Depends(get_orchestrator)
 ):
