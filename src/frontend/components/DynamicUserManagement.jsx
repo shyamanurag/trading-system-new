@@ -77,18 +77,48 @@ const DynamicUserManagement = () => {
     const loadUsers = async () => {
         try {
             setLoading(true);
-            const response = await fetch('/api/v1/users/dynamic/list?active_only=true');
-            const data = await response.json();
+            
+            // Try the dynamic endpoint first
+            let response = await fetch('/api/v1/users/dynamic/list?active_only=true');
+            let data = await response.json();
 
-            if (response.ok) {
+            if (response.ok && Array.isArray(data) && data.length > 0) {
                 setUsers(data);
                 setError(null);
-            } else {
-                throw new Error(data.detail || 'Failed to load users');
+                return;
             }
+
+            // FALLBACK: If dynamic endpoint fails or returns empty, try the working /users/active endpoint
+            console.log('🔄 Dynamic users endpoint failed, trying fallback...');
+            response = await fetch('/api/v1/users/active');
+            
+            if (response.ok) {
+                data = await response.json();
+                if (data.success && data.users) {
+                    // Transform the data to match expected format
+                    const transformedUsers = data.users.map(user => ({
+                        id: user.user_id,
+                        username: user.username,
+                        email: user.email,
+                        zerodha_client_id: user.zerodha_client_id,
+                        initial_capital: user.initial_capital,
+                        status: user.status,
+                        created_at: user.created_at,
+                        is_active: user.status === 'active'
+                    }));
+                    setUsers(transformedUsers);
+                    setError(null);
+                    console.log(`✅ Loaded ${transformedUsers.length} users from fallback endpoint`);
+                    return;
+                }
+            }
+            
+            throw new Error('No users found in either endpoint');
+            
         } catch (err) {
             setError(err.message);
             console.error('Error loading users:', err);
+            setUsers([]); // Set empty array to prevent infinite loading
         } finally {
             setLoading(false);
         }
