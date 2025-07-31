@@ -64,21 +64,74 @@ def validate_options_premium(symbol: str, price: float) -> bool:
     return True
 
 def get_complete_fo_symbols() -> List[str]:
-    """🎯 GET: Complete list of F&O symbols for autonomous trading"""
+    """🎯 GET: Complete list of F&O symbols for autonomous trading - EXPANDED"""
     # Major indices
     indices = [
         'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I'
     ]
     
-    # Major stocks with F&O
+    # Major stocks with F&O - EXPANDED TO ~200 SYMBOLS
     stocks = [
+        # Banking & Financial Services (25)
         'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
         'INFY', 'KOTAKBANK', 'LT', 'AXISBANK', 'MARUTI', 'ASIANPAINT',
         'TECHM', 'ADANIPORT', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO',
         'NESTLEIND', 'HINDUNILVR', 'POWERGRID', 'NTPC', 'COALINDIA',
-        'ONGC', 'SUNPHARMA', 'DRREDDY', 'CIPLA', 'APOLLOHOSP'
+        'ONGC', 'SUNPHARMA', 'DRREDDY', 'CIPLA', 'APOLLOHOSP',
+        'HCLTECH', 'INDUSINDBK', 'YESBANK', 'PNB', 'BANDHANBNK',
+        
+        # Auto & Auto Components (15)
+        'TATAMOTORS', 'M&M', 'BAJAJ-AUTO', 'EICHERMOT', 'HEROMOTOCO',
+        'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'FORCEMOT', 'MAHINDRA',
+        'BOSCHLTD', 'MOTHERSUMI', 'BALKRISIND', 'AMARAJABAT', 'CUMMINSIND',
+        
+        # IT & Technology (20)
+        'MINDTREE', 'MPHASIS', 'LTTS', 'PERSISTENT', 'COFORGE',
+        'RBLBANK', 'FEDERALBNK', 'IDFCFIRSTB', 'EQUITAS', 'SOUTHBANK',
+        'INTELLECT', 'RAMPGREEN', 'ZOMATO', 'PAYTM', 'NAUKRI',
+        'POLICYBZR', 'DMART', 'JUBLFOOD', 'DEVYANI', 'WESTLIFE',
+        
+        # Pharmaceuticals & Healthcare (20)
+        'BIOCON', 'CADILAHC', 'LUPIN', 'GLENMARK', 'TORNTPHARM',
+        'ALKEM', 'ABBOTINDIA', 'PFIZER', 'GLAXO', 'NOVARTIS',
+        'AUROPHARMA', 'LALPATHLAB', 'METROPOLIS', 'THYROCARE', 'HEALTHINS',
+        'FORTIS', 'MAXHEALTH', 'NARAYANHRL', 'APOLLOTYRE', 'MRF',
+        
+        # Energy & Oil (15)
+        'IOC', 'BPCL', 'HINDPETRO', 'GAIL', 'OIL', 'PETRONET',
+        'ADANIGREEN', 'ADANITRANS', 'ADANIPOWER', 'ADANIENTS',
+        'TATAPOWER', 'NHPC', 'SJVN', 'TORNTPOWER', 'CESC',
+        
+        # Metals & Mining (15)
+        'TATASTEEL', 'JSWSTEEL', 'SAILSTEEL', 'HINDALCO', 'VEDL',
+        'NMDC', 'COAL', 'JINDALSTEL', 'MOIL', 'WELCORP',
+        'RATNAMANI', 'MANAPPURAM', 'MUTHOOTFIN', 'CHOLAFIN', 'PFC',
+        
+        # FMCG & Consumer (20)
+        'ITC', 'BRITANNIA', 'DABUR', 'GODREJCP', 'MARICO',
+        'COLPAL', 'PGHH', 'VBL', 'CCL', 'RADICO',
+        'TATACONSUM', 'EMAMILTD', 'JYOTHYLAB', 'BAJAJCON', 'PAGEIND',
+        'PIDILITIND', 'BERGER', 'KANSAINER', 'ASTRAL', 'RELAXO',
+        
+        # Infrastructure & Real Estate (15)
+        'DLF', 'OBEROIRLTY', 'PRESTIGE', 'GODREJPROP', 'BRIGADE',
+        'PHOENIXLTD', 'SOBHA', 'MINDSPACE', 'BROOKFIELD', 'EMBASSY',
+        'IGARASHI', 'IRB', 'GMRINFRA', 'CONCOR', 'BHARATFORG',
+        
+        # Telecom & Media (10)
+        'IDEA', 'RCOM', 'GTPL', 'SITI', 'HATHWAY',
+        'DISHTV', 'TV18BRDCST', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',
+        
+        # Textiles & Apparel (10)
+        'RTNPOWER', 'VARDHMAN', 'WELSPUNIND', 'RAYMOND', 'ARVIND',
+        'GRASIM', 'ADITTYABIRLA', 'CENTURYTEX', 'KPR', 'SIYARAM',
+        
+        # Aviation & Logistics (10)
+        'INDIGO', 'SPICEJET', 'BLUEDART', 'GLAND', 'ALLCARGO',
+        'VTL', 'TCI', 'MAHLOG', 'GATI', 'SNOWMAN'
     ]
     
+    logger.info(f"📊 EXPANDED SYMBOL LIST: {len(indices + stocks)} total symbols")
     return indices + stocks
 
 def get_autonomous_symbol_status():
