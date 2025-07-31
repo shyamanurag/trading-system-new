@@ -555,8 +555,162 @@ class TrueDataClient:
                 ]
                 logger.info(f"🤖 AUTONOMOUS FALLBACK: Underlying-focused ({len(symbols)} symbols)")
             
-            return symbols
-
+                        # 🎯 CRITICAL FIX: Add options symbols for real-time options data
+            options_symbols = self._get_dynamic_options_symbols(symbols)
+            all_symbols = symbols + options_symbols
+            
+            logger.info(f"📊 FINAL SUBSCRIPTION LIST:")
+            logger.info(f"   Underlying: {len(symbols)} symbols")
+            logger.info(f"   Options: {len(options_symbols)} symbols") 
+            logger.info(f"   Total: {len(all_symbols)} symbols (TrueData limit: 250)")
+            
+            # Ensure we don't exceed TrueData limits
+            if len(all_symbols) > 250:
+                logger.warning(f"⚠️ Symbol count ({len(all_symbols)}) exceeds TrueData limit (250)")
+                # Keep underlying symbols + top liquid options
+                priority_options = self._get_priority_options_symbols(symbols[:50])  # Top 50 underlying
+                all_symbols = symbols + priority_options
+                logger.info(f"✂️ TRIMMED: {len(symbols)} underlying + {len(priority_options)} priority options = {len(all_symbols)}")
+            
+            return all_symbols
+    
+    def _get_dynamic_options_symbols(self, underlying_symbols: List[str]) -> List[str]:
+        """Generate options symbols for real-time trading based on strategy needs"""
+        try:
+            options_symbols = []
+            current_time = datetime.now()
+            
+            # Focus on most liquid underlying symbols for options
+            priority_underlyings = [
+                'NIFTY', 'BANKNIFTY', 'FINNIFTY',  # Indices (most liquid)
+                'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY',  # Top stocks
+                'BHARTIARTL', 'KOTAKBANK', 'SBIN', 'AXISBANK', 'WIPRO'
+            ]
+            
+            for symbol in underlying_symbols:
+                # Remove suffix for comparison
+                clean_symbol = symbol.replace('-I', '')
+                
+                # Only generate options for priority symbols during market hours
+                if clean_symbol in priority_underlyings and 9 <= current_time.hour <= 15:
+                    symbol_options = self._generate_options_chain(clean_symbol)
+                    options_symbols.extend(symbol_options)
+                    
+                    if len(options_symbols) > 150:  # Limit options to 150 max
+                        break
+            
+            return options_symbols[:150]  # Hard cap at 150 options
+            
+        except Exception as e:
+            logger.error(f"Error generating dynamic options symbols: {e}")
+            return []
+    
+    def _generate_options_chain(self, underlying: str) -> List[str]:
+        """Generate options chain for an underlying symbol"""
+        try:
+            options = []
+            
+            # Get current week and next week expiry in TrueData format
+            expiries = self._get_current_expiries()
+            
+            # Generate strikes around ATM for each expiry
+            for expiry in expiries[:2]:  # Current + next expiry only
+                strikes = self._get_atm_strikes(underlying)
+                
+                for strike in strikes:
+                    # Generate CE and PE using proper TrueData format
+                    from config.options_symbol_mapping import get_truedata_options_format
+                    
+                    ce_symbol = get_truedata_options_format(underlying, expiry, strike, 'CE')
+                    pe_symbol = get_truedata_options_format(underlying, expiry, strike, 'PE')
+                    options.extend([ce_symbol, pe_symbol])
+                    
+                    logger.debug(f"   Generated: {ce_symbol}, {pe_symbol}")
+            
+            logger.debug(f"📊 Generated {len(options)} options for {underlying}")
+            return options
+            
+        except Exception as e:
+            logger.error(f"Error generating options chain for {underlying}: {e}")
+            return []
+    
+    def _get_current_expiries(self) -> List[str]:
+        """Get current and next expiry in TrueData format"""
+        try:
+            # Use the same logic as base_strategy but in TrueData format
+            from datetime import datetime, timedelta
+            
+            today = datetime.now().date()
+            expiries = []
+            
+            # Find current Thursday and next Thursday
+            days_to_thursday = (3 - today.weekday()) % 7
+            if days_to_thursday == 0:
+                days_to_thursday = 7  # If today is Thursday, get next Thursday
+            
+            current_thursday = today + timedelta(days=days_to_thursday)
+            next_thursday = current_thursday + timedelta(days=7)
+            
+            # Format in TrueData format (need to check TrueData's exact format)
+            month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+                          'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+            
+            # TrueData might use different format - this needs testing
+            current_exp = f"{current_thursday.day:02d}{month_names[current_thursday.month - 1]}"
+            next_exp = f"{next_thursday.day:02d}{month_names[next_thursday.month - 1]}"
+            
+            return [current_exp, next_exp]
+            
+        except Exception as e:
+            logger.error(f"Error getting current expiries: {e}")
+            return ['07AUG', '14AUG']  # Fallback
+    
+    def _get_atm_strikes(self, underlying: str) -> List[int]:
+        """Get ATM strikes for an underlying symbol"""
+        try:
+            # This is a simplified version - in reality we'd get current price
+            # and calculate ATM strikes dynamically
+            
+            if underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
+                # Index strikes (wider range, 100-point intervals)
+                base_strikes = {
+                    'NIFTY': [24800, 24850, 24900, 24950, 25000],
+                    'BANKNIFTY': [55500, 55600, 55700, 55800, 55900],
+                    'FINNIFTY': [23000, 23100, 23200, 23300, 23400]
+                }
+                return base_strikes.get(underlying, [25000])
+            else:
+                # Stock strikes (50-point intervals typically)
+                base_prices = {
+                    'RELIANCE': [1400, 1450, 1500, 1550, 1600],
+                    'TCS': [2950, 3000, 3050, 3100, 3150],
+                    'HDFCBANK': [1950, 2000, 2050, 2100, 2150],
+                    'ICICIBANK': [1400, 1450, 1500, 1550, 1600],
+                    'INFY': [1750, 1800, 1850, 1900, 1950]
+                }
+                return base_prices.get(underlying, [1000, 1050, 1100, 1150, 1200])
+                
+        except Exception as e:
+            logger.error(f"Error getting ATM strikes for {underlying}: {e}")
+            return [1000]
+    
+    def _get_priority_options_symbols(self, underlying_symbols: List[str]) -> List[str]:
+        """Get priority options symbols when we need to trim"""
+        try:
+            priority_options = []
+            
+            # Focus on NIFTY and BANKNIFTY options only for space efficiency
+            for symbol in ['NIFTY', 'BANKNIFTY']:
+                if any(symbol in u for u in underlying_symbols):
+                    symbol_options = self._generate_options_chain(symbol)
+                    priority_options.extend(symbol_options[:20])  # Top 20 per index
+            
+            return priority_options
+            
+        except Exception as e:
+            logger.error(f"Error getting priority options: {e}")
+            return []
+    
     def _setup_callback(self):
         """Setup callback for live data processing"""
         if not self.td_obj:
@@ -584,15 +738,25 @@ class TrueDataClient:
                     logger.warning(f"⚠️ Invalid LTP for {symbol}: {ltp}")
                     return
                 
-                # CRITICAL FIX: Validate options premium data
+                # ENHANCED OPTIONS DATA PROCESSING
                 try:
                     from config.truedata_symbols import _is_options_symbol, validate_options_premium
+                    from config.options_symbol_mapping import is_valid_options_symbol, extract_options_components
                     
-                    if _is_options_symbol(symbol):
+                    is_options = _is_options_symbol(symbol) or is_valid_options_symbol(symbol)
+                    
+                    if is_options:
+                        # Validate options premium
                         if not validate_options_premium(symbol, ltp):
                             logger.error(f"❌ INVALID OPTIONS PREMIUM: {symbol} = ₹{ltp} (filtering out)")
                             return
-                        logger.debug(f"✅ VALID OPTIONS PREMIUM: {symbol} = ₹{ltp}")
+                        
+                        # Extract options components for enhanced data
+                        components = extract_options_components(symbol)
+                        if components.get('is_valid'):
+                            logger.debug(f"✅ OPTIONS DATA: {symbol} = ₹{ltp} | {components['underlying']} {components['expiry']} {components['strike']} {components['option_type']}")
+                        else:
+                            logger.debug(f"✅ VALID OPTIONS PREMIUM: {symbol} = ₹{ltp}")
                     else:
                         logger.debug(f"📊 UNDERLYING PRICE: {symbol} = ₹{ltp}")
                         

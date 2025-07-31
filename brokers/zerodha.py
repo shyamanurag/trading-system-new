@@ -921,8 +921,24 @@ class ZerodhaIntegration:
             # If not found, log similar symbols for debugging
             logger.error(f"❌ SYMBOL NOT FOUND: {options_symbol}")
             
-            # Extract base symbol to find similar ones
-            base_symbol = options_symbol.split('31JUL25')[0] if '31JUL25' in options_symbol else options_symbol[:10]
+            # Extract base symbol to find similar ones - FIXED for dynamic expiry detection
+            import re
+            # Extract symbol name (everything before the date pattern)
+            date_match = re.search(r'(\d{1,2}[A-Z]{3})', options_symbol)
+            if date_match:
+                date_start = date_match.start()
+                base_symbol = options_symbol[:date_start]
+            else:
+                # Fallback: extract symbol before strike (assume CE/PE is at the end)
+                ce_pe_match = re.search(r'(CE|PE)$', options_symbol)
+                if ce_pe_match:
+                    # Work backwards to find the symbol part
+                    symbol_part = re.sub(r'\d+[A-Z]{3}\d*(CE|PE)$', '', options_symbol)
+                    base_symbol = symbol_part if symbol_part else options_symbol[:6]
+                else:
+                    base_symbol = options_symbol[:6]  # Conservative fallback
+            
+            logger.info(f"🔍 Extracted base symbol: '{base_symbol}' from '{options_symbol}'")
             similar_symbols = []
             
             for instrument in instruments:
@@ -943,8 +959,112 @@ class ZerodhaIntegration:
             
         except Exception as e:
             logger.error(f"Error validating options symbol {options_symbol}: {e}")
-            return False
-
+                        return False
+    
+    async def get_options_ltp(self, options_symbol: str) -> Optional[float]:
+        """Get real-time LTP for options symbol from Zerodha"""
+        try:
+            if not self.kite or not self.is_connected:
+                logger.warning("⚠️ Zerodha not connected - cannot get options LTP")
+                return None
+            
+            # Get quotes for the options symbol
+            exchange = self._get_exchange_for_symbol(options_symbol)
+            full_symbol = f"{exchange}:{options_symbol}"
+            
+            quotes = self.kite.quote([full_symbol])
+            
+            if quotes and full_symbol in quotes:
+                quote_data = quotes[full_symbol]
+                ltp = quote_data.get('last_price', 0)
+                
+                if ltp and ltp > 0:
+                    logger.info(f"✅ ZERODHA LTP: {options_symbol} = ₹{ltp}")
+                    return float(ltp)
+            
+            logger.warning(f"⚠️ No LTP data from Zerodha for {options_symbol}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting Zerodha LTP for {options_symbol}: {e}")
+            return None
+    
+    async def get_options_volume(self, options_symbol: str) -> Optional[int]:
+        """Get real-time volume for options symbol from Zerodha"""
+        try:
+            if not self.kite or not self.is_connected:
+                logger.warning("⚠️ Zerodha not connected - cannot get options volume")
+                return None
+            
+            # Get quotes for the options symbol
+            exchange = self._get_exchange_for_symbol(options_symbol)
+            full_symbol = f"{exchange}:{options_symbol}"
+            
+            quotes = self.kite.quote([full_symbol])
+            
+            if quotes and full_symbol in quotes:
+                quote_data = quotes[full_symbol]
+                volume = quote_data.get('volume', 0)
+                
+                if volume:
+                    logger.info(f"✅ ZERODHA VOLUME: {options_symbol} = {volume:,}")
+                    return int(volume)
+            
+            logger.warning(f"⚠️ No volume data from Zerodha for {options_symbol}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting Zerodha volume for {options_symbol}: {e}")
+            return None
+    
+    async def get_multiple_options_quotes(self, options_symbols: List[str]) -> Dict[str, Dict]:
+        """Get real-time quotes for multiple options symbols from Zerodha"""
+        try:
+            if not self.kite or not self.is_connected:
+                logger.warning("⚠️ Zerodha not connected - cannot get options quotes")
+                return {}
+            
+            if not options_symbols:
+                return {}
+            
+            # Prepare full symbols for Zerodha API
+            full_symbols = []
+            symbol_mapping = {}
+            
+            for symbol in options_symbols:
+                exchange = self._get_exchange_for_symbol(symbol)
+                full_symbol = f"{exchange}:{symbol}"
+                full_symbols.append(full_symbol)
+                symbol_mapping[full_symbol] = symbol
+            
+            # Get quotes in batch
+            quotes = self.kite.quote(full_symbols)
+            
+            result = {}
+            if quotes:
+                for full_symbol, quote_data in quotes.items():
+                    original_symbol = symbol_mapping.get(full_symbol, full_symbol)
+                    
+                    ltp = quote_data.get('last_price', 0)
+                    volume = quote_data.get('volume', 0)
+                    oi = quote_data.get('oi', 0)  # Open Interest
+                    
+                    result[original_symbol] = {
+                        'ltp': float(ltp) if ltp else 0,
+                        'volume': int(volume) if volume else 0,
+                        'oi': int(oi) if oi else 0,
+                        'bid': quote_data.get('depth', {}).get('buy', [{}])[0].get('price', 0),
+                        'ask': quote_data.get('depth', {}).get('sell', [{}])[0].get('price', 0)
+                    }
+                
+                logger.info(f"✅ ZERODHA QUOTES: Retrieved data for {len(result)} options symbols")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting Zerodha quotes for options: {e}")
+            return {}
+        
     def get_connection_status(self) -> Dict:
         """Get detailed connection status"""
         return {

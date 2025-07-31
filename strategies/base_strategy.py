@@ -266,11 +266,17 @@ class BaseStrategy:
             
         except Exception as e:
             logger.error(f"Error calculating dynamic target: {e}")
-            # Fallback to simple percentage target
+            # DYNAMIC fallback percentage target based on volatility
+            try:
+                volatility_multiplier = self._get_volatility_multiplier(symbol, entry_price)
+                target_percent = 0.01 + (volatility_multiplier * 0.005)  # 1% base + volatility adjustment
+            except:
+                target_percent = 0.015  # 1.5% conservative fallback
+                
             if stop_loss < entry_price:  # BUY trade
-                return entry_price * 1.015  # 1.5% target for scalping
+                return entry_price * (1 + target_percent)  # Dynamic target for scalping
             else:  # SELL trade
-                return entry_price * 0.985  # 1.5% target for scalping
+                return entry_price * (1 - target_percent)  # Dynamic target for scalping
     
     def validate_signal_levels(self, entry_price: float, stop_loss: float, 
                               target: float, action: str) -> bool:
@@ -389,6 +395,11 @@ class BaseStrategy:
                 logger.warning(f"⚠️ OPTIONS SIGNAL REJECTED: {symbol} - cannot be traded")
                 return None
             
+            # 🎯 FALLBACK: If options not available, create equity signal instead
+            if option_type == 'EQUITY':
+                logger.info(f"🔄 FALLBACK TO EQUITY: Creating equity signal for {options_symbol}")
+                return self._create_equity_signal(options_symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            
             final_action = 'BUY' # Force all options signals to be BUY
             
             # 🔍 CRITICAL DEBUG: Log the complete symbol creation process
@@ -405,7 +416,7 @@ class BaseStrategy:
             
             # 🎯 CRITICAL FIX: Calculate correct stop_loss and target for options
             options_stop_loss, options_target = self._calculate_options_levels(
-                options_entry_price, stop_loss, target, option_type, action
+                options_entry_price, stop_loss, target, option_type, action, symbol
             )
             
             # Validate signal levels with OPTIONS pricing
@@ -483,9 +494,8 @@ class BaseStrategy:
             reward_percent = (reward_amount / entry_price) * 100
             risk_reward_ratio = reward_amount / risk_amount if risk_amount > 0 else 0
             
-            # Check minimum risk-reward ratio (adjusted for current market conditions)
-            # Reduced from 2.0 to 1.5 for current low volatility market
-            min_risk_reward_ratio = 1.5  # Adjusted for current market conditions
+            # Check minimum risk-reward ratio (DYNAMIC based on volatility)
+            min_risk_reward_ratio = self._get_dynamic_min_risk_reward_ratio(symbol, entry_price)
             if risk_reward_ratio < min_risk_reward_ratio:
                 logger.warning(f"Equity signal below {min_risk_reward_ratio}:1 ratio: {symbol} ({risk_reward_ratio:.2f})")
                 return None
@@ -607,15 +617,48 @@ class BaseStrategy:
                 # 🔧 CRITICAL FIX: Use Zerodha's exact symbol format for stocks too
                 options_symbol = f"{zerodha_underlying}{expiry}{strike}{option_type}"
                 
-                logger.info(f"🎯 ZERODHA OPTIONS SYMBOL: {underlying_symbol} → {options_symbol}")
-                logger.info(f"   Mapping: {underlying_symbol} → {zerodha_underlying}")
-                logger.info(f"   Strike: {strike}, Expiry: {expiry}, Type: {option_type}")
-                logger.info(f"   Used Price: ₹{actual_price:.2f} (real market price)")
-                
-                return options_symbol, option_type
+                # 🚨 CRITICAL FIX: Validate if options symbol exists in Zerodha before using
+                if self._validate_options_symbol_exists(options_symbol):
+                    logger.info(f"🎯 ZERODHA OPTIONS SYMBOL: {underlying_symbol} → {options_symbol}")
+                    logger.info(f"   Mapping: {underlying_symbol} → {zerodha_underlying}")
+                    logger.info(f"   Strike: {strike}, Expiry: {expiry}, Type: {option_type}")
+                    logger.info(f"   Used Price: ₹{actual_price:.2f} (real market price)")
+                    
+                    return options_symbol, option_type
+                else:
+                    # 🎯 FALLBACK: Options not available, trade equity instead
+                    logger.warning(f"⚠️ OPTIONS NOT AVAILABLE: {options_symbol} doesn't exist in Zerodha NFO")
+                    logger.info(f"🔄 FALLBACK: Trading {zerodha_underlying} as EQUITY instead")
+                    
+                    return zerodha_underlying, 'EQUITY'
         except Exception as e:
             logger.error(f"Error converting to options symbol: {e}")
             return underlying_symbol, 'CE'
+    
+    def _validate_options_symbol_exists(self, options_symbol: str) -> bool:
+        """Validate if options symbol exists in Zerodha NFO instruments"""
+        try:
+            # Get orchestrator instance to access Zerodha client
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if not orchestrator or not orchestrator.zerodha_client:
+                logger.warning("⚠️ Zerodha client not available for options validation")
+                return False  # Conservative: assume options don't exist
+            
+            # Use the Zerodha client's validation method
+            is_valid = orchestrator.zerodha_client.validate_options_symbol(options_symbol)
+            
+            if is_valid:
+                logger.info(f"✅ OPTIONS VALIDATED: {options_symbol} exists in Zerodha NFO")
+                return True
+            else:
+                logger.warning(f"❌ OPTIONS NOT FOUND: {options_symbol} doesn't exist in Zerodha NFO")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error validating options symbol {options_symbol}: {e}")
+            return False  # Conservative: assume options don't exist
     
     def _get_atm_strike(self, symbol: str, price: float) -> int:
         """Get ATM strike for index options - FIXED for Zerodha's actual intervals"""
@@ -950,9 +993,29 @@ class BaseStrategy:
         self.is_active = False 
 
     def _get_options_premium(self, options_symbol: str, fallback_price: float, option_type: str) -> float:
-        """Get actual options premium from TrueData cache"""
+        """Get actual options premium - FIRST from Zerodha, then TrueData, then estimate"""
         try:
-            # Try to get options premium from TrueData global cache
+            # 🎯 PRIMARY: Get real options premium from Zerodha API
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                
+                if orchestrator and orchestrator.zerodha_client:
+                    import asyncio
+                    # Get real LTP from Zerodha
+                    real_ltp = asyncio.create_task(orchestrator.zerodha_client.get_options_ltp(options_symbol))
+                    premium = asyncio.get_event_loop().run_until_complete(real_ltp)
+                    
+                    if premium and premium > 0:
+                        logger.info(f"✅ REAL ZERODHA LTP: {options_symbol} = ₹{premium}")
+                        return float(premium)
+                    else:
+                        logger.warning(f"⚠️ Zerodha LTP returned zero or None for {options_symbol}")
+                        
+            except Exception as e:
+                logger.debug(f"Could not get Zerodha LTP for {options_symbol}: {e}")
+            
+            # 🎯 SECONDARY: Try to get options premium from TrueData cache
             try:
                 from data.truedata_client import live_market_data
                 if live_market_data and options_symbol in live_market_data:
@@ -965,7 +1028,7 @@ class BaseStrategy:
             except Exception as e:
                 logger.debug(f"Could not access TrueData for {options_symbol}: {e}")
             
-            # Fallback: Estimate options premium dynamically based on market conditions
+            # 🎯 FALLBACK: Estimate options premium dynamically based on market conditions
             estimated_premium = self._estimate_options_premium_dynamic(fallback_price, option_type, options_symbol)
             logger.warning(f"⚠️ Using dynamic estimation for {options_symbol}: ₹{estimated_premium}")
             return estimated_premium
@@ -1033,16 +1096,16 @@ class BaseStrategy:
                 return 20.0  # ₹20 fallback for stocks
     
     def _calculate_options_levels(self, options_entry_price: float, original_stop_loss: float, 
-                                 original_target: float, option_type: str, action: str) -> tuple:
+                                 original_target: float, option_type: str, action: str, underlying_symbol: str) -> tuple:
         """Dynamically calculate stop_loss and target for options premium - ENSURES 2:1 RATIO"""
         try:
-            # CRITICAL FIX: Force 2:1 reward-to-risk ratio for quality trading
-            target_risk_reward_ratio = 2.1  # Slightly above 2.0 to ensure passing filter
+            # DYNAMIC FIX: Use market-based reward-to-risk ratio for quality trading
+            target_risk_reward_ratio = self._get_dynamic_target_risk_reward_ratio(underlying_symbol, options_entry_price, option_type)
             
-            # Calculate base risk amount (percentage of premium)
-            base_risk_percent = 0.15  # 15% risk of premium
+            # Calculate base risk amount (DYNAMIC percentage of premium based on volatility)
+            base_risk_percent = self._get_dynamic_risk_percentage(underlying_symbol, options_entry_price)
             risk_amount = options_entry_price * base_risk_percent
-            reward_amount = risk_amount * target_risk_reward_ratio  # 2.1x reward
+            reward_amount = risk_amount * target_risk_reward_ratio  # Dynamic reward based on market conditions
             
             # For BUY actions (all our options signals):
             # - stop_loss = Lower premium (cut losses)
@@ -1069,9 +1132,11 @@ class BaseStrategy:
             
         except Exception as e:
             logger.error(f"Error calculating options levels: {e}")
-            # Fallback with guaranteed 2:1 ratio
-            risk_amount = options_entry_price * 0.15  # 15% risk
-            reward_amount = risk_amount * 2.1          # 2.1x reward (210% of risk)
+            # Dynamic fallback with market-based ratio
+            base_risk_percent = 0.15  # Conservative 15% fallback risk
+            risk_amount = options_entry_price * base_risk_percent  
+            target_ratio = 2.2  # Conservative fallback ratio
+            reward_amount = risk_amount * target_ratio  # Conservative fallback reward
             stop_loss = options_entry_price - risk_amount
             target = options_entry_price + reward_amount
             # Ensure minimum stop loss
@@ -1135,27 +1200,39 @@ class BaseStrategy:
             return 0.03  # 3% fallback
     
     def _extract_strike_from_symbol(self, options_symbol: str) -> float:
-        """Extract strike price from options symbol - FIXED to avoid date contamination"""
+        """Extract strike price from options symbol - FIXED for DD+MMM format"""
         try:
-            # 🚨 CRITICAL FIX: Extract only strike, not date+strike
-            # Pattern: SYMBOL + DATE(31JUL25) + STRIKE + TYPE(CE/PE)
+            # 🚨 CRITICAL FIX: New Zerodha format is SYMBOL + DD+MMM + STRIKE + TYPE
+            # Pattern: TCS + 14AUG + 3000 + CE (no year in new format)
             import re
             
-            # First remove symbol name to isolate date+strike+type
-            # Look for date pattern followed by strike and CE/PE
-            date_strike_match = re.search(r'(\d{1,2}[A-Z]{3}\d{2})(\d+)(CE|PE)$', options_symbol)
+            # First try new format: SYMBOL + DDMMM + STRIKE + TYPE
+            date_strike_match = re.search(r'(\d{1,2}[A-Z]{3})(\d+)(CE|PE)$', options_symbol)
             
             if date_strike_match:
-                date_part = date_strike_match.group(1)  # e.g., "31JUL25"
-                strike_part = date_strike_match.group(2)  # e.g., "2000"
-                option_type = date_strike_match.group(3)  # e.g., "PE"
+                date_part = date_strike_match.group(1)  # e.g., "14AUG"
+                strike_part = date_strike_match.group(2)  # e.g., "3000"
+                option_type = date_strike_match.group(3)  # e.g., "CE"
                 
                 logger.info(f"🔍 STRIKE EXTRACTION: {options_symbol}")
                 logger.info(f"   Date: {date_part}, Strike: {strike_part}, Type: {option_type}")
                 
                 return float(strike_part)
             
-            # Fallback: If pattern doesn't match, try original method but with warning
+            # Fallback for old format: SYMBOL + DDMMMYY + STRIKE + TYPE
+            old_date_strike_match = re.search(r'(\d{1,2}[A-Z]{3}\d{2})(\d+)(CE|PE)$', options_symbol)
+            
+            if old_date_strike_match:
+                date_part = old_date_strike_match.group(1)  # e.g., "14AUG25"
+                strike_part = old_date_strike_match.group(2)  # e.g., "3000"
+                option_type = old_date_strike_match.group(3)  # e.g., "CE"
+                
+                logger.info(f"🔍 OLD FORMAT STRIKE EXTRACTION: {options_symbol}")
+                logger.info(f"   Date: {date_part}, Strike: {strike_part}, Type: {option_type}")
+                
+                return float(strike_part)
+            
+            # Final fallback: Extract just the numbers before CE/PE
             logger.warning(f"⚠️ Fallback strike extraction for {options_symbol}")
             fallback_match = re.search(r'(\d+)(CE|PE)$', options_symbol)
             if fallback_match:
@@ -1170,6 +1247,127 @@ class BaseStrategy:
         except Exception as e:
             logger.error(f"Error extracting strike from {options_symbol}: {e}")
             return 1000.0  # Fallback
+    
+    def _get_dynamic_min_risk_reward_ratio(self, symbol: str, price: float) -> float:
+        """Calculate minimum risk-reward ratio based on market volatility and symbol characteristics"""
+        try:
+            # Get market volatility indicators
+            volatility_multiplier = self._get_volatility_multiplier(symbol, price)
+            
+            # Base minimum ratio (conservative)
+            base_ratio = 1.2
+            
+            # Adjust based on volatility:
+            # High volatility = lower minimum ratio (easier to achieve)  
+            # Low volatility = higher minimum ratio (need better setups)
+            if volatility_multiplier > 2.0:
+                return base_ratio * 0.8  # 0.96 for high volatility
+            elif volatility_multiplier > 1.5:
+                return base_ratio * 0.9  # 1.08 for medium volatility  
+            else:
+                return base_ratio * 1.1  # 1.32 for low volatility
+                
+        except Exception as e:
+            logger.error(f"Error calculating dynamic min R:R ratio: {e}")
+            return 1.2  # Conservative fallback
+    
+    def _get_dynamic_target_risk_reward_ratio(self, symbol: str, price: float, option_type: str = 'CE') -> float:
+        """Calculate target risk-reward ratio based on market conditions and symbol characteristics"""
+        try:
+            # Get market volatility and momentum indicators
+            volatility_multiplier = self._get_volatility_multiplier(symbol, price)
+            
+            # Base target ratio
+            base_ratio = 2.0
+            
+            # Adjust based on volatility:
+            # High volatility = higher target ratio (bigger moves possible)
+            # Low volatility = lower target ratio (smaller moves expected)
+            if volatility_multiplier > 2.5:
+                target_ratio = base_ratio * 1.3  # 2.6 for very high volatility
+            elif volatility_multiplier > 2.0:
+                target_ratio = base_ratio * 1.2  # 2.4 for high volatility
+            elif volatility_multiplier > 1.5:
+                target_ratio = base_ratio * 1.1  # 2.2 for medium volatility
+            else:
+                target_ratio = base_ratio * 0.9  # 1.8 for low volatility
+            
+            # Options-specific adjustments
+            if option_type in ['CE', 'PE']:
+                # Options can have higher targets due to leverage
+                target_ratio *= 1.1
+            
+            # Cap the ratio at reasonable bounds
+            return max(1.5, min(target_ratio, 3.5))
+            
+        except Exception as e:
+            logger.error(f"Error calculating dynamic target R:R ratio: {e}")
+            return 2.2  # Conservative fallback
+    
+    def _get_dynamic_risk_percentage(self, symbol: str, price: float) -> float:
+        """Calculate risk percentage based on market volatility and price level"""
+        try:
+            # Get volatility indicators
+            volatility_multiplier = self._get_volatility_multiplier(symbol, price)
+            
+            # Base risk percentage
+            base_risk = 0.12  # 12% base risk
+            
+            # Adjust based on volatility:
+            # High volatility = lower risk percentage (to account for bigger moves)
+            # Low volatility = higher risk percentage (smaller moves, need wider stops)
+            if volatility_multiplier > 2.0:
+                risk_percent = base_risk * 0.8  # 9.6% for high volatility
+            elif volatility_multiplier > 1.5:
+                risk_percent = base_risk * 0.9  # 10.8% for medium volatility
+            else:
+                risk_percent = base_risk * 1.1  # 13.2% for low volatility
+            
+            # Ensure reasonable bounds
+            return max(0.08, min(risk_percent, 0.20))  # Between 8% and 20%
+            
+        except Exception as e:
+            logger.error(f"Error calculating dynamic risk percentage: {e}")
+            return 0.15  # 15% fallback
+    
+    def _get_volatility_multiplier(self, symbol: str, price: float) -> float:
+        """Get volatility multiplier for the symbol based on recent price action"""
+        try:
+            # Try to get actual volatility data from TrueData
+            from data.truedata_client import live_market_data
+            
+            if symbol in live_market_data:
+                market_data = live_market_data[symbol]
+                
+                # Calculate intraday volatility
+                high = market_data.get('high', price)
+                low = market_data.get('low', price)
+                open_price = market_data.get('open', price)
+                
+                if high > 0 and low > 0 and open_price > 0:
+                    # Calculate percentage range
+                    day_range = ((high - low) / open_price) * 100
+                    
+                    # Convert to volatility multiplier
+                    if day_range > 4.0:
+                        return 2.5  # Very high volatility
+                    elif day_range > 3.0:
+                        return 2.0  # High volatility
+                    elif day_range > 2.0:
+                        return 1.5  # Medium volatility
+                    else:
+                        return 1.0  # Low volatility
+            
+            # Fallback: Use symbol characteristics
+            # Major indices tend to be less volatile than individual stocks
+            if symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
+                return 1.8  # Index volatility
+            else:
+                return 1.5  # Stock volatility
+                
+        except Exception as e:
+            logger.error(f"Error calculating volatility multiplier for {symbol}: {e}")
+            return 1.5  # Moderate fallback
     
     def _calculate_days_to_expiry(self, options_symbol: str) -> int:
         """Calculate days to expiry from options symbol"""
@@ -1438,8 +1636,266 @@ class BaseStrategy:
             option_type = 'CE' if action.upper() == 'BUY' else 'PE'
             
             for strike in strikes:
-                # Build options symbol
-                options_symbol = f"{underlying_symbol}{expiry}{strike}{option_type}"
+                # Build options symbol using proper format mapping
+                from config.options_symbol_mapping import get_truedata_options_format
+                options_symbol = get_truedata_options_format(underlying_symbol, expiry, strike, option_type)
+                
+                if live_market_data and options_symbol in live_market_data:
+                    market_data = live_market_data[options_symbol]
+                    volume = market_data.get('volume', 0)
+                    premium = market_data.get('ltp', market_data.get('price', 0))
+                    
+                    volume_data[strike] = {
+                        'volume': volume,
+                        'premium': premium,
+                        'symbol': options_symbol
+                    }
+                    
+            if volume_data:
+                logger.info(f"✅ Retrieved volume data for {len(volume_data)} strikes from TrueData")
+                return volume_data
+            else:
+                logger.warning(f"⚠️ No volume data found in TrueData for {underlying_symbol} options")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Error getting volume data: {e}")
+            return {} 
+            actual_lot_size = self._fetch_zerodha_lot_size(underlying_symbol)
+            if actual_lot_size:
+                logger.info(f"✅ DYNAMIC LOT SIZE: {underlying_symbol} = {actual_lot_size} (from Zerodha API)")
+                return actual_lot_size
+            
+            # Fallback: EXCHANGE-DEFINED LOT SIZES (official NSE values)
+            if underlying_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
+                # Index options have standard lot sizes as per NSE
+                lot_sizes = {'NIFTY': 75, 'BANKNIFTY': 25, 'FINNIFTY': 40}  
+                fallback_size = lot_sizes.get(underlying_symbol, 75)
+                logger.info(f"📋 FALLBACK LOT SIZE: {underlying_symbol} = {fallback_size} (NSE standard)")
+                return fallback_size
+            else:
+                # Stock options: Use NSE standard of 750 for most stocks
+                fallback_size = 750  # Standard NSE stock option lot size
+                logger.info(f"📋 FALLBACK LOT SIZE: {underlying_symbol} = {fallback_size} (NSE stock standard)")
+                return fallback_size
+                
+        except Exception as e:
+            logger.error(f"Error getting dynamic lot size for {options_symbol}: {e}")
+            return 75  # Safe fallback
+    
+    def _fetch_zerodha_lot_size(self, underlying_symbol: str) -> int:
+        """🎯 DYNAMIC: Fetch actual lot size from Zerodha instruments API"""
+        try:
+            # Get orchestrator instance to access Zerodha client
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if not orchestrator or not orchestrator.zerodha_client:
+                logger.debug(f"⚠️ Zerodha client not available for lot size lookup: {underlying_symbol}")
+                return None
+            
+            # Try to get instruments data
+            if hasattr(orchestrator.zerodha_client, 'kite') and orchestrator.zerodha_client.kite:
+                try:
+                    # Get NFO instruments (F&O contracts)
+                    instruments = orchestrator.zerodha_client.kite.instruments('NFO')
+                    
+                    # Look for the underlying symbol in F&O instruments
+                    for instrument in instruments:
+                        trading_symbol = instrument.get('tradingsymbol', '')
+                        segment = instrument.get('segment', '')
+                        
+                        # Match underlying symbol (e.g., NIFTY, RELIANCE, etc.)
+                        if (underlying_symbol in trading_symbol and 
+                            segment == 'NFO-OPT' and  # Options only
+                            ('CE' in trading_symbol or 'PE' in trading_symbol)):
+                            
+                            lot_size = instrument.get('lot_size', 0)
+                            if lot_size > 0:
+                                logger.info(f"✅ ZERODHA LOT SIZE: {underlying_symbol} = {lot_size}")
+                                return lot_size
+                    
+                    logger.debug(f"🔍 No F&O lot size found for {underlying_symbol} in Zerodha instruments")
+                    return None
+                    
+                except Exception as e:
+                    logger.debug(f"⚠️ Error fetching Zerodha instruments for {underlying_symbol}: {e}")
+                    return None
+            else:
+                logger.debug(f"⚠️ Zerodha KiteConnect not initialized for lot size lookup")
+                return None
+                
+        except Exception as e:
+            logger.debug(f"Error fetching Zerodha lot size for {underlying_symbol}: {e}")
+            return None
+    
+    def _get_capital_constrained_quantity(self, options_symbol: str, underlying_symbol: str, entry_price: float) -> int:
+        """🎯 SMART QUANTITY: F&O uses lots, Equity uses shares based on capital"""
+        try:
+            # Check if this is F&O (options) or equity
+            is_options = (options_symbol != underlying_symbol or 
+                         'CE' in options_symbol or 'PE' in options_symbol)
+            
+            # Get real-time available capital
+            available_capital = self._get_available_capital()
+            
+            if is_options:
+                # 🎯 F&O: Use lot-based calculation
+                base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
+                cost_per_lot = base_lot_size * entry_price
+                
+                # Check affordability
+                max_capital_per_trade = available_capital * 0.6  # 60% max per trade
+                
+                if cost_per_lot <= max_capital_per_trade:
+                    logger.info(f"✅ F&O ORDER: {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
+                    logger.info(f"   💰 Cost: ₹{cost_per_lot:,.0f} / Available: ₹{available_capital:,.0f}")
+                    return base_lot_size
+                elif cost_per_lot <= (available_capital * 0.8):
+                    logger.info(f"✅ F&O ORDER (HIGH COST): {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
+                    return base_lot_size
+                else:
+                    logger.warning(f"❌ F&O REJECTED: {underlying_symbol} too expensive (₹{cost_per_lot:,.0f} > 80% of ₹{available_capital:,.0f})")
+                    return 0
+            else:
+                # 🎯 EQUITY: Use share-based calculation
+                max_capital_per_trade = available_capital * 0.3  # 30% max per equity trade
+                max_shares = int(max_capital_per_trade / entry_price)
+                
+                # Minimum viable quantity for equity
+                min_shares = max(1, int(5000 / entry_price))  # At least ₹5000 worth
+                final_quantity = max(min_shares, min(max_shares, 100))  # Between min and 100 shares
+                
+                cost = final_quantity * entry_price
+                logger.info(f"✅ EQUITY ORDER: {underlying_symbol} = {final_quantity} shares")
+                logger.info(f"   💰 Cost: ₹{cost:,.0f} / Available: ₹{available_capital:,.0f} ({cost/available_capital:.1%})")
+                return final_quantity
+            
+        except Exception as e:
+            logger.error(f"Error calculating quantity: {e}")
+            # Fallback based on signal type
+            if 'CE' in options_symbol or 'PE' in options_symbol:
+                return 75  # F&O fallback
+            else:
+                return 10  # Equity fallback
+    
+    def _get_available_capital(self) -> float:
+        """🎯 DYNAMIC: Get available capital from Zerodha margins API in real-time"""
+        try:
+            # Try to get real-time capital from Zerodha margins API
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if orchestrator and orchestrator.zerodha_client:
+                try:
+                    # Try to get margins (available cash) from Zerodha
+                    if hasattr(orchestrator.zerodha_client, 'get_margins'):
+                        # Use async method if available
+                        import asyncio
+                        loop = asyncio.get_event_loop()
+                        
+                        if loop.is_running():
+                            # If already in async context, use fallback
+                            logger.debug("⚠️ Already in async context, using cached capital")
+                            return 49233.5  # Use cached value
+                        else:
+                            # Run async method to get live margins
+                            margins = loop.run_until_complete(orchestrator.zerodha_client.get_margins())
+                            if margins and isinstance(margins, (int, float)) and margins > 0:
+                                logger.info(f"✅ DYNAMIC CAPITAL: ₹{margins:,.2f} (live from Zerodha)")
+                                return float(margins)
+                    
+                    # Fallback: Try sync method if available
+                    if hasattr(orchestrator.zerodha_client, 'kite') and orchestrator.zerodha_client.kite:
+                        try:
+                            margins = orchestrator.zerodha_client.kite.margins()
+                            equity_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
+                            if equity_cash > 0:
+                                logger.info(f"✅ DYNAMIC CAPITAL: ₹{equity_cash:,.2f} (from Zerodha equity margins)")
+                                return float(equity_cash)
+                        except Exception as margin_error:
+                            logger.debug(f"⚠️ Error fetching Zerodha margins: {margin_error}")
+                            
+                except Exception as zerodha_error:
+                    logger.debug(f"⚠️ Error accessing Zerodha for capital: {zerodha_error}")
+            
+            # Fallback to cached/estimated value
+            logger.debug("📋 Using fallback capital (Zerodha not available)")
+            return 49233.5  # Current known balance as fallback
+            
+        except Exception as e:
+            logger.error(f"Error getting dynamic available capital: {e}")
+            return 49233.5  # Safe fallback
+    
+    def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
+        """🎯 USER REQUIREMENT: Select strike based on volume - highest or second highest for liquidity"""
+        try:
+            # First get ATM strike as baseline
+            atm_strike = self._get_atm_strike_for_stock(current_price)
+            
+            # Get available strikes around ATM (3 strikes above and below)
+            strike_interval = 50 if underlying_symbol not in ['NIFTY', 'BANKNIFTY', 'FINNIFTY'] else (50 if underlying_symbol == 'NIFTY' else 100)
+            
+            candidate_strikes = []
+            for i in range(-3, 4):  # 7 strikes total around ATM
+                strike = atm_strike + (i * strike_interval)
+                if strike > 0:  # Only positive strikes
+                    candidate_strikes.append(strike)
+            
+            logger.info(f"💰 VOLUME-BASED STRIKE SELECTION for {underlying_symbol}")
+            logger.info(f"   Current Price: ₹{current_price:.2f}, ATM: {atm_strike}")
+            logger.info(f"   Evaluating strikes: {candidate_strikes}")
+            
+            # Try to get volume data from market data (TrueData)
+            volume_data = self._get_strikes_volume_data(underlying_symbol, candidate_strikes, expiry, action)
+            
+            if volume_data:
+                # Sort by volume (highest first)
+                sorted_by_volume = sorted(volume_data.items(), key=lambda x: x[1]['volume'], reverse=True)
+                
+                # Log volume analysis
+                logger.info(f"📊 VOLUME ANALYSIS:")
+                for i, (strike, data) in enumerate(sorted_by_volume[:3]):
+                    logger.info(f"   #{i+1}: Strike {strike} - Volume: {data['volume']:,} - Premium: ₹{data.get('premium', 'N/A')}")
+                
+                # USER REQUIREMENT: Use highest or second highest volume for liquidity
+                if len(sorted_by_volume) >= 2:
+                    # Use second highest for better execution (avoid over-crowded strikes)
+                    selected_strike = sorted_by_volume[1][0]
+                    selected_data = sorted_by_volume[1][1]
+                    logger.info(f"✅ SELECTED: Strike {selected_strike} (2nd highest volume: {selected_data['volume']:,})")
+                else:
+                    # Fallback to highest volume
+                    selected_strike = sorted_by_volume[0][0]
+                    selected_data = sorted_by_volume[0][1]
+                    logger.info(f"✅ SELECTED: Strike {selected_strike} (highest volume: {selected_data['volume']:,})")
+                
+                return selected_strike
+            else:
+                # Fallback to ATM if volume data not available
+                logger.warning(f"⚠️ Volume data not available for {underlying_symbol}, using ATM strike: {atm_strike}")
+                return atm_strike
+                
+        except Exception as e:
+            logger.error(f"Error in volume-based strike selection: {e}")
+            # Fallback to ATM
+            atm_strike = self._get_atm_strike_for_stock(current_price)
+            logger.warning(f"⚠️ Fallback to ATM strike: {atm_strike}")
+            return atm_strike
+    
+    def _get_strikes_volume_data(self, underlying_symbol: str, strikes: List[int], expiry: str, action: str) -> Dict:
+        """Get volume data for strikes from market data sources"""
+        try:
+            # Try to get volume data from TrueData cache
+            from data.truedata_client import live_market_data
+            
+            volume_data = {}
+            option_type = 'CE' if action.upper() == 'BUY' else 'PE'
+            
+            for strike in strikes:
+                # Build options symbol using proper format mapping
+                from config.options_symbol_mapping import get_truedata_options_format
+                options_symbol = get_truedata_options_format(underlying_symbol, expiry, strike, option_type)
                 
                 if live_market_data and options_symbol in live_market_data:
                     market_data = live_market_data[options_symbol]
