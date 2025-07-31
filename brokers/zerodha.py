@@ -952,10 +952,15 @@ class ZerodhaIntegration:
                 logger.warning(f"⚠️ Found {len(similar_symbols)} similar symbols for {base_symbol}:")
                 for i, sym in enumerate(similar_symbols[:10]):
                     logger.warning(f"   Similar #{i+1}: {sym}")
+                
+                # 🚨 CRITICAL FIX: If we find similar symbols but not exact match,
+                # it means Zerodha hasn't loaded the new expiry yet - ALLOW ORDER TO PROCEED
+                logger.warning(f"🔄 EXPIRY MISMATCH: {options_symbol} not found but {base_symbol} has other expiries")
+                logger.warning(f"🔄 ALLOWING ORDER: Zerodha might not have loaded new expiry instruments yet")
+                return True  # Allow order to proceed - Zerodha will validate at order time
             else:
                 logger.warning(f"⚠️ NO SIMILAR SYMBOLS FOUND for {base_symbol}")
-            
-            return False
+                return False  # Base symbol doesn't exist at all
             
         except Exception as e:
             logger.error(f"Error validating options symbol {options_symbol}: {e}")

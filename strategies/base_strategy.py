@@ -744,23 +744,25 @@ class BaseStrategy:
         available_expiries = self._get_available_expiries_from_zerodha()
         
         if not available_expiries:
-            # 🚨 CRITICAL FIX: Use actual available expiry from Zerodha instruments instead of fallback
-            logger.warning("⚠️ No expiries from API - using currently available Zerodha expiry")
-            return "25JUL"  # Use actually available expiry format from logs (no year)
+            # 🚨 CRITICAL FIX: Use real-time calculation based on today's date
+            logger.warning("⚠️ No expiries from API - calculating next available Thursday")
+            fallback_expiry = self._calculate_next_thursday_fallback()
+            return fallback_expiry
         
         today = datetime.now().date()
         
-        # 🚨 CRITICAL FIX: Use current day or next day to avoid expired options
+        # 🚨 CRITICAL FIX: Use next day as cutoff to avoid expired/expiring options
         # Today is July 31, so July 25 expiry has already passed
-        cutoff_date = today  # Use today as cutoff, not tomorrow
+        cutoff_date = today + timedelta(days=1)  # Use tomorrow as cutoff for safety
         
         # Filter future expiries only
         future_expiries = [exp for exp in available_expiries if exp['date'] >= cutoff_date]
         
         if not future_expiries:
-            # 🚨 CRITICAL FIX: If no future expiries found, use the nearest available
-            logger.warning("⚠️ No future expiries found - using nearest available expiry")
-            return "25JUL"  # Use actually available expiry format from logs (no year)
+            # 🚨 CRITICAL FIX: If no future expiries found, calculate next Thursday
+            logger.warning("⚠️ No future expiries found - calculating next Thursday")
+            fallback_expiry = self._calculate_next_thursday_fallback()
+            return fallback_expiry
         
         # Sort by date
         future_expiries.sort(key=lambda x: x['date'])
@@ -906,6 +908,12 @@ class BaseStrategy:
             days_ahead = 7  # If today is Thursday, get next Thursday
             
         next_thursday = today + timedelta(days=days_ahead)
+        
+        # 🚨 CRITICAL DEBUG: Log calculation details
+        logger.info(f"🔍 EXPIRY CALCULATION DEBUG:")
+        logger.info(f"   Today: {today.strftime('%A, %B %d, %Y')} (weekday: {today.weekday()})")
+        logger.info(f"   Days ahead to Thursday: {days_ahead}")
+        logger.info(f"   Next Thursday: {next_thursday.strftime('%A, %B %d, %Y')}")
         
         # 🔧 CRITICAL FIX: Format for Zerodha - their format is 25JUL (not 31JUL25)
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
