@@ -958,6 +958,78 @@ async def get_daily_pnl():
             }
         }
 
+@app.get("/api/v1/recommendations", tags=["dashboard"])
+async def get_recommendations():
+    """Get trading recommendations for frontend"""
+    try:
+        # Return mock recommendations - can be enhanced later
+        return {
+            "success": True,
+            "data": {
+                "recommendations": [
+                    {
+                        "symbol": "NIFTY",
+                        "action": "HOLD",
+                        "confidence": 0.75,
+                        "reason": "Market consolidation phase",
+                        "target": 0,
+                        "stop_loss": 0
+                    }
+                ],
+                "count": 1,
+                "last_updated": datetime.now().isoformat()
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "data": {
+                "recommendations": [],
+                "count": 0,
+                "error": str(e),
+                "last_updated": datetime.now().isoformat()
+            }
+        }
+
+@app.get("/api/v1/strategies", tags=["strategies"])
+async def get_strategies_status():
+    """Get strategy status for frontend"""
+    try:
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        strategies = []
+        if orchestrator and hasattr(orchestrator, 'strategies'):
+            for name, strategy in orchestrator.strategies.items():
+                strategies.append({
+                    "name": name,
+                    "status": "active" if strategy else "inactive",
+                    "signals_today": 0,  # Can be enhanced with real data
+                    "success_rate": 0.0,
+                    "pnl": 0.0
+                })
+        
+        return {
+            "success": True,
+            "data": {
+                "strategies": strategies,
+                "total_strategies": len(strategies),
+                "active_strategies": len([s for s in strategies if s["status"] == "active"]),
+                "last_updated": datetime.now().isoformat()
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "data": {
+                "strategies": [],
+                "total_strategies": 0,
+                "active_strategies": 0,
+                "error": str(e),
+                "last_updated": datetime.now().isoformat()
+            }
+        }
+
 @app.post("/api/auth/login", tags=["auth"])
 async def redirect_login(request: Request):
     """Redirect from old login path to new one"""
