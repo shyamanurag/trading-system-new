@@ -188,7 +188,7 @@ class TradingPosition(Base):
     
     # Relationships - FIXED: Remove circular reference
     user = relationship("User")
-    trades = relationship("Trade", back_populates="position")
+    trades = relationship("TradingTrade", back_populates="position")
 
 class TradingTrade(Base):  # FIXED: Renamed to avoid conflict with Pydantic Trade
     """Trading transactions"""
