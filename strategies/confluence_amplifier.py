@@ -53,7 +53,7 @@ class ConfluenceAmplifier(BaseStrategy):
                 return
                 
             # Process market data and generate NEW signals (only if no existing positions)
-            signals = self._generate_signals(data)
+            signals = await self._generate_signals(data)
             
             # FIXED: Only store signals for orchestrator collection - no direct execution
             for signal in signals:
@@ -68,7 +68,7 @@ class ConfluenceAmplifier(BaseStrategy):
         except Exception as e:
             logger.error(f"Error in {self.name} strategy: {str(e)}")
     
-    def _generate_signals(self, data: Dict) -> List[Dict]:
+    async def _generate_signals(self, data: Dict) -> List[Dict]:
         """Generate signals based on confluence analysis"""
         try:
             # Clean up old signals first
@@ -79,7 +79,7 @@ class ConfluenceAmplifier(BaseStrategy):
                 return []
             
             # Analyze confluence and generate amplified signals
-            confluent_signals = self._analyze_confluence(data)
+            confluent_signals = await self._analyze_confluence(data)
             
             return confluent_signals
             
