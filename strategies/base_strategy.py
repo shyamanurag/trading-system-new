@@ -1042,8 +1042,8 @@ class BaseStrategy:
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
         
-        # 🚨 CRITICAL FIX: Zerodha format is 14AUG25 (DD + MMM + YY), NOT 14AUG (DD + MMM)
-        zerodha_expiry = f"{exp_date.day:02d}{month_names[exp_date.month - 1]}{str(exp_date.year)[-2:]}"
+        # 🚨 CRITICAL FIX: Zerodha format is 25AUG (YY + MMM), NOT 14AUG25 (DD + MMM + YY)
+        zerodha_expiry = f"{str(exp_date.year)[-2:]}{month_names[exp_date.month - 1]}"
         
         logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
         logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
@@ -1132,10 +1132,10 @@ class BaseStrategy:
                 
             thursday = current_date + timedelta(days=days_ahead)
             
-            # Format for Zerodha: 14AUG25
+            # Format for Zerodha: 25AUG (YY + MMM)
             month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                           'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
-            formatted = f"{thursday.day:02d}{month_names[thursday.month - 1]}{str(thursday.year)[-2:]}"
+            formatted = f"{str(thursday.year)[-2:]}{month_names[thursday.month - 1]}"
             
             # Determine if it's monthly (last Thursday of month)
             next_week = thursday + timedelta(days=7)
