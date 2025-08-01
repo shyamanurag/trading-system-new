@@ -1418,6 +1418,9 @@ class TradingOrchestrator:
                         strategy_instance = strategy_info['instance']
                         self.logger.info(f"🔍 Processing strategy: {strategy_key}")
                         
+                        # 🎯 PRE-FETCH LTP for common options BEFORE signal generation
+                        await self._prefetch_options_ltp(transformed_data)
+                        
                         # Call strategy's on_market_data method with TRANSFORMED data
                         await strategy_instance.on_market_data(transformed_data)
                         
@@ -2482,6 +2485,65 @@ class TradingOrchestrator:
         except Exception as e:
             self.logger.error(f"❌ Error updating all Zerodha tokens: {e}")
             return False
+
+    async def _prefetch_options_ltp(self, market_data: Dict) -> None:
+        """Pre-fetch LTP for common options symbols to prevent 0.0 rejections"""
+        try:
+            # Get top 3 most active symbols from market data
+            active_symbols = []
+            for symbol, data in market_data.items():
+                volume = data.get('volume', 0) or data.get('vol', 0)
+                if volume > 0:
+                    active_symbols.append((symbol, volume))
+            
+            # Sort by volume and take top 3
+            active_symbols.sort(key=lambda x: x[1], reverse=True)
+            top_symbols = [symbol for symbol, _ in active_symbols[:3]]
+            
+            if not top_symbols:
+                return
+                
+            self.logger.info(f"🎯 PRE-FETCHING LTP for top symbols: {', '.join(top_symbols)}")
+            
+            # Pre-fetch options for each symbol
+            for symbol in top_symbols:
+                try:
+                    symbol_data = market_data.get(symbol, {})
+                    current_price = symbol_data.get('ltp') or symbol_data.get('price') or symbol_data.get('last_price')
+                    
+                    if not current_price or current_price <= 0:
+                        continue
+                        
+                    # Generate common options symbols (CE and PE at ATM)
+                    atm_strike = round(current_price / 50) * 50  # Zerodha 50-point intervals
+                    
+                    # Generate symbols for next expiry (25AUG format)
+                    ce_symbol = f"{symbol}25AUG{int(atm_strike)}CE"
+                    pe_symbol = f"{symbol}25AUG{int(atm_strike)}PE"
+                    
+                    # Pre-fetch LTP for both CE and PE
+                    if self.zerodha_client:
+                        for options_symbol in [ce_symbol, pe_symbol]:
+                            try:
+                                ltp = await self.zerodha_client.get_options_ltp(options_symbol)
+                                if ltp and ltp > 0:
+                                    self.logger.info(f"✅ PRE-FETCHED: {options_symbol} = ₹{ltp}")
+                                    # Store in a cache for quick access
+                                    if not hasattr(self, 'options_ltp_cache'):
+                                        self.options_ltp_cache = {}
+                                    self.options_ltp_cache[options_symbol] = {
+                                        'ltp': ltp,
+                                        'timestamp': datetime.now(),
+                                        'ttl': 30  # 30 seconds TTL
+                                    }
+                            except Exception as e:
+                                self.logger.debug(f"Could not pre-fetch {options_symbol}: {e}")
+                                
+                except Exception as e:
+                    self.logger.debug(f"Error pre-fetching for {symbol}: {e}")
+                    
+        except Exception as e:
+            self.logger.debug(f"Error in LTP pre-fetching: {e}")
 
 
 # Global function to get orchestrator instance
