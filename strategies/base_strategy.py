@@ -653,10 +653,13 @@ class BaseStrategy:
                 options_entry_price, stop_loss, target, option_type, action, symbol
             )
             
-            # Validate signal levels with OPTIONS pricing
-            if not self.validate_signal_levels(options_entry_price, options_stop_loss, options_target, 'BUY'):
+            # 🎯 ALLOW 0.0 signals to pass to orchestrator for LTP fixing
+            # Only validate if we have a real entry price (orchestrator will fix 0.0 prices)
+            if options_entry_price > 0 and not self.validate_signal_levels(options_entry_price, options_stop_loss, options_target, 'BUY'):
                 logger.warning(f"Invalid options signal levels: Entry={options_entry_price}, SL={options_stop_loss}, Target={options_target}")
                 return None
+            elif options_entry_price == 0:
+                logger.info(f"🔄 PASSING 0.0 signal to orchestrator for LTP validation: {options_symbol}")
             
             # 🎯 CRITICAL FIX: Always BUY options (no selling due to margin requirements)
             final_action = 'BUY'  # Force all options signals to be BUY
