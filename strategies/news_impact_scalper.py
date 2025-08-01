@@ -236,14 +236,14 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             # Calculate confidence based on momentum analysis
             confidence = self._calculate_confidence(momentum_analysis, price_change, volume_change)
             
-            # Create standardized signal
+            # Create standardized signal (convert confidence from 0.0-1.0 to 0.0-10.0 scale)
             signal = await self.create_standard_signal(
                 symbol=symbol,
                 action=action,
                 entry_price=current_price,
                 stop_loss=stop_loss,
                 target=target,
-                confidence=confidence,
+                confidence=confidence * 10.0,  # Convert 0.85 -> 8.5
                 metadata={
                     'scalping_optimized': True,
                     'momentum_score': momentum_analysis['score'],

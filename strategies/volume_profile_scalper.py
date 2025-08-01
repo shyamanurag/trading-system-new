@@ -251,14 +251,14 @@ class EnhancedVolumeProfileScalper(BaseStrategy):
             # Calculate confidence based on volume analysis
             confidence = self._calculate_confidence(volume_analysis, volume_change, price_change)
             
-            # Create standardized signal
+            # Create standardized signal (convert confidence from 0.0-1.0 to 0.0-10.0 scale)
             signal = await self.create_standard_signal(
                 symbol=symbol,
                 action=action,
                 entry_price=current_price,
                 stop_loss=stop_loss,
                 target=target,
-                confidence=confidence,
+                confidence=confidence * 10.0,  # Convert 0.7 -> 7.0
                 metadata={
                     'scalping_optimized': True,
                     'volume_score': volume_analysis['score'],

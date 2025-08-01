@@ -265,14 +265,14 @@ class ConfluenceAmplifier(BaseStrategy):
             consensus_stop = np.mean(stop_losses)
             consensus_target = np.mean(targets)
             
-            # Create amplified signal using base strategy format
+            # Create amplified signal using base strategy format (convert confidence from 0.0-1.0 to 0.0-10.0 scale)
             amplified_signal = await self.create_standard_signal(
                 symbol=symbol,
                 action=base_signal.get('action', 'BUY'),
                 entry_price=current_price,  # Use current price for immediate execution
                 stop_loss=consensus_stop,
                 target=consensus_target,
-                confidence=amplified_confidence,
+                confidence=amplified_confidence * 10.0,  # Convert 0.95 -> 9.5
                 metadata={
                     'confluence_strength': confluence_analysis['confluence_strength'],
                     'contributing_strategies': confluence_analysis['strategies'],

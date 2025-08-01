@@ -177,14 +177,14 @@ class EnhancedVolatilityExplosion(BaseStrategy):
             # Calculate confidence based on volatility analysis
             confidence = self._calculate_confidence(volatility_analysis, current_volatility_ratio, historical_volatility)
             
-            # Create standardized signal
+            # Create standardized signal (convert confidence from 0.0-1.0 to 0.0-10.0 scale)
             signal = await self.create_standard_signal(
                 symbol=symbol,
                 action=action,
                 entry_price=current_price,
                 stop_loss=stop_loss,
                 target=target,
-                confidence=confidence,
+                confidence=confidence * 10.0,  # Convert 0.8 -> 8.0
                 metadata={
                     'scalping_optimized': True,
                     'volatility_score': volatility_analysis['score'],
