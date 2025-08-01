@@ -1298,15 +1298,14 @@ class BaseStrategy:
             except Exception as e:
                 logger.debug(f"Could not get Zerodha LTP for {options_symbol}: {e}")
             
-            # 🎯 FINAL FALLBACK: Estimate options premium dynamically based on market conditions
-            estimated_premium = self._estimate_options_premium_dynamic(fallback_price, option_type, options_symbol)
-            logger.warning(f"⚠️ Using dynamic estimation for {options_symbol}: ₹{estimated_premium}")
-            return estimated_premium
+            # 🎯 FINAL FALLBACK: Simple realistic fallback (no fake estimation)
+            logger.error(f"❌ NO REAL LTP AVAILABLE for {options_symbol} - SKIPPING SIGNAL")
+            return 0.0  # Return 0 to reject this signal completely
             
         except Exception as e:
             logger.error(f"Error getting options premium for {options_symbol}: {e}")
-            # Final fallback
-            return self._estimate_options_premium_dynamic(fallback_price, option_type, options_symbol)
+            # Final fallback - reject signal
+            return 0.0
     
     def _round_to_tick_size(self, price: float) -> float:
         """Round options price to proper tick size (₹0.05 for options)"""
@@ -1316,63 +1315,7 @@ class BaseStrategy:
         except ImportError:
             # Fallback if import fails
             return round(price / 0.05) * 0.05
-    
-    def _estimate_options_premium_dynamic(self, underlying_price: float, option_type: str, options_symbol: str) -> float:
-        """FIXED: Calculate realistic options premium - hundreds for indices, not thousands"""
-        try:
-            # Extract strike and expiry from options symbol for dynamic calculation
-            strike_price = self._extract_strike_from_symbol(options_symbol)
-            days_to_expiry = self._calculate_days_to_expiry(options_symbol)
-            
-            # 🚨 CRITICAL FIX: Realistic premium calculation for different asset types
-            if any(idx in options_symbol for idx in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']):
-                # INDEX OPTIONS: Premium should be ₹10-500 maximum
-                base_premium_percent = 0.002  # 0.2% of underlying (much lower)
-                max_premium = 500  # Maximum ₹500 for index options
-                min_premium = 10   # Minimum ₹10
-            else:
-                # STOCK OPTIONS: Premium should be ₹5-200 maximum  
-                base_premium_percent = 0.015  # 1.5% of underlying
-                max_premium = 200  # Maximum ₹200 for stock options
-                min_premium = 5    # Minimum ₹5
-            
-            # Calculate moneyness (distance from ATM)
-            moneyness = abs(underlying_price - strike_price) / underlying_price
-            
-            # Time decay factor (less impact for short-term options)
-            time_value_factor = max(0.1, min(0.5, days_to_expiry / 30))  # Max 50% time value
-            
-            # Volatility factor (much lower)
-            volatility_factor = 0.05  # 5% volatility factor (was too high before)
-            
-            # Base premium calculation - MUCH MORE CONSERVATIVE
-            if option_type == 'CE':
-                intrinsic_value = max(0, underlying_price - strike_price)
-            else:  # PE
-                intrinsic_value = max(0, strike_price - underlying_price)
-            
-            # Time value calculation - REALISTIC
-            time_value = underlying_price * base_premium_percent * time_value_factor * (1 + moneyness)
-            
-            estimated_premium = intrinsic_value + time_value
-            
-            # Apply realistic bounds
-            estimated_premium = max(min_premium, min(estimated_premium, max_premium))
-            
-            logger.info(f"📊 REALISTIC Premium: {option_type} = ₹{estimated_premium:.2f}")
-            logger.info(f"   Underlying: ₹{underlying_price}, Strike: ₹{strike_price}")
-            logger.info(f"   Intrinsic: ₹{intrinsic_value:.2f}, Time: ₹{time_value:.2f}")
-            logger.info(f"   Days: {days_to_expiry}, Bounds: ₹{min_premium}-₹{max_premium}")
-            
-            return estimated_premium
-            
-        except Exception as e:
-            logger.error(f"Error in premium calculation: {e}")
-            # Conservative fallback
-            if any(idx in options_symbol for idx in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']):
-                return 50.0  # ₹50 fallback for indices
-            else:
-                return 20.0  # ₹20 fallback for stocks
+
     
     def _calculate_options_levels(self, options_entry_price: float, original_stop_loss: float, 
                                  original_target: float, option_type: str, action: str, underlying_symbol: str) -> tuple:
@@ -1479,53 +1422,34 @@ class BaseStrategy:
             return 0.03  # 3% fallback
     
     def _extract_strike_from_symbol(self, options_symbol: str) -> float:
-        """Extract strike price from options symbol - FIXED for DD+MMM format"""
+        """Extract strike price from options symbol - FIXED REGEX"""
         try:
-            # 🚨 CRITICAL FIX: New Zerodha format is SYMBOL + DD+MMM + STRIKE + TYPE
-            # Pattern: TCS + 14AUG + 3000 + CE (no year in new format)
             import re
             
-            # First try format with year: SYMBOL + DDMMMYY + STRIKE + TYPE  
-            date_strike_match = re.search(r'(\d{1,2}[A-Z]{3}\d{2})(\d+)(CE|PE)$', options_symbol)
+            # 🎯 CORRECT FORMAT: SYMBOL + YYMMM + STRIKE + TYPE
+            # Examples: ASIANPAINT25AUG2450CE, TCS25AUG3000PE
             
-            if date_strike_match:
-                date_part = date_strike_match.group(1)  # e.g., "14AUG"
-                strike_part = date_strike_match.group(2)  # e.g., "3000"
-                option_type = date_strike_match.group(3)  # e.g., "CE"
+            # Pattern: Any letters + YYMMM + NUMBERS + CE/PE
+            match = re.search(r'([A-Z]+)(\d{2}[A-Z]{3})(\d+)(CE|PE)$', options_symbol)
+            
+            if match:
+                symbol_part = match.group(1)    # e.g., "ASIANPAINT" 
+                date_part = match.group(2)      # e.g., "25AUG"
+                strike_part = match.group(3)    # e.g., "2450"
+                option_type = match.group(4)    # e.g., "CE"
                 
                 logger.info(f"🔍 STRIKE EXTRACTION: {options_symbol}")
-                logger.info(f"   Date: {date_part}, Strike: {strike_part}, Type: {option_type}")
+                logger.info(f"   Symbol: {symbol_part}, Date: {date_part}, Strike: {strike_part}, Type: {option_type}")
                 
                 return float(strike_part)
             
-            # Fallback for format without year: SYMBOL + DDMMM + STRIKE + TYPE
-            old_date_strike_match = re.search(r'(\d{1,2}[A-Z]{3})(\d+)(CE|PE)$', options_symbol)
-            
-            if old_date_strike_match:
-                date_part = old_date_strike_match.group(1)  # e.g., "14AUG25"
-                strike_part = old_date_strike_match.group(2)  # e.g., "3000"
-                option_type = old_date_strike_match.group(3)  # e.g., "CE"
-                
-                logger.info(f"🔍 OLD FORMAT STRIKE EXTRACTION: {options_symbol}")
-                logger.info(f"   Date: {date_part}, Strike: {strike_part}, Type: {option_type}")
-                
-                return float(strike_part)
-            
-            # Final fallback: Extract just the numbers before CE/PE
-            logger.warning(f"⚠️ Fallback strike extraction for {options_symbol}")
-            fallback_match = re.search(r'(\d+)(CE|PE)$', options_symbol)
-            if fallback_match:
-                extracted_value = float(fallback_match.group(1))
-                logger.warning(f"   Fallback extracted: {extracted_value}")
-                return extracted_value
-                
-            # Final fallback
+            # If regex fails, use fallback
             logger.error(f"❌ Could not extract strike from {options_symbol}")
-            return 1000.0  # Safe fallback
+            return 2500.0  # Safe fallback
             
         except Exception as e:
             logger.error(f"Error extracting strike from {options_symbol}: {e}")
-            return 1000.0  # Fallback
+            return 2500.0  # Fallback
     
     def _get_dynamic_min_risk_reward_ratio(self, symbol: str, price: float) -> float:
         """Calculate minimum risk-reward ratio based on market volatility and symbol characteristics"""
