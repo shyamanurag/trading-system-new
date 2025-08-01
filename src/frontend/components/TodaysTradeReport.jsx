@@ -37,7 +37,7 @@ const TodaysTradeReport = () => {
             daily_pnl: 0,
             active_positions: 0,
             win_rate: 0,
-            trading_active: false
+            is_active: false
         },
         lastUpdate: null
     });
@@ -115,7 +115,7 @@ const TodaysTradeReport = () => {
             summary: tradeData.summary,
             trades: tradeData.trades,
             system_info: {
-                trading_active: tradeData.summary.trading_active,
+                trading_active: tradeData.summary.is_active,
                 session_id: tradeData.summary.session_id,
                 active_strategies: tradeData.summary.active_strategies
             }
@@ -189,7 +189,7 @@ const TodaysTradeReport = () => {
                 </Alert>
             )}
 
-            {!tradeData.summary.trading_active && (
+            {!tradeData.summary.is_active && (
                 <Alert severity="warning" sx={{ mb: 2 }}>
                     <Box>
                         <Typography variant="body1" fontWeight="bold">
@@ -281,8 +281,8 @@ const TodaysTradeReport = () => {
                         <Typography>
                             <strong>Trading Active:</strong> {' '}
                             <Chip
-                                label={tradeData.summary.trading_active ? 'YES' : 'NO'}
-                                color={tradeData.summary.trading_active ? 'success' : 'error'}
+                                                        label={tradeData.summary.is_active ? 'YES' : 'NO'}
+                        color={tradeData.summary.is_active ? 'success' : 'error'}
                                 size="small"
                             />
                         </Typography>
