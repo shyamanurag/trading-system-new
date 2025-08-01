@@ -2546,6 +2546,32 @@ class TradingOrchestrator:
             self.logger.error(f"Error validating signal: {e}")
             return None
 
+    def _get_truedata_data(self) -> Dict:
+        from data.truedata_client import live_market_data
+        return live_market_data or {}
+
+    def _get_zerodha_data(self) -> Dict:
+        from brokers.zerodha import ZerodhaIntegration
+        client = ZerodhaIntegration()  # Assume singleton or init
+        return client.get_market_data() or {}
+
+    def _normalize_data(self, data: Dict) -> Dict:
+        from config.options_symbol_mapping import convert_truedata_to_zerodha_options
+        normalized = {}
+        for symbol, d in data.items():
+            if 'CE' in symbol or 'PE' in symbol:
+                norm_symbol = convert_truedata_to_zerodha_options(symbol)
+                normalized[norm_symbol] = d
+            else:
+                normalized[symbol] = d
+        return normalized
+
+    def _transform_market_data_for_strategies(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
+        truedata = self._get_truedata_data()
+        zerodha = self._get_zerodha_data() if not truedata else {}
+        merged = {**truedata, **zerodha}  # TrueData priority
+        return self._normalize_data(merged)
+
 
 # Global function to get orchestrator instance
 async def get_orchestrator() -> TradingOrchestrator:

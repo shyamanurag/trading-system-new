@@ -53,111 +53,18 @@ const TodaysTradeReport = () => {
         setError(null);
 
         try {
-            // Get real trading status from autonomous endpoint
-            const autonomousResponse = await fetch('/api/v1/autonomous/status');
-            const autonomousData = await autonomousResponse.json();
-
-            let trades = [];
-            let summary = {
-                total_trades: 0,
-                daily_pnl: 0,
-                active_positions: 0,
-                win_rate: 0,
-                trading_active: false
-            };
-
-            if (autonomousData.success && autonomousData.data) {
-                const trading = autonomousData.data;
-                console.log('🎯 Today\'s Trades using REAL DATA:', trading);
-
-                summary = {
-                    total_trades: trading.total_trades || 0,
-                    daily_pnl: trading.daily_pnl || 0,
-                    active_positions: trading.active_positions || 0,
-                    win_rate: trading.success_rate || 0,
-                    trading_active: trading.is_active || false,
-                    session_id: trading.session_id,
-                    start_time: trading.start_time,
-                    active_strategies: trading.active_strategies || []
-                };
-
-                // FIXED: Get REAL trades from the trading system API endpoints
-                try {
-                    // Try to get real trades from the autonomous trading API
-                    const tradesResponse = await fetchWithAuth('/api/v1/autonomous/trades');
-                    if (tradesResponse.ok) {
-                        const tradesData = await tradesResponse.json();
-                        if (tradesData.success && tradesData.trades) {
-                            trades = tradesData.trades.map(trade => ({
-                                id: trade.trade_id,
-                                symbol: trade.symbol,
-                                side: trade.trade_type || trade.side,
-                                quantity: trade.quantity,
-                                entry_price: trade.price,
-                                current_price: trade.price, // For executed trades, current price = execution price
-                                pnl: trade.pnl || 0,
-                                pnl_percent: trade.pnl_percent || 0,
-                                status: trade.status || 'EXECUTED',
-                                entry_time: trade.executed_at,
-                                strategy: trade.strategy,
-                                commission: trade.commission || 0
-                            }));
-                            
-                            // CRITICAL FIX: Update summary with REAL trade count and P&L
-                            console.log(`🎯 Found ${trades.length} REAL trades from Zerodha API`);
-                            const totalPnL = trades.reduce((sum, trade) => sum + (trade.pnl || 0), 0);
-                            const winningTrades = trades.filter(trade => (trade.pnl || 0) > 0).length;
-                            
-                            summary.total_trades = trades.length;
-                            summary.daily_pnl = totalPnL;
-                            summary.win_rate = trades.length > 0 ? ((winningTrades / trades.length) * 100) : 0;
-                        }
-                    }
-                } catch (tradesError) {
-                    console.warn('Could not fetch real trades:', tradesError);
-                }
-
-                // If no trades from autonomous API, try the search API
-                if (trades.length === 0 && summary.total_trades > 0) {
-                    try {
-                        const searchResponse = await fetch('/api/v1/search/trades?limit=50');
-                        if (searchResponse.ok) {
-                            const searchData = await searchResponse.json();
-                            if (searchData.success && searchData.data && searchData.data.trades) {
-                                trades = searchData.data.trades.map(trade => ({
-                                    id: trade.trade_id,
-                                    symbol: trade.symbol,
-                                    side: trade.side,
-                                    quantity: trade.quantity,
-                                    entry_price: trade.price,
-                                    current_price: trade.price,
-                                    pnl: trade.pnl || 0,
-                                    pnl_percent: ((trade.pnl || 0) / (trade.price * trade.quantity)) * 100,
-                                    status: trade.status || 'EXECUTED',
-                                    entry_time: trade.executed_at || trade.created_at,
-                                    strategy: trade.strategy,
-                                    commission: 0
-                                }));
-                            }
-                        }
-                    } catch (searchError) {
-                        console.warn('Could not fetch trades from search API:', searchError);
-                    }
-                }
-
-                // ELIMINATED: All mock trade generation removed - only real data allowed
-                console.log(`✅ REAL TRADES ONLY: Found ${trades.length} actual trades`);
+            const response = await fetchWithAuth('/api/v1/trades');
+            if (response.ok) {
+                const data = await response.json();
+                setTradeData(data.trades || []);
+                setError(null);
+            } else {
+                setError('Failed to fetch real trades');
+                setTradeData([]);
             }
-
-            setTradeData({
-                trades: trades,
-                summary: summary,
-                lastUpdate: new Date()
-            });
-
         } catch (err) {
-            setError(`Failed to fetch trade data: ${err.message}`);
-            console.error('Trade data fetch error:', err);
+            setError('Error fetching trades: ' + err.message);
+            setTradeData([]);
         } finally {
             setLoading(false);
         }
