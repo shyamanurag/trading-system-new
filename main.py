@@ -1912,6 +1912,30 @@ async def redirect_strategies():
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/api/v1/autonomous/strategies", status_code=307)
 
+@app.get("/api/v1/trades", tags=["trades"])
+async def get_trades_endpoint():
+    """Get all trades - Direct endpoint for frontend"""
+    try:
+        # Get live trades from Zerodha
+        live_trades = await get_live_trades_from_zerodha()
+        
+        return {
+            "success": True,
+            "trades": live_trades,
+            "count": len(live_trades),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting trades: {str(e)}")
+        return {
+            "success": False,
+            "trades": [],
+            "count": 0,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @app.get("/api/v1/users", tags=["users"])
 async def redirect_users():
     """Redirect to users performance endpoint"""
