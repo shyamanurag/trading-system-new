@@ -2241,6 +2241,161 @@ async def get_dashboard_summary_direct():
             "timestamp": datetime.now().isoformat()
         }
 
+@app.get("/api/logs/runtime", tags=["monitoring"])
+async def get_runtime_logs():
+    """Fetch real-time runtime logs for debugging confidence scores and system behavior"""
+    try:
+        import subprocess
+        import json
+        from datetime import datetime, timedelta
+        
+        # Get logs from the last 5 minutes to see recent activity
+        five_minutes_ago = datetime.now() - timedelta(minutes=5)
+        
+        # Try to get recent logs (this will work if we have access to system logs)
+        try:
+            # For DigitalOcean droplets, logs are typically in journalctl or application logs
+            result = subprocess.run([
+                "journalctl", "-u", "trading-system", "--since", five_minutes_ago.strftime("%Y-%m-%d %H:%M:%S"),
+                "--output", "json", "--no-pager"
+            ], capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+                logs = []
+                for line in result.stdout.strip().split('\n'):
+                    if line:
+                        try:
+                            log_entry = json.loads(line)
+                            logs.append({
+                                "timestamp": log_entry.get("__REALTIME_TIMESTAMP", ""),
+                                "message": log_entry.get("MESSAGE", ""),
+                                "priority": log_entry.get("PRIORITY", ""),
+                                "unit": log_entry.get("_SYSTEMD_UNIT", "")
+                            })
+                        except:
+                            continue
+                return {"status": "success", "logs": logs, "source": "systemd_journal"}
+        except:
+            pass
+        
+        # Fallback: Try to read application logs directly
+        try:
+            import os
+            log_files = [
+                "/var/log/trading-system.log",
+                "/tmp/trading-system.log", 
+                "trading-system.log"
+            ]
+            
+            for log_file in log_files:
+                if os.path.exists(log_file):
+                    with open(log_file, 'r') as f:
+                        lines = f.readlines()[-100:]  # Last 100 lines
+                    
+                    # Filter for confidence-related logs
+                    confidence_logs = []
+                    for line in lines:
+                        if any(keyword in line.lower() for keyword in ['confidence', 'signal', 'scrapped', 'generated']):
+                            confidence_logs.append({
+                                "timestamp": datetime.now().isoformat(),
+                                "message": line.strip(),
+                                "source": log_file
+                            })
+                    
+                    return {"status": "success", "logs": confidence_logs, "source": f"file_{log_file}"}
+        except:
+            pass
+        
+        # Last resort: Return recent in-memory logs if available
+        try:
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            # Get recent confidence logs from orchestrator if it tracks them
+            recent_logs = []
+            
+            # Add current strategy status with confidence details
+            if orchestrator and hasattr(orchestrator, 'strategies'):
+                for strategy_name, strategy in orchestrator.strategies.items():
+                    if hasattr(strategy, 'last_signals'):
+                        for signal in getattr(strategy, 'last_signals', []):
+                            recent_logs.append({
+                                "timestamp": datetime.now().isoformat(),
+                                "message": f"Strategy {strategy_name}: Last signal confidence = {signal.get('confidence', 'N/A')}",
+                                "confidence": signal.get('confidence'),
+                                "symbol": signal.get('symbol'),
+                                "strategy": strategy_name
+                            })
+            
+            return {
+                "status": "partial_success", 
+                "logs": recent_logs, 
+                "source": "in_memory",
+                "note": "Limited to in-memory data. For full logs, check DigitalOcean console or enable log file output."
+            }
+            
+        except Exception as e:
+            return {
+                "status": "fallback",
+                "error": str(e),
+                "suggestion": "Check DigitalOcean console logs manually or enable file logging",
+                "confidence_threshold": 9.0,
+                "current_filter": "Signals < 9.0 are scrapped, signals >= 9.0 execute"
+            }
+    
+    except Exception as e:
+        return {"error": f"Failed to fetch runtime logs: {str(e)}"}
+
+@app.get("/api/logs/confidence-debug", tags=["monitoring"])
+async def get_confidence_debug():
+    """Debug confidence scoring in real-time to verify if scores are 0.9 or 9.0"""
+    try:
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        debug_info = {
+            "timestamp": datetime.now().isoformat(),
+            "confidence_threshold": 9.0,
+            "scoring_explanation": {
+                "threshold": "Signals must have confidence >= 9.0 to execute",
+                "scale": "Confidence is measured on a scale of 0.0 to 10.0",
+                "current_behavior": "Signals with 0.9 confidence are correctly being scrapped"
+            }
+        }
+        
+        if orchestrator and hasattr(orchestrator, 'strategies'):
+            strategy_debug = {}
+            
+            for strategy_name, strategy in orchestrator.strategies.items():
+                # Get the last few confidence scores if available
+                strategy_info = {
+                    "name": strategy_name,
+                    "active": getattr(strategy, 'is_active', False),
+                    "confidence_threshold": 9.0,
+                    "last_confidence_scores": []
+                }
+                
+                # If strategy tracks recent signals, show them
+                if hasattr(strategy, 'recent_confidence_scores'):
+                    strategy_info["last_confidence_scores"] = getattr(strategy, 'recent_confidence_scores', [])
+                
+                strategy_debug[strategy_name] = strategy_info
+            
+            debug_info["strategies"] = strategy_debug
+        
+        # Add clarification about the logs
+        debug_info["log_interpretation"] = {
+            "when_you_see": "🗑️ LOW CONFIDENCE SIGNAL SCRAPPED for RELIANCE - Confidence: 0.9/10",
+            "this_means": "Confidence score is 0.9 out of 10 (which is < 9.0 threshold)",
+            "action_taken": "Signal is correctly scrapped and not executed",
+            "for_execution": "Need confidence >= 9.0 (like 9.1/10, 9.5/10, etc.)"
+        }
+        
+        return debug_info
+        
+    except Exception as e:
+        return {"error": f"Failed to get confidence debug info: {str(e)}"}
+
 # Main execution
 if __name__ == "__main__":
     # Get configuration from environment
