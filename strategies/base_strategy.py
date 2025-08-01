@@ -679,9 +679,9 @@ class BaseStrategy:
                 'option_type': option_type,  # CE or PE
                 'action': final_action.upper(),  # Always BUY for options (no selling due to margin)
                 'quantity': self._get_capital_constrained_quantity(options_symbol, symbol, options_entry_price),  # 🎯 CAPITAL-AWARE: Limit lots based on capital
-                'entry_price': round(options_entry_price, 2),  # 🎯 FIXED: Use options premium
-                'stop_loss': round(options_stop_loss, 2),      # 🎯 FIXED: Correct options stop_loss
-                'target': round(options_target, 2),            # 🎯 FIXED: Correct options target
+                'entry_price': self._round_to_tick_size(options_entry_price),  # 🎯 FIXED: Use tick size rounding
+                'stop_loss': self._round_to_tick_size(options_stop_loss),      # 🎯 FIXED: Tick size rounding
+                'target': self._round_to_tick_size(options_target),            # 🎯 FIXED: Tick size rounding
                 'strategy': self.name,  # Use 'strategy' for compatibility
                 'strategy_name': self.name,  # Also include strategy_name for new components
                 'confidence': round(min(confidence, 0.9), 2),
@@ -1307,6 +1307,15 @@ class BaseStrategy:
             logger.error(f"Error getting options premium for {options_symbol}: {e}")
             # Final fallback
             return self._estimate_options_premium_dynamic(fallback_price, option_type, options_symbol)
+    
+    def _round_to_tick_size(self, price: float) -> float:
+        """Round options price to proper tick size (₹0.05 for options)"""
+        try:
+            from src.utils.helpers import round_price_to_tick
+            return round_price_to_tick(price, 0.05)  # Options tick size is ₹0.05
+        except ImportError:
+            # Fallback if import fails
+            return round(price / 0.05) * 0.05
     
     def _estimate_options_premium_dynamic(self, underlying_price: float, option_type: str, options_symbol: str) -> float:
         """FIXED: Calculate realistic options premium - hundreds for indices, not thousands"""
