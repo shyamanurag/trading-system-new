@@ -144,10 +144,13 @@ def convert_truedata_to_zerodha_options(truedata_symbol: str) -> str:
                           'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
             month_str = month_names[month - 1]
             
-            # Format as Zerodha: DDMMM
+            # Format as Zerodha: DDMMM (without year)
             zerodha_date = f"{day:02d}{month_str}"
             
-            return f"{underlying}{zerodha_date}{strike}{option_type}"
+            # Remove leading zeros from strike for Zerodha format
+            strike_clean = str(int(strike))
+            
+            return f"{underlying}{zerodha_date}{strike_clean}{option_type}"
         else:
             logger.warning(f"Could not parse TrueData symbol: {truedata_symbol}")
             return truedata_symbol
