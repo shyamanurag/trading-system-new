@@ -144,8 +144,9 @@ def convert_truedata_to_zerodha_options(truedata_symbol: str) -> str:
                           'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
             month_str = month_names[month - 1]
             
-            # Format as Zerodha: DDMMM (without year)
-            zerodha_date = f"{day:02d}{month_str}"
+            # Format as Zerodha: YYMMM (year first, not day first)
+            year_short = str(year)[-2:]  # Last 2 digits of year (e.g., 2025 -> 25)
+            zerodha_date = f"{year_short}{month_str}"
             
             # Remove leading zeros from strike for Zerodha format
             strike_clean = str(int(strike))
