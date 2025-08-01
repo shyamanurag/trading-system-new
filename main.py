@@ -1835,9 +1835,13 @@ async def get_live_trades_direct():
                 if order.get('status') != 'COMPLETE':
                     continue
                 
-                order_date_str = order.get('order_timestamp', '')
-                if order_date_str:
-                    order_date = datetime.fromisoformat(order_date_str.replace('Z', '+00:00')).date()
+                order_timestamp = order.get('order_timestamp', '')
+                if order_timestamp:
+                    # Handle both datetime objects and string timestamps
+                    if isinstance(order_timestamp, datetime):
+                        order_date = order_timestamp.date()
+                    else:
+                        order_date = datetime.fromisoformat(str(order_timestamp).replace('Z', '+00:00')).date()
                     if order_date != today:
                         continue
                 
