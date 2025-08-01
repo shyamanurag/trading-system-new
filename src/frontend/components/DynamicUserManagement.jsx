@@ -52,7 +52,7 @@ const DynamicUserManagement = () => {
         email: '',
         password: '',
         full_name: '',
-        initial_capital: 50000,
+        initial_capital: 0, // User must input real capital
         risk_tolerance: 'medium',
         zerodha_client_id: '',
         zerodha_api_key: '',
@@ -279,7 +279,7 @@ const DynamicUserManagement = () => {
             email: '',
             password: '',
             full_name: '',
-            initial_capital: 50000,
+            initial_capital: 0, // User must input real capital
             risk_tolerance: 'medium',
             zerodha_client_id: '',
             zerodha_api_key: '',

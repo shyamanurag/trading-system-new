@@ -158,8 +158,8 @@ const UserPerformanceDashboard = ({ tradingData }) => {
                 setSelectedUser(null);
             }
 
-            // CRITICAL FIX: Use REAL dynamic data instead of hardcoded values
-            const realCapital = trading.aum || trading.capital || 75000; // Use real capital, fallback to your ₹75,000
+            // CRITICAL FIX: Use ONLY REAL dynamic data - no hardcoded fallbacks
+            const realCapital = trading.aum || trading.capital || 0; // Only real capital, no hardcoded values
             setSummaryMetrics({
                 todayPnL: trading.totalPnL || trading.daily_pnl || 0,
                 todayPnLPercent: realCapital > 0 ? ((trading.totalPnL || trading.daily_pnl || 0) / realCapital) * 100 : 0,

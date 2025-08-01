@@ -33,7 +33,7 @@ const BrokerUserSetup = ({ open, onClose, onUserAdded }) => {
         api_key: '',
         api_secret: '',
         client_id: '',
-        initial_capital: 1000000,
+        initial_capital: 0, // User must input their real capital
         risk_tolerance: 'medium',
         paper_trading: false
     });
@@ -83,7 +83,7 @@ const BrokerUserSetup = ({ open, onClose, onUserAdded }) => {
                         api_key: '',
                         api_secret: '',
                         client_id: '',
-                        initial_capital: 1000000,
+                        initial_capital: 0, // User must input their real capital
                         risk_tolerance: 'medium',
                         paper_trading: false
                     });

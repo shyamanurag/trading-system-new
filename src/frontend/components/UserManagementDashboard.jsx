@@ -61,7 +61,7 @@ const UserManagementDashboard = ({ tradingData }) => {
         password: '',
         zerodhaClientId: '',
         zerodhaPassword: '',
-        initialCapital: 50000,
+        initialCapital: 0, // User must input real capital
         riskLevel: 'medium'
     });
     const [error, setError] = useState(null);
@@ -103,7 +103,7 @@ const UserManagementDashboard = ({ tradingData }) => {
                 const masterUser = createStandardUser({
                     total_trades: trading.totalTrades || 0,
                     total_pnl: trading.totalPnL || 0,
-                    current_balance: trading.currentBalance || 1000000,
+                    current_balance: trading.currentBalance || trading.aum || trading.capital || 0, // Only real data, no fallbacks
                     win_rate: trading.winRate || 0,
                     open_trades: trading.activeTrades || 0
                 });
@@ -301,7 +301,7 @@ const UserManagementDashboard = ({ tradingData }) => {
                         password: '',
                         zerodhaClientId: '',
                         zerodhaPassword: '',
-                        initialCapital: 50000,
+                        initialCapital: 0, // User must input real capital
                         riskLevel: 'medium'
                     });
                 } else {

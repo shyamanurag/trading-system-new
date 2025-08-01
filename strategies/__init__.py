@@ -1,4 +1,4 @@
-# NEW SOPHISTICATED STRATEGIES - 4 Specialists
+# NEW SOPHISTICATED STRATEGIES - 4 Specialists (Deployment Refresh)
 # Each strategy is specialized for specific market segments
 
 from .professional_options_engine import ProfessionalOptionsEngine
