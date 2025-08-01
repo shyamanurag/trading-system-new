@@ -846,15 +846,19 @@ async def get_current_positions(orchestrator: TradingOrchestrator = Depends(get_
             }
         
         # Get positions directly from Zerodha
-        positions = await orchestrator.zerodha_client.get_positions()
-        if not positions:
-            positions = []
+        positions_data = await orchestrator.zerodha_client.get_positions()
+        if not positions_data:
+            positions_data = {'net': [], 'day': []}
+        
+        # CRITICAL FIX: Zerodha returns {net: [...], day: [...]} format
+        # Combine both net and day positions for processing
+        all_positions = positions_data.get('net', []) + positions_data.get('day', [])
         
         # Filter for active positions only
         active_positions = []
         total_pnl = 0.0
         
-        for position in positions:
+        for position in all_positions:
             quantity = position.get('quantity', 0)
             if quantity != 0:  # Active position
                 pnl = float(position.get('pnl', 0) or 0)
