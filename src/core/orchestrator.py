@@ -1848,39 +1848,31 @@ class TradingOrchestrator:
             self.strategies.clear()
             self.active_strategies.clear()
             
-            # FIXED: Original strategies only - no emergency systems
+            # NEW SOPHISTICATED STRATEGIES - 4 Specialists
             strategy_configs = {
-                'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
-                'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},
-                'volume_profile_scalper': {'name': 'EnhancedVolumeProfileScalper', 'config': {}},
-                'news_impact_scalper': {'name': 'EnhancedNewsImpactScalper', 'config': {}},
-                'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}},
-                'confluence_amplifier': {'name': 'ConfluenceAmplifier', 'config': {}}
+                'professional_options_engine': {'name': 'ProfessionalOptionsEngine', 'config': {}},
+                'nifty_intelligence_engine': {'name': 'NiftyIntelligenceEngine', 'config': {}},
+                'smart_intraday_options': {'name': 'SmartIntradayOptions', 'config': {}},
+                'market_microstructure_edge': {'name': 'MarketMicrostructureEdge', 'config': {}}
             }
             
             self.logger.info(f"Loading {len(strategy_configs)} trading strategies...")
             
             for strategy_key, strategy_info in strategy_configs.items():
                 try:
-                    # Import strategy class
-                    if strategy_key == 'momentum_surfer':
-                        from strategies.momentum_surfer import EnhancedMomentumSurfer
-                        strategy_instance = EnhancedMomentumSurfer(strategy_info['config'])
-                    elif strategy_key == 'volatility_explosion':
-                        from strategies.volatility_explosion import EnhancedVolatilityExplosion
-                        strategy_instance = EnhancedVolatilityExplosion(strategy_info['config'])
-                    elif strategy_key == 'volume_profile_scalper':
-                        from strategies.volume_profile_scalper import EnhancedVolumeProfileScalper
-                        strategy_instance = EnhancedVolumeProfileScalper(strategy_info['config'])
-                    elif strategy_key == 'news_impact_scalper':
-                        from strategies.news_impact_scalper import EnhancedNewsImpactScalper
-                        strategy_instance = EnhancedNewsImpactScalper(strategy_info['config'])
-                    elif strategy_key == 'regime_adaptive_controller':
-                        from strategies.regime_adaptive_controller import RegimeAdaptiveController
-                        strategy_instance = RegimeAdaptiveController(strategy_info['config'])
-                    elif strategy_key == 'confluence_amplifier':
-                        from strategies.confluence_amplifier import ConfluenceAmplifier
-                        strategy_instance = ConfluenceAmplifier(strategy_info['config'])
+                    # Import NEW sophisticated strategy classes
+                    if strategy_key == 'professional_options_engine':
+                        from strategies.professional_options_engine import ProfessionalOptionsEngine
+                        strategy_instance = ProfessionalOptionsEngine()
+                    elif strategy_key == 'nifty_intelligence_engine':
+                        from strategies.nifty_intelligence_engine import NiftyIntelligenceEngine
+                        strategy_instance = NiftyIntelligenceEngine()
+                    elif strategy_key == 'smart_intraday_options':
+                        from strategies.smart_intraday_options import SmartIntradayOptions
+                        strategy_instance = SmartIntradayOptions()
+                    elif strategy_key == 'market_microstructure_edge':
+                        from strategies.market_microstructure_edge import MarketMicrostructureEdge
+                        strategy_instance = MarketMicrostructureEdge()
                     else:
                         continue
                     
