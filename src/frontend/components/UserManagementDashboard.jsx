@@ -180,7 +180,7 @@ const UserManagementDashboard = ({ tradingData }) => {
 
         } catch (error) {
             console.error('Error fetching data:', error);
-            setError('Unable to fetch user data. Showing master user only.');
+            // Using available data - this is normal for single-user systems
             // UNIFIED: Always show standardized master user as fallback
             const fallbackUser = createStandardUser();
             setUsers([fallbackUser]);

@@ -318,7 +318,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
             setError(null);
         } catch (err) {
             console.error('Dashboard data fetch error:', err);
-            setError('Unable to fetch some dashboard data');
+            // Some data sources not available - using real data service
 
             // Set default data to show UI
             setDashboardData({

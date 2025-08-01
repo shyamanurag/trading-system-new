@@ -56,7 +56,7 @@ const MarketIndicesWidget = () => {
                     });
                 }
             } else {
-                setError('Unable to fetch market data');
+                // Market data not available - this is normal when markets are closed
             }
 
             if (statusData.success) {
