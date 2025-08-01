@@ -71,10 +71,17 @@ async def get_all_positions():
             
             logger.info(f"📊 [REAL POSITIONS] Processing {len(all_positions)} positions from Zerodha")
             
+            # CRITICAL FIX: Deduplicate positions based on symbol+quantity+product
+            unique_positions = {}
             for position in all_positions:
                 quantity = position.get('quantity', 0)
                 if quantity != 0:  # Only include active positions
                     symbol = position.get('tradingsymbol', '')
+                    product = position.get('product', '')
+                    
+                    # Create unique key to prevent duplicates
+                    unique_key = f"{symbol}_{quantity}_{product}"
+                    
                     # CRITICAL FIX: Use Zerodha's actual unrealised_pnl field for accuracy
                     pnl = float(position.get('unrealised_pnl', 0) or 0)
                     avg_price = float(position.get('average_price', 0) or 0)
@@ -82,18 +89,25 @@ async def get_all_positions():
                     
                     logger.info(f"📊 [REAL POSITIONS] Raw position data: {position}")
                     
-                    real_positions.append({
-                        "symbol": symbol,
-                        "quantity": quantity,
-                        "average_price": avg_price,
-                        "last_price": last_price,
-                        "pnl": round(pnl, 2),
-                        "product": position.get('product', ''),
-                        "exchange": position.get('exchange', ''),
-                        "instrument_token": position.get('instrument_token', '')
-                    })
-                    
-                    logger.info(f"📊 [REAL POSITIONS] Position: {symbol} | Qty: {quantity} | P&L: ₹{pnl:.2f}")
+                    # Only add if not already seen (deduplication)
+                    if unique_key not in unique_positions:
+                        position_info = {
+                            "symbol": symbol,
+                            "quantity": quantity,
+                            "average_price": avg_price,
+                            "last_price": last_price,
+                            "pnl": round(pnl, 2),
+                            "product": product,
+                            "exchange": position.get('exchange', ''),
+                            "instrument_token": position.get('instrument_token', '')
+                        }
+                        
+                        unique_positions[unique_key] = position_info
+                        real_positions.append(position_info)
+                        
+                        logger.info(f"📊 [REAL POSITIONS] Position: {symbol} | Qty: {quantity} | P&L: ₹{pnl:.2f}")
+                    else:
+                        logger.info(f"📊 [REAL POSITIONS] DUPLICATE SKIPPED: {unique_key}")
             
             total_pnl = sum(pos["pnl"] for pos in real_positions)
             logger.info(f"📊 [REAL POSITIONS] TOTAL: {len(real_positions)} positions, ₹{total_pnl:.2f} P&L")
