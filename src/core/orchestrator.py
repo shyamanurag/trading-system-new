@@ -1848,31 +1848,39 @@ class TradingOrchestrator:
             self.strategies.clear()
             self.active_strategies.clear()
             
-            # NEW SOPHISTICATED STRATEGIES - 4 Specialists
+            # FIXED: Original strategies only - no emergency systems
             strategy_configs = {
-                'professional_options_engine': {'name': 'ProfessionalOptionsEngine', 'config': {}},
-                'nifty_intelligence_engine': {'name': 'NiftyIntelligenceEngine', 'config': {}},
-                'smart_intraday_options': {'name': 'SmartIntradayOptions', 'config': {}},
-                'market_microstructure_edge': {'name': 'MarketMicrostructureEdge', 'config': {}}
+                'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
+                'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},
+                'volume_profile_scalper': {'name': 'EnhancedVolumeProfileScalper', 'config': {}},
+                'news_impact_scalper': {'name': 'EnhancedNewsImpactScalper', 'config': {}},
+                'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}},
+                'confluence_amplifier': {'name': 'ConfluenceAmplifier', 'config': {}}
             }
             
             self.logger.info(f"Loading {len(strategy_configs)} trading strategies...")
             
             for strategy_key, strategy_info in strategy_configs.items():
                 try:
-                    # Import NEW sophisticated strategy classes
-                    if strategy_key == 'professional_options_engine':
-                        from strategies.professional_options_engine import ProfessionalOptionsEngine
-                        strategy_instance = ProfessionalOptionsEngine()
-                    elif strategy_key == 'nifty_intelligence_engine':
-                        from strategies.nifty_intelligence_engine import NiftyIntelligenceEngine
-                        strategy_instance = NiftyIntelligenceEngine()
-                    elif strategy_key == 'smart_intraday_options':
-                        from strategies.smart_intraday_options import SmartIntradayOptions
-                        strategy_instance = SmartIntradayOptions()
-                    elif strategy_key == 'market_microstructure_edge':
-                        from strategies.market_microstructure_edge import MarketMicrostructureEdge
-                        strategy_instance = MarketMicrostructureEdge()
+                    # Import strategy class
+                    if strategy_key == 'momentum_surfer':
+                        from strategies.momentum_surfer import EnhancedMomentumSurfer
+                        strategy_instance = EnhancedMomentumSurfer(strategy_info['config'])
+                    elif strategy_key == 'volatility_explosion':
+                        from strategies.volatility_explosion import EnhancedVolatilityExplosion
+                        strategy_instance = EnhancedVolatilityExplosion(strategy_info['config'])
+                    elif strategy_key == 'volume_profile_scalper':
+                        from strategies.volume_profile_scalper import EnhancedVolumeProfileScalper
+                        strategy_instance = EnhancedVolumeProfileScalper(strategy_info['config'])
+                    elif strategy_key == 'news_impact_scalper':
+                        from strategies.news_impact_scalper import EnhancedNewsImpactScalper
+                        strategy_instance = EnhancedNewsImpactScalper(strategy_info['config'])
+                    elif strategy_key == 'regime_adaptive_controller':
+                        from strategies.regime_adaptive_controller import RegimeAdaptiveController
+                        strategy_instance = RegimeAdaptiveController(strategy_info['config'])
+                    elif strategy_key == 'confluence_amplifier':
+                        from strategies.confluence_amplifier import ConfluenceAmplifier
+                        strategy_instance = ConfluenceAmplifier(strategy_info['config'])
                     else:
                         continue
                     
@@ -2064,18 +2072,32 @@ class TradingOrchestrator:
                     self.logger.warning(f"Could not get trade engine status: {e}")
                     total_trades = 0
             
-            # Get positions from position tracker
+            # CRITICAL FIX: Sync with REAL Zerodha positions FIRST
+            try:
+                if self.trade_engine and hasattr(self.trade_engine, 'sync_actual_zerodha_positions'):
+                    self.logger.info("🔄 Syncing orchestrator position tracker with REAL Zerodha positions...")
+                    actual_positions = await self.trade_engine.sync_actual_zerodha_positions()
+                    if actual_positions:
+                        self.logger.info(f"✅ Synced with {len(actual_positions)} REAL Zerodha positions")
+                    else:
+                        self.logger.warning("⚠️ No positions returned from Zerodha sync")
+                except Exception as sync_error:
+                    self.logger.error(f"❌ Failed to sync with Zerodha positions: {sync_error}")
+            
+            # Get positions from position tracker (NOW includes REAL Zerodha positions)
             if self.position_tracker:
                 try:
                     positions = getattr(self.position_tracker, 'positions', {})
                     active_positions = len(positions)
                     
-                    # Calculate daily P&L from positions
+                    # Calculate daily P&L from positions (NOW reflects REAL P&L)
                     for position in positions.values():
                         if isinstance(position, dict):
                             daily_pnl += position.get('unrealized_pnl', 0.0)
                         else:
                             daily_pnl += getattr(position, 'unrealized_pnl', 0.0)
+                    
+                    self.logger.info(f"📊 Position tracker: {active_positions} positions, ₹{daily_pnl:.2f} total P&L")
                 except Exception as e:
                     self.logger.warning(f"Could not get position data: {e}")
             
