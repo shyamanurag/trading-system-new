@@ -65,9 +65,29 @@ async def get_current_positions(db: Session = Depends(get_db)):
                 last_price = position.get('last_price', average_price)
                 unrealized_pnl = position.get('unrealised_pnl', 0)
                 
-                # Calculate P&L percentage
-                position_value = average_price * abs(quantity)
-                pnl_percent = (unrealized_pnl / position_value) * 100 if position_value > 0 else 0
+                # CRITICAL FIX: For options, use premium-based P&L calculation
+                # Check if this is an options symbol (contains CE or PE)
+                is_options = 'CE' in symbol or 'PE' in symbol
+                
+                if is_options:
+                    # For OPTIONS: P&L should be based on PREMIUM, not notional value
+                    # Zerodha API sometimes gives notional-based P&L for options
+                    # Recalculate using premium-based logic
+                    position_value = average_price * abs(quantity)  # Premium-based position value
+                    manual_pnl = (last_price - average_price) * abs(quantity)  # Premium-based P&L
+                    
+                    # Use manual calculation for options, Zerodha's for stocks
+                    final_pnl = manual_pnl
+                    logger.info(f"📊 OPTIONS P&L CALCULATION: {symbol}")
+                    logger.info(f"   Entry Premium: ₹{average_price:.2f} × {abs(quantity)} = ₹{position_value:.2f}")
+                    logger.info(f"   Current Premium: ₹{last_price:.2f} × {abs(quantity)} = ₹{last_price * abs(quantity):.2f}")
+                    logger.info(f"   Manual P&L: ₹{manual_pnl:.2f} | Zerodha P&L: ₹{unrealized_pnl:.2f}")
+                else:
+                    # For STOCKS: Use Zerodha's P&L directly
+                    position_value = average_price * abs(quantity)
+                    final_pnl = unrealized_pnl
+                
+                pnl_percent = (final_pnl / position_value) * 100 if position_value > 0 else 0
                 
                 position_info = {
                     "symbol": symbol,

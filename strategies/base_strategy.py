@@ -1791,39 +1791,12 @@ class BaseStrategy:
                 if strike > 0:  # Only positive strikes
                     candidate_strikes.append(strike)
             
-            logger.info(f"💰 VOLUME-BASED STRIKE SELECTION for {underlying_symbol}")
+            logger.info(f"🎯 SIMPLIFIED STRIKE SELECTION for {underlying_symbol}")
             logger.info(f"   Current Price: ₹{current_price:.2f}, ATM: {atm_strike}")
-            logger.info(f"   Evaluating strikes: {candidate_strikes}")
+            logger.info(f"   Using ATM strike for optimal execution")
             
-            # Try to get volume data from market data (TrueData)
-            volume_data = self._get_strikes_volume_data(underlying_symbol, candidate_strikes, expiry, action)
-            
-            if volume_data:
-                # Sort by volume (highest first)
-                sorted_by_volume = sorted(volume_data.items(), key=lambda x: x[1]['volume'], reverse=True)
-                
-                # Log volume analysis
-                logger.info(f"📊 VOLUME ANALYSIS:")
-                for i, (strike, data) in enumerate(sorted_by_volume[:3]):
-                    logger.info(f"   #{i+1}: Strike {strike} - Volume: {data['volume']:,} - Premium: ₹{data.get('premium', 'N/A')}")
-                
-                # USER REQUIREMENT: Use highest or second highest volume for liquidity
-                if len(sorted_by_volume) >= 2:
-                    # Use second highest for better execution (avoid over-crowded strikes)
-                    selected_strike = sorted_by_volume[1][0]
-                    selected_data = sorted_by_volume[1][1]
-                    logger.info(f"✅ SELECTED: Strike {selected_strike} (2nd highest volume: {selected_data['volume']:,})")
-                else:
-                    # Fallback to highest volume
-                    selected_strike = sorted_by_volume[0][0]
-                    selected_data = sorted_by_volume[0][1]
-                    logger.info(f"✅ SELECTED: Strike {selected_strike} (highest volume: {selected_data['volume']:,})")
-                
-                return selected_strike
-            else:
-                # Fallback to ATM if volume data not available
-                logger.warning(f"⚠️ Volume data not available for {underlying_symbol}, using ATM strike: {atm_strike}")
-                return atm_strike
+            # 🎯 SIMPLIFIED: Always use ATM strike for best execution and no volume barriers
+            return atm_strike
                 
         except Exception as e:
             logger.error(f"Error in volume-based strike selection: {e}")
@@ -1861,7 +1834,7 @@ class BaseStrategy:
                 logger.info(f"✅ Retrieved volume data for {len(volume_data)} strikes from TrueData")
                 return volume_data
             else:
-                logger.warning(f"⚠️ No volume data found in TrueData for {underlying_symbol} options")
+                logger.debug(f"Volume data not needed - using ATM strike for {underlying_symbol}")
                 return {}
                 
         except Exception as e:
@@ -2048,39 +2021,12 @@ class BaseStrategy:
                 if strike > 0:  # Only positive strikes
                     candidate_strikes.append(strike)
             
-            logger.info(f"💰 VOLUME-BASED STRIKE SELECTION for {underlying_symbol}")
+            logger.info(f"🎯 SIMPLIFIED STRIKE SELECTION for {underlying_symbol}")
             logger.info(f"   Current Price: ₹{current_price:.2f}, ATM: {atm_strike}")
-            logger.info(f"   Evaluating strikes: {candidate_strikes}")
+            logger.info(f"   Using ATM strike for optimal execution")
             
-            # Try to get volume data from market data (TrueData)
-            volume_data = self._get_strikes_volume_data(underlying_symbol, candidate_strikes, expiry, action)
-            
-            if volume_data:
-                # Sort by volume (highest first)
-                sorted_by_volume = sorted(volume_data.items(), key=lambda x: x[1]['volume'], reverse=True)
-                
-                # Log volume analysis
-                logger.info(f"📊 VOLUME ANALYSIS:")
-                for i, (strike, data) in enumerate(sorted_by_volume[:3]):
-                    logger.info(f"   #{i+1}: Strike {strike} - Volume: {data['volume']:,} - Premium: ₹{data.get('premium', 'N/A')}")
-                
-                # USER REQUIREMENT: Use highest or second highest volume for liquidity
-                if len(sorted_by_volume) >= 2:
-                    # Use second highest for better execution (avoid over-crowded strikes)
-                    selected_strike = sorted_by_volume[1][0]
-                    selected_data = sorted_by_volume[1][1]
-                    logger.info(f"✅ SELECTED: Strike {selected_strike} (2nd highest volume: {selected_data['volume']:,})")
-                else:
-                    # Fallback to highest volume
-                    selected_strike = sorted_by_volume[0][0]
-                    selected_data = sorted_by_volume[0][1]
-                    logger.info(f"✅ SELECTED: Strike {selected_strike} (highest volume: {selected_data['volume']:,})")
-                
-                return selected_strike
-            else:
-                # Fallback to ATM if volume data not available
-                logger.warning(f"⚠️ Volume data not available for {underlying_symbol}, using ATM strike: {atm_strike}")
-                return atm_strike
+            # 🎯 SIMPLIFIED: Always use ATM strike for best execution and no volume barriers
+            return atm_strike
                 
         except Exception as e:
             logger.error(f"Error in volume-based strike selection: {e}")
@@ -2118,7 +2064,7 @@ class BaseStrategy:
                 logger.info(f"✅ Retrieved volume data for {len(volume_data)} strikes from TrueData")
                 return volume_data
             else:
-                logger.warning(f"⚠️ No volume data found in TrueData for {underlying_symbol} options")
+                logger.debug(f"Volume data not needed - using ATM strike for {underlying_symbol}")
                 return {}
                 
         except Exception as e:

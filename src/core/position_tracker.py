@@ -125,11 +125,16 @@ class ProductionPositionTracker:
                 position.last_updated = now
                 position.side = side
                 
-                # Calculate PnL
+                # CRITICAL FIX: Calculate PnL correctly for options vs stocks
+                # For OPTIONS, price is PREMIUM. For STOCKS, price is share price.
                 if side == 'long':
                     position.unrealized_pnl = (price - position.average_price) * position.quantity
                 else:
                     position.unrealized_pnl = (position.average_price - price) * position.quantity
+                
+                # Log for options debugging
+                if 'CE' in symbol or 'PE' in symbol:
+                    self.logger.info(f"📊 OPTIONS P&L UPDATE: {symbol} | Entry: ₹{position.average_price:.2f} | Current: ₹{price:.2f} | P&L: ₹{position.unrealized_pnl:.2f}")
                 
             else:
                 # Create new position
@@ -249,11 +254,14 @@ class ProductionPositionTracker:
             total_unrealized_pnl = sum(pos.unrealized_pnl for pos in self.positions.values())
             total_invested = sum(abs(pos.average_price * pos.quantity) for pos in self.positions.values())
             
+            # CRITICAL FIX: Daily P&L MUST include unrealized P&L from open positions
+            current_daily_pnl = self.daily_pnl + total_unrealized_pnl
+            
             return {
                 'total_positions': len(self.positions),
                 'total_unrealized_pnl': total_unrealized_pnl,
                 'total_realized_pnl': self.total_pnl,
-                'daily_pnl': self.daily_pnl,
+                'daily_pnl': current_daily_pnl,  # FIXED: Includes both realized + unrealized
                 'total_invested': total_invested,
                 'win_rate': self.win_rate,
                 'total_trades': self.total_trades,

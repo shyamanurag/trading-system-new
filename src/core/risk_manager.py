@@ -444,8 +444,13 @@ class RiskManager:
                 self.peak_capital = total_capital
                 self.current_drawdown = 0.0
             
-            # Update daily P&L
-            self.daily_pnl = self.position_tracker.daily_pnl
+            # CRITICAL FIX: Update daily P&L to include unrealized P&L from open positions
+            realized_pnl = self.position_tracker.daily_pnl
+            unrealized_pnl = sum(pos.unrealized_pnl for pos in self.position_tracker.positions.values())
+            self.daily_pnl = realized_pnl + unrealized_pnl
+            
+            if unrealized_pnl != 0:
+                logger.info(f"💰 DAILY P&L UPDATE: Realized: ₹{realized_pnl:.2f} + Unrealized: ₹{unrealized_pnl:.2f} = Total: ₹{self.daily_pnl:.2f}")
             
             # Calculate portfolio VaR
             self.portfolio_var = self.var_calculator.calculate_portfolio_var(

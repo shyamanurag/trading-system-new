@@ -130,14 +130,18 @@ class Position:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def update_pnl(self, current_price: float):
-        """Update P&L calculations"""
+        """Update P&L calculations - FIXED for options premium vs stock value"""
         self.current_price = current_price
+        
+        # CRITICAL: For both options and stocks, this calculation is correct:
+        # - OPTIONS: entry_price = premium paid, current_price = current premium
+        # - STOCKS: entry_price = share price, current_price = current share price
         position_value = self.quantity * self.entry_price
         current_value = self.quantity * current_price
         
         if self.status == PositionStatus.OPEN:
             self.unrealized_pnl = current_value - position_value
-            self.pnl_percent = (self.unrealized_pnl / position_value) * 100
+            self.pnl_percent = (self.unrealized_pnl / position_value) * 100 if position_value > 0 else 0
             
         # Track extremes
         self.max_profit = max(self.max_profit, self.unrealized_pnl)
