@@ -23,12 +23,27 @@ async def get_current_positions(db: Session = Depends(get_db)):
         from src.core.orchestrator import get_orchestrator_instance
         orchestrator = get_orchestrator_instance()
         
+        # ENHANCED DEBUGGING: Check each step of connection
+        logger.info(f"📊 Orchestrator available: {orchestrator is not None}")
+        if orchestrator:
+            logger.info(f"📊 Zerodha client available: {orchestrator.zerodha_client is not None}")
+            if orchestrator.zerodha_client:
+                logger.info(f"📊 Zerodha client type: {type(orchestrator.zerodha_client)}")
+        
         if not orchestrator or not orchestrator.zerodha_client:
-            raise HTTPException(status_code=503, detail="Zerodha client not available")
+            error_msg = f"Zerodha client not available - orchestrator: {orchestrator is not None}, client: {orchestrator.zerodha_client is not None if orchestrator else False}"
+            logger.error(f"❌ {error_msg}")
+            raise HTTPException(status_code=503, detail=error_msg)
         
         # Get real positions data from Zerodha API
-        logger.info("📊 Fetching real positions from Zerodha API...")
-        positions_data = await orchestrator.zerodha_client.get_positions()
+        logger.info("📊 Attempting to fetch real positions from Zerodha API...")
+        try:
+            positions_data = await orchestrator.zerodha_client.get_positions()
+            logger.info(f"📊 Zerodha API response type: {type(positions_data)}")
+            logger.info(f"📊 Zerodha API response data: {positions_data}")
+        except Exception as zerodha_error:
+            logger.error(f"❌ Zerodha API call failed: {zerodha_error}")
+            raise HTTPException(status_code=500, detail=f"Zerodha API error: {str(zerodha_error)}")
         
         if not positions_data:
             logger.warning("⚠️ No positions data returned from Zerodha")
