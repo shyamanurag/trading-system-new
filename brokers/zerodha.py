@@ -7,7 +7,7 @@ import asyncio
 import logging
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -807,13 +807,26 @@ class ZerodhaIntegration:
             # Extract unique expiry dates
             expiry_dates = set()
             for contract in options_contracts:
-                expiry_str = contract.get('expiry')
-                if expiry_str:
+                expiry_value = contract.get('expiry')
+                if expiry_value:
                     try:
-                        # Parse expiry date (format: YYYY-MM-DD)
-                        expiry_date = datetime.strptime(expiry_str, '%Y-%m-%d').date()
+                        # Handle both string and datetime.date objects
+                        if isinstance(expiry_value, str):
+                            # Parse expiry date string (format: YYYY-MM-DD)
+                            expiry_date = datetime.strptime(expiry_value, '%Y-%m-%d').date()
+                        elif hasattr(expiry_value, 'date'):
+                            # If it's a datetime object, get the date part
+                            expiry_date = expiry_value.date()
+                        elif isinstance(expiry_value, date):
+                            # If it's already a date object, use directly
+                            expiry_date = expiry_value
+                        else:
+                            # Try to convert to string first, then parse
+                            expiry_date = datetime.strptime(str(expiry_value), '%Y-%m-%d').date()
+                        
                         expiry_dates.add(expiry_date)
-                    except ValueError:
+                    except (ValueError, AttributeError) as e:
+                        logger.debug(f"⚠️ Could not parse expiry '{expiry_value}' for contract: {e}")
                         continue
             
             # Convert to list and sort
