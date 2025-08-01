@@ -82,8 +82,8 @@ async def get_all_positions():
                     # Create unique key to prevent duplicates
                     unique_key = f"{symbol}_{quantity}_{product}"
                     
-                    # CRITICAL FIX: Use Zerodha's actual unrealised_pnl field for accuracy
-                    pnl = float(position.get('unrealised_pnl', 0) or 0)
+                    # CRITICAL FIX: Use Zerodha's pnl field (try multiple field names)
+                    pnl = float(position.get('pnl', 0) or position.get('unrealised_pnl', 0) or position.get('day_pnl', 0) or 0)
                     avg_price = float(position.get('average_price', 0) or 0)
                     last_price = float(position.get('last_price', 0) or 0)
                     
