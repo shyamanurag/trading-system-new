@@ -753,11 +753,15 @@ router_configs = [
     ('zerodha_auth', '', ('zerodha',)),  # Already has /api/zerodha prefix
     ('zerodha_daily_auth', '', ('zerodha-daily',)),  # Mount at root, has /zerodha prefix
     ('zerodha_refresh', '/api/zerodha/refresh', ('zerodha-refresh',)),  # CRITICAL FIX: Mount zerodha refresh router with prefix
+    ('zerodha_analytics', '/api', ('zerodha-analytics',)),  # CRITICAL FIX: Mount zerodha analytics for real position data
     ('token_diagnostic', '/api/v1', ('token-diagnostic',)),  # Token debugging endpoints
     ('zerodha_multi_user', '', ('zerodha-multi',)),  # Mount at root, has /zerodha-multi prefix
     ('zerodha_manual_auth', '', ('zerodha-manual',)),  # Mount at root - router already has /auth/zerodha prefix
     ('daily_auth_workflow', '', ('daily-auth',)),  # Mount at root, has /daily-auth prefix
     ('webhooks', '/api/v1/webhooks', ('webhooks',)),
+    
+    # CRITICAL FIX: Add missing positions API that talks directly to Zerodha
+    ('positions', '', ('positions',)),  # Mount positions API for real position data
     
     # WebSocket
     ('websocket', '/ws', ('websocket',)),
