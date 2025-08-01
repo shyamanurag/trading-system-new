@@ -53,13 +53,13 @@ class OrderRateLimiter:
                 'message': f'Symbol {symbol} temporarily banned due to failures'
             }
         
-        # Check for duplicate orders
-        order_signature = f"{symbol}:{action}:{quantity}:{int(time.time() // 60)}"
+        # Check for duplicate orders (use shorter time window to allow retries after fixes)
+        order_signature = f"{symbol}:{action}:{quantity}:{int(time.time() // 10)}"  # 10-second window instead of 60
         if order_signature in self.processed_signals:
             return {
                 'allowed': False,
                 'reason': 'DUPLICATE_ORDER',
-                'message': f'Duplicate order blocked: {symbol} {action}'
+                'message': f'Duplicate order blocked: {symbol} {action} (wait 10s for retry)'
             }
         
         return {
