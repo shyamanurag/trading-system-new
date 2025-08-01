@@ -158,16 +158,17 @@ const UserPerformanceDashboard = ({ tradingData }) => {
                 setSelectedUser(null);
             }
 
-            // Set summary metrics from real data
+            // CRITICAL FIX: Use REAL dynamic data instead of hardcoded values
+            const realCapital = trading.aum || trading.capital || 75000; // Use real capital, fallback to your ₹75,000
             setSummaryMetrics({
-                todayPnL: trading.totalPnL || 0,
-                todayPnLPercent: ((trading.totalPnL || 0) / 1000000) * 100,
-                activeUsers: trading.activeUsers || 1,
-                newUsersThisWeek: trading.activeUsers || 1,
-                totalTrades: trading.totalTrades || 0,
-                winRate: trading.successRate || 0,
-                totalAUM: 1000000 + (trading.totalPnL || 0),
-                aumGrowth: ((trading.totalPnL || 0) / 1000000) * 100
+                todayPnL: trading.totalPnL || trading.daily_pnl || 0,
+                todayPnLPercent: realCapital > 0 ? ((trading.totalPnL || trading.daily_pnl || 0) / realCapital) * 100 : 0,
+                activeUsers: trading.activeUsers || (trading.is_active ? 1 : 0),
+                newUsersThisWeek: trading.activeUsers || (trading.is_active ? 1 : 0),
+                totalTrades: trading.totalTrades || trading.total_trades || 0,
+                winRate: trading.successRate || trading.win_rate || 0,
+                totalAUM: realCapital + (trading.totalPnL || trading.daily_pnl || 0), // Real capital + P&L
+                aumGrowth: realCapital > 0 ? ((trading.totalPnL || trading.daily_pnl || 0) / realCapital) * 100 : 0
             });
 
             // FIXED: Fetch REAL daily P&L data from API - NO MOCK DATA
