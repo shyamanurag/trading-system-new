@@ -1,18 +1,14 @@
-# RESTORED: Strategies must be loaded at deployment time
-# Fixed async/await issues in all strategies before restoring imports
+# NEW SOPHISTICATED STRATEGIES - 4 Specialists
+# Each strategy is specialized for specific market segments
 
-from .momentum_surfer import EnhancedMomentumSurfer
-from .volatility_explosion import EnhancedVolatilityExplosion
-from .volume_profile_scalper import EnhancedVolumeProfileScalper
-from .news_impact_scalper import EnhancedNewsImpactScalper
-from .regime_adaptive_controller import RegimeAdaptiveController
-from .confluence_amplifier import ConfluenceAmplifier
+from .professional_options_engine import ProfessionalOptionsEngine
+from .nifty_intelligence_engine import NiftyIntelligenceEngine
+from .smart_intraday_options import SmartIntradayOptions
+from .market_microstructure_edge import MarketMicrostructureEdge
 
 __all__ = [
-    "EnhancedMomentumSurfer",
-    "EnhancedVolatilityExplosion",
-    "EnhancedVolumeProfileScalper", 
-    "EnhancedNewsImpactScalper",
-    "RegimeAdaptiveController",
-    "ConfluenceAmplifier"
+    "ProfessionalOptionsEngine",     # PURE OPTIONS SPECIALIST
+    "NiftyIntelligenceEngine",       # NIFTY INDEX SPECIALIST  
+    "SmartIntradayOptions",          # EQUITY STOCKS SPECIALIST
+    "MarketMicrostructureEdge"       # MARKET MICROSTRUCTURE SPECIALIST
 ]
