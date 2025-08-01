@@ -2355,11 +2355,11 @@ async def get_confidence_debug():
         
         debug_info = {
             "timestamp": datetime.now().isoformat(),
-            "confidence_threshold": 9.0,
+            "confidence_threshold": 0.9,
             "scoring_explanation": {
-                "threshold": "Signals must have confidence >= 9.0 to execute",
-                "scale": "Confidence is measured on a scale of 0.0 to 10.0",
-                "current_behavior": "Signals with 0.9 confidence are correctly being scrapped"
+                "threshold": "Signals must have confidence >= 0.9 (90%) to execute",
+                "scale": "Confidence is measured on a scale of 0.0 to 1.0 (0% to 100%)",
+                "current_behavior": "Signals with 0.9 confidence (90%) will now execute!"
             }
         }
         
@@ -2385,10 +2385,13 @@ async def get_confidence_debug():
         
         # Add clarification about the logs
         debug_info["log_interpretation"] = {
-            "when_you_see": "🗑️ LOW CONFIDENCE SIGNAL SCRAPPED for RELIANCE - Confidence: 0.9/10",
-            "this_means": "Confidence score is 0.9 out of 10 (which is < 9.0 threshold)",
-            "action_taken": "Signal is correctly scrapped and not executed",
-            "for_execution": "Need confidence >= 9.0 (like 9.1/10, 9.5/10, etc.)"
+            "FIXED_SCALE_ISSUE": "Confidence scale was mixed - strategies used 0.0-1.0, base_strategy expected 0.0-10.0",
+            "SOLUTION_APPLIED": "Added confidence * 10.0 conversion in all signal-generating strategies",
+            "now_when_you_see": "🗑️ LOW CONFIDENCE SIGNAL SCRAPPED for RELIANCE - Confidence: 9.0/10",
+            "this_means": "Strategy generated 0.9 confidence, converted to 9.0, which meets >= 9.0 threshold",
+            "action_taken": "Signal will now execute (was previously scrapped due to scale mismatch)",
+            "strategies_fixed": ["momentum_surfer", "volatility_explosion", "news_impact_scalper", "volume_profile_scalper", "confluence_amplifier"],
+            "strategy_not_fixed": "regime_adaptive_controller (meta-strategy, doesn't generate signals)"
         }
         
         return debug_info
