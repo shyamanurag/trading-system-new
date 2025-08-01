@@ -664,11 +664,11 @@ class BaseStrategy:
             # 🎯 CRITICAL FIX: Always BUY options (no selling due to margin requirements)
             final_action = 'BUY'  # Force all options signals to be BUY
             
-            # Calculate risk metrics using OPTIONS pricing
+            # Calculate risk metrics using OPTIONS pricing (handle 0.0 entry price)
             risk_amount = abs(options_entry_price - options_stop_loss)
             reward_amount = abs(options_target - options_entry_price)
-            risk_percent = (risk_amount / options_entry_price) * 100
-            reward_percent = (reward_amount / options_entry_price) * 100
+            risk_percent = (risk_amount / options_entry_price) * 100 if options_entry_price > 0 else 0
+            reward_percent = (reward_amount / options_entry_price) * 100 if options_entry_price > 0 else 0
             risk_reward_ratio = reward_amount / risk_amount if risk_amount > 0 else 0
             
             # CRITICAL FIX: Generate unique signal_id for tracking
