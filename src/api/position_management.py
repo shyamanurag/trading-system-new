@@ -41,6 +41,14 @@ async def get_all_positions():
             logger.info(f"📊 [REAL POSITIONS] Zerodha API response type: {type(positions_data)}")
             logger.info(f"📊 [REAL POSITIONS] Zerodha API response data: {positions_data}")
             
+            # ENHANCED DEBUG: Show net vs day positions separately
+            net_positions = positions_data.get('net', [])
+            day_positions = positions_data.get('day', [])
+            logger.info(f"📊 [REAL POSITIONS] NET positions count: {len(net_positions)}")
+            logger.info(f"📊 [REAL POSITIONS] DAY positions count: {len(day_positions)}")
+            logger.info(f"📊 [REAL POSITIONS] NET positions data: {net_positions}")
+            logger.info(f"📊 [REAL POSITIONS] DAY positions data: {day_positions}")
+            
             if not positions_data:
                 logger.warning("⚠️ [REAL POSITIONS] No positions data returned from Zerodha")
                 return {
@@ -52,11 +60,14 @@ async def get_all_positions():
                     "timestamp": datetime.now().isoformat()
                 }
             
-            # Process real Zerodha positions
+            # Process real Zerodha positions - CRITICAL FIX: Use only NET positions to avoid duplicates
+            # NET positions = current actual positions in account
+            # DAY positions = intraday trades that may include closed positions
             real_positions = []
             net_positions = positions_data.get('net', [])
-            day_positions = positions_data.get('day', [])
-            all_positions = net_positions + day_positions
+            
+            logger.info(f"📊 [REAL POSITIONS] Using NET positions only to avoid duplicates from DAY positions")
+            all_positions = net_positions  # Only use net positions for accuracy
             
             logger.info(f"📊 [REAL POSITIONS] Processing {len(all_positions)} positions from Zerodha")
             
@@ -64,9 +75,12 @@ async def get_all_positions():
                 quantity = position.get('quantity', 0)
                 if quantity != 0:  # Only include active positions
                     symbol = position.get('tradingsymbol', '')
-                    pnl = float(position.get('pnl', 0) or 0)
+                    # CRITICAL FIX: Use Zerodha's actual unrealised_pnl field for accuracy
+                    pnl = float(position.get('unrealised_pnl', 0) or 0)
                     avg_price = float(position.get('average_price', 0) or 0)
                     last_price = float(position.get('last_price', 0) or 0)
+                    
+                    logger.info(f"📊 [REAL POSITIONS] Raw position data: {position}")
                     
                     real_positions.append({
                         "symbol": symbol,
