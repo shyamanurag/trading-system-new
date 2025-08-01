@@ -1258,26 +1258,7 @@ class BaseStrategy:
     def _get_options_premium(self, options_symbol: str, fallback_price: float, option_type: str) -> float:
         """Get actual options premium - PRIMARY from TrueData, SECONDARY from Zerodha for validation only"""
         try:
-            # 🎯 FIRST: Check orchestrator's pre-fetched LTP cache
-            try:
-                from src.core.orchestrator import get_orchestrator_instance
-                orchestrator = get_orchestrator_instance()
-                
-                if orchestrator and hasattr(orchestrator, 'options_ltp_cache'):
-                    cache_entry = orchestrator.options_ltp_cache.get(options_symbol)
-                    if cache_entry:
-                        # Check if cache is still valid (within TTL)
-                        cache_age = (datetime.now() - cache_entry['timestamp']).total_seconds()
-                        if cache_age <= cache_entry['ttl']:
-                            cached_ltp = cache_entry['ltp']
-                            logger.info(f"✅ CACHED LTP: {options_symbol} = ₹{cached_ltp} (age: {cache_age:.1f}s)")
-                            return float(cached_ltp)
-                        else:
-                            logger.debug(f"Cache expired for {options_symbol} (age: {cache_age:.1f}s)")
-            except Exception as e:
-                logger.debug(f"Could not access LTP cache for {options_symbol}: {e}")
-                
-            # 🎯 SECONDARY: Get options premium from TrueData cache (USER PREFERENCE)
+            # 🎯 PRIMARY: Get options premium from TrueData cache (USER PREFERENCE)
             try:
                 from data.truedata_client import live_market_data
                 from config.options_symbol_mapping import convert_zerodha_to_truedata_options

@@ -1418,27 +1418,31 @@ class TradingOrchestrator:
                         strategy_instance = strategy_info['instance']
                         self.logger.info(f"🔍 Processing strategy: {strategy_key}")
                         
-                        # 🎯 PRE-FETCH LTP for common options BEFORE signal generation
-                        await self._prefetch_options_ltp(transformed_data)
-                        
                         # Call strategy's on_market_data method with TRANSFORMED data
                         await strategy_instance.on_market_data(transformed_data)
                         
-                        # Collect signals and track generation count
+                        # Collect signals and POST-PROCESS them for LTP validation
                         signals_generated = 0
                         if hasattr(strategy_instance, 'current_positions'):
                             for symbol, signal in strategy_instance.current_positions.items():
                                 if isinstance(signal, dict) and 'action' in signal and signal.get('action') != 'HOLD':
-                                    # Add strategy info to signal
-                                    signal['strategy'] = strategy_key
-                                    signal['signal_id'] = f"{strategy_key}_{symbol}_{int(datetime.now().timestamp())}"
-                                    signal['generated_at'] = datetime.now().isoformat()
-                                    all_signals.append(signal.copy())  # Copy signal to avoid reference issues
-                                    signals_generated += 1
-                                    self.logger.info(f"🚨 SIGNAL COLLECTED: {strategy_key} -> {signal}")
                                     
-                                    # TRACK: Increment signals generated count
-                                    self._track_signal_generated(strategy_key, signal)
+                                    # 🎯 POST-SIGNAL LTP VALIDATION: Fix 0.0 entry prices
+                                    validated_signal = await self._validate_and_fix_signal_ltp(signal)
+                                    
+                                    if validated_signal and validated_signal.get('entry_price', 0) > 0:
+                                        # Add strategy info to validated signal
+                                        validated_signal['strategy'] = strategy_key
+                                        validated_signal['signal_id'] = f"{strategy_key}_{symbol}_{int(datetime.now().timestamp())}"
+                                        validated_signal['generated_at'] = datetime.now().isoformat()
+                                        all_signals.append(validated_signal.copy())
+                                        signals_generated += 1
+                                        self.logger.info(f"✅ VALIDATED SIGNAL: {strategy_key} -> {validated_signal}")
+                                        
+                                        # TRACK: Increment signals generated count
+                                        self._track_signal_generated(strategy_key, validated_signal)
+                                    else:
+                                        self.logger.warning(f"❌ REJECTED SIGNAL: {strategy_key} -> {signal.get('symbol')} (no valid LTP)")
                         
                         if signals_generated == 0:
                             self.logger.info(f"📝 {strategy_key}: No signals generated (normal operation)")
@@ -2486,64 +2490,61 @@ class TradingOrchestrator:
             self.logger.error(f"❌ Error updating all Zerodha tokens: {e}")
             return False
 
-    async def _prefetch_options_ltp(self, market_data: Dict) -> None:
-        """Pre-fetch LTP for common options symbols to prevent 0.0 rejections"""
+    async def _validate_and_fix_signal_ltp(self, signal: Dict) -> Optional[Dict]:
+        """Validate signal and fetch real LTP for options if entry_price is 0.0"""
         try:
-            # Get top 3 most active symbols from market data
-            active_symbols = []
-            for symbol, data in market_data.items():
-                volume = data.get('volume', 0) or data.get('vol', 0)
-                if volume > 0:
-                    active_symbols.append((symbol, volume))
+            # Check if this is an options signal with 0.0 entry price
+            symbol = signal.get('symbol', '')
+            entry_price = signal.get('entry_price', 0)
             
-            # Sort by volume and take top 3
-            active_symbols.sort(key=lambda x: x[1], reverse=True)
-            top_symbols = [symbol for symbol, _ in active_symbols[:3]]
+            # If entry price is valid, return as-is
+            if entry_price > 0:
+                return signal
             
-            if not top_symbols:
-                return
-                
-            self.logger.info(f"🎯 PRE-FETCHING LTP for top symbols: {', '.join(top_symbols)}")
-            
-            # Pre-fetch options for each symbol
-            for symbol in top_symbols:
+            # If it's an options signal (contains CE/PE), fetch real LTP
+            if any(opt_type in symbol for opt_type in ['CE', 'PE']) and self.zerodha_client:
                 try:
-                    symbol_data = market_data.get(symbol, {})
-                    current_price = symbol_data.get('ltp') or symbol_data.get('price') or symbol_data.get('last_price')
+                    self.logger.info(f"🎯 FETCHING REAL LTP for {symbol}...")
+                    real_ltp = await self.zerodha_client.get_options_ltp(symbol)
                     
-                    if not current_price or current_price <= 0:
-                        continue
+                    if real_ltp and real_ltp > 0:
+                        # Create corrected signal with real LTP
+                        corrected_signal = signal.copy()
                         
-                    # Generate common options symbols (CE and PE at ATM)
-                    atm_strike = round(current_price / 50) * 50  # Zerodha 50-point intervals
-                    
-                    # Generate symbols for next expiry (25AUG format)
-                    ce_symbol = f"{symbol}25AUG{int(atm_strike)}CE"
-                    pe_symbol = f"{symbol}25AUG{int(atm_strike)}PE"
-                    
-                    # Pre-fetch LTP for both CE and PE
-                    if self.zerodha_client:
-                        for options_symbol in [ce_symbol, pe_symbol]:
-                            try:
-                                ltp = await self.zerodha_client.get_options_ltp(options_symbol)
-                                if ltp and ltp > 0:
-                                    self.logger.info(f"✅ PRE-FETCHED: {options_symbol} = ₹{ltp}")
-                                    # Store in a cache for quick access
-                                    if not hasattr(self, 'options_ltp_cache'):
-                                        self.options_ltp_cache = {}
-                                    self.options_ltp_cache[options_symbol] = {
-                                        'ltp': ltp,
-                                        'timestamp': datetime.now(),
-                                        'ttl': 30  # 30 seconds TTL
-                                    }
-                            except Exception as e:
-                                self.logger.debug(f"Could not pre-fetch {options_symbol}: {e}")
-                                
+                        # Apply tick size rounding
+                        rounded_ltp = round(real_ltp / 0.05) * 0.05
+                        corrected_signal['entry_price'] = rounded_ltp
+                        
+                        # Recalculate stop loss and target based on real LTP
+                        if 'stop_loss' in signal and 'target' in signal:
+                            # Use 15% risk and 2:1 reward ratio for options
+                            risk_amount = rounded_ltp * 0.15
+                            reward_amount = risk_amount * 2.0
+                            
+                            corrected_signal['stop_loss'] = round((rounded_ltp - risk_amount) / 0.05) * 0.05
+                            corrected_signal['target'] = round((rounded_ltp + reward_amount) / 0.05) * 0.05
+                            
+                            # Ensure stop loss doesn't go below 5% of entry
+                            min_stop = rounded_ltp * 0.05
+                            corrected_signal['stop_loss'] = max(corrected_signal['stop_loss'], min_stop)
+                        
+                        self.logger.info(f"✅ LTP FIXED: {symbol} = ₹{rounded_ltp} (SL: ₹{corrected_signal.get('stop_loss', 0):.2f}, Target: ₹{corrected_signal.get('target', 0):.2f})")
+                        return corrected_signal
+                    else:
+                        self.logger.warning(f"❌ NO REAL LTP available for {symbol}")
+                        return None
+                        
                 except Exception as e:
-                    self.logger.debug(f"Error pre-fetching for {symbol}: {e}")
-                    
+                    self.logger.error(f"Error fetching LTP for {symbol}: {e}")
+                    return None
+            else:
+                # Non-options signal with 0 price - reject
+                self.logger.warning(f"❌ Invalid signal: {symbol} has zero entry price")
+                return None
+                
         except Exception as e:
-            self.logger.debug(f"Error in LTP pre-fetching: {e}")
+            self.logger.error(f"Error validating signal: {e}")
+            return None
 
 
 # Global function to get orchestrator instance
