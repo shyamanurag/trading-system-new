@@ -916,6 +916,11 @@ class BaseStrategy:
     def _validate_options_symbol_exists(self, options_symbol: str) -> bool:
         """Validate if options symbol exists in Zerodha NFO instruments"""
         try:
+            # Log symbol mapping for debugging
+            zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+            if zerodha_symbol != underlying_symbol:
+                logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {zerodha_symbol}")
+            
             # Get orchestrator instance to access Zerodha client
             from src.core.orchestrator import get_orchestrator_instance
             orchestrator = get_orchestrator_instance()
@@ -1100,6 +1105,11 @@ class BaseStrategy:
         Returns list of {date: datetime.date, formatted: str, is_weekly: bool, is_monthly: bool}
         """
         try:
+            # Log symbol mapping for debugging
+            zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+            if zerodha_symbol != underlying_symbol:
+                logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {zerodha_symbol}")
+            
             # Get orchestrator instance to access Zerodha client
             from src.core.orchestrator import get_orchestrator_instance
             orchestrator = get_orchestrator_instance()
@@ -1688,6 +1698,11 @@ class BaseStrategy:
     def _fetch_zerodha_lot_size(self, underlying_symbol: str) -> int:
         """🎯 DYNAMIC: Fetch actual lot size from Zerodha instruments API"""
         try:
+            # Log symbol mapping for debugging
+            zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+            if zerodha_symbol != underlying_symbol:
+                logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {zerodha_symbol}")
+            
             # Get orchestrator instance to access Zerodha client
             from src.core.orchestrator import get_orchestrator_instance
             orchestrator = get_orchestrator_instance()
@@ -1707,8 +1722,8 @@ class BaseStrategy:
                         trading_symbol = instrument.get('tradingsymbol', '')
                         segment = instrument.get('segment', '')
                         
-                        # CRITICAL FIX: Clean symbol matching (remove -I suffix for indices)
-                        clean_underlying = underlying_symbol.replace('-I', '').replace('NIFTY-I', 'NIFTY').replace('BANKNIFTY-I', 'BANKNIFTY')
+                        # CRITICAL FIX: Use proper symbol mapping function
+                        clean_underlying = self._map_truedata_to_zerodha_symbol(underlying_symbol)
                         
                         # Match underlying symbol (e.g., NIFTY, RELIANCE, etc.)
                         if (clean_underlying in trading_symbol and 
@@ -1924,6 +1939,11 @@ class BaseStrategy:
     def _fetch_zerodha_lot_size(self, underlying_symbol: str) -> int:
         """🎯 DYNAMIC: Fetch actual lot size from Zerodha instruments API"""
         try:
+            # Log symbol mapping for debugging
+            zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+            if zerodha_symbol != underlying_symbol:
+                logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {zerodha_symbol}")
+            
             # Get orchestrator instance to access Zerodha client
             from src.core.orchestrator import get_orchestrator_instance
             orchestrator = get_orchestrator_instance()
@@ -1943,8 +1963,8 @@ class BaseStrategy:
                         trading_symbol = instrument.get('tradingsymbol', '')
                         segment = instrument.get('segment', '')
                         
-                        # CRITICAL FIX: Clean symbol matching (remove -I suffix for indices)
-                        clean_underlying = underlying_symbol.replace('-I', '').replace('NIFTY-I', 'NIFTY').replace('BANKNIFTY-I', 'BANKNIFTY')
+                        # CRITICAL FIX: Use proper symbol mapping function
+                        clean_underlying = self._map_truedata_to_zerodha_symbol(underlying_symbol)
                         
                         # Match underlying symbol (e.g., NIFTY, RELIANCE, etc.)
                         if (clean_underlying in trading_symbol and 
