@@ -2504,14 +2504,15 @@ class TradingOrchestrator:
             real_positions = {}
             for symbol, position in all_positions.items():
                 if position.quantity != 0:  # Only active positions
+                    # CRITICAL FIX: Ensure all numeric values are floats, not strings
                     real_positions[symbol] = {
                         'symbol': symbol,
-                        'quantity': position.quantity,
-                        'entry_price': position.average_price,  # FIXED: Use average_price field
-                        'current_price': position.current_price,
-                        'stop_loss': position.stop_loss,
-                        'target': position.target,
-                        'pnl': position.unrealized_pnl,
+                        'quantity': int(position.quantity) if position.quantity else 0,
+                        'entry_price': float(position.average_price) if position.average_price else 0.0,
+                        'current_price': float(position.current_price) if position.current_price else 0.0,
+                        'stop_loss': float(position.stop_loss) if position.stop_loss else 0.0,
+                        'target': float(position.target) if position.target else 0.0,
+                        'pnl': float(position.unrealized_pnl) if position.unrealized_pnl else 0.0,
                         'timestamp': position.entry_time.isoformat() if position.entry_time else None,
                         'source': 'REAL_ZERODHA'
                     }

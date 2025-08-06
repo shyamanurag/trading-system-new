@@ -768,7 +768,7 @@ class BaseStrategy:
                 return None
             
             signal = {
-                'signal_id': f"{self.name}_{symbol}_{int(time.time())}",
+                'signal_id': f"{self.name}_{symbol}_{int(time_module.time())}",
                 'symbol': symbol,
                 'action': action.upper(),
                 'quantity': self._get_capital_constrained_quantity(symbol, symbol, entry_price),
@@ -1664,6 +1664,27 @@ class BaseStrategy:
             logger.error(f"Error getting dynamic lot size for {options_symbol}: {e}")
             return None  # NO FALLBACKS
     
+    def _map_truedata_to_zerodha_symbol(self, truedata_symbol: str) -> str:
+        """Map TrueData symbol format to Zerodha format"""
+        # Direct mapping for common indices
+        symbol_mapping = {
+            'NIFTY-I': 'NIFTY',
+            'BANKNIFTY-I': 'BANKNIFTY', 
+            'FINNIFTY-I': 'FINNIFTY',
+            'MIDCPNIFTY-I': 'MIDCPNIFTY',
+            'SENSEX-I': 'SENSEX',
+            'BANKEX-I': 'BANKEX'
+        }
+        
+        # Check direct mapping first
+        if truedata_symbol in symbol_mapping:
+            return symbol_mapping[truedata_symbol]
+        
+        # For regular stocks, remove any suffixes and clean
+        cleaned_symbol = truedata_symbol.replace('-I', '').replace('-EQ', '').strip()
+        
+        return cleaned_symbol
+    
     def _fetch_zerodha_lot_size(self, underlying_symbol: str) -> int:
         """🎯 DYNAMIC: Fetch actual lot size from Zerodha instruments API"""
         try:
@@ -1686,8 +1707,11 @@ class BaseStrategy:
                         trading_symbol = instrument.get('tradingsymbol', '')
                         segment = instrument.get('segment', '')
                         
+                        # CRITICAL FIX: Clean symbol matching (remove -I suffix for indices)
+                        clean_underlying = underlying_symbol.replace('-I', '').replace('NIFTY-I', 'NIFTY').replace('BANKNIFTY-I', 'BANKNIFTY')
+                        
                         # Match underlying symbol (e.g., NIFTY, RELIANCE, etc.)
-                        if (underlying_symbol in trading_symbol and 
+                        if (clean_underlying in trading_symbol and 
                             segment == 'NFO-OPT' and  # Options only
                             ('CE' in trading_symbol or 'PE' in trading_symbol)):
                             
@@ -1919,8 +1943,11 @@ class BaseStrategy:
                         trading_symbol = instrument.get('tradingsymbol', '')
                         segment = instrument.get('segment', '')
                         
+                        # CRITICAL FIX: Clean symbol matching (remove -I suffix for indices)
+                        clean_underlying = underlying_symbol.replace('-I', '').replace('NIFTY-I', 'NIFTY').replace('BANKNIFTY-I', 'BANKNIFTY')
+                        
                         # Match underlying symbol (e.g., NIFTY, RELIANCE, etc.)
-                        if (underlying_symbol in trading_symbol and 
+                        if (clean_underlying in trading_symbol and 
                             segment == 'NFO-OPT' and  # Options only
                             ('CE' in trading_symbol or 'PE' in trading_symbol)):
                             
