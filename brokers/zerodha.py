@@ -587,6 +587,14 @@ class ZerodhaIntegration:
 
     async def get_positions(self) -> Dict:
         """Get positions with retry"""
+        # CRITICAL FIX: Check if kite client is None
+        if not self.kite:
+            logger.error("❌ Zerodha kite client is None - attempting to reinitialize")
+            self._initialize_kite()
+            if not self.kite:
+                logger.error("❌ Zerodha kite client reinitialize failed")
+                return {'net': [], 'day': []}
+        
         for attempt in range(self.max_retries):
             try:
                 logger.info(f"📊 Getting positions from Zerodha (attempt {attempt + 1})")
@@ -615,6 +623,14 @@ class ZerodhaIntegration:
 
     async def get_margins(self) -> Dict:
         """Get margins with retry"""
+        # CRITICAL FIX: Check if kite client is None
+        if not self.kite:
+            logger.error("❌ Zerodha kite client is None - attempting to reinitialize")
+            self._initialize_kite()
+            if not self.kite:
+                logger.error("❌ Zerodha kite client reinitialize failed")
+                return {'equity': {'available': {'cash': 0}}}
+        
         for attempt in range(self.max_retries):
             try:
                 logger.info(f"📊 Getting margins from Zerodha (attempt {attempt + 1})")
@@ -629,6 +645,14 @@ class ZerodhaIntegration:
 
     async def get_orders(self) -> List[Dict]:
         """Get orders with retry - CRITICAL for trade sync"""
+        # CRITICAL FIX: Check if kite client is None
+        if not self.kite:
+            logger.error("❌ Zerodha kite client is None - attempting to reinitialize")
+            self._initialize_kite()
+            if not self.kite:
+                logger.error("❌ Zerodha kite client reinitialize failed")
+                return []
+        
         for attempt in range(self.max_retries):
             try:
                 logger.info(f"📊 Getting orders from Zerodha (attempt {attempt + 1})")

@@ -251,6 +251,20 @@ class TradeEngine:
                 # CRITICAL DEBUG: Log orchestrator state
                 if orchestrator:
                     self.logger.error(f"❌ Orchestrator exists but zerodha_client is: {getattr(orchestrator, 'zerodha_client', 'MISSING')}")
+                    
+                    # EMERGENCY FIX: Try to reinitialize Zerodha client
+                    self.logger.info("🔄 EMERGENCY: Attempting to reinitialize Zerodha client...")
+                    try:
+                        new_client = await orchestrator._initialize_zerodha_client()
+                        if new_client:
+                            orchestrator.zerodha_client = new_client
+                            self.zerodha_client = new_client
+                            self.logger.info("✅ EMERGENCY: Successfully reinitialized Zerodha client")
+                            return True
+                        else:
+                            self.logger.error("❌ EMERGENCY: Zerodha reinitialize failed")
+                    except Exception as reinit_error:
+                        self.logger.error(f"❌ EMERGENCY: Zerodha reinitialize error: {reinit_error}")
                 else:
                     self.logger.error("❌ No orchestrator instance found")
                 return False
