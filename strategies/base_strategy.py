@@ -29,7 +29,9 @@ class BaseStrategy:
         self.max_signals_per_strategy = 10  # Maximum 10 signals per strategy per hour
         self.signals_generated_this_hour = 0
         self.strategy_signals_this_hour = 0
-        self.hour_start_time = datetime.now()
+        import pytz
+        ist = pytz.timezone('Asia/Kolkata')
+        self.hour_start_time = datetime.now(ist)
         
         # Enhanced cooldown control
         self.scalping_cooldown = 30  # 30 seconds between signals
@@ -55,12 +57,17 @@ class BaseStrategy:
         if not self.last_signal_time:
             return True
         
-        time_since_last = (datetime.now() - self.last_signal_time).total_seconds()
+        import pytz
+        ist = pytz.timezone('Asia/Kolkata')
+        current_time_ist = datetime.now(ist)
+        time_since_last = (current_time_ist - self.last_signal_time).total_seconds()
         return time_since_last >= self.scalping_cooldown
     
     def _check_signal_rate_limits(self) -> bool:
         """Check if signal generation is allowed based on rate limits"""
-        current_time = datetime.now()
+        import pytz
+        ist = pytz.timezone('Asia/Kolkata')
+        current_time = datetime.now(ist)
         
         # Reset hourly counters if hour has passed
         if (current_time - self.hour_start_time).total_seconds() >= 3600:

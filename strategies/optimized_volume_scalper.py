@@ -212,7 +212,9 @@ class OptimizedVolumeScalper(BaseStrategy):
     
     def _are_market_conditions_favorable(self) -> bool:
         """Check if market conditions are favorable for microstructure trading"""
-        current_time = datetime.now()
+        import pytz
+        ist = pytz.timezone('Asia/Kolkata')
+        current_time = datetime.now(ist)
         hour = current_time.hour
         minute = current_time.minute
         

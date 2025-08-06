@@ -1848,14 +1848,13 @@ class TradingOrchestrator:
             self.strategies.clear()
             self.active_strategies.clear()
             
-            # FIXED: Original strategies only - no emergency systems
+            # OPTIONS-FOCUSED STRATEGIES - All updated for options trading
             strategy_configs = {
                 'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
                 'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},
-                'volume_profile_scalper': {'name': 'EnhancedVolumeProfileScalper', 'config': {}},
                 'news_impact_scalper': {'name': 'EnhancedNewsImpactScalper', 'config': {}},
-                'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}},
-                'confluence_amplifier': {'name': 'ConfluenceAmplifier', 'config': {}}
+                'optimized_volume_scalper': {'name': 'OptimizedVolumeScalper', 'config': {}},
+                'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}}
             }
             
             self.logger.info(f"Loading {len(strategy_configs)} trading strategies...")
@@ -1869,18 +1868,15 @@ class TradingOrchestrator:
                     elif strategy_key == 'volatility_explosion':
                         from strategies.volatility_explosion import EnhancedVolatilityExplosion
                         strategy_instance = EnhancedVolatilityExplosion(strategy_info['config'])
-                    elif strategy_key == 'volume_profile_scalper':
-                        from strategies.volume_profile_scalper import EnhancedVolumeProfileScalper
-                        strategy_instance = EnhancedVolumeProfileScalper(strategy_info['config'])
                     elif strategy_key == 'news_impact_scalper':
                         from strategies.news_impact_scalper import EnhancedNewsImpactScalper
                         strategy_instance = EnhancedNewsImpactScalper(strategy_info['config'])
+                    elif strategy_key == 'optimized_volume_scalper':
+                        from strategies.optimized_volume_scalper import OptimizedVolumeScalper
+                        strategy_instance = OptimizedVolumeScalper(strategy_info['config'])
                     elif strategy_key == 'regime_adaptive_controller':
                         from strategies.regime_adaptive_controller import RegimeAdaptiveController
                         strategy_instance = RegimeAdaptiveController(strategy_info['config'])
-                    elif strategy_key == 'confluence_amplifier':
-                        from strategies.confluence_amplifier import ConfluenceAmplifier
-                        strategy_instance = ConfluenceAmplifier(strategy_info['config'])
                     else:
                         continue
                     

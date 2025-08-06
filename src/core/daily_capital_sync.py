@@ -91,8 +91,8 @@ class DailyCapitalSync:
                 logger.error("❌ Failed to fetch margin data from Zerodha")
                 return {}
             
-            # Extract real available capital
-            available_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
+            # Extract real available capital - FIXED: Use correct field mapping
+            available_cash = margins.get('equity', {}).get('available', {}).get('live_balance', 0)
             total_margin = margins.get('equity', {}).get('available', {}).get('collateral', 0)
             
             # Use actual Zerodha user ID from environment
