@@ -96,7 +96,7 @@ class TradeEngine:
         try:
             # Check if paper trading is enabled
             if self.paper_trading_enabled:
-                return await self._process_paper_signal(signal)
+                return await self._process_live_signal(signal)
             else:
                 return await self._process_live_signal(signal)
                 
@@ -128,7 +128,7 @@ class TradeEngine:
                     await asyncio.sleep(batch_delay)
                 
                 if self.paper_trading_enabled:
-                    result = await self._process_paper_signal(signal)
+                    result = await self._process_live_signal(signal)
                 else:
                     result = await self._process_live_signal(signal)
                 
@@ -286,8 +286,8 @@ class TradeEngine:
         except Exception as e:
             self.logger.error(f"❌ Error marking signal as executed: {e}")
     
-    async def _process_paper_signal(self, signal: Dict):
-        """Process paper trading signal - ONLY store if actually executed by Zerodha"""
+    async def _process_live_signal(self, signal: Dict):
+        """Process trading signal - ONLY store if actually executed by Zerodha"""
         try:
             symbol = signal.get('symbol')
             action = signal.get('action', 'BUY')
@@ -406,19 +406,31 @@ class TradeEngine:
                     
                     # Only proceed if strategy provided both values
                     if stop_loss_price and target_price and execution_price > 0:
-                        # Update position with strategy-provided stop loss and target
+                        # Wait briefly for position tracker to update, then set risk levels
+                        import asyncio
+                        await asyncio.sleep(0.1)  # Allow position tracker to update
+                        
                         position = await self.position_tracker.get_position(symbol)
                         if position:
                             position.stop_loss = stop_loss_price
                             position.target = target_price
                             position.trailing_stop = stop_loss_price  # Initialize trailing stop
                             
-                            self.logger.info(f"🎯 Position risk levels set for {symbol} (from strategy):")
+                            self.logger.info(f"🎯 Position risk levels set for {symbol}:")
                             self.logger.info(f"   Entry: ₹{execution_price:.2f}")
-                            self.logger.info(f"   Stop Loss: ₹{stop_loss_price:.2f} (from strategy)")
-                            self.logger.info(f"   Target: ₹{target_price:.2f} (from strategy)")
+                            self.logger.info(f"   Stop Loss: ₹{stop_loss_price:.2f}")
+                            self.logger.info(f"   Target: ₹{target_price:.2f}")
                         else:
-                            self.logger.warning(f"⚠️ Position not found for {symbol} - cannot set risk levels")
+                            # Retry once more after longer wait
+                            await asyncio.sleep(0.5)
+                            position = await self.position_tracker.get_position(symbol)
+                            if position:
+                                position.stop_loss = stop_loss_price
+                                position.target = target_price
+                                position.trailing_stop = stop_loss_price
+                                self.logger.info(f"🎯 Position risk levels set for {symbol} (retry successful)")
+                            else:
+                                self.logger.error(f"❌ Position still not found for {symbol} after retries - risk management compromised")
                     else:
                         self.logger.error(f"❌ Strategy didn't provide stop_loss/target for {symbol} - NO RISK LEVELS SET")
                         self.logger.error(f"   stop_loss: {stop_loss_price}, target: {target_price}")
@@ -433,7 +445,7 @@ class TradeEngine:
                 # CRITICAL FIX: Calculate real P&L and store to database
                 await self._calculate_and_store_trade_pnl(trade_record)
                 
-                self.logger.info(f"✅ Paper trade executed via Zerodha API: {order_id}")
+                self.logger.info(f"✅ Trade executed via Zerodha API: {order_id}")
                 return trade_record
             else:
                 # CRITICAL FIX: Don't store failed or non-executed trades

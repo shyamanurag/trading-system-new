@@ -112,8 +112,23 @@ class BaseStrategy:
     # ========================================
     
     def has_existing_position(self, symbol: str) -> bool:
-        """Check if strategy already has active position in symbol - PREVENTS DUPLICATES"""
-        return symbol in self.active_positions
+        """Check if strategy already has active position in symbol with phantom cleanup"""
+        if symbol in self.active_positions:
+            # Check for phantom positions (older than 30 minutes)
+            position_data = self.active_positions[symbol]
+            if isinstance(position_data, dict):
+                timestamp = position_data.get('timestamp', 0)
+                current_time = time_module.time()
+                age_minutes = (current_time - timestamp) / 60
+                
+                if age_minutes > 30:  # 30 minutes
+                    logger.warning(f"🧹 CLEARING PHANTOM POSITION: {symbol} (age: {age_minutes:.1f} min)")
+                    del self.active_positions[symbol]
+                    return False
+            
+            logger.info(f"🚫 {self.strategy_name}: DUPLICATE SIGNAL PREVENTED for {symbol} - Position already exists")
+            return True
+        return False
     
     async def manage_existing_positions(self, market_data: Dict):
         """Manage all existing positions with trailing stops and exit logic"""
@@ -843,8 +858,8 @@ class BaseStrategy:
                 else:  # SELL signal becomes BUY Put
                     option_type = 'PE'  # BUY Put when bearish
                 
-                # 🔧 CRITICAL FIX: Use Zerodha's exact symbol format
-                # Zerodha format: BANKNIFTY25JUL57100PE (not BANKNIFTY31JUL2557100PE)
+                # 🔧 CRITICAL FIX: Use Zerodha's EXACT format from API response
+                # Zerodha format: NIFTY07AUG2524650CE (not NIFTY25AUG24650CE)
                 options_symbol = f"{zerodha_underlying}{expiry}{strike}{option_type}"
                 
                 logger.info(f"🎯 INDEX SIGNAL: {underlying_symbol} → OPTIONS (F&O enabled)")
@@ -984,8 +999,19 @@ class BaseStrategy:
             logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
             return optimal_expiry
         else:
-            logger.error("❌ No expiry dates from Zerodha API - REJECTING SIGNAL (no fallback)")
-            return None
+            logger.warning("⚠️ No expiry dates from Zerodha API - using calculated fallback")
+            # Use simple fallback calculation for next Thursday
+            from datetime import datetime, timedelta
+            today = datetime.now().date()
+            days_ahead = 3 - today.weekday()  # Thursday is 3 (Monday=0)
+            if days_ahead <= 0:  # If today is Thursday or later, get next Thursday
+                days_ahead += 7
+            next_thursday = today + timedelta(days=days_ahead)
+            
+            # Format as DDMMMYY for Zerodha
+            fallback_expiry = next_thursday.strftime("%d%b%y").upper()
+            logger.info(f"🔄 FALLBACK EXPIRY: {fallback_expiry} (calculated next Thursday)")
+            return fallback_expiry
     
     async def _get_optimal_expiry_for_strategy(self, preference: str = "nearest_weekly") -> str:
         """
@@ -1052,8 +1078,8 @@ class BaseStrategy:
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
         
-        # 🚨 CRITICAL FIX: Zerodha format is 25AUG (YY + MMM), NOT 14AUG25 (DD + MMM + YY)
-        zerodha_expiry = f"{str(exp_date.year)[-2:]}{month_names[exp_date.month - 1]}"
+        # 🚨 CRITICAL FIX: Zerodha format is 07AUG25 (DD + MMM + YY), NOT 25AUG
+        zerodha_expiry = f"{exp_date.day:02d}{month_names[exp_date.month - 1]}{str(exp_date.year)[-2:]}"
         
         logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
         logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
@@ -1308,9 +1334,9 @@ class BaseStrategy:
             except Exception as e:
                 logger.debug(f"Could not get Zerodha LTP for {options_symbol}: {e}")
             
-            # 🎯 FINAL FALLBACK: Simple realistic fallback (no fake estimation)
-            logger.error(f"❌ NO REAL LTP AVAILABLE for {options_symbol} - SKIPPING SIGNAL")
-            return 0.0  # Return 0 to reject this signal completely
+            # 🎯 NO REAL LTP: Pass 0.0 to orchestrator for validation (no fallbacks)
+            logger.warning(f"⚠️ NO LTP AVAILABLE for {options_symbol} - passing to orchestrator for validation")
+            return 0.0  # Return 0.0 to allow orchestrator LTP validation
             
         except Exception as e:
             logger.error(f"Error getting options premium for {options_symbol}: {e}")
@@ -1622,22 +1648,13 @@ class BaseStrategy:
                 logger.info(f"✅ DYNAMIC LOT SIZE: {underlying_symbol} = {actual_lot_size} (from Zerodha API)")
                 return actual_lot_size
             
-            # Fallback: EXCHANGE-DEFINED LOT SIZES (official NSE values)
-            if underlying_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
-                # Index options have standard lot sizes as per NSE
-                lot_sizes = {'NIFTY': 75, 'BANKNIFTY': 25, 'FINNIFTY': 40}  
-                fallback_size = lot_sizes.get(underlying_symbol, 75)
-                logger.info(f"📋 FALLBACK LOT SIZE: {underlying_symbol} = {fallback_size} (NSE standard)")
-                return fallback_size
-            else:
-                # Stock options: Use NSE standard of 750 for most stocks
-                fallback_size = 750  # Standard NSE stock option lot size
-                logger.info(f"📋 FALLBACK LOT SIZE: {underlying_symbol} = {fallback_size} (NSE stock standard)")
-                return fallback_size
+            # NO FALLBACKS - If Zerodha API doesn't provide lot size, reject signal
+            logger.error(f"❌ NO LOT SIZE from Zerodha API for {underlying_symbol} - REJECTING SIGNAL")
+            return None
                 
         except Exception as e:
             logger.error(f"Error getting dynamic lot size for {options_symbol}: {e}")
-            return 75  # Safe fallback
+            return None  # NO FALLBACKS
     
     def _fetch_zerodha_lot_size(self, underlying_symbol: str) -> int:
         """🎯 DYNAMIC: Fetch actual lot size from Zerodha instruments API"""
@@ -1698,6 +1715,9 @@ class BaseStrategy:
             if is_options:
                 # 🎯 F&O: Use lot-based calculation
                 base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
+                if base_lot_size is None:
+                    logger.error(f"❌ NO LOT SIZE AVAILABLE for {underlying_symbol} - REJECTING SIGNAL")
+                    return 0
                 cost_per_lot = base_lot_size * entry_price
                 
                 # Check affordability
@@ -1928,6 +1948,9 @@ class BaseStrategy:
             if is_options:
                 # 🎯 F&O: Use lot-based calculation
                 base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
+                if base_lot_size is None:
+                    logger.error(f"❌ NO LOT SIZE AVAILABLE for {underlying_symbol} - REJECTING SIGNAL")
+                    return 0
                 cost_per_lot = base_lot_size * entry_price
                 
                 # Check affordability
