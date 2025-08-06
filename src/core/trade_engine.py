@@ -205,9 +205,25 @@ class TradeEngine:
             import requests
             import asyncio
             
-            # Prepare failed order data
+            # Prepare failed order data - CRITICAL FIX: Convert datetime objects to strings
+            import json
+            
+            # Create a serializable copy of signal
+            serializable_signal = {}
+            for key, value in signal.items():
+                if isinstance(value, datetime):
+                    serializable_signal[key] = value.isoformat()
+                elif hasattr(value, 'isoformat'):  # datetime-like objects
+                    serializable_signal[key] = value.isoformat()
+                else:
+                    try:
+                        json.dumps(value)  # Test if serializable
+                        serializable_signal[key] = value
+                    except (TypeError, ValueError):
+                        serializable_signal[key] = str(value)  # Convert to string if not serializable
+            
             failed_order_data = {
-                **signal,
+                **serializable_signal,
                 'failure_reason': reason,
                 'failed_at': datetime.now().isoformat(),
                 'routed_to_elite': True
@@ -1022,11 +1038,12 @@ class TradeEngine:
             # Create order from signal
             order = self._create_order_from_signal(signal)
             
-            # Submit order
-            order_id = await self.order_manager.place_order(order)
+            # Submit order - CRITICAL FIX: OrderManager expects (user_id, order_data)
+            user_id = signal.get('user_id', 'system')
+            order_id = await self.order_manager.place_order(user_id, order)
             
             # Log order placement
-            self.logger.info(f"📋 Order placed: {order_id} for user {signal.get('user_id', 'system')}")
+            self.logger.info(f"📋 Order placed: {order_id} for user {user_id}")
             
             # Update rate limiting
             self.last_signal_time = time.time()

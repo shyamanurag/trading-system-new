@@ -183,11 +183,12 @@ class SimpleTradeEngine:
             # Create order from signal
             order = self._create_order_from_signal(signal)
             
-            # Submit order
-            order_id = await self.order_manager.place_order(order)
+            # Submit order - CRITICAL FIX: OrderManager expects (user_id, order_data)
+            user_id = signal.get('user_id', 'system')
+            order_id = await self.order_manager.place_order(user_id, order)
             
             # Log order placement
-            self.logger.info(f"📋 Order placed: {order_id} for user {signal.get('user_id', 'system')}")
+            self.logger.info(f"📋 Order placed: {order_id} for user {user_id}")
             
             # Simulate order execution for paper trading
             self.logger.info(f"✅ Order executed: {order_id}")
