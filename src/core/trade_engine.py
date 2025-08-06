@@ -614,12 +614,57 @@ class TradeEngine:
             # Update our records with ACTUAL execution data
             for trade in executed_trades:
                 await self._update_with_actual_execution_data(trade)
+                
+                # CRITICAL FIX: Update position tracker with real trade data
+                if self.position_tracker:
+                    await self._update_position_tracker_with_trade(trade)
             
             return executed_trades
             
         except Exception as e:
             self.logger.error(f"❌ Error syncing actual Zerodha trades: {e}")
             return []
+    
+    async def _update_position_tracker_with_trade(self, trade_data: Dict):
+        """Update position tracker with actual executed trade data"""
+        try:
+            symbol = trade_data.get('symbol')
+            side = trade_data.get('side')  # BUY or SELL
+            quantity = int(trade_data.get('quantity', 0))
+            price = float(trade_data.get('price', 0))
+            trade_id = trade_data.get('trade_id')
+            
+            if not all([symbol, side, quantity, price]):
+                self.logger.warning(f"⚠️ Incomplete trade data for position tracker: {trade_data}")
+                return
+            
+            # Create position data structure
+            position_data = {
+                'symbol': symbol,
+                'quantity': quantity if side == 'BUY' else -quantity,  # Negative for SELL
+                'average_price': price,
+                'side': side,
+                'trade_id': trade_id,
+                'timestamp': trade_data.get('executed_at'),
+                'pnl': 0.0,  # Will be calculated by position tracker
+                'status': 'ACTIVE'
+            }
+            
+            # Update position tracker using existing method
+            success = await self.position_tracker.update_position(
+                symbol=symbol,
+                quantity=quantity if side == 'BUY' else -quantity,
+                price=price,
+                side='long' if side == 'BUY' else 'short'
+            )
+            
+            if success:
+                self.logger.info(f"✅ Position tracker updated with {symbol} {side} {quantity}@₹{price}")
+            else:
+                self.logger.error(f"❌ Failed to update position tracker for {symbol}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error updating position tracker with trade: {e}")
     
     async def _update_with_actual_execution_data(self, actual_trade: Dict):
         """Update internal trade records with ACTUAL execution data from Zerodha"""
