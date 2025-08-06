@@ -1768,6 +1768,11 @@ class BaseStrategy:
                 if base_lot_size is None:
                     logger.error(f"❌ NO LOT SIZE AVAILABLE for {underlying_symbol} - REJECTING SIGNAL")
                     return 0
+                # CRITICAL FIX: Check for zero entry price (missing LTP)
+                if entry_price <= 0:
+                    logger.error(f"❌ ZERO ENTRY PRICE for {options_symbol} - cannot calculate position size")
+                    return 0
+                
                 cost_per_lot = base_lot_size * entry_price
                 
                 # Check affordability
@@ -2009,6 +2014,11 @@ class BaseStrategy:
                 if base_lot_size is None:
                     logger.error(f"❌ NO LOT SIZE AVAILABLE for {underlying_symbol} - REJECTING SIGNAL")
                     return 0
+                # CRITICAL FIX: Check for zero entry price (missing LTP)
+                if entry_price <= 0:
+                    logger.error(f"❌ ZERO ENTRY PRICE for {options_symbol} - cannot calculate position size")
+                    return 0
+                
                 cost_per_lot = base_lot_size * entry_price
                 
                 # Check affordability
