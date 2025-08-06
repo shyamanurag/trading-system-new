@@ -50,34 +50,34 @@ class RegimeAdaptiveController:
         # Allocation adjustments by regime
         self.allocation_adjustments = {
             'VOLATILE': {
-                'volatility_explosion': 1.5,
-                'momentum_surfer': 0.8,
-                'volume_profile_scalper': 1.2,
-                'news_impact_scalper': 1.0
+                'professional_options_engine': 1.5,
+                'nifty_intelligence_engine': 0.8,
+                'smart_intraday_options': 1.2,
+                'market_microstructure_edge': 1.0
             },
             'TRENDING': {
-                'momentum_surfer': 1.5,
-                'volatility_explosion': 1.2,
-                'volume_profile_scalper': 0.8,
-                'news_impact_scalper': 0.9
+                'nifty_intelligence_engine': 1.5,
+                'professional_options_engine': 1.2,
+                'smart_intraday_options': 0.8,
+                'market_microstructure_edge': 0.9
             },
             'RANGING': {
-                'volume_profile_scalper': 1.3,
-                'volatility_explosion': 0.9,
-                'momentum_surfer': 0.7,
-                'news_impact_scalper': 1.1
+                'smart_intraday_options': 1.3,
+                'professional_options_engine': 0.9,
+                'nifty_intelligence_engine': 0.7,
+                'market_microstructure_edge': 1.1
             },
             'BREAKOUT': {
-                'momentum_surfer': 1.8,
-                'volatility_explosion': 1.4,
-                'volume_profile_scalper': 1.0,
-                'news_impact_scalper': 0.8
+                'nifty_intelligence_engine': 1.8,
+                'professional_options_engine': 1.4,
+                'smart_intraday_options': 1.0,
+                'market_microstructure_edge': 0.8
             },
             'REVERSAL': {
-                'news_impact_scalper': 1.5,
-                'volume_profile_scalper': 1.3,
-                'volatility_explosion': 1.1,
-                'momentum_surfer': 0.6
+                'market_microstructure_edge': 1.5,
+                'smart_intraday_options': 1.3,
+                'professional_options_engine': 1.1,
+                'nifty_intelligence_engine': 0.6
             }
         }
         
@@ -327,41 +327,41 @@ class RegimeAdaptiveController:
     def get_strategy_weights(self) -> Dict[str, float]:
         """Get strategy weights based on current regime"""
         weights = {
-            'volatility_explosion': 0.0,
-            'momentum_surfer': 0.0,
-            'volume_profile_scalper': 0.0,
-            'news_impact_scalper': 0.0
+            'professional_options_engine': 0.0,
+            'nifty_intelligence_engine': 0.0,
+            'smart_intraday_options': 0.0,
+            'market_microstructure_edge': 0.0
         }
         
         if self.current_regime == MarketRegime.VOLATILE:
-            weights['volatility_explosion'] = 0.4
-            weights['volume_profile_scalper'] = 0.3
-            weights['momentum_surfer'] = 0.2
-            weights['news_impact_scalper'] = 0.1
+            weights['professional_options_engine'] = 0.4
+            weights['smart_intraday_options'] = 0.3
+            weights['nifty_intelligence_engine'] = 0.2
+            weights['market_microstructure_edge'] = 0.1
             
         elif self.current_regime == MarketRegime.TRENDING:
-            weights['momentum_surfer'] = 0.4
-            weights['volatility_explosion'] = 0.3
-            weights['volume_profile_scalper'] = 0.2
-            weights['news_impact_scalper'] = 0.1
+            weights['nifty_intelligence_engine'] = 0.4
+            weights['professional_options_engine'] = 0.3
+            weights['smart_intraday_options'] = 0.2
+            weights['market_microstructure_edge'] = 0.1
             
         elif self.current_regime == MarketRegime.BREAKOUT:
-            weights['momentum_surfer'] = 0.5
-            weights['volatility_explosion'] = 0.3
-            weights['volume_profile_scalper'] = 0.1
-            weights['news_impact_scalper'] = 0.1
+            weights['nifty_intelligence_engine'] = 0.5
+            weights['professional_options_engine'] = 0.3
+            weights['smart_intraday_options'] = 0.1
+            weights['market_microstructure_edge'] = 0.1
             
         elif self.current_regime == MarketRegime.REVERSAL:
-            weights['news_impact_scalper'] = 0.4
-            weights['volume_profile_scalper'] = 0.3
-            weights['volatility_explosion'] = 0.2
-            weights['momentum_surfer'] = 0.1
+            weights['market_microstructure_edge'] = 0.4
+            weights['smart_intraday_options'] = 0.3
+            weights['professional_options_engine'] = 0.2
+            weights['nifty_intelligence_engine'] = 0.1
             
         else:  # RANGING
-            weights['volume_profile_scalper'] = 0.4
-            weights['news_impact_scalper'] = 0.3
-            weights['volatility_explosion'] = 0.2
-            weights['momentum_surfer'] = 0.1
+            weights['smart_intraday_options'] = 0.4
+            weights['market_microstructure_edge'] = 0.3
+            weights['professional_options_engine'] = 0.2
+            weights['nifty_intelligence_engine'] = 0.1
         
         return weights
     

@@ -1,307 +1,279 @@
 """
-Enhanced Volatility Explosion Strategy - SCALPING OPTIMIZED
-A sophisticated volatility-based trading strategy with SCALPING-OPTIMIZED risk management
+Nifty Intelligence Engine - NIFTY INDEX SPECIALIST
+Advanced Nifty futures and options strategy with GARCH volatility modeling,
+regime detection, and sophisticated position management.
 """
 
+import asyncio
 import logging
-from typing import Dict, List, Optional
-from datetime import datetime
-from strategies.base_strategy import BaseStrategy
+import numpy as np
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
+from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
 class EnhancedVolatilityExplosion(BaseStrategy):
-    """Enhanced volatility-based trading strategy with SCALPING-OPTIMIZED parameters"""
+    """
+    NIFTY INDEX SPECIALIST ENGINE
+    - GARCH volatility modeling
+    - Regime detection (trending/sideways/volatile)
+    - Nifty futures with point-based targets
+    - Index options strategies
+    - Intelligent trailing stops
+    """
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict = None):
+        if config is None:
+            config = {}
         super().__init__(config)
-        self.name = "EnhancedVolatilityExplosion"
+        self.strategy_name = "nifty_intelligence_engine"
+        self.description = "Nifty Intelligence Engine with advanced pattern recognition"
         
-        # REALISTIC volatility thresholds (prevent false signals on market noise)
-        self.volatility_thresholds = {
-            'extreme_volatility': 2.5,   # 2.5x historical volatility (realistic)
-            'high_volatility': 2.0,      # 2.0x historical volatility (realistic)
-            'moderate_volatility': 1.6,  # 1.6x historical volatility (realistic)
-            'volume_confirmation': {
-                'strong': 50,            # 50% volume increase (realistic)
-                'moderate': 35,          # 35% volume increase (realistic)
-                'weak': 25              # 25% volume increase (realistic)
-            },
-            'price_gap_threshold': 0.3   # 0.3% price gap (realistic)
-        }
+        # Nifty-specific parameters
+        self.nifty_symbols = ['NIFTY-I', 'NIFTY-FUT', 'BANKNIFTY-I', 'FINNIFTY-I']
         
-        # SCALPING-OPTIMIZED ATR multipliers (tighter stops)
-        self.atr_multipliers = {
-            'extreme_volatility': 2.0,   # 2.0x ATR for extreme volatility (tighter)
-            'high_volatility': 1.6,      # 1.6x ATR for high volatility (tighter)
-            'moderate_volatility': 1.3   # 1.3x ATR for moderate volatility (tighter)
-        }
+        # Point-based targets for Nifty futures (normal market conditions)
+        self.nifty_target_points = 75  # 50-100 points target
+        self.nifty_stop_points = 12    # 10-15 points stop
         
-        # Enhanced cooldown control (prevent signal spam)
-        self.scalping_cooldown = 30  # 30 seconds between signals
-        self.symbol_cooldowns = {}   # Symbol-specific cooldowns (45 seconds per symbol)
-        self.symbol_cooldown_duration = 45  # 45 seconds per symbol
+        # GARCH volatility parameters
+        self.volatility_window = 20
+        self.volatility_history = []
         
-        # Signal quality filters
-        self.min_confidence = 0.7  # Minimum 70% confidence required
+        # Regime detection
+        self.regime_states = ['trending_up', 'trending_down', 'sideways', 'volatile']
+        self.current_regime = 'sideways'
         
-        # Historical volatility tracking per symbol
-        self.volatility_history = {}
-    
+        # Position management
+        self.max_positions_per_symbol = 2
+        self.trailing_stop_activation = 0.6  # Activate trailing at 60% of target
+        
+        logger.info("✅ NiftyIntelligenceEngine strategy initialized")
+
     async def initialize(self):
         """Initialize the strategy"""
         self.is_active = True
-        logger.info(f"✅ {self.name} strategy initialized successfully")
-        
+        logger.info("✅ Nifty Intelligence Engine loaded successfully")
+
     async def on_market_data(self, data: Dict):
-        """Handle incoming market data and generate signals"""
+        """Process market data and generate Nifty signals"""
         if not self.is_active:
             return
             
         try:
-            # ========================================
-            # CRITICAL: MANAGE EXISTING POSITIONS FIRST
-            # ========================================
-            await self.manage_existing_positions(data)
+            # Generate signals using the existing method
+            signals = await self.generate_signals(data)
             
-            # Check SCALPING cooldown
-            if not self._is_scalping_cooldown_passed():
-                return
-                
-            # Process market data and generate NEW signals (only if no existing positions)
-            signals = await self._generate_signals(data)
-            
-            # FIXED: Only store signals for orchestrator collection - no direct execution
+            # Store signals in current_positions for orchestrator to find
             for signal in signals:
-                self.current_positions[signal['symbol']] = signal
-                logger.info(f"🚨 {self.name} SIGNAL GENERATED: {signal['symbol']} {signal['action']} "
-                           f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
-            
-            # Update last signal time if signals generated
-            if signals:
-                self.last_signal_time = datetime.now()
+                symbol = signal.get('symbol')
+                if symbol:
+                    self.current_positions[symbol] = signal
+                    logger.info(f"🎯 NIFTY INTELLIGENCE: {signal['symbol']} {signal['action']} "
+                               f"Confidence: {signal.get('confidence', 0):.1f}/10 "
+                               f"Regime: {self.current_regime}")
                 
         except Exception as e:
-            logger.error(f"Error in {self.name} strategy: {str(e)}")
-    
-    def _is_scalping_cooldown_passed(self) -> bool:
-        """Check if SCALPING cooldown period has passed"""
-        if not self.last_signal_time:
-            return True
-        
-        time_since_last = (datetime.now() - self.last_signal_time).total_seconds()
-        return time_since_last >= self.scalping_cooldown
-    
-    async def _generate_signals(self, data: Dict) -> List[Dict]:
-        """Generate trading signals based on market data"""
-        signals = []
-        
+            logger.error(f"Error in Nifty Intelligence Engine: {e}")
+
+    async def generate_signals(self, market_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate intelligent Nifty signals with regime awareness"""
         try:
-            # Extract symbols from market data
-            symbols = list(data.keys()) if isinstance(data, dict) else []
+            signals = []
             
-            for symbol in symbols:
-                symbol_data = data.get(symbol, {})
-                if not symbol_data:
-                    continue
-                
-                # Check symbol-specific cooldown for scalping
-                if not self._is_symbol_scalping_cooldown_passed(symbol):
-                    continue
-                    
-                # Generate signal for this symbol
-                signal = await self._analyze_volatility(symbol, symbol_data)
-                if signal:
-                    signals.append(signal)
-                    # Update symbol cooldown
-                    self.symbol_cooldowns[symbol] = datetime.now()
-                    
+            if not market_data:
+                return signals
+            
+            # Update volatility model
+            self._update_volatility_model(market_data)
+            
+            # Detect current market regime
+            self._detect_market_regime(market_data)
+            
+            # Generate signals based on regime
+            for symbol in self.nifty_symbols:
+                if symbol in market_data:
+                    signal = await self._analyze_nifty_opportunity(symbol, market_data)
+                    if signal:
+                        signals.append(signal)
+            
+            logger.info(f"📊 Nifty Intelligence Engine generated {len(signals)} signals (Regime: {self.current_regime})")
+            return signals
+            
         except Exception as e:
-            logger.error(f"Error generating signals: {e}")
-            
-        return signals
-    
-    def _is_symbol_scalping_cooldown_passed(self, symbol: str) -> bool:
-        """Check if symbol-specific scalping cooldown has passed"""
-        if symbol not in self.symbol_cooldowns:
-            return True
-        
-        last_signal = self.symbol_cooldowns[symbol]
-        time_since = (datetime.now() - last_signal).total_seconds()
-        return time_since >= 45  # 45 seconds per symbol for volatility
-    
-    async def _analyze_volatility(self, symbol: str, data: Dict) -> Optional[Dict]:
-        """Analyze volatility patterns with SCALPING optimization"""
+            logger.error(f"Error in Nifty Intelligence Engine: {e}")
+            return []
+
+    def _update_volatility_model(self, market_data: Dict[str, Any]):
+        """Update GARCH-inspired volatility model"""
         try:
-            # Extract price data
-            current_price = data.get('close', 0)
-            high = data.get('high', 0)
-            low = data.get('low', 0)
+            nifty_data = market_data.get('NIFTY-I', {})
+            if not nifty_data:
+                return
+            
+            change_percent = nifty_data.get('change_percent', 0)
+            self.volatility_history.append(abs(change_percent))
+            
+            # Keep rolling window
+            if len(self.volatility_history) > self.volatility_window:
+                self.volatility_history.pop(0)
+            
+            # Calculate current volatility
+            if len(self.volatility_history) >= 5:
+                self.current_volatility = np.std(self.volatility_history[-10:]) if len(self.volatility_history) >= 10 else np.std(self.volatility_history)
+            else:
+                self.current_volatility = 1.0
+                
+        except Exception as e:
+            logger.debug(f"Error updating volatility model: {e}")
+
+    def _detect_market_regime(self, market_data: Dict[str, Any]):
+        """Detect current market regime using price action"""
+        try:
+            nifty_data = market_data.get('NIFTY-I', {})
+            if not nifty_data:
+                return
+            
+            change_percent = nifty_data.get('change_percent', 0)
+            ltp = nifty_data.get('ltp', 0)
+            
+            # Simple regime detection logic
+            if abs(change_percent) > 1.5:
+                if change_percent > 0:
+                    self.current_regime = 'trending_up'
+                else:
+                    self.current_regime = 'trending_down'
+            elif hasattr(self, 'current_volatility') and self.current_volatility > 2.0:
+                self.current_regime = 'volatile'
+            else:
+                self.current_regime = 'sideways'
+                
+        except Exception as e:
+            logger.debug(f"Error detecting market regime: {e}")
+
+    async def _analyze_nifty_opportunity(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Analyze Nifty opportunity based on regime and volatility"""
+        try:
+            data = market_data.get(symbol, {})
+            if not data:
+                return None
+            
+            ltp = data.get('ltp', 0)
+            change_percent = data.get('change_percent', 0)
             volume = data.get('volume', 0)
             
-            if not all([current_price, high, low, volume]):
-                return None
-                
-            # Calculate proper ATR using base class method
-            atr = self.calculate_atr(symbol, high, low, current_price)
-            
-            # Calculate current volatility ratio (simplified but consistent)
-            current_volatility_ratio = atr / current_price if current_price > 0 else 0
-            
-            # Get or calculate historical volatility for this symbol
-            historical_volatility = self._get_historical_volatility(symbol, current_volatility_ratio)
-            
-            # Analyze volatility explosion with SCALPING thresholds
-            volatility_analysis = self._analyze_volatility_explosion(
-                current_volatility_ratio, historical_volatility, data
-            )
-            
-            if volatility_analysis['signal_strength'] == 'none':
+            if ltp <= 0:
                 return None
             
-            # Determine action based on price direction
-            price_change = data.get('price_change', 0)
-            action = 'BUY' if price_change > 0 else 'SELL'
-            atr_multiplier = self.atr_multipliers[volatility_analysis['signal_strength']]
+            # Regime-based signal generation
+            signal_type = None
+            confidence = 5.0
+            reasoning = f"Nifty analysis in {self.current_regime} regime"
             
-            # Calculate SCALPING-OPTIMIZED stop loss and target
-            stop_loss = self.calculate_dynamic_stop_loss(
-                current_price, atr, action, atr_multiplier, 
-                min_percent=0.4, max_percent=1.0  # TIGHT bounds for volatility scalping
-            )
-            
-            target = self.calculate_dynamic_target(
-                current_price, stop_loss, risk_reward_ratio=1.6  # 1.6:1 for volatility scalping
-            )
-            
-            # Calculate confidence based on volatility analysis
-            confidence = self._calculate_confidence(volatility_analysis, current_volatility_ratio, historical_volatility)
-            
-            # Create standardized signal (convert confidence from 0.0-1.0 to 0.0-10.0 scale)
-            signal = await self.create_standard_signal(
-                symbol=symbol,
-                action=action,
-                entry_price=current_price,
-                stop_loss=stop_loss,
-                target=target,
-                confidence=confidence * 10.0,  # Convert 0.8 -> 8.0
-                metadata={
-                    'scalping_optimized': True,
-                    'volatility_score': volatility_analysis['score'],
-                    'volatility_strength': volatility_analysis['signal_strength'],
-                    'current_volatility': current_volatility_ratio,
-                    'historical_volatility': historical_volatility,
-                    'volatility_ratio': current_volatility_ratio / historical_volatility if historical_volatility > 0 else 1.0,
-                    'volume_change': data.get('volume_change', 0),
-                    'price_change': price_change,
-                    'atr': atr,
-                    'atr_multiplier': atr_multiplier,
-                    'risk_type': 'SCALPING_VOLATILITY_EXPLOSION',
-                    'strategy_version': '2.0_SCALPING_OPTIMIZED'
-                }
-            )
-            
-            return signal
+            if self.current_regime == 'trending_up' and change_percent > 0.5:
+                signal_type = 'buy'
+                confidence += 2.0
+                reasoning += f" - Uptrend continuation, change: {change_percent:.1f}%"
                 
-        except Exception as e:
-            logger.error(f"Error analyzing volatility for {symbol}: {e}")
+            elif self.current_regime == 'trending_down' and change_percent < -0.5:
+                signal_type = 'sell'
+                confidence += 2.0
+                reasoning += f" - Downtrend continuation, change: {change_percent:.1f}%"
+                
+            elif self.current_regime == 'volatile' and abs(change_percent) > 1.0:
+                # In volatile regime, trade momentum
+                signal_type = 'buy' if change_percent > 0 else 'sell'
+                confidence += 1.5
+                reasoning += f" - Volatile regime momentum, change: {change_percent:.1f}%"
+                
+            elif self.current_regime == 'sideways' and abs(change_percent) > 0.3:
+                # In sideways, look for mean reversion
+                signal_type = 'sell' if change_percent > 0 else 'buy'
+                confidence += 1.0
+                reasoning += f" - Sideways mean reversion, change: {change_percent:.1f}%"
             
-        return None
-    
-    def _get_historical_volatility(self, symbol: str, current_volatility: float) -> float:
-        """Get or calculate historical volatility for the symbol"""
-        try:
-            if symbol not in self.volatility_history:
-                self.volatility_history[symbol] = []
+            if not signal_type:
+                return None
             
-            # Add current volatility to history
-            self.volatility_history[symbol].append(current_volatility)
+            # Volume confirmation
+            if volume > 1000000:  # High volume
+                confidence += 1.0
+            elif volume > 500000:
+                confidence += 0.5
             
-            # Keep only last 20 observations
-            if len(self.volatility_history[symbol]) > 20:
-                self.volatility_history[symbol].pop(0)
+            # Volatility adjustment
+            if hasattr(self, 'current_volatility'):
+                if self.current_volatility > 2.0:
+                    confidence += 0.5  # High volatility = more opportunities
+                
+            if confidence < 9.0:
+                return None
             
-            # Calculate historical average
-            if len(self.volatility_history[symbol]) < 5:
-                return 0.02  # Default 2% historical volatility
-            
-            # Use average of last 10-15 observations (excluding most recent)
-            historical_data = self.volatility_history[symbol][:-1]  # Exclude current
-            if len(historical_data) >= 3:
-                return sum(historical_data[-10:]) / len(historical_data[-10:])
+            # Determine if this is futures or options
+            if 'FUT' in symbol:
+                return await self._create_futures_signal(symbol, signal_type, confidence, reasoning, market_data)
             else:
-                return 0.02
-                
+                return await self._create_index_options_signal(symbol, signal_type, confidence, reasoning, market_data)
+            
         except Exception as e:
-            logger.error(f"Error calculating historical volatility for {symbol}: {e}")
-            return 0.02
-    
-    def _analyze_volatility_explosion(self, current_vol: float, historical_vol: float, data: Dict) -> Dict:
-        """Analyze volatility explosion strength"""
-        thresholds = self.volatility_thresholds
-        volume_change = data.get('volume_change', 0)
-        price_change = data.get('price_change', 0)
-        
-        # Calculate volatility ratio
-        vol_ratio = current_vol / historical_vol if historical_vol > 0 else 1.0
-        
-        volatility_score = 0
-        
-        # Volatility explosion scoring
-        if vol_ratio >= thresholds['extreme_volatility']:
-            volatility_score += 4
-            signal_strength = 'extreme_volatility'
-        elif vol_ratio >= thresholds['high_volatility']:
-            volatility_score += 3
-            signal_strength = 'high_volatility'
-        elif vol_ratio >= thresholds['moderate_volatility']:
-            volatility_score += 2
-            signal_strength = 'moderate_volatility'
-        else:
-            volatility_score = 0
-            signal_strength = 'none'
-        
-        # Volume confirmation
-        vol_confirmations = thresholds['volume_confirmation']
-        if volume_change >= vol_confirmations['strong']:
-            volatility_score += 2
-        elif volume_change >= vol_confirmations['moderate']:
-            volatility_score += 1
-        elif volume_change >= vol_confirmations['weak']:
-            volatility_score += 0.5
-        
-        # Price gap confirmation
-        if abs(price_change) >= thresholds['price_gap_threshold']:
-            volatility_score += 1
-        
-        # Require minimum score for signal generation
-        if volatility_score < 3:
-            signal_strength = 'none'
-        
-        return {
-            'signal_strength': signal_strength,
-            'score': volatility_score,
-            'vol_ratio': vol_ratio
-        }
-    
-    def _calculate_confidence(self, volatility_analysis: Dict, current_vol: float, historical_vol: float) -> float:
-        """Calculate signal confidence based on volatility analysis"""
-        base_confidence = 0.5
-        
-        # Boost confidence for strong volatility explosion
-        if volatility_analysis['signal_strength'] == 'extreme_volatility':
-            base_confidence = 0.8
-        elif volatility_analysis['signal_strength'] == 'high_volatility':
-            base_confidence = 0.7
-        elif volatility_analysis['signal_strength'] == 'moderate_volatility':
-            base_confidence = 0.6
-        
-        # Boost confidence for high volatility ratio
-        vol_ratio_boost = min((volatility_analysis['vol_ratio'] - 1.0) / 2.0, 0.15)  # Up to 15% boost
-        
-        # Boost confidence for high volatility score
-        score_boost = min(volatility_analysis['score'] / 10.0, 0.1)  # Up to 10% boost
-        
-        final_confidence = base_confidence + vol_ratio_boost + score_boost
-        
-        return min(final_confidence, 0.9)  # Cap at 90% 
+            logger.debug(f"Error analyzing Nifty opportunity for {symbol}: {e}")
+            return None
+
+    async def _create_futures_signal(self, symbol: str, signal_type: str, confidence: float, 
+                                   reasoning: str, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create Nifty futures signal with point-based targets"""
+        try:
+            data = market_data.get(symbol, {})
+            ltp = data.get('ltp', 0)
+            
+            # Point-based targets for futures
+            if signal_type == 'buy':
+                target_price = ltp + self.nifty_target_points
+                stop_loss_price = ltp - self.nifty_stop_points
+            else:
+                target_price = ltp - self.nifty_target_points
+                stop_loss_price = ltp + self.nifty_stop_points
+            
+            # Position sizing for futures (larger lots)
+            position_size = 75  # Standard Nifty lot size
+            
+            return {
+                'symbol': symbol,
+                'signal_type': signal_type,
+                'entry_price': ltp,
+                'target_price': target_price,
+                'stop_loss_price': stop_loss_price,
+                'quantity': position_size,
+                'confidence': confidence,
+                'strategy': self.strategy_name,
+                'reasoning': reasoning + f" | Futures target: {self.nifty_target_points}pts, stop: {self.nifty_stop_points}pts",
+                'timestamp': datetime.now().isoformat(),
+                'instrument_type': 'futures',
+                'trailing_stop_enabled': True,
+                'trailing_stop_activation': self.trailing_stop_activation
+            }
+            
+        except Exception as e:
+            logger.error(f"Error creating futures signal: {e}")
+            return None
+
+    async def _create_index_options_signal(self, symbol: str, signal_type: str, confidence: float,
+                                         reasoning: str, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create index options signal"""
+        try:
+            # For index options, use the base strategy's options signal creation
+            return await self._create_options_signal(
+                symbol=symbol,
+                signal_type=signal_type,
+                confidence=confidence,
+                market_data=market_data,
+                reasoning=reasoning + " | Index options strategy",
+                position_size=150  # Standard options lot size
+            )
+            
+        except Exception as e:
+            logger.error(f"Error creating index options signal: {e}")
+            return None
+
+logger.info("✅ Nifty Intelligence Engine loaded successfully")

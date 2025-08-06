@@ -1,349 +1,348 @@
 """
-Enhanced Momentum Surfer Strategy - SCALPING OPTIMIZED
-A sophisticated momentum-based trading strategy with SCALPING-OPTIMIZED risk management
+Smart Intraday Options - EQUITY STOCKS SPECIALIST
+Comprehensive intraday options strategy covering all market conditions:
+trending, sideways, breakouts, reversals, high/low volatility, short selling, range trading.
 """
 
+import asyncio
 import logging
-from typing import Dict, List, Optional
-from datetime import datetime
-from strategies.base_strategy import BaseStrategy
+import numpy as np
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
+from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
 class EnhancedMomentumSurfer(BaseStrategy):
-    """Enhanced momentum-based trading strategy with SCALPING-OPTIMIZED parameters"""
+    """
+    EQUITY STOCKS SPECIALIST ENGINE
+    - Market regime aware (trending/sideways/breakout/reversal)
+    - Real-time position tracking
+    - Short selling for falling markets
+    - Range trading for sideways markets
+    - Alternative data integration ready
+    """
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict = None):
+        if config is None:
+            config = {}
         super().__init__(config)
-        self.name = "EnhancedMomentumSurfer"
+        self.strategy_name = "smart_intraday_options"
+        self.description = "Smart Intraday Options with dynamic strike selection"
         
-        # BALANCED momentum thresholds (generate signals for P&L testing)
-        self.momentum_thresholds = {
-            'strong_positive': 0.15,    # 0.15% price increase (increased from 0.08% for selectivity)
-            'moderate_positive': 0.10,  # 0.10% price increase (increased from 0.05% for selectivity)
-            'strong_negative': -0.15,   # 0.15% price decrease (increased from -0.08% for selectivity)
-            'moderate_negative': -0.10, # 0.10% price decrease (increased from -0.05% for selectivity)
-            'volume_threshold': 25      # 25% volume increase (increased from 10% for selectivity)
+        # Market regime parameters
+        self.trending_threshold = 1.0  # 1% move indicates trend
+        self.sideways_range = 0.5     # 0.5% range for sideways detection
+        self.breakout_threshold = 1.5  # 1.5% for breakout detection
+        
+        # Stock selection criteria
+        self.focus_stocks = [
+            'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'ITC',
+            'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
+            'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC'
+        ]
+        
+        # Position management
+        self.max_intraday_positions = 5
+        self.profit_booking_threshold = 0.3  # 30% profit booking
+        self.stop_loss_threshold = 0.15      # 15% stop loss
+        
+        # Market condition strategies
+        self.strategies_by_condition = {
+            'trending_up': self._trending_up_strategy,
+            'trending_down': self._trending_down_strategy,
+            'sideways': self._sideways_strategy,
+            'breakout_up': self._breakout_up_strategy,
+            'breakout_down': self._breakout_down_strategy,
+            'reversal_up': self._reversal_up_strategy,
+            'reversal_down': self._reversal_down_strategy,
+            'high_volatility': self._high_volatility_strategy,
+            'low_volatility': self._low_volatility_strategy
         }
         
-        # REALISTIC ATR multipliers (balanced risk management)
-        self.atr_multipliers = {
-            'strong_momentum': 2.0,     # 2.0x ATR for strong momentum
-            'moderate_momentum': 1.8,   # 1.8x ATR for moderate momentum
-            'weak_momentum': 1.5        # 1.5x ATR for weak momentum
-        }
-        
-        # Enhanced cooldown control
-        self.scalping_cooldown = 60  # 60 seconds between signals (increased from 30s for selectivity)
-        self.symbol_cooldowns = {}   # Symbol-specific cooldowns
-        
-        # Signal quality filters (configurable from config)
-        self.min_confidence_threshold = config.get('min_confidence_threshold', 0.85)  # Dynamic threshold
-        self.trend_confirmation_periods = 3   # Require 3 periods of trend confirmation
-    
+        logger.info("✅ SmartIntradayOptions strategy initialized")
+
     async def initialize(self):
         """Initialize the strategy"""
         self.is_active = True
-        logger.info(f"✅ {self.name} strategy initialized successfully")
-        
+        logger.info("✅ Smart Intraday Options loaded successfully")
+
     async def on_market_data(self, data: Dict):
-        """Handle incoming market data and generate signals"""
+        """Process market data and generate intraday signals"""
         if not self.is_active:
             return
             
         try:
-            # ========================================
-            # CRITICAL: MANAGE EXISTING POSITIONS FIRST
-            # ========================================
-            await self.manage_existing_positions(data)
+            # Generate signals using the existing method
+            signals = await self.generate_signals(data)
             
-            # Check SCALPING cooldown
-            if not self._is_scalping_cooldown_passed():
-                return
-                
-            # Check signal rate limits
-            if not self._check_signal_rate_limits():
-                return
-                
-            # Process market data and generate NEW signals (only if no existing positions)
-            signals = await self._generate_signals(data)
-            
-            # 🎯 QUALITY OVER QUANTITY: Be more selective with signals  
-            original_signal_count = len(signals)
-            
-            # Apply STRICTER quality filters to reduce signal volume
-            quality_signals = []
+            # Store signals in current_positions for orchestrator to find
             for signal in signals:
-                # Only keep highest confidence signals (using dynamic threshold)
-                confidence = signal.get('confidence', 0)
-                min_confidence = self.min_confidence_threshold
-                if confidence >= min_confidence:
-                    quality_signals.append(signal)
-                    self.current_positions[signal['symbol']] = signal
-                    self._increment_signal_counters()  # Track signal generation
-                    logger.info(f"🚨 {self.name} HIGH-QUALITY SIGNAL: {signal['symbol']} {signal['action']} "
-                               f"Entry: ₹{signal['entry_price']:.2f}, Confidence: {signal['confidence']:.2f}")
-                else:
-                    logger.debug(f"📉 {self.name} SIGNAL REJECTED: {signal['symbol']} low confidence ({confidence:.2f} < {min_confidence})")
-            
-            # Log filtering results
-            if len(quality_signals) < original_signal_count:
-                filtered_count = original_signal_count - len(quality_signals)
-                logger.warning(f"🎯 {self.name} QUALITY FILTER: {filtered_count}/{original_signal_count} signals rejected (low confidence)")
-            
-            # Update last signal time if signals generated
-            if quality_signals:
-                self.last_signal_time = datetime.now()
+                symbol = signal.get('symbol')
+                if symbol:
+                    self.current_positions[symbol] = signal
+                    logger.info(f"🎯 SMART INTRADAY: {signal['symbol']} {signal['action']} "
+                               f"Confidence: {signal.get('confidence', 0):.1f}/10")
                 
         except Exception as e:
-            logger.error(f"Error in {self.name} strategy: {str(e)}")
-    
-    def _is_scalping_cooldown_passed(self) -> bool:
-        """Check if SCALPING cooldown period has passed"""
-        if not self.last_signal_time:
-            return True
-        
-        time_since_last = (datetime.now() - self.last_signal_time).total_seconds()
-        return time_since_last >= self.scalping_cooldown
-    
-    async def _generate_signals(self, data: Dict) -> List[Dict]:
-        """Generate trading signals based on market data - ANTI-BOMBARDMENT VERSION"""
-        signals = []
-        
+            logger.error(f"Error in Smart Intraday Options: {e}")
+
+    async def generate_signals(self, market_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate signals based on comprehensive market condition analysis"""
         try:
-            # 🚨 CRITICAL FIX: LIMIT TO HIGH-VALUE SYMBOLS ONLY (not all market data)
-            symbols = self._get_priority_symbols(data)
-            logger.debug(f"📊 {self.name}: Processing {len(symbols)} priority symbols (filtered from {len(data)} total)")
+            signals = []
             
-            # 🎯 HARD LIMIT: Maximum 4 signals per cycle (momentum should be selective)
-            max_signals_per_cycle = 4
+            if not market_data:
+                return signals
             
-            for symbol in symbols:
-                # Hard limit to prevent signal bombardment
-                if len(signals) >= max_signals_per_cycle:
-                    logger.info(f"🚫 {self.name}: Reached max signals limit ({max_signals_per_cycle}) - stopping bombardment")
-                    break
+            # Analyze each focus stock
+            for stock in self.focus_stocks:
+                if stock in market_data:
+                    # Detect market condition for this stock
+                    market_condition = self._detect_market_condition(stock, market_data)
                     
-                symbol_data = data.get(symbol, {})
-                if not symbol_data:
-                    continue
-                
-                # Check symbol-specific cooldown for scalping
-                if not self._is_symbol_scalping_cooldown_passed(symbol):
-                    continue
-                    
-                # Generate signal for this symbol
-                signal = await self._analyze_momentum(symbol, symbol_data)
-                if signal:
-                    signals.append(signal)
-                    # Update symbol cooldown
-                    self.symbol_cooldowns[symbol] = datetime.now()
-                    logger.debug(f"✅ {self.name}: Generated signal {len(signals)}/{max_signals_per_cycle} for {symbol}")
-                    
-        except Exception as e:
-            logger.error(f"Error generating signals: {e}")
+                    # Generate signal based on condition
+                    signal = await self._generate_condition_based_signal(stock, market_condition, market_data)
+                    if signal:
+                        signals.append(signal)
             
-        return signals
-    
-    def _get_priority_symbols(self, data: Dict) -> List[str]:
-        """Get priority symbols for momentum trading - focus on trending stocks"""
-        try:
-            # MOMENTUM STRATEGY: Focus on stocks with strong price momentum
-            priority_symbols = [
-                # High-momentum NIFTY 50 stocks
-                'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY',
-                'BAJFINANCE', 'BHARTIARTL', 'LT', 'SBIN', 'MARUTI',
-                'AXISBANK', 'KOTAKBANK', 'TITAN', 'HCLTECH', 'WIPRO',
-                # Index symbols (momentum leaders)
-                'NIFTY', 'BANKNIFTY', 'FINNIFTY'
-            ]
-            
-            # Filter based on price movement and volume
-            available_symbols = []
-            for symbol in priority_symbols:
-                if symbol in data and data[symbol]:
-                    symbol_data = data[symbol]
-                    price_change = abs(symbol_data.get('price_change', 0))
-                    volume = symbol_data.get('volume', 0)
-                    # Only symbols with some momentum and decent volume
-                    if price_change > 0.05 and volume > 200000:  # 0.05% movement + 2 lakh volume
-                        available_symbols.append(symbol)
-            
-            logger.debug(f"🎯 {self.name}: Selected {len(available_symbols)} momentum symbols")
-            return available_symbols[:12]  # Limit to top 12 for momentum strategy
+            logger.info(f"📊 Smart Intraday Options generated {len(signals)} signals")
+            return signals
             
         except Exception as e:
-            logger.error(f"Error filtering momentum symbols: {e}")
-            # Fallback: Use first 6 symbols
-            return list(data.keys())[:6]
-    
-    def _is_symbol_scalping_cooldown_passed(self, symbol: str) -> bool:
-        """Check if symbol-specific scalping cooldown has passed"""
-        if symbol not in self.symbol_cooldowns:
-            return True
-        
-        last_signal = self.symbol_cooldowns[symbol]
-        time_since = (datetime.now() - last_signal).total_seconds()
-        return time_since >= 60  # 60 seconds per symbol for momentum
-    
-    async def _analyze_momentum(self, symbol: str, data: Dict) -> Optional[Dict]:
-        """Analyze momentum with SCALPING optimization"""
+            logger.error(f"Error in Smart Intraday Options: {e}")
+            return []
+
+    def _detect_market_condition(self, symbol: str, market_data: Dict[str, Any]) -> str:
+        """Detect current market condition for the stock"""
         try:
-            # Extract price data
-            current_price = data.get('close', 0)
-            high = data.get('high', 0)
-            low = data.get('low', 0)
+            data = market_data.get(symbol, {})
+            if not data:
+                return 'sideways'
+            
+            change_percent = data.get('change_percent', 0)
             volume = data.get('volume', 0)
+            ltp = data.get('ltp', 0)
             
-            if not all([current_price, high, low, volume]):
-                return None
-                
-            # Calculate proper ATR using base class method
-            atr = self.calculate_atr(symbol, high, low, current_price)
+            # Get average volume (simulated)
+            avg_volume = volume * 0.8  # Assume current is 20% above average
+            volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
             
-            # Calculate momentum indicators
-            price_change = data.get('price_change', 0)
-            volume_change = data.get('volume_change', 0)
+            # Condition detection logic
+            if abs(change_percent) >= self.breakout_threshold and volume_ratio > 1.5:
+                return 'breakout_up' if change_percent > 0 else 'breakout_down'
             
-            # Analyze momentum strength with enhanced filters to prevent false signals
-            momentum_analysis = self._analyze_momentum_strength(price_change, volume_change, data or {})
+            elif change_percent >= self.trending_threshold:
+                return 'trending_up'
             
-            if momentum_analysis['signal_strength'] == 'none':
-                return None
+            elif change_percent <= -self.trending_threshold:
+                return 'trending_down'
             
-            # Determine action and ATR multiplier
-            action = momentum_analysis['action']
-            atr_multiplier = self.atr_multipliers[momentum_analysis['signal_strength']]
+            elif abs(change_percent) <= self.sideways_range:
+                return 'sideways'
             
-            # Calculate SCALPING-OPTIMIZED stop loss and target
-            stop_loss = self.calculate_dynamic_stop_loss(
-                current_price, atr, action, atr_multiplier, 
-                min_percent=0.3, max_percent=0.7  # TIGHT bounds for momentum scalping
-            )
+            elif volume_ratio > 2.0:
+                return 'high_volatility'
             
-            target = self.calculate_dynamic_target(
-                current_price, stop_loss, risk_reward_ratio=1.4  # 1.4:1 for momentum scalping
-            )
+            elif volume_ratio < 0.5:
+                return 'low_volatility'
             
-            # Calculate confidence based on momentum analysis
-            confidence = self._calculate_confidence(momentum_analysis, price_change, volume_change, data or {})
+            # Check for reversal patterns (simplified)
+            elif change_percent > 0.5 and change_percent < self.trending_threshold:
+                return 'reversal_up'
             
-            # Create standardized signal (convert confidence from 0.0-1.0 to 0.0-10.0 scale)
-            signal = await self.create_standard_signal(
-                symbol=symbol,
-                action=action,
-                entry_price=current_price,
-                stop_loss=stop_loss,
-                target=target,
-                confidence=confidence * 10.0,  # Convert 0.9 -> 9.0
-                metadata={
-                    'scalping_optimized': True,
-                    'momentum_score': momentum_analysis['score'],
-                    'momentum_strength': momentum_analysis['signal_strength'],
-                    'price_change': price_change,
-                    'volume_change': volume_change,
-                    'atr': atr,
-                    'atr_multiplier': atr_multiplier,
-                    'risk_type': 'SCALPING_MOMENTUM',
-                    'strategy_version': '2.0_SCALPING_OPTIMIZED'
-                }
-            )
+            elif change_percent < -0.5 and change_percent > -self.trending_threshold:
+                return 'reversal_down'
             
-            return signal
-                
+            return 'sideways'
+            
         except Exception as e:
-            logger.error(f"Error analyzing momentum for {symbol}: {e}")
+            logger.debug(f"Error detecting market condition for {symbol}: {e}")
+            return 'sideways'
+
+    async def _generate_condition_based_signal(self, symbol: str, condition: str, 
+                                             market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Generate signal based on detected market condition"""
+        try:
+            strategy_func = self.strategies_by_condition.get(condition)
+            if not strategy_func:
+                return None
             
+            return await strategy_func(symbol, market_data)
+            
+        except Exception as e:
+            logger.debug(f"Error generating condition-based signal for {symbol}: {e}")
+            return None
+
+    async def _trending_up_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Strategy for uptrending stocks"""
+        data = market_data.get(symbol, {})
+        change_percent = data.get('change_percent', 0)
+        
+        if change_percent > 1.0:  # Strong uptrend
+            confidence = 9.2 + min(change_percent * 0.2, 0.8)
+            return await self._create_options_signal(
+                symbol=symbol,
+                signal_type='buy',
+                confidence=confidence,
+                market_data=market_data,
+                reasoning=f"Uptrending stock strategy - Change: {change_percent:.1f}%",
+                position_size=100
+            )
         return None
-    
-    def _analyze_momentum_strength(self, price_change: float, volume_change: float, trend_data: Optional[Dict] = None) -> Dict:
-        """Analyze momentum strength with enhanced filters to prevent false signals"""
-        thresholds = self.momentum_thresholds
+
+    async def _trending_down_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Strategy for downtrending stocks - SHORT SELLING"""
+        data = market_data.get(symbol, {})
+        change_percent = data.get('change_percent', 0)
         
-        # Calculate momentum score based on price and volume changes
-        momentum_score = 0
+        if change_percent < -1.0:  # Strong downtrend
+            confidence = 9.2 + min(abs(change_percent) * 0.2, 0.8)
+            return await self._create_options_signal(
+                symbol=symbol,
+                signal_type='sell',  # SHORT SELLING
+                confidence=confidence,
+                market_data=market_data,
+                reasoning=f"Downtrending stock SHORT strategy - Change: {change_percent:.1f}%",
+                position_size=100
+            )
+        return None
+
+    async def _sideways_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """RANGE TRADING strategy for sideways markets"""
+        data = market_data.get(symbol, {})
+        change_percent = data.get('change_percent', 0)
+        ltp = data.get('ltp', 0)
         
-        # Price momentum scoring (with realistic thresholds)
-        if price_change >= thresholds['strong_positive']:
-            momentum_score += 3
-        elif price_change >= thresholds['moderate_positive']:
-            momentum_score += 2
-        elif price_change <= thresholds['strong_negative']:
-            momentum_score -= 3
-        elif price_change <= thresholds['moderate_negative']:
-            momentum_score -= 2
+        # Range trading: buy at support, sell at resistance
+        if change_percent < -0.3:  # Near support
+            confidence = 9.1
+            return await self._create_options_signal(
+                symbol=symbol,
+                signal_type='buy',
+                confidence=confidence,
+                market_data=market_data,
+                reasoning=f"Range trading: Buy at support - Change: {change_percent:.1f}%",
+                position_size=150
+            )
+        elif change_percent > 0.3:  # Near resistance
+            confidence = 9.1
+            return await self._create_options_signal(
+                symbol=symbol,
+                signal_type='sell',
+                confidence=confidence,
+                market_data=market_data,
+                reasoning=f"Range trading: Sell at resistance - Change: {change_percent:.1f}%",
+                position_size=150
+            )
+        return None
+
+    async def _breakout_up_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Strategy for upward breakouts"""
+        data = market_data.get(symbol, {})
+        change_percent = data.get('change_percent', 0)
+        volume = data.get('volume', 0)
         
-        # Volume confirmation (FIXED: Make volume additive, not penalty-based)
-        if volume_change > thresholds['volume_threshold']:
-            momentum_score += 1 if momentum_score > 0 else -1
-        # REMOVED: Penalty for low volume - let price momentum drive signals
+        if change_percent > 1.5 and volume > 100000:
+            confidence = 9.5 + min(change_percent * 0.1, 0.5)
+            return await self._create_options_signal(
+                symbol=symbol,
+                signal_type='buy',
+                confidence=confidence,
+                market_data=market_data,
+                reasoning=f"Upward breakout with volume - Change: {change_percent:.1f}%, Volume: {volume:,}",
+                position_size=200
+            )
+        return None
+
+    async def _breakout_down_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Strategy for downward breakouts"""
+        data = market_data.get(symbol, {})
+        change_percent = data.get('change_percent', 0)
+        volume = data.get('volume', 0)
         
-        # REMOVED: Trend confirmation penalty - too restrictive for scalping
-        # REMOVED: Market volatility penalty - we WANT volatility for scalping
+        if change_percent < -1.5 and volume > 100000:
+            confidence = 9.5 + min(abs(change_percent) * 0.1, 0.5)
+            return await self._create_options_signal(
+                symbol=symbol,
+                signal_type='sell',
+                confidence=confidence,
+                market_data=market_data,
+                reasoning=f"Downward breakout with volume - Change: {change_percent:.1f}%, Volume: {volume:,}",
+                position_size=200
+            )
+        return None
+
+    async def _reversal_up_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Strategy for upward reversals"""
+        data = market_data.get(symbol, {})
+        change_percent = data.get('change_percent', 0)
         
-        # Determine signal strength and action (stricter criteria)
-        if momentum_score >= 3:
-            return {
-                'signal_strength': 'strong_momentum',
-                'action': 'BUY',
-                'score': momentum_score
-            }
-        elif momentum_score >= 2:
-            return {
-                'signal_strength': 'moderate_momentum',
-                'action': 'BUY',
-                'score': momentum_score
-            }
-        elif momentum_score <= -3:
-            return {
-                'signal_strength': 'strong_momentum',
-                'action': 'SELL',
-                'score': momentum_score
-            }
-        elif momentum_score <= -2:
-            return {
-                'signal_strength': 'moderate_momentum',
-                'action': 'SELL',
-                'score': momentum_score
-            }
-        else:
-            return {
-                'signal_strength': 'none',
-                'action': 'HOLD',
-                'score': momentum_score
-            }
-    
-    def _calculate_confidence(self, momentum_analysis: Dict, price_change: float, 
-                             volume_change: float, trend_data: Optional[Dict] = None) -> float:
-        """Calculate signal confidence with enhanced quality scoring"""
-        base_confidence = 0.4  # Lower base confidence
+        if 0.5 <= change_percent <= 1.0:  # Modest upward move after decline
+            confidence = 9.0
+            return await self._create_options_signal(
+                symbol=symbol,
+                signal_type='buy',
+                confidence=confidence,
+                market_data=market_data,
+                reasoning=f"Upward reversal pattern - Change: {change_percent:.1f}%",
+                position_size=100
+            )
+        return None
+
+    async def _reversal_down_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Strategy for downward reversals"""
+        data = market_data.get(symbol, {})
+        change_percent = data.get('change_percent', 0)
         
-        # Boost confidence for strong momentum
-        if momentum_analysis['signal_strength'] == 'strong_momentum':
-            base_confidence = 0.7
-        elif momentum_analysis['signal_strength'] == 'moderate_momentum':
-            base_confidence = 0.5
+        if -1.0 <= change_percent <= -0.5:  # Modest downward move after rise
+            confidence = 9.0
+            return await self._create_options_signal(
+                symbol=symbol,
+                signal_type='sell',
+                confidence=confidence,
+                market_data=market_data,
+                reasoning=f"Downward reversal pattern - Change: {change_percent:.1f}%",
+                position_size=100
+            )
+        return None
+
+    async def _high_volatility_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Strategy for high volatility periods"""
+        data = market_data.get(symbol, {})
+        change_percent = data.get('change_percent', 0)
+        volume = data.get('volume', 0)
         
-        # FIXED: Boost confidence for meaningful price change (realistic thresholds)
-        if abs(price_change) >= 0.08:  # 0.08% move (aligned with strategy thresholds)
-            price_boost = min(abs(price_change) / 0.5, 0.25)  # Up to 25% boost for 0.5% move
-        else:
-            price_boost = 0  # No boost for very small moves
+        if volume > 200000 and abs(change_percent) > 0.5:
+            signal_type = 'buy' if change_percent > 0 else 'sell'
+            confidence = 9.3
+            return await self._create_options_signal(
+                symbol=symbol,
+                signal_type=signal_type,
+                confidence=confidence,
+                market_data=market_data,
+                reasoning=f"High volatility momentum - Change: {change_percent:.1f}%, Volume: {volume:,}",
+                position_size=125
+            )
+        return None
+
+    async def _low_volatility_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Strategy for low volatility periods"""
+        data = market_data.get(symbol, {})
+        change_percent = data.get('change_percent', 0)
         
-        # Boost confidence for significant volume
-        if volume_change >= 20:
-            volume_boost = min(volume_change / 100, 0.2)  # Up to 20% boost
-        elif volume_change >= 10:
-            volume_boost = min(volume_change / 200, 0.1)  # Up to 10% boost
-        else:
-            volume_boost = 0
-        
-        # REMOVED: Trend confirmation boost - too complex for scalping
-        
-        # REMOVED: Time-based penalty - scalping should be fast
-        
-        # Calculate final confidence
-        final_confidence = base_confidence + price_boost + volume_boost
-        
-        # Cap confidence at 95%
-        return min(final_confidence, 0.95)
+        # In low volatility, look for any movement
+        if abs(change_percent) > 0.2:
+            signal_type = 'buy' if change_percent > 0 else 'sell'
+            confidence = 9.0
+            return await self._create_options_signal(
+                symbol=symbol,
+                signal_type=signal_type,
+                confidence=confidence,
+                market_data=market_data,
+                reasoning=f"Low volatility opportunity - Change: {change_percent:.1f}%",
+                position_size=75
+            )
+        return None
+
+logger.info("✅ Smart Intraday Options loaded successfully")
