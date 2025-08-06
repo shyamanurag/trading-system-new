@@ -1169,6 +1169,9 @@ class BaseStrategy:
             
         except Exception as e:
             logger.error(f"❌ Error fetching available expiries: {e}")
+            # Add debug info to help identify the issue
+            import traceback
+            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
             return []
     
     def _get_fallback_expiries(self) -> List[Dict]:

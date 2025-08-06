@@ -732,10 +732,17 @@ class RiskManager:
             # Convert order to signal-like object for validation
             class OrderSignal:
                 def __init__(self, order):
-                    self.symbol = order.symbol
-                    self.strategy_name = getattr(order, 'strategy_name', 'unknown')
-                    self.quantity = order.quantity
-                    self.entry_price = getattr(order, 'price', 0.0)
+                    # CRITICAL FIX: Handle both dict and object types
+                    if isinstance(order, dict):
+                        self.symbol = order.get('symbol', 'UNKNOWN')
+                        self.strategy_name = order.get('strategy_name', 'unknown')
+                        self.quantity = order.get('quantity', 0)
+                        self.entry_price = order.get('price', 0.0)
+                    else:
+                        self.symbol = getattr(order, 'symbol', 'UNKNOWN')
+                        self.strategy_name = getattr(order, 'strategy_name', 'unknown')
+                        self.quantity = getattr(order, 'quantity', 0)
+                        self.entry_price = getattr(order, 'price', 0.0)
                     self.quality_score = 0.8  # Default quality
             
             signal = OrderSignal(order)
