@@ -227,6 +227,17 @@ class ConnectionManager:
         try:
             logger.info("Initializing Zerodha connection...")
             
+            # CRITICAL FIX: Check if orchestrator already has a working Zerodha client
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                    logger.info("✅ Using existing Zerodha client from orchestrator (prevents token conflicts)")
+                    self.connections['zerodha'] = orchestrator.zerodha_client
+                    return True
+            except Exception as e:
+                logger.debug(f"Could not get orchestrator client: {e}")
+            
             # Import ZerodhaIntegration from the correct location
             from brokers.zerodha import ZerodhaIntegration
             
@@ -241,14 +252,12 @@ class ConnectionManager:
                     redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
                     redis_client = redis.from_url(redis_url)
                     
-                    # Check multiple Redis key patterns to find the token
+                    # CRITICAL FIX: Use EXACT SAME pattern as token submission in zerodha_manual_auth.py
+                    # Token is stored at: zerodha:token:{actual_user_id} 
+                    primary_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
                     token_keys_to_check = [
-                        f"zerodha:token:{user_id}",  # Standard pattern with env user_id
-                        f"zerodha:token:{os.getenv('ZERODHA_USER_ID', 'QSW899')}",  # Dynamic user_id pattern
-                        f"zerodha:token:PAPER_TRADER_MAIN",  # Alternative paper trader ID
-                        f"zerodha:{user_id}:access_token",  # Alternative pattern
-                        f"zerodha:access_token",  # Simple pattern
-                        f"zerodha_token_{user_id}",  # Alternative format
+                        f"zerodha:token:{primary_user_id}",  # PRIMARY: Matches zerodha_manual_auth.py storage
+                        f"zerodha:token:{user_id}",  # Fallback: env user_id if different
                     ]
                     
                     for key in token_keys_to_check:

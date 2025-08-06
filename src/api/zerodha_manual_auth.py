@@ -381,7 +381,29 @@ async def submit_manual_token(token_data: TokenSubmission):
         # Store session in memory using actual user ID from Zerodha
         zerodha_sessions[actual_user_id] = session
         
-        # CRITICAL FIX: Update ALL Zerodha client instances with new token
+        # CRITICAL FIX: Store token in Redis FIRST, then update clients
+        try:
+            redis_client = await get_redis_client()
+            # DYNAMIC USER ID: Use actual user ID from Zerodha response instead of hardcoded
+            redis_key = f"zerodha:token:{actual_user_id}"
+            
+            # Store token with expiration (tokens expire at 6 AM IST next day)
+            current_hour = datetime.now().hour
+            if current_hour < 6:
+                # Before 6 AM, expires at 6 AM today
+                seconds_until_6am = (6 - current_hour) * 3600
+            else:
+                # After 6 AM, expires at 6 AM tomorrow
+                seconds_until_6am = (24 - current_hour + 6) * 3600
+            
+            await redis_client.set(redis_key, access_token, ex=seconds_until_6am)
+            logger.info(f"✅ Token stored in Redis at {redis_key} BEFORE client updates")
+            
+        except Exception as e:
+            logger.error(f"❌ CRITICAL: Failed to store token in Redis BEFORE client updates: {e}")
+            raise HTTPException(status_code=500, detail="Token storage failed")
+
+        # CRITICAL FIX: Update ALL Zerodha client instances with new token AFTER Redis storage
         try:
             from src.core.orchestrator import TradingOrchestrator
             orchestrator = await TradingOrchestrator.get_instance()
@@ -406,28 +428,7 @@ async def submit_manual_token(token_data: TokenSubmission):
                 logger.warning("⚠️ Orchestrator instance not available")
         except Exception as e:
             logger.warning(f"⚠️ Orchestrator notification failed - {e}")
-        
-        # CRITICAL FIX: Store token in Redis for orchestrator access
-        try:
-            redis_client = await get_redis_client()
-            # DYNAMIC USER ID: Use actual user ID from Zerodha response instead of hardcoded
-            actual_user_id = session_data.get("user_id", token_data.user_id)
-            redis_key = f"zerodha:token:{actual_user_id}"
-            
-            # Store token with expiration (tokens expire at 6 AM IST next day)
-            current_hour = datetime.now().hour
-            if current_hour < 6:
-                # Before 6 AM, expires at 6 AM today
-                seconds_until_6am = (6 - current_hour) * 3600
-            else:
-                # After 6 AM, expires at 6 AM tomorrow
-                seconds_until_6am = (24 - current_hour + 6) * 3600
-            
-            await redis_client.set(redis_key, access_token, ex=seconds_until_6am)
-            logger.info(f"✅ Token stored in Redis at {redis_key} with TTL: {seconds_until_6am}s")
-            
-        except Exception as e:
-            logger.error(f"⚠️  Failed to store token in Redis: {e}")
+
             # Don't fail the request, just log the error
         
         logger.info(f"✅ Authentication successful for user: {actual_user_id}")

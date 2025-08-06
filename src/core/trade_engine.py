@@ -252,19 +252,11 @@ class TradeEngine:
                 if orchestrator:
                     self.logger.error(f"❌ Orchestrator exists but zerodha_client is: {getattr(orchestrator, 'zerodha_client', 'MISSING')}")
                     
-                    # EMERGENCY FIX: Try to reinitialize Zerodha client
-                    self.logger.info("🔄 EMERGENCY: Attempting to reinitialize Zerodha client...")
-                    try:
-                        new_client = await orchestrator._initialize_zerodha_client()
-                        if new_client:
-                            orchestrator.zerodha_client = new_client
-                            self.zerodha_client = new_client
-                            self.logger.info("✅ EMERGENCY: Successfully reinitialized Zerodha client")
-                            return True
-                        else:
-                            self.logger.error("❌ EMERGENCY: Zerodha reinitialize failed")
-                    except Exception as reinit_error:
-                        self.logger.error(f"❌ EMERGENCY: Zerodha reinitialize error: {reinit_error}")
+                    # EMERGENCY FIX: Try to reinitialize Zerodha client (DISABLED to prevent token conflicts)
+                    self.logger.warning("⚠️ EMERGENCY: Zerodha client missing but NOT reinitializing to prevent token conflicts")
+                    self.logger.warning("⚠️ Orchestrator should handle Zerodha client creation to maintain token consistency")
+                    # Disabled to prevent multiple clients with different tokens:
+                    # new_client = await orchestrator._initialize_zerodha_client()
                 else:
                     self.logger.error("❌ No orchestrator instance found")
                 return False
@@ -434,6 +426,10 @@ class TradeEngine:
                             self.logger.info(f"   Entry: ₹{execution_price:.2f}")
                             self.logger.info(f"   Stop Loss: ₹{stop_loss_price:.2f}")
                             self.logger.info(f"   Target: ₹{target_price:.2f}")
+                            
+                            # CRITICAL FIX: Place actual stop loss and target orders in Zerodha
+                            await self._place_risk_management_orders(signal, symbol, quantity, stop_loss_price, target_price)
+                            
                         else:
                             # Retry once more after longer wait
                             await asyncio.sleep(0.5)
@@ -443,6 +439,9 @@ class TradeEngine:
                                 position.target = target_price
                                 position.trailing_stop = stop_loss_price
                                 self.logger.info(f"🎯 Position risk levels set for {symbol} (retry successful)")
+                                
+                                # Place risk management orders
+                                await self._place_risk_management_orders(signal, symbol, quantity, stop_loss_price, target_price)
                             else:
                                 self.logger.error(f"❌ Position still not found for {symbol} after retries - risk management compromised")
                     else:
@@ -638,6 +637,63 @@ class TradeEngine:
         except Exception as e:
             self.logger.error(f"❌ Error syncing actual Zerodha trades: {e}")
             return []
+    
+    async def _place_risk_management_orders(self, signal: Dict, symbol: str, quantity: int, stop_loss_price: float, target_price: float):
+        """Place stop loss and target orders in Zerodha after main order execution"""
+        try:
+            zerodha_client = await self._try_get_zerodha_client_from_orchestrator()
+            if not zerodha_client:
+                self.logger.error(f"❌ No Zerodha client for risk management orders: {symbol}")
+                return
+            
+            # Determine opposite side for exit orders
+            main_action = signal.get('action', 'BUY')
+            exit_action = 'SELL' if main_action == 'BUY' else 'BUY'
+            
+            self.logger.info(f"🎯 Placing risk management orders for {symbol}")
+            
+            # Place Stop Loss Order (SL-M = Stop Loss Market)
+            try:
+                sl_params = {
+                    'symbol': symbol,
+                    'action': exit_action,
+                    'quantity': quantity,
+                    'order_type': 'SL-M',  # Stop Loss Market order
+                    'trigger_price': stop_loss_price,
+                    'tag': 'ALGO_SL'
+                }
+                
+                sl_order_id = await zerodha_client.place_order(sl_params)
+                if sl_order_id:
+                    self.logger.info(f"✅ Stop Loss order placed: {symbol} @ ₹{stop_loss_price:.2f} (ID: {sl_order_id})")
+                else:
+                    self.logger.error(f"❌ Stop Loss order failed: {symbol}")
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Stop Loss order error for {symbol}: {e}")
+            
+            # Place Target Order (LIMIT)
+            try:
+                target_params = {
+                    'symbol': symbol,
+                    'action': exit_action,
+                    'quantity': quantity,
+                    'order_type': 'LIMIT',
+                    'price': target_price,
+                    'tag': 'ALGO_TARGET'
+                }
+                
+                target_order_id = await zerodha_client.place_order(target_params)
+                if target_order_id:
+                    self.logger.info(f"✅ Target order placed: {symbol} @ ₹{target_price:.2f} (ID: {target_order_id})")
+                else:
+                    self.logger.error(f"❌ Target order failed: {symbol}")
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Target order error for {symbol}: {e}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Risk management orders failed for {symbol}: {e}")
     
     async def _update_position_tracker_with_trade(self, trade_data: Dict):
         """Update position tracker with actual executed trade data"""

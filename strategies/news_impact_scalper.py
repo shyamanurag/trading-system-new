@@ -80,22 +80,70 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             if not market_data:
                 return signals
             
-            # Focus on NIFTY and BANKNIFTY options for liquidity
-            option_symbols = [symbol for symbol in market_data.keys() 
-                            if any(underlying in symbol for underlying in ['NIFTY', 'BANKNIFTY'])
-                            and ('CE' in symbol or 'PE' in symbol)]
+            # CRITICAL FIX: Analyze underlying symbols, then request options data from Zerodha
+            underlying_symbols = [symbol for symbol in market_data.keys() 
+                                if any(underlying in symbol for underlying in ['NIFTY', 'BANKNIFTY'])]
             
-            for symbol in option_symbols[:10]:  # Limit processing
-                signal = await self._analyze_option_opportunity(symbol, market_data)
+            for underlying_symbol in underlying_symbols[:5]:  # Limit processing
+                # Get underlying data for analysis
+                underlying_data = market_data.get(underlying_symbol, {})
+                if not underlying_data:
+                    continue
+                    
+                # Analyze underlying for options opportunity
+                signal = await self._analyze_underlying_for_options(underlying_symbol, underlying_data, market_data)
                 if signal:
                     signals.append(signal)
             
-            logger.info(f"📊 Professional Options Engine generated {len(signals)} signals")
+            logger.info(f"📊 Professional Options Engine generated {len(signals)} signals from {len(underlying_symbols)} underlyings")
             return signals
             
         except Exception as e:
             logger.error(f"Error in Professional Options Engine: {e}")
             return []
+
+    async def _analyze_underlying_for_options(self, underlying_symbol: str, underlying_data: Dict[str, Any], market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Analyze underlying symbol and generate options signal with real Zerodha data"""
+        try:
+            ltp = underlying_data.get('ltp', 0)
+            volume = underlying_data.get('volume', 0)
+            
+            if ltp == 0 or volume == 0:
+                return None
+            
+            # Determine signal direction based on underlying analysis
+            # Simple momentum analysis for options direction
+            price_change = underlying_data.get('change_percent', 0)
+            
+            if abs(price_change) < 0.5:  # Not enough movement
+                return None
+                
+            # Determine call or put based on momentum
+            option_type = 'CE' if price_change > 0 else 'PE'
+            action = 'BUY'  # Always BUY options
+            
+            # Generate options signal using base strategy method
+            signal = await self.create_standard_signal(
+                symbol=underlying_symbol,  # Will be converted to options symbol
+                action=action,
+                entry_price=ltp,
+                stop_loss=ltp * 0.95 if action == 'BUY' else ltp * 1.05,
+                target=ltp * 1.10 if action == 'BUY' else ltp * 0.90,
+                confidence=8.5,  # High confidence for options
+                metadata={
+                    'strategy': self.strategy_name,
+                    'option_type': option_type,
+                    'underlying_change': price_change,
+                    'volume': volume,
+                    'signal_type': 'OPTIONS'
+                }
+            )
+            
+            return signal
+            
+        except Exception as e:
+            logger.error(f"Error analyzing underlying {underlying_symbol} for options: {e}")
+            return None
 
     async def _analyze_option_opportunity(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Analyze option using professional criteria"""

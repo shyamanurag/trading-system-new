@@ -1418,6 +1418,10 @@ class TradingOrchestrator:
                         strategy_instance = strategy_info['instance']
                         self.logger.info(f"🔍 Processing strategy: {strategy_key}")
                         
+                        # CRITICAL FIX: Sync real positions to strategy before processing
+                        if self.position_tracker:
+                            await self._sync_real_positions_to_strategy(strategy_instance)
+                        
                         # Call strategy's on_market_data method with TRANSFORMED data
                         await strategy_instance.on_market_data(transformed_data)
                         
@@ -2486,6 +2490,43 @@ class TradingOrchestrator:
             self.logger.error(f"❌ Error updating all Zerodha tokens: {e}")
             return False
 
+    async def _sync_real_positions_to_strategy(self, strategy_instance):
+        """Sync real Zerodha positions to strategy for re-evaluation"""
+        try:
+            # Get all real positions from position tracker
+            all_positions = await self.position_tracker.get_all_positions()
+            
+            if not all_positions:
+                return
+            
+            # Convert position tracker format to strategy format
+            real_positions = {}
+            for symbol, position in all_positions.items():
+                if position.quantity != 0:  # Only active positions
+                    real_positions[symbol] = {
+                        'symbol': symbol,
+                        'quantity': position.quantity,
+                        'entry_price': position.average_price,  # FIXED: Use average_price field
+                        'current_price': position.current_price,
+                        'stop_loss': position.stop_loss,
+                        'target': position.target,
+                        'pnl': position.unrealized_pnl,
+                        'timestamp': position.entry_time.isoformat() if position.entry_time else None,
+                        'source': 'REAL_ZERODHA'
+                    }
+            
+            # Update strategy's active positions with real data
+            if hasattr(strategy_instance, 'active_positions'):
+                # Clear phantom positions and update with real ones
+                strategy_instance.active_positions.clear()
+                strategy_instance.active_positions.update(real_positions)
+                
+                if real_positions:
+                    self.logger.info(f"🔄 Synced {len(real_positions)} real positions to {strategy_instance.strategy_name}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error syncing real positions to strategy: {e}")
+    
     async def _validate_and_fix_signal_ltp(self, signal: Dict) -> Optional[Dict]:
         """Validate signal and fetch real LTP for options if entry_price is 0.0"""
         try:
