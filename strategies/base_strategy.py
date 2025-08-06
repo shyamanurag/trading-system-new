@@ -1768,10 +1768,11 @@ class BaseStrategy:
                 if base_lot_size is None:
                     logger.error(f"❌ NO LOT SIZE AVAILABLE for {underlying_symbol} - REJECTING SIGNAL")
                     return 0
-                # CRITICAL FIX: Check for zero entry price (missing LTP)
+                # CRITICAL FIX: Allow zero entry price signals to pass to orchestrator for LTP validation
                 if entry_price <= 0:
-                    logger.error(f"❌ ZERO ENTRY PRICE for {options_symbol} - cannot calculate position size")
-                    return 0
+                    logger.info(f"🔄 ZERO ENTRY PRICE for {options_symbol} - using default lot size for orchestrator validation")
+                    # Return default lot size to allow signal to proceed to orchestrator
+                    return base_lot_size
                 
                 cost_per_lot = base_lot_size * entry_price
                 
@@ -2014,10 +2015,11 @@ class BaseStrategy:
                 if base_lot_size is None:
                     logger.error(f"❌ NO LOT SIZE AVAILABLE for {underlying_symbol} - REJECTING SIGNAL")
                     return 0
-                # CRITICAL FIX: Check for zero entry price (missing LTP)
+                # CRITICAL FIX: Allow zero entry price signals to pass to orchestrator for LTP validation
                 if entry_price <= 0:
-                    logger.error(f"❌ ZERO ENTRY PRICE for {options_symbol} - cannot calculate position size")
-                    return 0
+                    logger.info(f"🔄 ZERO ENTRY PRICE for {options_symbol} - using default lot size for orchestrator validation")
+                    # Return default lot size to allow signal to proceed to orchestrator
+                    return base_lot_size
                 
                 cost_per_lot = base_lot_size * entry_price
                 

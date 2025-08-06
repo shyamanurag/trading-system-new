@@ -265,13 +265,12 @@ class TrueDataClient:
                     pass
                 self.td_obj = None
 
-            # Create new connection
+            # Create new connection - CRITICAL FIX: Remove unsupported compression parameter
             self.td_obj = TD_live(
                 self.username,
                 self.password,
                 live_port=self.port,
-                url=self.url,
-                compression=False
+                url=self.url
             )
 
             logger.info("✅ TD_live object created")
