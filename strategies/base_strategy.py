@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, time, timedelta
 import numpy as np
 import pytz  # Add timezone support
-import time # Added for time.time()
+import time as time_module # Added for time.time() - avoid conflict with datetime.time
 
 logger = logging.getLogger(__name__)
 
@@ -172,17 +172,25 @@ class BaseStrategy:
             stop_loss = position.get('stop_loss', 0)
             target = position.get('target', 0)
             
-            # Check stop loss
-            if action == 'BUY' and current_price <= stop_loss:
-                return {'should_exit': True, 'reason': 'STOP_LOSS_HIT'}
-            elif action == 'SELL' and current_price >= stop_loss:
-                return {'should_exit': True, 'reason': 'STOP_LOSS_HIT'}
+            # CRITICAL FIX: Handle None values for stop_loss and target
+            if stop_loss is None:
+                stop_loss = 0
+            if target is None:
+                target = 0
             
-            # Check target
-            if action == 'BUY' and current_price >= target:
-                return {'should_exit': True, 'reason': 'TARGET_HIT'}
-            elif action == 'SELL' and current_price <= target:
-                return {'should_exit': True, 'reason': 'TARGET_HIT'}
+            # Check stop loss (only if not zero)
+            if stop_loss > 0:
+                if action == 'BUY' and current_price <= stop_loss:
+                    return {'should_exit': True, 'reason': 'STOP_LOSS_HIT'}
+                elif action == 'SELL' and current_price >= stop_loss:
+                    return {'should_exit': True, 'reason': 'STOP_LOSS_HIT'}
+            
+            # Check target (only if not zero)
+            if target > 0:
+                if action == 'BUY' and current_price >= target:
+                    return {'should_exit': True, 'reason': 'TARGET_HIT'}
+                elif action == 'SELL' and current_price <= target:
+                    return {'should_exit': True, 'reason': 'TARGET_HIT'}
             
             # Check trailing stop
             if symbol in self.trailing_stops:
@@ -510,8 +518,8 @@ class BaseStrategy:
             logger.error(f"Error calculating dynamic target: {e}")
             # DYNAMIC fallback percentage target based on volatility
             try:
-                volatility_multiplier = self._get_volatility_multiplier(symbol, entry_price)
-                target_percent = 0.01 + (volatility_multiplier * 0.005)  # 1% base + volatility adjustment
+                # Use simple percentage-based target without symbol dependency
+                target_percent = 0.015  # 1.5% conservative fallback
             except:
                 target_percent = 0.015  # 1.5% conservative fallback
                 

@@ -36,6 +36,7 @@ class RegimeAdaptiveController:
     def __init__(self, config: Dict):
         self.config = config
         self.name = "RegimeAdaptiveController"
+        self.strategy_name = "regime_adaptive_controller"  # CRITICAL FIX: Add missing attribute
         self.is_active = False
         self.current_regime = MarketRegime.RANGING
         self.regime_metrics = RegimeMetrics(0.0, 0.0, 0.0, 0.0, MarketRegime.RANGING)

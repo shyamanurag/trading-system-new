@@ -46,6 +46,7 @@ class OptimizedVolumeScalper(BaseStrategy):
     def __init__(self, config: Dict):
         super().__init__(config)
         self.name = "MarketMicrostructureEdge"
+        self.strategy_name = "MarketMicrostructureEdge"  # CRITICAL FIX: Add missing attribute
         
         # SOPHISTICATED PARAMETERS based on academic research
         self.order_flow_lookback = 20  # bars for order flow analysis
