@@ -1431,15 +1431,15 @@ class TradingOrchestrator:
                                        f"Sectors: {bias_summary['sector_alignment']:+.2f})")
             except Exception as e:
                 self.logger.warning(f"Error updating market bias: {e}")
-        
-        # DEBUG: Show strategy status before processing
-        self.logger.info(f"🔍 DEBUG: Total strategies loaded: {len(self.strategies)}")
-        for strategy_key, strategy_info in self.strategies.items():
-            active = strategy_info.get('active', False)
-            has_instance = 'instance' in strategy_info
-            self.logger.info(f"   📋 {strategy_key}: active={active}, has_instance={has_instance}")
-        
-        for strategy_key, strategy_info in self.strategies.items():
+            
+            # DEBUG: Show strategy status before processing
+            self.logger.info(f"🔍 DEBUG: Total strategies loaded: {len(self.strategies)}")
+            for strategy_key, strategy_info in self.strategies.items():
+                active = strategy_info.get('active', False)
+                has_instance = 'instance' in strategy_info
+                self.logger.info(f"   📋 {strategy_key}: active={active}, has_instance={has_instance}")
+            
+            for strategy_key, strategy_info in self.strategies.items():
                 if strategy_info.get('active', False) and 'instance' in strategy_info:
                     try:
                         strategy_instance = strategy_info['instance']
