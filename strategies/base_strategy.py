@@ -62,13 +62,13 @@ class BaseStrategy:
         self.profit_lock_percentage = 1.0  # Lock profit at 1%
         
         # 🎯 ACTIVE POSITION MANAGEMENT CONFIGURATION
-        self.enable_active_management = config.get('enable_active_management', True)
-        self.partial_profit_threshold = config.get('partial_profit_threshold', 15)  # Book profits at 15%
-        self.aggressive_profit_threshold = config.get('aggressive_profit_threshold', 25)  # Aggressive booking at 25%
-        self.scaling_profit_threshold = config.get('scaling_profit_threshold', 5)  # Scale position at 5% profit
-        self.breakeven_buffer = config.get('breakeven_buffer', 2)  # 2% buffer above breakeven
-        self.time_based_tightening_hours = config.get('time_based_tightening', 2)  # Tighten stops after 2 hours
-        self.volatility_adjustment_threshold = config.get('volatility_threshold', 3)  # Adjust stops at 3% volatility
+        self.enable_active_management = self.config.get('enable_active_management', True)
+        self.partial_profit_threshold = self.config.get('partial_profit_threshold', 15)  # Book profits at 15%
+        self.aggressive_profit_threshold = self.config.get('aggressive_profit_threshold', 25)  # Aggressive booking at 25%
+        self.scaling_profit_threshold = self.config.get('scaling_profit_threshold', 5)  # Scale position at 5% profit
+        self.breakeven_buffer = self.config.get('breakeven_buffer', 2)  # 2% buffer above breakeven
+        self.time_based_tightening_hours = self.config.get('time_based_tightening', 2)  # Tighten stops after 2 hours
+        self.volatility_adjustment_threshold = self.config.get('volatility_threshold', 3)  # Adjust stops at 3% volatility
         
         # ⏰ TRADING TIME RESTRICTIONS (IST)
         self.ist_timezone = pytz.timezone('Asia/Kolkata')
