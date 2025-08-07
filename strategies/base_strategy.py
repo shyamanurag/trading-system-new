@@ -1625,8 +1625,7 @@ class BaseStrategy:
                     logger.info(f"   Mapping: {underlying_symbol} → {zerodha_underlying}")
                     logger.info(f"   Strike: {strike}, Expiry: {expiry}, Type: {option_type}")
                     logger.info(f"   Used Price: ₹{actual_price:.2f} (real market price)")
-                
-                return options_symbol, option_type
+                    return options_symbol, option_type
                 else:
                     # 🎯 FALLBACK: Options not available, trade equity instead
                     logger.warning(f"⚠️ OPTIONS NOT AVAILABLE: {options_symbol} doesn't exist in Zerodha NFO")
