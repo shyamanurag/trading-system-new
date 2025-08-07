@@ -604,13 +604,18 @@ class BaseStrategy:
             # 🚨 CRITICAL: Check F&O availability first
             from config.truedata_symbols import is_fo_enabled, should_use_equity_only
             
+            # DEBUG: Log F&O check details
+            fo_enabled = is_fo_enabled(symbol)
+            equity_only = should_use_equity_only(symbol)
+            logger.info(f"🔍 F&O CHECK for {symbol}: fo_enabled={fo_enabled}, equity_only={equity_only}")
+            
             # Force equity for known cash-only stocks
-            if should_use_equity_only(symbol):
+            if equity_only:
                 logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY (no F&O available)")
                 return 'EQUITY'
             
             # Check if F&O is available for this symbol
-            if not is_fo_enabled(symbol):
+            if not fo_enabled:
                 logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY (no options trading)")
                 return 'EQUITY'
             

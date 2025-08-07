@@ -334,6 +334,9 @@ class RiskManager:
         self.peak_capital = self.position_tracker.capital
         self.portfolio_var = 0.0
         self.portfolio_beta = 1.0
+        
+        # CRITICAL FIX: Initialize emergency stop flag
+        self.emergency_stop_triggered = False
         self.portfolio_correlations = {}
         self.sector_concentrations = {}
         
@@ -395,18 +398,32 @@ class RiskManager:
         try:
             total_capital = self.position_tracker.capital
             
+            # CRITICAL DEBUG: Log all risk parameters for diagnosis
+            logger.info(f"🔍 RISK VALIDATION DEBUG for {symbol}:")
+            logger.info(f"   Position Value: ₹{position_value:,.0f}")
+            logger.info(f"   Total Capital: ₹{total_capital:,.0f}")
+            logger.info(f"   Daily P&L: ₹{self.daily_pnl:,.0f}")
+            logger.info(f"   Current Drawdown: {self.current_drawdown*100:.2f}%")
+            logger.info(f"   Emergency Stop: {getattr(self, 'emergency_stop_triggered', False)}")
+            
             # Check 1: Single position loss limit
             max_single_position_loss = total_capital * self.risk_limits['max_single_position_loss_percent']
-            if position_value > max_single_position_loss * 10:  # Assume 10% potential loss
-                return False, f"Position too large: ₹{position_value:,.0f} exceeds single position limit"
+            limit_check = max_single_position_loss * 10  # Assume 10% potential loss
+            logger.info(f"   Position Limit: ₹{limit_check:,.0f} (Max: ₹{max_single_position_loss:,.0f} * 10)")
+            if position_value > limit_check:
+                return False, f"Position too large: ₹{position_value:,.0f} exceeds single position limit ₹{limit_check:,.0f}"
             
             # Check 2: Daily loss limit
-            if self.daily_pnl < -total_capital * self.risk_limits['max_daily_loss_percent']:
-                return False, f"Daily loss limit exceeded: {self.daily_pnl:,.0f}"
+            daily_loss_limit = -total_capital * self.risk_limits['max_daily_loss_percent']
+            logger.info(f"   Daily Loss Limit: ₹{daily_loss_limit:,.0f} (Current: ₹{self.daily_pnl:,.0f})")
+            if self.daily_pnl < daily_loss_limit:
+                return False, f"Daily loss limit exceeded: ₹{self.daily_pnl:,.0f} < ₹{daily_loss_limit:,.0f}"
             
             # Check 3: Drawdown limit
-            if self.current_drawdown > self.risk_limits['max_drawdown_percent']:
-                return False, f"Drawdown limit exceeded: {self.current_drawdown*100:.1f}%"
+            drawdown_limit = self.risk_limits['max_drawdown_percent']
+            logger.info(f"   Drawdown Limit: {drawdown_limit*100:.1f}% (Current: {self.current_drawdown*100:.2f}%)")
+            if self.current_drawdown > drawdown_limit:
+                return False, f"Drawdown limit exceeded: {self.current_drawdown*100:.1f}% > {drawdown_limit*100:.1f}%"
             
             # Check 4: Concentration limit
             if self.would_exceed_concentration_limit(symbol, position_value):
@@ -421,9 +438,12 @@ class RiskManager:
                 return False, f"VaR limit would be exceeded"
             
             # Check 7: Emergency stop
-            if self.emergency_stop_triggered:
+            emergency_stop = getattr(self, 'emergency_stop_triggered', False)
+            logger.info(f"   Emergency Stop Check: {emergency_stop}")
+            if emergency_stop:
                 return False, "Emergency stop is active"
             
+            logger.info(f"✅ RISK VALIDATION PASSED for {symbol}")
             return True, "Risk validation passed"
             
         except Exception as e:
@@ -608,8 +628,12 @@ class RiskManager:
             quantity = signal.quantity
             entry_price = getattr(signal, 'entry_price', 0.0)
             
+            # CRITICAL DEBUG: Log signal validation details
+            logger.info(f"🔍 SIGNAL VALIDATION: {symbol} | Qty: {quantity} | Price: ₹{entry_price} | Strategy: {strategy_name}")
+            
             # Calculate position value
             position_value = entry_price * quantity
+            logger.info(f"   Position Value: ₹{position_value:,.0f}")
             
             # Validate trade risk using existing method
             risk_approved, risk_reason = self.validate_trade_risk(position_value, strategy_name, symbol)
@@ -729,6 +753,9 @@ class RiskManager:
     async def validate_order(self, user_id: str, order) -> bool:
         """Validate order for user (called by OrderManager)"""
         try:
+            logger.info(f"🔍 RISK MANAGER: Starting order validation for user {user_id}")
+            logger.info(f"   Order data: {order}")
+            
             # Convert order to signal-like object for validation
             class OrderSignal:
                 def __init__(self, order):
@@ -737,18 +764,26 @@ class RiskManager:
                         self.symbol = order.get('symbol', 'UNKNOWN')
                         self.strategy_name = order.get('strategy_name', 'unknown')
                         self.quantity = order.get('quantity', 0)
-                        self.entry_price = order.get('price', 0.0)
+                        # CRITICAL FIX: Check both price and entry_price fields
+                        self.entry_price = order.get('entry_price', order.get('price', 0.0))
                     else:
                         self.symbol = getattr(order, 'symbol', 'UNKNOWN')
                         self.strategy_name = getattr(order, 'strategy_name', 'unknown')
                         self.quantity = getattr(order, 'quantity', 0)
-                        self.entry_price = getattr(order, 'price', 0.0)
+                        # CRITICAL FIX: Check both price and entry_price fields for objects too
+                        self.entry_price = getattr(order, 'entry_price', getattr(order, 'price', 0.0))
                     self.quality_score = 0.8  # Default quality
             
             signal = OrderSignal(order)
-            result = await self.validate_signal(signal)
+            logger.info(f"   Created OrderSignal: symbol={signal.symbol}, quantity={signal.quantity}, entry_price={signal.entry_price}")
             
-            return result.get('approved', False)
+            result = await self.validate_signal(signal)
+            logger.info(f"   Validation result: {result}")
+            
+            approved = result.get('approved', False)
+            logger.info(f"🔍 RISK MANAGER: Order validation result for {signal.symbol}: {approved}")
+            
+            return approved
             
         except Exception as e:
             logger.error(f"Error validating order: {e}")

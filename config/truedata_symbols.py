@@ -24,25 +24,6 @@ ZERODHA_SYMBOL_MAPPING = {
     # Everything else will be auto-detected dynamically
 }
 
-def is_fo_enabled(symbol: str) -> bool:
-    """🎯 CHECK: Whether F&O trading is enabled for a symbol"""
-    # List of symbols with F&O enabled (major stocks and indices)
-    fo_symbols = {
-        'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX',
-        'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
-        'INFY', 'KOTAKBANK', 'LT', 'AXISBANK', 'MARUTI', 'ASIANPAINT',
-        'TECHM', 'ADANIPORT', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO'
-    }
-    
-    # Remove suffixes for comparison
-    clean_symbol = symbol.replace('-I', '').replace('25', '').replace('26', '')
-    return clean_symbol in fo_symbols
-
-def should_use_equity_only(symbol: str) -> bool:
-    """🎯 CHECK: Whether to use equity only (no F&O) for a symbol"""
-    # For symbols without F&O or during market hours restrictions
-    return not is_fo_enabled(symbol)
-
 def _is_options_symbol(symbol: str) -> bool:
     """🎯 CHECK: Whether symbol is an options contract"""
     # Check for CE/PE suffix and date pattern (e.g., TCS14AUG3000CE, NIFTY07AUG24800PE)
@@ -297,18 +278,34 @@ def _edit_distance(s1: str, s2: str) -> int:
     return previous_row[-1]
 
 def is_fo_enabled(symbol: str) -> bool:
-    """🎯 CHECK: Whether F&O trading is enabled for a symbol"""
-    # List of symbols with F&O enabled (major stocks and indices)
-    fo_symbols = {
+    """🎯 DYNAMIC CHECK: F&O enabled for TOP 50 most liquid companies only"""
+    # TOP 50 MOST LIQUID F&O SYMBOLS - Focus on liquidity for optimal execution
+    top_50_liquid_fo = {
+        # Major Indices (5)
         'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX',
+        
+        # TOP 45 MOST TRADED F&O STOCKS (by daily volume & liquidity)
         'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
         'INFY', 'KOTAKBANK', 'LT', 'AXISBANK', 'MARUTI', 'ASIANPAINT',
-        'TECHM', 'ADANIPORT', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO'
+        'TECHM', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO', 'NESTLEIND',
+        'HINDUNILVR', 'POWERGRID', 'NTPC', 'COALINDIA', 'ONGC', 'SUNPHARMA',
+        'DRREDDY', 'CIPLA', 'APOLLOHOSP', 'HCLTECH', 'INDUSINDBK', 'TATAMOTORS',
+        'TATASTEEL', 'JSWSTEEL', 'HINDALCO', 'VEDL', 'ITC', 'BRITANNIA',
+        'DABUR', 'GODREJCP', 'MARICO', 'IOC', 'BPCL', 'HINDPETRO',
+        'GAIL', 'ADANIPORT', 'ADANIGREEN', 'PNB', 'FEDERALBNK'
     }
     
-    # Remove suffixes for comparison
-    clean_symbol = symbol.replace('-I', '').replace('25', '').replace('26', '')
-    return clean_symbol in fo_symbols
+    # Remove suffixes for comparison (-I, 25, 26 etc.)
+    clean_symbol = symbol.replace('-I', '').replace('25', '').replace('26', '').strip().upper()
+    result = clean_symbol in top_50_liquid_fo
+    
+    # DEBUG: Log F&O check details
+    logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → F&O enabled: {result}")
+    if not result and clean_symbol in ['TATASTEEL', 'PNB']:
+        logger.warning(f"⚠️ {clean_symbol} should be F&O enabled but showing as false!")
+        logger.info(f"   Available F&O symbols: {sorted(list(top_50_liquid_fo))}")
+    
+    return result
 
 def should_use_equity_only(symbol: str) -> bool:
     """🎯 CHECK: Whether to use equity only (no F&O) for a symbol"""
