@@ -1717,10 +1717,16 @@ class TradingOrchestrator:
                         volume_change = volume - prev_volume if prev_volume > 0 else 0
                         volume_change_percent = (volume_change / prev_volume * 100) if prev_volume > 0 else 0
                         
-                        # CRITICAL FIX: Calculate price change (required for strategies but was missing!)
+                        # CRITICAL FIX: Calculate price change from day's open, not previous tick
+                        # For market bias, we need the day's change, not tick-to-tick change
+                        open_price = float(data.get('open', ltp))
+                        price_change = ltp - open_price
+                        price_change_percent = (price_change / open_price * 100) if open_price > 0 else 0
+                        
+                        # Also calculate tick-to-tick change for other strategies
                         prev_price = self.market_data_history.get(symbol, {}).get('price', 0)
-                        price_change = ltp - prev_price if prev_price > 0 else 0
-                        price_change_percent = (price_change / prev_price * 100) if prev_price > 0 else 0
+                        tick_change = ltp - prev_price if prev_price > 0 else 0
+                        tick_change_percent = (tick_change / prev_price * 100) if prev_price > 0 else 0
                         
                         # Store current data for next comparison
                         if symbol not in self.market_data_history:
@@ -1752,8 +1758,11 @@ class TradingOrchestrator:
                             'volume': volume,
                             'volume_change': volume_change,
                             'volume_change_percent': volume_change_percent,
-                            'price_change': price_change,
-                            'price_change_percent': price_change_percent,
+                            'price_change': price_change,  # Day's change for market bias
+                            'price_change_percent': price_change_percent,  # Day's change percent
+                            'change_percent': price_change_percent,  # Alias for compatibility
+                            'tick_change': tick_change,  # Tick-to-tick change
+                            'tick_change_percent': tick_change_percent,  # Tick-to-tick percent
                             'bid': float(bid),
                             'ask': float(ask),
                             'spread': spread,

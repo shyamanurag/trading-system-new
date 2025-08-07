@@ -97,10 +97,15 @@ class MarketDirectionalBias:
                 logger.warning("No NIFTY data available for bias calculation")
                 return self.current_bias
             
-            # Debug: Log NIFTY data fields to understand the structure
-            logger.debug(f"🔍 NIFTY-I data fields available: {list(nifty_data.keys())[:10]}...")
-            if 'ltp' in nifty_data:
-                logger.debug(f"🔍 NIFTY-I LTP: {nifty_data['ltp']}, available change fields: {[k for k in nifty_data.keys() if 'change' in k.lower()]}")
+            # Debug: Log NIFTY data to understand what we're getting
+            if 'ltp' in nifty_data and 'open' in nifty_data:
+                ltp = float(nifty_data.get('ltp', 0))
+                open_price = float(nifty_data.get('open', 0))
+                actual_change = ltp - open_price
+                actual_change_pct = (actual_change / open_price * 100) if open_price > 0 else 0
+                logger.info(f"📊 NIFTY-I: LTP={ltp:.2f}, Open={open_price:.2f}, "
+                           f"Actual Change={actual_change:.2f} ({actual_change_pct:+.2f}%), "
+                           f"Provided change_percent={nifty_data.get('change_percent', 'N/A')}")
             
             # 1. ANALYZE NIFTY MOMENTUM
             nifty_momentum = self._analyze_nifty_momentum(nifty_data)
@@ -360,26 +365,29 @@ class MarketDirectionalBias:
         
         return consistency - 0.5  # 0.5 to 0.5 range, where 0.5 = all same direction
     
-    def should_align_with_bias(self, signal_direction: str, signal_confidence: float) -> bool:
+    def should_allow_signal(self, signal_direction: str, signal_confidence: float) -> bool:
         """
-        Determine if a signal should align with market bias
+        Determine if a signal should be allowed based on market bias
         
         Args:
             signal_direction: 'BUY' or 'SELL'
             signal_confidence: Signal confidence (0-10)
             
         Returns:
-            True if signal should align with bias, False for high-confidence override
+            True if signal should be allowed, False if it should be rejected
         """
         try:
             # HIGH CONFIDENCE OVERRIDE: Allow counter-trend for very strong signals
             if signal_confidence >= 8.5:
                 logger.info(f"🎯 HIGH CONFIDENCE OVERRIDE: {signal_direction} allowed despite bias")
-                return False
+                return True
             
-            # NEUTRAL BIAS: Allow all directions with moderate confidence
+            # NEUTRAL BIAS: Allow signals with moderate confidence
             if self.current_bias.direction == "NEUTRAL":
-                return signal_confidence >= 6.5
+                allowed = signal_confidence >= 6.5
+                if not allowed:
+                    logger.debug(f"Signal rejected: Confidence {signal_confidence:.1f} < 6.5 threshold for neutral bias")
+                return allowed
             
             # DIRECTIONAL BIAS: Check alignment
             bias_aligned = (
@@ -388,15 +396,28 @@ class MarketDirectionalBias:
             )
             
             if bias_aligned:
-                # Aligned signals get confidence boost and lower threshold
-                return signal_confidence >= 5.5
+                # Aligned signals get lower threshold
+                allowed = signal_confidence >= 5.5
+                if not allowed:
+                    logger.debug(f"Aligned signal rejected: Confidence {signal_confidence:.1f} < 5.5 threshold")
+                return allowed
             else:
                 # Counter-trend signals need higher confidence
-                return signal_confidence >= 7.5
+                allowed = signal_confidence >= 7.5
+                if not allowed:
+                    logger.debug(f"Counter-trend signal rejected: Confidence {signal_confidence:.1f} < 7.5 threshold")
+                return allowed
                 
         except Exception as e:
             logger.warning(f"Error in bias alignment check: {e}")
             return signal_confidence >= 7.0  # Default threshold
+    
+    def should_align_with_bias(self, signal_direction: str, signal_confidence: float) -> bool:
+        """
+        DEPRECATED: Use should_allow_signal() instead
+        Kept for backward compatibility
+        """
+        return self.should_allow_signal(signal_direction, signal_confidence)
     
     def get_position_size_multiplier(self, signal_direction: str) -> float:
         """

@@ -1248,11 +1248,23 @@ class BaseStrategy:
             # Risk Manager will reject orders based on time restrictions
             
             # 🎯 MARKET BIAS COORDINATION: Filter signals based on market direction
-            if market_bias and hasattr(market_bias, 'should_align_with_bias'):
-                if not market_bias.should_align_with_bias(action.upper(), confidence):
+            if market_bias:
+                # CRITICAL FIX: Normalize confidence from percentage (0-100) to 0-10 scale
+                # Strategies generate confidence as percentage, but bias system expects 0-10
+                normalized_confidence = confidence / 10.0 if confidence > 10 else confidence
+                
+                # Use the new clearer method if available, otherwise fall back to old method
+                if hasattr(market_bias, 'should_allow_signal'):
+                    should_allow = market_bias.should_allow_signal(action.upper(), normalized_confidence)
+                elif hasattr(market_bias, 'should_align_with_bias'):
+                    should_allow = market_bias.should_align_with_bias(action.upper(), normalized_confidence)
+                else:
+                    should_allow = True  # If no bias method available, allow signal
+                
+                if not should_allow:
                     logger.info(f"🚫 BIAS FILTER: {symbol} {action} rejected by market bias "
                                f"(Bias: {getattr(market_bias.current_bias, 'direction', 'UNKNOWN')}, "
-                               f"Confidence: {confidence:.1f}/10)")
+                               f"Signal Confidence: {normalized_confidence:.1f}/10)")
                     return None
                 else:
                     # Apply position size multiplier for bias-aligned signals
