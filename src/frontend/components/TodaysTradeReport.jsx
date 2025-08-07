@@ -92,10 +92,10 @@ const TodaysTradeReport = () => {
                             trades = tradesData.trades.map(trade => ({
                                 id: trade.trade_id,
                                 symbol: trade.symbol,
-                                side: trade.trade_type || trade.side,
+                                side: (trade.trade_type || trade.side || '').toUpperCase(), // Ensure uppercase
                                 quantity: trade.quantity,
                                 entry_price: trade.price,
-                                current_price: trade.price, // For executed trades, current price = execution price
+                                current_price: trade.ltp || trade.current_price || trade.price, // Use LTP if available
                                 pnl: trade.pnl || 0,
                                 pnl_percent: trade.pnl_percent || 0,
                                 status: trade.status || 'EXECUTED',
@@ -126,17 +126,17 @@ const TodaysTradeReport = () => {
                             const searchData = await searchResponse.json();
                             if (searchData.success && searchData.data && searchData.data.trades) {
                                 trades = searchData.data.trades.map(trade => ({
-                                    id: trade.trade_id,
+                                    id: trade.trade_id || trade.order_id,
                                     symbol: trade.symbol,
-                                    side: trade.side,
+                                    side: (trade.side || trade.transaction_type || '').toUpperCase(), // Ensure uppercase
                                     quantity: trade.quantity,
                                     entry_price: trade.price,
-                                    current_price: trade.price,
+                                    current_price: trade.ltp || trade.current_price || trade.price, // Use LTP if available
                                     pnl: trade.pnl || 0,
                                     pnl_percent: ((trade.pnl || 0) / (trade.price * trade.quantity)) * 100,
                                     status: trade.status || 'EXECUTED',
                                     entry_time: trade.executed_at || trade.created_at,
-                                    strategy: trade.strategy,
+                                    strategy: trade.strategy || 'Manual/Zerodha',
                                     commission: 0
                                 }));
                             }

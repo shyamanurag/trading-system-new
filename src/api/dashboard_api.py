@@ -420,10 +420,13 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                 for position in current_positions:
                     if position.get('quantity', 0) != 0:  # Active position
                         active_positions_count += 1
-                        # Add P&L from this position
-                        pnl = position.get('pnl', 0) or 0
-                        daily_pnl += float(pnl)
-                        logger.info(f"📊 Position {position.get('tradingsymbol', 'UNKNOWN')}: Qty={position.get('quantity', 0)}, P&L=₹{pnl}")
+                        # Get P&L from Zerodha's position data
+                        # Zerodha provides realised_pnl and unrealised_pnl
+                        realised = float(position.get('realised_pnl', 0) or 0)
+                        unrealised = float(position.get('unrealised_pnl', 0) or 0)
+                        pnl = realised + unrealised  # Total P&L
+                        daily_pnl += pnl
+                        logger.info(f"📊 Position {position.get('tradingsymbol', 'UNKNOWN')}: Qty={position.get('quantity', 0)}, Realised=₹{realised}, Unrealised=₹{unrealised}, Total P&L=₹{pnl}")
                 
                 logger.info(f"📊 Active positions: {active_positions_count}, Total P&L: ₹{daily_pnl:.2f}")
                 
@@ -861,7 +864,10 @@ async def get_current_positions(orchestrator: TradingOrchestrator = Depends(get_
         for position in all_positions:
             quantity = position.get('quantity', 0)
             if quantity != 0:  # Active position
-                pnl = float(position.get('pnl', 0) or 0)
+                # Use Zerodha's P&L fields
+                realised = float(position.get('realised_pnl', 0) or 0)
+                unrealised = float(position.get('unrealised_pnl', 0) or 0)
+                pnl = realised + unrealised
                 total_pnl += pnl
                 
                 # Format position data

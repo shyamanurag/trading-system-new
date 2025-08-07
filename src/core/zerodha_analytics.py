@@ -336,45 +336,15 @@ class ZerodhaAnalyticsService:
         """Convert Zerodha orders to trade format"""
         trades = []
         
-        # Track positions for P&L calculation
-        positions = {}  # symbol -> {'qty': 0, 'avg_price': 0}
-        
         for order in orders:
             try:
-                # Extract trade information
-                symbol = order.get('tradingsymbol')
-                side = order.get('transaction_type')  # BUY or SELL
-                quantity = int(order.get('quantity', 0))
-                price = float(order.get('average_price', 0))
-                
-                # Calculate P&L for this trade
-                pnl = 0.0
-                if symbol and price > 0 and quantity > 0:
-                    if symbol not in positions:
-                        positions[symbol] = {'qty': 0, 'avg_price': 0}
-                    
-                    pos = positions[symbol]
-                    
-                    if side == 'BUY':
-                        # Update average price for buys
-                        total_value = (pos['qty'] * pos['avg_price']) + (quantity * price)
-                        pos['qty'] += quantity
-                        pos['avg_price'] = total_value / pos['qty'] if pos['qty'] > 0 else price
-                    elif side == 'SELL' and pos['qty'] > 0:
-                        # Calculate P&L for sells
-                        sell_qty = min(quantity, pos['qty'])
-                        pnl = (price - pos['avg_price']) * sell_qty
-                        pos['qty'] -= sell_qty
-                        if pos['qty'] <= 0:
-                            pos['avg_price'] = 0
-                
+                # Extract trade information - pass through Zerodha data as-is
                 trade = {
                     'order_id': order.get('order_id'),
-                    'symbol': symbol,
-                    'side': side,
-                    'quantity': quantity,
-                    'price': price,
-                    'pnl': pnl,  # Add P&L field
+                    'symbol': order.get('tradingsymbol'),
+                    'side': order.get('transaction_type'),  # BUY or SELL
+                    'quantity': int(order.get('quantity', 0)),
+                    'price': float(order.get('average_price', 0)),
                     'status': order.get('status'),
                     'timestamp': order.get('order_timestamp'),
                     'exchange': order.get('exchange'),
@@ -387,6 +357,8 @@ class ZerodhaAnalyticsService:
                     'stoploss': order.get('stoploss'),
                     'trailing_stoploss': order.get('trailing_stoploss'),
                     'source': 'ZERODHA_API'
+                    # Note: P&L is not provided by Zerodha at order level
+                    # Use positions API for P&L data
                 }
                 
                 trades.append(trade)
