@@ -1249,22 +1249,29 @@ class BaseStrategy:
             
             # 🎯 MARKET BIAS COORDINATION: Filter signals based on market direction
             if market_bias:
-                # CRITICAL FIX: Normalize confidence from percentage (0-100) to 0-10 scale
-                # Strategies generate confidence as percentage, but bias system expects 0-10
-                normalized_confidence = confidence / 10.0 if confidence > 10 else confidence
+                # CRITICAL FIX: Normalize confidence to 0-10 scale
+                # Some strategies use percentage (0-100), others use decimal (0-10)
+                if confidence > 10:
+                    # It's a percentage, convert to 0-10 scale
+                    normalized_confidence = confidence / 10.0
+                    logger.debug(f"📊 Confidence normalization for {symbol}: {confidence}% → {normalized_confidence}/10")
+                else:
+                    # Already in 0-10 scale
+                    normalized_confidence = confidence
+                    logger.debug(f"📊 Confidence for {symbol} already normalized: {normalized_confidence}/10")
                 
-                # Use the new clearer method if available, otherwise fall back to old method
+                # Use the new clearer method if available
                 if hasattr(market_bias, 'should_allow_signal'):
                     should_allow = market_bias.should_allow_signal(action.upper(), normalized_confidence)
-                elif hasattr(market_bias, 'should_align_with_bias'):
-                    should_allow = market_bias.should_align_with_bias(action.upper(), normalized_confidence)
                 else:
-                    should_allow = True  # If no bias method available, allow signal
+                    # Fallback: if no bias method available, allow signal
+                    should_allow = True
+                    logger.warning(f"⚠️ Market bias object missing should_allow_signal method")
                 
                 if not should_allow:
                     logger.info(f"🚫 BIAS FILTER: {symbol} {action} rejected by market bias "
                                f"(Bias: {getattr(market_bias.current_bias, 'direction', 'UNKNOWN')}, "
-                               f"Signal Confidence: {normalized_confidence:.1f}/10)")
+                               f"Raw Confidence: {confidence}, Normalized: {normalized_confidence:.1f}/10)")
                     return None
                 else:
                     # Apply position size multiplier for bias-aligned signals
