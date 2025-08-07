@@ -1621,9 +1621,9 @@ class BaseStrategy:
                 
                 # 🚨 CRITICAL FIX: Validate if options symbol exists in Zerodha before using
                 if self._validate_options_symbol_exists(options_symbol):
-                logger.info(f"🎯 ZERODHA OPTIONS SYMBOL: {underlying_symbol} → {options_symbol}")
-                logger.info(f"   Mapping: {underlying_symbol} → {zerodha_underlying}")
-                logger.info(f"   Strike: {strike}, Expiry: {expiry}, Type: {option_type}")
+                    logger.info(f"🎯 ZERODHA OPTIONS SYMBOL: {underlying_symbol} → {options_symbol}")
+                    logger.info(f"   Mapping: {underlying_symbol} → {zerodha_underlying}")
+                    logger.info(f"   Strike: {strike}, Expiry: {expiry}, Type: {option_type}")
                     logger.info(f"   Used Price: ₹{actual_price:.2f} (real market price)")
                 
                 return options_symbol, option_type
