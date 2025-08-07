@@ -749,6 +749,9 @@ router_configs = [
     ('debug_endpoints', '/api/v1', ('debug',)),
     ('orchestrator_debug', '/api/v1', ('orchestrator-debug',)),
     
+    # Dashboard endpoints
+    ('dashboard', '/api', ('dashboard',)),  # Dashboard API endpoints
+    
     # External integrations
     ('zerodha_auth', '', ('zerodha',)),  # Already has /api/zerodha prefix
     ('zerodha_daily_auth', '', ('zerodha-daily',)),  # Mount at root, has /zerodha prefix
