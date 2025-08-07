@@ -45,8 +45,16 @@ class BaseStrategy:
         # CRITICAL: Position Management System
         self.active_positions = {}  # symbol -> position data with strategy linkage
         self.position_metadata = {}  # symbol -> strategy-specific position data
-        self.trailing_stops = {}  # symbol -> trailing stop data
+        self.trailing_stops = {}
+        
+        # 🎯 MARKET BIAS COORDINATION
+        self.market_bias = None  # Will be set by orchestrator
         self.position_entry_times = {}  # symbol -> entry timestamp
+    
+    def set_market_bias(self, market_bias):
+        """Set market bias system for coordinated signal generation"""
+        self.market_bias = market_bias
+        logger.debug(f"🎯 {self.name}: Market bias system connected")
         
         # Position deduplication and management flags
         self.max_position_age_hours = 24  # Auto-close positions after 24 hours
@@ -1210,15 +1218,32 @@ class BaseStrategy:
     
     async def create_standard_signal(self, symbol: str, action: str, entry_price: float, 
                               stop_loss: float, target: float, confidence: float, 
-                              metadata: Dict) -> Optional[Dict]:
+                              metadata: Dict, market_bias=None) -> Optional[Dict]:
         """Create standardized signal format - SUPPORTS EQUITY, FUTURES & OPTIONS"""
         try:
                     # 🔧 TIME RESTRICTIONS MOVED TO RISK MANAGER
         # Strategies should always generate signals for analysis
         # Risk Manager will reject orders based on time restrictions
-            
-            # CRITICAL FIX: Type validation to prevent float/string arithmetic errors
-            try:
+        
+        # 🎯 MARKET BIAS COORDINATION: Filter signals based on market direction
+        if market_bias and hasattr(market_bias, 'should_align_with_bias'):
+            if not market_bias.should_align_with_bias(action.upper(), confidence):
+                logger.info(f"🚫 BIAS FILTER: {symbol} {action} rejected by market bias "
+                           f"(Bias: {getattr(market_bias.current_bias, 'direction', 'UNKNOWN')}, "
+                           f"Confidence: {confidence:.1f}/10)")
+                return None
+            else:
+                # Apply position size multiplier for bias-aligned signals
+                if hasattr(market_bias, 'get_position_size_multiplier'):
+                    bias_multiplier = market_bias.get_position_size_multiplier(action.upper())
+                    metadata['bias_multiplier'] = bias_multiplier
+                    if bias_multiplier > 1.0:
+                        logger.info(f"🔥 BIAS BOOST: {symbol} {action} gets {bias_multiplier:.1f}x position size")
+                    elif bias_multiplier < 1.0:
+                        logger.info(f"⚠️ BIAS REDUCE: {symbol} {action} gets {bias_multiplier:.1f}x position size")
+        
+        # CRITICAL FIX: Type validation to prevent float/string arithmetic errors
+        try:
                 entry_price = float(entry_price) if entry_price not in [None, '', 'N/A', '-'] else 0.0
                 stop_loss = float(stop_loss) if stop_loss not in [None, '', 'N/A', '-'] else 0.0
                 target = float(target) if target not in [None, '', 'N/A', '-'] else 0.0

@@ -12,6 +12,7 @@ from datetime import datetime, time, timedelta
 from typing import Dict, List, Optional, Any
 import sys
 import os
+from src.core.market_directional_bias import MarketDirectionalBias
 import pytz
 from urllib.parse import urlparse
 import redis
@@ -476,6 +477,11 @@ class TradingOrchestrator:
             }
         }
         
+        # CRITICAL: Initialize Market Directional Bias System
+        self.logger.info("🎯 Initializing Market Directional Bias System...")
+        self.market_bias = MarketDirectionalBias()
+        self.logger.info("✅ Market Directional Bias System initialized")
+        
         # Initialize trade engine with all required components and configuration
         self.trade_engine = TradeEngine(
             self.db_config,
@@ -489,6 +495,7 @@ class TradingOrchestrator:
         # Set additional components after initialization
         self.trade_engine.zerodha_client = self.zerodha_client
         self.trade_engine.risk_manager = self.risk_manager
+        self.trade_engine.market_bias = self.market_bias  # Add bias system to trade engine
         
         # CRITICAL FIX: Initialize real-time P&L calculator
         self.pnl_calculator = None
@@ -1406,14 +1413,33 @@ class TradingOrchestrator:
             # transformed_data = self._transform_market_data_for_strategies(market_data)  # ❌ REMOVED: Causes double processing
             transformed_data = market_data  # ✅ FIXED: Use pre-transformed data
             
-            # DEBUG: Show strategy status before processing
-            self.logger.info(f"🔍 DEBUG: Total strategies loaded: {len(self.strategies)}")
-            for strategy_key, strategy_info in self.strategies.items():
-                active = strategy_info.get('active', False)
-                has_instance = 'instance' in strategy_info
-                self.logger.info(f"   📋 {strategy_key}: active={active}, has_instance={has_instance}")
-            
-            for strategy_key, strategy_info in self.strategies.items():
+                    # CRITICAL: Update Market Directional Bias BEFORE running strategies
+        try:
+            if hasattr(self, 'market_bias') and self.market_bias:
+                current_bias = await self.market_bias.update_market_bias(transformed_data)
+                bias_summary = self.market_bias.get_current_bias_summary()
+                
+                # Log bias update every 10 cycles to avoid spam
+                if not hasattr(self, '_bias_log_counter'):
+                    self._bias_log_counter = 0
+                self._bias_log_counter += 1
+                
+                if self._bias_log_counter % 10 == 0:  # Log every 10th cycle
+                    self.logger.info(f"🎯 MARKET BIAS: {bias_summary['direction']} "
+                                   f"(Confidence: {bias_summary['confidence']}/10, "
+                                   f"NIFTY: {bias_summary['nifty_momentum']:+.2f}%, "
+                                   f"Sectors: {bias_summary['sector_alignment']:+.2f})")
+        except Exception as e:
+            self.logger.warning(f"Error updating market bias: {e}")
+        
+        # DEBUG: Show strategy status before processing
+        self.logger.info(f"🔍 DEBUG: Total strategies loaded: {len(self.strategies)}")
+        for strategy_key, strategy_info in self.strategies.items():
+            active = strategy_info.get('active', False)
+            has_instance = 'instance' in strategy_info
+            self.logger.info(f"   📋 {strategy_key}: active={active}, has_instance={has_instance}")
+        
+        for strategy_key, strategy_info in self.strategies.items():
                 if strategy_info.get('active', False) and 'instance' in strategy_info:
                     try:
                         strategy_instance = strategy_info['instance']
@@ -1431,6 +1457,10 @@ class TradingOrchestrator:
                         # 🔄 PROCESS PENDING MANAGEMENT ACTIONS: Handle any queued management actions from previous cycles
                         if hasattr(strategy_instance, 'process_pending_management_actions'):
                             await strategy_instance.process_pending_management_actions()
+                        
+                        # 🎯 PASS MARKET BIAS to strategy for coordinated signal generation
+                        if hasattr(strategy_instance, 'set_market_bias') and hasattr(self, 'market_bias'):
+                            strategy_instance.set_market_bias(self.market_bias)
                         
                         # Call strategy's on_market_data method with TRANSFORMED data
                         await strategy_instance.on_market_data(transformed_data)
@@ -2065,7 +2095,7 @@ class TradingOrchestrator:
             daily_pnl = 0.0
             active_positions = 0
             
-            # Get trades from trade engine
+            # Get trades from trade engine AND Zerodha for accuracy
             if self.trade_engine:
                 try:
                     # CRITICAL FIX: Use get_statistics() instead of get_status() for full-featured TradeEngine
@@ -2082,20 +2112,83 @@ class TradingOrchestrator:
                     self.logger.warning(f"Could not get trade engine status: {e}")
                     total_trades = 0
             
+            # CRITICAL FIX: Get accurate trade count from Zerodha if trade engine shows 0
+            if self.zerodha_client and total_trades == 0:
+                try:
+                    zerodha_orders = await self.zerodha_client.get_orders()
+                    if zerodha_orders:
+                        # Count only completed orders from today
+                        today = datetime.now().date()
+                        completed_orders = []
+                        for order in zerodha_orders:
+                            if order.get('status') == 'COMPLETE':
+                                try:
+                                    # Parse order timestamp to check if it's from today
+                                    order_time_str = order.get('order_timestamp', '')
+                                    if order_time_str:
+                                        # Handle both datetime objects and ISO strings
+                                        if isinstance(order_time_str, str):
+                                            order_time = datetime.fromisoformat(order_time_str.replace('Z', '+00:00'))
+                                        else:
+                                            order_time = order_time_str
+                                        
+                                        if order_time.date() == today:
+                                            completed_orders.append(order)
+                                except Exception as parse_error:
+                                    self.logger.debug(f"Could not parse order timestamp: {parse_error}")
+                                    # Include order anyway if we can't parse timestamp
+                                    completed_orders.append(order)
+                        
+                        total_trades = len(completed_orders)
+                        self.logger.info(f"📊 Found {total_trades} completed trades from Zerodha today")
+                        
+                except Exception as e:
+                    self.logger.warning(f"Could not get Zerodha trade count: {e}")
+            
             # Get positions from position tracker
             if self.position_tracker:
                 try:
                     positions = getattr(self.position_tracker, 'positions', {})
                     active_positions = len(positions)
                     
-                    # Calculate daily P&L from positions
+                    # Calculate daily P&L from positions (both realized and unrealized)
                     for position in positions.values():
                         if isinstance(position, dict):
                             daily_pnl += position.get('unrealized_pnl', 0.0)
+                            daily_pnl += position.get('realized_pnl', 0.0)  # Add realized P&L
+                            daily_pnl += position.get('pnl', 0.0)  # Add any general P&L field
                         else:
                             daily_pnl += getattr(position, 'unrealized_pnl', 0.0)
+                            daily_pnl += getattr(position, 'realized_pnl', 0.0)  # Add realized P&L
+                            daily_pnl += getattr(position, 'pnl', 0.0)  # Add any general P&L field
                 except Exception as e:
                     self.logger.warning(f"Could not get position data: {e}")
+            
+            # CRITICAL FIX: Get realized P&L from Zerodha directly
+            if self.zerodha_client and daily_pnl == 0:
+                try:
+                    # Get live positions from Zerodha for accurate P&L
+                    zerodha_positions = await self.zerodha_client.get_positions()
+                    if zerodha_positions:
+                        for position in zerodha_positions:
+                            if isinstance(position, dict):
+                                # Add all P&L fields from Zerodha
+                                daily_pnl += float(position.get('pnl', 0))
+                                daily_pnl += float(position.get('m2m', 0))  # Mark-to-market P&L
+                                daily_pnl += float(position.get('unrealised', 0))  # Unrealized P&L
+                                daily_pnl += float(position.get('realised', 0))  # Realized P&L
+                                self.logger.debug(f"Position {position.get('tradingsymbol')}: PnL={position.get('pnl', 0)}")
+                    
+                    # Also check orders for executed trade P&L
+                    if daily_pnl == 0:  # Still no P&L found
+                        zerodha_orders = await self.zerodha_client.get_orders()
+                        if zerodha_orders:
+                            completed_orders = [o for o in zerodha_orders if o.get('status') == 'COMPLETE']
+                            total_trades = len(completed_orders)
+                            self.logger.info(f"Found {total_trades} completed orders from Zerodha")
+                            
+                except Exception as e:
+                    self.logger.warning(f"Could not get Zerodha P&L data: {e}")
             
             # Get market status
             market_open = self._is_market_open()

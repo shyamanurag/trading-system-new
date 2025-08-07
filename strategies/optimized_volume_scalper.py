@@ -476,7 +476,8 @@ class OptimizedVolumeScalper(BaseStrategy):
                     'strategy_type': 'microstructure',
                     'time_sensitive': True,
                     'max_hold_time': self.max_position_time
-                }
+                },
+                market_bias=self.market_bias  # 🎯 Pass market bias for coordination
             )
             
             return signal

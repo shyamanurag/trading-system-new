@@ -136,7 +136,8 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                     'underlying_change': price_change,
                     'volume': volume,
                     'signal_type': 'OPTIONS'
-                }
+                },
+                market_bias=self.market_bias  # 🎯 Pass market bias for coordination
             )
             
             return signal

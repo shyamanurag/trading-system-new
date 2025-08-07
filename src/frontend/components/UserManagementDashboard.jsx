@@ -4,6 +4,7 @@ import {
     PersonAdd,
     Visibility
 } from '@mui/icons-material';
+import { fetchWithAuth } from '../api/fetchWithAuth';
 import {
     Alert,
     Avatar,
