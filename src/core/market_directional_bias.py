@@ -8,9 +8,10 @@ in the same direction, preventing conflicting BUY/SELL positions that guarantee 
 
 import logging
 from typing import Dict, Optional, List, Tuple
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import numpy as np
 from dataclasses import dataclass
+from collections import deque
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,11 @@ class MarketBias:
     volume_confirmation: bool  # Volume supports the bias
     time_phase: str  # OPENING, MORNING, AFTERNOON, CLOSING
     last_updated: datetime
+    # Enhanced fields for better bias detection
+    market_regime: str = "NORMAL"  # From market internals
+    breadth_score: float = 0.0  # Market breadth strength
+    stability_score: float = 0.0  # Bias stability over time
+    internals_alignment: float = 0.0  # How well internals align with bias
 
 class MarketDirectionalBias:
     """
@@ -51,11 +57,28 @@ class MarketDirectionalBias:
             last_updated=datetime.now()
         )
         
+        # Initialize market internals analyzer
+        try:
+            from src.core.market_internals import MarketInternalsAnalyzer
+            self.internals_analyzer = MarketInternalsAnalyzer()
+            self.use_internals = True
+            logger.info("✅ Market Internals integrated with Bias System")
+        except ImportError:
+            self.internals_analyzer = None
+            self.use_internals = False
+            logger.warning("⚠️ Market Internals not available, using basic bias calculation")
+        
         # BIAS CALCULATION PARAMETERS
         self.nifty_trend_threshold = 0.3  # 0.3% minimum for bias detection
         self.sector_alignment_threshold = 0.6  # 60% sector alignment required
         self.volume_multiplier_threshold = 1.5  # 1.5x average volume for confirmation
         self.confidence_decay_minutes = 30  # Bias confidence decays over 30 minutes
+        
+        # BIAS STABILITY TRACKING
+        self.bias_history = deque(maxlen=10)  # Track last 10 bias calculations
+        self.last_bias_change = datetime.now()
+        self.min_bias_duration = timedelta(minutes=5)  # Minimum time before bias change
+        self.bias_change_count = 0  # Track frequency of changes
         
         # SECTOR TRACKING
         self.major_sectors = {
@@ -82,7 +105,7 @@ class MarketDirectionalBias:
         
     async def update_market_bias(self, market_data: Dict) -> MarketBias:
         """
-        Analyze market data and update directional bias
+        Analyze market data and update directional bias with enhanced internals
         
         Args:
             market_data: Dictionary with symbol -> price data
@@ -107,24 +130,53 @@ class MarketDirectionalBias:
                            f"Actual Change={actual_change:.2f} ({actual_change_pct:+.2f}%), "
                            f"Provided change_percent={nifty_data.get('change_percent', 'N/A')}")
             
-            # 1. ANALYZE NIFTY MOMENTUM
+            # 1. ANALYZE MARKET INTERNALS (if available)
+            market_internals = None
+            if self.use_internals and self.internals_analyzer:
+                market_internals = await self.internals_analyzer.analyze_market_internals(market_data)
+            
+            # 2. ANALYZE NIFTY MOMENTUM
             nifty_momentum = self._analyze_nifty_momentum(nifty_data)
             
-            # 2. CALCULATE SECTOR ALIGNMENT
+            # 3. CALCULATE SECTOR ALIGNMENT
             sector_alignment = self._calculate_sector_alignment(market_data)
             
-            # 3. CHECK VOLUME CONFIRMATION
+            # 4. CHECK VOLUME CONFIRMATION
             volume_confirmation = self._check_volume_confirmation(nifty_data)
             
-            # 4. DETERMINE TIME PHASE
+            # 5. DETERMINE TIME PHASE
             time_phase = self._get_current_time_phase()
             
-            # 5. CALCULATE OVERALL BIAS
-            bias_direction, confidence = self._calculate_market_bias(
-                nifty_momentum, sector_alignment, volume_confirmation, time_phase
-            )
+            # 6. CALCULATE ENHANCED BIAS (with internals if available)
+            if market_internals:
+                bias_direction, confidence = self._calculate_enhanced_bias(
+                    nifty_momentum, sector_alignment, volume_confirmation, 
+                    time_phase, market_internals
+                )
+                market_regime = market_internals.market_regime
+                breadth_score = market_internals.advance_decline_ratio
+                internals_alignment = self._calculate_internals_alignment(
+                    bias_direction, market_internals
+                )
+            else:
+                # Fallback to basic calculation
+                bias_direction, confidence = self._calculate_market_bias(
+                    nifty_momentum, sector_alignment, volume_confirmation, time_phase
+                )
+                market_regime = "NORMAL"
+                breadth_score = 1.0
+                internals_alignment = 0.0
             
-            # 6. UPDATE CURRENT BIAS
+            # 7. CHECK BIAS STABILITY
+            stability_score = self._calculate_bias_stability(bias_direction)
+            
+            # 8. APPLY STABILITY FILTER (prevent rapid flipping)
+            if not self._should_change_bias(bias_direction, confidence, stability_score):
+                # Keep current bias but update metrics
+                bias_direction = self.current_bias.direction
+                confidence = self.current_bias.confidence * 0.95  # Slight decay
+            
+            # 9. UPDATE CURRENT BIAS
             self.current_bias = MarketBias(
                 direction=bias_direction,
                 confidence=confidence,
@@ -132,13 +184,25 @@ class MarketDirectionalBias:
                 sector_alignment=sector_alignment,
                 volume_confirmation=volume_confirmation,
                 time_phase=time_phase,
-                last_updated=datetime.now()
+                last_updated=datetime.now(),
+                market_regime=market_regime,
+                breadth_score=breadth_score,
+                stability_score=stability_score,
+                internals_alignment=internals_alignment
             )
+            
+            # Update history
+            self.bias_history.append({
+                'direction': bias_direction,
+                'confidence': confidence,
+                'timestamp': datetime.now()
+            })
             
             # Log bias update
             logger.info(f"🎯 MARKET BIAS UPDATE: {bias_direction} "
                        f"(Confidence: {confidence:.1f}/10, NIFTY: {nifty_momentum:+.2f}%, "
-                       f"Sectors: {sector_alignment:+.2f}, Phase: {time_phase})")
+                       f"Regime: {market_regime}, Breadth: {breadth_score:.2f}, "
+                       f"Stability: {stability_score:.1f})")
             
             return self.current_bias
             
@@ -451,6 +515,220 @@ class MarketDirectionalBias:
             logger.warning(f"Error calculating position size multiplier: {e}")
             return 1.0
     
+    def _calculate_enhanced_bias(self, nifty_momentum: float, sector_alignment: float,
+                                volume_confirmation: bool, time_phase: str,
+                                internals) -> Tuple[str, float]:
+        """Calculate market bias using comprehensive internals"""
+        try:
+            # Start with basic components
+            base_direction = "NEUTRAL"
+            base_confidence = 0.0
+            
+            # 1. Price momentum component (30% weight)
+            if abs(nifty_momentum) >= self.nifty_trend_threshold:
+                if nifty_momentum > 0:
+                    base_direction = "BULLISH"
+                else:
+                    base_direction = "BEARISH"
+                base_confidence = min(abs(nifty_momentum) * 2, 3.0)  # Max 3.0 from momentum
+            
+            # 2. Market internals component (40% weight)
+            internals_direction = "NEUTRAL"
+            internals_confidence = 0.0
+            
+            if internals.bullish_score > internals.bearish_score + 10:
+                internals_direction = "BULLISH"
+                internals_confidence = (internals.bullish_score - internals.bearish_score) / 20
+            elif internals.bearish_score > internals.bullish_score + 10:
+                internals_direction = "BEARISH"
+                internals_confidence = (internals.bearish_score - internals.bullish_score) / 20
+            else:
+                internals_direction = "NEUTRAL"
+                internals_confidence = internals.neutral_score / 25
+            
+            internals_confidence = min(internals_confidence, 4.0)  # Max 4.0 from internals
+            
+            # 3. Breadth component (20% weight)
+            breadth_confidence = 0.0
+            if internals.advance_decline_ratio > 2:
+                breadth_confidence = 2.0
+            elif internals.advance_decline_ratio > 1.5:
+                breadth_confidence = 1.0
+            elif internals.advance_decline_ratio < 0.5:
+                breadth_confidence = 2.0
+            elif internals.advance_decline_ratio < 0.67:
+                breadth_confidence = 1.0
+            
+            # 4. Regime adjustment (10% weight)
+            regime_multiplier = 1.0
+            if internals.market_regime == "CHOPPY":
+                regime_multiplier = 0.5  # Reduce confidence in choppy markets
+            elif internals.market_regime == "TRENDING":
+                regime_multiplier = 1.2  # Increase confidence in trending markets
+            elif internals.market_regime == "VOLATILE_CHOPPY":
+                regime_multiplier = 0.3  # Very low confidence in volatile chop
+            
+            # Combine all components
+            if base_direction == internals_direction and base_direction != "NEUTRAL":
+                # Aligned signals - add confidences
+                total_confidence = base_confidence + internals_confidence + breadth_confidence
+                final_direction = base_direction
+            elif base_direction == "NEUTRAL":
+                # Use internals direction if price is neutral
+                total_confidence = internals_confidence + breadth_confidence * 0.5
+                final_direction = internals_direction
+            elif internals_direction == "NEUTRAL":
+                # Use price direction if internals are neutral
+                total_confidence = base_confidence + breadth_confidence * 0.5
+                final_direction = base_direction
+            else:
+                # Conflicting signals - use dominant one
+                if internals_confidence > base_confidence:
+                    final_direction = internals_direction
+                    total_confidence = internals_confidence - base_confidence
+                else:
+                    final_direction = base_direction
+                    total_confidence = base_confidence - internals_confidence
+            
+            # Apply regime multiplier
+            total_confidence *= regime_multiplier
+            
+            # Apply time phase multiplier
+            time_multiplier = self._get_time_phase_multiplier(time_phase)
+            total_confidence *= time_multiplier
+            
+            # Add volume confirmation bonus
+            if volume_confirmation and final_direction != "NEUTRAL":
+                total_confidence += 1.0
+            
+            # Cap confidence
+            total_confidence = min(total_confidence, 10.0)
+            total_confidence = max(total_confidence, 0.0)
+            
+            # Check minimum threshold
+            if total_confidence < 3.0:
+                final_direction = "NEUTRAL"
+                total_confidence = 0.0
+            
+            return final_direction, total_confidence
+            
+        except Exception as e:
+            logger.error(f"Error in enhanced bias calculation: {e}")
+            # Fallback to basic calculation
+            return self._calculate_market_bias(
+                nifty_momentum, sector_alignment, volume_confirmation, time_phase
+            )
+    
+    def _calculate_internals_alignment(self, bias_direction: str, internals) -> float:
+        """Calculate how well internals align with the bias"""
+        try:
+            alignment_score = 0.0
+            
+            if bias_direction == "BULLISH":
+                # Check bullish alignment
+                if internals.advance_decline_ratio > 1.5:
+                    alignment_score += 0.3
+                if internals.up_volume_ratio > 60:
+                    alignment_score += 0.2
+                if internals.bullish_score > 60:
+                    alignment_score += 0.3
+                if internals.vix_change < 0:
+                    alignment_score += 0.2
+            elif bias_direction == "BEARISH":
+                # Check bearish alignment
+                if internals.advance_decline_ratio < 0.67:
+                    alignment_score += 0.3
+                if internals.up_volume_ratio < 40:
+                    alignment_score += 0.2
+                if internals.bearish_score > 60:
+                    alignment_score += 0.3
+                if internals.vix_change > 0:
+                    alignment_score += 0.2
+            else:
+                # Neutral alignment
+                if 0.8 < internals.advance_decline_ratio < 1.2:
+                    alignment_score += 0.4
+                if internals.neutral_score > 50:
+                    alignment_score += 0.6
+            
+            return min(alignment_score, 1.0)
+            
+        except Exception as e:
+            logger.error(f"Error calculating internals alignment: {e}")
+            return 0.0
+    
+    def _calculate_bias_stability(self, new_direction: str) -> float:
+        """Calculate stability score for bias changes"""
+        try:
+            if len(self.bias_history) < 3:
+                return 0.5  # Neutral stability for insufficient history
+            
+            # Check recent bias directions
+            recent_biases = [b['direction'] for b in list(self.bias_history)[-5:]]
+            
+            # Count direction changes
+            changes = 0
+            for i in range(1, len(recent_biases)):
+                if recent_biases[i] != recent_biases[i-1]:
+                    changes += 1
+            
+            # Calculate stability (fewer changes = higher stability)
+            change_ratio = changes / (len(recent_biases) - 1)
+            stability = 1.0 - change_ratio
+            
+            # Bonus for consistent direction
+            if all(b == new_direction for b in recent_biases[-3:]):
+                stability = min(stability + 0.2, 1.0)
+            
+            return stability
+            
+        except Exception as e:
+            logger.error(f"Error calculating bias stability: {e}")
+            return 0.5
+    
+    def _should_change_bias(self, new_direction: str, new_confidence: float, 
+                           stability: float) -> bool:
+        """Determine if bias should change (with hysteresis)"""
+        try:
+            # Always allow first bias
+            if not self.bias_history:
+                return True
+            
+            current_direction = self.current_bias.direction
+            
+            # Same direction - always update
+            if new_direction == current_direction:
+                return True
+            
+            # Check minimum time since last change
+            time_since_change = datetime.now() - self.last_bias_change
+            if time_since_change < self.min_bias_duration:
+                # Too soon to change - need very high confidence
+                if new_confidence < 7.0:
+                    return False
+            
+            # Check if market is too choppy
+            if stability < 0.3:  # Very unstable
+                # Require higher confidence to change
+                if new_confidence < 6.0:
+                    return False
+            
+            # Check confidence differential
+            confidence_diff = new_confidence - self.current_bias.confidence
+            if confidence_diff < 2.0:  # New bias must be significantly more confident
+                return False
+            
+            # Update change tracking
+            if new_direction != current_direction:
+                self.last_bias_change = datetime.now()
+                self.bias_change_count += 1
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error checking bias change: {e}")
+            return True
+    
     def get_current_bias_summary(self) -> Dict:
         """Get current bias summary for logging/monitoring"""
         return {
@@ -460,6 +738,11 @@ class MarketDirectionalBias:
             'sector_alignment': round(self.current_bias.sector_alignment, 3),
             'volume_confirmation': self.current_bias.volume_confirmation,
             'time_phase': self.current_bias.time_phase,
+            'market_regime': getattr(self.current_bias, 'market_regime', 'NORMAL'),
+            'breadth_score': round(getattr(self.current_bias, 'breadth_score', 1.0), 2),
+            'stability_score': round(getattr(self.current_bias, 'stability_score', 0.5), 2),
+            'internals_alignment': round(getattr(self.current_bias, 'internals_alignment', 0.0), 2),
             'last_updated': self.current_bias.last_updated.strftime('%H:%M:%S'),
-            'age_minutes': (datetime.now() - self.current_bias.last_updated).total_seconds() / 60
+            'age_minutes': (datetime.now() - self.current_bias.last_updated).total_seconds() / 60,
+            'bias_changes': self.bias_change_count
         }
