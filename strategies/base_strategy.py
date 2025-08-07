@@ -1217,7 +1217,7 @@ class BaseStrategy:
             # Check for identical levels (problematic for low-priced stocks)
             if entry_price == stop_loss == target:
                 logger.warning(f"Invalid signal levels: All levels identical ({entry_price}) - likely rounding issue for low-priced stock")
-                    return False
+                return False
             
             # Check risk/reward ratio is reasonable (0.5:1 to 5:1)
             risk = abs(entry_price - stop_loss)
