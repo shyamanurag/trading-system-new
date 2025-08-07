@@ -82,7 +82,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             
             # CRITICAL FIX: Analyze underlying symbols, then request options data from Zerodha
             underlying_symbols = [symbol for symbol in market_data.keys() 
-                                if any(underlying in symbol for underlying in ['NIFTY', 'BANKNIFTY'])]
+                                if any(underlying in symbol for underlying in ['NIFTY-I', 'BANKNIFTY-I', 'NIFTY', 'BANKNIFTY'])]
             
             for underlying_symbol in underlying_symbols[:5]:  # Limit processing
                 # Get underlying data for analysis

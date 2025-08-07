@@ -1413,24 +1413,24 @@ class TradingOrchestrator:
             # transformed_data = self._transform_market_data_for_strategies(market_data)  # ❌ REMOVED: Causes double processing
             transformed_data = market_data  # ✅ FIXED: Use pre-transformed data
             
-                    # CRITICAL: Update Market Directional Bias BEFORE running strategies
-        try:
-            if hasattr(self, 'market_bias') and self.market_bias:
-                current_bias = await self.market_bias.update_market_bias(transformed_data)
-                bias_summary = self.market_bias.get_current_bias_summary()
-                
-                # Log bias update every 10 cycles to avoid spam
-                if not hasattr(self, '_bias_log_counter'):
-                    self._bias_log_counter = 0
-                self._bias_log_counter += 1
-                
-                if self._bias_log_counter % 10 == 0:  # Log every 10th cycle
-                    self.logger.info(f"🎯 MARKET BIAS: {bias_summary['direction']} "
-                                   f"(Confidence: {bias_summary['confidence']}/10, "
-                                   f"NIFTY: {bias_summary['nifty_momentum']:+.2f}%, "
-                                   f"Sectors: {bias_summary['sector_alignment']:+.2f})")
-        except Exception as e:
-            self.logger.warning(f"Error updating market bias: {e}")
+            # CRITICAL: Update Market Directional Bias BEFORE running strategies
+            try:
+                if hasattr(self, 'market_bias') and self.market_bias:
+                    current_bias = await self.market_bias.update_market_bias(transformed_data)
+                    bias_summary = self.market_bias.get_current_bias_summary()
+                    
+                    # Log bias update every 10 cycles to avoid spam
+                    if not hasattr(self, '_bias_log_counter'):
+                        self._bias_log_counter = 0
+                    self._bias_log_counter += 1
+                    
+                    if self._bias_log_counter % 10 == 0:  # Log every 10th cycle
+                        self.logger.info(f"🎯 MARKET BIAS: {bias_summary['direction']} "
+                                       f"(Confidence: {bias_summary['confidence']}/10, "
+                                       f"NIFTY: {bias_summary['nifty_momentum']:+.2f}%, "
+                                       f"Sectors: {bias_summary['sector_alignment']:+.2f})")
+            except Exception as e:
+                self.logger.warning(f"Error updating market bias: {e}")
         
         # DEBUG: Show strategy status before processing
         self.logger.info(f"🔍 DEBUG: Total strategies loaded: {len(self.strategies)}")

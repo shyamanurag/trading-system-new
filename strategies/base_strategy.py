@@ -514,6 +514,18 @@ class BaseStrategy:
                 actions['adjust_stop_loss'] = True
                 logger.info(f"🛡️ {self.name}: {symbol} - Moving stop to break-even+ (P&L: {pnl_pct:.2f}%)")
             
+            # 4. SCALPING AUTO-EXIT: Close positions after 10 minutes max (quick in/out)
+            if position_age > 10:  # 10 minutes max hold for scalping
+                actions['immediate_exit'] = True
+                actions['exit_reason'] = 'SCALPING_AUTO_EXIT_10MIN'
+                logger.info(f"⚡ {self.name}: {symbol} - Auto-exit after {position_age:.1f} minutes (scalping rule)")
+            
+            # 5. SMALL PROFIT CAPTURE: Take profits quickly on small moves
+            elif pnl_pct > 3 and position_age > 2:  # 3%+ profit after 2+ minutes
+                actions['immediate_exit'] = True
+                actions['exit_reason'] = 'QUICK_PROFIT_CAPTURE'
+                logger.info(f"💨 {self.name}: {symbol} - Quick profit capture: {pnl_pct:.2f}% in {position_age:.1f}min")
+            
             return actions
             
         except Exception as e:
@@ -1221,29 +1233,29 @@ class BaseStrategy:
                               metadata: Dict, market_bias=None) -> Optional[Dict]:
         """Create standardized signal format - SUPPORTS EQUITY, FUTURES & OPTIONS"""
         try:
-                    # 🔧 TIME RESTRICTIONS MOVED TO RISK MANAGER
-        # Strategies should always generate signals for analysis
-        # Risk Manager will reject orders based on time restrictions
-        
-        # 🎯 MARKET BIAS COORDINATION: Filter signals based on market direction
-        if market_bias and hasattr(market_bias, 'should_align_with_bias'):
-            if not market_bias.should_align_with_bias(action.upper(), confidence):
-                logger.info(f"🚫 BIAS FILTER: {symbol} {action} rejected by market bias "
-                           f"(Bias: {getattr(market_bias.current_bias, 'direction', 'UNKNOWN')}, "
-                           f"Confidence: {confidence:.1f}/10)")
-                return None
-            else:
-                # Apply position size multiplier for bias-aligned signals
-                if hasattr(market_bias, 'get_position_size_multiplier'):
-                    bias_multiplier = market_bias.get_position_size_multiplier(action.upper())
-                    metadata['bias_multiplier'] = bias_multiplier
-                    if bias_multiplier > 1.0:
-                        logger.info(f"🔥 BIAS BOOST: {symbol} {action} gets {bias_multiplier:.1f}x position size")
-                    elif bias_multiplier < 1.0:
-                        logger.info(f"⚠️ BIAS REDUCE: {symbol} {action} gets {bias_multiplier:.1f}x position size")
-        
-        # CRITICAL FIX: Type validation to prevent float/string arithmetic errors
-        try:
+            # 🔧 TIME RESTRICTIONS MOVED TO RISK MANAGER
+            # Strategies should always generate signals for analysis
+            # Risk Manager will reject orders based on time restrictions
+            
+            # 🎯 MARKET BIAS COORDINATION: Filter signals based on market direction
+            if market_bias and hasattr(market_bias, 'should_align_with_bias'):
+                if not market_bias.should_align_with_bias(action.upper(), confidence):
+                    logger.info(f"🚫 BIAS FILTER: {symbol} {action} rejected by market bias "
+                               f"(Bias: {getattr(market_bias.current_bias, 'direction', 'UNKNOWN')}, "
+                               f"Confidence: {confidence:.1f}/10)")
+                    return None
+                else:
+                    # Apply position size multiplier for bias-aligned signals
+                    if hasattr(market_bias, 'get_position_size_multiplier'):
+                        bias_multiplier = market_bias.get_position_size_multiplier(action.upper())
+                        metadata['bias_multiplier'] = bias_multiplier
+                        if bias_multiplier > 1.0:
+                            logger.info(f"🔥 BIAS BOOST: {symbol} {action} gets {bias_multiplier:.1f}x position size")
+                        elif bias_multiplier < 1.0:
+                            logger.info(f"⚠️ BIAS REDUCE: {symbol} {action} gets {bias_multiplier:.1f}x position size")
+            
+            # CRITICAL FIX: Type validation to prevent float/string arithmetic errors
+            try:
                 entry_price = float(entry_price) if entry_price not in [None, '', 'N/A', '-'] else 0.0
                 stop_loss = float(stop_loss) if stop_loss not in [None, '', 'N/A', '-'] else 0.0
                 target = float(target) if target not in [None, '', 'N/A', '-'] else 0.0
@@ -2509,11 +2521,11 @@ class BaseStrategy:
                     return 0
             else:
                 # 🎯 EQUITY: Use share-based calculation
-                max_capital_per_trade = available_capital * 0.08  # 8% to stay safely under 10% risk manager limit
+                max_capital_per_trade = available_capital * 0.15  # 15% for meaningful positions
                 max_shares = int(max_capital_per_trade / entry_price)
                 
                 # Minimum viable quantity for equity
-                min_shares = max(1, int(3000 / entry_price))  # At least ₹3000 worth (reduced from ₹5000)
+                min_shares = max(1, int(15000 / entry_price))  # At least ₹15000 worth - meaningful positions
                 final_quantity = max(min_shares, min(max_shares, 100))  # Between min and 100 shares
                 
                 cost = final_quantity * entry_price
@@ -2756,11 +2768,11 @@ class BaseStrategy:
                     return 0
             else:
                 # 🎯 EQUITY: Use share-based calculation
-                max_capital_per_trade = available_capital * 0.08  # 8% to stay safely under 10% risk manager limit
+                max_capital_per_trade = available_capital * 0.15  # 15% for meaningful positions
                 max_shares = int(max_capital_per_trade / entry_price)
                 
                 # Minimum viable quantity for equity
-                min_shares = max(1, int(3000 / entry_price))  # At least ₹3000 worth (reduced from ₹5000)
+                min_shares = max(1, int(15000 / entry_price))  # At least ₹15000 worth - meaningful positions
                 final_quantity = max(min_shares, min(max_shares, 100))  # Between min and 100 shares
                 
                 cost = final_quantity * entry_price
