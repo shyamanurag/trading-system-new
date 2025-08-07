@@ -97,6 +97,11 @@ class MarketDirectionalBias:
                 logger.warning("No NIFTY data available for bias calculation")
                 return self.current_bias
             
+            # Debug: Log NIFTY data fields to understand the structure
+            logger.debug(f"🔍 NIFTY-I data fields available: {list(nifty_data.keys())[:10]}...")
+            if 'ltp' in nifty_data:
+                logger.debug(f"🔍 NIFTY-I LTP: {nifty_data['ltp']}, available change fields: {[k for k in nifty_data.keys() if 'change' in k.lower()]}")
+            
             # 1. ANALYZE NIFTY MOMENTUM
             nifty_momentum = self._analyze_nifty_momentum(nifty_data)
             
@@ -139,7 +144,20 @@ class MarketDirectionalBias:
     def _analyze_nifty_momentum(self, nifty_data: Dict) -> float:
         """Analyze NIFTY momentum and trend strength"""
         try:
-            change_percent = float(nifty_data.get('change_percent', 0))
+            # Try multiple possible field names for price change
+            change_percent = 0.0
+            for field in ['change_percent', 'price_change', 'change_pct', 'change', 'pct_change']:
+                if field in nifty_data:
+                    change_percent = float(nifty_data[field])
+                    break
+            
+            # If still zero, try to calculate from price data
+            if change_percent == 0.0 and 'ltp' in nifty_data and 'open' in nifty_data:
+                ltp = float(nifty_data.get('ltp', 0))
+                open_price = float(nifty_data.get('open', 0))
+                if open_price > 0:
+                    change_percent = ((ltp - open_price) / open_price) * 100
+                    
             ltp = float(nifty_data.get('ltp', 0))
             
             # Update NIFTY history
@@ -163,8 +181,10 @@ class MarketDirectionalBias:
                 trend_consistency = self._calculate_trend_consistency(recent_changes)
                 momentum *= (1 + trend_consistency * 0.5)  # Up to 50% bonus for consistency
                 
+                logger.debug(f"🎯 NIFTY momentum calculated: {momentum:.2f}% (from {len(recent_changes)} recent changes)")
                 return momentum
             else:
+                logger.debug(f"🎯 NIFTY momentum (single point): {change_percent:.2f}%")
                 return change_percent
                 
         except Exception as e:
@@ -246,7 +266,9 @@ class MarketDirectionalBias:
     def _get_current_time_phase(self) -> str:
         """Determine current market time phase"""
         try:
-            now = datetime.now()
+            import pytz
+            ist = pytz.timezone('Asia/Kolkata')
+            now = datetime.now(ist)
             current_time = now.time()
             
             for phase_name, (start_hour, start_min, end_hour, end_min) in self.time_phases.items():
