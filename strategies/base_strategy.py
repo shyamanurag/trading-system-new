@@ -83,6 +83,11 @@ class BaseStrategy:
     def _is_trading_hours_active(self) -> bool:
         """⏰ CHECK TRADING HOURS - Simplified check for position management"""
         try:
+            # Ensure ist_timezone is available (fallback for inheritance issues)
+            if not hasattr(self, 'ist_timezone'):
+                import pytz
+                self.ist_timezone = pytz.timezone('Asia/Kolkata')
+                
             current_time_ist = datetime.now(self.ist_timezone).time()
             
             # Market open check (9:15 AM - 3:30 PM IST)
@@ -99,6 +104,11 @@ class BaseStrategy:
     def _get_position_close_urgency(self) -> str:
         """⏰ GET POSITION CLOSE URGENCY - Determine urgency level for position closure"""
         try:
+            # Ensure ist_timezone is available (fallback for inheritance issues)
+            if not hasattr(self, 'ist_timezone'):
+                import pytz
+                self.ist_timezone = pytz.timezone('Asia/Kolkata')
+                
             current_time_ist = datetime.now(self.ist_timezone).time()
             
             if current_time_ist >= self.mandatory_close_time:  # After 3:20 PM
@@ -113,7 +123,7 @@ class BaseStrategy:
         except Exception as e:
             logger.error(f"Error determining close urgency: {e}")
             return "NORMAL"
-    
+        
     def _is_scalping_cooldown_passed(self) -> bool:
         """Check if SCALPING cooldown period has passed"""
         if not self.last_signal_time:
@@ -1207,7 +1217,7 @@ class BaseStrategy:
             # Check for identical levels (problematic for low-priced stocks)
             if entry_price == stop_loss == target:
                 logger.warning(f"Invalid signal levels: All levels identical ({entry_price}) - likely rounding issue for low-priced stock")
-                return False
+                    return False
             
             # Check risk/reward ratio is reasonable (0.5:1 to 5:1)
             risk = abs(entry_price - stop_loss)
@@ -1579,7 +1589,7 @@ class BaseStrategy:
                     option_type = 'CE'  # BUY Call when bullish
                 else:  # SELL signal becomes BUY Put
                     option_type = 'PE'  # BUY Put when bearish
-                
+                    
                 # 🔧 CRITICAL FIX: Use Zerodha's EXACT format from API response
                 # Zerodha format: NIFTY07AUG2524650CE (not NIFTY25AUG24650CE)
                 options_symbol = f"{zerodha_underlying}{expiry}{strike}{option_type}"
@@ -1611,12 +1621,12 @@ class BaseStrategy:
                 
                 # 🚨 CRITICAL FIX: Validate if options symbol exists in Zerodha before using
                 if self._validate_options_symbol_exists(options_symbol):
-                    logger.info(f"🎯 ZERODHA OPTIONS SYMBOL: {underlying_symbol} → {options_symbol}")
-                    logger.info(f"   Mapping: {underlying_symbol} → {zerodha_underlying}")
-                    logger.info(f"   Strike: {strike}, Expiry: {expiry}, Type: {option_type}")
+                logger.info(f"🎯 ZERODHA OPTIONS SYMBOL: {underlying_symbol} → {options_symbol}")
+                logger.info(f"   Mapping: {underlying_symbol} → {zerodha_underlying}")
+                logger.info(f"   Strike: {strike}, Expiry: {expiry}, Type: {option_type}")
                     logger.info(f"   Used Price: ₹{actual_price:.2f} (real market price)")
-                    
-                    return options_symbol, option_type
+                
+                return options_symbol, option_type
                 else:
                     # 🎯 FALLBACK: Options not available, trade equity instead
                     logger.warning(f"⚠️ OPTIONS NOT AVAILABLE: {options_symbol} doesn't exist in Zerodha NFO")
@@ -1715,7 +1725,7 @@ class BaseStrategy:
             fallback_strike = round(current_price / 50) * 50
             logger.warning(f"⚠️ FALLBACK STRIKE: {int(fallback_strike)} (rounded to nearest 50)")
             return int(fallback_strike)
-    
+      
     async def _get_next_expiry(self, underlying_symbol: str = "NIFTY") -> str:
         """DYNAMIC EXPIRY SELECTION: Get optimal expiry based on strategy requirements"""
         # 🔍 DEBUG: Add comprehensive logging for expiry date debugging
@@ -1874,7 +1884,7 @@ class BaseStrategy:
                             
                             if expiries:
                                 logger.info(f"📅 Using expiries from {symbol}: {len(expiries)} found")
-                                return expiries
+                        return expiries
                         except Exception as async_err:
                             logger.warning(f"⚠️ Async expiry fetch failed for {symbol}: {async_err}")
                             continue
@@ -2080,7 +2090,7 @@ class BaseStrategy:
                     if premium and premium > 0:
                         logger.info(f"✅ FALLBACK ZERODHA LTP: {options_symbol} = ₹{premium}")
                         return float(premium)
-                    else:
+            else:
                         logger.warning(f"⚠️ Zerodha LTP returned zero or None for {options_symbol}")
             except Exception as e:
                 logger.debug(f"Could not get Zerodha LTP for {options_symbol}: {e}")
@@ -2622,7 +2632,7 @@ class BaseStrategy:
         """Get volume data for strikes from market data sources"""
         try:
             # Try to get volume data from TrueData cache
-            from data.truedata_client import live_market_data
+                    from data.truedata_client import live_market_data
             
             volume_data = {}
             option_type = 'CE' if action.upper() == 'BUY' else 'PE'
@@ -2646,7 +2656,7 @@ class BaseStrategy:
             if volume_data:
                 logger.info(f"✅ Retrieved volume data for {len(volume_data)} strikes from TrueData")
                 return volume_data
-            else:
+                        else:
                 logger.debug(f"Volume data not needed - using ATM strike for {underlying_symbol}")
                 return {}
                 
