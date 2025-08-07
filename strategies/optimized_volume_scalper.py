@@ -301,7 +301,7 @@ class OptimizedVolumeScalper(BaseStrategy):
             institutional_boost = len(large_trades) / len(recent_flows)
             
             strength = imbalance_ratio + institutional_boost * 0.2
-            confidence = min(strength * 100, 95)  # Cap at 95%
+            confidence = min(strength * 10, 9.5)  # Cap at 9.5 on 0-10 scale
             
             return MarketMicrostructureSignal(
                 signal_type=direction,
@@ -331,7 +331,7 @@ class OptimizedVolumeScalper(BaseStrategy):
                 
                 # Confidence based on volatility persistence
                 vol_persistence = self._calculate_volatility_persistence(symbol)
-                confidence = min(70 + vol_persistence * 20, 95)
+                confidence = min(7.0 + vol_persistence * 2, 9.5)  # 0-10 scale
                 
                 return MarketMicrostructureSignal(
                     signal_type=direction,
@@ -372,7 +372,7 @@ class OptimizedVolumeScalper(BaseStrategy):
             volume_ratio = volume / avg_volume if avg_volume > 0 else 1
             
             if volume_ratio >= 1.5:  # 50% above average volume
-                confidence = min(60 + abs(z_score) * 10 + volume_ratio * 5, 95)
+                confidence = min(6.0 + abs(z_score) * 1.0 + volume_ratio * 0.5, 9.5)  # 0-10 scale
                 
                 return MarketMicrostructureSignal(
                     signal_type=direction,
@@ -397,7 +397,7 @@ class OptimizedVolumeScalper(BaseStrategy):
             
             # Quick reversion opportunity
             strength = abs(price_change) * 100
-            confidence = min(50 + strength * 5, 85)  # Conservative for liquidity trades
+            confidence = min(5.0 + strength * 0.5, 8.5)  # Conservative for liquidity trades (0-10 scale)
             
             return MarketMicrostructureSignal(
                 signal_type=direction,
@@ -495,16 +495,16 @@ class OptimizedVolumeScalper(BaseStrategy):
             metadata = signal.get('metadata', {})
             
             # Only accept high-confidence signals
-            if confidence >= 75:  # 7.5/10 minimum
+            if confidence >= 7.5:  # 7.5/10 minimum
                 # Additional quality checks
                 edge_source = metadata.get('edge_source', '')
                 
                 # Prioritize stronger edge sources
                 if edge_source in ['ORDER_FLOW_IMBALANCE', 'VOLATILITY_CLUSTERING']:
-                    if confidence >= 80:  # Higher bar for these
+                    if confidence >= 8.0:  # Higher bar for these
                         quality_signals.append(signal)
                 elif edge_source in ['MEAN_REVERSION', 'LIQUIDITY_GAP']:
-                    if confidence >= 75:  # Standard bar
+                    if confidence >= 7.5:  # Standard bar
                         quality_signals.append(signal)
         
         # Limit to top 3 signals per cycle
