@@ -820,7 +820,9 @@ class RiskManager:
                 return False
             
             # 🎯 BYPASS TIME RESTRICTIONS FOR POSITION MANAGEMENT ACTIONS
-            if is_management_action or is_closing_action or 'POSITION_MGMT' in tag:
+            # Check if this is from position monitor (auto square-off)
+            strategy = order_data.get('strategy', '')
+            if is_management_action or is_closing_action or 'POSITION_MGMT' in tag or strategy == 'position_monitor':
                 logger.info(f"🎯 TIME BYPASS: {symbol} {action} - Management/closing action allowed at {current_time_str} IST")
                 return True
             
