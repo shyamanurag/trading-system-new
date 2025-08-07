@@ -36,6 +36,7 @@ class BaseStrategy:
         # Enhanced cooldown control
         self.scalping_cooldown = 30  # 30 seconds between signals
         self.symbol_cooldowns = {}   # Symbol-specific cooldowns
+        self.position_cooldowns = {}  # Phantom position cleanup cooldowns
         
         # Historical data for proper ATR calculation
         self.historical_data = {}  # symbol -> list of price data
@@ -52,6 +53,59 @@ class BaseStrategy:
         self.trailing_stop_percentage = 0.5  # 0.5% trailing stop
         self.profit_lock_percentage = 1.0  # Lock profit at 1%
         
+        # 🎯 ACTIVE POSITION MANAGEMENT CONFIGURATION
+        self.enable_active_management = config.get('enable_active_management', True)
+        self.partial_profit_threshold = config.get('partial_profit_threshold', 15)  # Book profits at 15%
+        self.aggressive_profit_threshold = config.get('aggressive_profit_threshold', 25)  # Aggressive booking at 25%
+        self.scaling_profit_threshold = config.get('scaling_profit_threshold', 5)  # Scale position at 5% profit
+        self.breakeven_buffer = config.get('breakeven_buffer', 2)  # 2% buffer above breakeven
+        self.time_based_tightening_hours = config.get('time_based_tightening', 2)  # Tighten stops after 2 hours
+        self.volatility_adjustment_threshold = config.get('volatility_threshold', 3)  # Adjust stops at 3% volatility
+        
+        # ⏰ TRADING TIME RESTRICTIONS (IST)
+        self.ist_timezone = pytz.timezone('Asia/Kolkata')
+        self.no_new_signals_after = time(15, 0)  # 3:00 PM IST - No new signals
+        self.mandatory_close_time = time(15, 20)  # 3:20 PM IST - Force close all positions
+        self.warning_close_time = time(15, 15)    # 3:15 PM IST - Start aggressive closing
+        
+        # Position management tracking
+        self.management_actions_taken = {}  # symbol -> list of actions taken
+        self.last_management_time = {}  # symbol -> last management timestamp
+        
+    def _is_trading_hours_active(self) -> bool:
+        """⏰ CHECK TRADING HOURS - Simplified check for position management"""
+        try:
+            current_time_ist = datetime.now(self.ist_timezone).time()
+            
+            # Market open check (9:15 AM - 3:30 PM IST)
+            market_open = time(9, 15)
+            market_close = time(15, 30)
+            
+            return market_open <= current_time_ist <= market_close
+            
+        except Exception as e:
+            logger.error(f"Error checking trading hours: {e}")
+            # Safe fallback - allow trading if error in time check
+            return True
+    
+    def _get_position_close_urgency(self) -> str:
+        """⏰ GET POSITION CLOSE URGENCY - Determine urgency level for position closure"""
+        try:
+            current_time_ist = datetime.now(self.ist_timezone).time()
+            
+            if current_time_ist >= self.mandatory_close_time:  # After 3:20 PM
+                return "IMMEDIATE"
+            elif current_time_ist >= self.warning_close_time:  # After 3:15 PM
+                return "URGENT"
+            elif current_time_ist >= self.no_new_signals_after:  # After 3:00 PM
+                return "GRADUAL"
+            else:
+                return "NORMAL"
+                
+        except Exception as e:
+            logger.error(f"Error determining close urgency: {e}")
+            return "NORMAL"
+    
     def _is_scalping_cooldown_passed(self) -> bool:
         """Check if SCALPING cooldown period has passed"""
         if not self.last_signal_time:
@@ -119,21 +173,65 @@ class BaseStrategy:
             if isinstance(position_data, dict):
                 timestamp = position_data.get('timestamp', 0)
                 current_time = time_module.time()
+                
+                # CRITICAL FIX: Handle timestamp corruption (Unix epoch issues)
+                if timestamp == 0 or timestamp < 1000000000:  # Before year 2001 (likely corrupted)
+                    logger.warning(f"🧹 CLEARING CORRUPTED TIMESTAMP POSITION: {symbol} (timestamp: {timestamp})")
+                    del self.active_positions[symbol]
+                    # Add cooldown to prevent immediate regeneration
+                    self._add_position_cooldown(symbol, 60)  # 60 second cooldown
+                    return False
+                
                 age_minutes = (current_time - timestamp) / 60
                 
-                if age_minutes > 30:  # 30 minutes
+                # CRITICAL FIX: Handle extreme ages (likely timestamp corruption)
+                if age_minutes > 1440:  # More than 24 hours indicates corruption
+                    logger.warning(f"🧹 CLEARING PHANTOM POSITION: {symbol} (age: {age_minutes:.1f} min - likely corrupted timestamp)")
+                    del self.active_positions[symbol]
+                    # Add cooldown to prevent immediate regeneration
+                    self._add_position_cooldown(symbol, 60)  # 60 second cooldown
+                    return False
+                elif age_minutes > 30:  # Normal 30 minute cleanup
                     logger.warning(f"🧹 CLEARING PHANTOM POSITION: {symbol} (age: {age_minutes:.1f} min)")
                     del self.active_positions[symbol]
+                    # CRITICAL FIX: Add cooldown period after clearing phantom position
+                    self._add_position_cooldown(symbol, 60)  # 60 second cooldown
                     return False
             
             logger.info(f"🚫 {self.strategy_name}: DUPLICATE SIGNAL PREVENTED for {symbol} - Position already exists")
             return True
         return False
     
+    def _add_position_cooldown(self, symbol: str, seconds: int):
+        """Add cooldown period for a symbol after phantom position cleanup"""
+        expiry_time = time_module.time() + seconds
+        self.position_cooldowns[symbol] = expiry_time
+        logger.info(f"🕐 COOLDOWN ADDED: {symbol} for {seconds} seconds")
+    
+    def _is_position_cooldown_active(self, symbol: str) -> bool:
+        """Check if symbol is in cooldown period"""
+        if symbol not in self.position_cooldowns:
+            return False
+        
+        current_time = time_module.time()
+        if current_time < self.position_cooldowns[symbol]:
+            remaining = int(self.position_cooldowns[symbol] - current_time)
+            logger.info(f"🕐 COOLDOWN ACTIVE: {symbol} ({remaining}s remaining)")
+            return True
+        else:
+            # Cooldown expired, remove it
+            del self.position_cooldowns[symbol]
+            return False
+    
     async def manage_existing_positions(self, market_data: Dict):
-        """Manage all existing positions with trailing stops and exit logic"""
+        """🎯 COMPREHENSIVE POSITION MANAGEMENT - Active monitoring and management"""
         try:
+            # ⏰ CHECK POSITION CLOSURE URGENCY based on current time
+            close_urgency = self._get_position_close_urgency()
+            current_time_ist = datetime.now(self.ist_timezone).strftime('%H:%M:%S')
+            
             positions_to_exit = []
+            positions_to_modify = []
             
             for symbol, position in self.active_positions.items():
                 if symbol not in market_data:
@@ -143,23 +241,105 @@ class BaseStrategy:
                 if current_price == 0:
                     continue
                 
-                # Check if position should be exited
-                exit_decision = await self.should_exit_position(symbol, current_price, position)
-                
-                if exit_decision['should_exit']:
+                # ⏰ PRIORITY: HANDLE TIME-BASED CLOSURE URGENCY
+                if close_urgency == "IMMEDIATE":  # After 3:20 PM - FORCE CLOSE ALL
                     positions_to_exit.append({
                         'symbol': symbol,
-                        'reason': exit_decision['reason'],
+                        'reason': f'MANDATORY_CLOSE_3:20PM_IST',
                         'current_price': current_price,
-                        'position': position
+                        'position': position,
+                        'urgent': True
                     })
-                else:
-                    # Update trailing stop if position is profitable
+                    logger.warning(f"🚨 {self.name}: MANDATORY CLOSE {symbol} at {current_time_ist} IST (After 3:20 PM)")
+                    continue
+                    
+                elif close_urgency == "URGENT":  # 3:15-3:20 PM - AGGRESSIVE CLOSING
+                    # Force exit losing positions, book profits on winning ones
+                    entry_price = position.get('entry_price', 0)
+                    action = position.get('action', 'BUY')
+                    
+                    if action == 'BUY':
+                        pnl_pct = ((current_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
+                    else:
+                        pnl_pct = ((entry_price - current_price) / entry_price) * 100 if entry_price > 0 else 0
+                    
+                    # Close losing positions immediately, be more aggressive on winners
+                    if pnl_pct < -2:  # Losing >2%
+                        positions_to_exit.append({
+                            'symbol': symbol,
+                            'reason': f'URGENT_CLOSE_3:15PM_LOSS_{pnl_pct:.1f}%',
+                            'current_price': current_price,
+                            'position': position,
+                            'urgent': True
+                        })
+                        logger.warning(f"🚨 {self.name}: URGENT CLOSE {symbol} (Loss: {pnl_pct:.1f}%) at {current_time_ist} IST")
+                        continue
+                    elif pnl_pct > 5:  # Winning >5% - book 75% profits
+                        await self.book_partial_profits(symbol, current_price, position, 75)
+                        logger.info(f"⏰ {self.name}: URGENT PROFIT BOOKING 75% for {symbol} (P&L: {pnl_pct:.1f}%) at {current_time_ist} IST")
+                        
+                elif close_urgency == "GRADUAL":  # 3:00-3:15 PM - NO NEW POSITIONS, gradual exit
+                    # Start booking profits more aggressively, no new scaling
+                    entry_price = position.get('entry_price', 0)
+                    action = position.get('action', 'BUY')
+                    
+                    if action == 'BUY':
+                        pnl_pct = ((current_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
+                    else:
+                        pnl_pct = ((entry_price - current_price) / entry_price) * 100 if entry_price > 0 else 0
+                    
+                    # More aggressive profit booking after 3 PM
+                    if pnl_pct > 8:  # Lower threshold for profit booking
+                        await self.book_partial_profits(symbol, current_price, position, 50)
+                        logger.info(f"⏰ {self.name}: GRADUAL PROFIT BOOKING 50% for {symbol} (P&L: {pnl_pct:.1f}%) at {current_time_ist} IST")
+                
+                # 1. CHECK FOR REGULAR EXIT CONDITIONS (if not urgent closure)
+                if close_urgency not in ["IMMEDIATE", "URGENT"]:
+                    exit_decision = await self.should_exit_position(symbol, current_price, position)
+                    
+                    if exit_decision['should_exit']:
+                        positions_to_exit.append({
+                            'symbol': symbol,
+                            'reason': exit_decision['reason'],
+                            'current_price': current_price,
+                            'position': position,
+                            'urgent': False
+                        })
+                        continue
+                
+                # 2. ACTIVE POSITION MANAGEMENT (only during normal hours and if not exiting)
+                if close_urgency == "NORMAL":
+                    management_actions = await self.analyze_position_management(symbol, current_price, position, market_data[symbol])
+                    
+                    # 3. UPDATE TRAILING STOPS
                     await self.update_trailing_stop(symbol, current_price, position)
+                    
+                    # 4. PARTIAL PROFIT BOOKING
+                    if management_actions.get('book_partial_profits'):
+                        await self.book_partial_profits(symbol, current_price, position, management_actions['partial_percentage'])
+                    
+                    # 5. SCALE INTO POSITION (only during normal hours)
+                    if management_actions.get('scale_position'):
+                        await self.scale_into_position(symbol, current_price, position, management_actions['scale_quantity'])
+                    
+                    # 6. DYNAMIC STOP LOSS ADJUSTMENT
+                    if management_actions.get('adjust_stop_loss'):
+                        await self.adjust_dynamic_stop_loss(symbol, current_price, position, management_actions['new_stop_loss'])
+                    
+                    # 7. TIME-BASED PROFIT PROTECTION
+                    await self.apply_time_based_management(symbol, current_price, position)
+                    
+                    # 8. VOLATILITY-BASED ADJUSTMENTS
+                    await self.apply_volatility_based_management(symbol, current_price, position, market_data[symbol])
                     
             # Execute position exits
             for exit_data in positions_to_exit:
                 await self.exit_position(exit_data['symbol'], exit_data['current_price'], exit_data['reason'])
+                
+            # Enhanced logging with time context
+            if len(self.active_positions) > 0:
+                logger.info(f"🎯 {self.name}: Managing {len(self.active_positions)} positions | "
+                           f"Exits: {len(positions_to_exit)} | Urgency: {close_urgency} | Time: {current_time_ist} IST")
                 
         except Exception as e:
             logger.error(f"Error managing existing positions: {e}")
@@ -258,6 +438,467 @@ class BaseStrategy:
                         
         except Exception as e:
             logger.error(f"Error updating trailing stop for {symbol}: {e}")
+    
+    async def analyze_position_management(self, symbol: str, current_price: float, position: Dict, market_data: Dict) -> Dict:
+        """🧠 INTELLIGENT POSITION ANALYSIS - Determine optimal management actions"""
+        try:
+            entry_price = position.get('entry_price', 0)
+            action = position.get('action', 'BUY')
+            quantity = position.get('quantity', 0)
+            entry_time = position.get('timestamp')
+            
+            # Calculate current profit/loss
+            if action == 'BUY':
+                pnl_pct = ((current_price - entry_price) / entry_price) * 100
+            else:
+                pnl_pct = ((entry_price - current_price) / entry_price) * 100
+            
+            # Calculate position age in minutes
+            position_age = 0
+            if entry_time:
+                try:
+                    if isinstance(entry_time, str):
+                        entry_dt = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+                    else:
+                        entry_dt = entry_time
+                    position_age = (datetime.now().replace(tzinfo=None) - entry_dt.replace(tzinfo=None)).total_seconds() / 60
+                except:
+                    position_age = 0
+            
+            # Get market indicators
+            volume = market_data.get('volume', 0)
+            change_pct = market_data.get('change_percent', 0)
+            
+            actions = {
+                'book_partial_profits': False,
+                'scale_position': False,
+                'adjust_stop_loss': False,
+                'partial_percentage': 0,
+                'scale_quantity': 0,
+                'new_stop_loss': 0
+            }
+            
+            # 1. PARTIAL PROFIT BOOKING CONDITIONS
+            if pnl_pct > 15:  # 15%+ profit
+                if position_age > 30:  # Held for 30+ minutes
+                    actions['book_partial_profits'] = True
+                    actions['partial_percentage'] = 50  # Book 50% profits
+                    logger.info(f"💰 {self.name}: {symbol} - Booking 50% profits (P&L: {pnl_pct:.2f}%, Age: {position_age:.1f}min)")
+            
+            elif pnl_pct > 25:  # 25%+ profit - aggressive booking
+                actions['book_partial_profits'] = True
+                actions['partial_percentage'] = 75  # Book 75% profits
+                logger.info(f"💰 {self.name}: {symbol} - Booking 75% profits (P&L: {pnl_pct:.2f}%)")
+            
+            # 2. POSITION SCALING CONDITIONS (only if profitable and strong momentum)
+            if pnl_pct > 5 and abs(change_pct) > 2 and volume > 100000:  # Strong momentum
+                if position_age < 15 and quantity < 200:  # Fresh position, not too large
+                    actions['scale_position'] = True
+                    actions['scale_quantity'] = max(1, int(quantity * 0.25))  # Scale by 25%
+                    logger.info(f"📈 {self.name}: {symbol} - Scaling position by {actions['scale_quantity']} shares (momentum: {change_pct:.2f}%)")
+            
+            # 3. DYNAMIC STOP LOSS ADJUSTMENT
+            if pnl_pct > 10:  # Move stop to break-even plus buffer
+                if action == 'BUY':
+                    actions['new_stop_loss'] = entry_price * 1.02  # 2% above entry
+                else:
+                    actions['new_stop_loss'] = entry_price * 0.98  # 2% below entry
+                actions['adjust_stop_loss'] = True
+                logger.info(f"🛡️ {self.name}: {symbol} - Moving stop to break-even+ (P&L: {pnl_pct:.2f}%)")
+            
+            return actions
+            
+        except Exception as e:
+            logger.error(f"Error analyzing position management for {symbol}: {e}")
+            return {}
+    
+    async def book_partial_profits(self, symbol: str, current_price: float, position: Dict, percentage: int):
+        """💰 PARTIAL PROFIT BOOKING - Lock in profits while maintaining exposure"""
+        try:
+            current_quantity = position.get('quantity', 0)
+            action = position.get('action', 'BUY')
+            
+            # Calculate quantity to book
+            quantity_to_book = max(1, int(current_quantity * percentage / 100))
+            
+            # Create exit signal for partial quantity
+            exit_action = 'SELL' if action == 'BUY' else 'BUY'
+            
+            # Generate partial exit signal for execution
+            partial_signal = await self._create_management_signal(
+                symbol=symbol,
+                action=exit_action,
+                quantity=quantity_to_book,
+                price=current_price,
+                reason=f'PARTIAL_PROFIT_BOOKING_{percentage}%'
+            )
+            
+            # Execute the partial exit order
+            if partial_signal:
+                await self._execute_management_action(partial_signal)
+                logger.info(f"💰 {self.name}: Booking {percentage}% profits for {symbol} - {quantity_to_book} shares at ₹{current_price:.2f}")
+                
+                # Track management action
+                if symbol not in self.management_actions_taken:
+                    self.management_actions_taken[symbol] = []
+                self.management_actions_taken[symbol].append(f'PARTIAL_PROFIT_BOOKING_{percentage}%')
+                self.last_management_time[symbol] = datetime.now()
+                
+                # Update position quantity
+                remaining_quantity = current_quantity - quantity_to_book
+                if remaining_quantity > 0:
+                    position['quantity'] = remaining_quantity
+                    logger.info(f"📊 {symbol}: Remaining position - {remaining_quantity} shares")
+                else:
+                    # Position fully closed
+                    await self.exit_position(symbol, current_price, f'FULL_PROFIT_BOOKING_{percentage}%')
+            
+        except Exception as e:
+            logger.error(f"Error booking partial profits for {symbol}: {e}")
+    
+    async def scale_into_position(self, symbol: str, current_price: float, position: Dict, additional_quantity: int):
+        """📈 POSITION SCALING - Add to winning positions with strong momentum"""
+        try:
+            action = position.get('action', 'BUY')
+            
+            # Create additional position signal for execution
+            scale_signal = await self._create_management_signal(
+                symbol=symbol,
+                action=action,  # Same direction as original
+                quantity=additional_quantity,
+                price=current_price,
+                reason='POSITION_SCALING_MOMENTUM'
+            )
+            
+            # Execute the scaling order
+            if scale_signal:
+                await self._execute_management_action(scale_signal)
+                logger.info(f"📈 {self.name}: Scaling {symbol} position - Adding {additional_quantity} shares at ₹{current_price:.2f}")
+                
+                # Track management action
+                if symbol not in self.management_actions_taken:
+                    self.management_actions_taken[symbol] = []
+                self.management_actions_taken[symbol].append(f'POSITION_SCALING_{additional_quantity}_shares')
+                self.last_management_time[symbol] = datetime.now()
+                
+                # Update position tracking to include scaled quantity
+                current_quantity = position.get('quantity', 0)
+                position['quantity'] = current_quantity + additional_quantity
+                
+                # Recalculate average entry price
+                current_entry = position.get('entry_price', 0)
+                current_value = current_quantity * current_entry
+                additional_value = additional_quantity * current_price
+                new_avg_entry = (current_value + additional_value) / (current_quantity + additional_quantity)
+                position['entry_price'] = new_avg_entry
+                
+                logger.info(f"📊 {symbol}: Scaled position - {position['quantity']} total shares, avg entry: ₹{new_avg_entry:.2f}")
+            
+        except Exception as e:
+            logger.error(f"Error scaling position for {symbol}: {e}")
+    
+    async def adjust_dynamic_stop_loss(self, symbol: str, current_price: float, position: Dict, new_stop_loss: float):
+        """🛡️ DYNAMIC STOP LOSS - Adjust stop loss based on market conditions"""
+        try:
+            current_stop = position.get('stop_loss', 0)
+            action = position.get('action', 'BUY')
+            
+            # Only adjust if new stop is better (more protective while profitable)
+            should_update = False
+            if action == 'BUY' and new_stop_loss > current_stop:
+                should_update = True
+            elif action == 'SELL' and new_stop_loss < current_stop:
+                should_update = True
+            
+            if should_update:
+                position['stop_loss'] = new_stop_loss
+                logger.info(f"🛡️ {self.name}: Adjusted {symbol} stop loss to ₹{new_stop_loss:.2f} (was ₹{current_stop:.2f})")
+                
+                # Track management action
+                if symbol not in self.management_actions_taken:
+                    self.management_actions_taken[symbol] = []
+                self.management_actions_taken[symbol].append(f'STOP_LOSS_ADJUSTMENT_TO_{new_stop_loss:.2f}')
+                self.last_management_time[symbol] = datetime.now()
+                
+                # Update stop loss in position tracker/broker if available
+                # Note: Stop loss adjustments are applied to the position tracker
+                # The actual broker stop loss orders are managed by the position monitor
+            
+        except Exception as e:
+            logger.error(f"Error adjusting stop loss for {symbol}: {e}")
+    
+    async def apply_time_based_management(self, symbol: str, current_price: float, position: Dict):
+        """⏰ TIME-BASED MANAGEMENT - Apply time decay considerations"""
+        try:
+            entry_time = position.get('timestamp')
+            if not entry_time:
+                return
+                
+            # Calculate position age
+            try:
+                if isinstance(entry_time, str):
+                    entry_dt = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+                else:
+                    entry_dt = entry_time
+                position_age_hours = (datetime.now().replace(tzinfo=None) - entry_dt.replace(tzinfo=None)).total_seconds() / 3600
+            except:
+                return
+            
+            action = position.get('action', 'BUY')
+            entry_price = position.get('entry_price', 0)
+            
+            # Calculate current P&L
+            if action == 'BUY':
+                pnl_pct = ((current_price - entry_price) / entry_price) * 100
+            else:
+                pnl_pct = ((entry_price - current_price) / entry_price) * 100
+            
+            # Time-based profit protection (tighten stops over time)
+            if position_age_hours > 2 and pnl_pct > 0:  # 2+ hours and profitable
+                # Tighten trailing stop for older positions
+                tighter_stop_pct = max(0.5, 2.0 - (position_age_hours * 0.2))  # Gradually tighten
+                
+                if symbol in self.trailing_stops:
+                    current_trail = self.trailing_stops[symbol]['stop_price']
+                    if action == 'BUY':
+                        tighter_stop = current_price * (1 - tighter_stop_pct / 100)
+                        if tighter_stop > current_trail:
+                            self.trailing_stops[symbol]['stop_price'] = tighter_stop
+                            logger.info(f"⏰ {self.name}: Tightened trailing stop for {symbol} due to time (age: {position_age_hours:.1f}h)")
+                    else:
+                        tighter_stop = current_price * (1 + tighter_stop_pct / 100)
+                        if tighter_stop < current_trail:
+                            self.trailing_stops[symbol]['stop_price'] = tighter_stop
+                            logger.info(f"⏰ {self.name}: Tightened trailing stop for {symbol} due to time (age: {position_age_hours:.1f}h)")
+            
+        except Exception as e:
+            logger.error(f"Error applying time-based management for {symbol}: {e}")
+    
+    async def apply_volatility_based_management(self, symbol: str, current_price: float, position: Dict, market_data: Dict):
+        """📊 VOLATILITY-BASED MANAGEMENT - Adjust based on market volatility"""
+        try:
+            # Calculate short-term volatility from price movements
+            high = market_data.get('high', current_price)
+            low = market_data.get('low', current_price)
+            volume = market_data.get('volume', 0)
+            
+            # Calculate intraday volatility
+            if high > 0 and low > 0:
+                intraday_volatility = ((high - low) / current_price) * 100
+                
+                action = position.get('action', 'BUY')
+                entry_price = position.get('entry_price', 0)
+                
+                # High volatility (>3%) - tighten stops
+                if intraday_volatility > 3:
+                    if symbol in self.trailing_stops:
+                        current_trail = self.trailing_stops[symbol]['stop_price']
+                        volatility_adjustment = 0.5  # Tighter stops in high volatility
+                        
+                        if action == 'BUY':
+                            adjusted_stop = current_price * (1 - volatility_adjustment / 100)
+                            if adjusted_stop > current_trail:
+                                self.trailing_stops[symbol]['stop_price'] = adjusted_stop
+                                logger.info(f"📊 {self.name}: Tightened stop for {symbol} due to high volatility ({intraday_volatility:.2f}%)")
+                        else:
+                            adjusted_stop = current_price * (1 + volatility_adjustment / 100)
+                            if adjusted_stop < current_trail:
+                                self.trailing_stops[symbol]['stop_price'] = adjusted_stop
+                                logger.info(f"📊 {self.name}: Tightened stop for {symbol} due to high volatility ({intraday_volatility:.2f}%)")
+                
+                # Low volatility (<1%) with high volume - consider scaling
+                elif intraday_volatility < 1 and volume > 500000:
+                    # This suggests strong conviction move - handled in main analysis
+                    pass
+            
+        except Exception as e:
+            logger.error(f"Error applying volatility-based management for {symbol}: {e}")
+    
+    def get_position_management_summary(self) -> Dict:
+        """📊 GET POSITION MANAGEMENT SUMMARY - For monitoring and reporting"""
+        try:
+            summary = {
+                'total_positions': len(self.active_positions),
+                'positions_with_trailing_stops': len(self.trailing_stops),
+                'management_actions': {},
+                'position_details': []
+            }
+            
+            # Count management actions
+            for symbol, actions in self.management_actions_taken.items():
+                for action in actions:
+                    if action not in summary['management_actions']:
+                        summary['management_actions'][action] = 0
+                    summary['management_actions'][action] += 1
+            
+            # Position details with current P&L
+            for symbol, position in self.active_positions.items():
+                entry_price = position.get('entry_price', 0)
+                current_price = position.get('current_price', entry_price)
+                action = position.get('action', 'BUY')
+                quantity = position.get('quantity', 0)
+                
+                # Calculate P&L
+                if action == 'BUY':
+                    pnl_pct = ((current_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
+                else:
+                    pnl_pct = ((entry_price - current_price) / entry_price) * 100 if entry_price > 0 else 0
+                
+                # Position age
+                entry_time = position.get('timestamp')
+                age_hours = 0
+                if entry_time:
+                    try:
+                        if isinstance(entry_time, str):
+                            entry_dt = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+                        else:
+                            entry_dt = entry_time
+                        age_hours = (datetime.now().replace(tzinfo=None) - entry_dt.replace(tzinfo=None)).total_seconds() / 3600
+                    except:
+                        pass
+                
+                position_detail = {
+                    'symbol': symbol,
+                    'action': action,
+                    'quantity': quantity,
+                    'entry_price': entry_price,
+                    'current_price': current_price,
+                    'pnl_percent': pnl_pct,
+                    'age_hours': age_hours,
+                    'has_trailing_stop': symbol in self.trailing_stops,
+                    'management_actions': self.management_actions_taken.get(symbol, [])
+                }
+                
+                summary['position_details'].append(position_detail)
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"Error generating position management summary: {e}")
+            return {}
+    
+    def log_position_management_status(self):
+        """📊 LOG POSITION MANAGEMENT STATUS - Regular monitoring log"""
+        try:
+            summary = self.get_position_management_summary()
+            
+            if summary['total_positions'] > 0:
+                logger.info(f"🎯 {self.name} POSITION MANAGEMENT STATUS:")
+                logger.info(f"   📊 Total Positions: {summary['total_positions']}")
+                logger.info(f"   🛡️ Trailing Stops: {summary['positions_with_trailing_stops']}")
+                
+                # Log management actions taken
+                if summary['management_actions']:
+                    actions_str = ", ".join([f"{action}: {count}" for action, count in summary['management_actions'].items()])
+                    logger.info(f"   ⚡ Actions Taken: {actions_str}")
+                
+                # Log top 3 positions by P&L
+                positions = sorted(summary['position_details'], key=lambda x: x['pnl_percent'], reverse=True)[:3]
+                for pos in positions:
+                    logger.info(f"   📈 {pos['symbol']}: {pos['pnl_percent']:.2f}% | "
+                               f"Age: {pos['age_hours']:.1f}h | Actions: {len(pos['management_actions'])}")
+        
+        except Exception as e:
+            logger.error(f"Error logging position management status: {e}")
+    
+    async def _create_management_signal(self, symbol: str, action: str, quantity: int, price: float, reason: str) -> Dict:
+        """🎯 CREATE MANAGEMENT SIGNAL - Format position management actions as executable signals"""
+        try:
+            # Create signal in the same format as regular trading signals
+            management_signal = {
+                'signal_id': f"{self.name}_MGMT_{symbol}_{int(time_module.time())}",
+                'symbol': symbol,
+                'action': action.upper(),
+                'quantity': quantity,
+                'entry_price': price,
+                'price': price,  # Both fields for compatibility
+                'order_type': 'MARKET',  # Management actions use market orders for quick execution
+                'product': self._get_product_type_for_symbol(symbol),
+                'validity': 'DAY',
+                'tag': 'POSITION_MGMT',
+                'strategy': self.name,
+                'strategy_name': self.name,
+                'reason': reason,
+                'user_id': 'system',
+                'timestamp': datetime.now().isoformat(),
+                'management_action': True,  # Flag to identify management actions
+                'closing_action': True,     # Allow execution even after 3:00 PM
+                'source': 'position_management'
+            }
+            
+            logger.debug(f"🎯 Created management signal: {symbol} {action} {quantity} @ ₹{price:.2f} ({reason})")
+            return management_signal
+            
+        except Exception as e:
+            logger.error(f"Error creating management signal for {symbol}: {e}")
+            return {}
+    
+    def _get_product_type_for_symbol(self, symbol: str) -> str:
+        """Get appropriate product type for symbol"""
+        # Options require NRML, equity can use MIS for intraday
+        if 'CE' in symbol or 'PE' in symbol:
+            return 'NRML'  # Options must use NRML
+        else:
+            return 'MIS'  # Margin Intraday Square-off for equity
+    
+    async def _execute_management_action(self, signal: Dict):
+        """🚀 EXECUTE MANAGEMENT ACTION - Send management signals for immediate execution"""
+        try:
+            # Get orchestrator instance for execution
+            orchestrator = self._get_orchestrator_instance()
+            
+            if orchestrator and hasattr(orchestrator, 'trade_engine') and orchestrator.trade_engine:
+                # Send directly to trade engine for immediate execution
+                logger.info(f"🚀 Executing management action: {signal['symbol']} {signal['action']} {signal['quantity']} ({signal['reason']})")
+                
+                # Process through trade engine (bypasses deduplication for management actions)
+                await orchestrator.trade_engine._process_live_signal(signal)
+                
+                logger.info(f"✅ Management action submitted: {signal['symbol']} {signal['reason']}")
+                
+            else:
+                # Fallback: Store in pending management actions for next cycle processing
+                logger.warning(f"⚠️ No trade engine available - queuing management action: {signal['symbol']} {signal['reason']}")
+                
+                if not hasattr(self, 'pending_management_actions'):
+                    self.pending_management_actions = []
+                self.pending_management_actions.append(signal)
+                
+        except Exception as e:
+            logger.error(f"❌ Error executing management action for {signal.get('symbol', 'UNKNOWN')}: {e}")
+            # Don't raise exception to avoid breaking position management loop
+    
+    def _get_orchestrator_instance(self):
+        """Get orchestrator instance for execution"""
+        try:
+            # Try to get orchestrator instance from singleton pattern
+            if hasattr(self, 'orchestrator') and self.orchestrator:
+                return self.orchestrator
+            
+            # Try to get from TradingOrchestrator singleton
+            from src.core.orchestrator import TradingOrchestrator
+            return getattr(TradingOrchestrator, '_instance', None)
+            
+        except Exception as e:
+            logger.error(f"Error getting orchestrator instance: {e}")
+            return None
+    
+    async def process_pending_management_actions(self):
+        """🔄 PROCESS PENDING MANAGEMENT ACTIONS - Handle queued management actions"""
+        try:
+            if not hasattr(self, 'pending_management_actions') or not self.pending_management_actions:
+                return
+            
+            logger.info(f"🔄 Processing {len(self.pending_management_actions)} pending management actions")
+            
+            for signal in self.pending_management_actions.copy():
+                await self._execute_management_action(signal)
+                self.pending_management_actions.remove(signal)
+                
+            logger.info(f"✅ Processed all pending management actions")
+            
+        except Exception as e:
+            logger.error(f"Error processing pending management actions: {e}")
     
     async def exit_position(self, symbol: str, exit_price: float, reason: str):
         """Exit position and clean up tracking data"""
@@ -543,6 +1184,11 @@ class BaseStrategy:
                     logger.warning(f"Invalid SELL signal levels: SL={stop_loss}, Entry={entry_price}, Target={target}")
                     return False
             
+            # Check for identical levels (problematic for low-priced stocks)
+            if entry_price == stop_loss == target:
+                logger.warning(f"Invalid signal levels: All levels identical ({entry_price}) - likely rounding issue for low-priced stock")
+                return False
+            
             # Check risk/reward ratio is reasonable (0.5:1 to 5:1)
             risk = abs(entry_price - stop_loss)
             reward = abs(target - entry_price)
@@ -567,11 +1213,37 @@ class BaseStrategy:
                               metadata: Dict) -> Optional[Dict]:
         """Create standardized signal format - SUPPORTS EQUITY, FUTURES & OPTIONS"""
         try:
+                    # 🔧 TIME RESTRICTIONS MOVED TO RISK MANAGER
+        # Strategies should always generate signals for analysis
+        # Risk Manager will reject orders based on time restrictions
+            
+            # CRITICAL FIX: Type validation to prevent float/string arithmetic errors
+            try:
+                entry_price = float(entry_price) if entry_price not in [None, '', 'N/A', '-'] else 0.0
+                stop_loss = float(stop_loss) if stop_loss not in [None, '', 'N/A', '-'] else 0.0
+                target = float(target) if target not in [None, '', 'N/A', '-'] else 0.0
+                confidence = float(confidence) if confidence not in [None, '', 'N/A', '-'] else 0.0
+            except (ValueError, TypeError) as type_error:
+                logger.error(f"❌ TYPE ERROR for {symbol}: Invalid numeric data - {type_error}")
+                logger.error(f"   entry_price: {repr(entry_price)}, stop_loss: {repr(stop_loss)}, target: {repr(target)}")
+                return None
+            
+            # Validate numeric ranges
+            if entry_price <= 0:
+                logger.warning(f"⚠️ INVALID ENTRY PRICE for {symbol}: {entry_price}")
+                return None
             # ========================================
             # CRITICAL: POSITION DEDUPLICATION CHECK
             # ========================================
             if self.has_existing_position(symbol):
                 logger.info(f"🚫 {self.name}: DUPLICATE SIGNAL PREVENTED for {symbol} - Position already exists")
+                return None
+            
+            # ========================================
+            # CRITICAL: PHANTOM POSITION COOLDOWN CHECK  
+            # ========================================
+            if self._is_position_cooldown_active(symbol):
+                logger.info(f"🕐 {self.name}: SIGNAL DELAYED for {symbol} - Position cooldown active")
                 return None
             
             # ========================================
@@ -859,7 +1531,7 @@ class BaseStrategy:
             # 🔧 IMPORTANT: Only use indices with confirmed options contracts on Zerodha
             if zerodha_underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:  # REMOVED MIDCPNIFTY - no options
                 # Index options - use volume-based strike selection for liquidity
-                expiry = await self._get_next_expiry()
+                expiry = await self._get_next_expiry(zerodha_underlying)
                 if not expiry:
                     logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
                     return None, 'REJECTED'
@@ -885,7 +1557,7 @@ class BaseStrategy:
             else:
                 # Stock options - convert equity to options using ZERODHA NAME
                 # 🎯 USER REQUIREMENT: Volume-based strike selection for liquidity
-                expiry = await self._get_next_expiry()
+                expiry = await self._get_next_expiry(zerodha_underlying)
                 if not expiry:
                     logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
                     return None, 'REJECTED'
@@ -918,9 +1590,17 @@ class BaseStrategy:
             logger.error(f"Error converting to options symbol: {e}")
             return underlying_symbol, 'CE'
     
-    def _validate_options_symbol_exists(self, options_symbol: str) -> bool:
+    def _validate_options_symbol_exists(self, options_symbol: str, underlying_symbol: str = None) -> bool:
         """Validate if options symbol exists in Zerodha NFO instruments"""
         try:
+            # Extract underlying symbol if not provided
+            if not underlying_symbol:
+                # Extract from options symbol (e.g., NIFTY14AUG2524550PE -> NIFTY)
+                underlying_symbol = options_symbol.split('CE')[0].split('PE')[0]
+                # Remove date patterns to get clean symbol
+                import re
+                underlying_symbol = re.sub(r'\d{2}[A-Z]{3}\d{2}', '', underlying_symbol)
+            
             # Log symbol mapping for debugging
             zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
             if zerodha_symbol != underlying_symbol:
@@ -998,14 +1678,18 @@ class BaseStrategy:
             fallback_strike = round(current_price / 50) * 50
             logger.warning(f"⚠️ FALLBACK STRIKE: {int(fallback_strike)} (rounded to nearest 50)")
             return int(fallback_strike)
-      
-    async def _get_next_expiry(self) -> str:
+    
+    async def _get_next_expiry(self, underlying_symbol: str = "NIFTY") -> str:
         """DYNAMIC EXPIRY SELECTION: Get optimal expiry based on strategy requirements"""
         # 🔍 DEBUG: Add comprehensive logging for expiry date debugging
         logger.info(f"🔍 DEBUG: Getting next expiry date...")
         
         # Try to get real expiry dates from Zerodha first
-        available_expiries = await self._get_available_expiries_from_zerodha()
+        try:
+            available_expiries = await self._get_available_expiries_from_zerodha(underlying_symbol)
+        except Exception as e:
+            logger.error(f"Error fetching expiries from Zerodha: {e}")
+            available_expiries = []
         
         if available_expiries:
             logger.info(f"✅ Found {len(available_expiries)} expiry dates from Zerodha API")
@@ -1013,7 +1697,7 @@ class BaseStrategy:
                 logger.info(f"   {i+1}. {exp['formatted']} ({exp['date']})")
             
             # Use the next expiry (not nearest to avoid expiry day volatility)
-            optimal_expiry = await self._get_optimal_expiry_for_strategy("next_weekly")  # Changed from default to "next_weekly"
+            optimal_expiry = await self._get_optimal_expiry_for_strategy(underlying_symbol, "next_weekly")  # Changed from default to "next_weekly"
             logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
             return optimal_expiry
         else:
@@ -1031,14 +1715,18 @@ class BaseStrategy:
             logger.info(f"🔄 FALLBACK EXPIRY: {fallback_expiry} (calculated next Thursday)")
             return fallback_expiry
     
-    async def _get_optimal_expiry_for_strategy(self, preference: str = "nearest_weekly") -> str:
+    async def _get_optimal_expiry_for_strategy(self, underlying_symbol: str = "NIFTY", preference: str = "nearest_weekly") -> str:
         """
         Get optimal expiry based on strategy requirements - FIXED ZERODHA FORMAT
         
         Args:
             preference: "nearest_weekly", "nearest_monthly", "next_weekly", "max_time_decay"
         """
-        available_expiries = await self._get_available_expiries_from_zerodha()
+        try:
+            available_expiries = await self._get_available_expiries_from_zerodha(underlying_symbol)
+        except Exception as e:
+            logger.error(f"Error fetching expiries from Zerodha: {e}")
+            available_expiries = []
         
         if not available_expiries:
             # 🚨 NO FALLBACK: Return None if no real expiries from Zerodha API
@@ -1104,7 +1792,7 @@ class BaseStrategy:
         
         return zerodha_expiry
     
-    async def _get_available_expiries_from_zerodha(self) -> List[Dict]:
+    async def _get_available_expiries_from_zerodha(self, underlying_symbol: str) -> List[Dict]:
         """
         Fetch available expiry dates from Zerodha instruments API
         Returns list of {date: datetime.date, formatted: str, is_weekly: bool, is_monthly: bool}
@@ -1796,11 +2484,11 @@ class BaseStrategy:
                     return 0
             else:
                 # 🎯 EQUITY: Use share-based calculation
-                max_capital_per_trade = available_capital * 0.3  # 30% max per equity trade
+                max_capital_per_trade = available_capital * 0.08  # 8% to stay safely under 10% risk manager limit
                 max_shares = int(max_capital_per_trade / entry_price)
                 
                 # Minimum viable quantity for equity
-                min_shares = max(1, int(5000 / entry_price))  # At least ₹5000 worth
+                min_shares = max(1, int(3000 / entry_price))  # At least ₹3000 worth (reduced from ₹5000)
                 final_quantity = max(min_shares, min(max_shares, 100))  # Between min and 100 shares
                 
                 cost = final_quantity * entry_price
@@ -2043,11 +2731,11 @@ class BaseStrategy:
                     return 0
             else:
                 # 🎯 EQUITY: Use share-based calculation
-                max_capital_per_trade = available_capital * 0.3  # 30% max per equity trade
+                max_capital_per_trade = available_capital * 0.08  # 8% to stay safely under 10% risk manager limit
                 max_shares = int(max_capital_per_trade / entry_price)
                 
                 # Minimum viable quantity for equity
-                min_shares = max(1, int(5000 / entry_price))  # At least ₹5000 worth
+                min_shares = max(1, int(3000 / entry_price))  # At least ₹3000 worth (reduced from ₹5000)
                 final_quantity = max(min_shares, min(max_shares, 100))  # Between min and 100 shares
                 
                 cost = final_quantity * entry_price

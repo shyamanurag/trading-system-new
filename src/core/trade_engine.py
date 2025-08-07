@@ -1012,12 +1012,18 @@ class TradeEngine:
     async def _process_live_signal(self, signal: Dict):
         """Process signal in live trading mode"""
         try:
-            # Check rate limiting
-            current_time = time.time()
-            if current_time - self.last_signal_time < (1.0 / self.signal_rate_limit):
-                wait_time = (1.0 / self.signal_rate_limit) - (current_time - self.last_signal_time)
-                self.logger.info(f"⏱️ Rate limiting: waiting {wait_time:.2f}s")
-                await asyncio.sleep(wait_time)
+            # 🎯 MANAGEMENT ACTIONS: Bypass rate limiting for position management
+            is_management_action = signal.get('management_action', False)
+            
+            if not is_management_action:
+                # Check rate limiting for regular signals only
+                current_time = time.time()
+                if current_time - self.last_signal_time < (1.0 / self.signal_rate_limit):
+                    wait_time = (1.0 / self.signal_rate_limit) - (current_time - self.last_signal_time)
+                    self.logger.info(f"⏱️ Rate limiting: waiting {wait_time:.2f}s")
+                    await asyncio.sleep(wait_time)
+            else:
+                self.logger.info(f"🎯 PRIORITY EXECUTION: Management action bypassing rate limits")
             
             # Process through order manager if available
             if self.order_manager:

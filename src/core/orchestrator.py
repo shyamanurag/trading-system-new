@@ -1423,6 +1423,15 @@ class TradingOrchestrator:
                         if self.position_tracker:
                             await self._sync_real_positions_to_strategy(strategy_instance)
                         
+                        # 🎯 ACTIVE POSITION MANAGEMENT: Manage existing positions before generating new signals
+                        if hasattr(strategy_instance, 'manage_existing_positions') and len(strategy_instance.active_positions) > 0:
+                            await strategy_instance.manage_existing_positions(transformed_data)
+                            self.logger.debug(f"🎯 {strategy_key}: Active position management completed for {len(strategy_instance.active_positions)} positions")
+                        
+                        # 🔄 PROCESS PENDING MANAGEMENT ACTIONS: Handle any queued management actions from previous cycles
+                        if hasattr(strategy_instance, 'process_pending_management_actions'):
+                            await strategy_instance.process_pending_management_actions()
+                        
                         # Call strategy's on_market_data method with TRANSFORMED data
                         await strategy_instance.on_market_data(transformed_data)
                         

@@ -398,30 +398,19 @@ class RiskManager:
         try:
             total_capital = self.position_tracker.capital
             
-            # CRITICAL DEBUG: Log all risk parameters for diagnosis
-            logger.info(f"🔍 RISK VALIDATION DEBUG for {symbol}:")
-            logger.info(f"   Position Value: ₹{position_value:,.0f}")
-            logger.info(f"   Total Capital: ₹{total_capital:,.0f}")
-            logger.info(f"   Daily P&L: ₹{self.daily_pnl:,.0f}")
-            logger.info(f"   Current Drawdown: {self.current_drawdown*100:.2f}%")
-            logger.info(f"   Emergency Stop: {getattr(self, 'emergency_stop_triggered', False)}")
-            
             # Check 1: Single position loss limit
             max_single_position_loss = total_capital * self.risk_limits['max_single_position_loss_percent']
             limit_check = max_single_position_loss * 10  # Assume 10% potential loss
-            logger.info(f"   Position Limit: ₹{limit_check:,.0f} (Max: ₹{max_single_position_loss:,.0f} * 10)")
             if position_value > limit_check:
                 return False, f"Position too large: ₹{position_value:,.0f} exceeds single position limit ₹{limit_check:,.0f}"
             
             # Check 2: Daily loss limit
             daily_loss_limit = -total_capital * self.risk_limits['max_daily_loss_percent']
-            logger.info(f"   Daily Loss Limit: ₹{daily_loss_limit:,.0f} (Current: ₹{self.daily_pnl:,.0f})")
             if self.daily_pnl < daily_loss_limit:
                 return False, f"Daily loss limit exceeded: ₹{self.daily_pnl:,.0f} < ₹{daily_loss_limit:,.0f}"
             
             # Check 3: Drawdown limit
             drawdown_limit = self.risk_limits['max_drawdown_percent']
-            logger.info(f"   Drawdown Limit: {drawdown_limit*100:.1f}% (Current: {self.current_drawdown*100:.2f}%)")
             if self.current_drawdown > drawdown_limit:
                 return False, f"Drawdown limit exceeded: {self.current_drawdown*100:.1f}% > {drawdown_limit*100:.1f}%"
             
@@ -756,6 +745,10 @@ class RiskManager:
             logger.info(f"🔍 RISK MANAGER: Starting order validation for user {user_id}")
             logger.info(f"   Order data: {order}")
             
+            # 🕐 CRITICAL: TIME-BASED TRADING RESTRICTIONS (IST)
+            if not self._validate_trading_hours(order):
+                return False
+            
             # Convert order to signal-like object for validation
             class OrderSignal:
                 def __init__(self, order):
@@ -788,6 +781,69 @@ class RiskManager:
         except Exception as e:
             logger.error(f"Error validating order: {e}")
             return False
+
+    def _validate_trading_hours(self, order) -> bool:
+        """⏰ VALIDATE TRADING HOURS - Time-based order restrictions (IST)"""
+        try:
+            import pytz
+            from datetime import time
+            
+            # IST timezone
+            ist_timezone = pytz.timezone('Asia/Kolkata')
+            current_time_ist = datetime.now(ist_timezone).time()
+            current_time_str = datetime.now(ist_timezone).strftime('%H:%M:%S')
+            
+            # Extract order information
+            if isinstance(order, dict):
+                symbol = order.get('symbol', 'UNKNOWN')
+                action = order.get('action', order.get('side', 'UNKNOWN'))
+                is_management_action = order.get('management_action', False)
+                is_closing_action = order.get('closing_action', False)
+                tag = order.get('tag', '')
+            else:
+                symbol = getattr(order, 'symbol', 'UNKNOWN')
+                action = getattr(order, 'action', getattr(order, 'side', 'UNKNOWN'))
+                is_management_action = getattr(order, 'management_action', False)
+                is_closing_action = getattr(order, 'closing_action', False)
+                tag = getattr(order, 'tag', '')
+            
+            # Define trading time restrictions (IST)
+            market_open = time(9, 15)      # 9:15 AM IST
+            no_new_signals_after = time(15, 0)    # 3:00 PM IST - No new signals
+            warning_close_time = time(15, 15)     # 3:15 PM IST - Start aggressive closing
+            mandatory_close_time = time(15, 20)   # 3:20 PM IST - Force close all positions
+            market_close = time(15, 30)           # 3:30 PM IST - Market close
+            
+            # Check if market is open
+            if current_time_ist < market_open or current_time_ist > market_close:
+                logger.warning(f"🕐 MARKET CLOSED: {symbol} {action} rejected - Market hours: 9:15 AM - 3:30 PM IST (Current: {current_time_str} IST)")
+                return False
+            
+            # 🎯 BYPASS TIME RESTRICTIONS FOR POSITION MANAGEMENT ACTIONS
+            if is_management_action or is_closing_action or 'POSITION_MGMT' in tag:
+                logger.info(f"🎯 TIME BYPASS: {symbol} {action} - Management/closing action allowed at {current_time_str} IST")
+                return True
+            
+            # Time-based restrictions for regular signals
+            if current_time_ist >= mandatory_close_time:  # After 3:20 PM
+                logger.warning(f"🚨 MANDATORY CLOSE TIME: {symbol} {action} rejected - Only position management allowed after 3:20 PM IST (Current: {current_time_str} IST)")
+                return False
+            elif current_time_ist >= warning_close_time:  # 3:15-3:20 PM
+                logger.warning(f"⚠️ WARNING CLOSE TIME: {symbol} {action} rejected - Only urgent position management allowed 3:15-3:20 PM IST (Current: {current_time_str} IST)")
+                return False
+            elif current_time_ist >= no_new_signals_after:  # 3:00-3:15 PM
+                logger.warning(f"🕐 NO NEW SIGNALS: {symbol} {action} rejected - No new positions after 3:00 PM IST (Current: {current_time_str} IST)")
+                return False
+            
+            # Normal trading hours (9:15 AM - 3:00 PM)
+            logger.debug(f"✅ TRADING HOURS VALID: {symbol} {action} approved at {current_time_str} IST")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error validating trading hours: {e}")
+            # Safe fallback - allow trading if error in time check
+            logger.warning(f"⚠️ TIME VALIDATION ERROR: Allowing {symbol} {action} due to time check failure")
+            return True
 
     def get_risk_report(self) -> Dict[str, Any]:
         """Get comprehensive risk report"""

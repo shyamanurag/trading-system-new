@@ -137,6 +137,14 @@ class SignalDeduplicator:
     async def _check_signal_already_executed(self, signal: Dict) -> bool:
         """Check if this signal was already executed today (across deploys)"""
         try:
+            # 🎯 BYPASS DEDUPLICATION FOR POSITION MANAGEMENT ACTIONS
+            is_management_action = signal.get('management_action', False)
+            is_closing_action = signal.get('closing_action', False)
+            
+            if is_management_action or is_closing_action:
+                logger.info(f"🎯 MANAGEMENT ACTION BYPASS: {signal.get('symbol')} {signal.get('action')} - skipping duplicate check")
+                return False
+            
             if not self.redis_client:
                 logger.warning(f"🚨 NO REDIS CLIENT: Cannot check for duplicate signal {signal.get('symbol')} - allowing execution")
                 return False
@@ -239,6 +247,15 @@ class SignalDeduplicator:
         }
         
         for signal in signals:
+            # 🎯 BYPASS QUALITY FILTERING FOR POSITION MANAGEMENT ACTIONS
+            is_management_action = signal.get('management_action', False)
+            is_closing_action = signal.get('closing_action', False)
+            
+            if is_management_action or is_closing_action:
+                logger.info(f"🎯 QUALITY BYPASS: {signal.get('symbol')} {signal.get('action')} - management action approved")
+                quality_signals.append(signal)
+                continue
+            
             confidence = signal.get('confidence', 0)
             
             # Check minimum confidence
@@ -297,11 +314,19 @@ class SignalDeduplicator:
     def _deduplicate_by_symbol(self, signals: List[Dict]) -> List[Dict]:
         """Remove duplicate signals for the same symbol, keep highest confidence"""
         symbol_signals = defaultdict(list)
+        management_signals = []  # Management actions bypass symbol deduplication
         
-        # Group signals by symbol
+        # Separate management actions from regular signals
         for signal in signals:
-            symbol = signal['symbol']
-            symbol_signals[symbol].append(signal)
+            is_management_action = signal.get('management_action', False)
+            is_closing_action = signal.get('closing_action', False)
+            
+            if is_management_action or is_closing_action:
+                logger.info(f"🎯 SYMBOL DEDUP BYPASS: {signal.get('symbol')} {signal.get('action')} - management action")
+                management_signals.append(signal)
+            else:
+                symbol = signal['symbol']
+                symbol_signals[symbol].append(signal)
         
         deduplicated = []
         
@@ -321,6 +346,9 @@ class SignalDeduplicator:
                 deduplicated.append(best_signal)
             else:
                 deduplicated.append(symbol_signal_list[0])
+        
+        # Add all management signals (no deduplication)
+        deduplicated.extend(management_signals)
         
         return deduplicated
     
