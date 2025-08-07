@@ -882,8 +882,29 @@ async def get_dashboard_summary():
                 # Get positions
                 positions = await orchestrator.zerodha_client.get_positions()
                 if positions:
-                    active_positions = len([p for p in positions if float(p.get('quantity', 0)) != 0])
-                    daily_pnl = sum(float(p.get('pnl', 0)) for p in positions)
+                    # Check both 'net' and 'day' positions
+                    all_positions = []
+                    if 'net' in positions:
+                        all_positions.extend(positions['net'])
+                    if 'day' in positions:
+                        all_positions.extend(positions['day'])
+                    
+                    active_positions = len([p for p in all_positions if float(p.get('quantity', 0)) != 0])
+                    
+                    # Try multiple P&L field names (Zerodha uses different fields)
+                    total_pnl = 0.0
+                    for p in all_positions:
+                        pnl = 0.0
+                        # Try different possible P&L field names
+                        for field in ['pnl', 'unrealised', 'realised', 'day_pnl', 'net_pnl', 'm2m']:
+                            if field in p and p[field] is not None:
+                                try:
+                                    pnl += float(p[field])
+                                except (ValueError, TypeError):
+                                    pass
+                        total_pnl += pnl
+                    
+                    daily_pnl = total_pnl
             except Exception as e:
                 logger.warning(f"Error fetching trading data: {e}")
         
@@ -928,15 +949,31 @@ async def get_daily_pnl():
             try:
                 positions = await orchestrator.zerodha_client.get_positions()
                 if positions:
-                    for pos in positions:
-                        pnl = float(pos.get('pnl', 0))
-                        if pnl != 0:
+                    # Check both 'net' and 'day' positions
+                    all_positions = []
+                    if 'net' in positions:
+                        all_positions.extend(positions['net'])
+                    if 'day' in positions:
+                        all_positions.extend(positions['day'])
+                    
+                    for pos in all_positions:
+                        # Calculate total P&L from all possible fields
+                        pos_pnl = 0.0
+                        for field in ['pnl', 'unrealised', 'realised', 'day_pnl', 'net_pnl', 'm2m']:
+                            if field in pos and pos[field] is not None:
+                                try:
+                                    pos_pnl += float(pos[field])
+                                except (ValueError, TypeError):
+                                    pass
+                        
+                        if pos_pnl != 0:
                             pnl_breakdown.append({
                                 "symbol": pos.get('tradingsymbol', 'UNKNOWN'),
-                                "pnl": pnl,
+                                "pnl": pos_pnl,
                                 "quantity": float(pos.get('quantity', 0))
                             })
-                    daily_pnl = sum(float(p.get('pnl', 0)) for p in positions)
+                    
+                    daily_pnl = sum(item['pnl'] for item in pnl_breakdown)
             except Exception as e:
                 logger.warning(f"Error fetching PnL data: {e}")
         
