@@ -1883,7 +1883,7 @@ class BaseStrategy:
                             
                             if expiries:
                                 logger.info(f"📅 Using expiries from {symbol}: {len(expiries)} found")
-                        return expiries
+                                return expiries
                         except Exception as async_err:
                             logger.warning(f"⚠️ Async expiry fetch failed for {symbol}: {async_err}")
                             continue
@@ -1897,9 +1897,8 @@ class BaseStrategy:
                             # Use expiries from the first successful symbol lookup
                             logger.info(f"📅 Using expiries from {symbol}: {len(expiries)} found")
                             return expiries
-                            
                 except Exception as e:
-                    logger.warning(f"⚠️ Failed to get expiries for {symbol}: {e}")
+                    logger.warning(f"⚠️ Error fetching expiries for {symbol}: {e}")
                     continue
             
             # If no expiries found from API, REJECT signal
@@ -2089,7 +2088,7 @@ class BaseStrategy:
                     if premium and premium > 0:
                         logger.info(f"✅ FALLBACK ZERODHA LTP: {options_symbol} = ₹{premium}")
                         return float(premium)
-            else:
+                    else:
                         logger.warning(f"⚠️ Zerodha LTP returned zero or None for {options_symbol}")
             except Exception as e:
                 logger.debug(f"Could not get Zerodha LTP for {options_symbol}: {e}")
@@ -2631,7 +2630,7 @@ class BaseStrategy:
         """Get volume data for strikes from market data sources"""
         try:
             # Try to get volume data from TrueData cache
-                    from data.truedata_client import live_market_data
+            from data.truedata_client import live_market_data
             
             volume_data = {}
             option_type = 'CE' if action.upper() == 'BUY' else 'PE'
@@ -2655,34 +2654,13 @@ class BaseStrategy:
             if volume_data:
                 logger.info(f"✅ Retrieved volume data for {len(volume_data)} strikes from TrueData")
                 return volume_data
-                        else:
+            else:
                 logger.debug(f"Volume data not needed - using ATM strike for {underlying_symbol}")
                 return {}
                 
         except Exception as e:
             logger.error(f"Error getting volume data: {e}")
-            return {} 
-            actual_lot_size = self._fetch_zerodha_lot_size(underlying_symbol)
-            if actual_lot_size:
-                logger.info(f"✅ DYNAMIC LOT SIZE: {underlying_symbol} = {actual_lot_size} (from Zerodha API)")
-                return actual_lot_size
-            
-            # Fallback: EXCHANGE-DEFINED LOT SIZES (official NSE values)
-            if underlying_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
-                # Index options have standard lot sizes as per NSE
-                lot_sizes = {'NIFTY': 75, 'BANKNIFTY': 25, 'FINNIFTY': 40}  
-                fallback_size = lot_sizes.get(underlying_symbol, 75)
-                logger.info(f"📋 FALLBACK LOT SIZE: {underlying_symbol} = {fallback_size} (NSE standard)")
-                return fallback_size
-            else:
-                # Stock options: Use NSE standard of 750 for most stocks
-                fallback_size = 750  # Standard NSE stock option lot size
-                logger.info(f"📋 FALLBACK LOT SIZE: {underlying_symbol} = {fallback_size} (NSE stock standard)")
-                return fallback_size
-                
-        except Exception as e:
-            logger.error(f"Error getting dynamic lot size for {options_symbol}: {e}")
-            return 75  # Safe fallback
+            return {}
     
     def _fetch_zerodha_lot_size(self, underlying_symbol: str) -> int:
         """🎯 DYNAMIC: Fetch actual lot size from Zerodha instruments API"""
