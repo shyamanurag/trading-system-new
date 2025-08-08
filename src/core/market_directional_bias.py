@@ -150,8 +150,8 @@ class MarketDirectionalBias:
             # 6. CALCULATE ENHANCED BIAS (with internals if available)
             if market_internals:
                 bias_direction, confidence = self._calculate_enhanced_bias(
-                    nifty_momentum, sector_alignment, volume_confirmation, 
-                    time_phase, market_internals
+                    nifty_momentum, sector_alignment, volume_confirmation,
+                    time_phase, market_internals, nifty_data=nifty_data
                 )
                 market_regime = market_internals.market_regime
                 breadth_score = market_internals.advance_decline_ratio
@@ -543,7 +543,7 @@ class MarketDirectionalBias:
     
     def _calculate_enhanced_bias(self, nifty_momentum: float, sector_alignment: float,
                                 volume_confirmation: bool, time_phase: str,
-                                internals) -> Tuple[str, float]:
+                                internals, nifty_data: Dict = None) -> Tuple[str, float]:
         """Calculate market bias using comprehensive internals"""
         try:
             # Start with basic components
@@ -601,7 +601,7 @@ class MarketDirectionalBias:
                 regime_multiplier = 0.3  # Very low confidence in volatile chop
             
             # 2.5 Opening gap component (time-phase weighted)
-            gap_pct = self._analyze_gap_component(nifty_data)
+            gap_pct = self._analyze_gap_component(nifty_data or {})
             gap_weight = 0.0
             try:
                 # Emphasize gap in OPENING; decay after 30 minutes
