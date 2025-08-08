@@ -1319,7 +1319,14 @@ class BaseStrategy:
                         is_aligned = False
 
                     if is_aligned and hasattr(market_bias, 'get_position_size_multiplier'):
+                        # Micro-size in CHOPPY regimes even when aligned
                         bias_multiplier = market_bias.get_position_size_multiplier(action.upper())
+                        try:
+                            regime = getattr(getattr(market_bias, 'current_bias', None), 'market_regime', 'NORMAL')
+                            if regime in ('CHOPPY', 'VOLATILE_CHOPPY'):
+                                bias_multiplier = min(bias_multiplier, 1.0)
+                        except Exception:
+                            pass
                         metadata['bias_multiplier'] = bias_multiplier
                         if bias_multiplier > 1.0:
                             logger.info(f"🔥 BIAS BOOST: {symbol} {action} gets {bias_multiplier:.1f}x position size")
@@ -1360,8 +1367,19 @@ class BaseStrategy:
             # ========================================
             # CRITICAL: CONFIDENCE FILTERING + OPENING GAP GATE
             # ========================================
-            if confidence < 9.0:
-                logger.info(f"🗑️ {self.name}: LOW CONFIDENCE SIGNAL SCRAPPED for {symbol} - Confidence: {confidence:.1f}/10")
+            # Regime-aware minimum confidence: slightly relaxed in CHOPPY with micro-sizing
+            min_conf = 9.0
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                regime = getattr(getattr(getattr(orchestrator, 'market_bias', None), 'current_bias', None), 'market_regime', 'NORMAL')
+                if regime in ('CHOPPY', 'VOLATILE_CHOPPY'):
+                    min_conf = 8.8
+            except Exception:
+                min_conf = 9.0
+
+            if confidence < min_conf:
+                logger.info(f"🗑️ {self.name}: LOW CONFIDENCE SIGNAL SCRAPPED for {symbol} - Confidence: {confidence:.1f}/10 (min={min_conf})")
                 return None
 
             # Opening gap gate: avoid counter-gap trades during opening/morning on large gaps
