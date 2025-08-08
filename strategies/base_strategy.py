@@ -996,7 +996,8 @@ class BaseStrategy:
                 'confidence': signal.get('confidence', 0),
                 'quantity': signal.get('quantity', 1),
                 'strategy': self.name,
-                'entry_time': datetime.now()
+                'entry_time': datetime.now(),
+                'timestamp': __import__('time').time()
             }
             
             # Store entry time for age tracking
@@ -1205,13 +1206,22 @@ class BaseStrategy:
         try:
             if action.upper() == 'BUY':
                 # For BUY: stop_loss < entry_price < target
+                # Enforce minimum separations for low-priced stocks
+                min_step = max(0.05, entry_price * 0.003)  # at least 0.05 or 0.3%
                 if not (stop_loss < entry_price < target):
                     logger.warning(f"Invalid BUY signal levels: SL={stop_loss}, Entry={entry_price}, Target={target}")
                     return False
+                if (entry_price - stop_loss) < min_step or (target - entry_price) < min_step:
+                    logger.warning(f"Invalid BUY signal distances (too tight): step={min_step:.4f} for Entry={entry_price}")
+                    return False
             else:  # SELL
                 # For SELL: target < entry_price < stop_loss
+                min_step = max(0.05, entry_price * 0.003)
                 if not (target < entry_price < stop_loss):
                     logger.warning(f"Invalid SELL signal levels: SL={stop_loss}, Entry={entry_price}, Target={target}")
+                    return False
+                if (stop_loss - entry_price) < min_step or (entry_price - target) < min_step:
+                    logger.warning(f"Invalid SELL signal distances (too tight): step={min_step:.4f} for Entry={entry_price}")
                     return False
             
             # Check for identical levels (problematic for low-priced stocks)
@@ -1274,14 +1284,26 @@ class BaseStrategy:
                                f"Raw Confidence: {confidence}, Normalized: {normalized_confidence:.1f}/10)")
                     return None
                 else:
-                    # Apply position size multiplier for bias-aligned signals
-                    if hasattr(market_bias, 'get_position_size_multiplier'):
+                    # Apply position size multiplier ONLY when aligned with current bias
+                    try:
+                        current_bias_dir = getattr(getattr(market_bias, 'current_bias', None), 'direction', 'NEUTRAL')
+                        is_aligned = (
+                            (current_bias_dir == 'BULLISH' and action.upper() == 'BUY') or
+                            (current_bias_dir == 'BEARISH' and action.upper() == 'SELL')
+                        )
+                    except Exception:
+                        current_bias_dir = 'NEUTRAL'
+                        is_aligned = False
+
+                    if is_aligned and hasattr(market_bias, 'get_position_size_multiplier'):
                         bias_multiplier = market_bias.get_position_size_multiplier(action.upper())
                         metadata['bias_multiplier'] = bias_multiplier
                         if bias_multiplier > 1.0:
                             logger.info(f"🔥 BIAS BOOST: {symbol} {action} gets {bias_multiplier:.1f}x position size")
                         elif bias_multiplier < 1.0:
                             logger.info(f"⚠️ BIAS REDUCE: {symbol} {action} gets {bias_multiplier:.1f}x position size")
+                    else:
+                        metadata['bias_multiplier'] = 1.0
             
             # CRITICAL FIX: Type validation to prevent float/string arithmetic errors
             try:
@@ -1432,7 +1454,24 @@ class BaseStrategy:
                 logger.warning(f"Invalid options signal levels: Entry={options_entry_price}, SL={options_stop_loss}, Target={options_target}")
                 return None
             elif options_entry_price == 0:
-                logger.info(f"🔄 PASSING 0.0 signal to orchestrator for LTP validation: {options_symbol}")
+                # Final attempt: try Zerodha quotes directly before giving up
+                try:
+                    from src.core.orchestrator import get_orchestrator_instance
+                    orchestrator = get_orchestrator_instance()
+                    if orchestrator and orchestrator.zerodha_client:
+                        import asyncio
+                        task = asyncio.create_task(orchestrator.zerodha_client.get_options_ltp(options_symbol))
+                        fetched_ltp = asyncio.get_event_loop().run_until_complete(task)
+                        if fetched_ltp and fetched_ltp > 0:
+                            options_entry_price = float(fetched_ltp)
+                            logger.info(f"✅ Retrieved options LTP before validation: {options_symbol} = ₹{options_entry_price}")
+                        else:
+                            logger.warning(f"⚠️ Zerodha LTP still unavailable for {options_symbol}")
+                except Exception as e:
+                    logger.debug(f"Zerodha LTP late-fetch failed for {options_symbol}: {e}")
+                
+                if options_entry_price == 0:
+                    logger.info(f"🔄 PASSING 0.0 signal to orchestrator for LTP validation: {options_symbol}")
             
             # 🎯 CRITICAL FIX: Always BUY options (no selling due to margin requirements)
             final_action = 'BUY'  # Force all options signals to be BUY
@@ -1761,8 +1800,8 @@ class BaseStrategy:
             for i, exp in enumerate(available_expiries[:3]):  # Log first 3
                 logger.info(f"   {i+1}. {exp['formatted']} ({exp['date']})")
             
-            # Use the next expiry (not nearest to avoid expiry day volatility)
-            optimal_expiry = await self._get_optimal_expiry_for_strategy(underlying_symbol, "next_weekly")  # Changed from default to "next_weekly"
+            # Prefer nearest weekly first; if LTP missing later, logic will escalate to next
+            optimal_expiry = await self._get_optimal_expiry_for_strategy(underlying_symbol, "nearest_weekly")
             logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
             return optimal_expiry
         else:
