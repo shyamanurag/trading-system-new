@@ -625,12 +625,41 @@ class RiskManager:
             # CRITICAL DEBUG: Log signal validation details
             logger.info(f"🔍 SIGNAL VALIDATION: {symbol} | Qty: {quantity} | Price: ₹{entry_price} | Strategy: {strategy_name}")
             
-            # Calculate position value
-            position_value = entry_price * quantity
+            # Calculate position value with management-action awareness
+            position_value = float(entry_price) * float(quantity)
             logger.info(f"   Position Value: ₹{position_value:,.0f}")
+
+            # Management/closing actions (auto square-off) should not be blocked by sizing caps
+            is_management_action = False
+            try:
+                # detect via strategy/tag hints commonly used by order paths
+                is_management_action = (
+                    (signal and getattr(signal, 'strategy_name', '') == 'position_monitor') or
+                    (hasattr(signal, 'tag') and 'POSITION_MGMT' in str(getattr(signal, 'tag')))
+                )
+            except Exception:
+                is_management_action = False
             
-            # Validate trade risk using existing method
-            risk_approved, risk_reason = self.validate_trade_risk(position_value, strategy_name, symbol)
+            # Prefer live capital from Zerodha margins when available
+            total_capital_override = None
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                if orchestrator and getattr(orchestrator, 'zerodha_client', None):
+                    margins = await orchestrator.zerodha_client.get_margins()
+                    if margins:
+                        total_capital_override = float(margins.get('equity', {}).get('available', {}).get('live_balance', 0))
+                        if total_capital_override == 0:
+                            total_capital_override = None
+            except Exception:
+                total_capital_override = None
+            
+            # Validate trade risk using existing method (skip single-position cap for management actions)
+            if is_management_action:
+                # Only enforce emergency stop and basic sanity checks for exits
+                risk_approved, risk_reason = True, "Management action bypass"
+            else:
+                risk_approved, risk_reason = self.validate_trade_risk(position_value, strategy_name, symbol, total_capital_override)
             
             if not risk_approved:
                 return {
@@ -760,16 +789,20 @@ class RiskManager:
                     # CRITICAL FIX: Handle both dict and object types
                     if isinstance(order, dict):
                         self.symbol = order.get('symbol', 'UNKNOWN')
-                        self.strategy_name = order.get('strategy_name', 'unknown')
+                        self.strategy_name = order.get('strategy_name', order.get('strategy', 'unknown'))
+                        self.strategy = order.get('strategy', self.strategy_name)
                         self.quantity = order.get('quantity', 0)
                         # CRITICAL FIX: Check both price and entry_price fields
                         self.entry_price = order.get('entry_price', order.get('price', 0.0))
+                        self.tag = order.get('tag', '')
                     else:
                         self.symbol = getattr(order, 'symbol', 'UNKNOWN')
-                        self.strategy_name = getattr(order, 'strategy_name', 'unknown')
+                        self.strategy_name = getattr(order, 'strategy_name', getattr(order, 'strategy', 'unknown'))
+                        self.strategy = getattr(order, 'strategy', self.strategy_name)
                         self.quantity = getattr(order, 'quantity', 0)
                         # CRITICAL FIX: Check both price and entry_price fields for objects too
                         self.entry_price = getattr(order, 'entry_price', getattr(order, 'price', 0.0))
+                        self.tag = getattr(order, 'tag', '')
                     self.quality_score = 0.8  # Default quality
             
             signal = OrderSignal(order)

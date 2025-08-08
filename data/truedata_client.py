@@ -170,6 +170,10 @@ class TrueDataClient:
         # Register cleanup handlers
         self._register_cleanup_handlers()
 
+        # Background health monitor flags
+        self._health_thread = None
+        self._stop_health = threading.Event()
+
     def _generate_deployment_id(self):
         """Generate unique deployment ID for connection tracking"""
         import uuid
@@ -286,6 +290,8 @@ class TrueDataClient:
             self.connected = True
             self._connection_attempts = 0
             logger.info("🎉 TrueData connected successfully!")
+            # Start health monitor after successful connect
+            self._start_health_monitor()
             return True
 
         except Exception as e:
@@ -494,7 +500,60 @@ class TrueDataClient:
             logger.error(f"❌ Force disconnect error: {e}")
         
         self.connected = False
+        # Stop health monitor
+        try:
+            self._stop_health.set()
+        except Exception:
+            pass
         logger.info("🛑 Force disconnect completed")
+
+    def _start_health_monitor(self):
+        """Start a lightweight background thread to auto-recover from ping/pong timeouts"""
+        try:
+            if self._health_thread and self._health_thread.is_alive():
+                return
+            self._stop_health.clear()
+
+            def _monitor():
+                last_ok = time.time()
+                while not self._stop_health.is_set():
+                    try:
+                        # Consider data healthy if ticks updated in last 10 seconds
+                        recent = any(
+                            True for v in live_market_data.values()
+                            if isinstance(v, dict) and (
+                                time.time() - (
+                                    datetime.fromisoformat(v.get('timestamp')).timestamp()
+                                    if isinstance(v.get('timestamp'), str) else last_ok
+                                )
+                            ) < 10
+                        )
+                        if recent:
+                            last_ok = time.time()
+                        # If no recent ticks for 15s during market hours, attempt gentle reconnect
+                        current_hour = datetime.now().hour
+                        in_market = 9 <= current_hour <= 15
+                        if in_market and (time.time() - last_ok) > 15:
+                            logger.warning("⚠️ TrueData tick silence detected, attempting gentle reconnect")
+                            try:
+                                # Avoid tight loop
+                                self._activate_circuit_breaker()
+                                time.sleep(2)
+                                self._reset_circuit_breaker()
+                                self._direct_connect()
+                                last_ok = time.time()
+                            except Exception as re_err:
+                                logger.error(f"❌ Health monitor reconnect error: {re_err}")
+                                time.sleep(5)
+                        time.sleep(3)
+                    except Exception as mon_err:
+                        logger.debug(f"Health monitor error: {mon_err}")
+                        time.sleep(5)
+
+            self._health_thread = threading.Thread(target=_monitor, name="TDHealth", daemon=True)
+            self._health_thread.start()
+        except Exception as e:
+            logger.warning(f"⚠️ Could not start TrueData health monitor: {e}")
 
     def _get_symbols_to_subscribe(self):
         """Get symbols from autonomous configuration - FULLY AUTONOMOUS SELECTION"""

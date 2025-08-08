@@ -1415,7 +1415,17 @@ class BaseStrategy:
                 pass
             
             # 🎯 INTELLIGENT SIGNAL TYPE SELECTION based on market conditions and symbol
-            signal_type = self._determine_optimal_signal_type(symbol, entry_price, confidence, metadata)
+            # Ensure numeric types for decision helpers
+            try:
+                _entry_price_num = float(entry_price)
+            except (TypeError, ValueError):
+                _entry_price_num = 0.0
+            try:
+                _confidence_num = float(confidence)
+            except (TypeError, ValueError):
+                _confidence_num = 0.0
+
+            signal_type = self._determine_optimal_signal_type(symbol, _entry_price_num, _confidence_num, metadata)
             
             if signal_type == 'OPTIONS':
                 # Convert to options signal

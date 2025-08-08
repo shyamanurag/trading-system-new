@@ -101,8 +101,22 @@ class OptimizedVolumeScalper(BaseStrategy):
             # STEP 4: Generate sophisticated signals
             signals = await self._generate_microstructure_signals(data)
             
-            # STEP 5: Filter for only highest probability trades
+            # STEP 5: Filter for only highest probability trades AND align with market bias
             quality_signals = self._filter_for_quality(signals)
+            if hasattr(self, 'market_bias') and self.market_bias:
+                aligned = []
+                for s in quality_signals:
+                    direction = s.get('action', 'BUY')
+                    raw_confidence = s.get('confidence', 0.0)
+                    # Normalize confidence to 0-10 scale before bias gating
+                    try:
+                        confidence_val = float(raw_confidence)
+                    except (TypeError, ValueError):
+                        confidence_val = 0.0
+                    normalized_confidence = confidence_val / 10.0 if confidence_val > 10 else confidence_val
+                    if self.market_bias.should_allow_signal(direction, normalized_confidence):
+                        aligned.append(s)
+                quality_signals = aligned
             
             # CRITICAL FIX: Store signals in current_positions for orchestrator to find
             for signal in quality_signals:

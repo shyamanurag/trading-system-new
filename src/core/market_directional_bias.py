@@ -459,7 +459,8 @@ class MarketDirectionalBias:
         try:
             # Regime-aware thresholds
             regime = getattr(self.current_bias, 'market_regime', 'NORMAL')
-            override_threshold = 9.5 if regime in ('CHOPPY', 'VOLATILE_CHOPPY') else 8.5
+            # Make counter-trend overrides harder in choppy/sideways days
+            override_threshold = 9.9 if regime in ('CHOPPY', 'VOLATILE_CHOPPY') else 9.7
             neutral_threshold = 7.5 if regime in ('CHOPPY', 'VOLATILE_CHOPPY') else 6.5
 
             # HIGH CONFIDENCE OVERRIDE: Allow counter-trend for very strong signals (regime aware)
@@ -492,10 +493,13 @@ class MarketDirectionalBias:
                     logger.debug(f"Aligned signal rejected: Confidence {signal_confidence:.1f} < 5.5 threshold")
                 return allowed
             else:
-                # Counter-trend signals need higher confidence
-                allowed = signal_confidence >= 7.5
+                # Counter-trend signals need much higher confidence, scaled by bias confidence
+                bias_conf = getattr(self.current_bias, 'confidence', 0.0)
+                required = 7.5 + min(bias_conf, 3.0)  # 7.5 to 10.5, capped effectively by 10
+                required = min(required, 9.9)
+                allowed = signal_confidence >= required
                 if not allowed:
-                    logger.debug(f"Counter-trend signal rejected: Confidence {signal_confidence:.1f} < 7.5 threshold")
+                    logger.debug(f"Counter-trend signal rejected: Confidence {signal_confidence:.1f} < {required:.1f} threshold (bias_conf={bias_conf:.1f})")
                 return allowed
                 
         except Exception as e:
