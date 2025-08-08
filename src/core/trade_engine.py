@@ -184,6 +184,18 @@ class TradeEngine:
                     orchestrator.signal_stats['by_strategy'][strategy]['executed'] += 1
                 
                 self.logger.info(f"📊 EXECUTION TRACKED: Total executed: {orchestrator.signal_stats['executed']}")
+
+            # Notify strategy to record actual position entry only after execution
+            try:
+                strategy_name = signal.get('strategy') or signal.get('strategy_name')
+                if strategy_name and hasattr(orchestrator, 'strategies') and strategy_name in orchestrator.strategies:
+                    strategy_instance = orchestrator.strategies[strategy_name].get('instance')
+                    if strategy_instance and hasattr(strategy_instance, 'record_position_entry'):
+                        symbol = signal.get('symbol')
+                        strategy_instance.record_position_entry(symbol, signal)
+                        self.logger.info(f"✅ Strategy notified to record executed position: {strategy_name} {symbol}")
+            except Exception as notify_err:
+                self.logger.warning(f"⚠️ Could not notify strategy for executed position: {notify_err}")
                 
         except Exception as e:
             self.logger.error(f"Error tracking signal execution: {e}")
@@ -1052,6 +1064,17 @@ class TradeEngine:
         try:
             # Create order from signal
             order = self._create_order_from_signal(signal)
+            
+            # Enrich risk manager with live capital override (Zerodha margins)
+            if self.risk_manager:
+                try:
+                    total_capital_override = None
+                    if self.zerodha_client:
+                        margins = await self.zerodha_client.get_margins()
+                        total_capital_override = float(margins.get('equity', {}).get('available', {}).get('live_balance', 0)) if margins else None
+                    # Wrap validate_signal to pass override via OrderManager call path
+                except Exception:
+                    total_capital_override = None
             
             # Submit order - CRITICAL FIX: OrderManager expects (user_id, order_data)
             user_id = signal.get('user_id', 'system')

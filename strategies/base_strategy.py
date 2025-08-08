@@ -1227,6 +1227,10 @@ class BaseStrategy:
                               target: float, action: str) -> bool:
         """Validate that signal levels make logical sense"""
         try:
+            # Normalize numeric types to avoid '<' between str and int/float errors
+            entry_price = float(entry_price)
+            stop_loss = float(stop_loss)
+            target = float(target)
             if action.upper() == 'BUY':
                 # For BUY: stop_loss < entry_price < target
                 # Enforce adaptive minimum separations by price band (tick-size aware)
@@ -1662,8 +1666,7 @@ class BaseStrategy:
                 'generated_at': datetime.now().isoformat()
             }
             
-            # CRITICAL: Record position entry for management
-            self.record_position_entry(symbol, signal)
+            # DEFERRED: Position entry is recorded only after real execution confirmation
             
             return signal
             
@@ -2633,7 +2636,7 @@ class BaseStrategy:
             return None
     
     def _get_capital_constrained_quantity(self, options_symbol: str, underlying_symbol: str, entry_price: float) -> int:
-        """🎯 SMART QUANTITY: F&O uses lots, Equity uses shares based on capital"""
+        """🎯 SMART QUANTITY: size by dynamic capital percentage (no hard-coded rupee minimums)"""
         try:
             # Check if this is F&O (options) or equity
             is_options = (options_symbol != underlying_symbol or 
@@ -2641,6 +2644,18 @@ class BaseStrategy:
             
             # Get real-time available capital
             available_capital = self._get_available_capital()
+            # Dynamic per-trade allocation percentages
+            import os as _os
+            try:
+                trade_pct = float(_os.getenv('TRADE_PCT', '0.25'))  # default 25%
+            except Exception:
+                trade_pct = 0.25
+            try:
+                trade_pct_cap = float(_os.getenv('TRADE_PCT_CAP', '0.30'))  # hard cap 30%
+            except Exception:
+                trade_pct_cap = 0.30
+            trade_pct = max(0.01, min(trade_pct, 0.5))
+            trade_pct_cap = max(trade_pct, min(trade_pct_cap, 0.6))
             
             if is_options:
                 # 🎯 F&O: Use lot-based calculation
@@ -2655,33 +2670,33 @@ class BaseStrategy:
                     return base_lot_size
                 
                 cost_per_lot = base_lot_size * entry_price
+                desired_value = available_capital * trade_pct
+                max_value = available_capital * trade_pct_cap
                 
-                # Check affordability
-                max_capital_per_trade = available_capital * 0.6  # 60% max per trade
-                
-                if cost_per_lot <= max_capital_per_trade:
+                # 1 lot only if within cap; do not pyramid in this path
+                if cost_per_lot <= max_value:
                     logger.info(f"✅ F&O ORDER: {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
                     logger.info(f"   💰 Cost: ₹{cost_per_lot:,.0f} / Available: ₹{available_capital:,.0f}")
                     return base_lot_size
-                elif cost_per_lot <= (available_capital * 0.8):
-                    logger.info(f"✅ F&O ORDER (HIGH COST): {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
-                    return base_lot_size
                 else:
-                    logger.warning(f"❌ F&O REJECTED: {underlying_symbol} too expensive (₹{cost_per_lot:,.0f} > 80% of ₹{available_capital:,.0f})")
+                    logger.warning(f"❌ F&O REJECTED: {underlying_symbol} too expensive (₹{cost_per_lot:,.0f} > {trade_pct_cap*100:.0f}% of ₹{available_capital:,.0f})")
                     return 0
             else:
                 # 🎯 EQUITY: Use share-based calculation
-                max_capital_per_trade = available_capital * 0.15  # 15% for meaningful positions
-                max_shares = int(max_capital_per_trade / entry_price)
-                
-                # Minimum viable quantity for equity
-                min_shares = max(1, int(15000 / entry_price))  # At least ₹15000 worth - meaningful positions
-                final_quantity = max(min_shares, min(max_shares, 100))  # Between min and 100 shares
-                
-                cost = final_quantity * entry_price
-                logger.info(f"✅ EQUITY ORDER: {underlying_symbol} = {final_quantity} shares")
+                if entry_price <= 0:
+                    return 0
+                desired_value = available_capital * trade_pct
+                max_value = available_capital * trade_pct_cap
+                qty_desired = int(max(1, desired_value // entry_price))
+                # Clamp to cap
+                if (qty_desired * entry_price) > max_value:
+                    qty_final = int(max(1, max_value // entry_price))
+                else:
+                    qty_final = qty_desired
+                cost = qty_final * entry_price
+                logger.info(f"✅ EQUITY ORDER: {underlying_symbol} = {qty_final} shares")
                 logger.info(f"   💰 Cost: ₹{cost:,.0f} / Available: ₹{available_capital:,.0f} ({cost/available_capital:.1%})")
-                return final_quantity
+                return qty_final
             
         except Exception as e:
             logger.error(f"Error calculating quantity: {e}")

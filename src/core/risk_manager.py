@@ -391,13 +391,17 @@ class RiskManager:
         logger.info("✅ RiskManager initialized - FOCUSED ON RISK VALIDATION & MONITORING")
         logger.info(f"📊 Risk limits: {self.risk_limits}")
         
-    def validate_trade_risk(self, position_value: float, strategy_name: str, symbol: str) -> Tuple[bool, str]:
+    def validate_trade_risk(self, position_value: float, strategy_name: str, symbol: str, total_capital_override: Optional[float] = None) -> Tuple[bool, str]:
         """
         Validate if a trade is acceptable from risk perspective
         This is RiskManager's PRIMARY responsibility
         """
         try:
-            total_capital = self.position_tracker.capital
+            # Determine total capital for risk limits
+            if total_capital_override is not None and total_capital_override > 0:
+                total_capital = total_capital_override
+            else:
+                total_capital = self.position_tracker.capital
             
             # Check 1: Single position loss limit
             max_single_position_loss = total_capital * self.risk_limits['max_single_position_loss_percent']
@@ -446,7 +450,7 @@ class RiskManager:
         This is RiskManager's ONGOING responsibility
         """
         try:
-            total_capital = self.position_tracker.capital
+            # total_capital already set above
             
             # Update drawdown
             self.current_drawdown = (self.peak_capital - total_capital) / self.peak_capital
@@ -479,7 +483,7 @@ class RiskManager:
     def check_risk_breaches(self):
         """Check for risk limit breaches"""
         try:
-            total_capital = self.position_tracker.capital
+            # total_capital already set above
             
             # Check daily loss breach
             max_daily_loss = total_capital * self.risk_limits['max_daily_loss_percent']

@@ -277,27 +277,8 @@ class SimpleTradeEngine:
             # Extract signal parameters
             symbol = signal.get('symbol', '')
             action = signal.get('action', 'BUY').upper()
-            # Enforce minimum economic order size and cap
-            raw_qty = int(signal.get('quantity', 50) or 0)
-            min_value = float(os.getenv('MIN_ORDER_VALUE', '10000'))  # ₹10k default
-            max_value = float(os.getenv('MAX_ORDER_VALUE', '30000'))  # ₹30k default
-            entry_price = float(signal.get('entry_price', 0) or 0)
-            if entry_price > 0 and raw_qty > 0:
-                est_value = entry_price * raw_qty
-                if est_value < min_value:
-                    # Scale up to minimum value (rounded)
-                    scaled_qty = int(max(1, round(min_value / entry_price)))
-                    self.logger.info(f"⚖️ Upsizing qty for {symbol}: {raw_qty}→{scaled_qty} to meet min ₹{min_value:.0f}")
-                    quantity = scaled_qty
-                elif est_value > max_value:
-                    # Scale down to cap
-                    scaled_qty = int(max(1, round(max_value / entry_price)))
-                    self.logger.info(f"⚖️ Downsizing qty for {symbol}: {raw_qty}→{scaled_qty} to cap at ₹{max_value:.0f}")
-                    quantity = scaled_qty
-                else:
-                    quantity = raw_qty
-            else:
-                quantity = raw_qty
+            # Quantity strictly from strategy sizing (dynamic capital %) – no hard-coded order value caps
+            quantity = int(signal.get('quantity', 50) or 0)
             
             # Create order parameters with DYNAMIC product type
             order_data = {
