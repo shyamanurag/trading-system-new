@@ -110,6 +110,15 @@ class TradeEngine:
             return []
         
         self.logger.info(f"🔍 Processing {len(signals)} signals for execution")
+
+        # Global throttle (secondary safety): cap number of signals per cycle
+        try:
+            max_signals_per_cycle = int(os.getenv('MAX_SIGNALS_PER_CYCLE', '1'))
+        except Exception:
+            max_signals_per_cycle = 1
+        if len(signals) > max_signals_per_cycle:
+            self.logger.info(f"⚖️ TradeEngine throttle: {len(signals)} → {max_signals_per_cycle} per cycle")
+            signals = signals[:max_signals_per_cycle]
         
         # 🚨 CRITICAL FIX: Add batch rate limiting to prevent API overwhelming
         if len(signals) > 5:
