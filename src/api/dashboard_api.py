@@ -394,11 +394,18 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                 logger.info(f"📊 Raw Zerodha orders count: {len(today_orders)}")
                 
                 # Get current positions directly from Zerodha
-                current_positions = await orchestrator.zerodha_client.get_positions()
-                if not current_positions:
-                    current_positions = []
+                positions_data = await orchestrator.zerodha_client.get_positions()
+                if not positions_data:
+                    positions_data = {'net': [], 'day': []}
                 
-                logger.info(f"📊 Raw Zerodha positions count: {len(current_positions)}")
+                # Zerodha positions come as { net: [...], day: [...] }
+                if isinstance(positions_data, dict):
+                    all_positions = (positions_data.get('net', []) or []) + (positions_data.get('day', []) or [])
+                else:
+                    # Fallback if SDK returns a flat list
+                    all_positions = positions_data if isinstance(positions_data, list) else []
+                
+                logger.info(f"📊 Raw Zerodha positions count: {len(all_positions)}")
                 
                 # Filter for actual trades (completed orders)
                 completed_orders = [
@@ -415,19 +422,37 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                 
                 # Calculate daily P&L from positions
                 daily_pnl = 0.0
-                active_positions_count = 0
+                active_positions: list = []
                 
-                for position in current_positions:
-                    if position.get('quantity', 0) != 0:  # Active position
-                        active_positions_count += 1
-                        # Get P&L from Zerodha's position data
-                        # Zerodha provides realised_pnl and unrealised_pnl
+                for position in all_positions:
+                    try:
+                        quantity = position.get('quantity', 0)
+                    except AttributeError:
+                        # Defensive: skip malformed entries
+                        continue
+                    if quantity != 0:  # Active position
+                        # Use Zerodha's P&L fields
                         realised = float(position.get('realised_pnl', 0) or 0)
                         unrealised = float(position.get('unrealised_pnl', 0) or 0)
-                        pnl = realised + unrealised  # Total P&L
+                        pnl = realised + unrealised
                         daily_pnl += pnl
-                        logger.info(f"📊 Position {position.get('tradingsymbol', 'UNKNOWN')}: Qty={position.get('quantity', 0)}, Realised=₹{realised}, Unrealised=₹{unrealised}, Total P&L=₹{pnl}")
+                        active_positions.append({
+                            "symbol": position.get('tradingsymbol', ''),
+                            "quantity": quantity,
+                            "average_price": float(position.get('average_price', 0) or 0),
+                            "last_price": float(position.get('last_price', 0) or 0),
+                            "pnl": round(pnl, 2),
+                            "product": position.get('product', ''),
+                            "exchange": position.get('exchange', ''),
+                            "instrument_token": position.get('instrument_token', ''),
+                            "data_source": "zerodha_direct"
+                        })
+                        logger.info(
+                            f"📊 Position {position.get('tradingsymbol', 'UNKNOWN')}: Qty={quantity}, "
+                            f"Realised=₹{realised}, Unrealised=₹{unrealised}, Total P&L=₹{pnl}"
+                        )
                 
+                active_positions_count = len(active_positions)
                 logger.info(f"📊 Active positions: {active_positions_count}, Total P&L: ₹{daily_pnl:.2f}")
                 
                 # Calculate win rate from completed orders (simplified)
@@ -455,6 +480,12 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                     await orchestrator.trade_engine.sync_actual_zerodha_positions()
                     real_position_count = await orchestrator.trade_engine.position_tracker.get_position_count()
                     logger.info(f"🔄 Position tracker shows {real_position_count} positions after Zerodha sync")
+
+                # Derive trading active state from autonomous status if available
+                try:
+                    is_active = bool(autonomous_status.get('is_active', False))
+                except Exception:
+                    is_active = False
             else:
                 # Fallback to autonomous status when Zerodha not available
                 total_trades = autonomous_status.get('total_trades', 0)
@@ -483,8 +514,11 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
             active_positions_raw = autonomous_status.get('active_positions', [])
             if isinstance(active_positions_raw, int):
                 active_positions_count = active_positions_raw
+                active_positions = []
             else:
                 active_positions_count = len(active_positions_raw)
+                active_positions = active_positions_raw if isinstance(active_positions_raw, list) else []
+            is_active = autonomous_status.get('is_active', False)
             win_rate = 0.0
             estimated_wins = 0
             estimated_losses = 0
@@ -549,7 +583,7 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
             "positions": {
                 "active_count": active_positions_count,
                 "total_value": round(daily_pnl, 2),
-                "positions": active_positions[:10]  # First 10 positions
+                    "positions": active_positions[:10]  # First 10 positions
             },
             
             # Real-time Status

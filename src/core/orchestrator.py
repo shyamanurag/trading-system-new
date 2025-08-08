@@ -1718,10 +1718,20 @@ class TradingOrchestrator:
                         volume_change_percent = (volume_change / prev_volume * 100) if prev_volume > 0 else 0
                         
                         # CRITICAL FIX: Calculate price change from day's open, not previous tick
-                        # For market bias, we need the day's change, not tick-to-tick change
+                        # Keep both: provider change_percent (typically vs prev close) and intraday (vs open)
                         open_price = float(data.get('open', ltp))
                         price_change = ltp - open_price
                         price_change_percent = (price_change / open_price * 100) if open_price > 0 else 0
+
+                        # Prefer provider's change percent when available (especially for indices)
+                        provider_change_percent = None
+                        for field in ['change_percent', 'changeper', 'changepercent', 'pchange', 'percent_change', 'chg_percent', 'pct_change']:
+                            if field in data and data.get(field) is not None:
+                                try:
+                                    provider_change_percent = float(data.get(field))
+                                    break
+                                except (TypeError, ValueError):
+                                    continue
                         
                         # Also calculate tick-to-tick change for other strategies
                         prev_price = self.market_data_history.get(symbol, {}).get('price', 0)
@@ -1758,9 +1768,10 @@ class TradingOrchestrator:
                             'volume': volume,
                             'volume_change': volume_change,
                             'volume_change_percent': volume_change_percent,
-                            'price_change': price_change,  # Day's change for market bias
-                            'price_change_percent': price_change_percent,  # Day's change percent
-                            'change_percent': price_change_percent,  # Alias for compatibility
+                            'price_change': price_change,  # Intraday change vs open
+                            'price_change_percent': price_change_percent,  # Intraday percent vs open
+                            # Default change_percent = intraday unless provider override below
+                            'change_percent': price_change_percent,
                             'tick_change': tick_change,  # Tick-to-tick change
                             'tick_change_percent': tick_change_percent,  # Tick-to-tick percent
                             'bid': float(bid),
@@ -1776,6 +1787,13 @@ class TradingOrchestrator:
                             'market_depth': data.get('market_depth', {}),
                             'raw_data': data  # Include raw data for debugging
                         }
+
+                        # Prefer provider percent for ALL symbols when available
+                        if provider_change_percent is not None:
+                            strategy_data['provider_change_percent'] = provider_change_percent
+                            strategy_data['change_percent'] = provider_change_percent
+                        # Always expose intraday vs open explicitly for consumers that need it
+                        strategy_data['intraday_change_percent'] = price_change_percent
                         
                         # Add to transformed data
                         transformed_data[symbol] = strategy_data

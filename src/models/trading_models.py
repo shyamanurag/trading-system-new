@@ -98,9 +98,9 @@ class User(Base):
     
     # Relationships - FIXED: Use proper SQLAlchemy class names
     # Note: These reference the SQLAlchemy models defined later in this file
-    trades = relationship("TradingTrade", back_populates="user", cascade="all, delete-orphan")
-    orders = relationship("Order", back_populates="user", cascade="all, delete-orphan")
-    risk_metrics = relationship("RiskMetric", back_populates="user")
+    trades = relationship("src.models.trading_models.TradingTrade", back_populates="user", cascade="all, delete-orphan")
+    orders = relationship("src.models.trading_models.Order", back_populates="user", cascade="all, delete-orphan")
+    risk_metrics = relationship("src.models.trading_models.RiskMetric", back_populates="user")
 
 class Portfolio(Base):
     """User portfolios and holdings"""
@@ -119,9 +119,9 @@ class Portfolio(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
-    user = relationship("User", back_populates="portfolios")
-    positions = relationship("TradingPosition", back_populates="portfolio")
-    trades = relationship("TradingTrade", back_populates="portfolio")
+    user = relationship("src.models.trading_models.User", back_populates="portfolios")
+    positions = relationship("src.models.trading_models.TradingPosition", back_populates="portfolio")
+    trades = relationship("src.models.trading_models.TradingTrade", back_populates="portfolio")
 
 class Stock(Base):
     """Stock/Symbol master data"""
@@ -139,10 +139,10 @@ class Stock(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
-    market_data = relationship("MarketData", back_populates="stock")
-    positions = relationship("TradingPosition", back_populates="stock")
-    trades = relationship("TradingTrade", back_populates="stock")
-    recommendations = relationship("Recommendation", back_populates="stock")
+    market_data = relationship("src.models.trading_models.MarketData", back_populates="stock")
+    positions = relationship("src.models.trading_models.TradingPosition", back_populates="stock")
+    trades = relationship("src.models.trading_models.TradingTrade", back_populates="stock")
+    recommendations = relationship("src.models.trading_models.Recommendation", back_populates="stock")
 
 class MarketData(Base):
     """Historical and real-time market data"""
@@ -164,7 +164,7 @@ class MarketData(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
-    stock = relationship("Stock", back_populates="market_data")
+    stock = relationship("src.models.trading_models.Stock", back_populates="market_data")
 
 class TradingPosition(Base):
     """Trading positions"""
@@ -187,8 +187,8 @@ class TradingPosition(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships - FIXED: Remove circular reference
-    user = relationship("User")
-    trades = relationship("TradingTrade", back_populates="position")
+    user = relationship("src.models.trading_models.User")
+    trades = relationship("src.models.trading_models.TradingTrade", back_populates="position")
 
 class TradingTrade(Base):  # FIXED: Renamed to avoid conflict with Pydantic Trade
     """Trading transactions"""
@@ -212,8 +212,8 @@ class TradingTrade(Base):  # FIXED: Renamed to avoid conflict with Pydantic Trad
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
-    user = relationship("User", back_populates="trades")
-    position = relationship("TradingPosition", back_populates="trades")
+    user = relationship("src.models.trading_models.User", back_populates="trades")
+    position = relationship("src.models.trading_models.TradingPosition", back_populates="trades")
 
 class Order(Base):
     """Trading orders"""
@@ -244,7 +244,7 @@ class Order(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
-    user = relationship("User", back_populates="orders")
+    user = relationship("src.models.trading_models.User", back_populates="orders")
 
 class UserMetric(Base):
     """User performance metrics"""
@@ -266,7 +266,7 @@ class UserMetric(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
-    user = relationship("User", back_populates="metrics")
+    user = relationship("src.models.trading_models.User", back_populates="metrics")
 
 class RiskMetric(Base):
     """Risk metrics"""
@@ -308,7 +308,7 @@ class Recommendation(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
-    stock = relationship("Stock", back_populates="recommendations")
+    stock = relationship("src.models.trading_models.Stock", back_populates="recommendations")
 
 class RiskMetrics(Base):
     """Portfolio risk analysis data"""
