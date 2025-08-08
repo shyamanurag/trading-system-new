@@ -323,7 +323,8 @@ class RiskManager:
             'max_correlation': config.get('max_correlation', 0.7),                   # 70% correlation
             'max_concentration_percent': config.get('max_concentration_percent', 0.3), # 30% in single asset
             'max_portfolio_var_percent': config.get('max_portfolio_var_percent', 0.03), # 3% VaR
-            'max_single_position_loss_percent': config.get('max_single_position_loss_percent', 0.01), # 1% per position
+            # Adjusted to align with 20-30% max position value: 3% assumed loss × 10 = 30% cap
+            'max_single_position_loss_percent': config.get('max_single_position_loss_percent', 0.03), # 3% per position
             'vix_threshold_high': config.get('vix_threshold_high', 25),
             'vix_threshold_extreme': config.get('vix_threshold_extreme', 35)
         }

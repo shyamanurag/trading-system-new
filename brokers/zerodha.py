@@ -1020,6 +1020,32 @@ class ZerodhaIntegration:
                     return float(ltp)
             
             logger.warning(f"⚠️ No LTP data from Zerodha for {options_symbol}")
+
+            # Fallback 1: Resolve instrument token from cached NFO instruments and fetch via token
+            try:
+                # Ensure NFO instruments are cached
+                if self._nfo_instruments is None:
+                    await self.get_instruments('NFO')
+                instruments = self._nfo_instruments or []
+
+                instrument_token = None
+                for inst in instruments:
+                    if inst.get('tradingsymbol') == options_symbol:
+                        instrument_token = inst.get('instrument_token') or inst.get('token')
+                        break
+
+                if instrument_token:
+                    # Fetch LTP by instrument token
+                    ltp_resp = await self._async_api_call(self.kite.ltp, [instrument_token])
+                    if ltp_resp:
+                        # Response can be keyed by instrument token; extract first entry
+                        for _, data in ltp_resp.items():
+                            token_ltp = data.get('last_price') or data.get('last_traded_price') or 0
+                            if token_ltp and token_ltp > 0:
+                                logger.info(f"✅ ZERODHA LTP (token): {options_symbol} = ₹{token_ltp}")
+                                return float(token_ltp)
+            except Exception as fallback_err:
+                logger.warning(f"⚠️ Token-based LTP fallback failed for {options_symbol}: {fallback_err}")
             return None
             
         except Exception as e:
