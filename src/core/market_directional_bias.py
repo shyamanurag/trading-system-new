@@ -176,7 +176,11 @@ class MarketDirectionalBias:
                 bias_direction = self.current_bias.direction
                 confidence = self.current_bias.confidence * 0.95  # Slight decay
             
-            # 9. UPDATE CURRENT BIAS
+            # 9. ENFORCE LOW-CONFIDENCE NEUTRALIZATION
+            if confidence < 3.0:
+                bias_direction = "NEUTRAL"
+
+            # 10. UPDATE CURRENT BIAS
             self.current_bias = MarketBias(
                 direction=bias_direction,
                 confidence=confidence,
@@ -441,22 +445,32 @@ class MarketDirectionalBias:
             True if signal should be allowed, False if it should be rejected
         """
         try:
-            # HIGH CONFIDENCE OVERRIDE: Allow counter-trend for very strong signals
-            if signal_confidence >= 8.5:
-                logger.info(f"🎯 HIGH CONFIDENCE OVERRIDE: {signal_direction} allowed despite bias")
+            # Regime-aware thresholds
+            regime = getattr(self.current_bias, 'market_regime', 'NORMAL')
+            override_threshold = 9.5 if regime in ('CHOPPY', 'VOLATILE_CHOPPY') else 8.5
+            neutral_threshold = 7.5 if regime in ('CHOPPY', 'VOLATILE_CHOPPY') else 6.5
+
+            # HIGH CONFIDENCE OVERRIDE: Allow counter-trend for very strong signals (regime aware)
+            if signal_confidence >= override_threshold:
+                logger.info(f"🎯 HIGH CONFIDENCE OVERRIDE: {signal_direction} allowed despite bias (regime={regime})")
                 return True
             
-            # NEUTRAL BIAS: Allow signals with moderate confidence
-            if self.current_bias.direction == "NEUTRAL":
-                allowed = signal_confidence >= 6.5
+            # Treat very low confidence bias effectively as NEUTRAL
+            effective_direction = self.current_bias.direction
+            if getattr(self.current_bias, 'confidence', 0.0) < 3.0:
+                effective_direction = "NEUTRAL"
+
+            # NEUTRAL BIAS: Allow signals with moderate confidence (regime aware)
+            if effective_direction == "NEUTRAL":
+                allowed = signal_confidence >= neutral_threshold
                 if not allowed:
-                    logger.debug(f"Signal rejected: Confidence {signal_confidence:.1f} < 6.5 threshold for neutral bias")
+                    logger.debug(f"Signal rejected: Confidence {signal_confidence:.1f} < {neutral_threshold} threshold for neutral bias (regime={regime})")
                 return allowed
             
             # DIRECTIONAL BIAS: Check alignment
             bias_aligned = (
-                (self.current_bias.direction == "BULLISH" and signal_direction == "BUY") or
-                (self.current_bias.direction == "BEARISH" and signal_direction == "SELL")
+                (effective_direction == "BULLISH" and signal_direction == "BUY") or
+                (effective_direction == "BEARISH" and signal_direction == "SELL")
             )
             
             if bias_aligned:
@@ -548,15 +562,21 @@ class MarketDirectionalBias:
             
             internals_confidence = min(internals_confidence, 4.0)  # Max 4.0 from internals
             
-            # 3. Breadth component (20% weight)
+            # 3. Breadth component (20% weight) - symmetric, volume-aware
             breadth_confidence = 0.0
-            if internals.advance_decline_ratio > 2:
+            adr = getattr(internals, 'advance_decline_ratio', 1.0)
+            up_vol = getattr(internals, 'up_volume_ratio', 50)  # percent
+            # Bullish breadth
+            if adr >= 1.5 and up_vol >= 60:
                 breadth_confidence = 2.0
-            elif internals.advance_decline_ratio > 1.5:
+                internals_direction = "BULLISH" if internals_direction == "NEUTRAL" else internals_direction
+            elif adr >= 1.2:
                 breadth_confidence = 1.0
-            elif internals.advance_decline_ratio < 0.5:
+            # Bearish breadth
+            elif adr <= 0.67 and up_vol <= 40:
                 breadth_confidence = 2.0
-            elif internals.advance_decline_ratio < 0.67:
+                internals_direction = "BEARISH" if internals_direction == "NEUTRAL" else internals_direction
+            elif adr <= 0.85:
                 breadth_confidence = 1.0
             
             # 4. Regime adjustment (10% weight)
@@ -590,7 +610,7 @@ class MarketDirectionalBias:
                     final_direction = base_direction
                     total_confidence = base_confidence - internals_confidence
             
-            # Apply regime multiplier
+            # Apply regime multiplier (confidence dampening in chop)
             total_confidence *= regime_multiplier
             
             # Apply time phase multiplier
