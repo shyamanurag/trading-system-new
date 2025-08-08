@@ -1058,6 +1058,29 @@ class BaseStrategy:
             # SAFETY: If timezone check fails, default to False (safer)
             return False
     
+    def _is_opening_gap_gate_active(self, market_data: Dict, gap_threshold: float = 0.8) -> bool:
+        """Opening gate: block counter-gap trades in first minutes after large gap"""
+        try:
+            # Determine time phase from orchestrator if available
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            time_phase = getattr(getattr(orchestrator, 'market_bias', None), 'current_bias', None)
+            phase = getattr(time_phase, 'time_phase', 'UNKNOWN') if time_phase else 'UNKNOWN'
+
+            if phase not in ('OPENING', 'MORNING'):
+                return False
+
+            # Use index data for gap (NIFTY-I preferred)
+            index_data = market_data.get('NIFTY-I') or market_data.get('NIFTY') or {}
+            open_price = float(index_data.get('open', 0) or 0)
+            prev_close = float(index_data.get('prev_close', 0) or 0)
+            if open_price > 0 and prev_close > 0:
+                gap_pct = ((open_price - prev_close) / prev_close) * 100.0
+                return abs(gap_pct) >= gap_threshold
+            return False
+        except Exception:
+            return False
+
     def calculate_true_range(self, high: float, low: float, prev_close: float) -> float:
         """Calculate True Range - the foundation of proper ATR calculation"""
         try:
@@ -1335,11 +1358,25 @@ class BaseStrategy:
                 return None
             
             # ========================================
-            # CRITICAL: CONFIDENCE FILTERING
+            # CRITICAL: CONFIDENCE FILTERING + OPENING GAP GATE
             # ========================================
             if confidence < 9.0:
                 logger.info(f"🗑️ {self.name}: LOW CONFIDENCE SIGNAL SCRAPPED for {symbol} - Confidence: {confidence:.1f}/10")
                 return None
+
+            # Opening gap gate: avoid counter-gap trades during opening/morning on large gaps
+            try:
+                if self._is_opening_gap_gate_active(market_data):
+                    # Determine gap direction from index
+                    index_data = market_data.get('NIFTY-I') or market_data.get('NIFTY') or {}
+                    open_price = float(index_data.get('open', 0) or 0)
+                    prev_close = float(index_data.get('prev_close', 0) or 0)
+                    gap_dir = 'BUY' if (open_price > prev_close) else 'SELL'
+                    if gap_dir != action.upper():
+                        logger.info(f"⛔ {self.name}: COUNTER-GAP BLOCK {symbol} {action} during opening (gap {gap_dir})")
+                        return None
+            except Exception:
+                pass
             
             # 🎯 INTELLIGENT SIGNAL TYPE SELECTION based on market conditions and symbol
             signal_type = self._determine_optimal_signal_type(symbol, entry_price, confidence, metadata)
@@ -1460,8 +1497,23 @@ class BaseStrategy:
                     orchestrator = get_orchestrator_instance()
                     if orchestrator and orchestrator.zerodha_client:
                         import asyncio
-                        task = asyncio.create_task(orchestrator.zerodha_client.get_options_ltp(options_symbol))
-                        fetched_ltp = asyncio.get_event_loop().run_until_complete(task)
+                        # First try exact symbol
+                        task1 = asyncio.create_task(orchestrator.zerodha_client.get_options_ltp(options_symbol))
+                        fetched_ltp = asyncio.get_event_loop().run_until_complete(task1)
+                        # If still zero, try nearby strikes within tight band to avoid excessive calls
+                        if (not fetched_ltp) or fetched_ltp == 0:
+                            # Build ATM from underlying price
+                            atm = await self._get_atm_strike_for_stock(entry_price)
+                            nearby = await orchestrator.zerodha_client.get_nearby_atm_options_ltp(
+                                underlying_symbol=self._map_truedata_to_zerodha_symbol(symbol),
+                                atm_strike=atm,
+                                expiry=await self._get_next_expiry(symbol if symbol.endswith('-I') else 'NIFTY'),
+                                option_type=option_type,
+                                band=1
+                            )
+                            if nearby:
+                                # Pick the closest strike
+                                fetched_ltp = list(sorted(nearby.items(), key=lambda kv: abs(int(kv[0][-7:-2]) - atm)))[0][1]
                         if fetched_ltp and fetched_ltp > 0:
                             options_entry_price = float(fetched_ltp)
                             logger.info(f"✅ Retrieved options LTP before validation: {options_symbol} = ₹{options_entry_price}")

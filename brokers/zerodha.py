@@ -1101,6 +1101,28 @@ class ZerodhaIntegration:
         except Exception as e:
             logger.error(f"❌ Error getting Zerodha quotes for options: {e}")
             return {}
+
+    async def get_nearby_atm_options_ltp(self, underlying_symbol: str, atm_strike: int, expiry: str, option_type: str = 'CE', band: int = 2) -> Dict[str, float]:
+        """Rate-limited batch fetch of nearby strikes to find first tradable LTP.
+        Returns mapping of symbol->ltp for those with non-zero LTP.
+        """
+        try:
+            # Build candidate symbols within +/- band strikes
+            candidates = []
+            for k in range(-band, band + 1):
+                strike = atm_strike + (k * 50)
+                if strike <= 0:
+                    continue
+                sym = f"{underlying_symbol}{expiry}{strike}{option_type}"
+                candidates.append(sym)
+
+            # Respect simple client-side rate limit: batch in one call
+            quotes = await self.get_multiple_options_quotes(candidates)
+            tradables = {sym: data.get('ltp', 0) for sym, data in quotes.items() if data.get('ltp', 0) > 0}
+            return tradables
+        except Exception as e:
+            logger.error(f"❌ Error in nearby ATM options LTP fetch: {e}")
+            return {}
         
     def get_connection_status(self) -> Dict:
         """Get detailed connection status"""

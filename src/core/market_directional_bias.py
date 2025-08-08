@@ -215,7 +215,7 @@ class MarketDirectionalBias:
             return self.current_bias
     
     def _analyze_nifty_momentum(self, nifty_data: Dict) -> float:
-        """Analyze NIFTY momentum and trend strength"""
+        """Analyze NIFTY intraday momentum from today's open (percent)"""
         try:
             # Try multiple possible field names for price change
             change_percent = 0.0
@@ -262,6 +262,18 @@ class MarketDirectionalBias:
                 
         except Exception as e:
             logger.warning(f"Error analyzing NIFTY momentum: {e}")
+            return 0.0
+
+    def _analyze_gap_component(self, nifty_data: Dict) -> float:
+        """Analyze overnight gap: today open vs yesterday close (percent)"""
+        try:
+            open_price = float(nifty_data.get('open', 0))
+            prev_close = float(nifty_data.get('prev_close', 0))
+            if prev_close > 0 and open_price > 0 and open_price != prev_close:
+                gap_pct = ((open_price - prev_close) / prev_close) * 100.0
+                return round(gap_pct, 3)
+            return 0.0
+        except Exception:
             return 0.0
     
     def _calculate_sector_alignment(self, market_data: Dict) -> float:
@@ -588,6 +600,25 @@ class MarketDirectionalBias:
             elif internals.market_regime == "VOLATILE_CHOPPY":
                 regime_multiplier = 0.3  # Very low confidence in volatile chop
             
+            # 2.5 Opening gap component (time-phase weighted)
+            gap_pct = self._analyze_gap_component(nifty_data)
+            gap_weight = 0.0
+            try:
+                # Emphasize gap in OPENING; decay after 30 minutes
+                current_time = datetime.now().time()
+                is_opening = self._get_time_phase().upper() == 'OPENING'
+                if is_opening:
+                    gap_weight = 0.7
+                elif self._get_time_phase().upper() in ('MORNING',):
+                    gap_weight = 0.3
+                else:
+                    gap_weight = 0.0
+                # In CHOPPY regime cap gap influence
+                if internals.market_regime in ('CHOPPY', 'VOLATILE_CHOPPY'):
+                    gap_weight = min(gap_weight, 0.3)
+            except Exception:
+                gap_weight = 0.0
+
             # Combine all components
             if base_direction == internals_direction and base_direction != "NEUTRAL":
                 # Aligned signals - add confidences
@@ -610,6 +641,17 @@ class MarketDirectionalBias:
                     final_direction = base_direction
                     total_confidence = base_confidence - internals_confidence
             
+            # Apply gap influence to direction and confidence
+            if gap_weight > 0 and abs(gap_pct) >= 0.5:  # consider meaningful gap
+                gap_direction = 'BULLISH' if gap_pct > 0 else 'BEARISH'
+                if final_direction == gap_direction:
+                    total_confidence += abs(gap_pct) * (gap_weight / 2.0)
+                else:
+                    total_confidence -= abs(gap_pct) * (gap_weight / 2.0)
+                    if total_confidence < 0.5:
+                        final_direction = 'NEUTRAL'
+                        total_confidence = max(0.0, total_confidence)
+
             # Apply regime multiplier (confidence dampening in chop)
             total_confidence *= regime_multiplier
             
