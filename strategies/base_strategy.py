@@ -1229,8 +1229,15 @@ class BaseStrategy:
         try:
             if action.upper() == 'BUY':
                 # For BUY: stop_loss < entry_price < target
-                # Enforce minimum separations for low-priced stocks
-                min_step = max(0.05, entry_price * 0.003)  # at least 0.05 or 0.3%
+                # Enforce adaptive minimum separations by price band (tick-size aware)
+                if entry_price >= 1000:
+                    min_step = max(0.05, entry_price * 0.001)   # 0.10%
+                elif entry_price >= 300:
+                    min_step = max(0.05, entry_price * 0.0015)  # 0.15%
+                elif entry_price >= 100:
+                    min_step = max(0.05, entry_price * 0.002)   # 0.20%
+                else:
+                    min_step = max(0.05, entry_price * 0.003)   # 0.30%
                 if not (stop_loss < entry_price < target):
                     logger.warning(f"Invalid BUY signal levels: SL={stop_loss}, Entry={entry_price}, Target={target}")
                     return False
@@ -1239,7 +1246,14 @@ class BaseStrategy:
                     return False
             else:  # SELL
                 # For SELL: target < entry_price < stop_loss
-                min_step = max(0.05, entry_price * 0.003)
+                if entry_price >= 1000:
+                    min_step = max(0.05, entry_price * 0.001)
+                elif entry_price >= 300:
+                    min_step = max(0.05, entry_price * 0.0015)
+                elif entry_price >= 100:
+                    min_step = max(0.05, entry_price * 0.002)
+                else:
+                    min_step = max(0.05, entry_price * 0.003)
                 if not (target < entry_price < stop_loss):
                     logger.warning(f"Invalid SELL signal levels: SL={stop_loss}, Entry={entry_price}, Target={target}")
                     return False
@@ -1252,7 +1266,7 @@ class BaseStrategy:
                 logger.warning(f"Invalid signal levels: All levels identical ({entry_price}) - likely rounding issue for low-priced stock")
                 return False
             
-            # Check risk/reward ratio is reasonable (0.5:1 to 5:1)
+            # Check risk/reward ratio is reasonable (>= ~0.45:1 to 5:1)
             risk = abs(entry_price - stop_loss)
             reward = abs(target - entry_price)
             
@@ -1261,7 +1275,7 @@ class BaseStrategy:
                 return False
             
             risk_reward_ratio = reward / risk
-            if risk_reward_ratio < 0.5 or risk_reward_ratio > 5.0:
+            if risk_reward_ratio < 0.45 or risk_reward_ratio > 5.0:
                 logger.warning(f"Unreasonable risk/reward ratio: {risk_reward_ratio}")
                 return False
             
