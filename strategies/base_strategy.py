@@ -1524,6 +1524,14 @@ class BaseStrategy:
     def _determine_optimal_signal_type(self, symbol: str, entry_price: float, confidence: float, metadata: Dict) -> str:
         """Determine the best signal type based on market conditions and F&O availability"""
         try:
+            # 🚨 CRITICAL FIX: Normalize confidence to 0-1 scale
+            # Strategies send 0-10 scale, we need 0-1 for thresholds
+            if confidence > 1.0:
+                normalized_confidence = confidence / 10.0
+                logger.debug(f"📊 Normalizing confidence: {confidence:.2f} → {normalized_confidence:.2f}")
+            else:
+                normalized_confidence = confidence
+            
             # 🚨 CRITICAL: Check F&O availability first
             from config.truedata_symbols import is_fo_enabled, should_use_equity_only
             
@@ -1544,7 +1552,7 @@ class BaseStrategy:
             
             # Factors for signal type selection (F&O enabled symbols)
             is_index = symbol.endswith('-I') or symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
-            is_high_confidence = confidence >= 0.8
+            is_high_confidence = normalized_confidence >= 0.8
             is_scalping = metadata.get('risk_type', '').startswith('SCALPING')
             volatility_score = metadata.get('volume_score', 0)
             
@@ -1558,20 +1566,20 @@ class BaseStrategy:
             if is_index:
                 logger.info(f"🎯 INDEX SIGNAL: {symbol} → OPTIONS (F&O enabled)")
                 return 'OPTIONS'
-            elif is_high_confidence and confidence >= 0.80:  # High confidence for options
-                logger.info(f"🎯 HIGH CONFIDENCE: {symbol} → OPTIONS (F&O enabled, conf={confidence:.2f})")
+            elif is_high_confidence and normalized_confidence >= 0.80:  # High confidence for options
+                logger.info(f"🎯 HIGH CONFIDENCE: {symbol} → OPTIONS (F&O enabled, conf={normalized_confidence:.2f})")
                 return 'OPTIONS'
-            elif volatility_score >= 0.8 and confidence >= 0.75:  # High volatility + good confidence
-                logger.info(f"🎯 HIGH VOLATILITY: {symbol} → OPTIONS (vol={volatility_score:.2f}, conf={confidence:.2f})")
+            elif volatility_score >= 0.8 and normalized_confidence >= 0.75:  # High volatility + good confidence
+                logger.info(f"🎯 HIGH VOLATILITY: {symbol} → OPTIONS (vol={volatility_score:.2f}, conf={normalized_confidence:.2f})")
                 return 'OPTIONS'
-            elif is_scalping and confidence >= 0.75:  # Scalping needs good confidence for options
-                logger.info(f"🎯 SCALPING SIGNAL: {symbol} → OPTIONS (conf={confidence:.2f})")
+            elif is_scalping and normalized_confidence >= 0.75:  # Scalping needs good confidence for options
+                logger.info(f"🎯 SCALPING SIGNAL: {symbol} → OPTIONS (conf={normalized_confidence:.2f})")
                 return 'OPTIONS'
-            elif confidence >= 0.70:  # Medium-high confidence → Try F&O with smaller position
-                logger.info(f"🎯 MEDIUM-HIGH CONFIDENCE: {symbol} → OPTIONS (moderate risk, conf={confidence:.2f})")
+            elif normalized_confidence >= 0.70:  # Medium-high confidence → Try F&O with smaller position
+                logger.info(f"🎯 MEDIUM-HIGH CONFIDENCE: {symbol} → OPTIONS (moderate risk, conf={normalized_confidence:.2f})")
                 return 'OPTIONS'
             else:
-                logger.info(f"🎯 BELOW THRESHOLD: {symbol} → EQUITY (conf={confidence:.2f} < 0.70)")
+                logger.info(f"🎯 BELOW THRESHOLD: {symbol} → EQUITY (conf={normalized_confidence:.2f} < 0.70)")
                 return 'EQUITY'
                 
         except Exception as e:
