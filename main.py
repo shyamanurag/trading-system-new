@@ -958,54 +958,53 @@ async def get_dashboard_summary():
 @app.get("/api/v1/dashboard/daily-pnl", tags=["dashboard"])
 async def get_daily_pnl():
     """Get daily PnL data that frontend expects"""
-    try:
-        from src.core.orchestrator import get_orchestrator_instance
-        orchestrator = get_orchestrator_instance()
-        
-        daily_pnl = 0.0
-        pnl_breakdown = []
-        
-        if orchestrator and orchestrator.zerodha_client:
-            try:
-                positions = await orchestrator.zerodha_client.get_positions()
-                if positions:
-                    # Check both 'net' and 'day' positions
-                    all_positions = []
-                    if 'net' in positions:
-                        all_positions.extend(positions['net'])
-                    if 'day' in positions:
-                        all_positions.extend(positions['day'])
+    from src.core.orchestrator import get_orchestrator_instance
+    orchestrator = get_orchestrator_instance()
+    
+    daily_pnl = 0.0
+    pnl_breakdown = []
+    
+    if orchestrator and orchestrator.zerodha_client:
+        try:
+            positions = await orchestrator.zerodha_client.get_positions()
+            if positions:
+                # Check both 'net' and 'day' positions
+                all_positions = []
+                if 'net' in positions:
+                    all_positions.extend(positions['net'])
+                if 'day' in positions:
+                    all_positions.extend(positions['day'])
+                
+                for pos in all_positions:
+                    # Calculate total P&L from all possible fields
+                    pos_pnl = 0.0
+                    for field in ['pnl', 'unrealised', 'realised', 'day_pnl', 'net_pnl', 'm2m']:
+                        if field in pos and pos[field] is not None:
+                            try:
+                                pos_pnl += float(pos[field])
+                            except (ValueError, TypeError):
+                                pass
                     
-                    for pos in all_positions:
-                        # Calculate total P&L from all possible fields
-                        pos_pnl = 0.0
-                        for field in ['pnl', 'unrealised', 'realised', 'day_pnl', 'net_pnl', 'm2m']:
-                            if field in pos and pos[field] is not None:
-                                try:
-                                    pos_pnl += float(pos[field])
-                                except (ValueError, TypeError):
-                                    pass
-                        
-                        if pos_pnl != 0:
-                            pnl_breakdown.append({
-                                "symbol": pos.get('tradingsymbol', 'UNKNOWN'),
-                                "pnl": pos_pnl,
-                                "quantity": float(pos.get('quantity', 0))
-                            })
-                    
-                    daily_pnl = sum(item['pnl'] for item in pnl_breakdown)
-            except Exception as e:
-                logger.warning(f"Error fetching PnL data: {e}")
-        
-        return {
-            "success": True,
-            "data": {
-                "total_pnl": daily_pnl,
-                "breakdown": pnl_breakdown,
-                "date": datetime.now().date().isoformat(),
-                "last_updated": datetime.now().isoformat()
-            }
+                    if pos_pnl != 0:
+                        pnl_breakdown.append({
+                            "symbol": pos.get('tradingsymbol', 'UNKNOWN'),
+                            "pnl": pos_pnl,
+                            "quantity": float(pos.get('quantity', 0))
+                        })
+                
+                daily_pnl = sum(item['pnl'] for item in pnl_breakdown)
+        except Exception as e:
+            logger.warning(f"Error fetching PnL data: {e}")
+    
+    return {
+        "success": True,
+        "data": {
+            "total_pnl": daily_pnl,
+            "breakdown": pnl_breakdown,
+            "date": datetime.now().date().isoformat(),
+            "last_updated": datetime.now().isoformat()
         }
+    }
 
 @app.get("/api/v1/analytics/strategy", tags=["analytics"])  # New endpoint for per-strategy analytics
 async def get_strategy_analytics():
