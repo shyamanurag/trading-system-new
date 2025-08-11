@@ -1006,6 +1006,80 @@ async def get_daily_pnl():
                 "last_updated": datetime.now().isoformat()
             }
         }
+
+@app.get("/api/v1/analytics/strategy", tags=["analytics"])  # New endpoint for per-strategy analytics
+async def get_strategy_analytics():
+    try:
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+
+        analytics = {
+            'generated': 0,
+            'executed': 0,
+            'failed': 0,
+            'by_strategy': {},
+            'pnl_by_strategy': {}
+        }
+
+        # Base counters
+        try:
+            stats = orchestrator.get_signal_stats() if orchestrator else {}
+            analytics['generated'] = stats.get('generated', 0)
+            analytics['executed'] = stats.get('executed', 0)
+            analytics['failed'] = stats.get('failed', 0)
+            analytics['by_strategy'] = stats.get('by_strategy', {})
+        except Exception:
+            pass
+
+        # Attribute current P&L to strategies when possible
+        if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+            try:
+                positions = await orchestrator.zerodha_client.get_positions()
+                symbol_map = {}
+                try:
+                    symbol_map = getattr(orchestrator, 'signal_stats', {}).get('symbol_strategy_map', {})
+                except Exception:
+                    symbol_map = {}
+
+                pnl_by_strategy = {}
+                if positions:
+                    for pos_list in [positions.get('net', []), positions.get('day', [])]:
+                        for pos in pos_list or []:
+                            symbol = pos.get('tradingsymbol')
+                            qty = float(pos.get('quantity', 0) or 0)
+                            if qty == 0:
+                                continue
+                            # Try Zerodha fields first
+                            pnl_fields = ['pnl', 'unrealised', 'realised', 'day_pnl', 'net_pnl', 'm2m']
+                            symbol_pnl = 0.0
+                            for f in pnl_fields:
+                                try:
+                                    v = pos.get(f)
+                                    if v is not None:
+                                        symbol_pnl += float(v)
+                                except Exception:
+                                    continue
+                            # If still zero, compute from prices if present
+                            if symbol_pnl == 0.0:
+                                try:
+                                    ltp = float(pos.get('last_price', 0) or 0)
+                                    avg = float(pos.get('average_price', 0) or 0)
+                                    if ltp > 0 and avg > 0:
+                                        symbol_pnl = (ltp - avg) * qty
+                                except Exception:
+                                    pass
+
+                            strategy_name = symbol_map.get(symbol, 'unknown')
+                            pnl_by_strategy[strategy_name] = pnl_by_strategy.get(strategy_name, 0.0) + symbol_pnl
+
+                analytics['pnl_by_strategy'] = pnl_by_strategy
+            except Exception as e:
+                logger.warning(f"Error building strategy analytics P&L: {e}")
+
+        return { 'success': True, 'data': analytics }
+    except Exception as e:
+        logger.error(f"Error in strategy analytics endpoint: {e}")
+        return { 'success': False, 'error': str(e) }
         
     except Exception as e:
         logger.error(f"Error getting daily PnL: {e}")

@@ -182,6 +182,20 @@ class TradeEngine:
                 strategy = signal.get('strategy', 'unknown')
                 if strategy in orchestrator.signal_stats['by_strategy']:
                     orchestrator.signal_stats['by_strategy'][strategy]['executed'] += 1
+                else:
+                    orchestrator.signal_stats['by_strategy'][strategy] = {
+                        'generated': 0, 'executed': 1, 'failed': 0
+                    }
+
+                # Map symbol -> strategy for later P&L attribution
+                try:
+                    if 'symbol_strategy_map' not in orchestrator.signal_stats:
+                        orchestrator.signal_stats['symbol_strategy_map'] = {}
+                    executed_symbol = signal.get('symbol') or signal.get('underlying_symbol')
+                    if executed_symbol:
+                        orchestrator.signal_stats['symbol_strategy_map'][executed_symbol] = strategy
+                except Exception as map_err:
+                    self.logger.debug(f"Symbol strategy map update failed: {map_err}")
                 
                 self.logger.info(f"📊 EXECUTION TRACKED: Total executed: {orchestrator.signal_stats['executed']}")
 

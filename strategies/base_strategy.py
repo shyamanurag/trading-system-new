@@ -3061,30 +3061,54 @@ class BaseStrategy:
                         margin_required = contract_value * 0.10  # 10% margin estimate
                         logger.info(f"📊 Futures margin estimate: ₹{margin_required:,.2f}")
                 
-                # Check affordability with actual/estimated margin
+                # Enforce min margin per trade (reduce tiny trades) and affordability
                 max_capital_per_trade = available_capital * 0.6  # 60% max per trade
-                
-                if margin_required <= max_capital_per_trade:
-                    logger.info(f"✅ F&O ORDER: {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
-                    logger.info(f"   💰 Margin Required: ₹{margin_required:,.0f} / Available: ₹{available_capital:,.0f} ({margin_required/available_capital*100:.1f}%)")
-                    return base_lot_size
-                elif margin_required <= (available_capital * 0.8):
-                    logger.info(f"✅ F&O ORDER (HIGH MARGIN): {underlying_symbol} = 1 lot × {base_lot_size}")
-                    logger.info(f"   💰 Margin: ₹{margin_required:,.0f} ({margin_required/available_capital*100:.1f}% of available)")
-                    return base_lot_size
-                else:
-                    logger.warning(f"❌ F&O REJECTED: {underlying_symbol} margin too high (₹{margin_required:,.0f} = {margin_required/available_capital*100:.1f}% > 80% limit)")
-                    return 0
+                min_margin_per_trade = float(getattr(self, 'min_margin_per_trade', 10000.0))
+
+                # Determine number of lots to satisfy minimum margin usage
+                import math
+                lots_needed_for_min = 1
+                if margin_required > 0 and margin_required < min_margin_per_trade:
+                    lots_needed_for_min = math.ceil(min_margin_per_trade / margin_required)
+
+                total_margin = margin_required * lots_needed_for_min if margin_required > 0 else margin_required
+
+                # Hard guard: do not exceed affordability constraints
+                if total_margin <= max_capital_per_trade and total_margin <= (available_capital * 0.8):
+                    total_qty = base_lot_size * lots_needed_for_min
+                    logger.info(
+                        f"✅ F&O ORDER: {underlying_symbol} = {lots_needed_for_min} lot(s) × {base_lot_size} = {total_qty} qty"
+                    )
+                    logger.info(
+                        f"   💰 Margin: ₹{total_margin:,.0f} (per lot ₹{margin_required:,.0f}) / Available: ₹{available_capital:,.0f}"
+                    )
+                    return total_qty
+
+                # If even 1 lot is too expensive or cannot meet min margin without exceeding caps, reject early
+                logger.warning(
+                    f"❌ F&O REJECTED: {underlying_symbol} cannot satisfy min ₹{min_margin_per_trade:,.0f} within capital limits "
+                    f"(needed ₹{total_margin:,.0f}, available ₹{available_capital:,.0f})"
+                )
+                return 0
             else:
                 # 🎯 EQUITY: Use share-based calculation
                 max_capital_per_trade = available_capital * 0.15  # 15% for meaningful positions
                 max_shares = int(max_capital_per_trade / entry_price)
                 
                 # Minimum viable quantity for equity
-                min_shares = max(1, int(15000 / entry_price))  # At least ₹15000 worth - meaningful positions
+                min_margin_per_trade = float(getattr(self, 'min_margin_per_trade', 10000.0))
+                min_shares = max(1, int(min_margin_per_trade / entry_price))
                 final_quantity = max(min_shares, min(max_shares, 100))  # Between min and 100 shares
                 
                 cost = final_quantity * entry_price
+                # If we cannot reach minimum trade amount within caps, reject early to avoid later risk rejection
+                if cost < min_margin_per_trade:
+                    logger.warning(
+                        f"❌ EQUITY REJECTED: {underlying_symbol} cannot meet min trade value ₹{min_margin_per_trade:,.0f} "
+                        f"(cost ₹{cost:,.0f}, available ₹{available_capital:,.0f})"
+                    )
+                    return 0
+
                 logger.info(f"✅ EQUITY ORDER: {underlying_symbol} = {final_quantity} shares")
                 logger.info(f"   💰 Cost: ₹{cost:,.0f} / Available: ₹{available_capital:,.0f} ({cost/available_capital:.1%})")
                 return final_quantity
