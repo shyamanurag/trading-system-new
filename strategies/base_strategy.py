@@ -1558,17 +1558,20 @@ class BaseStrategy:
             if is_index:
                 logger.info(f"🎯 INDEX SIGNAL: {symbol} → OPTIONS (F&O enabled)")
                 return 'OPTIONS'
-            elif is_high_confidence and confidence >= 0.85 and is_scalping:  # Only very high confidence scalping
-                logger.info(f"🎯 VERY HIGH CONFIDENCE SCALPING: {symbol} → OPTIONS (F&O enabled)")
+            elif is_high_confidence and confidence >= 0.70:  # Lowered threshold for more options
+                logger.info(f"🎯 HIGH CONFIDENCE: {symbol} → OPTIONS (F&O enabled, conf={confidence:.2f})")
                 return 'OPTIONS'
-            elif volatility_score >= 0.9 and confidence >= 0.85:  # Higher thresholds for options
-                logger.info(f"🎯 VERY HIGH VOLATILITY: {symbol} → OPTIONS (F&O enabled)")
+            elif volatility_score >= 0.7 and confidence >= 0.65:  # More aggressive options trading
+                logger.info(f"🎯 GOOD VOLATILITY: {symbol} → OPTIONS (vol={volatility_score:.2f}, conf={confidence:.2f})")
                 return 'OPTIONS'
-            elif confidence >= 0.65:
-                logger.info(f"🎯 MEDIUM+ CONFIDENCE: {symbol} → EQUITY (balanced trading)")
-                return 'EQUITY'
+            elif is_scalping and confidence >= 0.60:  # Enable options for scalping
+                logger.info(f"🎯 SCALPING SIGNAL: {symbol} → OPTIONS (conf={confidence:.2f})")
+                return 'OPTIONS'
+            elif confidence >= 0.55:  # Try options for medium confidence too
+                logger.info(f"🎯 MEDIUM CONFIDENCE: {symbol} → OPTIONS (testing F&O, conf={confidence:.2f})")
+                return 'OPTIONS'
             else:
-                logger.info(f"🎯 LOW CONFIDENCE: {symbol} → EQUITY (safest)")
+                logger.info(f"🎯 LOW CONFIDENCE: {symbol} → EQUITY (safer approach, conf={confidence:.2f})")
                 return 'EQUITY'
                 
         except Exception as e:
@@ -2988,20 +2991,53 @@ class BaseStrategy:
                     # Return default lot size to allow signal to proceed to orchestrator
                     return base_lot_size
                 
-                cost_per_lot = base_lot_size * entry_price
+                # 🚨 CRITICAL FIX: Get REAL margin requirement from Zerodha API
+                margin_required = 0.0
                 
-                # Check affordability
+                try:
+                    from src.core.orchestrator import get_orchestrator_instance
+                    orchestrator = get_orchestrator_instance()
+                    
+                    if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                        # Get actual margin requirement from Zerodha
+                        if hasattr(orchestrator.zerodha_client, 'get_required_margin_for_order'):
+                            # Use the actual F&O symbol for margin calculation
+                            actual_symbol = options_symbol if options_symbol else underlying_symbol
+                            margin_required = orchestrator.zerodha_client.get_required_margin_for_order(
+                                symbol=actual_symbol,
+                                quantity=base_lot_size,
+                                order_type='BUY',
+                                product='MIS'  # Intraday
+                            )
+                            logger.info(f"📊 Dynamic margin from Zerodha: ₹{margin_required:,.2f} for {actual_symbol}")
+                except Exception as e:
+                    logger.debug(f"Could not get dynamic margin: {e}")
+                
+                # Fallback if dynamic margin not available
+                if margin_required <= 0:
+                    if 'CE' in options_symbol or 'PE' in options_symbol:
+                        # Options: Premium estimate (use lower value for options)
+                        margin_required = min(base_lot_size * 50, available_capital * 0.2)  # Max 20% or ₹50/share
+                        logger.info(f"📊 Options margin estimate: ₹{margin_required:,.2f}")
+                    else:
+                        # Futures: 10-15% of contract value
+                        contract_value = base_lot_size * entry_price
+                        margin_required = contract_value * 0.10  # 10% margin estimate
+                        logger.info(f"📊 Futures margin estimate: ₹{margin_required:,.2f}")
+                
+                # Check affordability with actual/estimated margin
                 max_capital_per_trade = available_capital * 0.6  # 60% max per trade
                 
-                if cost_per_lot <= max_capital_per_trade:
+                if margin_required <= max_capital_per_trade:
                     logger.info(f"✅ F&O ORDER: {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
-                    logger.info(f"   💰 Cost: ₹{cost_per_lot:,.0f} / Available: ₹{available_capital:,.0f}")
+                    logger.info(f"   💰 Margin Required: ₹{margin_required:,.0f} / Available: ₹{available_capital:,.0f} ({margin_required/available_capital*100:.1f}%)")
                     return base_lot_size
-                elif cost_per_lot <= (available_capital * 0.8):
-                    logger.info(f"✅ F&O ORDER (HIGH COST): {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
+                elif margin_required <= (available_capital * 0.8):
+                    logger.info(f"✅ F&O ORDER (HIGH MARGIN): {underlying_symbol} = 1 lot × {base_lot_size}")
+                    logger.info(f"   💰 Margin: ₹{margin_required:,.0f} ({margin_required/available_capital*100:.1f}% of available)")
                     return base_lot_size
                 else:
-                    logger.warning(f"❌ F&O REJECTED: {underlying_symbol} too expensive (₹{cost_per_lot:,.0f} > 80% of ₹{available_capital:,.0f})")
+                    logger.warning(f"❌ F&O REJECTED: {underlying_symbol} margin too high (₹{margin_required:,.0f} = {margin_required/available_capital*100:.1f}% > 80% limit)")
                     return 0
             else:
                 # 🎯 EQUITY: Use share-based calculation

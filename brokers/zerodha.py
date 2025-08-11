@@ -596,6 +596,70 @@ class ZerodhaIntegration:
             logger.debug(f"Could not get positions sync: {e}")
             return {'net': [], 'day': []}
     
+    def get_required_margin_for_order(self, symbol: str, quantity: int, order_type: str = 'BUY', product: str = 'MIS') -> float:
+        """Get required margin for a specific order from Zerodha"""
+        try:
+            if not self.kite:
+                return 0.0
+            
+            # Use Zerodha's order margin API to get exact margin requirement
+            order_params = [{
+                'exchange': 'NSE',
+                'tradingsymbol': symbol,
+                'transaction_type': order_type.upper(),
+                'variety': 'regular',
+                'product': product,  # MIS for intraday, CNC for delivery
+                'order_type': 'MARKET',
+                'quantity': quantity
+            }]
+            
+            try:
+                margin_detail = self.kite.order_margins(order_params)
+                if margin_detail and len(margin_detail) > 0:
+                    total_margin = margin_detail[0].get('total', 0)
+                    logger.info(f"💰 Margin for {symbol} x{quantity}: ₹{total_margin:,.2f}")
+                    return float(total_margin)
+            except Exception as e:
+                logger.debug(f"Could not get order margin from API: {e}")
+                
+            # Fallback: Estimate based on instrument type
+            if symbol.endswith('CE') or symbol.endswith('PE'):
+                # Options: Rough estimate - premium × quantity
+                # We'll need LTP for accurate calculation
+                try:
+                    ltp = self.kite.ltp(['NSE:' + symbol])
+                    if ltp and f'NSE:{symbol}' in ltp:
+                        premium = ltp[f'NSE:{symbol}'].get('last_price', 100)
+                        return float(premium * quantity)
+                except:
+                    return float(100 * quantity)  # Default ₹100 per option
+                    
+            elif symbol.endswith('FUT'):
+                # Futures: ~10-15% of contract value
+                try:
+                    ltp = self.kite.ltp(['NSE:' + symbol])
+                    if ltp and f'NSE:{symbol}' in ltp:
+                        price = ltp[f'NSE:{symbol}'].get('last_price', 1000)
+                        return float(price * quantity * 0.15)
+                except:
+                    return float(quantity * 1000 * 0.15)
+            else:
+                # Equity: Full amount for CNC, ~20% for MIS
+                try:
+                    ltp = self.kite.ltp(['NSE:' + symbol])
+                    if ltp and f'NSE:{symbol}' in ltp:
+                        price = ltp[f'NSE:{symbol}'].get('last_price', 100)
+                        if product == 'MIS':
+                            return float(price * quantity * 0.2)  # 20% for intraday
+                        else:
+                            return float(price * quantity)  # Full for delivery
+                except:
+                    return float(quantity * 100)
+                    
+        except Exception as e:
+            logger.error(f"Error calculating margin for {symbol}: {e}")
+            return 0.0
+    
     def get_margins_sync(self) -> float:
         """Get available margin synchronously (for real-time capital tracking)"""
         try:
