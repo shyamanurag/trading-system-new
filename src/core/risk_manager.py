@@ -779,6 +779,18 @@ class RiskManager:
             logger.info(f"🔍 RISK MANAGER: Starting order validation for user {user_id}")
             logger.info(f"   Order data: {order}")
             
+            # 🚨 CRITICAL: EMERGENCY EXITS MUST ALWAYS PASS
+            # Check for bypass flags in order metadata or tag
+            if isinstance(order, dict):
+                metadata = order.get('metadata', {})
+                bypass_all = metadata.get('bypass_all_checks', False)
+                is_emergency = 'EMERGENCY' in order.get('tag', '')
+                is_closing = metadata.get('closing_action', False)
+                
+                if bypass_all or is_emergency or is_closing:
+                    logger.warning(f"🚨 BYPASSING ALL RISK CHECKS - Emergency/Closing order for {order.get('symbol')}")
+                    return True
+            
             # 🕐 CRITICAL: TIME-BASED TRADING RESTRICTIONS (IST)
             if not self._validate_trading_hours(order):
                 return False

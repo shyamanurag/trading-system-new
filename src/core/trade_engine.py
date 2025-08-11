@@ -1134,6 +1134,13 @@ class TradeEngine:
             self.logger.warning(f"⚠️ No action found in signal for {signal.get('symbol', 'UNKNOWN')} - REJECTING")
             signal_action = 'INVALID'
         
+        # 🚨 CRITICAL: Check for emergency exit metadata
+        metadata = signal.get('metadata', {})
+        tag = 'ALGO_TRADE'
+        if metadata.get('bypass_all_checks') or metadata.get('closing_action'):
+            tag = 'EMERGENCY_EXIT'
+            self.logger.warning(f"🚨 EMERGENCY EXIT ORDER: {signal.get('symbol')} - bypassing all checks")
+        
         return {
             'symbol': signal.get('symbol'),
             'action': signal_action,  # ✅ FIXED: Primary action field
@@ -1145,8 +1152,9 @@ class TradeEngine:
             'order_type': signal.get('order_type', 'MARKET'),
             'product': self._get_product_type_for_symbol(signal.get('symbol', '')),  # FIXED: Dynamic product type
             'validity': signal.get('validity', 'DAY'),
-            'tag': 'ALGO_TRADE',
-            'user_id': signal.get('user_id', 'system')
+            'tag': tag,  # 🚨 CRITICAL: Use emergency tag if needed
+            'user_id': signal.get('user_id', 'system'),
+            'metadata': metadata  # 🚨 CRITICAL: Pass metadata for risk manager bypass
         }
     
     def _get_product_type_for_symbol(self, symbol: str) -> str:
