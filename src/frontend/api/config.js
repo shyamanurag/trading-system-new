@@ -96,7 +96,7 @@ export const API_ENDPOINTS = {
 
     // UNIFIED User Management endpoints - Fixed to match backend routes
     USERS: createEndpoint('/api/v1/users', true),
-    USERS_ACTIVE: createEndpoint('/users/active'),
+    USERS_ACTIVE: createEndpoint('/api/v1/control/users/broker'),
     USER_PERFORMANCE: createEndpoint('/api/v1/user-analytics/user'),
     USER_CURRENT: createEndpoint('/api/v1/users/current'),
     USER_ANALYTICS: createEndpoint('/api/v1/user-analytics'),
@@ -132,8 +132,8 @@ export const API_ENDPOINTS = {
     STRATEGY_PERFORMANCE: createEndpoint('/api/v1/strategies/performance'),
 
     // Dashboard endpoints - Fixed to match backend routes
-    DASHBOARD_SUMMARY: createEndpoint('/api/dashboard/summary'),
-    DAILY_PNL: createEndpoint('/api/v1/performance/daily-pnl'),
+    DASHBOARD_SUMMARY: createEndpoint('/api/v1/dashboard/summary'),
+    DAILY_PNL: createEndpoint('/api/v1/dashboard/daily-pnl'),
     DAILY_PNL_HISTORY: createEndpoint('/api/v1/performance/daily-pnl-history'),
     RECOMMENDATIONS: createEndpoint('/api/v1/recommendations'),
 

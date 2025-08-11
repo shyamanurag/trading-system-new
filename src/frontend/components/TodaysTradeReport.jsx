@@ -84,31 +84,68 @@ const TodaysTradeReport = () => {
 
                 // FIXED: Get REAL trades from the trading system API endpoints
                 try {
-                    // Try to get real trades from the autonomous trading API
-                    const tradesResponse = await fetchWithAuth('/api/v1/autonomous/trades');
+                    // Fetch real trades from backend live trades endpoint
+                    const tradesResponse = await fetchWithAuth('/api/trades/live');
                     if (tradesResponse.ok) {
                         const tradesData = await tradesResponse.json();
-                        if (tradesData.success && tradesData.trades) {
-                            trades = tradesData.trades.map(trade => ({
-                                id: trade.trade_id,
-                                symbol: trade.symbol,
-                                side: (trade.trade_type || trade.side || '').toUpperCase(), // Ensure uppercase
-                                quantity: trade.quantity,
-                                entry_price: trade.price,
-                                current_price: trade.ltp || trade.current_price || trade.price, // Use LTP if available
-                                pnl: trade.pnl || 0,
-                                pnl_percent: trade.pnl_percent || 0,
+                        let rawTrades = [];
+                        if (Array.isArray(tradesData)) {
+                            rawTrades = tradesData;
+                        } else if (tradesData?.success && Array.isArray(tradesData.trades)) {
+                            rawTrades = tradesData.trades;
+                        } else if (tradesData?.success && Array.isArray(tradesData.data)) {
+                            rawTrades = tradesData.data;
+                        }
+
+                        if (rawTrades.length > 0) {
+                            trades = rawTrades.map(trade => ({
+                                id: trade.trade_id || trade.order_id || trade.id,
+                                symbol: trade.symbol || trade.tradingsymbol,
+                                side: (trade.trade_type || trade.transaction_type || trade.side || '').toUpperCase(),
+                                quantity: trade.quantity || trade.qty || 0,
+                                entry_price: trade.price || trade.average_price || trade.avg_price || 0,
+                                // temporary; will be overwritten by live positions enrichment below
+                                current_price: trade.ltp || trade.last_price || trade.current_price || 0,
+                                pnl: 0,
+                                pnl_percent: 0,
                                 status: trade.status || 'EXECUTED',
-                                entry_time: trade.executed_at,
-                                strategy: trade.strategy,
+                                entry_time: trade.executed_at || trade.timestamp || trade.created_at,
+                                strategy: trade.strategy || (trade.tag || '').split('_')[0] || 'Manual/Zerodha',
                                 commission: trade.commission || 0
                             }));
-                            
-                            // CRITICAL FIX: Update summary with REAL trade count and P&L
-                            console.log(`🎯 Found ${trades.length} REAL trades from Zerodha API`);
-                            const totalPnL = trades.reduce((sum, trade) => sum + (trade.pnl || 0), 0);
-                            const winningTrades = trades.filter(trade => (trade.pnl || 0) > 0).length;
-                            
+
+                            // Enrich with live LTP from positions and compute P&L per trade
+                            try {
+                                const posRes = await fetchWithAuth('/api/v1/positions');
+                                if (posRes.ok) {
+                                    const posJson = await posRes.json();
+                                    const posLists = [];
+                                    if (posJson?.data) posLists.push(...posJson.data);
+                                    if (posJson?.positions?.net) posLists.push(...posJson.positions.net);
+                                    if (posJson?.positions?.day) posLists.push(...posJson.positions.day);
+
+                                    const ltpMap = new Map();
+                                    for (const p of posLists) {
+                                        const sym = p.tradingsymbol || p.symbol;
+                                        const ltp = p.last_price || p.ltp || p.close || 0;
+                                        if (sym && ltp) ltpMap.set(sym, ltp);
+                                    }
+
+                                    trades = trades.map(t => {
+                                        const ltp = ltpMap.get(t.symbol) ?? t.current_price ?? t.entry_price;
+                                        const isBuy = t.side === 'BUY';
+                                        const pnl = (isBuy ? (ltp - t.entry_price) : (t.entry_price - ltp)) * t.quantity;
+                                        const pnlPct = t.entry_price > 0 ? (pnl / (t.entry_price * t.quantity)) * 100 : 0;
+                                        return { ...t, current_price: ltp, pnl, pnl_percent: pnlPct };
+                                    });
+                                }
+                            } catch (posErr) {
+                                console.warn('Positions enrichment failed:', posErr);
+                            }
+
+                            // Finalize summary from computed P&L
+                            const totalPnL = trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+                            const winningTrades = trades.filter(t => (t.pnl || 0) > 0).length;
                             summary.total_trades = trades.length;
                             summary.daily_pnl = totalPnL;
                             summary.win_rate = trades.length > 0 ? ((winningTrades / trades.length) * 100) : 0;

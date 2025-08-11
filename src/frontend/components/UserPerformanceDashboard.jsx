@@ -130,7 +130,7 @@ const UserPerformanceDashboard = ({ tradingData }) => {
 
                 // FIXED: Fetch REAL users from API - NO MOCK DATA
                 try {
-                    const usersResponse = await fetchWithAuth('/api/v1/users/active');
+                    const usersResponse = await fetchWithAuth(API_ENDPOINTS.BROKER_USERS.url);
                     
                     if (usersResponse.ok) {
                         const realUsers = await usersResponse.json();
@@ -154,15 +154,33 @@ const UserPerformanceDashboard = ({ tradingData }) => {
                 }
 
                 // Set summary metrics from real data
+                // Fetch real P&L and balances from backend endpoints
+                let todayPnl = 0;
+                let availableCash = 0;
+                try {
+                    const [pnlRes, balRes] = await Promise.all([
+                        fetchWithAuth(API_ENDPOINTS.DAILY_PNL.url),
+                        fetchWithAuth(API_ENDPOINTS.REALTIME_BALANCE.url)
+                    ]);
+                    if (pnlRes.ok) {
+                        const pnlJson = await pnlRes.json();
+                        todayPnl = pnlJson?.data?.total_pnl || 0;
+                    }
+                    if (balRes.ok) {
+                        const balJson = await balRes.json();
+                        availableCash = balJson?.available_cash || 0;
+                    }
+                } catch {}
+
                 setSummaryMetrics({
-                    todayPnL: trading.totalPnL || 0,
-                    todayPnLPercent: ((trading.totalPnL || 0) / 1000000) * 100,
-                    activeUsers: trading.activeUsers || 1,
-                    newUsersThisWeek: trading.activeUsers || 1,
+                    todayPnL: todayPnl,
+                    todayPnLPercent: 0,
+                    activeUsers: 1,
+                    newUsersThisWeek: 1,
                     totalTrades: trading.totalTrades || 0,
                     winRate: trading.successRate || 0,
-                    totalAUM: 1000000 + (trading.totalPnL || 0),
-                    aumGrowth: ((trading.totalPnL || 0) / 1000000) * 100
+                    totalAUM: availableCash,
+                    aumGrowth: 0
                 });
 
                 // FIXED: Fetch REAL daily P&L data from API - NO MOCK DATA

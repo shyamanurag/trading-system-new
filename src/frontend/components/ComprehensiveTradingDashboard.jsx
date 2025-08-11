@@ -110,11 +110,12 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
 
             // Fetch real data from APIs using Promise.allSettled to handle failures gracefully
             // CRITICAL FIX: Get data from autonomous/status where REAL trading data lives
-            const [autonomousRes, dashboardRes, performanceRes, recommendationsRes] = await Promise.allSettled([
-                fetchWithAuth('/api/v1/autonomous/status'),  // PRIMARY data source with REAL trades
-                fetchWithAuth(API_ENDPOINTS.DASHBOARD_SUMMARY.url),  // Fallback data source
+            const [autonomousRes, dashboardRes, pnlRes, brokerUsersRes, balanceRes] = await Promise.allSettled([
+                fetchWithAuth('/api/v1/autonomous/status'),
+                fetchWithAuth(API_ENDPOINTS.DASHBOARD_SUMMARY.url),
                 fetchWithAuth(API_ENDPOINTS.DAILY_PNL.url),
-                fetchWithAuth(API_ENDPOINTS.RECOMMENDATIONS.url)
+                fetchWithAuth(API_ENDPOINTS.BROKER_USERS.url),
+                fetchWithAuth(API_ENDPOINTS.REALTIME_BALANCE.url)
             ]);
 
             let dashboardData = {
@@ -155,10 +156,10 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                         // Create performance data from real trading
                         if (realTrading.total_trades > 0) {
                             dashboardData.topPerformers = [{
-                                user: 'Autonomous Trading System',
+                                user: 'Zerodha Account (QSW899)',
                                 pnl: safeNumber(realTrading.daily_pnl),
                                 trades: safeNumber(realTrading.total_trades),
-                                winRate: safeNumber(realTrading.success_rate || 70)
+                                winRate: safeNumber(realTrading.success_rate || 0)
                             }];
 
                             // Create alerts for active trading
@@ -275,21 +276,25 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                 }
             }
 
-            // Process daily P&L data with safe extraction
-            if (performanceRes.status === 'fulfilled' && performanceRes.value.ok) {
-                try {
-                    const pnlData = await performanceRes.value.json();
-                    if (pnlData.success && Array.isArray(pnlData.daily_pnl)) {
-                        dashboardData.dailyPnL = pnlData.daily_pnl.map(item => ({
-                            date: safeString(item.date),
-                            pnl: safeNumber(item.pnl),
-                            trades: safeNumber(item.trades)
-                        }));
-                    }
-                } catch (parseError) {
-                    console.warn('Error parsing P&L data:', parseError);
+            // Refresh P&L/AUM/users from direct endpoints
+            try {
+                if (pnlRes.status === 'fulfilled' && pnlRes.value.ok) {
+                    const pnlJson = await pnlRes.value.json();
+                    dashboardData.systemMetrics.totalPnL = safeNumber(pnlJson?.data?.total_pnl || 0);
                 }
-            }
+            } catch {}
+            try {
+                if (brokerUsersRes.status === 'fulfilled' && brokerUsersRes.value.ok) {
+                    const usersJson = await brokerUsersRes.value.json();
+                    dashboardData.systemMetrics.activeUsers = Array.isArray(usersJson?.users) ? usersJson.users.length : 0;
+                }
+            } catch {}
+            try {
+                if (balanceRes.status === 'fulfilled' && balanceRes.value.ok) {
+                    const balJson = await balanceRes.value.json();
+                    dashboardData.systemMetrics.aum = safeNumber(balJson?.available_cash || dashboardData.systemMetrics.aum);
+                }
+            } catch {}
 
             // Process recommendations for alerts with safe extraction
             if (recommendationsRes.status === 'fulfilled' && recommendationsRes.value.ok) {

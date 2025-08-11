@@ -37,6 +37,8 @@ import {
     Typography
 } from '@mui/material';
 import React, { useEffect, useState } from 'react';
+import { API_ENDPOINTS } from '../api/config';
+import fetchWithAuth from '../api/fetchWithAuth';
 
 const DynamicUserManagement = () => {
     // State management
@@ -77,48 +79,33 @@ const DynamicUserManagement = () => {
     const loadUsers = async () => {
         try {
             setLoading(true);
-            
-            // Try the dynamic endpoint first
-            let response = await fetch('/api/v1/users/dynamic/list?active_only=true');
-            let data = await response.json();
-
-            if (response.ok && Array.isArray(data) && data.length > 0) {
-                setUsers(data);
-                setError(null);
-                return;
+            // Fetch broker users directly; no fallbacks
+            const response = await fetchWithAuth(API_ENDPOINTS.BROKER_USERS.url);
+            if (!response.ok) {
+                throw new Error('Broker users endpoint failed');
             }
-
-            // FALLBACK: If dynamic endpoint fails or returns empty, try the working /users/active endpoint
-            console.log('🔄 Dynamic users endpoint failed, trying fallback...');
-            response = await fetch('/api/v1/users/active');
-            
-            if (response.ok) {
-                data = await response.json();
-                if (data.success && data.users) {
-                    // Transform the data to match expected format
-                    const transformedUsers = data.users.map(user => ({
-                        id: user.user_id,
-                        username: user.username,
-                        email: user.email,
-                        zerodha_client_id: user.zerodha_client_id,
-                        initial_capital: user.initial_capital,
-                        status: user.status,
-                        created_at: user.created_at,
-                        is_active: user.status === 'active'
-                    }));
-                    setUsers(transformedUsers);
-                    setError(null);
-                    console.log(`✅ Loaded ${transformedUsers.length} users from fallback endpoint`);
-                    return;
-                }
-            }
-            
-            throw new Error('No users found in either endpoint');
-            
+            const data = await response.json();
+            const rawUsers = Array.isArray(data?.users) ? data.users : [];
+            const transformedUsers = rawUsers.map(user => ({
+                id: user.user_id || user.id,
+                username: user.username || user.name || user.user_id,
+                email: user.email || '',
+                zerodha_client_id: user.zerodha_client_id || '',
+                initial_capital: user.initial_capital || 0,
+                current_balance: user.current_balance || 0,
+                total_trades: user.total_trades || 0,
+                total_pnl: user.total_pnl || 0,
+                win_rate: user.win_rate || 0,
+                status: user.status || 'active',
+                created_at: user.created_at || null,
+                is_active: (user.status || 'active') === 'active'
+            }));
+            setUsers(transformedUsers);
+            setError(null);
         } catch (err) {
             setError(err.message);
             console.error('Error loading users:', err);
-            setUsers([]); // Set empty array to prevent infinite loading
+            setUsers([]);
         } finally {
             setLoading(false);
         }

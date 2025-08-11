@@ -1625,6 +1625,10 @@ class BaseStrategy:
                               stop_loss: float, target: float, confidence: float, metadata: Dict) -> Dict:
         """Create standardized signal format for options"""
         try:
+            # If market is closed, do not attempt options trading or on-demand data
+            if not self._is_trading_hours_active():
+                logger.warning(f"⏸️ MARKET CLOSED - Skipping options signal for {symbol}")
+                return None
             # 🎯 CRITICAL FIX: Convert to options symbol and force BUY action
             options_symbol, option_type = await self._convert_to_options_symbol(symbol, entry_price, action)
             
@@ -1660,9 +1664,11 @@ class BaseStrategy:
             # 🚨 CRITICAL: Block options signals with zero LTP completely
             if options_entry_price <= 0:
                 logger.error(f"❌ REJECTING OPTIONS SIGNAL: {options_symbol} has ZERO LTP - cannot trade")
-                # Try to fallback to equity if possible
-                logger.info(f"🔄 ATTEMPTING EQUITY FALLBACK for {symbol} due to zero options LTP")
-                return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+                # Only fall back to equity if market is open
+                if self._is_trading_hours_active():
+                    logger.info(f"🔄 ATTEMPTING EQUITY FALLBACK for {symbol} due to zero options LTP")
+                    return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+                return None
             
             # Validate signal levels only if we have a real entry price
             if not self.validate_signal_levels(options_entry_price, options_stop_loss, options_target, 'BUY'):
@@ -2307,9 +2313,17 @@ class BaseStrategy:
     def _get_options_premium(self, options_symbol: str, fallback_price: float, option_type: str) -> float:
         """Get actual options premium - PRIMARY from TrueData, SECONDARY from Zerodha for validation only"""
         try:
+            # Short-circuit when market is closed to avoid futile TrueData attempts
+            try:
+                if not self._is_trading_hours_active():
+                    logger.info(f"⏸️ MARKET CLOSED - Skipping premium fetch for {options_symbol}")
+                    return 0.0
+            except Exception:
+                pass
+
             # 🎯 PRIMARY: Get options premium from TrueData cache (USER PREFERENCE)
             try:
-                from data.truedata_client import live_market_data, subscribe_to_symbols
+                from data.truedata_client import live_market_data, subscribe_to_symbols, is_connected, get_connection_status
                 from config.options_symbol_mapping import convert_zerodha_to_truedata_options
                 
                 # Convert Zerodha format to TrueData format for lookup
@@ -2325,6 +2339,13 @@ class BaseStrategy:
                         return float(premium)
                 else:
                     # 🚨 CRITICAL FIX: Subscribe to options symbol on-demand if not in cache
+                    # Only if market open AND TrueData is healthy
+                    if not self._is_trading_hours_active():
+                        logger.info(f"⏸️ MARKET CLOSED - Skipping subscribe for {truedata_symbol}")
+                        raise RuntimeError("market_closed")
+                    if not is_connected() or not get_connection_status().get('can_attempt_connection', False):
+                        logger.warning(f"⚠️ TrueData not healthy - skipping subscribe for {truedata_symbol}")
+                        raise RuntimeError("truedata_unhealthy")
                     logger.info(f"📊 ON-DEMAND SUBSCRIBE: {truedata_symbol} not in cache, subscribing now...")
                     try:
                         # Subscribe to the specific options symbol
