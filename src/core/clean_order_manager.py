@@ -124,7 +124,8 @@ class OrderManager:
                     'timestamp': datetime.now().isoformat(),
                     **order_data
                 }
-                await self.redis_client.set(order_key, json.dumps(order_record))
+                # FIX: Redis client.set is not async, remove await
+                self.redis_client.set(order_key, json.dumps(order_record))
             
             logger.info(f"✅ Order placed: {order_id} -> {broker_order_id}")
             return order_id

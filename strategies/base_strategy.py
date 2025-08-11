@@ -1361,7 +1361,8 @@ class BaseStrategy:
                 confidence = float(confidence) if confidence not in [None, '', 'N/A', '-'] else 0.0
             except (ValueError, TypeError) as type_error:
                 logger.error(f"❌ TYPE ERROR for {symbol}: Invalid numeric data - {type_error}")
-                logger.error(f"   entry_price: {repr(entry_price)}, stop_loss: {repr(stop_loss)}, target: {repr(target)}")
+                logger.error(f"   entry_price: {repr(entry_price)}, stop_loss: {repr(stop_loss)}, "
+                            f"target: {repr(target)}, confidence: {repr(confidence)}")
                 return None
             
             # Validate numeric ranges
@@ -1396,8 +1397,18 @@ class BaseStrategy:
             except Exception:
                 min_conf = 9.0
 
-            if confidence < min_conf:
-                logger.info(f"🗑️ {self.name}: LOW CONFIDENCE SIGNAL SCRAPPED for {symbol} - Confidence: {confidence:.1f}/10 (min={min_conf})")
+            # Ensure confidence is numeric before comparison
+            try:
+                if not isinstance(confidence, (int, float)):
+                    logger.error(f"❌ CONFIDENCE TYPE ERROR for {symbol}: confidence is {type(confidence)} = {repr(confidence)}")
+                    confidence = float(confidence) if confidence else 0.0
+                
+                if confidence < min_conf:
+                    logger.info(f"🗑️ {self.name}: LOW CONFIDENCE SIGNAL SCRAPPED for {symbol} - Confidence: {confidence:.1f}/10 (min={min_conf})")
+                    return None
+            except (TypeError, ValueError) as e:
+                logger.error(f"❌ Error comparing confidence for {symbol}: {e}")
+                logger.error(f"   confidence={repr(confidence)}, min_conf={repr(min_conf)}")
                 return None
 
             # Opening gap gate: avoid counter-gap trades during opening/morning on large gaps
