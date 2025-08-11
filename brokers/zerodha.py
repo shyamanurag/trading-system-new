@@ -596,6 +596,52 @@ class ZerodhaIntegration:
             logger.debug(f"Could not get positions sync: {e}")
             return {'net': [], 'day': []}
     
+    def get_margins_sync(self) -> float:
+        """Get available margin synchronously (for real-time capital tracking)"""
+        try:
+            if not self.kite:
+                return 0.0
+            
+            margins = self.kite.margins()
+            if margins and 'equity' in margins:
+                equity = margins['equity']
+                
+                # Get net available (this is what's actually free to trade)
+                net = equity.get('net', 0)
+                
+                # Get available breakdown
+                available = equity.get('available', {})
+                cash = available.get('cash', 0)
+                collateral = available.get('collateral', 0)
+                intraday_payin = available.get('intraday_payin', 0)
+                
+                # Get used margin
+                utilised = equity.get('utilised', {})
+                used_debits = utilised.get('debits', 0)
+                used_exposure = utilised.get('exposure', 0)
+                used_m2m = utilised.get('m2m', 0)
+                used_option_premium = utilised.get('option_premium', 0)
+                used_holding_sales = utilised.get('holding_sales', 0)
+                
+                total_used = used_debits + used_exposure + used_m2m + used_option_premium + used_holding_sales
+                
+                # Real available = net (Zerodha calculates this correctly)
+                # But if net is 0, calculate manually
+                if net > 0:
+                    real_available = net
+                else:
+                    total_funds = cash + collateral + intraday_payin
+                    real_available = max(0, total_funds - total_used)
+                
+                logger.info(f"💰 MARGIN STATUS: Available=₹{real_available:,.2f}, Used=₹{total_used:,.2f}, Cash=₹{cash:,.2f}")
+                return float(real_available)
+            
+            return 0.0
+            
+        except Exception as e:
+            logger.debug(f"Could not get margins sync: {e}")
+            return 0.0
+    
     async def get_positions(self) -> Dict:
         """Get positions with retry"""
         # CRITICAL FIX: Check if kite client is None

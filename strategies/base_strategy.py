@@ -2812,9 +2812,12 @@ class BaseStrategy:
                         loop = asyncio.get_event_loop()
                         
                         if loop.is_running():
-                            # If already in async context, use fallback
-                            logger.debug("⚠️ Already in async context, using cached capital")
-                            return 49233.5  # Use cached value
+                            # 🚨 CRITICAL FIX: Use synchronous method in async context
+                            if hasattr(orchestrator.zerodha_client, 'get_margins_sync'):
+                                real_available = orchestrator.zerodha_client.get_margins_sync()
+                                if real_available > 0:
+                                    logger.info(f"✅ REAL-TIME CAPITAL: ₹{real_available:,.2f} (sync from Zerodha)")
+                                    return float(real_available)
                         else:
                             # Run async method to get live margins
                             margins = loop.run_until_complete(orchestrator.zerodha_client.get_margins())
@@ -2836,13 +2839,13 @@ class BaseStrategy:
                 except Exception as zerodha_error:
                     logger.debug(f"⚠️ Error accessing Zerodha for capital: {zerodha_error}")
             
-            # Fallback to cached/estimated value
-            logger.debug("📋 Using fallback capital (Zerodha not available)")
-            return 49233.5  # Current known balance as fallback
+            # 🚨 CRITICAL: Return small amount to prevent new trades if can't get real balance
+            logger.warning("⚠️ Cannot get real-time capital - returning minimal amount to prevent trades")
+            return 1000.0  # Minimal amount to block new trades when capital unknown
             
         except Exception as e:
             logger.error(f"Error getting dynamic available capital: {e}")
-            return 49233.5  # Safe fallback
+            return 1000.0  # Minimal amount to prevent trades on error
     
     def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
         """🎯 USER REQUIREMENT: Select strike based on volume - highest or second highest for liquidity"""
@@ -3038,9 +3041,12 @@ class BaseStrategy:
                         loop = asyncio.get_event_loop()
                         
                         if loop.is_running():
-                            # If already in async context, use fallback
-                            logger.debug("⚠️ Already in async context, using cached capital")
-                            return 49233.5  # Use cached value
+                            # 🚨 CRITICAL FIX: Use synchronous method in async context
+                            if hasattr(orchestrator.zerodha_client, 'get_margins_sync'):
+                                real_available = orchestrator.zerodha_client.get_margins_sync()
+                                if real_available > 0:
+                                    logger.info(f"✅ REAL-TIME CAPITAL: ₹{real_available:,.2f} (sync from Zerodha)")
+                                    return float(real_available)
                         else:
                             # Run async method to get live margins
                             margins = loop.run_until_complete(orchestrator.zerodha_client.get_margins())
@@ -3062,13 +3068,13 @@ class BaseStrategy:
                 except Exception as zerodha_error:
                     logger.debug(f"⚠️ Error accessing Zerodha for capital: {zerodha_error}")
             
-            # Fallback to cached/estimated value
-            logger.debug("📋 Using fallback capital (Zerodha not available)")
-            return 49233.5  # Current known balance as fallback
+            # 🚨 CRITICAL: Return small amount to prevent new trades if can't get real balance
+            logger.warning("⚠️ Cannot get real-time capital - returning minimal amount to prevent trades")
+            return 1000.0  # Minimal amount to block new trades when capital unknown
             
         except Exception as e:
             logger.error(f"Error getting dynamic available capital: {e}")
-            return 49233.5  # Safe fallback
+            return 1000.0  # Minimal amount to prevent trades on error
     
     def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
         """🎯 USER REQUIREMENT: Select strike based on volume - highest or second highest for liquidity"""
