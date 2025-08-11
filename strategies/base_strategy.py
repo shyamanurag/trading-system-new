@@ -1657,45 +1657,17 @@ class BaseStrategy:
                 options_entry_price, stop_loss, target, option_type, action, symbol
             )
             
-            # 🎯 ALLOW 0.0 signals to pass to orchestrator for LTP fixing
-            # Only validate if we have a real entry price (orchestrator will fix 0.0 prices)
-            if options_entry_price > 0 and not self.validate_signal_levels(options_entry_price, options_stop_loss, options_target, 'BUY'):
+            # 🚨 CRITICAL: Block options signals with zero LTP completely
+            if options_entry_price <= 0:
+                logger.error(f"❌ REJECTING OPTIONS SIGNAL: {options_symbol} has ZERO LTP - cannot trade")
+                # Try to fallback to equity if possible
+                logger.info(f"🔄 ATTEMPTING EQUITY FALLBACK for {symbol} due to zero options LTP")
+                return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            
+            # Validate signal levels only if we have a real entry price
+            if not self.validate_signal_levels(options_entry_price, options_stop_loss, options_target, 'BUY'):
                 logger.warning(f"Invalid options signal levels: Entry={options_entry_price}, SL={options_stop_loss}, Target={options_target}")
                 return None
-            elif options_entry_price == 0:
-                # Final attempt: try Zerodha quotes directly before giving up
-                try:
-                    from src.core.orchestrator import get_orchestrator_instance
-                    orchestrator = get_orchestrator_instance()
-                    if orchestrator and orchestrator.zerodha_client:
-                        import asyncio
-                        # First try exact symbol
-                        task1 = asyncio.create_task(orchestrator.zerodha_client.get_options_ltp(options_symbol))
-                        fetched_ltp = asyncio.get_event_loop().run_until_complete(task1)
-                        # If still zero, try nearby strikes within tight band to avoid excessive calls
-                        if (not fetched_ltp) or fetched_ltp == 0:
-                            # Build ATM from underlying price
-                            atm = await self._get_atm_strike_for_stock(entry_price)
-                            nearby = await orchestrator.zerodha_client.get_nearby_atm_options_ltp(
-                                underlying_symbol=self._map_truedata_to_zerodha_symbol(symbol),
-                                atm_strike=atm,
-                                expiry=await self._get_next_expiry(symbol if symbol.endswith('-I') else 'NIFTY'),
-                                option_type=option_type,
-                                band=1
-                            )
-                            if nearby:
-                                # Pick the closest strike
-                                fetched_ltp = list(sorted(nearby.items(), key=lambda kv: abs(int(kv[0][-7:-2]) - atm)))[0][1]
-                        if fetched_ltp and fetched_ltp > 0:
-                            options_entry_price = float(fetched_ltp)
-                            logger.info(f"✅ Retrieved options LTP before validation: {options_symbol} = ₹{options_entry_price}")
-                        else:
-                            logger.warning(f"⚠️ Zerodha LTP still unavailable for {options_symbol}")
-                except Exception as e:
-                    logger.debug(f"Zerodha LTP late-fetch failed for {options_symbol}: {e}")
-                
-                if options_entry_price == 0:
-                    logger.info(f"🔄 PASSING 0.0 signal to orchestrator for LTP validation: {options_symbol}")
             
             # 🎯 CRITICAL FIX: Always BUY options (no selling due to margin requirements)
             final_action = 'BUY'  # Force all options signals to be BUY
