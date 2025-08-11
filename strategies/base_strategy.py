@@ -38,6 +38,10 @@ class BaseStrategy:
         self.symbol_cooldowns = {}   # Symbol-specific cooldowns
         self.position_cooldowns = {}  # Phantom position cleanup cooldowns
         
+        # EMERGENCY STOP LOSS THRESHOLDS (configurable)
+        self.emergency_loss_amount = config.get('emergency_loss_amount', -1000)  # ₹1000 default
+        self.emergency_loss_percent = config.get('emergency_loss_percent', -2.0)  # 2% default
+        
         # Historical data for proper ATR calculation
         self.historical_data = {}  # symbol -> list of price data
         self.max_history = 50  # Keep last 50 data points per symbol
@@ -273,9 +277,22 @@ class BaseStrategy:
                             avg_price = pos.get('average_price', 0)
                             pnl = pos.get('pnl', 0) or pos.get('unrealised', 0) or 0
                             
-                            # EMERGENCY: Exit MANAPPURAM with ₹1700 loss
-                            if symbol == 'MANAPPURAM' and pnl < -1000:
-                                logger.error(f"🚨 EMERGENCY EXIT: {symbol} loss=₹{pnl:.2f}, qty={qty}")
+                            # EMERGENCY: Exit ANY position with >₹1000 loss or >2% loss
+                            loss_threshold_amount = -1000  # ₹1000 loss
+                            loss_threshold_percent = -2.0  # 2% loss
+                            
+                            # Calculate percentage loss
+                            if avg_price > 0 and qty != 0:
+                                current_price = market_data.get(symbol, {}).get('ltp', avg_price)
+                                pnl_percent = ((current_price - avg_price) / avg_price) * 100
+                            else:
+                                pnl_percent = 0
+                            
+                            # Check if position needs emergency exit
+                            if (pnl < loss_threshold_amount) or (pnl_percent < loss_threshold_percent):
+                                logger.error(f"🚨 EMERGENCY STOP LOSS TRIGGERED: {symbol}")
+                                logger.error(f"   Loss: ₹{pnl:.2f} ({pnl_percent:.1f}%), Qty: {qty}, Avg: ₹{avg_price:.2f}")
+                                
                                 # Force immediate exit signal
                                 exit_signal = {
                                     'symbol': symbol,
@@ -285,15 +302,18 @@ class BaseStrategy:
                                     'stop_loss': 0,
                                     'target': 0,
                                     'confidence': 10.0,  # Maximum confidence for emergency exit
+                                    'reason': f'EMERGENCY_STOP_LOSS: ₹{pnl:.2f} ({pnl_percent:.1f}%)',  # Add at top level
                                     'metadata': {
                                         'reason': 'EMERGENCY_STOP_LOSS',
                                         'loss_amount': pnl,
+                                        'loss_percent': pnl_percent,
                                         'management_action': True,
-                                        'closing_action': True
+                                        'closing_action': True,
+                                        'bypass_all_checks': True
                                     }
                                 }
                                 await self._execute_management_action(exit_signal)
-                                logger.error(f"🚨 EXECUTED EMERGENCY EXIT for {symbol}")
+                                logger.error(f"🚨 EXECUTED EMERGENCY EXIT for {symbol} - Loss: ₹{pnl:.2f}")
             
             # ⏰ CHECK POSITION CLOSURE URGENCY based on current time
             close_urgency = self._get_position_close_urgency()
@@ -930,16 +950,19 @@ class BaseStrategy:
             
             if orchestrator and hasattr(orchestrator, 'trade_engine') and orchestrator.trade_engine:
                 # Send directly to trade engine for immediate execution
-                logger.info(f"🚀 Executing management action: {signal['symbol']} {signal['action']} {signal['quantity']} ({signal['reason']})")
+                reason = signal.get('reason', signal.get('metadata', {}).get('reason', 'POSITION_MANAGEMENT'))
+                logger.info(f"🚀 Executing management action: {signal['symbol']} {signal['action']} {signal['quantity']} ({reason})")
                 
                 # Process through trade engine (bypasses deduplication for management actions)
                 await orchestrator.trade_engine._process_live_signal(signal)
                 
-                logger.info(f"✅ Management action submitted: {signal['symbol']} {signal['reason']}")
+                reason = signal.get('reason', signal.get('metadata', {}).get('reason', 'POSITION_MANAGEMENT'))
+                logger.info(f"✅ Management action submitted: {signal['symbol']} {reason}")
                 
             else:
                 # Fallback: Store in pending management actions for next cycle processing
-                logger.warning(f"⚠️ No trade engine available - queuing management action: {signal['symbol']} {signal['reason']}")
+                reason = signal.get('reason', signal.get('metadata', {}).get('reason', 'POSITION_MANAGEMENT'))
+                logger.warning(f"⚠️ No trade engine available - queuing management action: {signal['symbol']} {reason}")
                 
                 if not hasattr(self, 'pending_management_actions'):
                     self.pending_management_actions = []
@@ -1423,9 +1446,15 @@ class BaseStrategy:
             # ========================================
             # CRITICAL: POSITION DEDUPLICATION CHECK
             # ========================================
-            if self.has_existing_position(symbol):
-                logger.info(f"🚫 {self.name}: DUPLICATE SIGNAL PREVENTED for {symbol} - Position already exists")
-                return None
+            # Skip duplicate check for management/closing actions
+            is_management = metadata.get('management_action', False)
+            is_closing = metadata.get('closing_action', False)
+            bypass_checks = metadata.get('bypass_all_checks', False)
+            
+            if not (is_management or is_closing or bypass_checks):
+                if self.has_existing_position(symbol):
+                    logger.info(f"🚫 {self.name}: DUPLICATE SIGNAL PREVENTED for {symbol} - Position already exists")
+                    return None
             
             # ========================================
             # CRITICAL: PHANTOM POSITION COOLDOWN CHECK  
@@ -1462,19 +1491,8 @@ class BaseStrategy:
                 logger.error(f"   confidence={repr(confidence)}, min_conf={repr(min_conf)}")
                 return None
 
-            # Opening gap gate: avoid counter-gap trades during opening/morning on large gaps
-            try:
-                if self._is_opening_gap_gate_active(market_data):
-                    # Determine gap direction from index
-                    index_data = market_data.get('NIFTY-I') or market_data.get('NIFTY') or {}
-                    open_price = float(index_data.get('open', 0) or 0)
-                    prev_close = float(index_data.get('prev_close', 0) or 0)
-                    gap_dir = 'BUY' if (open_price > prev_close) else 'SELL'
-                    if gap_dir != action.upper():
-                        logger.info(f"⛔ {self.name}: COUNTER-GAP BLOCK {symbol} {action} during opening (gap {gap_dir})")
-                        return None
-            except Exception:
-                pass
+            # Opening gap gate: DISABLED - market_data not available in this context
+            # TODO: Move this check to risk manager or pass market_data to this method
             
             # 🎯 INTELLIGENT SIGNAL TYPE SELECTION based on market conditions and symbol
             # Ensure numeric types for decision helpers
