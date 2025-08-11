@@ -1915,27 +1915,48 @@ async def get_realtime_balance():
         orchestrator = get_orchestrator_instance()
         
         if not orchestrator or not orchestrator.zerodha_client:
-            logger.warning("Zerodha client not available for balance")
-            return {"balance": 0, "used": 0, "available": 0}
+            logger.warning("Zerodha client not available for realtime balance")
+            return {
+                "success": False,
+                "available_cash": 0.0,
+                "used_margin": 0.0,
+                "total_balance": 0.0,
+                "error": "Zerodha client not initialized"
+            }
         
-        # Get live margins
+        # Fetch fresh margins
         margins = await orchestrator.zerodha_client.get_margins()
         if not margins:
-            return {"balance": 0, "used": 0, "available": 0}
+            return {
+                "success": False,
+                "available_cash": 0.0,
+                "used_margin": 0.0,
+                "total_balance": 0.0,
+                "error": "Failed to fetch margins"
+            }
         
-        total_balance = float(margins.get('equity', {}).get('available', {}).get('live_balance', 0))
-        used_margin = float(margins.get('equity', {}).get('utilised', {}).get('total', 0))
-        available_balance = total_balance - used_margin
+        # Extract values
+        available = float(margins.get('equity', {}).get('available', {}).get('live_balance', 0) or 0)
+        used = float(margins.get('equity', {}).get('utilised', {}).get('total', 0) or 0)
+        total = available + used
         
         return {
-            "balance": total_balance,
-            "used": used_margin,
-            "available": available_balance
+            "success": True,
+            "available_cash": available,
+            "used_margin": used,
+            "total_balance": total,
+            "timestamp": datetime.now().isoformat()
         }
         
     except Exception as e:
         logger.error(f"Error getting realtime balance: {str(e)}")
-        return {"balance": 0, "used": 0, "available": 0}
+        return {
+            "success": False,
+            "available_cash": 0.0,
+            "used_margin": 0.0,
+            "total_balance": 0.0,
+            "error": str(e)
+        }
 
 @app.get("/api/trades/live", tags=["trades"])
 async def get_live_trades_direct():
