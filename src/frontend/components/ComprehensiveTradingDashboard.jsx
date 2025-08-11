@@ -296,23 +296,6 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                 }
             } catch {}
 
-            // Process recommendations for alerts with safe extraction
-            if (recommendationsRes.status === 'fulfilled' && recommendationsRes.value.ok) {
-                try {
-                    const recsData = await recommendationsRes.value.json();
-                    if (recsData.success && Array.isArray(recsData.recommendations)) {
-                        // Convert recommendations to alerts with safe rendering
-                        dashboardData.alerts = recsData.recommendations.slice(0, 3).map(rec => ({
-                            type: safeNumber(rec.confidence) > 80 ? 'success' : 'info',
-                            message: `${safeString(rec.strategy, 'Unknown Strategy')} signal for ${safeString(rec.symbol, 'Unknown Symbol')} - Confidence: ${safeNumber(rec.confidence)}%`,
-                            time: rec.timestamp ? new Date(rec.timestamp).toLocaleTimeString() : 'Unknown time'
-                        }));
-                    }
-                } catch (parseError) {
-                    console.warn('Error parsing recommendations:', parseError);
-                }
-            }
-
             setDashboardData(dashboardData);
 
             // Set system status with safe extraction

@@ -246,16 +246,15 @@ const UserPerformanceDashboard = ({ tradingData }) => {
 
         try {
             setLoading(true);
-            const response = await fetchWithAuth(`${API_ENDPOINTS.USER_PERFORMANCE.url}/${userId}`);
+            const response = await fetchWithAuth(`${API_ENDPOINTS.USER_PERFORMANCE.url}?user_id=${userId}`);
             if (!response.ok) {
                 throw new Error('Failed to fetch performance data');
             }
             const data = await response.json();
-            setUserPerformance(data.performance || {
-                daily_performance: [],
-                recent_trades: [],
-                risk_metrics: {},
-                strategy_breakdown: []
+            setUserPerformance(data.data || {
+                total_trades: 0,
+                winning_trades: 0,
+                // ... from backend response structure
             });
         } catch (error) {
             console.error('Error fetching performance:', error);

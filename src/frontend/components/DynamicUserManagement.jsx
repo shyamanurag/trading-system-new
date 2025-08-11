@@ -118,18 +118,28 @@ const DynamicUserManagement = () => {
 
             for (const user of users.slice(0, 10)) { // Limit to first 10 users for performance
                 try {
-                    // Load performance metrics
-                    const perfResponse = await fetch(`/api/v1/analytics/user/${user.id}/performance?days=30`);
+                    // Load performance metrics from correct endpoint
+                    const perfResponse = await fetchWithAuth(`/api/v1/users/performance?user_id=${user.id}&days=30`);
                     if (perfResponse.ok) {
-                        const perfData = await perfResponse.json();
-                        analytics[user.id] = perfData;
+                        const text = await perfResponse.text();
+                        try {
+                            const perfData = JSON.parse(text);
+                            analytics[user.id] = perfData;
+                        } catch (jsonErr) {
+                            console.error('Non-JSON response for performance:', text);
+                        }
                     }
 
-                    // Load dashboard data
-                    const dashResponse = await fetch(`/api/v1/analytics/user/${user.id}/dashboard`);
+                    // Load dashboard data - assuming correct endpoint
+                    const dashResponse = await fetchWithAuth(`/api/v1/users/dashboard?user_id=${user.id}`);
                     if (dashResponse.ok) {
-                        const dashData = await dashResponse.json();
-                        reports[user.id] = dashData;
+                        const text = await dashResponse.text();
+                        try {
+                            const dashData = JSON.parse(text);
+                            reports[user.id] = dashData;
+                        } catch (jsonErr) {
+                            console.error('Non-JSON response for dashboard:', text);
+                        }
                     }
                 } catch (err) {
                     console.warn(`Error loading analytics for user ${user.id}:`, err);
