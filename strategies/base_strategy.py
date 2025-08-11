@@ -292,6 +292,9 @@ class BaseStrategy:
                         del self.active_positions[symbol]
                     
                     # Now process emergency exits for REAL positions
+                    # 🚨 CRITICAL FIX: Track processed symbols to prevent duplicate exits
+                    emergency_exits_processed = set()
+                    
                     for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
                         for pos in pos_list:
                             symbol = pos.get('tradingsymbol')
@@ -302,6 +305,12 @@ class BaseStrategy:
                             # Skip if no actual position (qty = 0 means position closed)
                             if qty == 0:
                                 continue
+                            
+                            # 🚨 CRITICAL: Skip if already processed (prevents duplicate exits)
+                            if symbol in emergency_exits_processed:
+                                logger.debug(f"⏭️ Skipping {symbol} - already checked for emergency exit")
+                                continue
+                            emergency_exits_processed.add(symbol)
                             
                             # EMERGENCY: Exit ANY position with >₹1000 loss or >2% loss
                             loss_threshold_amount = -1000  # ₹1000 loss
