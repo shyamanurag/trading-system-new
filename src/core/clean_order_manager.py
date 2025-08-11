@@ -108,14 +108,15 @@ class OrderManager:
             
             broker_order_id = await self.zerodha_client.place_order(zerodha_params)
             
-            # 📊 Record order attempt in rate limiter
+            # 📊 Record order attempt in rate limiter (only if not emergency)
             order_success = bool(broker_order_id)
-            await self.rate_limiter.record_order_attempt(
-                rate_check['signature'], 
-                order_success, 
-                order_data['symbol'], 
-                "Order placement failed" if not order_success else None
-            )
+            if not is_emergency:
+                await self.rate_limiter.record_order_attempt(
+                    rate_check['signature'], 
+                    order_success, 
+                    order_data['symbol'], 
+                    "Order placement failed" if not order_success else None
+                )
             
             if not broker_order_id:
                 raise Exception("Zerodha order placement failed")
