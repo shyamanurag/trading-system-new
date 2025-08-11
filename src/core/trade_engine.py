@@ -275,13 +275,14 @@ class TradeEngine:
     async def _try_get_zerodha_client_from_orchestrator(self):
         """Try to get Zerodha client from orchestrator if not set"""
         try:
-            # CRITICAL FIX: Use correct function name
+            # CRITICAL FIX: ALWAYS use orchestrator's client to avoid token mismatch
             from src.core.orchestrator import get_orchestrator_instance
             orchestrator = get_orchestrator_instance()
             
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                # ALWAYS update to latest client reference
                 self.zerodha_client = orchestrator.zerodha_client
-                self.logger.info("✅ Successfully retrieved Zerodha client from orchestrator")
+                self.logger.debug("✅ Using orchestrator's Zerodha client")
                 return True
             else:
                 self.logger.error("❌ No Zerodha client available in orchestrator")

@@ -585,6 +585,17 @@ class ZerodhaIntegration:
                     await asyncio.sleep(self.retry_delay)
         return {}
 
+    def get_positions_sync(self) -> Dict:
+        """Get positions synchronously (for duplicate checking)"""
+        try:
+            if not self.kite:
+                return {'net': [], 'day': []}
+            positions = self.kite.positions()
+            return positions if positions else {'net': [], 'day': []}
+        except Exception as e:
+            logger.debug(f"Could not get positions sync: {e}")
+            return {'net': [], 'day': []}
+    
     async def get_positions(self) -> Dict:
         """Get positions with retry"""
         # CRITICAL FIX: Check if kite client is None

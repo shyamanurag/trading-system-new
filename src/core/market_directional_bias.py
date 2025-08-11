@@ -457,15 +457,20 @@ class MarketDirectionalBias:
             True if signal should be allowed, False if it should be rejected
         """
         try:
+            # CRITICAL FIX: Normalize confidence if it's in percentage scale
+            if signal_confidence > 10:
+                logger.debug(f"Normalizing confidence from {signal_confidence} to {signal_confidence/10}")
+                signal_confidence = signal_confidence / 10.0
+            
             # Regime-aware thresholds
             regime = getattr(self.current_bias, 'market_regime', 'NORMAL')
             # Make counter-trend overrides harder in choppy/sideways days
-            override_threshold = 9.9 if regime in ('CHOPPY', 'VOLATILE_CHOPPY') else 9.7
-            neutral_threshold = 7.5 if regime in ('CHOPPY', 'VOLATILE_CHOPPY') else 6.5
+            override_threshold = 8.5  # REDUCED from 9.7/9.9 to allow more signals through
+            neutral_threshold = 6.5 if regime in ('CHOPPY', 'VOLATILE_CHOPPY') else 6.5
 
             # HIGH CONFIDENCE OVERRIDE: Allow counter-trend for very strong signals (regime aware)
             if signal_confidence >= override_threshold:
-                logger.info(f"🎯 HIGH CONFIDENCE OVERRIDE: {signal_direction} allowed despite bias (regime={regime})")
+                logger.info(f"🎯 HIGH CONFIDENCE OVERRIDE: {signal_direction} allowed (confidence={signal_confidence:.1f}, regime={regime})")
                 return True
             
             # Treat very low confidence bias effectively as NEUTRAL

@@ -185,6 +185,22 @@ class BaseStrategy:
     
     def has_existing_position(self, symbol: str) -> bool:
         """Check if strategy already has active position in symbol with phantom cleanup"""
+        # CRITICAL FIX: Check ACTUAL Zerodha positions first, not just local dict
+        try:
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                # Get real positions from Zerodha
+                positions = orchestrator.zerodha_client.get_positions_sync()  # Use sync version
+                if positions:
+                    for pos_list in [positions.get('net', []), positions.get('day', [])]:
+                        for pos in pos_list:
+                            if pos.get('tradingsymbol') == symbol and pos.get('quantity', 0) != 0:
+                                logger.warning(f"🚫 REAL POSITION EXISTS: {symbol} qty={pos.get('quantity')} - BLOCKING DUPLICATE")
+                                return True
+        except Exception as e:
+            logger.debug(f"Could not check Zerodha positions: {e}")
+        
         if symbol in self.active_positions:
             # Check for phantom positions (older than 30 minutes)
             position_data = self.active_positions[symbol]
@@ -244,6 +260,41 @@ class BaseStrategy:
     async def manage_existing_positions(self, market_data: Dict):
         """🎯 COMPREHENSIVE POSITION MANAGEMENT - Active monitoring and management"""
         try:
+            # CRITICAL FIX: Check REAL Zerodha positions for stop loss management
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                real_positions = await orchestrator.zerodha_client.get_positions()
+                if real_positions:
+                    for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
+                        for pos in pos_list:
+                            symbol = pos.get('tradingsymbol')
+                            qty = pos.get('quantity', 0)
+                            avg_price = pos.get('average_price', 0)
+                            pnl = pos.get('pnl', 0) or pos.get('unrealised', 0) or 0
+                            
+                            # EMERGENCY: Exit MANAPPURAM with ₹1700 loss
+                            if symbol == 'MANAPPURAM' and pnl < -1000:
+                                logger.error(f"🚨 EMERGENCY EXIT: {symbol} loss=₹{pnl:.2f}, qty={qty}")
+                                # Force immediate exit signal
+                                exit_signal = {
+                                    'symbol': symbol,
+                                    'action': 'SELL' if qty > 0 else 'BUY',
+                                    'quantity': abs(qty),
+                                    'entry_price': market_data.get(symbol, {}).get('ltp', avg_price),
+                                    'stop_loss': 0,
+                                    'target': 0,
+                                    'confidence': 10.0,  # Maximum confidence for emergency exit
+                                    'metadata': {
+                                        'reason': 'EMERGENCY_STOP_LOSS',
+                                        'loss_amount': pnl,
+                                        'management_action': True,
+                                        'closing_action': True
+                                    }
+                                }
+                                await self._execute_management_action(exit_signal)
+                                logger.error(f"🚨 EXECUTED EMERGENCY EXIT for {symbol}")
+            
             # ⏰ CHECK POSITION CLOSURE URGENCY based on current time
             close_urgency = self._get_position_close_urgency()
             current_time_ist = datetime.now(self.ist_timezone).strftime('%H:%M:%S')
