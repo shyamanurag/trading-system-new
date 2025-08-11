@@ -74,15 +74,40 @@ def convert_expiry_to_truedata_format(expiry: str) -> str:
 
 def convert_zerodha_to_truedata_options(zerodha_symbol: str) -> str:
     """Convert Zerodha options symbol to TrueData format"""
-    # Convert: BANKNIFTY06OCT237000CE -> BANKNIFTY221006237000CE
-    # From: SYMBOL + DDMMM + STRIKE + TYPE
+    # Convert: NTPC14AUG25350CE -> NTPC250814350CE
+    # From: SYMBOL + DDMMMYY + STRIKE + TYPE
     # To:   SYMBOL + YYMMDD + STRIKE + TYPE
     
     try:
         import re
         from datetime import datetime
         
-        # Parse Zerodha format: BANKNIFTY06OCT237000CE
+        # Parse Zerodha format: NTPC14AUG25350CE (with year)
+        # First try with year included
+        match = re.search(r'^([A-Z&]+)(\d{1,2})([A-Z]{3})(\d{2})(\d+)(CE|PE)$', zerodha_symbol)
+        
+        if match:
+            underlying = match.group(1)
+            day = int(match.group(2))
+            month_str = match.group(3)
+            year = int(match.group(4)) + 2000  # Convert YY to YYYY
+            strike = match.group(5)
+            option_type = match.group(6)
+            
+            # Convert month name to number
+            month_map = {
+                'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+                'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+            }
+            month = month_map.get(month_str, 1)
+            
+            # Format as TrueData: YYMMDD
+            truedata_date = f"{year % 100:02d}{month:02d}{day:02d}"
+            
+            logger.debug(f"📊 Zerodha→TrueData: {zerodha_symbol} → {underlying}{truedata_date}{strike}{option_type}")
+            return f"{underlying}{truedata_date}{strike}{option_type}"
+        
+        # Fallback: Try without year (old format)
         match = re.search(r'^([A-Z&]+)(\d{1,2})([A-Z]{3})(\d+)(CE|PE)$', zerodha_symbol)
         
         if match:

@@ -2309,7 +2309,7 @@ class BaseStrategy:
         try:
             # 🎯 PRIMARY: Get options premium from TrueData cache (USER PREFERENCE)
             try:
-                from data.truedata_client import live_market_data
+                from data.truedata_client import live_market_data, subscribe_to_symbols
                 from config.options_symbol_mapping import convert_zerodha_to_truedata_options
                 
                 # Convert Zerodha format to TrueData format for lookup
@@ -2324,7 +2324,27 @@ class BaseStrategy:
                         logger.info(f"✅ Got options premium from TrueData: {options_symbol} ({truedata_symbol}) = ₹{premium}")
                         return float(premium)
                 else:
-                    logger.debug(f"📊 TrueData lookup failed: {truedata_symbol} not in cache")
+                    # 🚨 CRITICAL FIX: Subscribe to options symbol on-demand if not in cache
+                    logger.info(f"📊 ON-DEMAND SUBSCRIBE: {truedata_symbol} not in cache, subscribing now...")
+                    try:
+                        # Subscribe to the specific options symbol
+                        if subscribe_to_symbols([truedata_symbol]):
+                            logger.info(f"✅ Subscribed to {truedata_symbol}, waiting for data...")
+                            # Give it a moment for data to arrive (non-blocking check)
+                            import time
+                            for retry in range(3):  # Try 3 times with short waits
+                                time.sleep(0.5)  # Wait 500ms
+                                if truedata_symbol in live_market_data:
+                                    options_data = live_market_data[truedata_symbol]
+                                    premium = options_data.get('ltp', options_data.get('price', options_data.get('last_price')))
+                                    if premium and premium > 0:
+                                        logger.info(f"✅ Got options premium after subscription: {options_symbol} = ₹{premium}")
+                                        return float(premium)
+                            logger.warning(f"⚠️ No data received yet for {truedata_symbol} after subscription")
+                        else:
+                            logger.warning(f"⚠️ Could not subscribe to {truedata_symbol}")
+                    except Exception as sub_e:
+                        logger.error(f"Error subscribing to {truedata_symbol}: {sub_e}")
             except Exception as e:
                 logger.debug(f"Could not access TrueData for {options_symbol}: {e}")
             
