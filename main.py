@@ -1080,18 +1080,6 @@ async def get_strategy_analytics():
     except Exception as e:
         logger.error(f"Error in strategy analytics endpoint: {e}")
         return { 'success': False, 'error': str(e) }
-        
-    except Exception as e:
-        logger.error(f"Error getting daily PnL: {e}")
-        return {
-            "success": False,
-            "data": {
-                "total_pnl": 0.0,
-                "breakdown": [],
-                "error": str(e),
-                "last_updated": datetime.now().isoformat()
-            }
-        }
 
 @app.get("/api/v1/recommendations", tags=["dashboard"])
 async def get_recommendations():
