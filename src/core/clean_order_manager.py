@@ -72,14 +72,25 @@ class OrderManager:
                     raise Exception("Order failed risk validation")
             
             # 🛡️ Check order rate limits to prevent retry loops
-            rate_check = await self.rate_limiter.can_place_order(
-                order_data['symbol'], 
-                order_data['side'], 
-                order_data['quantity'], 
-                order_data.get('price', 0)
+            # BUT NEVER BLOCK EMERGENCY EXITS!
+            is_emergency = (
+                order_data.get('tag') == 'EMERGENCY_EXIT' or
+                order_data.get('metadata', {}).get('bypass_all_checks', False) or
+                order_data.get('metadata', {}).get('closing_action', False) or
+                order_data.get('metadata', {}).get('management_action', False)
             )
-            if not rate_check['allowed']:
-                raise Exception(f"Order rate limited: {rate_check['message']}")
+            
+            if not is_emergency:
+                rate_check = await self.rate_limiter.can_place_order(
+                    order_data['symbol'], 
+                    order_data['side'], 
+                    order_data['quantity'], 
+                    order_data.get('price', 0)
+                )
+                if not rate_check['allowed']:
+                    raise Exception(f"Order rate limited: {rate_check['message']}")
+            else:
+                logger.warning(f"🚨 EMERGENCY ORDER for {order_data['symbol']} - bypassing rate limits")
             
             # Place order via Zerodha
             zerodha_params = {

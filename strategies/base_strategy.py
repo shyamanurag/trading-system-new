@@ -264,18 +264,44 @@ class BaseStrategy:
     async def manage_existing_positions(self, market_data: Dict):
         """🎯 COMPREHENSIVE POSITION MANAGEMENT - Active monitoring and management"""
         try:
-            # CRITICAL FIX: Check REAL Zerodha positions for stop loss management
+            # 🚨 CRITICAL FIX: Sync local positions with REAL Zerodha positions
+            # Remove positions that no longer exist in broker
             from src.core.orchestrator import get_orchestrator_instance
             orchestrator = get_orchestrator_instance()
+            real_symbols_with_positions = set()
+            
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
                 real_positions = await orchestrator.zerodha_client.get_positions()
                 if real_positions:
+                    # First, collect all symbols that have real positions
+                    for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
+                        for pos in pos_list:
+                            symbol = pos.get('tradingsymbol')
+                            qty = pos.get('quantity', 0)
+                            if qty != 0:  # Only consider non-zero positions
+                                real_symbols_with_positions.add(symbol)
+                    
+                    # Clean up local positions that don't exist in broker
+                    symbols_to_remove = []
+                    for symbol in list(self.active_positions.keys()):
+                        if symbol not in real_symbols_with_positions:
+                            logger.warning(f"🧹 CLEANING STALE POSITION: {symbol} (not in broker)")
+                            symbols_to_remove.append(symbol)
+                    
+                    for symbol in symbols_to_remove:
+                        del self.active_positions[symbol]
+                    
+                    # Now process emergency exits for REAL positions
                     for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
                         for pos in pos_list:
                             symbol = pos.get('tradingsymbol')
                             qty = pos.get('quantity', 0)
                             avg_price = pos.get('average_price', 0)
                             pnl = pos.get('pnl', 0) or pos.get('unrealised', 0) or 0
+                            
+                            # Skip if no actual position (qty = 0 means position closed)
+                            if qty == 0:
+                                continue
                             
                             # EMERGENCY: Exit ANY position with >₹1000 loss or >2% loss
                             loss_threshold_amount = -1000  # ₹1000 loss
