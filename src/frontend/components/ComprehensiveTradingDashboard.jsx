@@ -292,6 +292,7 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
             try {
                 if (balanceRes.status === 'fulfilled' && balanceRes.value.ok) {
                     const balJson = await balanceRes.value.json();
+                    console.log('Balance response:', balJson); // Add this line
                     dashboardData.systemMetrics.aum = safeNumber(balJson?.available_cash || dashboardData.systemMetrics.aum);
                 }
             } catch {}

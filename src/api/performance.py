@@ -55,10 +55,11 @@ async def get_daily_pnl_history(
         logger.info(f"📊 Fetching {days} days of historical P&L data")
         
         # Import here to avoid circular imports  
-        from src.core.database import get_db_connection
+        from src.core.database import get_session
         
-        async with get_db_connection() as conn:
-            query = """
+        session = get_session()
+        
+        query = """
             SELECT DATE(created_at) as date,
                    SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END) as profit,
                    SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END) as loss,
@@ -71,7 +72,7 @@ async def get_daily_pnl_history(
             ORDER BY date DESC
             """
             
-            result = await conn.fetch(query, days)
+            result = await session.execute(query, days)
             
             daily_history = []
             for row in result:

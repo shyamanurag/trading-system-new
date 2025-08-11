@@ -119,6 +119,7 @@ const TodaysTradeReport = () => {
                                 const posRes = await fetchWithAuth('/api/v1/positions');
                                 if (posRes.ok) {
                                     const posJson = await posRes.json();
+                                    console.log('Positions data:', posJson); // Add logging
                                     const posLists = [];
                                     if (posJson?.data) posLists.push(...posJson.data);
                                     if (posJson?.positions?.net) posLists.push(...posJson.positions.net);
@@ -130,6 +131,7 @@ const TodaysTradeReport = () => {
                                         const ltp = p.last_price || p.ltp || p.close || 0;
                                         if (sym && ltp) ltpMap.set(sym, ltp);
                                     }
+                                    console.log('LTP Map:', Object.fromEntries(ltpMap)); // Add logging
 
                                     trades = trades.map(t => {
                                         const ltp = ltpMap.get(t.symbol) ?? t.current_price ?? t.entry_price;
