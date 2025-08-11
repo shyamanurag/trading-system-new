@@ -1558,20 +1558,20 @@ class BaseStrategy:
             if is_index:
                 logger.info(f"🎯 INDEX SIGNAL: {symbol} → OPTIONS (F&O enabled)")
                 return 'OPTIONS'
-            elif is_high_confidence and confidence >= 0.70:  # Lowered threshold for more options
+            elif is_high_confidence and confidence >= 0.80:  # High confidence for options
                 logger.info(f"🎯 HIGH CONFIDENCE: {symbol} → OPTIONS (F&O enabled, conf={confidence:.2f})")
                 return 'OPTIONS'
-            elif volatility_score >= 0.7 and confidence >= 0.65:  # More aggressive options trading
-                logger.info(f"🎯 GOOD VOLATILITY: {symbol} → OPTIONS (vol={volatility_score:.2f}, conf={confidence:.2f})")
+            elif volatility_score >= 0.8 and confidence >= 0.75:  # High volatility + good confidence
+                logger.info(f"🎯 HIGH VOLATILITY: {symbol} → OPTIONS (vol={volatility_score:.2f}, conf={confidence:.2f})")
                 return 'OPTIONS'
-            elif is_scalping and confidence >= 0.60:  # Enable options for scalping
+            elif is_scalping and confidence >= 0.75:  # Scalping needs good confidence for options
                 logger.info(f"🎯 SCALPING SIGNAL: {symbol} → OPTIONS (conf={confidence:.2f})")
                 return 'OPTIONS'
-            elif confidence >= 0.55:  # Try options for medium confidence too
-                logger.info(f"🎯 MEDIUM CONFIDENCE: {symbol} → OPTIONS (testing F&O, conf={confidence:.2f})")
+            elif confidence >= 0.70:  # Medium-high confidence → Try F&O with smaller position
+                logger.info(f"🎯 MEDIUM-HIGH CONFIDENCE: {symbol} → OPTIONS (moderate risk, conf={confidence:.2f})")
                 return 'OPTIONS'
             else:
-                logger.info(f"🎯 LOW CONFIDENCE: {symbol} → EQUITY (safer approach, conf={confidence:.2f})")
+                logger.info(f"🎯 BELOW THRESHOLD: {symbol} → EQUITY (conf={confidence:.2f} < 0.70)")
                 return 'EQUITY'
                 
         except Exception as e:
