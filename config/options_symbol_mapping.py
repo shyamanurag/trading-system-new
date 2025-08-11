@@ -104,8 +104,11 @@ def convert_zerodha_to_truedata_options(zerodha_symbol: str) -> str:
             # Format as TrueData: YYMMDD
             truedata_date = f"{year % 100:02d}{month:02d}{day:02d}"
             
-            logger.debug(f"📊 Zerodha→TrueData: {zerodha_symbol} → {underlying}{truedata_date}{strike}{option_type}")
-            return f"{underlying}{truedata_date}{strike}{option_type}"
+            # Ensure strike has 5 digits for TrueData format
+            strike_padded = str(strike).zfill(5)
+            
+            logger.debug(f"📊 Zerodha→TrueData: {zerodha_symbol} → {underlying}{truedata_date}{strike_padded}{option_type}")
+            return f"{underlying}{truedata_date}{strike_padded}{option_type}"
         
         # Fallback: Try without year (old format)
         match = re.search(r'^([A-Z&]+)(\d{1,2})([A-Z]{3})(\d+)(CE|PE)$', zerodha_symbol)
@@ -131,7 +134,10 @@ def convert_zerodha_to_truedata_options(zerodha_symbol: str) -> str:
             # Format as TrueData: YYMMDD
             truedata_date = f"{year % 100:02d}{month:02d}{day:02d}"
             
-            return f"{underlying}{truedata_date}{strike}{option_type}"
+            # Ensure strike has 5 digits for TrueData format
+            strike_padded = str(strike).zfill(5)
+            
+            return f"{underlying}{truedata_date}{strike_padded}{option_type}"
         else:
             logger.warning(f"Could not parse Zerodha symbol: {zerodha_symbol}")
             return zerodha_symbol
