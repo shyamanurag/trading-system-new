@@ -897,15 +897,32 @@ async def get_dashboard_summary():
                     # Try multiple P&L field names (Zerodha uses different fields)
                     total_pnl = 0.0
                     for p in all_positions:
-                        pnl = 0.0
-                        # Try different possible P&L field names
-                        for field in ['pnl', 'unrealised', 'realised', 'day_pnl', 'net_pnl', 'm2m']:
-                            if field in p and p[field] is not None:
-                                try:
-                                    pnl += float(p[field])
-                                except (ValueError, TypeError):
-                                    pass
-                        total_pnl += pnl
+                        # Skip positions with zero quantity
+                        if float(p.get('quantity', 0)) == 0:
+                            continue
+                            
+                        # Calculate P&L from current price and average price if available
+                        qty = float(p.get('quantity', 0))
+                        ltp = float(p.get('last_price', 0) or p.get('ltp', 0) or 0)
+                        avg_price = float(p.get('average_price', 0) or p.get('buy_price', 0) or 0)
+                        
+                        if qty != 0 and ltp > 0 and avg_price > 0:
+                            # Calculate unrealized P&L
+                            position_pnl = (ltp - avg_price) * qty
+                            total_pnl += position_pnl
+                        else:
+                            # Fallback to pre-calculated P&L fields
+                            pnl = 0.0
+                            # Try different possible P&L field names
+                            for field in ['pnl', 'unrealised', 'realised', 'day_pnl', 'net_pnl', 'm2m']:
+                                if field in p and p[field] is not None:
+                                    try:
+                                        pnl = float(p[field])
+                                        if pnl != 0:
+                                            break  # Use first non-zero P&L value
+                                    except (ValueError, TypeError):
+                                        pass
+                            total_pnl += pnl
                     
                     daily_pnl = total_pnl
             except Exception as e:
@@ -2318,6 +2335,78 @@ async def get_users():
             "success": False,
             "users": [],
             "total": 0,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+# FRONTEND FIX: Add broker users endpoint that frontend expects
+@app.get("/api/v1/control/users/broker", tags=["users"])
+async def get_broker_users():
+    """Get broker users for frontend UserManagementDashboard"""
+    try:
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        # Get real trading data from Zerodha
+        total_trades = 0
+        daily_pnl = 0.0
+        current_balance = 1000000.0  # Default
+        
+        if orchestrator and orchestrator.zerodha_client:
+            try:
+                # Get positions for P&L
+                positions = await orchestrator.zerodha_client.get_positions()
+                if positions:
+                    # Calculate P&L from all positions
+                    for pos_list in [positions.get('net', []), positions.get('day', [])]:
+                        for pos in pos_list:
+                            if pos.get('quantity', 0) != 0:
+                                # Try multiple P&L fields
+                                pnl = pos.get('pnl', 0) or pos.get('unrealised', 0) or pos.get('realised', 0) or 0
+                                daily_pnl += float(pnl)
+                
+                # Get orders for trade count
+                orders = await orchestrator.zerodha_client.get_orders()
+                if orders:
+                    today = datetime.now().date()
+                    total_trades = len([o for o in orders if o.get('status') == 'COMPLETE'])
+                    
+                # Get margins for balance
+                margins = await orchestrator.zerodha_client.get_margins()
+                if margins and 'equity' in margins:
+                    available = margins['equity'].get('available', {})
+                    if 'cash' in available:
+                        current_balance = float(available['cash'])
+                        
+            except Exception as e:
+                logger.warning(f"Error fetching Zerodha data: {e}")
+        
+        return {
+            "success": True,
+            "users": [
+                {
+                    "id": "QSW899",
+                    "username": "QSW899",
+                    "email": "trader@zerodha.com",
+                    "status": "active",
+                    "trading_enabled": True,
+                    "broker": "Zerodha",
+                    "total_trades": total_trades,
+                    "total_pnl": daily_pnl,
+                    "current_balance": current_balance,
+                    "win_rate": 0.0,
+                    "open_trades": 0,
+                    "created_at": datetime.now().isoformat()
+                }
+            ],
+            "total": 1,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting broker users: {e}")
+        return {
+            "success": False,
+            "users": [],
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
