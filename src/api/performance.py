@@ -71,28 +71,28 @@ AND status = 'executed'
 GROUP BY DATE(created_at)
 ORDER BY date DESC
 """
+
+        result = await session.execute(query, days)
+
+        daily_history = []
+        for row in result:
+            daily_history.append({
+                'date': row['date'].isoformat() if row['date'] else None,
+                'total_pnl': float(row['total_pnl']) if row['total_pnl'] else 0,
+                'profit': float(row['profit']) if row['profit'] else 0,
+                'loss': float(row['loss']) if row['loss'] else 0,
+                'trades': int(row['trades']) if row['trades'] else 0
+            })
             
-            result = await session.execute(query, days)
+        logger.info(f"✅ Retrieved {len(daily_history)} days of P&L history")
             
-            daily_history = []
-            for row in result:
-                daily_history.append({
-                    'date': row['date'].isoformat() if row['date'] else None,
-                    'total_pnl': float(row['total_pnl']) if row['total_pnl'] else 0,
-                    'profit': float(row['profit']) if row['profit'] else 0,
-                    'loss': float(row['loss']) if row['loss'] else 0,
-                    'trades': int(row['trades']) if row['trades'] else 0
-                })
-            
-            logger.info(f"✅ Retrieved {len(daily_history)} days of P&L history")
-            
-            return {
-                "success": True,
-                "daily_history": daily_history,
-                "total_days": len(daily_history),
-                "timestamp": datetime.now().isoformat(),
-                "source": "real_database"
-            }
+        return {
+            "success": True,
+            "daily_history": daily_history,
+            "total_days": len(daily_history),
+            "timestamp": datetime.now().isoformat(),
+            "source": "real_database"
+        }
             
     except Exception as e:
         logger.error(f"Error getting daily P&L history: {e}")
