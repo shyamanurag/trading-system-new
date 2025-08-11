@@ -60,17 +60,17 @@ async def get_daily_pnl_history(
         session = get_session()
         
         query = """
-            SELECT DATE(created_at) as date,
-                   SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END) as profit,
-                   SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END) as loss,
-                   SUM(pnl) as total_pnl,
-                   COUNT(*) as trades
-            FROM paper_trades 
-            WHERE created_at >= NOW() - INTERVAL %s DAY
-            AND status = 'executed'
-            GROUP BY DATE(created_at)
-            ORDER BY date DESC
-            """
+SELECT DATE(created_at) as date,
+       SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END) as profit,
+       SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END) as loss,
+       SUM(pnl) as total_pnl,
+       COUNT(*) as trades
+FROM paper_trades 
+WHERE created_at >= NOW() - INTERVAL %s DAY
+AND status = 'executed'
+GROUP BY DATE(created_at)
+ORDER BY date DESC
+"""
             
             result = await session.execute(query, days)
             
@@ -229,5 +229,4 @@ async def get_risk_metrics(
         }
     except Exception as e:
         logger.error(f"Error getting risk metrics: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 
         raise HTTPException(status_code=500, detail=str(e)) 
