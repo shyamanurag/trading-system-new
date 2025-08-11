@@ -2015,7 +2015,9 @@ class BaseStrategy:
             preference: "nearest_weekly", "nearest_monthly", "next_weekly", "max_time_decay"
         """
         try:
-            available_expiries = await self._get_available_expiries_from_zerodha(underlying_symbol)
+            # Map TrueData symbol to Zerodha symbol before fetching expiries
+            zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+            available_expiries = await self._get_available_expiries_from_zerodha(zerodha_symbol)
         except Exception as e:
             logger.error(f"Error fetching expiries from Zerodha: {e}")
             available_expiries = []
@@ -2042,34 +2044,33 @@ class BaseStrategy:
         # Sort by date
         future_expiries.sort(key=lambda x: x['date'])
         
-        if preference == "nearest_weekly":
-            # Get the nearest expiry (usually weekly)
-            nearest = future_expiries[0]
-        elif preference == "nearest_monthly":
-            # Try to find monthly expiry (usually last Thursday of month)
-            monthly_expiries = [exp for exp in future_expiries if exp.get('is_monthly', False)]
-            nearest = monthly_expiries[0] if monthly_expiries else future_expiries[0]
-        elif preference == "next_weekly":
-            # 🎯 USER REQUIREMENT: Next expiry minimum (not nearest)
-            # Skip the nearest expiry and use the next one for better liquidity
-            if len(future_expiries) > 1:
-                nearest = future_expiries[1]  # Second expiry (next minimum)
-                logger.info(f"✅ Selected NEXT expiry (not nearest) for liquidity: {nearest['formatted']}")
-            else:
-                nearest = future_expiries[0]  # Fallback if only one available
-                logger.warning(f"⚠️ Only one expiry available, using: {nearest['formatted']}")
-        else:  # max_time_decay
-            # Choose expiry with optimal time decay (not too near, not too far)
-            optimal_days = 7  # 1 week optimal
-            best_expiry = future_expiries[0]
-            best_diff = abs((best_expiry['date'] - today).days - optimal_days)
+        # 🎯 SMART EXPIRY SELECTION: Indices vs Stocks
+        # Map TrueData symbols to Zerodha symbols for proper identification
+        zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+        is_index = zerodha_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX']
+        
+        if is_index:
+            # INDICES: Skip immediate expiry (too little time), use next one
+            days_to_first_expiry = (future_expiries[0]['date'] - today).days
             
-            for expiry in future_expiries:
-                days_diff = abs((expiry['date'] - today).days - optimal_days)
-                if days_diff < best_diff:
-                    best_diff = days_diff
-                    best_expiry = expiry
-            nearest = best_expiry
+            if days_to_first_expiry <= 2 and len(future_expiries) > 1:
+                # Skip very near expiry (0-2 days), use next
+                nearest = future_expiries[1]
+                logger.info(f"📊 INDEX {zerodha_symbol} (from {underlying_symbol}): Skipping immediate expiry ({days_to_first_expiry} days), using next ({(nearest['date'] - today).days} days)")
+            else:
+                # First expiry has enough time
+                nearest = future_expiries[0]
+                logger.info(f"📊 INDEX {zerodha_symbol} (from {underlying_symbol}): Using nearest expiry ({days_to_first_expiry} days)")
+        else:
+            # STOCKS: Only have monthly expiries, use the nearest one
+            nearest = future_expiries[0]
+            days_to_expiry = (nearest['date'] - today).days
+            logger.info(f"📊 STOCK {zerodha_symbol}: Using monthly expiry ({days_to_expiry} days)")
+            
+        # Override with preference if specified
+        if preference == "next_weekly" and len(future_expiries) > 1:
+            nearest = future_expiries[1]
+            logger.info(f"   Override: Using next expiry as requested")
         
         # 🔧 CRITICAL FIX: Convert to Zerodha format (25JUL instead of 31JUL25)
         exp_date = nearest['date']
