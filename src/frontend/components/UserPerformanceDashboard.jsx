@@ -185,7 +185,7 @@ const UserPerformanceDashboard = ({ tradingData }) => {
 
                 // FIXED: Fetch REAL daily P&L data from API - NO MOCK DATA
                 try {
-                    const dailyPnLResponse = await fetchWithAuth('/api/v1/performance/daily-pnl-history');
+                    const dailyPnLResponse = await fetchWithAuth('/api/v1/dashboard/daily-pnl');
                     
                     if (dailyPnLResponse.ok) {
                         const realDailyData = await dailyPnLResponse.json();

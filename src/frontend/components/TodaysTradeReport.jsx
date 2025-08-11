@@ -138,6 +138,7 @@ const TodaysTradeReport = () => {
                                         const isBuy = t.side === 'BUY';
                                         const pnl = (isBuy ? (ltp - t.entry_price) : (t.entry_price - ltp)) * t.quantity;
                                         const pnlPct = t.entry_price > 0 ? (pnl / (t.entry_price * t.quantity)) * 100 : 0;
+                                        console.log(`Calculating PNL for ${t.symbol}: ltp=${ltp}, entry=${t.entry_price}, qty=${t.quantity}, side=${t.side}, pnl=${pnl}`);
                                         return { ...t, current_price: ltp, pnl, pnl_percent: pnlPct };
                                     });
                                 }

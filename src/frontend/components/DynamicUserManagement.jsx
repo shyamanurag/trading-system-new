@@ -131,7 +131,7 @@ const DynamicUserManagement = () => {
                     }
 
                     // Load dashboard data - assuming correct endpoint
-                    const dashResponse = await fetchWithAuth(`/api/v1/users/dashboard?user_id=${user.id}`);
+                    const dashResponse = await fetchWithAuth(`/api/v1/users/performance?user_id=${user.id}`);
                     if (dashResponse.ok) {
                         const text = await dashResponse.text();
                         try {
