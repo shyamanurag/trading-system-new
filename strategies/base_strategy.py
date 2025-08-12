@@ -1651,7 +1651,7 @@ class BaseStrategy:
             logger.info(f"   Entry Price: ₹{entry_price} (underlying)")
             
             # 🎯 CRITICAL FIX: Get actual options premium from TrueData instead of stock price
-            options_entry_price = self._get_options_premium(options_symbol, entry_price, option_type)
+            options_entry_price = self._get_options_premium(options_symbol, symbol)
             
             # 🔍 DEBUG: Log premium fetching
             logger.info(f"   Options Premium: ₹{options_entry_price} (vs underlying ₹{entry_price})")
