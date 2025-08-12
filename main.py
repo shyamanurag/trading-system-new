@@ -1961,36 +1961,87 @@ async def get_realtime_balance():
 @app.get("/api/trades/live")
 async def get_live_trades_direct():
     try:
-        trades = zerodha_client.get_orders()  # Assuming this gets list of dicts
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
         
-        enriched_trades = []
-        for trade in trades:
-            symbol = trade.get('symbol', trade.get('tradingsymbol', ''))
+        if not orchestrator or not orchestrator.zerodha_client:
+            logger.warning("Zerodha client not available for live trades")
+            return {"trades": [], "success": False, "error": "No Zerodha client"}
+        
+        # Get ACTUAL live orders from Zerodha API
+        logger.info("📋 Fetching live orders from Zerodha...")
+        orders = await orchestrator.zerodha_client.get_orders()
+        
+        if not orders:
+            return {"trades": [], "success": True}
+        
+        # Filter today's executed orders
+        live_trades = []
+        today = datetime.now().date()
+        
+        for order in orders:
+            if order.get('status') != 'COMPLETE':
+                continue
             
-            # Fetch live LTP
-            ltp = get_ltp_from_truedata(symbol)  # Implement or use existing
-            if not ltp or ltp <= 0:
-                ltp = zerodha_client.get_options_ltp(symbol) if 'CE' in symbol or 'PE' in symbol else zerodha_client.kite.ltp(f"NSE:{symbol}").get(f"NSE:{symbol}", {}).get('last_price', 0)
+            order_timestamp = order.get('order_timestamp')
+            if order_timestamp:
+                if isinstance(order_timestamp, datetime):
+                    order_date = order_timestamp.date()
+                elif isinstance(order_timestamp, str):
+                    order_date = datetime.fromisoformat(order_timestamp.replace('Z', '+00:00')).date()
+                else:
+                    continue
+                
+                if order_date != today:
+                    continue
             
-            entry_price = trade.get('entry_price', trade.get('average_price', 0))
-            quantity = trade.get('quantity', 0)
-            side = trade.get('side', trade.get('transaction_type', ''))
+            symbol = order.get('tradingsymbol', 'UNKNOWN')
+            side = order.get('transaction_type', 'UNKNOWN').lower()
+            quantity = int(order.get('filled_quantity', 0))
+            entry_price = float(order.get('average_price', 0))
             
-            current_price = ltp if ltp > 0 else entry_price
-            pnl = (current_price - entry_price) * quantity if side == 'BUY' else (entry_price - current_price) * quantity
+            # Fetch live LTP from TrueData
+            from data.truedata_client import get_ltp
+            ltp = get_ltp(symbol)
+            
+            # Fallback to Zerodha if zero
+            if ltp <= 0:
+                full_symbol = f"NSE:{symbol}"
+                try:
+                    quote = orchestrator.zerodha_client.kite.ltp(full_symbol)
+                    ltp = quote.get(full_symbol, {}).get('last_price', entry_price)
+                except:
+                    ltp = entry_price
+            
+            # Calculate P&L
+            pnl = (ltp - entry_price) * quantity if side == 'buy' else (entry_price - ltp) * quantity
             pnl_percent = (pnl / (entry_price * quantity)) * 100 if entry_price > 0 and quantity > 0 else 0
             
-            enriched_trade = {
-                **trade,
-                'current_price': current_price,
-                'pnl': pnl,
-                'pnl_percent': pnl_percent
+            trade_info = {
+                "id": order.get('order_id'),
+                "trade_id": order.get('order_id'),
+                "symbol": symbol,
+                "side": side,
+                "trade_type": side,
+                "quantity": quantity,
+                "entry_price": entry_price,
+                "current_price": ltp,
+                "price": entry_price,
+                "pnl": pnl,
+                "pnl_percent": pnl_percent,
+                "status": "EXECUTED",
+                "strategy": "Zerodha",
+                "commission": 0,
+                "entry_time": order.get('order_timestamp'),
+                "executed_at": order.get('order_timestamp'),
+                "timestamp": order.get('order_timestamp')
             }
-            enriched_trades.append(enriched_trade)
+            live_trades.append(trade_info)
         
-        return {"trades": enriched_trades, "success": True}
+        logger.info(f"📊 Retrieved {len(live_trades)} live trades")
+        return {"trades": live_trades, "success": True}
     except Exception as e:
-        logger.error(f"Error fetching live trades: {e}")
+        logger.error(f"Error getting live trades: {str(e)}")
         return {"trades": [], "success": False, "error": str(e)}
 
 @app.get("/api/v1/strategies", tags=["strategies"])  
