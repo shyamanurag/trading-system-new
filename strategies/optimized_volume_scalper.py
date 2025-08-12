@@ -547,3 +547,13 @@ class OptimizedVolumeScalper(BaseStrategy):
             return round_price_to_tick(price, 0.05)
         except ImportError:
             return round(price / 0.05) * 0.05
+
+    def get_ltp(self, symbol: str) -> float:
+        """Get last traded price from TrueData cache"""
+        try:
+            from data.truedata_client import live_market_data
+            data = live_market_data.get(symbol, {})
+            return data.get('ltp', data.get('price', data.get('last_price', 0.0)))
+        except Exception as e:
+            logger.error(f"Error getting LTP for {symbol}: {e}")
+            return 0.0
