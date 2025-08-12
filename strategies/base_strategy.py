@@ -2319,33 +2319,45 @@ class BaseStrategy:
             return 0.0
         
         try:
-            # NEW: Primary - Zerodha LTP
-            zerodha_ltp = self.zerodha_client.get_options_ltp(options_symbol)
-            if zerodha_ltp and zerodha_ltp > 0:
-                logger.info(f"✅ Primary Zerodha LTP for {options_symbol}: ₹{zerodha_ltp}")
-                return zerodha_ltp
+            # NEW: Dynamic fetch for zerodha_client if missing
+            if not hasattr(self, 'zerodha_client') or self.zerodha_client is None:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                if orchestrator:
+                    self.zerodha_client = orchestrator.zerodha_client
+                    logger.info(f"✅ Dynamically fetched Zerodha client for {self.name}")
+                else:
+                    logger.warning(f"⚠️ Could not fetch Zerodha client dynamically - skipping Zerodha fallback")
+            
+            # Primary - Zerodha LTP
+            if self.zerodha_client:
+                zerodha_ltp = self.zerodha_client.get_options_ltp(options_symbol)
+                if zerodha_ltp and zerodha_ltp > 0:
+                    logger.info(f"✅ Primary Zerodha LTP for {options_symbol}: ₹{zerodha_ltp}")
+                    return zerodha_ltp
             
             # Primary Fallback: Zerodha bid/ask average
-            try:
-                full_symbol = f"NFO:{options_symbol}"
-                quote = self.zerodha_client.kite.quote(full_symbol)
-                if quote and full_symbol in quote:
-                    data = quote[full_symbol]
-                    bid = data.get('depth', {}).get('buy', [{}])[0].get('price', 0)
-                    ask = data.get('depth', {}).get('sell', [{}])[0].get('price', 0)
-                    if bid > 0 and ask > 0:
-                        avg_price = (bid + ask) / 2
-                        logger.info(f"✅ Zerodha bid/ask average (primary fallback) for {options_symbol}: ₹{avg_price} (bid: ₹{bid}, ask: ₹{ask})")
-                        return avg_price
-                    elif bid > 0:
-                        logger.info(f"✅ Using Zerodha bid price (primary fallback) for {options_symbol}: ₹{bid}")
-                        return bid
-                    elif ask > 0:
-                        logger.info(f"✅ Using Zerodha ask price (primary fallback) for {options_symbol}: ₹{ask}")
-                        return ask
-                logger.warning(f"⚠️ Zerodha quote primary fallback returned zero for {options_symbol}")
-            except Exception as quote_err:
-                logger.warning(f"⚠️ Zerodha quote primary fallback failed for {options_symbol}: {quote_err}")
+            if self.zerodha_client:
+                try:
+                    full_symbol = f"NFO:{options_symbol}"
+                    quote = self.zerodha_client.kite.quote(full_symbol)
+                    if quote and full_symbol in quote:
+                        data = quote[full_symbol]
+                        bid = data.get('depth', {}).get('buy', [{}])[0].get('price', 0)
+                        ask = data.get('depth', {}).get('sell', [{}])[0].get('price', 0)
+                        if bid > 0 and ask > 0:
+                            avg_price = (bid + ask) / 2
+                            logger.info(f"✅ Zerodha bid/ask average (primary fallback) for {options_symbol}: ₹{avg_price} (bid: ₹{bid}, ask: ₹{ask})")
+                            return avg_price
+                        elif bid > 0:
+                            logger.info(f"✅ Using Zerodha bid price (primary fallback) for {options_symbol}: ₹{bid}")
+                            return bid
+                        elif ask > 0:
+                            logger.info(f"✅ Using Zerodha ask price (primary fallback) for {options_symbol}: ₹{ask}")
+                            return ask
+                    logger.warning(f"⚠️ Zerodha quote primary fallback returned zero for {options_symbol}")
+                except Exception as quote_err:
+                    logger.warning(f"⚠️ Zerodha quote primary fallback failed for {options_symbol}: {quote_err}")
             
             # Secondary: TrueData cache
             premium = self.get_ltp(options_symbol)
@@ -2791,7 +2803,7 @@ class BaseStrategy:
                 return 0
             max_value = available_capital * equity_pct  # Now 25%
             max_shares = int(max_value / entry_price)
-            min_margin_per_trade = float(getattr(self, 'min_margin_per_trade', 10000.0))
+            min_margin_per_trade = 5000.0  # Lowered to 5000 for testing to allow more trades
             if (max_shares * entry_price) < min_margin_per_trade:
                 return 0
             return max(1, max_shares)  # At least 1 share
