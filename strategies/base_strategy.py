@@ -2800,16 +2800,17 @@ class BaseStrategy:
                 desired_value = available_capital * trade_pct
                 max_value = available_capital * trade_pct_cap
                 
-                # 1 lot only if within cap; do not pyramid in this path
-                if cost_per_lot <= max_value:
-                    logger.info(f"✅ F&O ORDER: {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
+                # NEW: Remove min barrier for options - allow 1 lot if affordable, ignore pct caps for min
+                if cost_per_lot <= available_capital:
+                    logger.info(f"✅ OPTIONS ORDER (no min barrier): {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
                     logger.info(f"   💰 Cost: ₹{cost_per_lot:,.0f} / Available: ₹{available_capital:,.0f}")
                     return base_lot_size
                 else:
-                    logger.warning(f"❌ F&O REJECTED: {underlying_symbol} too expensive (₹{cost_per_lot:,.0f} > {trade_pct_cap*100:.0f}% of ₹{available_capital:,.0f})")
+                    logger.warning(f"❌ OPTIONS REJECTED: Insufficient capital for 1 lot of {underlying_symbol} (₹{cost_per_lot:,.0f} > available ₹{available_capital:,.0f})")
                     return 0
+            
             else:
-                # 🎯 EQUITY: Use share-based calculation
+                # 🎯 EQUITY: Use share-based calculation (keep original logic with pct caps)
                 if entry_price <= 0:
                     return 0
                 desired_value = available_capital * trade_pct
