@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from strategies.base_strategy import BaseStrategy
+import pytz
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,16 @@ class OptimizedVolumeScalper(BaseStrategy):
         self.volatility_history = {}
         self.order_flow_history = {}
         self.position_entry_times = {}
+        
+    def is_market_open(self) -> bool:
+        """Check if market is currently open (IST)"""
+        now = datetime.now(pytz.timezone('Asia/Kolkata'))
+        weekday = now.weekday()
+        if weekday >= 5:  # Saturday/Sunday
+            return False
+        market_open = now.replace(hour=9, minute=15, second=0)
+        market_close = now.replace(hour=15, minute=30, second=0)
+        return market_open <= now <= market_close
         
     async def initialize(self):
         """Initialize the strategy"""
