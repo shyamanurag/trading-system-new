@@ -2322,24 +2322,52 @@ class BaseStrategy:
             # Primary: TrueData cache
             premium = self.get_ltp(options_symbol)
             if premium > 0:
+                logger.info(f"✅ TrueData cache LTP for {options_symbol}: ₹{premium}")
                 return premium
             
-            # Subscribe and wait if not in cache
+            # Subscribe if not in cache
             if options_symbol not in self.truedata_symbols:
+                logger.info(f"📡 Subscribing to {options_symbol} on TrueData...")
                 self.truedata_client.subscribe([options_symbol])
-                time.sleep(1.0)  # Wait for data
+                self.truedata_symbols.append(options_symbol)  # Track subscribed symbols
+                
+                # Wait with multiple checks (up to 5 seconds)
+                for attempt in range(5):
+                    time.sleep(1.0)
+                    premium = self.get_ltp(options_symbol)
+                    if premium > 0:
+                        logger.info(f"✅ TrueData LTP after subscription (attempt {attempt+1}): ₹{premium} for {options_symbol}")
+                        return premium
+                logger.warning(f"⚠️ TrueData LTP still zero after 5s wait for {options_symbol}")
             
-            premium = self.get_ltp(options_symbol)
-            if premium > 0:
-                return premium
-            
-            # NEW: Fallback to Zerodha quote API
+            # Fallback 1: Zerodha LTP
             zerodha_ltp = self.zerodha_client.get_options_ltp(options_symbol)
             if zerodha_ltp and zerodha_ltp > 0:
-                logger.info(f"✅ Fallback Zerodha LTP for {options_symbol}: ₹{zerodha_ltp}")
+                logger.info(f"✅ Zerodha fallback LTP for {options_symbol}: ₹{zerodha_ltp}")
                 return zerodha_ltp
             
-            logger.warning(f"⚠️ NO LTP AVAILABLE for {options_symbol} - passing to orchestrator for validation")
+            # NEW: Fallback 2: Use bid/ask average from Zerodha quote if LTP zero (for low liquidity)
+            try:
+                full_symbol = f"NFO:{options_symbol}"
+                quote = self.zerodha_client.kite.quote(full_symbol)
+                if quote and full_symbol in quote:
+                    data = quote[full_symbol]
+                    bid = data.get('depth', {}).get('buy', [{}])[0].get('price', 0)
+                    ask = data.get('depth', {}).get('sell', [{}])[0].get('price', 0)
+                    if bid > 0 and ask > 0:
+                        avg_price = (bid + ask) / 2
+                        logger.info(f"✅ Zerodha bid/ask average for {options_symbol}: ₹{avg_price} (bid: ₹{bid}, ask: ₹{ask})")
+                        return avg_price
+                    elif bid > 0:
+                        logger.info(f"✅ Using Zerodha bid price as fallback for {options_symbol}: ₹{bid}")
+                        return bid
+                    elif ask > 0:
+                        logger.info(f"✅ Using Zerodha ask price as fallback for {options_symbol}: ₹{ask}")
+                        return ask
+            except Exception as quote_err:
+                logger.warning(f"⚠️ Zerodha quote fallback failed for {options_symbol}: {quote_err}")
+            
+            logger.warning(f"❌ All fallbacks failed - ZERO LTP for {options_symbol}")
             return 0.0
         
         except Exception as e:
