@@ -263,7 +263,7 @@ class BaseStrategy:
             del self.position_cooldowns[symbol]
             return False
     
-    async def manage_existing_positions(self, market_data: Dict):
+    async def manage_existing_positions(self, market_data: Dict) -> List[Dict]:
         """🎯 COMPREHENSIVE POSITION MANAGEMENT - Active monitoring and management"""
         try:
             # 🚨 CRITICAL FIX: Sync local positions with REAL Zerodha positions
@@ -2319,34 +2319,13 @@ class BaseStrategy:
             return 0.0
         
         try:
-            # Primary: TrueData cache
-            premium = self.get_ltp(options_symbol)
-            if premium > 0:
-                logger.info(f"✅ TrueData cache LTP for {options_symbol}: ₹{premium}")
-                return premium
-            
-            # Subscribe if not in cache
-            if options_symbol not in self.truedata_symbols:
-                logger.info(f"📡 Subscribing to {options_symbol} on TrueData...")
-                self.truedata_client.subscribe([options_symbol])
-                self.truedata_symbols.append(options_symbol)  # Track subscribed symbols
-                
-                # Wait with multiple checks (up to 5 seconds)
-                for attempt in range(5):
-                    time.sleep(1.0)
-                    premium = self.get_ltp(options_symbol)
-                    if premium > 0:
-                        logger.info(f"✅ TrueData LTP after subscription (attempt {attempt+1}): ₹{premium} for {options_symbol}")
-                        return premium
-                logger.warning(f"⚠️ TrueData LTP still zero after 5s wait for {options_symbol}")
-            
-            # Fallback 1: Zerodha LTP
+            # NEW: Primary - Zerodha LTP
             zerodha_ltp = self.zerodha_client.get_options_ltp(options_symbol)
             if zerodha_ltp and zerodha_ltp > 0:
-                logger.info(f"✅ Zerodha fallback LTP for {options_symbol}: ₹{zerodha_ltp}")
+                logger.info(f"✅ Primary Zerodha LTP for {options_symbol}: ₹{zerodha_ltp}")
                 return zerodha_ltp
             
-            # NEW: Fallback 2: Use bid/ask average from Zerodha quote if LTP zero (for low liquidity)
+            # Primary Fallback: Zerodha bid/ask average
             try:
                 full_symbol = f"NFO:{options_symbol}"
                 quote = self.zerodha_client.kite.quote(full_symbol)
@@ -2356,18 +2335,40 @@ class BaseStrategy:
                     ask = data.get('depth', {}).get('sell', [{}])[0].get('price', 0)
                     if bid > 0 and ask > 0:
                         avg_price = (bid + ask) / 2
-                        logger.info(f"✅ Zerodha bid/ask average for {options_symbol}: ₹{avg_price} (bid: ₹{bid}, ask: ₹{ask})")
+                        logger.info(f"✅ Zerodha bid/ask average (primary fallback) for {options_symbol}: ₹{avg_price} (bid: ₹{bid}, ask: ₹{ask})")
                         return avg_price
                     elif bid > 0:
-                        logger.info(f"✅ Using Zerodha bid price as fallback for {options_symbol}: ₹{bid}")
+                        logger.info(f"✅ Using Zerodha bid price (primary fallback) for {options_symbol}: ₹{bid}")
                         return bid
                     elif ask > 0:
-                        logger.info(f"✅ Using Zerodha ask price as fallback for {options_symbol}: ₹{ask}")
+                        logger.info(f"✅ Using Zerodha ask price (primary fallback) for {options_symbol}: ₹{ask}")
                         return ask
+                logger.warning(f"⚠️ Zerodha quote primary fallback returned zero for {options_symbol}")
             except Exception as quote_err:
-                logger.warning(f"⚠️ Zerodha quote fallback failed for {options_symbol}: {quote_err}")
+                logger.warning(f"⚠️ Zerodha quote primary fallback failed for {options_symbol}: {quote_err}")
             
-            logger.warning(f"❌ All fallbacks failed - ZERO LTP for {options_symbol}")
+            # Secondary: TrueData cache
+            premium = self.get_ltp(options_symbol)
+            if premium > 0:
+                logger.info(f"✅ Secondary TrueData cache LTP for {options_symbol}: ₹{premium}")
+                return premium
+            
+            # Secondary Subscribe and wait
+            if options_symbol not in self.truedata_symbols:
+                logger.info(f"📡 Subscribing to {options_symbol} on TrueData (secondary)...")
+                from data.truedata_client import subscribe_to_symbols
+                subscribe_to_symbols([options_symbol])
+                self.truedata_symbols.append(options_symbol)
+                
+                for attempt in range(10):
+                    time.sleep(0.5)
+                    premium = self.get_ltp(options_symbol)
+                    if premium > 0:
+                        logger.info(f"✅ TrueData LTP after subscription (secondary, attempt {attempt+1}): ₹{premium} for {options_symbol}")
+                        return premium
+                logger.warning(f"⚠️ TrueData secondary LTP still zero after 5s wait for {options_symbol}")
+            
+            logger.warning(f"❌ All sources failed - ZERO LTP for {options_symbol}")
             return 0.0
         
         except Exception as e:
