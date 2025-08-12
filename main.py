@@ -1958,107 +1958,40 @@ async def get_realtime_balance():
             "error": str(e)
         }
 
-@app.get("/api/trades/live", tags=["trades"])
+@app.get("/api/trades/live")
 async def get_live_trades_direct():
-    """Get live trades - Direct endpoint for frontend components calling /api/trades/live"""
     try:
-        from src.core.orchestrator import get_orchestrator_instance
-        orchestrator = get_orchestrator_instance()
+        trades = zerodha_client.get_orders()  # Assuming this gets list of dicts
         
-        if not orchestrator or not orchestrator.zerodha_client:
-            logger.warning("Zerodha client not available for live trades")
-            return []
+        enriched_trades = []
+        for trade in trades:
+            symbol = trade.get('symbol', trade.get('tradingsymbol', ''))
+            
+            # Fetch live LTP
+            ltp = get_ltp_from_truedata(symbol)  # Implement or use existing
+            if not ltp or ltp <= 0:
+                ltp = zerodha_client.get_options_ltp(symbol) if 'CE' in symbol or 'PE' in symbol else zerodha_client.kite.ltp(f"NSE:{symbol}").get(f"NSE:{symbol}", {}).get('last_price', 0)
+            
+            entry_price = trade.get('entry_price', trade.get('average_price', 0))
+            quantity = trade.get('quantity', 0)
+            side = trade.get('side', trade.get('transaction_type', ''))
+            
+            current_price = ltp if ltp > 0 else entry_price
+            pnl = (current_price - entry_price) * quantity if side == 'BUY' else (entry_price - current_price) * quantity
+            pnl_percent = (pnl / (entry_price * quantity)) * 100 if entry_price > 0 and quantity > 0 else 0
+            
+            enriched_trade = {
+                **trade,
+                'current_price': current_price,
+                'pnl': pnl,
+                'pnl_percent': pnl_percent
+            }
+            enriched_trades.append(enriched_trade)
         
-        # Get ACTUAL live trades from Zerodha API
-        logger.info("📋 Fetching live orders from Zerodha API (direct endpoint)...")
-        orders = await orchestrator.zerodha_client.get_orders()
-        
-        if not orders:
-            return []
-        
-        # Filter today's executed orders and format as live trades
-        live_trades = []
-        today = datetime.now().date()
-        
-        for order in orders:
-            try:
-                # Only include executed orders from today
-                if order.get('status') != 'COMPLETE':
-                    continue
-                
-                order_timestamp = order.get('order_timestamp', '')
-                if order_timestamp:
-                    # CRITICAL FIX: Handle both string and datetime objects
-                    if isinstance(order_timestamp, datetime):
-                        order_date = order_timestamp.date()
-                    elif isinstance(order_timestamp, str):
-                        order_date = datetime.fromisoformat(order_timestamp.replace('Z', '+00:00')).date()
-                    else:
-                        continue  # Skip if timestamp format is unknown
-                        
-                    if order_date != today:
-                        continue
-                
-                symbol = order.get('tradingsymbol', 'UNKNOWN')
-                side = order.get('transaction_type', 'UNKNOWN')
-                
-                # 🚨 FIX: Convert Zerodha string values to numbers with better error handling
-                try:
-                    filled_qty = order.get('filled_quantity', 0)
-                    if filled_qty is None or filled_qty == '':
-                        quantity = 0
-                    else:
-                        quantity = int(float(str(filled_qty)))
-                except (ValueError, TypeError) as e:
-                    logger.debug(f"Quantity conversion error for {filled_qty}: {e}")
-                    quantity = 0
-                    
-                try:
-                    avg_price = order.get('average_price', 0)
-                    if avg_price is None or avg_price == '':
-                        price = 0.0
-                    else:
-                        price = float(str(avg_price))
-                except (ValueError, TypeError) as e:
-                    logger.debug(f"Price conversion error for {avg_price}: {e}")
-                    price = 0.0
-                
-                # Enhanced format for live display (matches LiveTradesDashboardPolling.jsx expectations)
-                trade_info = {
-                    "id": order.get('order_id', 'UNKNOWN'),
-                    "trade_id": order.get('order_id', 'UNKNOWN'),
-                    "symbol": symbol,
-                    "side": side.lower(),
-                    "trade_type": side.lower(),
-                    "quantity": quantity,
-                    "entry_price": price,
-                    "current_price": price,  # For executed trades, current = entry
-                    "price": price,
-                    "pnl": 0,
-                    "pnl_percent": 0,
-                    "status": "EXECUTED",
-                    "strategy": "Zerodha",
-                    "commission": 0,
-                    "entry_time": order.get('order_timestamp'),
-                    "executed_at": order.get('order_timestamp'),
-                    "timestamp": order.get('order_timestamp')
-                }
-                
-                live_trades.append(trade_info)
-                
-            except Exception as order_error:
-                logger.warning(f"Error processing live order: {order_error}")
-                logger.warning(f"Problematic order data: {order}")
-                logger.warning(f"filled_quantity type: {type(order.get('filled_quantity'))}, value: {order.get('filled_quantity')}")
-                logger.warning(f"average_price type: {type(order.get('average_price'))}, value: {order.get('average_price')}")
-                continue
-        
-        logger.info(f"📊 Retrieved {len(live_trades)} live trades from Zerodha (direct)")
-        return live_trades
-        
+        return {"trades": enriched_trades, "success": True}
     except Exception as e:
-        logger.error(f"Error getting live trades: {str(e)}")
-        return []
+        logger.error(f"Error fetching live trades: {e}")
+        return {"trades": [], "success": False, "error": str(e)}
 
 @app.get("/api/v1/strategies", tags=["strategies"])  
 async def redirect_strategies():
