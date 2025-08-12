@@ -1991,9 +1991,10 @@ async def get_live_trades_direct():
                 elif isinstance(order_timestamp, str):
                     order_date = datetime.fromisoformat(order_timestamp.replace('Z', '+00:00')).date()
                 else:
-                    continue
+                    # Removed continue to include all orders
+                    pass
                 
-                # Comment out or remove the date check block to include all relevant trades
+                # Commented out to show all trades, not just today's
                 # if order_date != today:
                 #     continue
             
