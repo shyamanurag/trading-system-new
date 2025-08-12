@@ -1795,8 +1795,9 @@ async def get_trades():
                     order_date_str = order.get('order_timestamp', '')
                     if order_date_str:
                         order_date = datetime.fromisoformat(order_date_str.replace('Z', '+00:00')).date()
-                        if order_date != today:
-                            continue
+                        # Comment out or remove the date check block to include all relevant trades
+                        # if order_date != today:
+                        #     continue
                     
                     symbol = order.get('tradingsymbol', 'UNKNOWN')
                     side = order.get('transaction_type', 'UNKNOWN')
@@ -1992,8 +1993,9 @@ async def get_live_trades_direct():
                 else:
                     continue
                 
-                if order_date != today:
-                    continue
+                # Comment out or remove the date check block to include all relevant trades
+                # if order_date != today:
+                #     continue
             
             symbol = order.get('tradingsymbol', 'UNKNOWN')
             side = order.get('transaction_type', 'UNKNOWN').lower()

@@ -69,7 +69,7 @@ class MarketDirectionalBias:
             logger.warning("⚠️ Market Internals not available, using basic bias calculation")
         
         # BIAS CALCULATION PARAMETERS
-        self.nifty_trend_threshold = 0.3  # 0.3% minimum for bias detection
+        self.nifty_trend_threshold = 0.2  # Lowered to 0.2% for smaller moves
         self.sector_alignment_threshold = 0.6  # 60% sector alignment required
         self.volume_multiplier_threshold = 1.5  # 1.5x average volume for confirmation
         self.confidence_decay_minutes = 30  # Bias confidence decays over 30 minutes
