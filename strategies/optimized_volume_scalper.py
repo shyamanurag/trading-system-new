@@ -49,6 +49,9 @@ class OptimizedVolumeScalper(BaseStrategy):
         self.name = "MarketMicrostructureEdge"
         self.strategy_name = "MarketMicrostructureEdge"  # CRITICAL FIX: Add missing attribute
         
+        # NEW: Initialize truedata_symbols to fix AttributeError
+        self.truedata_symbols = []
+        
         # Position management attributes (required by BaseStrategy)
         self.profit_lock_percentage = 0.8  # Lock 80% of profits with trailing stop
         self.mandatory_close_time = "15:20"  # Close all positions by 3:20 PM IST
