@@ -743,7 +743,12 @@ class ZerodhaIntegration:
         return {'holdings': []}
 
     async def get_margins(self) -> Dict:
-        """Get margins with retry"""
+        """Get margins with retry and caching"""
+        now = time.time()
+        if hasattr(self, '_margins_cache') and hasattr(self, '_margins_cache_time') and now - self._margins_cache_time < 10:
+            logger.info("Using cached margins")
+            return self._margins_cache
+        
         # CRITICAL FIX: Check if kite client is None
         if not self.kite:
             logger.error("❌ Zerodha kite client is None - attempting to reinitialize")
@@ -757,6 +762,10 @@ class ZerodhaIntegration:
                 logger.info(f"📊 Getting margins from Zerodha (attempt {attempt + 1})")
                 result = await self._async_api_call(self.kite.margins)
                 logger.info(f"✅ Got margins: ₹{result.get('equity', {}).get('available', {}).get('cash', 0)}")
+                
+                # Cache the result
+                self._margins_cache = result
+                self._margins_cache_time = now
                 return result
             except Exception as e:
                 logger.error(f"❌ Get margins attempt {attempt + 1} failed: {e}")

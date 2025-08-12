@@ -2310,91 +2310,38 @@ class BaseStrategy:
         logger.info(f"Shutting down {self.name} strategy")
         self.is_active = False 
 
-    def _get_options_premium(self, options_symbol: str, fallback_price: float, option_type: str) -> float:
-        """Get actual options premium - PRIMARY from TrueData, SECONDARY from Zerodha for validation only"""
+    def _get_options_premium(self, options_symbol: str, underlying_symbol: str) -> float:
+        """Get real-time premium for options symbol with enhanced fallbacks"""
+        if not self.is_market_open():
+            logger.warning(f"⚠️ Market closed - cannot get options premium for {options_symbol}")
+            return 0.0
+        
         try:
-            # Short-circuit when market is closed to avoid futile TrueData attempts
-            try:
-                if not self._is_trading_hours_active():
-                    logger.info(f"⏸️ MARKET CLOSED - Skipping premium fetch for {options_symbol}")
-                    return 0.0
-            except Exception:
-                pass
-
-            # 🎯 PRIMARY: Get options premium from TrueData cache (USER PREFERENCE)
-            try:
-                from data.truedata_client import live_market_data, subscribe_to_symbols, is_connected, get_connection_status
-                from config.options_symbol_mapping import convert_zerodha_to_truedata_options
-                
-                # Convert Zerodha format to TrueData format for lookup
-                truedata_symbol = convert_zerodha_to_truedata_options(options_symbol)
-                logger.debug(f"🔄 Format conversion: {options_symbol} -> {truedata_symbol}")
-                
-                if live_market_data and truedata_symbol in live_market_data:
-                    options_data = live_market_data[truedata_symbol]
-                    # Extract LTP (Last Traded Price) for options premium
-                    premium = options_data.get('ltp', options_data.get('price', options_data.get('last_price')))
-                    if premium and premium > 0:
-                        logger.info(f"✅ Got options premium from TrueData: {options_symbol} ({truedata_symbol}) = ₹{premium}")
-                        return float(premium)
-                else:
-                    # 🚨 CRITICAL FIX: Subscribe to options symbol on-demand if not in cache
-                    # Only if market open AND TrueData is healthy
-                    if not self._is_trading_hours_active():
-                        logger.info(f"⏸️ MARKET CLOSED - Skipping subscribe for {truedata_symbol}")
-                        raise RuntimeError("market_closed")
-                    if not is_connected() or not get_connection_status().get('can_attempt_connection', False):
-                        logger.warning(f"⚠️ TrueData not healthy - skipping subscribe for {truedata_symbol}")
-                        raise RuntimeError("truedata_unhealthy")
-                    logger.info(f"📊 ON-DEMAND SUBSCRIBE: {truedata_symbol} not in cache, subscribing now...")
-                    try:
-                        # Subscribe to the specific options symbol
-                        if subscribe_to_symbols([truedata_symbol]):
-                            logger.info(f"✅ Subscribed to {truedata_symbol}, waiting for data...")
-                            # Give it a moment for data to arrive (non-blocking check)
-                            import time
-                            for retry in range(3):  # Try 3 times with short waits
-                                time.sleep(0.5)  # Wait 500ms
-                                if truedata_symbol in live_market_data:
-                                    options_data = live_market_data[truedata_symbol]
-                                    premium = options_data.get('ltp', options_data.get('price', options_data.get('last_price')))
-                                    if premium and premium > 0:
-                                        logger.info(f"✅ Got options premium after subscription: {options_symbol} = ₹{premium}")
-                                        return float(premium)
-                            logger.warning(f"⚠️ No data received yet for {truedata_symbol} after subscription")
-                        else:
-                            logger.warning(f"⚠️ Could not subscribe to {truedata_symbol}")
-                    except Exception as sub_e:
-                        logger.error(f"Error subscribing to {truedata_symbol}: {sub_e}")
-            except Exception as e:
-                logger.debug(f"Could not access TrueData for {options_symbol}: {e}")
+            # Primary: TrueData cache
+            premium = self.get_ltp(options_symbol)
+            if premium > 0:
+                return premium
             
-            # 🎯 SECONDARY: Fallback to Zerodha API only if TrueData unavailable
-            try:
-                from src.core.orchestrator import get_orchestrator_instance
-                orchestrator = get_orchestrator_instance()
-                
-                if orchestrator and orchestrator.zerodha_client:
-                    import asyncio
-                    # Get real LTP from Zerodha
-                    real_ltp = asyncio.create_task(orchestrator.zerodha_client.get_options_ltp(options_symbol))
-                    premium = asyncio.get_event_loop().run_until_complete(real_ltp)
-                    
-                    if premium and premium > 0:
-                        logger.info(f"✅ FALLBACK ZERODHA LTP: {options_symbol} = ₹{premium}")
-                        return float(premium)
-                    else:
-                        logger.warning(f"⚠️ Zerodha LTP returned zero or None for {options_symbol}")
-            except Exception as e:
-                logger.debug(f"Could not get Zerodha LTP for {options_symbol}: {e}")
+            # Subscribe and wait if not in cache
+            if options_symbol not in self.truedata_symbols:
+                self.truedata_client.subscribe([options_symbol])
+                time.sleep(1.0)  # Wait for data
             
-            # 🎯 NO REAL LTP: Pass 0.0 to orchestrator for validation (no fallbacks)
+            premium = self.get_ltp(options_symbol)
+            if premium > 0:
+                return premium
+            
+            # NEW: Fallback to Zerodha quote API
+            zerodha_ltp = self.zerodha_client.get_options_ltp(options_symbol)
+            if zerodha_ltp and zerodha_ltp > 0:
+                logger.info(f"✅ Fallback Zerodha LTP for {options_symbol}: ₹{zerodha_ltp}")
+                return zerodha_ltp
+            
             logger.warning(f"⚠️ NO LTP AVAILABLE for {options_symbol} - passing to orchestrator for validation")
-            return 0.0  # Return 0.0 to allow orchestrator LTP validation
-            
+            return 0.0
+        
         except Exception as e:
-            logger.error(f"Error getting options premium for {options_symbol}: {e}")
-            # Final fallback - reject signal
+            logger.error(f"Error getting options premium: {e}")
             return 0.0
     
     def _round_to_tick_size(self, price: float) -> float:
@@ -2859,53 +2806,24 @@ class BaseStrategy:
     def _get_available_capital(self) -> float:
         """🎯 DYNAMIC: Get available capital from Zerodha margins API in real-time"""
         try:
-            # Try to get real-time capital from Zerodha margins API
-            from src.core.orchestrator import get_orchestrator_instance
-            orchestrator = get_orchestrator_instance()
+            # Primary: Real-time from Zerodha
+            margins = self.zerodha_client.get_margins_sync()
+            if margins > 0:
+                logger.info(f"✅ REAL CAPITAL: ₹{margins:,.0f}")
+                return margins
             
-            if orchestrator and orchestrator.zerodha_client:
-                try:
-                    # Try to get margins (available cash) from Zerodha
-                    if hasattr(orchestrator.zerodha_client, 'get_margins'):
-                        # Use async method if available
-                        import asyncio
-                        loop = asyncio.get_event_loop()
-                        
-                        if loop.is_running():
-                            # 🚨 CRITICAL FIX: Use synchronous method in async context
-                            if hasattr(orchestrator.zerodha_client, 'get_margins_sync'):
-                                real_available = orchestrator.zerodha_client.get_margins_sync()
-                                if real_available > 0:
-                                    logger.info(f"✅ REAL-TIME CAPITAL: ₹{real_available:,.2f} (sync from Zerodha)")
-                                    return float(real_available)
-                        else:
-                            # Run async method to get live margins
-                            margins = loop.run_until_complete(orchestrator.zerodha_client.get_margins())
-                            if margins and isinstance(margins, (int, float)) and margins > 0:
-                                logger.info(f"✅ DYNAMIC CAPITAL: ₹{margins:,.2f} (live from Zerodha)")
-                                return float(margins)
-                    
-                    # Fallback: Try sync method if available
-                    if hasattr(orchestrator.zerodha_client, 'kite') and orchestrator.zerodha_client.kite:
-                        try:
-                            margins = orchestrator.zerodha_client.kite.margins()
-                            equity_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
-                            if equity_cash > 0:
-                                logger.info(f"✅ DYNAMIC CAPITAL: ₹{equity_cash:,.2f} (from Zerodha equity margins)")
-                                return float(equity_cash)
-                        except Exception as margin_error:
-                            logger.debug(f"⚠️ Error fetching Zerodha margins: {margin_error}")
-                            
-                except Exception as zerodha_error:
-                    logger.debug(f"⚠️ Error accessing Zerodha for capital: {zerodha_error}")
+            # Fallback: Position tracker
+            tracker_capital = self.position_tracker.capital
+            if tracker_capital > 0:
+                return tracker_capital
             
-            # 🚨 CRITICAL: Return small amount to prevent new trades if can't get real balance
+            # Minimal fallback to allow small trades
             logger.warning("⚠️ Cannot get real-time capital - returning minimal amount to prevent trades")
-            return 1000.0  # Minimal amount to block new trades when capital unknown
-            
+            return 50000.0  # Increased to allow small trades
+        
         except Exception as e:
-            logger.error(f"Error getting dynamic available capital: {e}")
-            return 1000.0  # Minimal amount to prevent trades on error
+            logger.error(f"Error getting available capital: {e}")
+            return 50000.0
     
     def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
         """🎯 USER REQUIREMENT: Select strike based on volume - highest or second highest for liquidity"""

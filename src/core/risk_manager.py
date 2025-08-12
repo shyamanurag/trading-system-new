@@ -625,6 +625,20 @@ class RiskManager:
             # CRITICAL DEBUG: Log signal validation details
             logger.info(f"🔍 SIGNAL VALIDATION: {symbol} | Qty: {quantity} | Price: ₹{entry_price} | Strategy: {strategy_name}")
             
+            if signal.quantity <= 0:
+                return {
+                    'approved': False,
+                    'reason': 'Invalid quantity: must be greater than 0',
+                    'risk_score': 100.0,
+                    'position_size': 0,
+                    'validation_details': {
+                        'symbol': symbol,
+                        'strategy': strategy_name,
+                        'error': 'Zero or negative quantity',
+                        'validation_timestamp': datetime.now().isoformat()
+                    }
+                }
+
             # Calculate position value with management-action awareness
             position_value = float(entry_price) * float(quantity)
             logger.info(f"   Position Value: ₹{position_value:,.0f}")
