@@ -2763,76 +2763,37 @@ class BaseStrategy:
             return None
     
     def _get_capital_constrained_quantity(self, options_symbol: str, underlying_symbol: str, entry_price: float) -> int:
-        """🎯 SMART QUANTITY: size by dynamic capital percentage (no hard-coded rupee minimums)"""
-        try:
-            # Check if this is F&O (options) or equity
-            is_options = (options_symbol != underlying_symbol or 
-                         'CE' in options_symbol or 'PE' in options_symbol)
+        available_capital = self._get_available_capital()
+        
+        # NEW: Dynamic config from env vars (kept for options, but hardcoded for equity)
+        equity_pct = 0.25  # Hardcoded to 25% minimum as per user request
+        options_max_lots = int(os.getenv('OPTIONS_MAX_LOTS', 5))  # Default cap 5 lots
+        
+        is_options = 'CE' in options_symbol or 'PE' in options_symbol
+        
+        if is_options:
+            lot_size = self._fetch_zerodha_lot_size(underlying_symbol)
+            if lot_size is None:
+                return 0
+            if entry_price <= 0:
+                return lot_size  # Fallback for zero price
             
-            # Get real-time available capital
-            available_capital = self._get_available_capital()
-            # Dynamic per-trade allocation percentages
-            import os as _os
-            try:
-                trade_pct = float(_os.getenv('TRADE_PCT', '0.25'))  # default 25%
-            except Exception:
-                trade_pct = 0.25
-            try:
-                trade_pct_cap = float(_os.getenv('TRADE_PCT_CAP', '0.30'))  # hard cap 30%
-            except Exception:
-                trade_pct_cap = 0.30
-            trade_pct = max(0.01, min(trade_pct, 0.5))
-            trade_pct_cap = max(trade_pct, min(trade_pct_cap, 0.6))
-            
-            if is_options:
-                # 🎯 F&O: Use lot-based calculation
-                base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
-                if base_lot_size is None:
-                    logger.error(f"❌ NO LOT SIZE AVAILABLE for {underlying_symbol} - REJECTING SIGNAL")
-                    return 0
-                # CRITICAL FIX: Allow zero entry price signals to pass to orchestrator for LTP validation
-                if entry_price <= 0:
-                    logger.info(f"🔄 ZERO ENTRY PRICE for {options_symbol} - using default lot size for orchestrator validation")
-                    # Return default lot size to allow signal to proceed to orchestrator
-                    return base_lot_size
-                
-                cost_per_lot = base_lot_size * entry_price
-                desired_value = available_capital * trade_pct
-                max_value = available_capital * trade_pct_cap
-                
-                # NEW: Remove min barrier for options - allow 1 lot if affordable, ignore pct caps for min
-                if cost_per_lot <= available_capital:
-                    logger.info(f"✅ OPTIONS ORDER (no min barrier): {underlying_symbol} = 1 lot × {base_lot_size} = {base_lot_size} qty")
-                    logger.info(f"   💰 Cost: ₹{cost_per_lot:,.0f} / Available: ₹{available_capital:,.0f}")
-                    return base_lot_size
-                else:
-                    logger.warning(f"❌ OPTIONS REJECTED: Insufficient capital for 1 lot of {underlying_symbol} (₹{cost_per_lot:,.0f} > available ₹{available_capital:,.0f})")
-                    return 0
-            
-            else:
-                # 🎯 EQUITY: Use share-based calculation (keep original logic with pct caps)
-                if entry_price <= 0:
-                    return 0
-                desired_value = available_capital * trade_pct
-                max_value = available_capital * trade_pct_cap
-                qty_desired = int(max(1, desired_value // entry_price))
-                # Clamp to cap
-                if (qty_desired * entry_price) > max_value:
-                    qty_final = int(max(1, max_value // entry_price))
-                else:
-                    qty_final = qty_desired
-                cost = qty_final * entry_price
-                logger.info(f"✅ EQUITY ORDER: {underlying_symbol} = {qty_final} shares")
-                logger.info(f"   💰 Cost: ₹{cost:,.0f} / Available: ₹{available_capital:,.0f} ({cost/available_capital:.1%})")
-                return qty_final
-            
-        except Exception as e:
-            logger.error(f"Error calculating quantity: {e}")
-            # Fallback based on signal type
-            if 'CE' in options_symbol or 'PE' in options_symbol:
-                return 75  # F&O fallback
-            else:
-                return 10  # Equity fallback
+            cost_per_lot = lot_size * entry_price
+            max_affordable_lots = int(available_capital / cost_per_lot) if cost_per_lot > 0 else 0
+            final_lots = min(max_affordable_lots, options_max_lots)  # Use dynamic cap
+            if final_lots < 1:
+                return 0
+            return final_lots * lot_size
+        
+        else:  # Equity
+            if entry_price <= 0:
+                return 0
+            max_value = available_capital * equity_pct  # Now 25%
+            max_shares = int(max_value / entry_price)
+            min_margin_per_trade = float(getattr(self, 'min_margin_per_trade', 10000.0))
+            if (max_shares * entry_price) < min_margin_per_trade:
+                return 0
+            return max(1, max_shares)  # At least 1 share
     
     def _get_available_capital(self) -> float:
         """🎯 DYNAMIC: Get available capital from Zerodha margins API in real-time"""

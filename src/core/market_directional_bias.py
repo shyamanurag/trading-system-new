@@ -69,7 +69,7 @@ class MarketDirectionalBias:
             logger.warning("⚠️ Market Internals not available, using basic bias calculation")
         
         # BIAS CALCULATION PARAMETERS
-        self.nifty_trend_threshold = 0.2  # Lowered to 0.2% for smaller moves
+        self.nifty_trend_threshold = 0.1  # Lowered to 0.1% for more sensitivity in low-movement markets
         self.sector_alignment_threshold = 0.6  # 60% sector alignment required
         self.volume_multiplier_threshold = 1.5  # 1.5x average volume for confirmation
         self.confidence_decay_minutes = 30  # Bias confidence decays over 30 minutes
@@ -413,6 +413,10 @@ class MarketDirectionalBias:
             if confidence < 3.0:  # Minimum confidence for bias
                 bias_direction = "NEUTRAL"
                 confidence = 0.0
+            
+            # NEW: Debug for index trading
+            if 'NIFTY' in time_phase or 'BANKNIFTY' in time_phase:  # Example check - adjust as needed
+                logger.info(f"🔍 INDEX BIAS DEBUG: Momentum={nifty_momentum}%, Threshold={self.nifty_trend_threshold}%, Direction={bias_direction}")
             
             return bias_direction, confidence
             
