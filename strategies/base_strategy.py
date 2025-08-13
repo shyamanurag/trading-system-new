@@ -604,33 +604,47 @@ class BaseStrategy:
                 'new_stop_loss': 0
             }
             
-            # 1. PARTIAL PROFIT BOOKING CONDITIONS
-            if pnl_pct > 15:  # 15%+ profit
-                if position_age > 30:  # Held for 30+ minutes
-                    actions['book_partial_profits'] = True
-                    actions['partial_percentage'] = 50  # Book 50% profits
-                    logger.info(f"💰 {self.name}: {symbol} - Booking 50% profits (P&L: {pnl_pct:.2f}%, Age: {position_age:.1f}min)")
-            
-            elif pnl_pct > 25:  # 25%+ profit - aggressive booking
-                actions['book_partial_profits'] = True
-                actions['partial_percentage'] = 75  # Book 75% profits
-                logger.info(f"💰 {self.name}: {symbol} - Booking 75% profits (P&L: {pnl_pct:.2f}%)")
-            
-            # 2. POSITION SCALING CONDITIONS (only if profitable and strong momentum)
-            if pnl_pct > 5 and abs(change_pct) > 2 and volume > 100000:  # Strong momentum
-                if position_age < 15 and quantity < 200:  # Fresh position, not too large
-                    actions['scale_position'] = True
-                    actions['scale_quantity'] = max(1, int(quantity * 0.25))  # Scale by 25%
-                    logger.info(f"📈 {self.name}: {symbol} - Scaling position by {actions['scale_quantity']} shares (momentum: {change_pct:.2f}%)")
-            
-            # 3. DYNAMIC STOP LOSS ADJUSTMENT
-            if pnl_pct > 10:  # Move stop to break-even plus buffer
+            # 1. DYNAMIC PROFIT BOOKING (based on target achievement, not hardcoded %)
+            target = position.get('target', 0)
+            if target > 0:
+                # Calculate distance to target
                 if action == 'BUY':
-                    actions['new_stop_loss'] = entry_price * 1.02  # 2% above entry
+                    target_achievement = (current_price - entry_price) / (target - entry_price) if target > entry_price else 0
                 else:
-                    actions['new_stop_loss'] = entry_price * 0.98  # 2% below entry
+                    target_achievement = (entry_price - current_price) / (entry_price - target) if entry_price > target else 0
+                
+                # Dynamic profit booking based on target progress
+                if target_achievement >= 0.8:  # 80% of target achieved
+                    if position_age > 30:  # Held for 30+ minutes - book profits
+                        actions['book_partial_profits'] = True
+                        actions['partial_percentage'] = 60  # Book 60% of position
+                        logger.info(f"💰 {self.name}: {symbol} - Booking 60% profits (Target: {target_achievement*100:.1f}%, Age: {position_age:.1f}min)")
+                elif target_achievement >= 1.0:  # Target exceeded - aggressive booking
+                    actions['book_partial_profits'] = True
+                    actions['partial_percentage'] = 80  # Book 80% profits
+                    logger.info(f"💰 {self.name}: {symbol} - Target exceeded! Booking 80% profits (Achievement: {target_achievement*100:.1f}%)")
+            
+            # 2. MOMENTUM-BASED POSITION SCALING (Conservative - only for strong setups)
+            # Only scale if risk per trade is still within 1% limit
+            current_risk_percent = abs(current_price - position.get('stop_loss', entry_price)) / entry_price * 100 if entry_price > 0 else 0
+            if current_risk_percent < 0.8 and pnl_pct > 3 and abs(change_pct) > 1.5:  # Conservative scaling
+                if position_age < 10 and quantity < 150:  # Fresh position, not too large
+                    actions['scale_position'] = True
+                    actions['scale_quantity'] = max(1, int(quantity * 0.15))  # Scale by 15% only
+                    logger.info(f"📈 {self.name}: {symbol} - Conservative scaling by {actions['scale_quantity']} shares (risk: {current_risk_percent:.2f}%)")
+            
+            # 3. DYNAMIC TRAILING STOP (based on original stop distance, not hardcoded %)
+            original_stop = position.get('stop_loss', 0)
+            if original_stop > 0 and pnl_pct > 5:  # Only after decent profit
+                original_risk_distance = abs(entry_price - original_stop)
+                buffer_distance = original_risk_distance * 0.3  # 30% of original risk as buffer
+                
+                if action == 'BUY':
+                    actions['new_stop_loss'] = max(entry_price + buffer_distance, current_price - original_risk_distance * 0.8)
+                else:
+                    actions['new_stop_loss'] = min(entry_price - buffer_distance, current_price + original_risk_distance * 0.8)
                 actions['adjust_stop_loss'] = True
-                logger.info(f"🛡️ {self.name}: {symbol} - Moving stop to break-even+ (P&L: {pnl_pct:.2f}%)")
+                logger.info(f"🛡️ {self.name}: {symbol} - Dynamic trailing stop (P&L: {pnl_pct:.2f}%, Risk Distance: {original_risk_distance:.2f})")
             
             # 4. SCALPING AUTO-EXIT: Close positions after 10 minutes max (quick in/out)
             if position_age > 10:  # 10 minutes max hold for scalping
@@ -1272,17 +1286,39 @@ class BaseStrategy:
     
     def calculate_dynamic_stop_loss(self, entry_price: float, atr: float, action: str, 
                                    multiplier: float = 2.0, min_percent: float = 0.5, 
-                                   max_percent: float = 5.0) -> float:
-        """Calculate dynamic stop loss based on ATR with SCALPING-OPTIMIZED bounds"""
+                                   max_percent: float = 5.0, available_capital: float = None) -> float:
+        """Calculate dynamic stop loss with MAXIMUM 1% RISK PER TRADE constraint"""
         try:
+            # Get available capital for 1% risk calculation
+            if available_capital is None:
+                available_capital = self._get_available_capital()
+            
+            # MAXIMUM 1% RISK PER TRADE CONSTRAINT
+            max_risk_amount = available_capital * 0.01  # 1% of capital
+            
             # Calculate ATR-based stop loss distance
             atr_distance = atr * multiplier
             
             # Convert to percentage
             atr_percent = (atr_distance / entry_price) * 100
             
-            # Apply SCALPING-OPTIMIZED bounds (tighter than original)
-            bounded_percent = max(min_percent, min(atr_percent, max_percent))
+            # CRITICAL: Ensure stop loss doesn't exceed 1% risk per trade
+            # Estimate typical trade size to validate risk
+            typical_trade_value = min(available_capital * 0.25, 50000)  # 25% capital or ₹50k max
+            typical_quantity = typical_trade_value / entry_price
+            potential_risk = atr_distance * typical_quantity
+            
+            # If ATR-based risk exceeds 1%, constrain it
+            if potential_risk > max_risk_amount:
+                # Recalculate stop distance to exactly match 1% risk
+                constrained_distance = max_risk_amount / typical_quantity
+                constrained_percent = (constrained_distance / entry_price) * 100
+                logger.info(f"🛡️ 1% RISK CONSTRAINT: {action} @ {entry_price:.2f} - ATR stop {atr_percent:.2f}% → {constrained_percent:.2f}%")
+                bounded_percent = constrained_percent
+            else:
+                # Apply SCALPING-OPTIMIZED bounds (tighter than original)
+                bounded_percent = max(min_percent, min(atr_percent, max_percent))
+            
             bounded_distance = (bounded_percent / 100) * entry_price
             
             # Calculate stop loss based on action
@@ -1290,6 +1326,9 @@ class BaseStrategy:
                 stop_loss = entry_price - bounded_distance
             else:  # SELL
                 stop_loss = entry_price + bounded_distance
+            
+            logger.info(f"🎯 DYNAMIC STOP: {action} @ {entry_price:.2f} → SL @ {stop_loss:.2f} "
+                       f"(Risk: {bounded_percent:.2f}%, Max Risk: ₹{max_risk_amount:.0f})")
             
             return round(stop_loss, 2)
             
@@ -1303,9 +1342,36 @@ class BaseStrategy:
                 return entry_price * (1 + fallback_percent / 100)
     
     def calculate_dynamic_target(self, entry_price: float, stop_loss: float, 
-                                risk_reward_ratio: float = 1.5) -> float:
-        """Calculate dynamic target with SCALPING-OPTIMIZED risk/reward ratio"""
+                                risk_reward_ratio: float = None) -> float:
+        """Calculate dynamic target with MARKET-ADAPTIVE risk/reward ratio"""
         try:
+            # Get current market regime for adaptive risk-reward
+            market_regime = "NORMAL"
+            nifty_momentum = 0.0
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                if orchestrator and hasattr(orchestrator, 'market_bias') and orchestrator.market_bias:
+                    market_regime = getattr(orchestrator.market_bias.current_bias, 'market_regime', 'NORMAL')
+                    nifty_momentum = getattr(orchestrator.market_bias.current_bias, 'nifty_momentum', 0.0)
+            except:
+                pass
+            
+            # MARKET-ADAPTIVE RISK-REWARD RATIO
+            if risk_reward_ratio is None:
+                # RANGING MARKET: Lower risk-reward (faster exits)
+                if abs(nifty_momentum) < 0.15 or market_regime in ('ranging', 'sideways', 'CHOPPY'):
+                    risk_reward_ratio = 1.2  # 1:1.2 for quick scalping profits
+                    logger.debug(f"🔄 RANGING MARKET: Using conservative R:R = 1:{risk_reward_ratio}")
+                # TRENDING MARKET: Higher risk-reward (ride the trend)
+                elif abs(nifty_momentum) >= 0.3:
+                    risk_reward_ratio = 2.0  # 1:2 for trend following
+                    logger.debug(f"📈 TRENDING MARKET: Using aggressive R:R = 1:{risk_reward_ratio}")
+                # MODERATE MOMENTUM: Balanced approach
+                else:
+                    risk_reward_ratio = 1.5  # 1:1.5 standard
+                    logger.debug(f"⚖️ MODERATE MARKET: Using balanced R:R = 1:{risk_reward_ratio}")
+            
             # Calculate risk distance
             risk_distance = abs(entry_price - stop_loss)
             
@@ -1318,21 +1384,19 @@ class BaseStrategy:
             else:  # SELL trade
                 target = entry_price - reward_distance
             
+            logger.info(f"🎯 DYNAMIC TARGET: Entry={entry_price:.2f}, SL={stop_loss:.2f}, "
+                       f"Target={target:.2f}, R:R=1:{risk_reward_ratio}, Regime={market_regime}")
+            
             return round(target, 2)
             
         except Exception as e:
             logger.error(f"Error calculating dynamic target: {e}")
-            # DYNAMIC fallback percentage target based on volatility
-            try:
-                # Use simple percentage-based target without symbol dependency
-                target_percent = 0.015  # 1.5% conservative fallback
-            except:
-                target_percent = 0.015  # 1.5% conservative fallback
-                
+            # Conservative fallback for ranging markets
+            target_percent = 0.008  # 0.8% conservative fallback
             if stop_loss < entry_price:  # BUY trade
-                return entry_price * (1 + target_percent)  # Dynamic target for scalping
+                return entry_price * (1 + target_percent)
             else:  # SELL trade
-                return entry_price * (1 - target_percent)  # Dynamic target for scalping
+                return entry_price * (1 - target_percent)
     
     def validate_signal_levels(self, entry_price: float, stop_loss: float, 
                               target: float, action: str) -> bool:

@@ -56,6 +56,11 @@ class OptimizedVolumeScalper(BaseStrategy):
         from data.truedata_client import TrueDataClient
         self.truedata_client = TrueDataClient()
         
+        # NEW: Initialize zerodha_client to fix AttributeError in options premium fetching
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        self.zerodha_client = orchestrator.zerodha_client if orchestrator else None
+        
         # Position management attributes (required by BaseStrategy)
         self.profit_lock_percentage = 0.8  # Lock 80% of profits with trailing stop
         self.mandatory_close_time = "15:20"  # Close all positions by 3:20 PM IST
@@ -472,24 +477,42 @@ class OptimizedVolumeScalper(BaseStrategy):
                                    symbol_data.get('low', current_price), 
                                    current_price)
             
-            # Dynamic stop loss based on microstructure edge
-            if ms_signal.edge_source == "LIQUIDITY_GAP":
-                # Tight stops for liquidity trades
-                stop_loss_pct = 0.002  # 0.2%
-            elif ms_signal.edge_source == "MEAN_REVERSION":
-                # Wider stops for mean reversion
-                stop_loss_pct = 0.005  # 0.5%
-            else:
-                # Standard stops for other strategies
-                stop_loss_pct = 0.003  # 0.3%
+            # DYNAMIC 1% RISK-BASED STOP LOSS (replacing hardcoded percentages)
+            # Get available capital for 1% risk calculation
+            available_capital = self._get_available_capital()
+            max_risk_amount = available_capital * 0.01  # 1% maximum risk
             
-            # Calculate stop loss and target
-            if ms_signal.signal_type == 'BUY':
-                stop_loss = current_price * (1 - stop_loss_pct)
-                target = current_price * (1 + stop_loss_pct * self.min_risk_reward)
+            # Calculate stop loss based on 1% risk constraint
+            if ms_signal.edge_source == "LIQUIDITY_GAP":
+                # Tight stops for liquidity trades - target 0.8% risk
+                target_risk_pct = 0.008
+            elif ms_signal.edge_source == "MEAN_REVERSION":
+                # Wider stops for mean reversion - target 1% risk (maximum)
+                target_risk_pct = 0.01
             else:
-                stop_loss = current_price * (1 + stop_loss_pct)
-                target = current_price * (1 - stop_loss_pct * self.min_risk_reward)
+                # Standard stops for other strategies - target 0.9% risk
+                target_risk_pct = 0.009
+            
+            # Calculate stop loss distance to achieve target risk
+            # Estimate trade value for risk calculation
+            estimated_trade_value = min(available_capital * 0.25, 50000)  # 25% capital or ₹50k
+            estimated_quantity = estimated_trade_value / current_price
+            target_risk_amount = available_capital * target_risk_pct
+            stop_loss_distance = target_risk_amount / estimated_quantity
+            stop_loss_pct = stop_loss_distance / current_price
+            
+            # Calculate stop loss and dynamic target based on market conditions
+            if ms_signal.signal_type == 'BUY':
+                stop_loss = current_price - stop_loss_distance
+                # Dynamic target using market-adaptive risk-reward
+                target = self.calculate_dynamic_target(current_price, stop_loss)
+            else:
+                stop_loss = current_price + stop_loss_distance
+                # Dynamic target using market-adaptive risk-reward  
+                target = self.calculate_dynamic_target(current_price, stop_loss)
+            
+            logger.info(f"💡 {ms_signal.edge_source}: Risk={target_risk_pct*100:.1f}%, "
+                       f"Stop Distance=₹{stop_loss_distance:.2f}, Entry={current_price:.2f}")
             
             # Round prices to tick size
             entry_price = self._round_to_tick_size(current_price)
