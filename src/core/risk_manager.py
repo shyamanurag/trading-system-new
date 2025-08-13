@@ -642,6 +642,12 @@ class RiskManager:
             # Calculate position value with management-action awareness
             position_value = float(entry_price) * float(quantity)
             logger.info(f"   Position Value: ₹{position_value:,.0f}")
+            
+            # CRITICAL: Options bypass position size limits (risk limited to premium paid)
+            is_options_trade = symbol and (symbol.endswith('CE') or symbol.endswith('PE'))
+            if is_options_trade:
+                logger.info(f"🎯 OPTIONS TRADE DETECTED: {symbol} - BYPASSING position size limits")
+                logger.info(f"   Risk limited to premium paid: ₹{position_value:,.0f}")
 
             # Management/closing actions (auto square-off) should not be blocked by sizing caps
             is_management_action = False
@@ -672,6 +678,9 @@ class RiskManager:
             if is_management_action:
                 # Only enforce emergency stop and basic sanity checks for exits
                 risk_approved, risk_reason = True, "Management action bypass"
+            elif is_options_trade:
+                risk_approved, risk_reason = True, "Options trade - no position size restrictions"
+                logger.info(f"🎯 OPTIONS BYPASS: {symbol} approved regardless of premium cost")
             else:
                 risk_approved, risk_reason = self.validate_trade_risk(position_value, strategy_name, symbol, total_capital_override)
             

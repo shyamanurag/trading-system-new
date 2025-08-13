@@ -3185,13 +3185,9 @@ class BaseStrategy:
                 max_margin_per_trade_pct = 0.25  # 25% of available margin per trade  
                 max_margin_allowed = available_capital * max_margin_per_trade_pct
 
-                # Calculate maximum lots within 25% margin limit
-                import math
-                if margin_required > 0:
-                    max_lots_by_margin = int(max_margin_allowed / margin_required)
-                    lots_needed_for_min = max(1, max_lots_by_margin)  # At least 1 lot
-                else:
-                    lots_needed_for_min = 1
+                # CRITICAL: Options should ALWAYS be 1 lot (as per user requirement)
+                lots_needed_for_min = 1  # Always 1 lot for options/F&O
+                logger.info(f"🎯 OPTIONS LOT SIZE: Fixed to 1 lot for {underlying_symbol}")
 
                 total_margin = margin_required * lots_needed_for_min if margin_required > 0 else margin_required
 
