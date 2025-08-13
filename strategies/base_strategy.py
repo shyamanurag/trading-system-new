@@ -2778,9 +2778,7 @@ class BaseStrategy:
     def _get_capital_constrained_quantity(self, options_symbol: str, underlying_symbol: str, entry_price: float) -> int:
         available_capital = self._get_available_capital()
         
-        # NEW: Dynamic config from env vars (kept for options, but hardcoded for equity)
-        equity_pct = 0.25  # Hardcoded to 25% minimum as per user request
-        options_max_lots = int(os.getenv('OPTIONS_MAX_LOTS', 5))  # Default cap 5 lots
+        # No percentage caps - remove all capital allocation limits
         
         is_options = 'CE' in options_symbol or 'PE' in options_symbol
         
@@ -2793,10 +2791,9 @@ class BaseStrategy:
             
             cost_per_lot = lot_size * entry_price
             max_affordable_lots = int(available_capital / cost_per_lot) if cost_per_lot > 0 else 0
-            final_lots = min(max_affordable_lots, options_max_lots)  # Use dynamic cap
-            if final_lots < 1:
+            if max_affordable_lots < 1:
                 return 0
-            return final_lots * lot_size
+            return max_affordable_lots * lot_size
         
         else:  # Equity
             if entry_price <= 0:
@@ -2807,21 +2804,16 @@ class BaseStrategy:
             if available_capital < min_trade_value:
                 return 0
                 
-            # Calculate shares needed for minimum trade value
-            min_shares_for_value = int(min_trade_value / entry_price)
+            # 🎯 CRITICAL: Calculate shares needed for MINIMUM ₹25,000 trade value
+            min_shares_required = int(min_trade_value / entry_price)
+            cost_for_min_shares = min_shares_required * entry_price
             
-            # Calculate max shares based on 25% allocation  
-            max_value = available_capital * equity_pct  # 25%
-            max_shares_by_allocation = int(max_value / entry_price)
-            
-            # Use the higher of minimum required or 25% allocation
-            final_shares = max(min_shares_for_value, max_shares_by_allocation, 1)
-            
-            # Cap at 80% of available capital
-            if (final_shares * entry_price) > (available_capital * 0.8):
+            # 🚨 STRICT ENFORCEMENT: If we can't afford minimum trade value, REJECT
+            if cost_for_min_shares > available_capital:
                 return 0
                 
-            return final_shares
+            # 🎯 SUCCESS: Use minimum required shares to ensure meaningful position
+            return min_shares_required
     
     def _get_available_capital(self) -> float:
         """🎯 DYNAMIC: Get available capital from Zerodha margins API in real-time"""
@@ -3022,8 +3014,8 @@ class BaseStrategy:
                 # Fallback if dynamic margin not available
                 if margin_required <= 0:
                     if 'CE' in options_symbol or 'PE' in options_symbol:
-                        # Options: Premium estimate (use lower value for options)
-                        margin_required = min(base_lot_size * 50, available_capital * 0.2)  # Max 20% or ₹50/share
+                        # Options: Premium estimate (no caps - based on actual lot size)
+                        margin_required = base_lot_size * 50  # Remove capital percentage cap
                         logger.info(f"📊 Options margin estimate: ₹{margin_required:,.2f}")
                     else:
                         # Futures: 10-15% of contract value
@@ -3031,8 +3023,7 @@ class BaseStrategy:
                         margin_required = contract_value * 0.10  # 10% margin estimate
                         logger.info(f"📊 Futures margin estimate: ₹{margin_required:,.2f}")
                 
-                # 🎯 OPTIONS: No minimum margin restriction - depends on lot size and LTP
-                max_capital_per_trade = available_capital * 0.6  # 60% max per trade
+                # 🎯 OPTIONS: No capital allocation caps - use as much as needed
 
                 # Determine number of lots based on available capital only (no minimums for options)
                 import math
@@ -3040,8 +3031,8 @@ class BaseStrategy:
 
                 total_margin = margin_required * lots_needed_for_min if margin_required > 0 else margin_required
 
-                # Hard guard: do not exceed affordability constraints
-                if total_margin <= max_capital_per_trade and total_margin <= (available_capital * 0.8):
+                # Hard guard: only check if we can afford it
+                if total_margin <= available_capital:
                     total_qty = base_lot_size * lots_needed_for_min
                     logger.info(
                         f"✅ F&O ORDER: {underlying_symbol} = {lots_needed_for_min} lot(s) × {base_lot_size} = {total_qty} qty"
@@ -3069,25 +3060,21 @@ class BaseStrategy:
                     )
                     return 0
                 
-                # Calculate shares needed for minimum trade value
-                min_shares_for_value = int(min_trade_value / entry_price)
+                # 🎯 CRITICAL: Calculate shares needed for MINIMUM ₹25,000 trade value
+                min_shares_required = int(min_trade_value / entry_price)
+                cost_for_min_shares = min_shares_required * entry_price
                 
-                # Calculate max shares based on 25% allocation  
-                max_capital_per_trade = available_capital * 0.25
-                max_shares_by_allocation = int(max_capital_per_trade / entry_price)
-                
-                # Use the higher of minimum required or 25% allocation, but cap at 100 shares
-                final_quantity = min(max(min_shares_for_value, max_shares_by_allocation, 1), 100)
-                
-                cost = final_quantity * entry_price
-                
-                # Final affordability check
-                if cost > available_capital * 0.8:  # Don't use more than 80% of capital
+                # 🚨 STRICT ENFORCEMENT: If we can't afford minimum trade value, REJECT
+                if cost_for_min_shares > available_capital:
                     logger.warning(
-                        f"❌ EQUITY REJECTED: {underlying_symbol} cost too high vs available capital "
-                        f"(cost ₹{cost:,.0f}, available ₹{available_capital:,.0f})"
+                        f"❌ EQUITY REJECTED: {underlying_symbol} minimum trade value unaffordable "
+                        f"(need ₹{cost_for_min_shares:,.0f} for min trade, available ₹{available_capital:,.0f})"
                     )
                     return 0
+                
+                # 🎯 SUCCESS: Use minimum required shares (no arbitrary caps!)
+                final_quantity = min_shares_required
+                cost = cost_for_min_shares
 
                 logger.info(f"✅ EQUITY ORDER: {underlying_symbol} = {final_quantity} shares")
                 logger.info(f"   💰 Cost: ₹{cost:,.0f} / Available: ₹{available_capital:,.0f} ({cost/available_capital:.1%})")
