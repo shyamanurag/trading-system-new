@@ -1501,18 +1501,33 @@ class BaseStrategy:
                 return None
             
             # ========================================
-            # CRITICAL: CONFIDENCE FILTERING + OPENING GAP GATE
+            # CRITICAL: CONFIDENCE FILTERING FOR INTRADAY TRADING
             # ========================================
-            # Regime-aware minimum confidence: slightly relaxed in CHOPPY with micro-sizing
-            min_conf = 9.0
+            # INTRADAY FOCUSED: Lower confidence requirements for faster signal generation
+            min_conf = 8.5  # Lowered from 9.0 for intraday momentum capture
+            
             try:
                 from src.core.orchestrator import get_orchestrator_instance
                 orchestrator = get_orchestrator_instance()
-                regime = getattr(getattr(getattr(orchestrator, 'market_bias', None), 'current_bias', None), 'market_regime', 'NORMAL')
-                if regime in ('CHOPPY', 'VOLATILE_CHOPPY'):
-                    min_conf = 8.8
-            except Exception:
-                min_conf = 9.0
+                
+                # Get market momentum for dynamic confidence
+                nifty_momentum = 0.0
+                if orchestrator and hasattr(orchestrator, 'market_bias') and orchestrator.market_bias:
+                    nifty_momentum = getattr(orchestrator.market_bias.current_bias, 'nifty_momentum', 0.0)
+                
+                # MOMENTUM-BASED CONFIDENCE: Lower requirements during strong trends
+                if abs(nifty_momentum) >= 0.3:  # Strong intraday move (0.3%+)
+                    min_conf = 8.0  # Very aggressive for trending markets
+                    logger.info(f"🚀 STRONG MOMENTUM DETECTED: Nifty={nifty_momentum:+.2f}% - min_conf lowered to {min_conf}")
+                elif abs(nifty_momentum) >= 0.15:  # Moderate move (0.15%+)
+                    min_conf = 8.3  # Moderately aggressive
+                    logger.info(f"📈 MODERATE MOMENTUM: Nifty={nifty_momentum:+.2f}% - min_conf={min_conf}")
+                else:
+                    logger.info(f"🔍 SIDEWAYS MARKET: Nifty={nifty_momentum:+.2f}% - min_conf={min_conf}")
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Could not detect market momentum: {e}")
+                min_conf = 8.5  # Default intraday confidence
 
             # Ensure confidence is numeric before comparison
             try:
