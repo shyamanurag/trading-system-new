@@ -2803,8 +2803,8 @@ class BaseStrategy:
                 return 0
             max_value = available_capital * equity_pct  # Now 25%
             max_shares = int(max_value / entry_price)
-            min_margin_per_trade = 5000.0  # Lowered to 5000 for testing to allow more trades
-            if (max_shares * entry_price) < min_margin_per_trade:
+            min_trade_value = 25000.0  # Minimum ₹25,000 trade value for stocks
+            if (max_shares * entry_price) < min_trade_value:
                 return 0
             return max(1, max_shares)  # At least 1 share
     
@@ -3016,15 +3016,12 @@ class BaseStrategy:
                         margin_required = contract_value * 0.10  # 10% margin estimate
                         logger.info(f"📊 Futures margin estimate: ₹{margin_required:,.2f}")
                 
-                # Enforce min margin per trade (reduce tiny trades) and affordability
+                # 🎯 OPTIONS: No minimum margin restriction - depends on lot size and LTP
                 max_capital_per_trade = available_capital * 0.6  # 60% max per trade
-                min_margin_per_trade = float(getattr(self, 'min_margin_per_trade', 10000.0))
 
-                # Determine number of lots to satisfy minimum margin usage
+                # Determine number of lots based on available capital only (no minimums for options)
                 import math
                 lots_needed_for_min = 1
-                if margin_required > 0 and margin_required < min_margin_per_trade:
-                    lots_needed_for_min = math.ceil(min_margin_per_trade / margin_required)
 
                 total_margin = margin_required * lots_needed_for_min if margin_required > 0 else margin_required
 
@@ -3046,20 +3043,20 @@ class BaseStrategy:
                 )
                 return 0
             else:
-                # 🎯 EQUITY: Use share-based calculation
-                max_capital_per_trade = available_capital * 0.15  # 15% for meaningful positions
+                # 🎯 EQUITY: Use share-based calculation with minimum trade value
+                max_capital_per_trade = available_capital * 0.25  # 25% for meaningful positions
                 max_shares = int(max_capital_per_trade / entry_price)
                 
-                # Minimum viable quantity for equity
-                min_margin_per_trade = float(getattr(self, 'min_margin_per_trade', 10000.0))
-                min_shares = max(1, int(min_margin_per_trade / entry_price))
+                # 🎯 USER REQUIREMENT: Minimum ₹25,000 trade value for stocks
+                min_trade_value = 25000.0  # Minimum trade value for equity
+                min_shares = max(1, int(min_trade_value / entry_price))
                 final_quantity = max(min_shares, min(max_shares, 100))  # Between min and 100 shares
                 
                 cost = final_quantity * entry_price
                 # If we cannot reach minimum trade amount within caps, reject early to avoid later risk rejection
-                if cost < min_margin_per_trade:
+                if cost < min_trade_value:
                     logger.warning(
-                        f"❌ EQUITY REJECTED: {underlying_symbol} cannot meet min trade value ₹{min_margin_per_trade:,.0f} "
+                        f"❌ EQUITY REJECTED: {underlying_symbol} cannot meet min trade value ₹{min_trade_value:,.0f} "
                         f"(cost ₹{cost:,.0f}, available ₹{available_capital:,.0f})"
                     )
                     return 0
