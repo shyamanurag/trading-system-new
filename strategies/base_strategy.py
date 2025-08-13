@@ -2801,12 +2801,27 @@ class BaseStrategy:
         else:  # Equity
             if entry_price <= 0:
                 return 0
-            max_value = available_capital * equity_pct  # Now 25%
-            max_shares = int(max_value / entry_price)
             min_trade_value = 25000.0  # Minimum ₹25,000 trade value for stocks
-            if (max_shares * entry_price) < min_trade_value:
+            
+            # Check if we can afford minimum trade value
+            if available_capital < min_trade_value:
                 return 0
-            return max(1, max_shares)  # At least 1 share
+                
+            # Calculate shares needed for minimum trade value
+            min_shares_for_value = int(min_trade_value / entry_price)
+            
+            # Calculate max shares based on 25% allocation  
+            max_value = available_capital * equity_pct  # 25%
+            max_shares_by_allocation = int(max_value / entry_price)
+            
+            # Use the higher of minimum required or 25% allocation
+            final_shares = max(min_shares_for_value, max_shares_by_allocation, 1)
+            
+            # Cap at 80% of available capital
+            if (final_shares * entry_price) > (available_capital * 0.8):
+                return 0
+                
+            return final_shares
     
     def _get_available_capital(self) -> float:
         """🎯 DYNAMIC: Get available capital from Zerodha margins API in real-time"""
@@ -3036,27 +3051,40 @@ class BaseStrategy:
                     )
                     return total_qty
 
-                # If even 1 lot is too expensive or cannot meet min margin without exceeding caps, reject early
+                # If even 1 lot is too expensive, reject early
                 logger.warning(
-                    f"❌ F&O REJECTED: {underlying_symbol} cannot satisfy min ₹{min_margin_per_trade:,.0f} within capital limits "
+                    f"❌ F&O REJECTED: {underlying_symbol} exceeds capital limits "
                     f"(needed ₹{total_margin:,.0f}, available ₹{available_capital:,.0f})"
                 )
                 return 0
             else:
                 # 🎯 EQUITY: Use share-based calculation with minimum trade value
-                max_capital_per_trade = available_capital * 0.25  # 25% for meaningful positions
-                max_shares = int(max_capital_per_trade / entry_price)
-                
-                # 🎯 USER REQUIREMENT: Minimum ₹25,000 trade value for stocks
                 min_trade_value = 25000.0  # Minimum trade value for equity
-                min_shares = max(1, int(min_trade_value / entry_price))
-                final_quantity = max(min_shares, min(max_shares, 100))  # Between min and 100 shares
+                
+                # Check if we can afford minimum trade value
+                if available_capital < min_trade_value:
+                    logger.warning(
+                        f"❌ EQUITY REJECTED: {underlying_symbol} insufficient capital for min trade value "
+                        f"(need ₹{min_trade_value:,.0f}, available ₹{available_capital:,.0f})"
+                    )
+                    return 0
+                
+                # Calculate shares needed for minimum trade value
+                min_shares_for_value = int(min_trade_value / entry_price)
+                
+                # Calculate max shares based on 25% allocation  
+                max_capital_per_trade = available_capital * 0.25
+                max_shares_by_allocation = int(max_capital_per_trade / entry_price)
+                
+                # Use the higher of minimum required or 25% allocation, but cap at 100 shares
+                final_quantity = min(max(min_shares_for_value, max_shares_by_allocation, 1), 100)
                 
                 cost = final_quantity * entry_price
-                # If we cannot reach minimum trade amount within caps, reject early to avoid later risk rejection
-                if cost < min_trade_value:
+                
+                # Final affordability check
+                if cost > available_capital * 0.8:  # Don't use more than 80% of capital
                     logger.warning(
-                        f"❌ EQUITY REJECTED: {underlying_symbol} cannot meet min trade value ₹{min_trade_value:,.0f} "
+                        f"❌ EQUITY REJECTED: {underlying_symbol} cost too high vs available capital "
                         f"(cost ₹{cost:,.0f}, available ₹{available_capital:,.0f})"
                     )
                     return 0
