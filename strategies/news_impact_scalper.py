@@ -45,6 +45,9 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         # Bid-ask spread control
         self.max_bid_ask_spread = 0.15  # Max 15% spread
         
+        # Initialize truedata_symbols to fix AttributeError in options premium fetching
+        self.truedata_symbols = []
+        
         logger.info("✅ ProfessionalOptionsEngine strategy initialized")
 
     def is_market_open(self) -> bool:
