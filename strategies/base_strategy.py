@@ -2778,7 +2778,8 @@ class BaseStrategy:
     def _get_capital_constrained_quantity(self, options_symbol: str, underlying_symbol: str, entry_price: float) -> int:
         available_capital = self._get_available_capital()
         
-        # No percentage caps - remove all capital allocation limits
+        # 🎯 RISK CONTROL: Maximum 25% margin usage per trade (not trade value)
+        max_margin_per_trade_pct = 0.25  # 25% of available margin
         
         is_options = 'CE' in options_symbol or 'PE' in options_symbol
         
@@ -2789,11 +2790,49 @@ class BaseStrategy:
             if entry_price <= 0:
                 return lot_size  # Fallback for zero price
             
-            cost_per_lot = lot_size * entry_price
-            max_affordable_lots = int(available_capital / cost_per_lot) if cost_per_lot > 0 else 0
+            # 🚨 MARGIN-BASED CALCULATION: Options use margin, not full premium cost
+            # For options: margin is typically much less than premium cost
+            premium_per_lot = lot_size * entry_price
+            
+            # Try to get actual margin requirement from Zerodha
+            try:
+                if hasattr(self, 'zerodha_client') and self.zerodha_client:
+                    # Use Zerodha's margin calculation if available
+                    estimated_margin_per_lot = self.zerodha_client.get_required_margin_for_order(
+                        symbol=options_symbol, quantity=lot_size, price=entry_price, 
+                        transaction_type='BUY', product='MIS'
+                    )
+                    if estimated_margin_per_lot and estimated_margin_per_lot > 0:
+                        logger.info(f"📊 ZERODHA MARGIN: {options_symbol} = ₹{estimated_margin_per_lot:,.0f} per lot")
+                    else:
+                        # Fallback: estimate margin as percentage of premium
+                        estimated_margin_per_lot = premium_per_lot * 0.3  # ~30% margin for options
+                        logger.info(f"📊 ESTIMATED MARGIN: {options_symbol} = ₹{estimated_margin_per_lot:,.0f} per lot")
+                else:
+                    # Fallback: estimate margin as percentage of premium  
+                    estimated_margin_per_lot = premium_per_lot * 0.3  # ~30% margin for options
+                    logger.info(f"📊 ESTIMATED MARGIN: {options_symbol} = ₹{estimated_margin_per_lot:,.0f} per lot")
+            except Exception as e:
+                # Conservative fallback
+                estimated_margin_per_lot = premium_per_lot * 0.3
+                logger.debug(f"Margin calculation fallback for {options_symbol}: {e}")
+            
+            # Apply 25% margin allocation limit
+            max_margin_allowed = available_capital * max_margin_per_trade_pct
+            max_affordable_lots = int(max_margin_allowed / estimated_margin_per_lot) if estimated_margin_per_lot > 0 else 0
+            
             if max_affordable_lots < 1:
+                logger.warning(
+                    f"❌ OPTIONS REJECTED: {options_symbol} 1 lot needs ₹{estimated_margin_per_lot:,.0f} margin, "
+                    f"exceeds 25% limit ₹{max_margin_allowed:,.0f}"
+                )
                 return 0
-            return max_affordable_lots * lot_size
+            
+            final_lots = max_affordable_lots
+            total_margin = final_lots * estimated_margin_per_lot
+            
+            logger.info(f"✅ OPTIONS MARGIN OK: {final_lots} lots, Est. Margin ₹{total_margin:,.0f}")
+            return final_lots * lot_size
         
         else:  # Equity
             if entry_price <= 0:
@@ -2808,12 +2847,43 @@ class BaseStrategy:
             min_shares_required = int(min_trade_value / entry_price)
             cost_for_min_shares = min_shares_required * entry_price
             
-            # 🚨 STRICT ENFORCEMENT: If we can't afford minimum trade value, REJECT
-            if cost_for_min_shares > available_capital:
-                return 0
+                                        # 🚨 MARGIN-BASED POSITION SIZING: Use 25% of available margin
+            # For MIS equity: margin ≈ 25-30% of trade value (leverage ~4x)
+            estimated_margin_factor = 0.25  # Conservative estimate for MIS margin requirement
+            max_margin_allowed = available_capital * max_margin_per_trade_pct
+            
+            # Calculate maximum trade value we can afford with 25% margin allocation
+            max_affordable_trade_value = max_margin_allowed / estimated_margin_factor
+            max_affordable_shares = int(max_affordable_trade_value / entry_price)
+            max_affordable_cost = max_affordable_shares * entry_price
+            
+            # Use the higher of: minimum trade value OR maximum affordable within margin limits
+            if max_affordable_cost >= min_trade_value:
+                # We can afford more than minimum - use maximum affordable
+                final_quantity = max_affordable_shares
+                cost = max_affordable_cost
+                estimated_margin = cost * estimated_margin_factor
                 
-            # 🎯 SUCCESS: Use minimum required shares to ensure meaningful position
-            return min_shares_required
+                logger.info(f"✅ MARGIN-OPTIMIZED: {underlying_symbol} = {final_quantity} shares")
+                logger.info(f"   💰 Trade Value: ₹{cost:,.0f}")
+                logger.info(f"   💳 Est. Margin: ₹{estimated_margin:,.0f} ({estimated_margin/available_capital:.1%} of capital)")
+                logger.info(f"   📊 Leverage: ~{cost/estimated_margin:.1f}x")
+                return final_quantity
+            else:
+                # Can only afford minimum - check if it fits in margin allocation
+                min_estimated_margin = cost_for_min_shares * estimated_margin_factor
+                
+                if min_estimated_margin <= max_margin_allowed:
+                    logger.info(f"✅ MINIMUM VIABLE: {underlying_symbol} = {min_shares_required} shares")
+                    logger.info(f"   💰 Trade Value: ₹{cost_for_min_shares:,.0f}")
+                    logger.info(f"   💳 Est. Margin: ₹{min_estimated_margin:,.0f}")
+                    return min_shares_required
+                else:
+                    logger.warning(
+                        f"❌ EQUITY REJECTED: {underlying_symbol} min trade ₹{min_trade_value:,.0f} "
+                        f"needs ₹{min_estimated_margin:,.0f} margin, exceeds 25% limit ₹{max_margin_allowed:,.0f}"
+                    )
+                    return 0
     
     def _get_available_capital(self) -> float:
         """🎯 DYNAMIC: Get available capital from Zerodha margins API in real-time"""
@@ -3023,16 +3093,22 @@ class BaseStrategy:
                         margin_required = contract_value * 0.10  # 10% margin estimate
                         logger.info(f"📊 Futures margin estimate: ₹{margin_required:,.2f}")
                 
-                # 🎯 OPTIONS: No capital allocation caps - use as much as needed
+                # 🎯 MARGIN-BASED ALLOCATION: 25% margin limit per trade
+                max_margin_per_trade_pct = 0.25  # 25% of available margin per trade  
+                max_margin_allowed = available_capital * max_margin_per_trade_pct
 
-                # Determine number of lots based on available capital only (no minimums for options)
+                # Calculate maximum lots within 25% margin limit
                 import math
-                lots_needed_for_min = 1
+                if margin_required > 0:
+                    max_lots_by_margin = int(max_margin_allowed / margin_required)
+                    lots_needed_for_min = max(1, max_lots_by_margin)  # At least 1 lot
+                else:
+                    lots_needed_for_min = 1
 
                 total_margin = margin_required * lots_needed_for_min if margin_required > 0 else margin_required
 
-                # Hard guard: only check if we can afford it
-                if total_margin <= available_capital:
+                # Check if we can afford it within margin limits
+                if total_margin <= max_margin_allowed and total_margin <= available_capital:
                     total_qty = base_lot_size * lots_needed_for_min
                     logger.info(
                         f"✅ F&O ORDER: {underlying_symbol} = {lots_needed_for_min} lot(s) × {base_lot_size} = {total_qty} qty"
@@ -3064,17 +3140,42 @@ class BaseStrategy:
                 min_shares_required = int(min_trade_value / entry_price)
                 cost_for_min_shares = min_shares_required * entry_price
                 
-                # 🚨 STRICT ENFORCEMENT: If we can't afford minimum trade value, REJECT
-                if cost_for_min_shares > available_capital:
-                    logger.warning(
-                        f"❌ EQUITY REJECTED: {underlying_symbol} minimum trade value unaffordable "
-                        f"(need ₹{cost_for_min_shares:,.0f} for min trade, available ₹{available_capital:,.0f})"
-                    )
-                    return 0
+                # 🚨 MARGIN-BASED POSITION SIZING: Use 25% of available margin
+                estimated_margin_factor = 0.25  # Conservative estimate for MIS margin requirement
+                max_margin_allowed = available_capital * max_margin_per_trade_pct
                 
-                # 🎯 SUCCESS: Use minimum required shares (no arbitrary caps!)
-                final_quantity = min_shares_required
-                cost = cost_for_min_shares
+                # Calculate maximum trade value we can afford with 25% margin allocation
+                max_affordable_trade_value = max_margin_allowed / estimated_margin_factor
+                max_affordable_shares = int(max_affordable_trade_value / entry_price)
+                max_affordable_cost = max_affordable_shares * entry_price
+                
+                # Use the higher of: minimum trade value OR maximum affordable within margin limits
+                if max_affordable_cost >= min_trade_value:
+                    # We can afford more than minimum - use maximum affordable
+                    final_quantity = max_affordable_shares
+                    cost = max_affordable_cost
+                    estimated_margin = cost * estimated_margin_factor
+                    
+                    logger.info(f"✅ MARGIN-OPTIMIZED: {underlying_symbol} = {final_quantity} shares")
+                    logger.info(f"   💰 Trade Value: ₹{cost:,.0f}")
+                    logger.info(f"   💳 Est. Margin: ₹{estimated_margin:,.0f} ({estimated_margin/available_capital:.1%} of capital)")
+                    logger.info(f"   📊 Leverage: ~{cost/estimated_margin:.1f}x")
+                else:
+                    # Can only afford minimum - check if it fits in margin allocation
+                    min_estimated_margin = cost_for_min_shares * estimated_margin_factor
+                    
+                    if min_estimated_margin <= max_margin_allowed:
+                        final_quantity = min_shares_required
+                        cost = cost_for_min_shares
+                        logger.info(f"✅ MINIMUM VIABLE: {underlying_symbol} = {final_quantity} shares")
+                        logger.info(f"   💰 Trade Value: ₹{cost:,.0f}")
+                        logger.info(f"   💳 Est. Margin: ₹{cost * estimated_margin_factor:,.0f}")
+                    else:
+                        logger.warning(
+                            f"❌ EQUITY REJECTED: {underlying_symbol} min trade ₹{min_trade_value:,.0f} "
+                            f"needs ₹{min_estimated_margin:,.0f} margin, exceeds 25% limit ₹{max_margin_allowed:,.0f}"
+                        )
+                        return 0
 
                 logger.info(f"✅ EQUITY ORDER: {underlying_symbol} = {final_quantity} shares")
                 logger.info(f"   💰 Cost: ₹{cost:,.0f} / Available: ₹{available_capital:,.0f} ({cost/available_capital:.1%})")
