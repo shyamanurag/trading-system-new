@@ -59,6 +59,16 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         market_close = now.replace(hour=15, minute=30, second=0)
         return market_open <= now <= market_close
 
+    def get_ltp(self, symbol: str) -> float:
+        """Get last traded price from TrueData cache"""
+        try:
+            from data.truedata_client import live_market_data
+            data = live_market_data.get(symbol, {})
+            return data.get('ltp', data.get('price', data.get('last_price', 0.0)))
+        except Exception as e:
+            logger.error(f"Error getting LTP for {symbol}: {e}")
+            return 0.0
+
     async def initialize(self):
         """Initialize the strategy"""
         self.is_active = True
