@@ -2373,7 +2373,7 @@ class BaseStrategy:
                 self.truedata_symbols.append(options_symbol)
                 
                 for attempt in range(10):
-                    time.sleep(0.5)
+                    time_module.sleep(0.5)
                     premium = self.get_ltp(options_symbol)
                     if premium > 0:
                         logger.info(f"✅ TrueData LTP after subscription (secondary, attempt {attempt+1}): ₹{premium} for {options_symbol}")
@@ -3142,6 +3142,7 @@ class BaseStrategy:
                 
                 # 🚨 MARGIN-BASED POSITION SIZING: Use 25% of available margin
                 estimated_margin_factor = 0.25  # Conservative estimate for MIS margin requirement
+                max_margin_per_trade_pct = 0.25  # 25% of available margin per trade
                 max_margin_allowed = available_capital * max_margin_per_trade_pct
                 
                 # Calculate maximum trade value we can afford with 25% margin allocation
