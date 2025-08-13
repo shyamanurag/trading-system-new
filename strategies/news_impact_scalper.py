@@ -47,6 +47,18 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         
         logger.info("✅ ProfessionalOptionsEngine strategy initialized")
 
+    def is_market_open(self) -> bool:
+        """Check if market is currently open (IST)"""
+        import pytz
+        from datetime import datetime
+        now = datetime.now(pytz.timezone('Asia/Kolkata'))
+        weekday = now.weekday()
+        if weekday >= 5:  # Saturday/Sunday
+            return False
+        market_open = now.replace(hour=9, minute=15, second=0)
+        market_close = now.replace(hour=15, minute=30, second=0)
+        return market_open <= now <= market_close
+
     async def initialize(self):
         """Initialize the strategy"""
         self.is_active = True
