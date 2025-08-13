@@ -2004,8 +2004,9 @@ async def get_live_trades_direct():
             entry_price = float(order.get('average_price', 0))
             
             # Fetch live LTP from TrueData
-            from data.truedata_client import get_ltp
-            ltp = get_ltp(symbol)
+            from data.truedata_client import get_live_data_for_symbol
+            live_data = get_live_data_for_symbol(symbol)
+            ltp = live_data.get('ltp', 0) if live_data else 0
             
             # Fallback to Zerodha if zero
             if ltp <= 0:
