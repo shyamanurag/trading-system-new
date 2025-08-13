@@ -2438,26 +2438,35 @@ class BaseStrategy:
                 except Exception as quote_err:
                     logger.warning(f"⚠️ Zerodha quote primary fallback failed for {options_symbol}: {quote_err}")
             
-            # Secondary: TrueData cache
-            premium = self.get_ltp(options_symbol)
+            # Secondary: TrueData cache (convert symbol format first)
+            # CRITICAL: Convert Zerodha format to TrueData format for LTP fetching
+            truedata_symbol = options_symbol
+            try:
+                from config.options_symbol_mapping import convert_zerodha_to_truedata_options
+                truedata_symbol = convert_zerodha_to_truedata_options(options_symbol)
+                logger.info(f"🔄 Symbol conversion: {options_symbol} → {truedata_symbol} (for TrueData)")
+            except Exception as e:
+                logger.warning(f"⚠️ Symbol conversion failed: {e}, using original: {options_symbol}")
+            
+            premium = self.get_ltp(truedata_symbol)
             if premium > 0:
-                logger.info(f"✅ Secondary TrueData cache LTP for {options_symbol}: ₹{premium}")
+                logger.info(f"✅ Secondary TrueData cache LTP for {truedata_symbol}: ₹{premium}")
                 return premium
             
-            # Secondary Subscribe and wait
-            if options_symbol not in self.truedata_symbols:
-                logger.info(f"📡 Subscribing to {options_symbol} on TrueData (secondary)...")
+            # Secondary Subscribe and wait (use TrueData format for subscription)
+            if truedata_symbol not in self.truedata_symbols:
+                logger.info(f"📡 Subscribing to {truedata_symbol} on TrueData (secondary)...")
                 from data.truedata_client import subscribe_to_symbols
-                subscribe_to_symbols([options_symbol])
-                self.truedata_symbols.append(options_symbol)
+                subscribe_to_symbols([truedata_symbol])
+                self.truedata_symbols.append(truedata_symbol)
                 
                 for attempt in range(10):
                     time_module.sleep(0.5)
-                    premium = self.get_ltp(options_symbol)
+                    premium = self.get_ltp(truedata_symbol)
                     if premium > 0:
-                        logger.info(f"✅ TrueData LTP after subscription (secondary, attempt {attempt+1}): ₹{premium} for {options_symbol}")
+                        logger.info(f"✅ TrueData LTP after subscription (secondary, attempt {attempt+1}): ₹{premium} for {truedata_symbol}")
                         return premium
-                logger.warning(f"⚠️ TrueData secondary LTP still zero after 5s wait for {options_symbol}")
+                logger.warning(f"⚠️ TrueData secondary LTP still zero after 5s wait for {truedata_symbol}")
             
             logger.warning(f"❌ All sources failed - ZERO LTP for {options_symbol}")
             return 0.0
