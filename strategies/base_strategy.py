@@ -2329,9 +2329,9 @@ class BaseStrategy:
                 else:
                     logger.warning(f"⚠️ Could not fetch Zerodha client dynamically - skipping Zerodha fallback")
             
-            # Primary - Zerodha LTP
+            # Primary - Zerodha LTP (sync version)
             if self.zerodha_client:
-                zerodha_ltp = self.zerodha_client.get_options_ltp(options_symbol)
+                zerodha_ltp = self.zerodha_client.get_options_ltp_sync(options_symbol)
                 if zerodha_ltp and zerodha_ltp > 0:
                     logger.info(f"✅ Primary Zerodha LTP for {options_symbol}: ₹{zerodha_ltp}")
                     return zerodha_ltp
@@ -2811,11 +2811,22 @@ class BaseStrategy:
     def _get_available_capital(self) -> float:
         """🎯 DYNAMIC: Get available capital from Zerodha margins API in real-time"""
         try:
+            # Ensure zerodha_client is available (dynamic fetch if needed)
+            if not hasattr(self, 'zerodha_client') or self.zerodha_client is None:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                if orchestrator:
+                    self.zerodha_client = orchestrator.zerodha_client
+                    logger.info(f"✅ Dynamically fetched Zerodha client for capital check in {self.name}")
+                else:
+                    logger.warning(f"⚠️ Could not fetch Zerodha client dynamically for capital - using fallback")
+                    
             # Primary: Real-time from Zerodha
-            margins = self.zerodha_client.get_margins_sync()
-            if margins > 0:
-                logger.info(f"✅ REAL CAPITAL: ₹{margins:,.0f}")
-                return margins
+            if self.zerodha_client:
+                margins = self.zerodha_client.get_margins_sync()
+                if margins > 0:
+                    logger.info(f"✅ REAL CAPITAL: ₹{margins:,.0f}")
+                    return margins
             
             # Fallback: Position tracker
             tracker_capital = self.position_tracker.capital

@@ -1128,6 +1128,34 @@ class ZerodhaIntegration:
             logger.error(f"Error validating options symbol {options_symbol}: {e}")
             return False
     
+    def get_options_ltp_sync(self, options_symbol: str) -> Optional[float]:
+        """Get real-time LTP for options symbol from Zerodha (synchronous version)"""
+        try:
+            if not self.kite or not self.is_connected:
+                logger.warning("⚠️ Zerodha not connected - cannot get options LTP")
+                return None
+            
+            # Get quotes for the options symbol
+            exchange = self._get_exchange_for_symbol(options_symbol)
+            full_symbol = f"{exchange}:{options_symbol}"
+            
+            quotes = self.kite.quote([full_symbol])
+            
+            if quotes and full_symbol in quotes:
+                quote_data = quotes[full_symbol]
+                ltp = quote_data.get('last_price', 0)
+                
+                if ltp and ltp > 0:
+                    logger.info(f"✅ ZERODHA LTP (sync): {options_symbol} = ₹{ltp}")
+                    return float(ltp)
+            
+            logger.warning(f"⚠️ No LTP data from Zerodha sync call for {options_symbol}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting Zerodha LTP sync for {options_symbol}: {e}")
+            return None
+    
     async def get_options_ltp(self, options_symbol: str) -> Optional[float]:
         """Get real-time LTP for options symbol from Zerodha"""
         try:
