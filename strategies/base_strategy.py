@@ -56,6 +56,7 @@ class BaseStrategy:
         # 🎯 MARKET BIAS COORDINATION
         self.market_bias = None  # Will be set by orchestrator
         self.position_entry_times = {}  # symbol -> entry timestamp
+        self.failed_options_symbols = set()  # Track symbols that failed subscription
     
     def set_market_bias(self, market_bias):
         """Set market bias system for coordinated signal generation"""
