@@ -1946,7 +1946,7 @@ class BaseStrategy:
                 # 🎯 USER REQUIREMENT: Volume-based strike selection for liquidity
                 expiry = await self._get_next_expiry(zerodha_underlying)
                 if not expiry:
-                    logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
+                    logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - FALLBACK TO EQUITY")
                     return None, 'REJECTED'
                 strike = self._get_volume_based_strike(zerodha_underlying, actual_price, expiry, action)
                 
@@ -3048,6 +3048,325 @@ class BaseStrategy:
         except Exception as e:
             logger.error(f"Error getting available capital: {e}")
             return 50000.0
+    
+    def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
+        """🎯 USER REQUIREMENT: Select strike based on volume - highest or second highest for liquidity"""
+        try:
+            # First get ATM strike as baseline
+            atm_strike = self._get_atm_strike_for_stock(current_price)
+            
+            # Get available strikes around ATM (3 strikes above and below)
+            strike_interval = 50 if underlying_symbol not in ['NIFTY', 'BANKNIFTY', 'FINNIFTY'] else (50 if underlying_symbol == 'NIFTY' else 100)
+            
+            candidate_strikes = []
+            for i in range(-3, 4):  # 7 strikes total around ATM
+                strike = atm_strike + (i * strike_interval)
+                if strike > 0:  # Only positive strikes
+                    candidate_strikes.append(strike)
+            
+            logger.info(f"🎯 SIMPLIFIED STRIKE SELECTION for {underlying_symbol}")
+            logger.info(f"   Current Price: ₹{current_price:.2f}, ATM: {atm_strike}")
+            logger.info(f"   Using ATM strike for optimal execution")
+            
+            # 🎯 SIMPLIFIED: Always use ATM strike for best execution and no volume barriers
+            return atm_strike
+                
+        except Exception as e:
+            logger.error(f"Error in volume-based strike selection: {e}")
+            # Fallback to ATM
+            atm_strike = self._get_atm_strike_for_stock(current_price)
+            logger.warning(f"⚠️ Fallback to ATM strike: {atm_strike}")
+            return atm_strike
+    
+    def _get_strikes_volume_data(self, underlying_symbol: str, strikes: List[int], expiry: str, action: str) -> Dict:
+        """Get volume data for strikes from market data sources"""
+        try:
+            # Try to get volume data from TrueData cache
+            from data.truedata_client import live_market_data
+            
+            volume_data = {}
+            option_type = 'CE' if action.upper() == 'BUY' else 'PE'
+            
+            for strike in strikes:
+                # Build options symbol using proper format mapping
+                from config.options_symbol_mapping import get_truedata_options_format
+                options_symbol = get_truedata_options_format(underlying_symbol, expiry, strike, option_type)
+                
+                if live_market_data and options_symbol in live_market_data:
+                    market_data = live_market_data[options_symbol]
+                    volume = market_data.get('volume', 0)
+                    premium = market_data.get('ltp', market_data.get('price', 0))
+                    
+                    volume_data[strike] = {
+                        'volume': volume,
+                        'premium': premium,
+                        'symbol': options_symbol
+                    }
+                    
+            if volume_data:
+                logger.info(f"✅ Retrieved volume data for {len(volume_data)} strikes from TrueData")
+                return volume_data
+            else:
+                logger.debug(f"Volume data not needed - using ATM strike for {underlying_symbol}")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Error getting volume data: {e}")
+            return {}
+    
+    def _fetch_zerodha_lot_size(self, underlying_symbol: str) -> int:
+        """🎯 DYNAMIC: Fetch actual lot size from Zerodha instruments API"""
+        try:
+            # Log symbol mapping for debugging
+            zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+            if zerodha_symbol != underlying_symbol:
+                logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {zerodha_symbol}")
+            
+            # Get orchestrator instance to access Zerodha client
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if not orchestrator or not orchestrator.zerodha_client:
+                logger.debug(f"⚠️ Zerodha client not available for lot size lookup: {underlying_symbol}")
+                return None
+            
+            # Try to get instruments data
+            if hasattr(orchestrator.zerodha_client, 'kite') and orchestrator.zerodha_client.kite:
+                try:
+                    # Get NFO instruments (F&O contracts)
+                    instruments = orchestrator.zerodha_client.kite.instruments('NFO')
+                    
+                    # Look for the underlying symbol in F&O instruments
+                    for instrument in instruments:
+                        trading_symbol = instrument.get('tradingsymbol', '')
+                        segment = instrument.get('segment', '')
+                        
+                        # CRITICAL FIX: Use proper symbol mapping function
+                        clean_underlying = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+                        
+                        # Match underlying symbol (e.g., NIFTY, RELIANCE, etc.)
+                        if (clean_underlying in trading_symbol and 
+                            segment == 'NFO-OPT' and  # Options only
+                            ('CE' in trading_symbol or 'PE' in trading_symbol)):
+                            
+                            lot_size = instrument.get('lot_size', 0)
+                            if lot_size > 0:
+                                logger.info(f"✅ ZERODHA LOT SIZE: {underlying_symbol} = {lot_size}")
+                                return lot_size
+                    
+                    logger.debug(f"🔍 No F&O lot size found for {underlying_symbol} in Zerodha instruments")
+                    return None
+                    
+                except Exception as e:
+                    logger.debug(f"⚠️ Error fetching Zerodha instruments for {underlying_symbol}: {e}")
+                    return None
+            else:
+                logger.debug(f"⚠️ Zerodha KiteConnect not initialized for lot size lookup")
+                return None
+                
+        except Exception as e:
+            logger.debug(f"Error fetching Zerodha lot size for {underlying_symbol}: {e}")
+            return None
+    
+    def _get_capital_constrained_quantity(self, options_symbol: str, underlying_symbol: str, entry_price: float) -> int:
+        """🎯 SMART QUANTITY: F&O uses lots, Equity uses shares based on capital"""
+        try:
+            # Check if this is F&O (options) or equity
+            is_options = (options_symbol != underlying_symbol or 
+                         'CE' in options_symbol or 'PE' in options_symbol)
+            
+            # Get real-time available capital
+            available_capital = self._get_available_capital()
+            
+            if is_options:
+                # 🎯 F&O: Use lot-based calculation
+                base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
+                if base_lot_size is None:
+                    logger.error(f"❌ NO LOT SIZE AVAILABLE for {underlying_symbol} - REJECTING SIGNAL")
+                    return 0
+                # CRITICAL FIX: Allow zero entry price signals to pass to orchestrator for LTP validation
+                if entry_price <= 0:
+                    logger.info(f"🔄 ZERO ENTRY PRICE for {options_symbol} - using default lot size for orchestrator validation")
+                    # Return default lot size to allow signal to proceed to orchestrator
+                    return base_lot_size
+                
+                # 🚨 CRITICAL FIX: Get REAL margin requirement from Zerodha API
+                margin_required = 0.0
+                
+                try:
+                    from src.core.orchestrator import get_orchestrator_instance
+                    orchestrator = get_orchestrator_instance()
+                    
+                    if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                        # Get actual margin requirement from Zerodha
+                        if hasattr(orchestrator.zerodha_client, 'get_required_margin_for_order'):
+                            # Use the actual F&O symbol for margin calculation
+                            actual_symbol = options_symbol if options_symbol else underlying_symbol
+                            margin_required = orchestrator.zerodha_client.get_required_margin_for_order(
+                                symbol=actual_symbol,
+                                quantity=base_lot_size,
+                                order_type='BUY',
+                                product='MIS'  # Intraday
+                            )
+                            logger.info(f"📊 Dynamic margin from Zerodha: ₹{margin_required:,.2f} for {actual_symbol}")
+                except Exception as e:
+                    logger.debug(f"Could not get dynamic margin: {e}")
+                
+                # Fallback if dynamic margin not available
+                if margin_required <= 0:
+                    if 'CE' in options_symbol or 'PE' in options_symbol:
+                        # Options: Premium estimate (no caps - based on actual lot size)
+                        margin_required = base_lot_size * 50  # Remove capital percentage cap
+                        logger.info(f"📊 Options margin estimate: ₹{margin_required:,.2f}")
+                    else:
+                        # Futures: 10-15% of contract value
+                        contract_value = base_lot_size * entry_price
+                        margin_required = contract_value * 0.10  # 10% margin estimate
+                        logger.info(f"📊 Futures margin estimate: ₹{margin_required:,.2f}")
+                
+                # 🎯 MARGIN-BASED ALLOCATION: 25% margin limit per trade
+                max_margin_per_trade_pct = 0.25  # 25% of available margin per trade  
+                max_margin_allowed = available_capital * max_margin_per_trade_pct
+
+                # CRITICAL: Options should ALWAYS be 1 lot (as per user requirement)
+                lots_needed_for_min = 1  # Always 1 lot for options/F&O
+                logger.info(f"🎯 OPTIONS LOT SIZE: Fixed to 1 lot for {underlying_symbol}")
+
+                total_margin = margin_required * lots_needed_for_min if margin_required > 0 else margin_required
+
+                # Check if we can afford it within margin limits
+                if total_margin <= max_margin_allowed and total_margin <= available_capital:
+                    total_qty = base_lot_size * lots_needed_for_min
+                    logger.info(
+                        f"✅ F&O ORDER: {underlying_symbol} = {lots_needed_for_min} lot(s) × {base_lot_size} = {total_qty} qty"
+                    )
+                    logger.info(
+                        f"   💰 Margin: ₹{total_margin:,.0f} (per lot ₹{margin_required:,.0f}) / Available: ₹{available_capital:,.0f}"
+                    )
+                    return total_qty
+
+                # If even 1 lot is too expensive, reject early
+                logger.warning(
+                    f"❌ F&O REJECTED: {underlying_symbol} exceeds capital limits "
+                    f"(needed ₹{total_margin:,.0f}, available ₹{available_capital:,.0f})"
+                )
+                return 0
+            else:
+                # 🎯 EQUITY: Use share-based calculation with minimum trade value
+                min_trade_value = 25000.0  # Minimum trade value for equity
+                
+                # Check if we can afford minimum trade value
+                if available_capital < min_trade_value:
+                    logger.warning(
+                        f"❌ EQUITY REJECTED: {underlying_symbol} insufficient capital for min trade value "
+                        f"(need ₹{min_trade_value:,.0f}, available ₹{available_capital:,.0f})"
+                    )
+                    return 0
+                
+                # 🎯 CRITICAL: Calculate shares needed for MINIMUM ₹25,000 trade value
+                min_shares_required = int(min_trade_value / entry_price)
+                cost_for_min_shares = min_shares_required * entry_price
+                
+                # 🚨 MARGIN-BASED POSITION SIZING: Use 25% of available margin
+                estimated_margin_factor = 0.25  # Conservative estimate for MIS margin requirement
+                max_margin_per_trade_pct = 0.25  # 25% of available margin per trade
+                max_margin_allowed = available_capital * max_margin_per_trade_pct
+                
+                # Calculate maximum trade value we can afford with 25% margin allocation
+                max_affordable_trade_value = max_margin_allowed / estimated_margin_factor
+                max_affordable_shares = int(max_affordable_trade_value / entry_price)
+                max_affordable_cost = max_affordable_shares * entry_price
+                
+                # Use the higher of: minimum trade value OR maximum affordable within margin limits
+                if max_affordable_cost >= min_trade_value:
+                    # We can afford more than minimum - use maximum affordable
+                    final_quantity = max_affordable_shares
+                    cost = max_affordable_cost
+                    estimated_margin = cost * estimated_margin_factor
+                    
+                    logger.info(f"✅ MARGIN-OPTIMIZED: {underlying_symbol} = {final_quantity} shares")
+                    logger.info(f"   💰 Trade Value: ₹{cost:,.0f}")
+                    logger.info(f"   💳 Est. Margin: ₹{estimated_margin:,.0f} ({estimated_margin/available_capital:.1%} of capital)")
+                    logger.info(f"   📊 Leverage: ~{cost/estimated_margin:.1f}x")
+                else:
+                    # Can only afford minimum - check if it fits in margin allocation
+                    min_estimated_margin = cost_for_min_shares * estimated_margin_factor
+                    
+                    if min_estimated_margin <= max_margin_allowed:
+                        final_quantity = min_shares_required
+                        cost = cost_for_min_shares
+                        logger.info(f"✅ MINIMUM VIABLE: {underlying_symbol} = {final_quantity} shares")
+                        logger.info(f"   💰 Trade Value: ₹{cost:,.0f}")
+                        logger.info(f"   💳 Est. Margin: ₹{cost * estimated_margin_factor:,.0f}")
+                    else:
+                        logger.warning(
+                            f"❌ EQUITY REJECTED: {underlying_symbol} min trade ₹{min_trade_value:,.0f} "
+                            f"needs ₹{min_estimated_margin:,.0f} margin, exceeds 25% limit ₹{max_margin_allowed:,.0f}"
+                        )
+                        return 0
+
+                logger.info(f"✅ EQUITY ORDER: {underlying_symbol} = {final_quantity} shares")
+                logger.info(f"   💰 Cost: ₹{cost:,.0f} / Available: ₹{available_capital:,.0f} ({cost/available_capital:.1%})")
+                return final_quantity
+            
+        except Exception as e:
+            logger.error(f"Error calculating quantity: {e}")
+            # Fallback based on signal type
+            if 'CE' in options_symbol or 'PE' in options_symbol:
+                return 75  # F&O fallback
+            else:
+                return 10  # Equity fallback
+    
+    def _get_available_capital(self) -> float:
+        """🎯 DYNAMIC: Get available capital from Zerodha margins API in real-time"""
+        try:
+            # Try to get real-time capital from Zerodha margins API
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if orchestrator and orchestrator.zerodha_client:
+                try:
+                    # Try to get margins (available cash) from Zerodha
+                    if hasattr(orchestrator.zerodha_client, 'get_margins'):
+                        # Use async method if available
+                        import asyncio
+                        loop = asyncio.get_event_loop()
+                        
+                        if loop.is_running():
+                            # 🚨 CRITICAL FIX: Use synchronous method in async context
+                            if hasattr(orchestrator.zerodha_client, 'get_margins_sync'):
+                                real_available = orchestrator.zerodha_client.get_margins_sync()
+                                if real_available > 0:
+                                    logger.info(f"✅ REAL-TIME CAPITAL: ₹{real_available:,.2f} (sync from Zerodha)")
+                                    return float(real_available)
+                        else:
+                            # Run async method to get live margins
+                            margins = loop.run_until_complete(orchestrator.zerodha_client.get_margins())
+                            if margins and isinstance(margins, (int, float)) and margins > 0:
+                                logger.info(f"✅ DYNAMIC CAPITAL: ₹{margins:,.2f} (live from Zerodha)")
+                                return float(margins)
+                    
+                    # Fallback: Try sync method if available
+                    if hasattr(orchestrator.zerodha_client, 'kite') and orchestrator.zerodha_client.kite:
+                        try:
+                            margins = orchestrator.zerodha_client.kite.margins()
+                            equity_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
+                            if equity_cash > 0:
+                                logger.info(f"✅ DYNAMIC CAPITAL: ₹{equity_cash:,.2f} (from Zerodha equity margins)")
+                                return float(equity_cash)
+                        except Exception as margin_error:
+                            logger.debug(f"⚠️ Error fetching Zerodha margins: {margin_error}")
+                            
+                except Exception as zerodha_error:
+                    logger.debug(f"⚠️ Error accessing Zerodha for capital: {zerodha_error}")
+            
+            # 🚨 CRITICAL: Return small amount to prevent new trades if can't get real balance
+            logger.warning("⚠️ Cannot get real-time capital - returning minimal amount to prevent trades")
+            return 1000.0  # Minimal amount to block new trades when capital unknown
+            
+        except Exception as e:
+            logger.error(f"Error getting dynamic available capital: {e}")
+            return 1000.0  # Minimal amount to prevent trades on error
     
     def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
         """🎯 USER REQUIREMENT: Select strike based on volume - highest or second highest for liquidity"""

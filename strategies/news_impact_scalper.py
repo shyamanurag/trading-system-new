@@ -111,8 +111,15 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 if 'change_percent' in market_data[symbol] and abs(market_data[symbol]['change_percent']) > 1.0
                 and symbol not in ['timestamp']  # Exclude non-symbol keys
             ]
+
+            # Limit to top 5 by |change_percent| to prevent flooding
+            underlying_symbols = sorted(
+                underlying_symbols,
+                key=lambda s: abs(market_data[s]['change_percent']),
+                reverse=True
+            )[:5]
             
-            for underlying_symbol in underlying_symbols[:5]:  # Limit processing
+            for underlying_symbol in underlying_symbols:  # Limit processing
                 # Get underlying data for analysis
                 underlying_data = market_data.get(underlying_symbol, {})
                 if not underlying_data:
