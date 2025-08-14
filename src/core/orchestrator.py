@@ -1854,8 +1854,7 @@ class TradingOrchestrator:
                 # STATIC FALLBACK: Use known working symbol list
                 all_symbols = [
                     # Core Indices
-                    'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
-                    
+                    'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I',
                     # Top 45 F&O Stocks (Most liquid and reliable)
                     'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
                     'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',

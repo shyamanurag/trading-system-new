@@ -106,8 +106,11 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 return signals
             
             # CRITICAL FIX: Analyze underlying symbols, then request options data from Zerodha
-            underlying_symbols = [symbol for symbol in market_data.keys() 
-                                if any(underlying in symbol for underlying in ['NIFTY-I', 'BANKNIFTY-I', 'NIFTY', 'BANKNIFTY'])]
+            underlying_symbols = [
+                symbol for symbol in market_data.keys()
+                if 'change_percent' in market_data[symbol] and abs(market_data[symbol]['change_percent']) > 1.0
+                and symbol not in ['timestamp']  # Exclude non-symbol keys
+            ]
             
             for underlying_symbol in underlying_symbols[:5]:  # Limit processing
                 # Get underlying data for analysis
