@@ -1969,8 +1969,19 @@ async def get_live_trades_direct():
             logger.warning("Zerodha client not available for live trades")
             return {"trades": [], "success": False, "error": "No Zerodha client"}
         
-        # Get ACTUAL live orders from Zerodha API
-        logger.info("📋 Fetching live orders from Zerodha...")
+        # CRITICAL FIX: Cache trades for 30 seconds to prevent API hammering
+        import time
+        cache_key = "live_trades_cache"
+        current_time = time.time()
+        
+        # Check if we have cached data less than 30 seconds old
+        if hasattr(get_live_trades_direct, '_cache') and hasattr(get_live_trades_direct, '_cache_time'):
+            if current_time - get_live_trades_direct._cache_time < 30:
+                logger.info("📊 Using cached live trades (preventing API hammering)")
+                return get_live_trades_direct._cache
+        
+        # Get ACTUAL live orders from Zerodha API (now cached)
+        logger.info("📋 Fetching live orders from Zerodha (cache miss)...")
         orders = await orchestrator.zerodha_client.get_orders()
         
         if not orders:
@@ -2043,7 +2054,14 @@ async def get_live_trades_direct():
             live_trades.append(trade_info)
         
         logger.info(f"📊 Retrieved {len(live_trades)} live trades")
-        return {"trades": live_trades, "success": True}
+        result = {"trades": live_trades, "success": True}
+        
+        # Cache the result for 30 seconds
+        get_live_trades_direct._cache = result
+        get_live_trades_direct._cache_time = current_time
+        logger.info(f"📊 Cached live trades result for 30 seconds")
+        
+        return result
     except Exception as e:
         logger.error(f"Error getting live trades: {str(e)}")
         return {"trades": [], "success": False, "error": str(e)}

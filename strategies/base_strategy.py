@@ -2397,6 +2397,9 @@ class BaseStrategy:
             logger.warning(f"⚠️ Market closed - cannot get options premium for {options_symbol}")
             return 0.0
         
+        # REMOVED: Stock options restriction - fixing root LTP issue instead
+        # Users confirmed stock options should work, need to debug actual LTP failures
+        
         try:
             # NEW: Dynamic fetch for zerodha_client if missing
             if not hasattr(self, 'zerodha_client') or self.zerodha_client is None:
@@ -2410,10 +2413,16 @@ class BaseStrategy:
             
             # Primary - Zerodha LTP (sync version)
             if self.zerodha_client:
+                logger.info(f"🔍 DEBUGGING: Fetching Zerodha LTP for {options_symbol}")
                 zerodha_ltp = self.zerodha_client.get_options_ltp_sync(options_symbol)
+                logger.info(f"📊 Zerodha LTP Response: {zerodha_ltp} for {options_symbol}")
                 if zerodha_ltp and zerodha_ltp > 0:
                     logger.info(f"✅ Primary Zerodha LTP for {options_symbol}: ₹{zerodha_ltp}")
                     return zerodha_ltp
+                else:
+                    logger.warning(f"⚠️ Zerodha LTP is zero or None: {zerodha_ltp} for {options_symbol}")
+            else:
+                logger.warning(f"⚠️ No Zerodha client available for LTP fetching")
             
             # Primary Fallback: Zerodha bid/ask average
             if self.zerodha_client:
@@ -2446,33 +2455,67 @@ class BaseStrategy:
                 truedata_symbol = convert_zerodha_to_truedata_options(options_symbol)
                 logger.info(f"🔄 Symbol conversion: {options_symbol} → {truedata_symbol} (for TrueData)")
             except Exception as e:
-                logger.warning(f"⚠️ Symbol conversion failed: {e}, using original: {options_symbol}")
+                logger.error(f"❌ Symbol conversion ERROR: {e}, using original: {options_symbol}")
+                import traceback
+                logger.error(f"Conversion traceback: {traceback.format_exc()}")
             
+            logger.info(f"🔍 DEBUGGING: Checking TrueData cache for {truedata_symbol}")
             premium = self.get_ltp(truedata_symbol)
+            logger.info(f"📊 TrueData Cache Response: {premium} for {truedata_symbol}")
             if premium > 0:
                 logger.info(f"✅ Secondary TrueData cache LTP for {truedata_symbol}: ₹{premium}")
                 return premium
+            else:
+                logger.warning(f"⚠️ TrueData cache returned zero/None: {premium} for {truedata_symbol}")
             
             # Secondary Subscribe and wait (use TrueData format for subscription)
             if truedata_symbol not in self.truedata_symbols:
-                logger.info(f"📡 Subscribing to {truedata_symbol} on TrueData (secondary)...")
-                from data.truedata_client import subscribe_to_symbols
-                subscribe_to_symbols([truedata_symbol])
-                self.truedata_symbols.append(truedata_symbol)
+                logger.info(f"📡 DEBUGGING: Subscribing to {truedata_symbol} on TrueData (secondary)...")
                 
-                for attempt in range(10):
-                    time_module.sleep(0.5)
-                    premium = self.get_ltp(truedata_symbol)
-                    if premium > 0:
-                        logger.info(f"✅ TrueData LTP after subscription (secondary, attempt {attempt+1}): ₹{premium} for {truedata_symbol}")
-                        return premium
-                logger.warning(f"⚠️ TrueData secondary LTP still zero after 5s wait for {truedata_symbol}")
+                # Check TrueData connection status first
+                from data.truedata_client import truedata_client
+                status = truedata_client.get_status()
+                logger.info(f"📊 TrueData Connection Status: {status}")
+                
+                if not status.get('connected', False):
+                    logger.error(f"❌ TrueData not connected - cannot subscribe to {truedata_symbol}")
+                    logger.error(f"   Connection status: {status}")
+                    return 0.0
+                
+                from data.truedata_client import subscribe_to_symbols
+                subscription_result = subscribe_to_symbols([truedata_symbol])
+                logger.info(f"📊 Subscription result for {truedata_symbol}: {subscription_result}")
+                
+                if subscription_result:
+                    self.truedata_symbols.append(truedata_symbol)
+                    logger.info(f"✅ Successfully subscribed, waiting for data...")
+                    
+                    for attempt in range(10):
+                        time_module.sleep(0.5)
+                        premium = self.get_ltp(truedata_symbol)
+                        logger.info(f"📊 TrueData LTP attempt {attempt+1}: {premium} for {truedata_symbol}")
+                        if premium > 0:
+                            logger.info(f"✅ TrueData LTP after subscription (secondary, attempt {attempt+1}): ₹{premium} for {truedata_symbol}")
+                            return premium
+                    logger.warning(f"⚠️ TrueData secondary LTP still zero after 5s wait for {truedata_symbol}")
+                else:
+                    logger.error(f"❌ TrueData subscription FAILED for {truedata_symbol}")
+                    logger.error("   This indicates symbol format issue or TrueData rejection")
+            else:
+                logger.info(f"📊 Symbol {truedata_symbol} already in subscription list")
             
-            logger.warning(f"❌ All sources failed - ZERO LTP for {options_symbol}")
+            logger.error(f"❌ ALL SOURCES FAILED - ZERO LTP for {options_symbol}")
+            logger.error(f"   Zerodha Symbol: {options_symbol}")
+            logger.error(f"   TrueData Symbol: {truedata_symbol}")
+            logger.error(f"   Underlying: {underlying_symbol}")
+            logger.error(f"   Market Open: {self.is_market_open()}")
+            logger.error("   DIAGNOSIS NEEDED: Check symbol formats, connection status, and market hours")
             return 0.0
         
         except Exception as e:
-            logger.error(f"Error getting options premium: {e}")
+            logger.error(f"❌ CRITICAL ERROR getting options premium for {options_symbol}: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return 0.0
     
     def _round_to_tick_size(self, price: float) -> float:

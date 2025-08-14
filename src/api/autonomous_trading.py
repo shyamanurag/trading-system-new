@@ -47,6 +47,16 @@ async def get_status(
 ):
     """Get current autonomous trading status"""
     try:
+        # CRITICAL FIX: Cache status for 15 seconds to prevent API hammering
+        import time
+        current_time = time.time()
+        
+        # Check if we have cached data less than 15 seconds old
+        if hasattr(get_status, '_cache') and hasattr(get_status, '_cache_time'):
+            if current_time - get_status._cache_time < 15:
+                logger.info("📊 Using cached autonomous status (preventing API hammering)")
+                return get_status._cache
+        
         # CRITICAL FIX: Ensure we get proper status even if orchestrator is not fully initialized
         if not orchestrator or not hasattr(orchestrator, 'get_trading_status'):
             logger.warning("Orchestrator not properly initialized - using fallback status")
@@ -89,11 +99,18 @@ async def get_status(
             "timestamp": datetime.utcnow()
         }
         
-        return TradingStatusResponse(
+        result = TradingStatusResponse(
             success=True,
             message="Trading status retrieved successfully",
             data=safe_status
         )
+        
+        # Cache the result for 15 seconds
+        get_status._cache = result
+        get_status._cache_time = current_time
+        logger.info(f"📊 Cached autonomous status result for 15 seconds")
+        
+        return result
     except Exception as e:
         logger.error(f"Error getting trading status: {str(e)}")
         # Return safe fallback instead of failing

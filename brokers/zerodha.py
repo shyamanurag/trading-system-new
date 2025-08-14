@@ -708,6 +708,12 @@ class ZerodhaIntegration:
     
     async def get_positions(self) -> Dict:
         """Get positions with retry"""
+        # CRITICAL FIX: Cache positions for 10 seconds to prevent API hammering
+        now = time.time()
+        if hasattr(self, '_positions_cache') and hasattr(self, '_positions_cache_time') and now - self._positions_cache_time < 10:
+            logger.info("📊 Using cached positions (preventing API hammering)")
+            return self._positions_cache
+        
         # CRITICAL FIX: Check if kite client is None
         if not self.kite:
             logger.error("❌ Zerodha kite client is None - attempting to reinitialize")
@@ -718,9 +724,15 @@ class ZerodhaIntegration:
         
         for attempt in range(self.max_retries):
             try:
-                logger.info(f"📊 Getting positions from Zerodha (attempt {attempt + 1})")
+                logger.info(f"📊 Getting positions from Zerodha (attempt {attempt + 1}) - CACHE MISS")
                 result = await self._async_api_call(self.kite.positions)
                 logger.info(f"✅ Got positions: {len(result.get('net', []))} net, {len(result.get('day', []))} day")
+                
+                # Cache the result for 10 seconds
+                self._positions_cache = result
+                self._positions_cache_time = now
+                logger.info(f"📊 Cached positions result for 10 seconds")
+                
                 return result
             except Exception as e:
                 logger.error(f"❌ Get positions attempt {attempt + 1} failed: {e}")
@@ -775,6 +787,12 @@ class ZerodhaIntegration:
 
     async def get_orders(self) -> List[Dict]:
         """Get orders with retry - CRITICAL for trade sync"""
+        # CRITICAL FIX: Cache orders for 10 seconds to prevent API hammering
+        now = time.time()
+        if hasattr(self, '_orders_cache') and hasattr(self, '_orders_cache_time') and now - self._orders_cache_time < 10:
+            logger.info("📊 Using cached orders (preventing API hammering)")
+            return self._orders_cache
+        
         # CRITICAL FIX: Check if kite client is None
         if not self.kite:
             logger.error("❌ Zerodha kite client is None - attempting to reinitialize")
@@ -785,9 +803,15 @@ class ZerodhaIntegration:
         
         for attempt in range(self.max_retries):
             try:
-                logger.info(f"📊 Getting orders from Zerodha (attempt {attempt + 1})")
+                logger.info(f"📊 Getting orders from Zerodha (attempt {attempt + 1}) - CACHE MISS")
                 result = await self._async_api_call(self.kite.orders)
                 logger.info(f"✅ Got {len(result)} orders")
+                
+                # Cache the result for 10 seconds
+                self._orders_cache = result
+                self._orders_cache_time = now
+                logger.info(f"📊 Cached orders result for 10 seconds")
+                
                 return result
             except Exception as e:
                 logger.error(f"❌ Get orders attempt {attempt + 1} failed: {e}")
@@ -1139,15 +1163,27 @@ class ZerodhaIntegration:
             exchange = self._get_exchange_for_symbol(options_symbol)
             full_symbol = f"{exchange}:{options_symbol}"
             
+            logger.info(f"🔍 Zerodha Quote Request: {full_symbol}")
             quotes = self.kite.quote([full_symbol])
+            logger.info(f"🔍 Zerodha Quote Response: {quotes}")
             
             if quotes and full_symbol in quotes:
                 quote_data = quotes[full_symbol]
                 ltp = quote_data.get('last_price', 0)
                 
+                # Additional debugging - check all available price fields
+                logger.info(f"🔍 Quote data for {options_symbol}: {quote_data}")
+                
                 if ltp and ltp > 0:
                     logger.info(f"✅ ZERODHA LTP (sync): {options_symbol} = ₹{ltp}")
                     return float(ltp)
+                else:
+                    # Check other price fields as fallback
+                    ohlc = quote_data.get('ohlc', {})
+                    close_price = ohlc.get('close', 0)
+                    if close_price and close_price > 0:
+                        logger.info(f"✅ ZERODHA LTP (close): {options_symbol} = ₹{close_price}")
+                        return float(close_price)
             
             logger.warning(f"⚠️ No LTP data from Zerodha sync call for {options_symbol}")
             return None
