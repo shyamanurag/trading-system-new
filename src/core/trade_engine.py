@@ -136,10 +136,12 @@ class TradeEngine:
                     self.logger.info(f"⏱️ BATCH RATE LIMIT: Waiting {batch_delay}s before processing signal {i+1}/{len(signals)}")
                     await asyncio.sleep(batch_delay)
                 
-                if self.paper_trading_enabled:
-                    result = await self._process_live_signal(signal)
+                logger.info(f"Processing signal {signal.get('signal_id')}: {signal.get('symbol')} {signal.get('action')}")
+                result = await self._process_live_signal(signal)
+                if result:
+                    logger.info(f"✅ Execution result: {result}")
                 else:
-                    result = await self._process_live_signal(signal)
+                    logger.error(f"❌ Execution failed - result None for {signal.get('symbol')}")
                 
                 if result:
                     execution_results.append(result)
