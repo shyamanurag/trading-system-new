@@ -238,6 +238,7 @@ class SignalDeduplicator:
     
     def _filter_by_quality(self, signals: List[Dict]) -> List[Dict]:
         """Filter signals by quality thresholds"""
+        logger.info(f"🔍 QUALITY FILTER: Processing {len(signals)} signals")
         quality_signals = []
         rejection_stats = {
             'low_confidence': 0,
@@ -261,14 +262,14 @@ class SignalDeduplicator:
             # Check minimum confidence
             if confidence < self.min_confidence_threshold:
                 rejection_stats['low_confidence'] += 1
-                logger.debug(f"❌ Signal rejected - low confidence: {signal['symbol']} ({confidence:.2f} < {self.min_confidence_threshold})")
+                logger.info(f"❌ Signal rejected - low confidence: {signal['symbol']} ({confidence:.2f} < {self.min_confidence_threshold})")
                 continue
             
             # Check for required fields
             required_fields = ['symbol', 'action', 'entry_price', 'stop_loss', 'target']
             if not all(field in signal for field in required_fields):
                 rejection_stats['missing_fields'] += 1
-                logger.debug(f"❌ Signal rejected - missing fields: {signal.get('symbol', 'UNKNOWN')}")
+                logger.info(f"❌ Signal rejected - missing fields: {signal.get('symbol', 'UNKNOWN')} - Missing: {[f for f in required_fields if f not in signal]}")
                 continue
             
             # Check for reasonable price levels
