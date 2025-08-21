@@ -25,7 +25,7 @@ class SignalDeduplicator:
         
         # Quality thresholds - BALANCED FOR PRODUCTION TRADING
         self.min_confidence_threshold = 0.65  # Slightly lowered to capture 0.65 confidence signals
-        self.max_signals_per_symbol = 5  # Allow 2 signals per symbol per period 
+        self.max_signals_per_symbol = 20  # TEMPORARY FIX: Increased from 5 to 20 to allow signals through
         self.deduplication_window = 300  # 5 minutes
 
         # 🚨 CRITICAL FIX: Redis persistence for executed signals across deploys
