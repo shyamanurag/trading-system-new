@@ -335,11 +335,13 @@ class SignalDeduplicator:
         deduplicated = []
         
         for symbol, symbol_signal_list in symbol_signals.items():
-            # Check if we already have recent signals for this symbol
+            # TEMPORARY FIX: Disable in-memory recent signals check - rely only on Redis executed signals
+            # The in-memory check counts generated signals, not executed ones, causing false blocks
             recent_count = len([s for s in self.recent_signals[symbol] 
                               if (datetime.now() - s['timestamp']).total_seconds() < self.deduplication_window])
             
-            if recent_count >= self.max_signals_per_symbol:
+            # DISABLED: Only use Redis-based executed signal check, not in-memory generated signal count
+            if False and recent_count >= self.max_signals_per_symbol:
                 logger.info(f"❌ Signal rejected - too many recent signals: {symbol} ({recent_count} >= {self.max_signals_per_symbol})")
                 continue
             
