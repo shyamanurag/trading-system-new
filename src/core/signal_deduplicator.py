@@ -247,6 +247,7 @@ class SignalDeduplicator:
             'low_confidence': 0,
             'missing_fields': 0,
             'invalid_prices': 0,
+            'invalid_quantity': 0,
             'poor_risk_reward': 0
         }
         
@@ -273,6 +274,13 @@ class SignalDeduplicator:
             if not all(field in signal for field in required_fields):
                 rejection_stats['missing_fields'] += 1
                 logger.info(f"❌ Signal rejected - missing fields: {signal.get('symbol', 'UNKNOWN')} - Missing: {[f for f in required_fields if f not in signal]}")
+                continue
+            
+            # 🚨 CRITICAL: Check for valid quantity (must be > 0)
+            quantity = signal.get('quantity', 0)
+            if quantity <= 0:
+                rejection_stats['invalid_quantity'] += 1
+                logger.info(f"❌ Signal rejected - invalid quantity: {signal['symbol']} (quantity: {quantity}) - Cannot trade zero or negative quantity")
                 continue
             
             # Check for reasonable price levels
