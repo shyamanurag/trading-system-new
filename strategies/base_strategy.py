@@ -1657,6 +1657,10 @@ class BaseStrategy:
             equity_only = should_use_equity_only(symbol)
             logger.info(f"🔍 F&O CHECK for {symbol}: fo_enabled={fo_enabled}, equity_only={equity_only}")
             
+            # CRITICAL DEBUG: For problematic symbols, add extra validation
+            if symbol in ['FORCEMOT', 'RCOM', 'DEVYANI', 'RAYMOND', 'ASTRAL', 'IDEA']:
+                logger.info(f"🔍 PROBLEMATIC SYMBOL DEBUG: {symbol} - F&O={fo_enabled}, Equity_Only={equity_only}")
+            
             # Force equity for known cash-only stocks
             if equity_only:
                 logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY (no F&O available)")
@@ -2824,8 +2828,9 @@ class BaseStrategy:
                 logger.info(f"✅ DYNAMIC LOT SIZE: {underlying_symbol} = {actual_lot_size} (from Zerodha API)")
                 return actual_lot_size
             
-            # NO FALLBACKS - If Zerodha API doesn't provide lot size, reject signal
-            logger.error(f"❌ NO LOT SIZE from Zerodha API for {underlying_symbol} - REJECTING SIGNAL")
+            # CRITICAL FIX: If no lot size available, this symbol should be equity-only
+            logger.warning(f"⚠️ NO LOT SIZE from Zerodha API for {underlying_symbol} - should be EQUITY only")
+            logger.info(f"🔄 FALLBACK: {underlying_symbol} should use EQUITY trading instead of F&O")
             return None
                 
         except Exception as e:
