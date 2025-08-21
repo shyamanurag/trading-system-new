@@ -3189,6 +3189,10 @@ class BaseStrategy:
                 base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
                 if base_lot_size is None:
                     logger.error(f"❌ NO LOT SIZE AVAILABLE for {underlying_symbol} - REJECTING SIGNAL")
+                    # CRITICAL DEBUG: This should NOT happen for equity signals
+                    if underlying_symbol in ['FORCEMOT', 'RCOM', 'DEVYANI', 'RAYMOND', 'ASTRAL', 'IDEA']:
+                        logger.error(f"🚨 CRITICAL: {underlying_symbol} hitting F&O path but should be EQUITY!")
+                        logger.error(f"   options_symbol={options_symbol}, underlying_symbol={underlying_symbol}")
                     return 0
                 # CRITICAL FIX: Allow zero entry price signals to pass to orchestrator for LTP validation
                 if entry_price <= 0:
@@ -3508,6 +3512,10 @@ class BaseStrategy:
                 base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
                 if base_lot_size is None:
                     logger.error(f"❌ NO LOT SIZE AVAILABLE for {underlying_symbol} - REJECTING SIGNAL")
+                    # CRITICAL DEBUG: This should NOT happen for equity signals
+                    if underlying_symbol in ['FORCEMOT', 'RCOM', 'DEVYANI', 'RAYMOND', 'ASTRAL', 'IDEA']:
+                        logger.error(f"🚨 CRITICAL: {underlying_symbol} hitting F&O path but should be EQUITY!")
+                        logger.error(f"   options_symbol={options_symbol}, underlying_symbol={underlying_symbol}")
                     return 0
                 # CRITICAL FIX: Allow zero entry price signals to pass to orchestrator for LTP validation
                 if entry_price <= 0:
