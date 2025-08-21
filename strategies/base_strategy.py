@@ -1833,6 +1833,10 @@ class BaseStrategy:
             
             # Check minimum risk-reward ratio (DYNAMIC based on volatility)
             min_risk_reward_ratio = self._get_dynamic_min_risk_reward_ratio(symbol, entry_price)
+            
+            # TEMPORARY FIX: Override minimum ratio to allow equity fallback signals
+            min_risk_reward_ratio = 1.15  # Temporarily lower to allow 1.20+ signals through
+            
             if risk_reward_ratio < min_risk_reward_ratio:
                 logger.warning(f"Equity signal below {min_risk_reward_ratio}:1 ratio: {symbol} ({risk_reward_ratio:.2f})")
                 return None
