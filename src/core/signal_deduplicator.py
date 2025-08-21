@@ -222,12 +222,15 @@ class SignalDeduplicator:
         
         # Filter by quality first
         quality_signals = self._filter_by_quality(signals)
+        logger.info(f"🔍 QUALITY FILTER: {len(signals)} → {len(quality_signals)} signals passed")
         
         # Deduplicate by symbol
         deduplicated_signals = self._deduplicate_by_symbol(quality_signals)
+        logger.info(f"🔍 SYMBOL DEDUP: {len(quality_signals)} → {len(deduplicated_signals)} signals passed")
         
         # Check for timestamp collisions and resolve
         final_signals = self._resolve_timestamp_collisions(deduplicated_signals)
+        logger.info(f"🔍 TIMESTAMP RESOLVE: {len(deduplicated_signals)} → {len(final_signals)} signals passed")
         
         # Update signal history
         self._update_signal_history(final_signals)
@@ -337,7 +340,7 @@ class SignalDeduplicator:
                               if (datetime.now() - s['timestamp']).total_seconds() < self.deduplication_window])
             
             if recent_count >= self.max_signals_per_symbol:
-                logger.debug(f"❌ Signal rejected - too many recent signals: {symbol}")
+                logger.info(f"❌ Signal rejected - too many recent signals: {symbol} ({recent_count} >= {self.max_signals_per_symbol})")
                 continue
             
             # If multiple signals for same symbol, keep the highest confidence
