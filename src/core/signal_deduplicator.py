@@ -278,7 +278,7 @@ class SignalDeduplicator:
             
             if not all([entry_price > 0, stop_loss > 0, target > 0]):
                 rejection_stats['invalid_prices'] += 1
-                logger.debug(f"❌ Signal rejected - invalid prices: {signal['symbol']}")
+                logger.info(f"❌ Signal rejected - invalid prices: {signal['symbol']} - Entry: ₹{entry_price}, SL: ₹{stop_loss}, Target: ₹{target}")
                 continue
             
             # Check risk-reward ratio
@@ -291,13 +291,13 @@ class SignalDeduplicator:
             
             if risk <= 0 or reward <= 0:
                 rejection_stats['invalid_prices'] += 1
-                logger.debug(f"❌ Signal rejected - invalid risk/reward: {signal['symbol']}")
+                logger.info(f"❌ Signal rejected - invalid risk/reward calculation: {signal['symbol']} - Risk: ₹{risk:.2f}, Reward: ₹{reward:.2f}")
                 continue
             
             risk_reward_ratio = reward / risk
             if risk_reward_ratio < 1.5:  # ADJUSTED: Minimum 1.5:1 profit-to-loss ratio for current market
                 rejection_stats['poor_risk_reward'] += 1
-                logger.debug(f"❌ Signal rejected - poor risk/reward: {signal['symbol']} ({risk_reward_ratio:.2f} < 1.5)")
+                logger.info(f"❌ Signal rejected - poor risk/reward: {signal['symbol']} ({risk_reward_ratio:.2f} < 1.5) - Entry: ₹{entry_price}, SL: ₹{stop_loss}, Target: ₹{target}")
                 continue
             
             quality_signals.append(signal)
