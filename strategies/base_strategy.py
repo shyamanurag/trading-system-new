@@ -2684,7 +2684,7 @@ class BaseStrategy:
             elif volatility_multiplier > 1.5:
                 return base_ratio * 0.9  # 1.08 for medium volatility  
             else:
-                return base_ratio * 1.1  # 1.32 for low volatility
+                return base_ratio * 1.0  # 1.20 for low volatility (FIXED: was 1.1 = 1.32)
                 
         except Exception as e:
             logger.error(f"Error calculating dynamic min R:R ratio: {e}")
