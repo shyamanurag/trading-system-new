@@ -739,7 +739,6 @@ router_configs = [
     ('error_monitoring', '/api/v1/errors', ('error-monitoring',)),
     ('database_health', '/api/v1/db-health', ('database-health',)),
     ('database_admin', '', ('database-admin',)),  # CRITICAL FIX: Mount database admin router
-    ('dashboard', '', ('dashboard',)),
     ('reports', '', ('reports',)),  # Already has /api/reports prefix
     ('system_status', '', ('system-status',)),  # Has full paths in router
     ('system_config', '/api/v1', ('system-config',)),  # System configuration endpoints
@@ -750,7 +749,7 @@ router_configs = [
     ('orchestrator_debug', '/api/v1', ('orchestrator-debug',)),
     
     # Dashboard endpoints
-    ('dashboard', '/api', ('dashboard',)),  # Dashboard API endpoints
+    ('dashboard', '', ('dashboard',)),  # Dashboard API endpoints - router already has /api prefix
     
     # External integrations
     ('zerodha_auth', '', ('zerodha',)),  # Already has /api/zerodha prefix
