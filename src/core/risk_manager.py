@@ -644,8 +644,21 @@ class RiskManager:
                 }
 
             # Calculate position value with management-action awareness
-            position_value = float(entry_price) * float(quantity)
-            logger.info(f"   Position Value: ₹{position_value:,.0f}")
+            contract_value = float(entry_price) * float(quantity)
+            
+            # CRITICAL FIX: For intraday equity trades, use margin requirement instead of full contract value
+            # This aligns risk assessment with actual capital at risk
+            is_equity_trade = symbol and not (symbol.endswith('CE') or symbol.endswith('PE'))
+            if is_equity_trade:
+                # Intraday equity margin is typically 20-25% of contract value
+                estimated_margin_factor = 0.25  # Conservative 25% margin requirement
+                position_value = contract_value * estimated_margin_factor
+                logger.info(f"   Contract Value: ₹{contract_value:,.0f}")
+                logger.info(f"   Position Value (Margin): ₹{position_value:,.0f} ({estimated_margin_factor:.1%} of contract)")
+            else:
+                # For options, full premium is at risk
+                position_value = contract_value
+                logger.info(f"   Position Value: ₹{position_value:,.0f}")
             
             # CRITICAL: Options bypass position size limits (risk limited to premium paid)
             is_options_trade = symbol and (symbol.endswith('CE') or symbol.endswith('PE'))
