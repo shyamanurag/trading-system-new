@@ -403,11 +403,13 @@ class RiskManager:
             else:
                 total_capital = self.position_tracker.capital
             
-            # Check 1: Single position loss limit - INCREASED for equity trades
+            # Check 1: Single position loss limit - EQUITY OPTIMIZED
             max_single_position_loss = total_capital * self.risk_limits['max_single_position_loss_percent']
-            # CRITICAL FIX: Increase multiplier from 10x to 30x to allow larger equity positions
-            # This allows up to 90% of capital per position (₹109k * 0.03 * 30 = ₹98k)
-            limit_check = max_single_position_loss * 30  # Assume 3.33% potential loss (more realistic)
+            
+            # CRITICAL FIX: For equity trades, allow up to 99% of capital usage
+            # Equity margin is only ~25% of trade value, so ₹109k trade needs only ₹27k margin
+            # Multiplier calculation: 99% / 3% = 33x multiplier
+            limit_check = max_single_position_loss * 33  # Allow 99% of capital for equity trades
             if position_value > limit_check:
                 return False, f"Position too large: ₹{position_value:,.0f} exceeds single position limit ₹{limit_check:,.0f}"
             
