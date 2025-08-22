@@ -3660,7 +3660,8 @@ class BaseStrategy:
                 return 0
             else:
                 # 🎯 EQUITY: Use share-based calculation with minimum trade value
-                min_trade_value = 25000.0  # Minimum trade value for equity
+                # CRITICAL FIX: Reduce minimum trade value to work with available capital
+                min_trade_value = 20000.0  # Reduced from ₹25,000 to ₹20,000 for capital efficiency
                 
                 # Check if we can afford minimum trade value
                 if available_capital < min_trade_value:
@@ -3989,7 +3990,8 @@ class BaseStrategy:
                 return 0
             else:
                 # 🎯 EQUITY: Use share-based calculation with minimum trade value
-                min_trade_value = 25000.0  # Minimum trade value for equity
+                # CRITICAL FIX: Reduce minimum trade value to work with available capital
+                min_trade_value = 20000.0  # Reduced from ₹25,000 to ₹20,000 for capital efficiency
                 
                 # Check if we can afford minimum trade value
                 if available_capital < min_trade_value:
