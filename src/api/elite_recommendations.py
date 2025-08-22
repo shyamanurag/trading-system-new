@@ -28,11 +28,13 @@ class AutonomousEliteScanner:
         self.failed_orders_max_age_hours = 24  # Keep failed orders for 24 hours
         
     async def initialize_strategies(self):
-        """Initialize ONLY PROFESSIONAL strategies - basic ones disabled until rewrite"""
+        """Initialize UNIQUE PROFESSIONAL strategies - duplicates eliminated"""
         try:
-            # Import ONLY professional strategies
+            # Import UNIQUE professional strategies with distinct mathematical edges
             from strategies.optimized_volume_scalper import OptimizedVolumeScalper
             from strategies.regime_adaptive_controller import RegimeAdaptiveController
+            from strategies.news_impact_scalper import EnhancedNewsImpactScalper
+            from strategies.momentum_surfer import EnhancedMomentumSurfer
             
             # Configuration for strategies (same as orchestrator)
             config = {
@@ -41,15 +43,15 @@ class AutonomousEliteScanner:
                 'max_positions': 5
             }
             
-            # Initialize ONLY professional strategies
+            # Initialize UNIQUE professional strategies with distinct capabilities
             self.strategies = {
-                'optimized_volume_scalper': OptimizedVolumeScalper(config),
-                'regime_adaptive_controller': RegimeAdaptiveController(config),
+                'optimized_volume_scalper': OptimizedVolumeScalper(config),      # Market microstructure + Statistical arbitrage
+                'regime_adaptive_controller': RegimeAdaptiveController(config),  # HMM + Kalman filtering (META)
+                'news_impact_scalper': EnhancedNewsImpactScalper(config),       # Black-Scholes + Greeks (OPTIONS)
+                'momentum_surfer': EnhancedMomentumSurfer(config),              # Hodrick-Prescott + Cross-sectional (MOMENTUM)
                 
-                # BASIC STRATEGIES DISABLED UNTIL PROFESSIONAL REWRITE
-                # 'momentum_surfer': EnhancedMomentumSurfer(config),
-                # 'volatility_explosion': EnhancedVolatilityExplosion(config),
-                # 'news_impact_scalper': EnhancedNewsImpactScalper(config),
+                # ELIMINATED DUPLICATES
+                # 'volatility_explosion': REMOVED - Too much overlap with volume_scalper GARCH models
             }
             
             # Initialize all strategies

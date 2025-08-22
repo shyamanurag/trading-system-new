@@ -1928,33 +1928,41 @@ class TradingOrchestrator:
             self.strategies.clear()
             self.active_strategies.clear()
             
-            # PROFESSIONAL STRATEGIES ONLY - Basic strategies disabled until rewritten
+            # PROFESSIONAL STRATEGIES ONLY - Optimized for unique capabilities
             strategy_configs = {
-                # PROFESSIONAL GRADE - ACTIVE
-                'optimized_volume_scalper': {'name': 'OptimizedVolumeScalper', 'config': {}},
-                'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}},
+                # CORE PROFESSIONAL STRATEGIES - EACH WITH UNIQUE MATHEMATICAL EDGE
+                'optimized_volume_scalper': {'name': 'OptimizedVolumeScalper', 'config': {}},  # Market microstructure + Statistical arbitrage
+                'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}},  # HMM + Kalman filtering (META)
+                'news_impact_scalper': {'name': 'EnhancedNewsImpactScalper', 'config': {}},  # Black-Scholes + Greeks (OPTIONS)
+                'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},  # Hodrick-Prescott + Cross-sectional (MOMENTUM)
                 
-                # BASIC STRATEGIES - DISABLED UNTIL PROFESSIONAL REWRITE
-                # 'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
-                # 'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},
-                # 'news_impact_scalper': {'name': 'EnhancedNewsImpactScalper', 'config': {}},
+                # ELIMINATED DUPLICATES
+                # 'volatility_explosion': DISABLED - Too much overlap with volume_scalper GARCH models
             }
             
             self.logger.info(f"Loading {len(strategy_configs)} trading strategies...")
             
             for strategy_key, strategy_info in strategy_configs.items():
                 try:
-                    # Import ONLY PROFESSIONAL strategy classes
+                    # Import PROFESSIONAL strategy classes with UNIQUE capabilities
                     if strategy_key == 'optimized_volume_scalper':
                         from strategies.optimized_volume_scalper import OptimizedVolumeScalper
                         strategy_instance = OptimizedVolumeScalper(strategy_info['config'])
-                        self.logger.info(f"✅ PROFESSIONAL: Loaded {strategy_key} (Institutional-grade)")
+                        self.logger.info(f"✅ MICROSTRUCTURE: Loaded {strategy_key} (GARCH + Statistical Arbitrage)")
                     elif strategy_key == 'regime_adaptive_controller':
                         from strategies.regime_adaptive_controller import RegimeAdaptiveController
                         strategy_instance = RegimeAdaptiveController(strategy_info['config'])
-                        self.logger.info(f"✅ PROFESSIONAL: Loaded {strategy_key} (Advanced meta-strategy)")
+                        self.logger.info(f"✅ META-STRATEGY: Loaded {strategy_key} (HMM + Kalman Filtering)")
+                    elif strategy_key == 'news_impact_scalper':
+                        from strategies.news_impact_scalper import EnhancedNewsImpactScalper
+                        strategy_instance = EnhancedNewsImpactScalper(strategy_info['config'])
+                        self.logger.info(f"✅ OPTIONS SPECIALIST: Loaded {strategy_key} (Black-Scholes + Greeks)")
+                    elif strategy_key == 'momentum_surfer':
+                        from strategies.momentum_surfer import EnhancedMomentumSurfer
+                        strategy_instance = EnhancedMomentumSurfer(strategy_info['config'])
+                        self.logger.info(f"✅ MOMENTUM SPECIALIST: Loaded {strategy_key} (Hodrick-Prescott + Cross-sectional)")
                     else:
-                        self.logger.info(f"⏸️ SKIPPED: {strategy_key} (Basic strategy disabled until rewrite)")
+                        self.logger.info(f"⏸️ ELIMINATED: {strategy_key} (Duplicate capabilities removed)")
                         continue
                     
                     # Initialize strategy
