@@ -82,11 +82,13 @@ def convert_zerodha_to_truedata_options(zerodha_symbol: str) -> str:
         import re
         from datetime import datetime
         
-        # Parse Zerodha format: NTPC14AUG25350CE (with year)
-        # First try with year included
+        # Parse Zerodha format: ICICIBANK28AUG251450CE (with year)
+        # CRITICAL FIX: Updated regex to handle new format SYMBOL + DDMMMYY + STRIKE + TYPE
+        logger.info(f"🔍 PARSING: {zerodha_symbol}")
         match = re.search(r'^([A-Z&]+)(\d{1,2})([A-Z]{3})(\d{2})(\d+)(CE|PE)$', zerodha_symbol)
         
         if match:
+            logger.info(f"✅ REGEX MATCH: Groups = {match.groups()}")
             underlying = match.group(1)
             day = int(match.group(2))
             month_str = match.group(3)

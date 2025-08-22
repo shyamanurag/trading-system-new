@@ -2762,6 +2762,20 @@ class BaseStrategy:
                 from config.options_symbol_mapping import convert_zerodha_to_truedata_options
                 truedata_symbol = convert_zerodha_to_truedata_options(options_symbol)
                 logger.info(f"🔄 Symbol conversion: {options_symbol} → {truedata_symbol} (for TrueData)")
+                
+                # CRITICAL DEBUG: Log the conversion details
+                logger.info(f"🔍 CONVERSION DEBUG:")
+                logger.info(f"   Input (Zerodha): {options_symbol}")
+                logger.info(f"   Output (TrueData): {truedata_symbol}")
+                logger.info(f"   Expected TrueData format: SYMBOL + YYMMDD + 5-digit-strike + CE/PE")
+                
+                # VALIDATE: Check if conversion makes sense
+                if len(truedata_symbol) < 15:
+                    logger.error(f"❌ CONVERSION ERROR: TrueData symbol too short: {truedata_symbol}")
+                elif not truedata_symbol.endswith(('CE', 'PE')):
+                    logger.error(f"❌ CONVERSION ERROR: TrueData symbol missing CE/PE: {truedata_symbol}")
+                else:
+                    logger.info(f"✅ CONVERSION VALID: TrueData symbol format looks correct")
             except Exception as e:
                 logger.error(f"❌ Symbol conversion ERROR: {e}, using original: {options_symbol}")
                 import traceback
