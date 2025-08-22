@@ -679,221 +679,303 @@ class RegimeAdaptiveController:
             logger.error(f"Regime change significance test failed: {e}")
             return False
     
-    async def update_regime(self) -> MarketRegime:
-        """Update market regime based on accumulated historical data - FIXED"""
+    async def _calculate_regime_confidence(self):
+        """Calculate regime confidence and transition probabilities"""
         try:
-            async with self._regime_lock:
-                if len(self.historical_data) < 2:
-                    return self.current_regime
-                
-                # Calculate regime metrics using historical data
-                self.regime_metrics.volatility = self._calculate_volatility_fixed()
-                self.regime_metrics.trend_strength = self._calculate_trend_strength_fixed()
-                self.regime_metrics.momentum = self._calculate_momentum_fixed()
-                self.regime_metrics.volume_profile = self._calculate_volume_profile_fixed()
-                
-                # Detect regime
-                new_regime = self._detect_regime()
-                
-                # Update regime history
-                self.regime_history.append(new_regime)
-                if len(self.regime_history) > self.min_samples:
-                    self.regime_history.pop(0)
-                
-                # Update current regime if stable
-                if self._is_regime_stable():
-                    self.current_regime = new_regime
-                    logger.info(f"Market regime updated to: {self.current_regime.value}")
-                
-                return self.current_regime
-                
-        except Exception as e:
-            logger.error(f"Error updating market regime: {str(e)}")
-            return self.current_regime
-    
-    def _calculate_volatility_fixed(self) -> float:
-        """Calculate market volatility - FIXED for accumulated data"""
-        try:
-            if len(self.historical_data) < 2:
-                return 0.02  # Default 2% volatility
+            if len(self.regime_history) < 2:
+                return
             
-            # Calculate returns from historical data
-            closes = [d['close'] for d in self.historical_data]
-            returns = []
-            for i in range(1, len(closes)):
-                if closes[i-1] > 0:
-                    returns.append((closes[i] - closes[i-1]) / closes[i-1])
+            # REGIME PERSISTENCE SCORE
+            persistence_score = self.math_models.regime_persistence_score(self.regime_history)
             
-            if len(returns) < 2:
-                return 0.02
+            # MARKOV TRANSITION PROBABILITIES
+            transition_probs = self.math_models.markov_switching_probability(
+                self.regime_history, 
+                self.feature_history[-1]['features'] if self.feature_history else np.zeros(7)
+            )
             
-            # Calculate volatility
-            volatility = np.std(returns) * np.sqrt(252)  # Annualized
-            return min(max(volatility, 0.01), 2.0)  # Cap between 1% and 200%
+            # CONFIDENCE CALCULATION
+            current_regime_prob = transition_probs.get(self.current_regime, 0.25)
+            
+            # Combine multiple confidence sources
+            feature_confidence = self._calculate_feature_confidence()
+            ensemble_confidence = (persistence_score + current_regime_prob + feature_confidence) / 3.0
+            
+            # Update regime metrics
+            self.regime_metrics.regime_confidence = ensemble_confidence
+            self.regime_metrics.transition_probability = current_regime_prob
+            self.regime_metrics.persistence_score = persistence_score
+            self.regime_metrics.timestamp = datetime.now()
+            
+            # Update specific metrics from latest features
+            if self.feature_history:
+                latest = self.feature_history[-1]['raw_data']
+                self.regime_metrics.volatility = latest['volatility']
+                self.regime_metrics.momentum = latest['momentum']
+                self.regime_metrics.volume_profile = latest['volume_profile']
+                self.regime_metrics.trend_strength = latest['trend_strength']
+                self.regime_metrics.correlation_regime = latest['correlation_regime']
+            
+            logger.debug(f"📊 Regime confidence: {ensemble_confidence:.2f}, "
+                        f"persistence: {persistence_score:.2f}")
             
         except Exception as e:
-            logger.error(f"Error calculating volatility: {e}")
-            return 0.02
+            logger.error(f"Regime confidence calculation failed: {e}")
     
-    def _calculate_trend_strength_fixed(self) -> float:
-        """Calculate trend strength - FIXED for accumulated data"""
+    def _calculate_feature_confidence(self) -> float:
+        """Calculate confidence based on feature stability"""
         try:
-            if len(self.historical_data) < 10:
-                return 20.0  # Default neutral trend strength
+            if len(self.feature_history) < 5:
+                return 0.5
             
-            # Simple trend strength based on price direction consistency
-            closes = [d['close'] for d in self.historical_data[-10:]]  # Last 10 points
-            ups = 0
-            downs = 0
+            # Calculate feature stability over recent window
+            recent_features = np.array([f['features'] for f in self.feature_history[-5:]])
             
-            for i in range(1, len(closes)):
-                if closes[i] > closes[i-1]:
-                    ups += 1
-                elif closes[i] < closes[i-1]:
-                    downs += 1
+            # Standard deviation of features (lower = more stable = higher confidence)
+            feature_stds = np.std(recent_features, axis=0)
+            avg_stability = 1.0 - np.mean(feature_stds)  # Convert to confidence
             
-            # Calculate trend strength as directional consistency
-            total_moves = ups + downs
-            if total_moves == 0:
-                return 20.0
-            
-            trend_strength = abs(ups - downs) / total_moves * 100
-            return min(max(trend_strength, 0.0), 100.0)
+            return max(0.1, min(0.9, avg_stability))
             
         except Exception as e:
-            logger.error(f"Error calculating trend strength: {e}")
-            return 20.0
+            logger.error(f"Feature confidence calculation failed: {e}")
+            return 0.5
     
-    def _calculate_momentum_fixed(self) -> float:
-        """Calculate market momentum - FIXED for accumulated data"""
+    async def _update_allocation_recommendations(self):
+        """Update professional allocation recommendations"""
         try:
-            if len(self.historical_data) < 5:
-                return 0.0  # Default neutral momentum
+            if self.current_regime not in self.professional_allocation_matrix:
+                return
             
-            # Calculate momentum as recent price change
-            current_close = self.historical_data[-1]['close']
-            past_close = self.historical_data[-5]['close']  # 5 periods ago
+            regime_config = self.professional_allocation_matrix[self.current_regime]
             
-            if past_close <= 0:
+            # RISK-ADJUSTED ALLOCATION
+            base_risk_multiplier = regime_config['risk_multiplier']
+            confidence_adjustment = self.regime_metrics.regime_confidence
+            
+            # Adjust risk based on confidence (higher confidence = can take more risk)
+            adjusted_risk_multiplier = base_risk_multiplier * (0.5 + confidence_adjustment)
+            
+            # STRATEGY-SPECIFIC ALLOCATIONS
+            strategy_allocations = {}
+            for strategy_name, base_allocation in regime_config.items():
+                if strategy_name not in ['risk_multiplier', 'confidence_threshold']:
+                    # Apply confidence-based adjustment
+                    adjusted_allocation = base_allocation * confidence_adjustment
+                    strategy_allocations[strategy_name] = adjusted_allocation
+            
+            # Store allocation recommendations
+            self.allocation_performance[self.current_regime] = {
+                'timestamp': datetime.now(),
+                'strategy_allocations': strategy_allocations,
+                'risk_multiplier': adjusted_risk_multiplier,
+                'confidence': confidence_adjustment,
+                'regime_metrics': self.regime_metrics
+            }
+            
+            logger.info(f"📈 ALLOCATION UPDATE: {self.current_regime.value} "
+                       f"risk_mult={adjusted_risk_multiplier:.2f} "
+                       f"confidence={confidence_adjustment:.2f}")
+            
+        except Exception as e:
+            logger.error(f"Allocation recommendation update failed: {e}")
+    
+    async def _monitor_regime_performance(self):
+        """Monitor regime performance and generate alerts"""
+        try:
+            # REGIME DURATION TRACKING
+            if len(self.regime_transition_log) >= 2:
+                current_time = datetime.now()
+                last_transition = self.regime_transition_log[-1]['timestamp']
+                regime_duration = (current_time - last_transition).total_seconds() / 60  # minutes
+                
+                # REGIME PERSISTENCE ALERTS
+                if regime_duration > 120:  # 2 hours
+                    logger.info(f"⏰ REGIME PERSISTENCE: {self.current_regime.value} "
+                               f"active for {regime_duration:.0f} minutes")
+                
+                # RAPID REGIME CHANGES ALERT
+                if len(self.regime_transition_log) >= 5:
+                    recent_transitions = self.regime_transition_log[-5:]
+                    time_span = (recent_transitions[-1]['timestamp'] - recent_transitions[0]['timestamp']).total_seconds() / 60
+                    
+                    if time_span < 30:  # 5 transitions in 30 minutes
+                        logger.warning(f"⚠️ RAPID REGIME CHANGES: 5 transitions in {time_span:.0f} minutes")
+            
+            # CONFIDENCE ALERTS
+            if self.regime_metrics.regime_confidence < 0.3:
+                logger.warning(f"⚠️ LOW REGIME CONFIDENCE: {self.regime_metrics.regime_confidence:.2f}")
+            
+            # VOLATILITY ALERTS
+            if self.regime_metrics.volatility > 0.2:  # 20% volatility
+                logger.warning(f"⚠️ HIGH VOLATILITY: {self.regime_metrics.volatility:.1%}")
+            
+            # PERFORMANCE TRACKING
+            await self._track_regime_performance()
+            
+        except Exception as e:
+            logger.error(f"Regime performance monitoring failed: {e}")
+    
+    async def _track_regime_performance(self):
+        """Track performance of regime predictions"""
+        try:
+            current_regime = self.current_regime
+            
+            # Initialize regime performance tracking
+            if current_regime not in self.regime_performance_history:
+                self.regime_performance_history[current_regime] = {
+                    'total_time': 0,
+                    'prediction_accuracy': [],
+                    'volatility_predictions': [],
+                    'allocation_performance': []
+                }
+            
+            # Track regime duration
+            if len(self.regime_transition_log) >= 1:
+                last_transition = self.regime_transition_log[-1]['timestamp']
+                duration = (datetime.now() - last_transition).total_seconds()
+                self.regime_performance_history[current_regime]['total_time'] += duration
+            
+            # Log performance every 50 updates
+            total_updates = sum(len(perf['prediction_accuracy']) for perf in self.regime_performance_history.values())
+            if total_updates > 0 and total_updates % 50 == 0:
+                logger.info(f"📊 REGIME PERFORMANCE SUMMARY: {len(self.regime_performance_history)} regimes tracked")
+                
+        except Exception as e:
+            logger.error(f"Regime performance tracking failed: {e}")
+
+    def get_professional_allocation_multiplier(self, strategy_name: str) -> float:
+        """Get professional allocation multiplier for a strategy"""
+        try:
+            if self.current_regime not in self.professional_allocation_matrix:
+                return 1.0
+            
+            regime_config = self.professional_allocation_matrix[self.current_regime]
+            base_multiplier = regime_config.get(strategy_name, 1.0)
+            
+            # Apply confidence adjustment
+            confidence_factor = 0.5 + (self.regime_metrics.regime_confidence * 0.5)
+            
+            return base_multiplier * confidence_factor
+            
+        except Exception as e:
+            logger.error(f"Professional allocation multiplier calculation failed: {e}")
+            return 1.0
+    
+    def get_professional_risk_multiplier(self) -> float:
+        """Get professional risk multiplier based on current regime"""
+        try:
+            if self.current_regime not in self.professional_allocation_matrix:
+                return 1.0
+            
+            regime_config = self.professional_allocation_matrix[self.current_regime]
+            base_risk = regime_config.get('risk_multiplier', 1.0)
+            
+            # Adjust based on confidence and volatility
+            confidence_adjustment = self.regime_metrics.regime_confidence
+            volatility_adjustment = 1.0 - min(self.regime_metrics.volatility * 2, 0.5)  # Reduce risk in high vol
+            
+            return base_risk * confidence_adjustment * volatility_adjustment
+            
+        except Exception as e:
+            logger.error(f"Professional risk multiplier calculation failed: {e}")
+            return 1.0
+    
+    def get_regime_confidence_threshold(self) -> float:
+        """Get confidence threshold for current regime"""
+        try:
+            if self.current_regime not in self.professional_allocation_matrix:
+                return 0.7
+            
+            return self.professional_allocation_matrix[self.current_regime].get('confidence_threshold', 0.7)
+            
+        except Exception as e:
+            logger.error(f"Confidence threshold retrieval failed: {e}")
+            return 0.7
+    
+    def get_regime_summary(self) -> Dict:
+        """Get comprehensive regime summary for monitoring"""
+        try:
+            return {
+                'current_regime': self.current_regime.value,
+                'confidence': self.regime_metrics.regime_confidence,
+                'volatility': self.regime_metrics.volatility,
+                'momentum': self.regime_metrics.momentum,
+                'trend_strength': self.regime_metrics.trend_strength,
+                'persistence_score': self.regime_metrics.persistence_score,
+                'transition_probability': self.regime_metrics.transition_probability,
+                'risk_multiplier': self.get_professional_risk_multiplier(),
+                'regime_duration_minutes': self._get_current_regime_duration(),
+                'total_regime_changes': len(self.regime_transition_log),
+                'feature_confidence': self._calculate_feature_confidence()
+            }
+            
+        except Exception as e:
+            logger.error(f"Regime summary generation failed: {e}")
+            return {'error': str(e)}
+    
+    def _get_current_regime_duration(self) -> float:
+        """Get current regime duration in minutes"""
+        try:
+            if not self.regime_transition_log:
                 return 0.0
             
-            momentum = ((current_close - past_close) / past_close) * 100
-            return min(max(momentum, -50.0), 50.0)  # Cap between -50% and +50%
+            last_transition = self.regime_transition_log[-1]['timestamp']
+            duration = (datetime.now() - last_transition).total_seconds() / 60
+            return duration
             
         except Exception as e:
-            logger.error(f"Error calculating momentum: {e}")
+            logger.error(f"Regime duration calculation failed: {e}")
             return 0.0
     
-    def _calculate_volume_profile_fixed(self) -> float:
-        """Calculate volume profile strength - FIXED for accumulated data"""
-        try:
-            if len(self.historical_data) < 10:
-                return 0.0  # Default neutral volume profile
-            
-            # Calculate recent volume vs average volume
-            recent_volumes = [d['volume'] for d in self.historical_data[-5:]]  # Last 5 periods
-            avg_volumes = [d['volume'] for d in self.historical_data[-10:]]  # Last 10 periods
-            
-            if not recent_volumes or not avg_volumes:
-                return 0.0
-            
-            recent_avg = np.mean(recent_volumes)
-            overall_avg = np.mean(avg_volumes)
-            
-            if overall_avg <= 0:
-                return 0.0
-            
-            volume_profile = ((recent_avg - overall_avg) / overall_avg) * 100
-            return min(max(volume_profile, -100.0), 100.0)  # Cap between -100% and +100%
-            
-        except Exception as e:
-            logger.error(f"Error calculating volume profile: {e}")
-            return 0.0
-    
-    def _detect_regime(self) -> MarketRegime:
-        """Detect market regime based on metrics - FIXED thresholds"""
-        metrics = self.regime_metrics
-        
-        # Use more realistic thresholds
-        if metrics.volatility > 0.15:  # 15% volatility - high volatility
-            return MarketRegime.VOLATILE
-        elif metrics.trend_strength > 70:  # 70% trend strength - strong trend
-            return MarketRegime.TRENDING
-        elif metrics.momentum > 3:  # 3% momentum - strong upward momentum
-            return MarketRegime.BREAKOUT
-        elif metrics.momentum < -3:  # -3% momentum - strong downward momentum
-            return MarketRegime.REVERSAL
-        else:
-            return MarketRegime.RANGING
-    
-    def _is_regime_stable(self) -> bool:
-        """Check if regime is stable enough to update"""
-        if len(self.regime_history) < self.min_samples:
-            return False
-        
-        recent_regimes = self.regime_history[-self.min_samples:]
-        regime_counts = {}
-        for regime in recent_regimes:
-            regime_counts[regime] = regime_counts.get(regime, 0) + 1
-        
-        most_common_count = max(regime_counts.values()) if regime_counts else 0
-        most_common_ratio = most_common_count / len(recent_regimes)
-        
-        return most_common_ratio >= self.regime_threshold
-    
-    def get_strategy_weights(self) -> Dict[str, float]:
-        """Get strategy weights based on current regime"""
-        weights = {
-            'professional_options_engine': 0.0,
-            'nifty_intelligence_engine': 0.0,
-            'smart_intraday_options': 0.0,
-            'market_microstructure_edge': 0.0
-        }
-        
-        if self.current_regime == MarketRegime.VOLATILE:
-            weights['professional_options_engine'] = 0.4
-            weights['smart_intraday_options'] = 0.3
-            weights['nifty_intelligence_engine'] = 0.2
-            weights['market_microstructure_edge'] = 0.1
-            
-        elif self.current_regime == MarketRegime.TRENDING:
-            weights['nifty_intelligence_engine'] = 0.4
-            weights['professional_options_engine'] = 0.3
-            weights['smart_intraday_options'] = 0.2
-            weights['market_microstructure_edge'] = 0.1
-            
-        elif self.current_regime == MarketRegime.BREAKOUT:
-            weights['nifty_intelligence_engine'] = 0.5
-            weights['professional_options_engine'] = 0.3
-            weights['smart_intraday_options'] = 0.1
-            weights['market_microstructure_edge'] = 0.1
-            
-        elif self.current_regime == MarketRegime.REVERSAL:
-            weights['market_microstructure_edge'] = 0.4
-            weights['smart_intraday_options'] = 0.3
-            weights['professional_options_engine'] = 0.2
-            weights['nifty_intelligence_engine'] = 0.1
-            
-        else:  # RANGING
-            weights['smart_intraday_options'] = 0.4
-            weights['market_microstructure_edge'] = 0.3
-            weights['professional_options_engine'] = 0.2
-            weights['nifty_intelligence_engine'] = 0.1
-        
-        return weights
-    
-    def get_allocation_multiplier(self, strategy_name: str) -> float:
-        """Get allocation multiplier for a strategy based on current regime"""
-        regime_name = self.current_regime.value.upper()
-        return self.allocation_adjustments.get(regime_name, {}).get(strategy_name, 1.0)
+    # PROFESSIONAL API METHODS FOR EXTERNAL ACCESS
     
     async def generate_signals(self, market_data: Dict) -> List[Dict]:
-        """Generate trading signals - meta-strategy doesn't generate direct signals"""
-        # Update regime based on market data
+        """Generate trading signals - meta-strategy provides regime guidance"""
         await self.on_market_data(market_data)
+        
+        # Meta-strategy doesn't generate direct trading signals
+        # Instead, it provides regime-based allocation guidance
         return []
     
+    def should_allow_strategy_signal(self, strategy_name: str, signal_confidence: float) -> bool:
+        """Determine if a strategy signal should be allowed based on current regime"""
+        try:
+            # Get regime-specific confidence threshold
+            required_confidence = self.get_regime_confidence_threshold()
+            
+            # Get strategy allocation multiplier
+            allocation_multiplier = self.get_professional_allocation_multiplier(strategy_name)
+            
+            # Allow signal if:
+            # 1. Signal confidence meets regime threshold
+            # 2. Strategy has positive allocation in current regime
+            # 3. Overall regime confidence is reasonable
+            
+            confidence_check = signal_confidence >= required_confidence
+            allocation_check = allocation_multiplier > 0.5
+            regime_confidence_check = self.regime_metrics.regime_confidence > 0.3
+            
+            return confidence_check and allocation_check and regime_confidence_check
+            
+        except Exception as e:
+            logger.error(f"Strategy signal validation failed: {e}")
+            return True  # Default to allowing signals if validation fails
+    
     async def shutdown(self):
-        """Shutdown the strategy"""
-        logger.info(f"Shutting down {self.name} strategy")
-        self.is_active = False 
+        """Shutdown the professional regime controller"""
+        logger.info(f"Shutting down {self.name} - Professional Regime Controller")
+        
+        # Log final regime summary
+        final_summary = self.get_regime_summary()
+        logger.info(f"📊 FINAL REGIME SUMMARY: {final_summary}")
+        
+        # Log performance statistics
+        if self.regime_transition_log:
+            total_transitions = len(self.regime_transition_log)
+            avg_regime_duration = self._get_current_regime_duration()
+            logger.info(f"📈 PERFORMANCE: {total_transitions} regime changes, "
+                       f"avg duration: {avg_regime_duration:.1f} minutes")
+        
+        self.is_active = False
+        logger.info("✅ Professional Regime Controller shutdown complete")
