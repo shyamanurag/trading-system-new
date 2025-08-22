@@ -74,6 +74,36 @@ class ProfessionalPosition:
             self.price_history = [self.current_price]
         if self.pnl_history is None:
             self.pnl_history = [self.pnl]
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert position to dictionary for serialization"""
+        return {
+            'symbol': self.symbol,
+            'quantity': self.quantity,
+            'average_price': self.average_price,
+            'current_price': self.current_price,
+            'pnl': self.pnl,
+            'unrealized_pnl': self.unrealized_pnl,
+            'side': self.side,
+            'entry_time': self.entry_time.isoformat() if self.entry_time else None,
+            'last_updated': self.last_updated.isoformat() if self.last_updated else None,
+            'stop_loss': self.stop_loss,
+            'target': self.target,
+            'trailing_stop': self.trailing_stop,
+            'var_95': self.var_95,
+            'cvar_95': self.cvar_95,
+            'sharpe_ratio': self.sharpe_ratio,
+            'max_drawdown': self.max_drawdown,
+            'correlation_score': self.correlation_score,
+            'beta': self.beta,
+            'alpha': self.alpha,
+            'strategy_source': self.strategy_source,
+            'sector': self.sector,
+            'position_size_score': self.position_size_score,
+            'confidence_score': self.confidence_score,
+            'price_history': self.price_history,
+            'pnl_history': self.pnl_history
+        }
 
 class ProfessionalRiskAnalytics:
     """Professional risk analytics for institutional-grade position management"""
