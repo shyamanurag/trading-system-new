@@ -2054,7 +2054,14 @@ class BaseStrategy:
                     logger.info(f"🔄 ATTEMPTING EQUITY FALLBACK for {symbol} due to zero options LTP")
                     logger.info(f"   REASON: Options contract {options_symbol} not liquid or doesn't exist")
                     logger.info(f"   SOLUTION: Trading underlying equity with same risk-reward profile")
-                    return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+                    
+                    # CRITICAL FIX: Ensure metadata shows EQUITY signal type for fallback
+                    equity_metadata = metadata.copy()
+                    equity_metadata['signal_type'] = 'EQUITY'
+                    equity_metadata['fallback_reason'] = 'options_ltp_zero'
+                    equity_metadata['original_options_symbol'] = options_symbol
+                    
+                    return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, equity_metadata)
                 return None
             
             # Validate signal levels only if we have a real entry price
@@ -3707,6 +3714,12 @@ class BaseStrategy:
 
                 logger.info(f"✅ EQUITY ORDER: {underlying_symbol} = {final_quantity} shares")
                 logger.info(f"   💰 Cost: ₹{cost:,.0f} / Available: ₹{available_capital:,.0f} ({cost/available_capital:.1%})")
+                
+                # CRITICAL DEBUG: Log final quantity calculation
+                if final_quantity == 0:
+                    logger.error(f"🚨 CRITICAL: Quantity calculation returned 0 for {underlying_symbol}")
+                    logger.error(f"   This should NOT happen for equity signals with valid entry price ₹{entry_price}")
+                
                 return final_quantity
             
         except Exception as e:
@@ -4030,6 +4043,12 @@ class BaseStrategy:
 
                 logger.info(f"✅ EQUITY ORDER: {underlying_symbol} = {final_quantity} shares")
                 logger.info(f"   💰 Cost: ₹{cost:,.0f} / Available: ₹{available_capital:,.0f} ({cost/available_capital:.1%})")
+                
+                # CRITICAL DEBUG: Log final quantity calculation
+                if final_quantity == 0:
+                    logger.error(f"🚨 CRITICAL: Quantity calculation returned 0 for {underlying_symbol}")
+                    logger.error(f"   This should NOT happen for equity signals with valid entry price ₹{entry_price}")
+                
                 return final_quantity
             
         except Exception as e:
