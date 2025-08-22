@@ -2313,55 +2313,6 @@ class BaseStrategy:
             
             if is_valid:
                 logger.info(f"✅ OPTIONS VALIDATED: {options_symbol} exists in Zerodha NFO")
-            
-            # CRITICAL DEBUG: Check what strikes are actually available
-            logger.info(f"🔍 STRIKE AVAILABILITY CHECK for {underlying_symbol}:")
-            try:
-                from src.core.orchestrator import get_orchestrator_instance
-                orchestrator = get_orchestrator_instance()
-                if orchestrator and orchestrator.zerodha_client:
-                    instruments = await orchestrator.zerodha_client.get_instruments("NFO")
-                    available_strikes = []
-                    for inst in instruments:
-                        if (underlying_symbol.upper() in inst.get('tradingsymbol', '').upper() and 
-                            expiry_str in inst.get('tradingsymbol', '') and
-                            inst.get('instrument_type') == 'CE'):
-                            strike = inst.get('strike', 0)
-                            if strike:
-                                available_strikes.append(int(strike))
-                    
-                    available_strikes = sorted(set(available_strikes))
-                    logger.info(f"   Available CE strikes for {expiry_str}: {available_strikes[:10]}...")  # Show first 10
-                    
-                    # Check if our calculated strike exists
-                    calculated_strike = int(strike_price)
-                    if calculated_strike in available_strikes:
-                        logger.info(f"✅ STRIKE CONFIRMED: {calculated_strike} exists in Zerodha")
-                    else:
-                        logger.error(f"❌ STRIKE MISSING: {calculated_strike} not found in available strikes")
-                        # Find nearest available strike
-                        nearest_strike = min(available_strikes, key=lambda x: abs(x - calculated_strike))
-                        logger.info(f"🎯 NEAREST AVAILABLE: {nearest_strike} (difference: {abs(nearest_strike - calculated_strike)})")
-                        
-                        # CRITICAL FIX: Use the nearest available strike
-                        if abs(nearest_strike - calculated_strike) <= 100:  # Within 100 points is acceptable
-                            logger.info(f"🔄 STRIKE CORRECTION: Using {nearest_strike} instead of {calculated_strike}")
-                            # Store the correction for later use
-                            self._strike_correction = {
-                                'original': calculated_strike,
-                                'corrected': nearest_strike,
-                                'symbol_original': options_symbol,
-                                'symbol_corrected': options_symbol.replace(str(calculated_strike), str(nearest_strike))
-                            }
-                            logger.info(f"🔄 CORRECTED SYMBOL: {options_symbol} → {self._strike_correction['symbol_corrected']}")
-                        else:
-                            logger.error(f"❌ STRIKE TOO FAR: Nearest strike {nearest_strike} is {abs(nearest_strike - calculated_strike)} points away")
-                            self._strike_correction = None
-                        
-            except Exception as debug_e:
-                logger.error(f"Strike availability check failed: {debug_e}")
-            
-            if is_valid:
                 return True
             else:
                 logger.warning(f"❌ OPTIONS NOT FOUND: {options_symbol} doesn't exist in Zerodha NFO")
