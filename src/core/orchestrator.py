@@ -1928,36 +1928,33 @@ class TradingOrchestrator:
             self.strategies.clear()
             self.active_strategies.clear()
             
-            # OPTIONS-FOCUSED STRATEGIES - All updated for options trading
+            # PROFESSIONAL STRATEGIES ONLY - Basic strategies disabled until rewritten
             strategy_configs = {
-                'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
-                'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},
-                'news_impact_scalper': {'name': 'EnhancedNewsImpactScalper', 'config': {}},
+                # PROFESSIONAL GRADE - ACTIVE
                 'optimized_volume_scalper': {'name': 'OptimizedVolumeScalper', 'config': {}},
-                'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}}
+                'regime_adaptive_controller': {'name': 'RegimeAdaptiveController', 'config': {}},
+                
+                # BASIC STRATEGIES - DISABLED UNTIL PROFESSIONAL REWRITE
+                # 'momentum_surfer': {'name': 'EnhancedMomentumSurfer', 'config': {}},
+                # 'volatility_explosion': {'name': 'EnhancedVolatilityExplosion', 'config': {}},
+                # 'news_impact_scalper': {'name': 'EnhancedNewsImpactScalper', 'config': {}},
             }
             
             self.logger.info(f"Loading {len(strategy_configs)} trading strategies...")
             
             for strategy_key, strategy_info in strategy_configs.items():
                 try:
-                    # Import strategy class
-                    if strategy_key == 'momentum_surfer':
-                        from strategies.momentum_surfer import EnhancedMomentumSurfer
-                        strategy_instance = EnhancedMomentumSurfer(strategy_info['config'])
-                    elif strategy_key == 'volatility_explosion':
-                        from strategies.volatility_explosion import EnhancedVolatilityExplosion
-                        strategy_instance = EnhancedVolatilityExplosion(strategy_info['config'])
-                    elif strategy_key == 'news_impact_scalper':
-                        from strategies.news_impact_scalper import EnhancedNewsImpactScalper
-                        strategy_instance = EnhancedNewsImpactScalper(strategy_info['config'])
-                    elif strategy_key == 'optimized_volume_scalper':
+                    # Import ONLY PROFESSIONAL strategy classes
+                    if strategy_key == 'optimized_volume_scalper':
                         from strategies.optimized_volume_scalper import OptimizedVolumeScalper
                         strategy_instance = OptimizedVolumeScalper(strategy_info['config'])
+                        self.logger.info(f"✅ PROFESSIONAL: Loaded {strategy_key} (Institutional-grade)")
                     elif strategy_key == 'regime_adaptive_controller':
                         from strategies.regime_adaptive_controller import RegimeAdaptiveController
                         strategy_instance = RegimeAdaptiveController(strategy_info['config'])
+                        self.logger.info(f"✅ PROFESSIONAL: Loaded {strategy_key} (Advanced meta-strategy)")
                     else:
+                        self.logger.info(f"⏸️ SKIPPED: {strategy_key} (Basic strategy disabled until rewrite)")
                         continue
                     
                     # Initialize strategy

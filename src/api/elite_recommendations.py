@@ -28,15 +28,11 @@ class AutonomousEliteScanner:
         self.failed_orders_max_age_hours = 24  # Keep failed orders for 24 hours
         
     async def initialize_strategies(self):
-        """Initialize the same 6 strategies used by the main trading system"""
+        """Initialize ONLY PROFESSIONAL strategies - basic ones disabled until rewrite"""
         try:
-            # Import and initialize all existing strategies
-            from strategies.momentum_surfer import EnhancedMomentumSurfer
-            from strategies.volatility_explosion import EnhancedVolatilityExplosion
-            from strategies.volume_profile_scalper import EnhancedVolumeProfileScalper
-            from strategies.news_impact_scalper import EnhancedNewsImpactScalper
+            # Import ONLY professional strategies
+            from strategies.optimized_volume_scalper import OptimizedVolumeScalper
             from strategies.regime_adaptive_controller import RegimeAdaptiveController
-            from strategies.confluence_amplifier import ConfluenceAmplifier
             
             # Configuration for strategies (same as orchestrator)
             config = {
@@ -45,14 +41,15 @@ class AutonomousEliteScanner:
                 'max_positions': 5
             }
             
-            # Initialize all strategies
+            # Initialize ONLY professional strategies
             self.strategies = {
-                'momentum_surfer': EnhancedMomentumSurfer(config),
-                'volatility_explosion': EnhancedVolatilityExplosion(config),
-                'volume_profile_scalper': EnhancedVolumeProfileScalper(config),
-                'news_impact_scalper': EnhancedNewsImpactScalper(config),
+                'optimized_volume_scalper': OptimizedVolumeScalper(config),
                 'regime_adaptive_controller': RegimeAdaptiveController(config),
-                'confluence_amplifier': ConfluenceAmplifier(config)
+                
+                # BASIC STRATEGIES DISABLED UNTIL PROFESSIONAL REWRITE
+                # 'momentum_surfer': EnhancedMomentumSurfer(config),
+                # 'volatility_explosion': EnhancedVolatilityExplosion(config),
+                # 'news_impact_scalper': EnhancedNewsImpactScalper(config),
             }
             
             # Initialize all strategies
