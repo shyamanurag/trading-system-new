@@ -2316,11 +2316,97 @@ class BaseStrategy:
                 return True
             else:
                 logger.warning(f"❌ OPTIONS NOT FOUND: {options_symbol} doesn't exist in Zerodha NFO")
+                
+                # Debug what options are actually available
+                try:
+                    # Extract expiry from options symbol for debugging
+                    import re
+                    match = re.search(r'(\d{2}[A-Z]{3}\d{2})', options_symbol)
+                    if match:
+                        expiry_str = match.group(1)
+                        import asyncio
+                        asyncio.create_task(self._debug_available_options(underlying_symbol, expiry_str))
+                except Exception as debug_e:
+                    logger.error(f"Debug options failed: {debug_e}")
+                
                 return False
                 
         except Exception as e:
             logger.error(f"Error validating options symbol {options_symbol}: {e}")
             return False  # Conservative: assume options don't exist
+    
+    async def _debug_available_options(self, underlying_symbol: str, expiry_str: str) -> None:
+        """Debug function to check what options are actually available"""
+        try:
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            if not orchestrator or not orchestrator.zerodha_client:
+                logger.warning("⚠️ Cannot debug options - Zerodha client not available")
+                return
+            
+            logger.info(f"🔍 DEBUGGING AVAILABLE OPTIONS for {underlying_symbol} expiry {expiry_str}")
+            
+            # Get all NFO instruments
+            instruments = await orchestrator.zerodha_client.get_instruments("NFO")
+            if not instruments:
+                logger.error("❌ No NFO instruments available")
+                return
+            
+            # Find all options for this underlying and expiry
+            available_options = []
+            for inst in instruments:
+                trading_symbol = inst.get('tradingsymbol', '')
+                if (underlying_symbol.upper() in trading_symbol.upper() and 
+                    expiry_str in trading_symbol and
+                    inst.get('instrument_type') in ['CE', 'PE']):
+                    available_options.append({
+                        'symbol': trading_symbol,
+                        'strike': inst.get('strike', 0),
+                        'type': inst.get('instrument_type'),
+                        'expiry': inst.get('expiry')
+                    })
+            
+            if available_options:
+                # Sort by strike price
+                available_options.sort(key=lambda x: float(x['strike']) if x['strike'] else 0)
+                
+                logger.info(f"✅ FOUND {len(available_options)} options for {underlying_symbol} {expiry_str}")
+                
+                # Show CE options
+                ce_options = [opt for opt in available_options if opt['type'] == 'CE']
+                if ce_options:
+                    strikes = [str(int(float(opt['strike']))) for opt in ce_options[:10]]  # First 10
+                    logger.info(f"   CE Strikes: {', '.join(strikes)}{'...' if len(ce_options) > 10 else ''}")
+                
+                # Show PE options  
+                pe_options = [opt for opt in available_options if opt['type'] == 'PE']
+                if pe_options:
+                    strikes = [str(int(float(opt['strike']))) for opt in pe_options[:10]]  # First 10
+                    logger.info(f"   PE Strikes: {', '.join(strikes)}{'...' if len(pe_options) > 10 else ''}")
+            else:
+                logger.error(f"❌ NO OPTIONS FOUND for {underlying_symbol} {expiry_str}")
+                
+                # Check if the underlying exists at all
+                all_underlyings = set()
+                for inst in instruments:
+                    trading_symbol = inst.get('tradingsymbol', '')
+                    if inst.get('instrument_type') in ['CE', 'PE']:
+                        # Extract underlying from options symbol
+                        import re
+                        match = re.match(r'^([A-Z]+)', trading_symbol)
+                        if match:
+                            all_underlyings.add(match.group(1))
+                
+                if underlying_symbol.upper() not in all_underlyings:
+                    logger.error(f"❌ UNDERLYING NOT FOUND: {underlying_symbol} not in NFO options")
+                    similar = [u for u in all_underlyings if underlying_symbol.upper()[:4] in u]
+                    if similar:
+                        logger.info(f"   Similar underlyings: {', '.join(list(similar)[:5])}")
+                else:
+                    logger.error(f"❌ NO OPTIONS for expiry {expiry_str} - check expiry date")
+                        
+        except Exception as e:
+            logger.error(f"Error debugging available options: {e}")
     
     def _get_atm_strike(self, symbol: str, price: float) -> int:
         """Get ATM strike for index options - FIXED for Zerodha's actual intervals"""
