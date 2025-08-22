@@ -606,6 +606,11 @@ class OptimizedVolumeScalper(BaseStrategy):
             if liquidity_signal:
                 microstructure_signals.append(liquidity_signal)
             
+            # 5. PROFESSIONAL STATISTICAL ARBITRAGE
+            arbitrage_signal = self._detect_statistical_arbitrage_opportunity(symbol, symbol_data, data)
+            if arbitrage_signal:
+                microstructure_signals.append(arbitrage_signal)
+            
             # Convert microstructure signals to trading signals
             for ms_signal in microstructure_signals:
                 trading_signal = await self._convert_to_trading_signal(symbol, symbol_data, ms_signal)
@@ -615,43 +620,395 @@ class OptimizedVolumeScalper(BaseStrategy):
         return signals
     
     def _detect_order_flow_imbalance(self, symbol: str, symbol_data: Dict) -> Optional[MarketMicrostructureSignal]:
-        """Detect order flow imbalance - institutional vs retail flow"""
+        """PROFESSIONAL ORDER FLOW ANALYSIS with institutional detection"""
         if symbol not in self.order_flow_history or len(self.order_flow_history[symbol]) < 10:
             return None
             
-        recent_flows = self.order_flow_history[symbol][-10:]
+        recent_flows = self.order_flow_history[symbol][-20:]  # Increased sample size
         
-        # Calculate directional flow imbalance
+        # PROFESSIONAL ORDER FLOW METRICS
         buy_flow = sum(f['intensity'] for f in recent_flows if f['direction'] > 0)
         sell_flow = sum(f['intensity'] for f in recent_flows if f['direction'] < 0)
         total_flow = buy_flow + sell_flow
         
         if total_flow == 0:
             return None
-            
-        # Calculate imbalance ratio
-        imbalance_ratio = max(buy_flow, sell_flow) / total_flow
         
+        # INSTITUTIONAL FLOW DETECTION
+        institutional_flows = [f for f in recent_flows if f['volume'] > self.institutional_size_threshold]
+        retail_flows = [f for f in recent_flows if f['volume'] <= self.institutional_size_threshold]
+        
+        # PROFESSIONAL IMBALANCE METRICS
+        imbalance_ratio = max(buy_flow, sell_flow) / total_flow
+        institutional_ratio = len(institutional_flows) / len(recent_flows) if recent_flows else 0
+        
+        # VOLUME-WEIGHTED PRICE IMPACT ANALYSIS
+        vwap_deviation = self._calculate_vwap_deviation(recent_flows, symbol_data)
+        
+        # MARKET MICROSTRUCTURE EDGE DETECTION
         if imbalance_ratio >= self.order_flow_imbalance_threshold:
             direction = 'BUY' if buy_flow > sell_flow else 'SELL'
             
-            # Check for institutional size trades
-            large_trades = [f for f in recent_flows if f['volume'] > self.institutional_size_threshold]
-            institutional_boost = len(large_trades) / len(recent_flows)
+            # PROFESSIONAL CONFIDENCE CALCULATION
+            base_confidence = imbalance_ratio * 10
+            institutional_boost = institutional_ratio * 2.0
+            vwap_boost = min(abs(vwap_deviation) * 5, 1.0)
             
-            strength = imbalance_ratio + institutional_boost * 0.2
-            confidence = min(strength * 10, 9.5)  # Cap at 9.5 on 0-10 scale
+            # STATISTICAL VALIDATION
+            flow_significance = self._test_flow_significance(recent_flows)
             
-            return MarketMicrostructureSignal(
+            confidence = min(base_confidence + institutional_boost + vwap_boost, 9.8)
+            
+            # RISK-ADJUSTED RETURN ESTIMATION
+            volatility = self._get_current_volatility(symbol)
+            expected_return = self._estimate_flow_return(imbalance_ratio, institutional_ratio, volatility)
+            
+            # PROFESSIONAL SIGNAL WITH VALIDATION
+            signal = MarketMicrostructureSignal(
                 signal_type=direction,
-                strength=strength,
+                strength=imbalance_ratio,
                 confidence=confidence,
-                edge_source="ORDER_FLOW_IMBALANCE",
-                expected_duration=180,  # 3 minutes
-                risk_adjusted_return=0.008  # 0.8% expected return
+                edge_source="PROFESSIONAL_ORDER_FLOW",
+                expected_duration=self._estimate_flow_duration(institutional_ratio),
+                risk_adjusted_return=expected_return,
+                statistical_significance=flow_significance,
+                sharpe_ratio=self._estimate_flow_sharpe(expected_return, volatility),
+                var_95=self._estimate_flow_var(expected_return, volatility),
+                kelly_fraction=self._calculate_optimal_sizing(expected_return, volatility)
             )
+            
+            logger.info(f"🏛️ INSTITUTIONAL FLOW: {symbol} {direction} "
+                       f"Imbalance={imbalance_ratio:.3f} Inst={institutional_ratio:.3f} "
+                       f"Confidence={confidence:.1f} p-value={flow_significance:.4f}")
+            
+            return signal
         
         return None
+    
+    def _calculate_vwap_deviation(self, flows: List[Dict], symbol_data: Dict) -> float:
+        """Calculate deviation from VWAP for flow analysis"""
+        try:
+            if not flows or 'ltp' not in symbol_data:
+                return 0.0
+            
+            current_price = symbol_data['ltp']
+            
+            # Calculate VWAP from recent flows
+            total_volume = sum(f['volume'] for f in flows)
+            if total_volume == 0:
+                return 0.0
+            
+            # Approximate VWAP using flow data
+            weighted_price = sum(f['volume'] * current_price for f in flows) / total_volume
+            vwap_deviation = (current_price - weighted_price) / weighted_price
+            
+            return vwap_deviation
+            
+        except Exception as e:
+            logger.error(f"VWAP deviation calculation failed: {e}")
+            return 0.0
+    
+    def _test_flow_significance(self, flows: List[Dict]) -> float:
+        """Test statistical significance of order flow imbalance"""
+        try:
+            if len(flows) < 10:
+                return 1.0
+            
+            # Extract flow directions
+            directions = [f['direction'] for f in flows]
+            
+            # Test if significantly different from random (50/50)
+            buy_count = sum(1 for d in directions if d > 0)
+            total_count = len(directions)
+            
+            # Binomial test against 50/50 null hypothesis
+            from scipy.stats import binom_test
+            p_value = binom_test(buy_count, total_count, 0.5)
+            
+            return p_value
+            
+        except Exception as e:
+            logger.error(f"Flow significance test failed: {e}")
+            return 1.0
+    
+    def _estimate_flow_return(self, imbalance_ratio: float, institutional_ratio: float, volatility: float) -> float:
+        """Estimate expected return from order flow imbalance"""
+        try:
+            # Base return from imbalance strength
+            base_return = (imbalance_ratio - 0.5) * 0.02  # 2% max from pure imbalance
+            
+            # Institutional boost
+            institutional_boost = institutional_ratio * 0.01  # 1% max from institutional flow
+            
+            # Volatility adjustment
+            vol_adjustment = min(volatility * 0.5, 0.01)  # Higher vol = higher potential return
+            
+            total_return = base_return + institutional_boost + vol_adjustment
+            
+            return max(min(total_return, 0.03), 0.001)  # Cap between 0.1% and 3%
+            
+        except Exception as e:
+            logger.error(f"Flow return estimation failed: {e}")
+            return 0.005
+    
+    def _estimate_flow_duration(self, institutional_ratio: float) -> int:
+        """Estimate signal duration based on institutional participation"""
+        try:
+            # Base duration
+            base_duration = 180  # 3 minutes
+            
+            # Institutional flows tend to last longer
+            institutional_extension = institutional_ratio * 300  # Up to 5 minutes extra
+            
+            total_duration = int(base_duration + institutional_extension)
+            
+            return min(max(total_duration, 60), 600)  # Between 1-10 minutes
+            
+        except Exception as e:
+            logger.error(f"Flow duration estimation failed: {e}")
+            return 180
+    
+    def _estimate_flow_sharpe(self, expected_return: float, volatility: float) -> float:
+        """Estimate Sharpe ratio for flow-based signal"""
+        try:
+            if volatility <= 0:
+                return 0.0
+            
+            # Annualized Sharpe estimation
+            annual_return = expected_return * 252  # Daily to annual
+            annual_vol = volatility
+            
+            sharpe = annual_return / annual_vol
+            
+            return max(min(sharpe, 5.0), 0.0)  # Cap between 0-5
+            
+        except Exception as e:
+            logger.error(f"Flow Sharpe estimation failed: {e}")
+            return 0.0
+    
+    def _estimate_flow_var(self, expected_return: float, volatility: float) -> float:
+        """Estimate VaR for flow-based signal"""
+        try:
+            # 95% VaR estimation assuming normal distribution
+            var_95 = 1.645 * volatility - expected_return  # 1.645 = 95% quantile
+            
+            return max(var_95, 0.0)
+            
+        except Exception as e:
+            logger.error(f"Flow VaR estimation failed: {e}")
+            return 0.02
+    
+    def _calculate_optimal_sizing(self, expected_return: float, volatility: float) -> float:
+        """Calculate optimal position sizing using Kelly criterion"""
+        try:
+            # Estimate win rate and win/loss ratio from expected return and volatility
+            win_rate = 0.55 + min(expected_return * 10, 0.15)  # 55-70% based on expected return
+            avg_win = expected_return * 1.5  # Assume 1.5x expected return on wins
+            avg_loss = volatility * 0.8  # Assume losses are 80% of volatility
+            
+            kelly_fraction = self.math_models.kelly_criterion(win_rate, avg_win, avg_loss)
+            
+            return kelly_fraction
+            
+        except Exception as e:
+            logger.error(f"Optimal sizing calculation failed: {e}")
+            return 0.02
+    
+    def _get_current_volatility(self, symbol: str) -> float:
+        """Get current volatility estimate for a symbol"""
+        try:
+            if symbol in self.volatility_history and self.volatility_history[symbol]:
+                return self.volatility_history[symbol][-1].get('current_vol', 0.02)
+            return 0.02  # Default 2% volatility
+        except Exception as e:
+            logger.error(f"Error getting current volatility for {symbol}: {e}")
+            return 0.02
+    
+    def _detect_statistical_arbitrage_opportunity(self, symbol: str, symbol_data: Dict, market_data: Dict) -> Optional[MarketMicrostructureSignal]:
+        """PROFESSIONAL STATISTICAL ARBITRAGE with cointegration testing"""
+        try:
+            if symbol not in self.price_history or len(self.price_history[symbol]) < 50:
+                return None
+            
+            # Find potential cointegration pairs
+            candidate_pairs = self._find_cointegration_candidates(symbol, market_data)
+            
+            for pair_symbol in candidate_pairs:
+                if pair_symbol not in self.price_history or len(self.price_history[pair_symbol]) < 50:
+                    continue
+                
+                # Test for cointegration
+                series1 = np.array(self.price_history[symbol][-50:])
+                series2 = np.array(self.price_history[pair_symbol][-50:])
+                
+                is_cointegrated, test_stat, p_value = self.math_models.cointegration_test(series1, series2)
+                
+                if is_cointegrated and p_value < 0.01:  # Strong cointegration
+                    # Calculate spread and z-score
+                    spread, z_score = self._calculate_spread_zscore(series1, series2)
+                    
+                    # Check for mean reversion opportunity
+                    if abs(z_score) > 2.0:  # 2 standard deviations
+                        direction = 'BUY' if z_score < -2.0 else 'SELL'
+                        
+                        # PROFESSIONAL ARBITRAGE SIGNAL
+                        confidence = min(9.0 + (abs(z_score) - 2.0) * 0.5, 9.8)
+                        expected_return = self._estimate_arbitrage_return(abs(z_score), p_value)
+                        
+                        signal = MarketMicrostructureSignal(
+                            signal_type=direction,
+                            strength=abs(z_score),
+                            confidence=confidence,
+                            edge_source="STATISTICAL_ARBITRAGE",
+                            expected_duration=self._estimate_arbitrage_duration(abs(z_score)),
+                            risk_adjusted_return=expected_return,
+                            statistical_significance=p_value,
+                            sharpe_ratio=self._estimate_arbitrage_sharpe(expected_return, abs(z_score)),
+                            var_95=self._estimate_arbitrage_var(expected_return, abs(z_score)),
+                            kelly_fraction=self._calculate_arbitrage_sizing(expected_return, abs(z_score))
+                        )
+                        
+                        logger.info(f"📊 STAT ARB: {symbol}-{pair_symbol} {direction} "
+                                   f"Z-score={z_score:.2f} p-value={p_value:.4f} "
+                                   f"Confidence={confidence:.1f}")
+                        
+                        return signal
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Statistical arbitrage detection failed for {symbol}: {e}")
+            return None
+    
+    def _find_cointegration_candidates(self, symbol: str, market_data: Dict) -> List[str]:
+        """Find potential cointegration pairs for statistical arbitrage"""
+        try:
+            # Sector-based pairing (simplified)
+            sector_groups = {
+                'BANKS': ['HDFCBANK', 'ICICIBANK', 'SBIN', 'KOTAKBANK', 'AXISBANK'],
+                'IT': ['TCS', 'INFY', 'WIPRO', 'HCLTECH', 'TECHM'],
+                'AUTO': ['MARUTI', 'M&M', 'TATAMOTORS', 'BAJAJ-AUTO', 'HEROMOTOCO'],
+                'PHARMA': ['SUNPHARMA', 'DRREDDY', 'CIPLA', 'LUPIN', 'BIOCON'],
+                'METALS': ['TATASTEEL', 'JSWSTEEL', 'HINDALCO', 'VEDL', 'COALINDIA']
+            }
+            
+            # Find symbol's sector
+            symbol_sector = None
+            for sector, symbols in sector_groups.items():
+                if symbol in symbols:
+                    symbol_sector = sector
+                    break
+            
+            if symbol_sector:
+                # Return other symbols in same sector
+                candidates = [s for s in sector_groups[symbol_sector] 
+                             if s != symbol and s in market_data]
+                return candidates[:3]  # Limit to top 3 candidates
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"Cointegration candidate search failed: {e}")
+            return []
+    
+    def _calculate_spread_zscore(self, series1: np.ndarray, series2: np.ndarray) -> Tuple[float, float]:
+        """Calculate spread and z-score for cointegrated pairs"""
+        try:
+            # Simple spread calculation (can be enhanced with regression)
+            spread = series1 - series2
+            
+            # Calculate z-score
+            spread_mean = np.mean(spread)
+            spread_std = np.std(spread)
+            
+            if spread_std == 0:
+                return 0.0, 0.0
+            
+            current_spread = spread[-1]
+            z_score = (current_spread - spread_mean) / spread_std
+            
+            return current_spread, z_score
+            
+        except Exception as e:
+            logger.error(f"Spread z-score calculation failed: {e}")
+            return 0.0, 0.0
+    
+    def _estimate_arbitrage_return(self, z_score: float, p_value: float) -> float:
+        """Estimate expected return from statistical arbitrage"""
+        try:
+            # Base return from z-score strength
+            base_return = min(z_score * 0.005, 0.02)  # 0.5% per z-score unit, max 2%
+            
+            # Cointegration strength boost
+            cointegration_boost = (1 - p_value) * 0.01  # Up to 1% from strong cointegration
+            
+            total_return = base_return + cointegration_boost
+            
+            return max(min(total_return, 0.025), 0.002)  # Between 0.2% and 2.5%
+            
+        except Exception as e:
+            logger.error(f"Arbitrage return estimation failed: {e}")
+            return 0.01
+    
+    def _estimate_arbitrage_duration(self, z_score: float) -> int:
+        """Estimate mean reversion duration for arbitrage"""
+        try:
+            # Higher z-scores tend to revert faster
+            base_duration = 300  # 5 minutes
+            z_adjustment = max(0, (4.0 - z_score) * 60)  # Reduce duration for higher z-scores
+            
+            total_duration = int(base_duration + z_adjustment)
+            
+            return min(max(total_duration, 120), 900)  # Between 2-15 minutes
+            
+        except Exception as e:
+            logger.error(f"Arbitrage duration estimation failed: {e}")
+            return 300
+    
+    def _estimate_arbitrage_sharpe(self, expected_return: float, z_score: float) -> float:
+        """Estimate Sharpe ratio for arbitrage opportunity"""
+        try:
+            # Arbitrage typically has high Sharpe ratios
+            base_sharpe = expected_return * 100  # High Sharpe for mean reversion
+            z_boost = min(z_score * 0.5, 2.0)  # Up to 2.0 boost from z-score
+            
+            total_sharpe = base_sharpe + z_boost
+            
+            return max(min(total_sharpe, 8.0), 1.0)  # Between 1.0-8.0
+            
+        except Exception as e:
+            logger.error(f"Arbitrage Sharpe estimation failed: {e}")
+            return 2.0
+    
+    def _estimate_arbitrage_var(self, expected_return: float, z_score: float) -> float:
+        """Estimate VaR for arbitrage opportunity"""
+        try:
+            # Arbitrage typically has lower risk
+            base_var = expected_return * 0.5  # Lower risk than expected return
+            z_adjustment = max(0, (z_score - 2.0) * 0.002)  # Higher z-score = slightly higher risk
+            
+            total_var = base_var + z_adjustment
+            
+            return max(min(total_var, 0.01), 0.001)  # Between 0.1% and 1%
+            
+        except Exception as e:
+            logger.error(f"Arbitrage VaR estimation failed: {e}")
+            return 0.005
+    
+    def _calculate_arbitrage_sizing(self, expected_return: float, z_score: float) -> float:
+        """Calculate optimal sizing for arbitrage opportunity"""
+        try:
+            # Higher confidence in arbitrage allows larger positions
+            base_sizing = 0.05  # 5% base position
+            z_boost = min(z_score * 0.01, 0.05)  # Up to 5% additional from z-score
+            
+            total_sizing = base_sizing + z_boost
+            
+            return max(min(total_sizing, 0.15), 0.02)  # Between 2% and 15%
+            
+        except Exception as e:
+            logger.error(f"Arbitrage sizing calculation failed: {e}")
+            return 0.05
     
     def _detect_volatility_clustering(self, symbol: str, symbol_data: Dict) -> Optional[MarketMicrostructureSignal]:
         """Detect volatility clustering for breakout trades"""
