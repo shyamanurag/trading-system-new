@@ -2361,11 +2361,11 @@ class BaseStrategy:
             except Exception as debug_e:
                 logger.error(f"Strike availability check failed: {debug_e}")
             
-            return is_valid
-            
-        else:
-            logger.warning(f"❌ OPTIONS NOT FOUND: {options_symbol} doesn't exist in Zerodha NFO")
-            return False
+            if is_valid:
+                return True
+            else:
+                logger.warning(f"❌ OPTIONS NOT FOUND: {options_symbol} doesn't exist in Zerodha NFO")
+                return False
                 
         except Exception as e:
             logger.error(f"Error validating options symbol {options_symbol}: {e}")
