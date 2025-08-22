@@ -321,7 +321,7 @@ class RiskManager:
             'max_daily_loss_percent': config.get('max_daily_loss_percent', 0.02),     # 2% daily loss
             'max_drawdown_percent': config.get('max_drawdown_percent', 0.05),        # 5% drawdown
             'max_correlation': config.get('max_correlation', 0.7),                   # 70% correlation
-            'max_concentration_percent': config.get('max_concentration_percent', 0.3), # 30% in single asset
+            'max_concentration_percent': config.get('max_concentration_percent', 0.95), # 95% in single asset (for single-position intraday trading)
             'max_portfolio_var_percent': config.get('max_portfolio_var_percent', 0.03), # 3% VaR
             # Adjusted to align with 20-30% max position value: 3% assumed loss × 10 = 30% cap
             'max_single_position_loss_percent': config.get('max_single_position_loss_percent', 0.03), # 3% per position
