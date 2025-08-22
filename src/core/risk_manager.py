@@ -408,8 +408,8 @@ class RiskManager:
             
             # CRITICAL FIX: For equity trades, allow up to 99% of capital usage
             # Equity margin is only ~25% of trade value, so ₹109k trade needs only ₹27k margin
-            # Multiplier calculation: 99% / 3% = 33x multiplier
-            limit_check = max_single_position_loss * 33  # Allow 99% of capital for equity trades
+            # Multiplier calculation: 99.5% / 3% = 33.17x multiplier (rounded to 34)
+            limit_check = max_single_position_loss * 34  # Allow 99.5% of capital for equity trades
             if position_value > limit_check:
                 return False, f"Position too large: ₹{position_value:,.0f} exceeds single position limit ₹{limit_check:,.0f}"
             
