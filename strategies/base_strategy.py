@@ -1292,7 +1292,7 @@ class BaseStrategy:
         self.symbol_cooldowns[symbol] = datetime.now()
         
     def _is_trading_hours(self) -> bool:
-        """Check if within trading hours - FIXED: Now uses IST timezone"""
+        """Check if within trading hours - INTRADAY FOCUSED with square-off logic"""
         try:
             # Get current time in IST (same as orchestrator)
             ist = pytz.timezone('Asia/Kolkata')
@@ -1303,24 +1303,49 @@ class BaseStrategy:
             market_open = time(9, 15)
             market_close = time(15, 30)
             
+            # INTRADAY SQUARE-OFF: Stop new positions 30 minutes before close
+            square_off_time = time(15, 0)  # 3:00 PM - Start square-off
+            
             # Check if it's a weekday (Monday=0, Sunday=6)
             if now.weekday() >= 5:  # Saturday or Sunday
                 logger.info(f"🚫 SAFETY: Trading blocked on weekend. Current day: {now.strftime('%A')}")
                 return False
             
             is_trading_time = market_open <= current_time <= market_close
+            is_square_off_time = square_off_time <= current_time <= market_close
             
             if not is_trading_time:
                 logger.info(f"🚫 SAFETY: Trading blocked outside market hours. Current IST time: {current_time} "
                            f"(Market: {market_open} - {market_close})")
+                return False
+            elif is_square_off_time:
+                logger.warning(f"⚠️ INTRADAY SQUARE-OFF: New positions blocked. Current time: {current_time} "
+                              f"(Square-off starts: {square_off_time})")
+                return False
             else:
-                logger.info(f"✅ TRADING HOURS: Market open. Current IST time: {current_time}")
-            
-            return is_trading_time
+                logger.info(f"✅ TRADING HOURS: Market open for new positions. Current IST time: {current_time}")
+                return True
             
         except Exception as e:
             logger.error(f"Error checking trading hours: {e}")
             # SAFETY: If timezone check fails, default to False (safer)
+            return False
+    
+    def _is_intraday_square_off_time(self) -> bool:
+        """Check if it's time to square off intraday positions"""
+        try:
+            ist = pytz.timezone('Asia/Kolkata')
+            now = datetime.now(ist)
+            current_time = now.time()
+            
+            # Square-off window: 3:00 PM to 3:30 PM
+            square_off_start = time(15, 0)
+            market_close = time(15, 30)
+            
+            return square_off_start <= current_time <= market_close
+            
+        except Exception as e:
+            logger.error(f"Error checking square-off time: {e}")
             return False
     
     def _is_opening_gap_gate_active(self, market_data: Dict, gap_threshold: float = 0.8) -> bool:

@@ -313,11 +313,18 @@ class OptimizedVolumeScalper(BaseStrategy):
         self.volatility_cluster_threshold = 1.5  # 1.5x normal volatility
         self.order_flow_imbalance_threshold = 0.7  # 70% directional flow
         
-        # TIME-BASED EDGE WINDOWS (IST timezone)
+        # INTRADAY PROFESSIONAL TRADING WINDOWS - OPTIMIZED FOR MICROSTRUCTURE
         self.high_volatility_windows = [
-            (9, 15, 9, 45),   # Opening 30 minutes
-            (14, 15, 15, 30), # Afternoon momentum
+            (9, 15, 10, 0),    # Opening 45 minutes - maximum volatility and volume
+            (10, 0, 10, 30),   # Post-opening consolidation - mean reversion opportunities
+            (11, 0, 11, 30),   # Mid-morning momentum - trend continuation
+            (14, 0, 14, 30),   # Pre-closing positioning - institutional activity
+            (14, 30, 15, 0),   # Final 30 minutes - maximum urgency and volume
         ]
+        
+        # INTRADAY SQUARE-OFF WINDOW
+        self.square_off_start_time = (15, 0)  # 3:00 PM - Start closing positions
+        self.market_close_time = (15, 30)     # 3:30 PM - Market close
         
         # RISK MANAGEMENT (conservative for real money)
         self.max_position_time = 300  # 5 minutes max hold

@@ -216,11 +216,13 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         # PROFESSIONAL OPTIONS MODELS
         self.options_models = ProfessionalOptionsModels()
         
-        # PROFESSIONAL PARAMETERS
-        self.iv_rank_threshold = 30  # Trade when IV rank > 30th percentile (more opportunities)
-        self.delta_range = (0.20, 0.80)  # Wider delta range for more opportunities
-        self.max_days_to_expiry = 60  # Extended for better time value capture
-        self.min_days_to_expiry = 5   # Reduced for more opportunities
+        # INTRADAY OPTIONS PARAMETERS - CRITICAL TIME FACTOR
+        self.iv_rank_threshold = 30  # Trade when IV rank > 30th percentile
+        self.delta_range = (0.20, 0.80)  # Wider delta range for opportunities
+        self.max_days_to_expiry = 7   # INTRADAY FOCUS: Max 1 week to expiry
+        self.min_days_to_expiry = 0   # INTRADAY: Allow same-day expiry (high theta)
+        self.max_hours_to_expiry = 24  # INTRADAY: Maximum 24 hours to expiry
+        self.min_hours_to_expiry = 1   # INTRADAY: Minimum 1 hour for safety
         
         # INSTITUTIONAL RISK MANAGEMENT
         self.max_position_size = 0.03  # 3% of capital per trade (professional sizing)
@@ -483,19 +485,82 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             logger.debug(f"Error in professional criteria check: {e}")
             return False
 
+    def _calculate_intraday_time_factor(self, symbol: str) -> Tuple[float, float, bool]:
+        """Calculate INTRADAY time factor for options - CRITICAL for theta decay"""
+        try:
+            import re
+            from datetime import datetime, time
+            import pytz
+            
+            # Extract expiry date from symbol (e.g., NIFTY2412520000CE -> 25DEC2024)
+            # Assuming format: SYMBOL + DDMMMYY + STRIKE + CE/PE
+            match = re.search(r'(\d{2})([A-Z]{3})(\d{2})', symbol)
+            if not match:
+                return 0.0, 0.0, False
+            
+            day, month_str, year = match.groups()
+            month_map = {
+                'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+                'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+            }
+            
+            if month_str not in month_map:
+                return 0.0, 0.0, False
+            
+            # Construct expiry datetime (3:30 PM IST on expiry day)
+            expiry_year = 2000 + int(year)
+            expiry_month = month_map[month_str]
+            expiry_day = int(day)
+            
+            ist = pytz.timezone('Asia/Kolkata')
+            expiry_datetime = ist.localize(datetime(expiry_year, expiry_month, expiry_day, 15, 30, 0))
+            current_datetime = datetime.now(ist)
+            
+            # Calculate time to expiry in hours and days
+            time_diff = expiry_datetime - current_datetime
+            hours_to_expiry = time_diff.total_seconds() / 3600
+            days_to_expiry = hours_to_expiry / 24
+            
+            # INTRADAY CHECK: Validate time constraints
+            is_intraday_suitable = (
+                self.min_hours_to_expiry <= hours_to_expiry <= self.max_hours_to_expiry and
+                self.min_days_to_expiry <= days_to_expiry <= self.max_days_to_expiry
+            )
+            
+            return hours_to_expiry, days_to_expiry, is_intraday_suitable
+            
+        except Exception as e:
+            logger.debug(f"Error calculating intraday time factor for {symbol}: {e}")
+            return 0.0, 0.0, False
+
     def _calculate_professional_confidence(self, symbol: str, ltp: float, underlying_price: float,
                                          strike_price: float, option_type: str, data: Dict,
                                          moneyness: float) -> float:
-        """Calculate confidence using professional options factors"""
+        """Calculate confidence using professional options factors with INTRADAY TIME FOCUS"""
         try:
             confidence = 5.0  # Base confidence
             
-            # 1. Moneyness scoring (favor slightly OTM)
+            # 1. INTRADAY TIME FACTOR - CRITICAL FOR OPTIONS
+            hours_to_expiry, days_to_expiry, is_time_suitable = self._calculate_intraday_time_factor(symbol)
+            
+            if not is_time_suitable:
+                logger.debug(f"❌ TIME FACTOR: {symbol} rejected - Hours to expiry: {hours_to_expiry:.1f}")
+                return 0.0  # REJECT if time factor not suitable
+            
+            # INTRADAY TIME BONUS: Higher confidence for shorter time (higher theta)
+            if hours_to_expiry <= 6:  # Same day expiry - HIGH THETA
+                confidence += 2.0
+                logger.debug(f"🔥 HIGH THETA: {symbol} - {hours_to_expiry:.1f} hours to expiry")
+            elif hours_to_expiry <= 24:  # Next day expiry - MEDIUM THETA
+                confidence += 1.0
+                logger.debug(f"⚡ MEDIUM THETA: {symbol} - {hours_to_expiry:.1f} hours to expiry")
+            
+            # 2. Moneyness scoring (favor slightly OTM for intraday)
             optimal_moneyness = 0.95 if option_type == 'CE' else 1.05
             moneyness_score = max(0, 3 - abs(moneyness - optimal_moneyness) * 10)
             confidence += moneyness_score
             
-            # 2. Volume and liquidity
+            # 3. Volume and liquidity (CRITICAL for intraday)
             volume = data.get('volume', 0)
             if volume > 1000:
                 confidence += 1.5
@@ -503,24 +568,44 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 confidence += 1.0
             elif volume > 100:
                 confidence += 0.5
+            else:
+                confidence -= 1.0  # Penalize low liquidity for intraday
             
-            # 3. Price momentum
+            # 4. Price momentum (intraday directional bias)
             change_percent = data.get('change_percent', 0)
             if option_type == 'CE' and change_percent > 2:
                 confidence += 1.0
             elif option_type == 'PE' and change_percent < -2:
                 confidence += 1.0
             
-            # 4. Time value preservation
-            # Favor options with reasonable time premium
+            # 5. INTRADAY TIME VALUE CHECK
             intrinsic_value = max(0, underlying_price - strike_price) if option_type == 'CE' else max(0, strike_price - underlying_price)
             time_value = ltp - intrinsic_value
-            if time_value > ltp * 0.3:  # Good time value
+            
+            # For intraday, prefer options with some time value but not too much
+            if 0.1 <= time_value / ltp <= 0.5:  # 10-50% time value is optimal for intraday
+                confidence += 1.0
+            elif time_value / ltp > 0.7:  # Too much time value - risky for intraday
+                confidence -= 0.5
+            
+            # 6. Market regime bonus (intraday volatility)
+            if abs(change_percent) > 1:  # Trending market - good for intraday options
                 confidence += 0.5
             
-            # 5. Market regime bonus
-            if abs(change_percent) > 1:  # Trending market
-                confidence += 0.5
+            # 7. INTRADAY THETA DECAY ACCELERATION
+            # Calculate theoretical theta and boost confidence for high theta decay
+            try:
+                T = days_to_expiry / 365.0  # Time to expiry in years
+                if T > 0:
+                    greeks = self.options_models.calculate_greeks(
+                        underlying_price, strike_price, T, 0.06, 0.2, option_type.lower(), 0.0
+                    )
+                    # Higher theta (more negative) = higher confidence for sellers
+                    theta_boost = min(abs(greeks.theta) * 0.1, 1.0)  # Cap at 1.0
+                    confidence += theta_boost
+                    logger.debug(f"📉 THETA BOOST: {symbol} - Theta: {greeks.theta:.3f}, Boost: {theta_boost:.2f}")
+            except Exception as e:
+                logger.debug(f"Error calculating theta boost: {e}")
             
             return min(confidence, 10.0)
             
