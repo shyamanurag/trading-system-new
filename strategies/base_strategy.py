@@ -2052,6 +2052,8 @@ class BaseStrategy:
                 # Only fall back to equity if market is open
                 if self._is_trading_hours_active():
                     logger.info(f"🔄 ATTEMPTING EQUITY FALLBACK for {symbol} due to zero options LTP")
+                    logger.info(f"   REASON: Options contract {options_symbol} not liquid or doesn't exist")
+                    logger.info(f"   SOLUTION: Trading underlying equity with same risk-reward profile")
                     return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
                 return None
             
