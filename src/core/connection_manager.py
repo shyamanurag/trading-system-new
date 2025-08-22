@@ -707,3 +707,33 @@ class ResilientConnection(ABC):
     @abstractmethod
     async def _check_connection_alive(self) -> bool:
         pass
+
+# Global instance
+connection_manager = None
+
+def get_connection_manager():
+    """Get the global connection manager instance"""
+    global connection_manager
+    if connection_manager is None:
+        # Initialize with default config
+        default_config = {
+            'max_retry_attempts': 3,
+            'retry_delay': 5,
+            'connection_timeout': 30,
+            'health_check_interval': 30
+        }
+        connection_manager = ConnectionManager(default_config)
+    return connection_manager
+
+async def initialize_connection_manager(config: dict = None):
+    """Initialize the global connection manager"""
+    global connection_manager
+    if config is None:
+        config = {
+            'max_retry_attempts': 3,
+            'retry_delay': 5,
+            'connection_timeout': 30,
+            'health_check_interval': 30
+        }
+    connection_manager = ConnectionManager(config)
+    return connection_manager

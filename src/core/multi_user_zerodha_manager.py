@@ -521,4 +521,15 @@ class MultiUserZerodhaManager:
             logger.error(f"❌ Error during cleanup: {e}")
 
 # Global instance
-multi_user_zerodha_manager = MultiUserZerodhaManager() 
+multi_user_zerodha_manager = MultiUserZerodhaManager()
+
+def get_multi_user_manager():
+    """Get the global multi-user Zerodha manager instance"""
+    return multi_user_zerodha_manager
+
+async def initialize_multi_user_manager():
+    """Initialize the global multi-user Zerodha manager"""
+    global multi_user_zerodha_manager
+    if not multi_user_zerodha_manager.is_initialized:
+        await multi_user_zerodha_manager.initialize()
+    return multi_user_zerodha_manager 
