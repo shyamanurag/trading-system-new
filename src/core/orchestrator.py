@@ -1530,6 +1530,23 @@ class TradingOrchestrator:
                 
                 filtered_signals = await signal_deduplicator.process_signals(all_signals)
 
+                # Generic executed-today suppression at orchestrator level (no hardcoded symbols)
+                try:
+                    import datetime as _dt
+                    today = _dt.datetime.now().strftime('%Y-%m-%d')
+                    if getattr(signal_deduplicator, 'redis_client', None):
+                        kept = []
+                        for s in filtered_signals:
+                            key = f"executed_signals:{today}:{s.get('symbol')}:{s.get('action','BUY')}"
+                            already = signal_deduplicator.redis_client.get(key)
+                            if already:
+                                self._track_signal_failed(s, 'DEDUPLICATED_TODAY')
+                            else:
+                                kept.append(s)
+                        filtered_signals = kept
+                except Exception:
+                    pass
+
                 # Global throttle: limit signals processed per cycle to reduce order churn and margin rejections
                 try:
                     max_signals_per_cycle = int(os.getenv('MAX_SIGNALS_PER_CYCLE', '1'))
@@ -1550,9 +1567,26 @@ class TradingOrchestrator:
                             self._track_signal_failed(signal, "No trade engine available")
                 else:
                     self.logger.info("📭 No high-quality signals after deduplication")
-                    # TRACK: Mark filtered signals as rejected
+                    # TRACK: Mark dedup-only outcomes as skipped rather than failed
                     for signal in all_signals:
-                        self._track_signal_failed(signal, "Filtered out by quality/deduplication")
+                        reason = "Filtered out by quality/deduplication"
+                        # If duplicate-today, log as skipped
+                        sym = signal.get('symbol')
+                        act = signal.get('action', 'BUY')
+                        import datetime as _dt
+                        today = _dt.datetime.now().strftime('%Y-%m-%d')
+                        dedup_key = f"executed_signals:{today}:{sym}:{act}"
+                        try:
+                            from src.core.signal_deduplicator import signal_deduplicator as _ded
+                            is_dup = False
+                            if getattr(_ded, 'redis_client', None):
+                                is_dup = bool(_ded.redis_client.get(dedup_key))
+                            if is_dup:
+                                self._track_signal_failed(signal, "DEDUPLICATED_TODAY")
+                            else:
+                                self._track_signal_failed(signal, reason)
+                        except Exception:
+                            self._track_signal_failed(signal, reason)
             else:
                 self.logger.debug("📭 No signals generated this cycle")
                     
