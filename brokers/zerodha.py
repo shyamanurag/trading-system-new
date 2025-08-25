@@ -1210,10 +1210,10 @@ class ZerodhaIntegration:
                         break
 
                 if instrument_token:
-                    # Fetch quote by instrument token and extract last_price
-                    quotes = self.kite.quote([instrument_token])
-                    if quotes:
-                        for _, data in quotes.items():
+                    # Fetch LTP by instrument token (preferred for tokens)
+                    ltp_resp = self.kite.ltp([instrument_token])
+                    if ltp_resp:
+                        for _, data in ltp_resp.items():
                             token_ltp = data.get('last_price') or data.get('last_traded_price') or 0
                             if token_ltp and token_ltp > 0:
                                 logger.info(f"✅ ZERODHA LTP (sync token): {options_symbol} = ₹{token_ltp}")
