@@ -458,7 +458,14 @@ class RegimeAdaptiveController:
             changes_array = np.array(price_changes)
             
             # 1. VOLATILITY FEATURES
-            volatility = np.std(changes_array) if len(changes_array) > 1 else 0.02
+            # Volatility should be on 0-1 scale of returns, not percentages.
+            # Use robust estimator and cap extremes to avoid 1000% artifacts from bad ticks.
+            if len(changes_array) > 1:
+                vol_raw = np.std(changes_array)
+                vol_clipped = float(np.clip(vol_raw, 0.0, 1.0))
+                volatility = vol_clipped
+            else:
+                volatility = 0.02
             
             # 2. MOMENTUM FEATURES
             momentum = np.mean(changes_array) if len(changes_array) > 0 else 0.0
@@ -808,7 +815,9 @@ class RegimeAdaptiveController:
             
             # VOLATILITY ALERTS
             if self.regime_metrics.volatility > 0.2:  # 20% volatility
-                logger.warning(f"⚠️ HIGH VOLATILITY: {self.regime_metrics.volatility:.1%}")
+                # Clamp logging to 100% to prevent unrealistic 1000%+ numbers
+                log_vol = min(self.regime_metrics.volatility, 1.0)
+                logger.warning(f"⚠️ HIGH VOLATILITY: {log_vol:.1%}")
             
             # PERFORMANCE TRACKING
             await self._track_regime_performance()
