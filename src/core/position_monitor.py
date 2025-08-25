@@ -57,6 +57,16 @@ class PositionMonitor:
         self.position_tracker = position_tracker
         self.risk_manager = risk_manager
         self.order_manager = order_manager
+        # Optional Redis for cooldown signaling
+        self.redis_client = None
+        try:
+            import os
+            import redis.asyncio as redis
+            redis_url = os.getenv('REDIS_URL')
+            if redis_url:
+                self.redis_client = redis.from_url(redis_url, decode_responses=True, ssl_cert_reqs=None, ssl_check_hostname=False)
+        except Exception:
+            self.redis_client = None
         
         # IST timezone for accurate time-based exits
         self.ist_timezone = pytz.timezone('Asia/Kolkata')
@@ -69,6 +79,8 @@ class PositionMonitor:
         # Exit conditions tracking
         self.pending_exits: Dict[str, List[ExitCondition]] = {}
         self.executed_exits: Dict[str, datetime] = {}
+        # Local fallback cooldown tracking
+        self._local_exit_cooldown: Dict[str, datetime] = {}
         
         # Time-based exit configuration
         self.intraday_exit_time = time(15, 15)  # 3:15 PM IST
@@ -519,6 +531,8 @@ class PositionMonitor:
                 if success:
                     # Mark as executed
                     self.executed_exits[condition.symbol] = datetime.now(self.ist_timezone)
+                    # Apply post-exit cooldown to prevent immediate re-entry
+                    await self._set_post_exit_cooldown(condition.symbol, cooldown_seconds=600)
                     
                     # Log the exit
                     logger.info(f"✅ AUTO SQUARE-OFF: {condition.symbol} - {condition.reason}")
@@ -579,6 +593,21 @@ class PositionMonitor:
         except Exception as e:
             logger.error(f"❌ Error executing single exit for {condition.symbol}: {e}")
             return False
+
+    async def _set_post_exit_cooldown(self, symbol: str, cooldown_seconds: int = 600):
+        """Set a post-exit cooldown marker to block immediate re-entry signals."""
+        try:
+            now = datetime.now(self.ist_timezone)
+            self._local_exit_cooldown[symbol] = now
+            if self.redis_client:
+                date_str = now.strftime('%Y-%m-%d')
+                key = f"post_exit_cooldown:{date_str}:{symbol}"
+                await self.redis_client.set(key, now.isoformat(), ex=cooldown_seconds)
+                logger.info(f"🧊 Post-exit cooldown set for {symbol} ({cooldown_seconds}s)")
+            else:
+                logger.info(f"🧊 Post-exit cooldown set locally for {symbol} ({cooldown_seconds}s)")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to set post-exit cooldown for {symbol}: {e}")
     
     async def get_monitoring_status(self) -> Dict[str, Any]:
         """Get current monitoring status"""

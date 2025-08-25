@@ -36,6 +36,9 @@ class SignalDeduplicator:
         # Don't create async task during init - will be called manually when event loop is ready
         self._startup_cleanup_pending = True
 
+        # Post-exit cooldown seconds (prevent immediate re-entry churn)
+        self.post_exit_cooldown_seconds = 600
+
     async def _clear_signal_cache_on_startup(self):
         """Clear deployment cache on startup to prevent duplicate signals"""
         try:
@@ -165,6 +168,16 @@ class SignalDeduplicator:
                 return True
             else:
                 logger.info(f"✅ SIGNAL ALLOWED: {symbol} {action} - no previous executions found")
+                # Check post-exit cooldown to prevent immediate re-entry after square-off
+                try:
+                    date = datetime.now().strftime('%Y-%m-%d')
+                    cooldown_key = f"post_exit_cooldown:{date}:{symbol}"
+                    cooldown_set_at = await self.redis_client.get(cooldown_key)
+                    if cooldown_set_at:
+                        logger.warning(f"🧊 COOLDOWN ACTIVE: Blocking new entry for {symbol} due to recent exit")
+                        return True
+                except Exception as cd_err:
+                    logger.debug(f"Cooldown check failed: {cd_err}")
                 return False
                 
         except Exception as e:
