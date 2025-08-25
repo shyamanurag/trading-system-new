@@ -244,8 +244,8 @@ class BaseStrategy:
             
         except Exception as e:
             logger.error(f"Error checking trading hours: {e}")
-            # Safe fallback - allow trading if error in time check
-            return True
+            # SAFE fallback - BLOCK trading if error in time check (safer)
+            return False
     
     def _get_position_close_urgency(self) -> str:
         """⏰ GET POSITION CLOSE URGENCY - Determine urgency level for position closure"""
@@ -2011,7 +2011,7 @@ class BaseStrategy:
         """Create standardized signal format for options"""
         try:
             # If market is closed, do not attempt options trading or on-demand data
-            if not self._is_trading_hours_active():
+            if not self._is_trading_hours():
                 logger.warning(f"⏸️ MARKET CLOSED - Skipping options signal for {symbol}")
                 return None
             # 🎯 CRITICAL FIX: Convert to options symbol and force BUY action
@@ -2050,7 +2050,7 @@ class BaseStrategy:
             if options_entry_price <= 0:
                 logger.error(f"❌ REJECTING OPTIONS SIGNAL: {options_symbol} has ZERO LTP - cannot trade")
                 # Only fall back to equity if market is open
-                if self._is_trading_hours_active():
+                if self._is_trading_hours():
                     logger.info(f"🔄 ATTEMPTING EQUITY FALLBACK for {symbol} due to zero options LTP")
                     logger.info(f"   REASON: Options contract {options_symbol} not liquid or doesn't exist")
                     logger.info(f"   SOLUTION: Trading underlying equity with same risk-reward profile")
@@ -2862,7 +2862,7 @@ class BaseStrategy:
                 logger.info(f"🔍 CONVERSION DEBUG:")
                 logger.info(f"   Input (Zerodha): {options_symbol}")
                 logger.info(f"   Output (TrueData): {truedata_symbol}")
-                logger.info(f"   Expected TrueData format: SYMBOL + YYMMDD + 5-digit-strike + CE/PE")
+                logger.info(f"   Expected TrueData format: SYMBOL + YYMMDD + 6-digit-strike + CE/PE")
                 
                 # VALIDATE: Check if conversion makes sense
                 if len(truedata_symbol) < 15:
