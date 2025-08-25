@@ -37,7 +37,7 @@ def get_truedata_options_format(underlying: str, expiry: str, strike: int, optio
     # Convert expiry from Zerodha format (14AUG) to TrueData format (YYMMDD)
     truedata_expiry = convert_expiry_to_truedata_format(expiry)
     
-    return f"{clean_underlying}{truedata_expiry}{strike:06d}{option_type}"
+    return f"{clean_underlying}{truedata_expiry}{strike}{option_type}"
 
 def convert_expiry_to_truedata_format(expiry: str) -> str:
     """Convert expiry from Zerodha format (14AUG) to TrueData format (220814)"""
@@ -106,8 +106,8 @@ def convert_zerodha_to_truedata_options(zerodha_symbol: str) -> str:
             # Format as TrueData: YYMMDD
             truedata_date = f"{year % 100:02d}{month:02d}{day:02d}"
             
-            # Ensure strike has 6 digits for TrueData format (like 003000, 237000)
-            strike_padded = str(strike).zfill(6)
+            # CRITICAL FIX: TrueData uses NO leading zeros for strike (like 1550, not 001550)
+            strike_padded = str(strike)
             
             logger.debug(f"📊 Zerodha→TrueData: {zerodha_symbol} → {underlying}{truedata_date}{strike_padded}{option_type}")
             return f"{underlying}{truedata_date}{strike_padded}{option_type}"
@@ -136,8 +136,8 @@ def convert_zerodha_to_truedata_options(zerodha_symbol: str) -> str:
             # Format as TrueData: YYMMDD
             truedata_date = f"{year % 100:02d}{month:02d}{day:02d}"
             
-            # Ensure strike has 6 digits for TrueData format (like 003000, 237000)
-            strike_padded = str(strike).zfill(6)
+            # CRITICAL FIX: TrueData uses NO leading zeros for strike (like 1550, not 001550)
+            strike_padded = str(strike)
             
             return f"{underlying}{truedata_date}{strike_padded}{option_type}"
         else:

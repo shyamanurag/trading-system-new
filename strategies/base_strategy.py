@@ -2862,7 +2862,7 @@ class BaseStrategy:
                 logger.info(f"🔍 CONVERSION DEBUG:")
                 logger.info(f"   Input (Zerodha): {options_symbol}")
                 logger.info(f"   Output (TrueData): {truedata_symbol}")
-                logger.info(f"   Expected TrueData format: SYMBOL + YYMMDD + 6-digit-strike + CE/PE")
+                logger.info(f"   Expected TrueData format: SYMBOL + YYMMDD + strike + CE/PE (no leading zeros)")
                 
                 # VALIDATE: Check if conversion makes sense
                 if len(truedata_symbol) < 15:
