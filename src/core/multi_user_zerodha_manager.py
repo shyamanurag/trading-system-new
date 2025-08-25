@@ -318,6 +318,40 @@ class MultiUserZerodhaManager:
         """Get status of all user sessions"""
         return [self.get_user_session_status(user_id) for user_id in self.user_sessions.keys()]
     
+    async def update_user_token(self, user_identifier, access_token: str) -> bool:
+        """Compatibility alias: Update token by numeric user_id, client_id, or username.
+        The orchestrator may pass a string client_id (e.g., QSW899) instead of an int user_id.
+        """
+        try:
+            # Direct int id
+            if isinstance(user_identifier, int) and user_identifier in self.user_sessions:
+                return await self.update_user_access_token(user_identifier, access_token)
+
+            # Try to resolve if a string identifier (client_id or username)
+            resolved_user_id: Optional[int] = None
+            try:
+                # Sometimes numeric id may be string, attempt cast
+                numeric_id = int(user_identifier)
+                if numeric_id in self.user_sessions:
+                    resolved_user_id = numeric_id
+            except Exception:
+                resolved_user_id = None
+
+            if resolved_user_id is None:
+                for uid, session in self.user_sessions.items():
+                    if session.client_id == str(user_identifier) or session.username == str(user_identifier):
+                        resolved_user_id = uid
+                        break
+
+            if resolved_user_id is not None:
+                return await self.update_user_access_token(resolved_user_id, access_token)
+
+            logger.warning(f"⚠️ update_user_token: Could not resolve user identifier: {user_identifier}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Error in update_user_token for {user_identifier}: {e}")
+            return False
+
     async def update_user_access_token(self, user_id: int, access_token: str) -> bool:
         """Update access token for a user"""
         try:

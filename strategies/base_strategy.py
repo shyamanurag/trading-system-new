@@ -2127,6 +2127,15 @@ class BaseStrategy:
                              stop_loss: float, target: float, confidence: float, metadata: Dict) -> Optional[Dict]:
         """Create equity signal with standard parameters"""
         try:
+            # Hard block known delisted/suspended symbols at source
+            try:
+                blocked_symbols = {'RCOM', 'RELCAPITAL', 'YESBANK', 'JETAIRWAYS'}
+                if symbol in blocked_symbols:
+                    logger.warning(f"🚫 BLOCKED EQUITY SIGNAL: {symbol} is delisted/suspended - rejecting")
+                    return None
+            except Exception:
+                pass
+
             # Validate signal levels
             if not self.validate_signal_levels(entry_price, stop_loss, target, action):
                 logger.warning(f"Invalid equity signal levels: {symbol}")

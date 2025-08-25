@@ -685,7 +685,8 @@ class RiskManager:
                 if orchestrator and getattr(orchestrator, 'zerodha_client', None):
                     margins = await orchestrator.zerodha_client.get_margins()
                     if margins:
-                        total_capital_override = float(margins.get('equity', {}).get('available', {}).get('live_balance', 0))
+                        # CRITICAL FIX: Use 'cash' field for available capital (not 'live_balance')
+                        total_capital_override = float(margins.get('equity', {}).get('available', {}).get('cash', 0))
                         if total_capital_override == 0:
                             total_capital_override = None
             except Exception:
