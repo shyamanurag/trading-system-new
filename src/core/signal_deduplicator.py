@@ -168,16 +168,7 @@ class SignalDeduplicator:
                 return True
             else:
                 logger.info(f"✅ SIGNAL ALLOWED: {symbol} {action} - no previous executions found")
-                # Check post-exit cooldown to prevent immediate re-entry after square-off
-                try:
-                    date = datetime.now().strftime('%Y-%m-%d')
-                    cooldown_key = f"post_exit_cooldown:{date}:{symbol}"
-                    cooldown_set_at = await self.redis_client.get(cooldown_key)
-                    if cooldown_set_at:
-                        logger.warning(f"🧊 COOLDOWN ACTIVE: Blocking new entry for {symbol} due to recent exit")
-                        return True
-                except Exception as cd_err:
-                    logger.debug(f"Cooldown check failed: {cd_err}")
+                # Removed: post-exit cooldown logic in favor of purging strategy caches
                 return False
                 
         except Exception as e:

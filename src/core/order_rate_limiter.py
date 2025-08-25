@@ -31,28 +31,13 @@ class OrderRateLimiter:
             'minute_max': 150,          # Stay below 200 limit  
             'second_max': 8,            # Stay below 10 limit
             'max_failures_per_symbol': 3,  # Ban symbol after 3 failures
-            'ban_duration': 600,        # 10 minutes ban
-            'min_hold_seconds': 120     # Minimum holding time after entry before re-entry allowed
+            'ban_duration': 600         # 10 minutes ban
         }
         
         logger.info("🛡️ OrderRateLimiter: Preventing order loops")
     
     async def can_place_order(self, symbol: str, action: str, quantity: int, price: float = 0) -> Dict:
-        # Prevent immediate re-entry churn: if we've just exited this symbol very recently, block
-        try:
-            if self.redis_client and action in ('BUY','SELL'):
-                from datetime import datetime
-                date = datetime.now().strftime('%Y-%m-%d')
-                cooldown_key = f"post_exit_cooldown:{date}:{symbol}"
-                cooldown_active = await self.redis_client.get(cooldown_key)
-                if cooldown_active:
-                    return {
-                        'allowed': False,
-                        'reason': 'POST_EXIT_COOLDOWN',
-                        'message': f'{symbol} under cooldown after recent exit'
-                    }
-        except Exception:
-            pass
+        # Strategy cache purge is now responsible for re-entry control; no broker-side cooldown here
 
         # Check daily limit
         if self.daily_order_count >= self.limits['daily_max']:

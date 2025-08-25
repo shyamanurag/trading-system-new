@@ -197,6 +197,26 @@ class BaseStrategy:
         self.position_entry_times = {}  # symbol -> entry timestamp
         self.failed_options_symbols = set()  # Track symbols that failed subscription
     
+    def purge_symbol_state(self, symbol: str) -> None:
+        """Remove cached state for a symbol so strategy decides fresh next cycle."""
+        try:
+            if symbol in getattr(self, 'current_positions', {}):
+                self.current_positions.pop(symbol, None)
+            if symbol in getattr(self, 'symbol_cooldowns', {}):
+                self.symbol_cooldowns.pop(symbol, None)
+            if symbol in getattr(self, 'position_cooldowns', {}):
+                self.position_cooldowns.pop(symbol, None)
+            if hasattr(self, 'price_history') and isinstance(getattr(self, 'price_history'), dict):
+                self.price_history.pop(symbol, None)
+            if hasattr(self, 'volume_history') and isinstance(getattr(self, 'volume_history'), dict):
+                self.volume_history.pop(symbol, None)
+            if symbol in getattr(self, 'active_positions', {}):
+                # Do not alter real positions; only clear strategy-side caches
+                pass
+            logger.info(f"🧹 {self.__class__.__name__}: Purged cached state for {symbol}")
+        except Exception as e:
+            logger.debug(f"{self.__class__.__name__}: purge_symbol_state failed for {symbol}: {e}")
+
     def set_market_bias(self, market_bias):
         """Set market bias system for coordinated signal generation"""
         self.market_bias = market_bias

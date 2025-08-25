@@ -531,8 +531,16 @@ class PositionMonitor:
                 if success:
                     # Mark as executed
                     self.executed_exits[condition.symbol] = datetime.now(self.ist_timezone)
-                    # Apply post-exit cooldown to prevent immediate re-entry
-                    await self._set_post_exit_cooldown(condition.symbol, cooldown_seconds=600)
+                    
+                    # Purge symbol state from all strategies so they decide fresh
+                    try:
+                        for key, meta in getattr(self.orchestrator, 'strategies', {}).items():
+                            inst = meta.get('instance') if isinstance(meta, dict) else None
+                            if inst and hasattr(inst, 'purge_symbol_state'):
+                                inst.purge_symbol_state(condition.symbol)
+                        logger.info(f"🧹 Purged symbol state across strategies for {condition.symbol}")
+                    except Exception as purge_err:
+                        logger.debug(f"Purge across strategies failed for {condition.symbol}: {purge_err}")
                     
                     # Log the exit
                     logger.info(f"✅ AUTO SQUARE-OFF: {condition.symbol} - {condition.reason}")
