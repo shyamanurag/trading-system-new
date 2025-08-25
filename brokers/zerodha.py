@@ -75,6 +75,8 @@ class ZerodhaIntegration:
         self._nse_instruments = None
         self._instruments_last_fetched = {}
         self._instruments_cache_duration = 3600  # 1 hour cache for instruments
+        # Fast lookup for instrument tokens by tradingsymbol
+        self._symbol_to_token: Dict[str, Any] = {}
         
         # Circuit breaker for symbol validation to prevent rate limiting
         self._validation_circuit_breaker = {
@@ -891,6 +893,15 @@ class ZerodhaIntegration:
                 self._instruments_last_fetched[cache_key] = now
                 if exchange == 'NFO':
                     self._nfo_instruments = instruments
+                    # Build fast lookup map for tokens
+                    try:
+                        self._symbol_to_token = {
+                            inst.get('tradingsymbol', ''): (inst.get('instrument_token') or inst.get('token'))
+                            for inst in instruments if inst.get('tradingsymbol')
+                        }
+                        logger.info(f"✅ Built token index for {len(self._symbol_to_token)} NFO symbols")
+                    except Exception as idx_err:
+                        logger.debug(f"Could not build token index: {idx_err}")
                 elif exchange == 'NSE':
                     self._nse_instruments = instruments
                 
@@ -1198,16 +1209,23 @@ class ZerodhaIntegration:
             # Fallback: resolve instrument token from cached NFO instruments and fetch via token (sync)
             try:
                 # Use already cached NFO instruments (do not attempt async from sync context)
-                instruments = self._nfo_instruments or []
-                if not instruments:
+                # Prefer fast map if available
+                if not self._symbol_to_token and self._nfo_instruments:
+                    try:
+                        self._symbol_to_token = {
+                            inst.get('tradingsymbol', ''): (inst.get('instrument_token') or inst.get('token'))
+                            for inst in (self._nfo_instruments or []) if inst.get('tradingsymbol')
+                        }
+                    except Exception:
+                        pass
+
+                if not self._symbol_to_token and not self._nfo_instruments:
                     logger.warning("⚠️ NFO instruments cache empty in sync path; skipping token fallback")
                     return None
 
-                instrument_token = None
-                for inst in instruments:
-                    if inst.get('tradingsymbol') == options_symbol:
-                        instrument_token = inst.get('instrument_token') or inst.get('token')
-                        break
+                instrument_token = self._symbol_to_token.get(options_symbol)
+                if not instrument_token:
+                    logger.info(f"ℹ️ No token found in index for {options_symbol}")
 
                 if instrument_token:
                     # Fetch LTP by instrument token (preferred for tokens)
