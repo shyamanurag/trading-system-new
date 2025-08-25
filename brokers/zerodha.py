@@ -1191,6 +1191,7 @@ class ZerodhaIntegration:
             full_symbol = f"{exchange}:{options_symbol}"
             
             logger.info(f"🔍 Zerodha Quote Request: {full_symbol}")
+            # Try both quote and ltp with exchange-qualified symbol
             quotes = self.kite.quote([full_symbol])
             logger.info(f"🔍 Zerodha Quote Response: {quotes}")
             
@@ -1213,6 +1214,16 @@ class ZerodhaIntegration:
                         return float(close_price)
             
             logger.warning(f"⚠️ No LTP data from Zerodha sync call for {options_symbol}")
+            try:
+                # Some environments allow ltp with exchange-qualified string
+                ltp_resp = self.kite.ltp([full_symbol])
+                if ltp_resp and full_symbol in ltp_resp:
+                    ltp2 = ltp_resp[full_symbol].get('last_price') or ltp_resp[full_symbol].get('last_traded_price') or 0
+                    if ltp2 and ltp2 > 0:
+                        logger.info(f"✅ ZERODHA LTP (sync alt): {options_symbol} = ₹{ltp2}")
+                        return float(ltp2)
+            except Exception:
+                pass
             # Fallback: resolve instrument token from cached NFO instruments and fetch via token (sync)
             try:
                 # Use already cached NFO instruments (do not attempt async from sync context)
@@ -1280,6 +1291,7 @@ class ZerodhaIntegration:
             exchange = self._get_exchange_for_symbol(options_symbol)
             full_symbol = f"{exchange}:{options_symbol}"
             
+            # Try both quote and ltp with exchange-qualified symbol
             quotes = self.kite.quote([full_symbol])
             
             if quotes and full_symbol in quotes:
@@ -1291,6 +1303,15 @@ class ZerodhaIntegration:
                     return float(ltp)
             
             logger.warning(f"⚠️ No LTP data from Zerodha for {options_symbol}")
+            try:
+                ltp_resp = self.kite.ltp([full_symbol])
+                if ltp_resp and full_symbol in ltp_resp:
+                    ltp2 = ltp_resp[full_symbol].get('last_price') or ltp_resp[full_symbol].get('last_traded_price') or 0
+                    if ltp2 and ltp2 > 0:
+                        logger.info(f"✅ ZERODHA LTP (alt): {options_symbol} = ₹{ltp2}")
+                        return float(ltp2)
+            except Exception:
+                pass
 
             # Fallback 1: Resolve instrument token from cached NFO instruments and fetch via token
             try:

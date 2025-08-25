@@ -2061,28 +2061,41 @@ class BaseStrategy:
             # 🔍 DEBUG: Log premium fetching
             logger.info(f"   Options Premium: ₹{options_entry_price} (vs underlying ₹{entry_price})")
             
-            # 🎯 CRITICAL FIX: Calculate correct stop_loss and target for options
+            # 🚨 CRITICAL: Block options signals with zero LTP completely
+            if options_entry_price <= 0:
+                # Attempt nearby-strike rescue before giving up
+                try:
+                    rescue = self._attempt_nearby_strike_rescue(options_symbol)
+                except Exception as _rescue_err:
+                    rescue = None
+                    logger.debug(f"Nearby-strike rescue error: {_rescue_err}")
+                if rescue and rescue.get('symbol') and rescue.get('ltp', 0) > 0:
+                    new_symbol = rescue['symbol']
+                    options_entry_price = rescue['ltp']
+                    logger.info(f"🛟 RESCUED OPTIONS: Switching to {new_symbol} with LTP ₹{options_entry_price}")
+                    options_symbol = new_symbol
+                
+                if options_entry_price <= 0:
+                    logger.error(f"❌ REJECTING OPTIONS SIGNAL: {options_symbol} has ZERO LTP - cannot trade")
+                    # Only fall back to equity if market is open
+                    if self._is_trading_hours():
+                        logger.info(f"🔄 ATTEMPTING EQUITY FALLBACK for {symbol} due to zero options LTP")
+                        logger.info(f"   REASON: Options contract {options_symbol} not liquid or doesn't exist")
+                        logger.info(f"   SOLUTION: Trading underlying equity with same risk-reward profile")
+                        
+                        # CRITICAL FIX: Ensure metadata shows EQUITY signal type for fallback
+                        equity_metadata = metadata.copy()
+                        equity_metadata['signal_type'] = 'EQUITY'
+                        equity_metadata['fallback_reason'] = 'options_ltp_zero'
+                        equity_metadata['original_options_symbol'] = options_symbol
+                        
+                        return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, equity_metadata)
+                    return None
+
+            # 🎯 CRITICAL FIX: Calculate correct stop_loss and target for options (only after non-zero premium)
             options_stop_loss, options_target = self._calculate_options_levels(
                 options_entry_price, stop_loss, target, option_type, action, symbol
             )
-            
-            # 🚨 CRITICAL: Block options signals with zero LTP completely
-            if options_entry_price <= 0:
-                logger.error(f"❌ REJECTING OPTIONS SIGNAL: {options_symbol} has ZERO LTP - cannot trade")
-                # Only fall back to equity if market is open
-                if self._is_trading_hours():
-                    logger.info(f"🔄 ATTEMPTING EQUITY FALLBACK for {symbol} due to zero options LTP")
-                    logger.info(f"   REASON: Options contract {options_symbol} not liquid or doesn't exist")
-                    logger.info(f"   SOLUTION: Trading underlying equity with same risk-reward profile")
-                    
-                    # CRITICAL FIX: Ensure metadata shows EQUITY signal type for fallback
-                    equity_metadata = metadata.copy()
-                    equity_metadata['signal_type'] = 'EQUITY'
-                    equity_metadata['fallback_reason'] = 'options_ltp_zero'
-                    equity_metadata['original_options_symbol'] = options_symbol
-                    
-                    return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, equity_metadata)
-                return None
             
             # Validate signal levels only if we have a real entry price
             if not self.validate_signal_levels(options_entry_price, options_stop_loss, options_target, 'BUY'):
@@ -2241,6 +2254,55 @@ class BaseStrategy:
                 return None
         except Exception as e:
             logger.error(f"Error getting real market price for {symbol}: {e}")
+            return None
+
+    def _attempt_nearby_strike_rescue(self, options_symbol: str) -> Optional[Dict]:
+        """Try nearby strikes (±2 steps) to find a tradable option LTP via Zerodha sync path.
+        Returns {'symbol': new_symbol, 'ltp': price} if found, else None.
+        """
+        try:
+            import re as _re
+            m = _re.match(r'^([A-Z]+)(\d{2}[A-Z]{3}\d{2})(\d+)(CE|PE)$', options_symbol)
+            if not m:
+                return None
+            underlying, expiry, strike_str, opt_type = m.groups()
+            try:
+                base_strike = int(strike_str)
+            except Exception:
+                return None
+
+            # Get zerodha client
+            if not getattr(self, 'zerodha_client', None):
+                try:
+                    from src.core.orchestrator import get_orchestrator_instance
+                    orchestrator = get_orchestrator_instance()
+                    if orchestrator:
+                        self.zerodha_client = orchestrator.zerodha_client
+                except Exception:
+                    pass
+            if not getattr(self, 'zerodha_client', None):
+                return None
+
+            # Use 50 as generic strike step for stocks; indices have 50 as well in most cases
+            step = 50
+            candidates = []
+            for k in [-2, -1, 1, 2]:  # skip 0 because current strike already failed
+                candidate_strike = base_strike + k * step
+                if candidate_strike <= 0:
+                    continue
+                sym = f"{underlying}{expiry}{candidate_strike}{opt_type}"
+                candidates.append(sym)
+
+            for sym in candidates:
+                try:
+                    ltp = self.zerodha_client.get_options_ltp_sync(sym)
+                    if ltp and ltp > 0:
+                        return {'symbol': sym, 'ltp': float(ltp)}
+                except Exception:
+                    continue
+
+            return None
+        except Exception:
             return None
 
     async def _convert_to_options_symbol(self, underlying_symbol: str, current_price: float, action: str) -> tuple:
