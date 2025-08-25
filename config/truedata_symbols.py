@@ -297,6 +297,13 @@ def is_fo_enabled(symbol: str) -> bool:
     
     # Remove suffixes for comparison (-I, 25, 26 etc.)
     clean_symbol = symbol.replace('-I', '').replace('25', '').replace('26', '').strip().upper()
+    
+    # CRITICAL FIX: Block delisted/suspended symbols
+    blocked_symbols = ['RCOM', 'RELCAPITAL', 'YESBANK', 'JETAIRWAYS']
+    if clean_symbol in blocked_symbols:
+        logger.warning(f"🚫 BLOCKED SYMBOL: {clean_symbol} - Known delisted/suspended stock")
+        return False
+    
     result = clean_symbol in top_50_liquid_fo
     
     # DEBUG: Log F&O check details

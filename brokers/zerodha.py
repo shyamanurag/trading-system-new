@@ -446,6 +446,15 @@ class ZerodhaIntegration:
             logger.error("Missing required field: symbol")
             return False
         
+        symbol = order_params['symbol']
+        
+        # CRITICAL FIX: Check if symbol is tradeable on Zerodha
+        # Known delisted/suspended symbols that should be blocked
+        blocked_symbols = ['RCOM', 'RELCAPITAL', 'YESBANK', 'JETAIRWAYS']
+        if symbol in blocked_symbols:
+            logger.warning(f"🚫 BLOCKED SYMBOL: {symbol} - Known delisted/suspended stock")
+            return False
+        
         # Check for quantity
         if 'quantity' not in order_params:
             logger.error("Missing required field: quantity")
