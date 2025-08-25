@@ -2,7 +2,11 @@ from fastapi import APIRouter, HTTPException
 from datetime import datetime
 import pytz
 import os
+import logging
 from src.models.responses import MarketIndicesResponse, MarketStatusResponse
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 # IST timezone
 IST = pytz.timezone('Asia/Kolkata')
@@ -13,8 +17,12 @@ router = APIRouter(prefix="/api/market", tags=["market-data"])
 async def get_market_indices():
     """Get market indices data from TrueData live feed with enhanced volume parsing"""
     try:
+        # CRITICAL DEBUG: Add error handling for each step
+        logger.info("🔍 Starting market indices endpoint...")
+        
         # Use IST timezone for timestamp
         now_ist = datetime.now(IST)
+        logger.info(f"🔍 IST time: {now_ist}")
         
         # Check if market is currently open
         current_hour = now_ist.hour
@@ -28,8 +36,10 @@ async def get_market_indices():
         # Only try to get live data if market is open
         if is_market_open:
             try:
-                # Import enhanced TrueData functions
+                # CRITICAL DEBUG: Test import step by step
+                logger.info("🔍 Attempting TrueData import...")
                 from data.truedata_client import live_market_data, get_truedata_status
+                logger.info("✅ TrueData import successful")
                 
                 # Get connection health
                 status = get_truedata_status()
@@ -214,6 +224,12 @@ async def get_market_indices():
         ).dict()
         
     except Exception as e:
+        # CRITICAL DEBUG: Log the full error details
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"❌ Market indices endpoint error: {e}")
+        logger.error(f"❌ Full traceback: {error_details}")
+        
         raise HTTPException(status_code=500, detail=f"Unable to fetch market indices: {str(e)}")
 
 @router.get("/market-status")
