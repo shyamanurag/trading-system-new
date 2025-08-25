@@ -2936,14 +2936,14 @@ class BaseStrategy:
                     self.truedata_symbols.append(truedata_symbol)
                     logger.info(f"✅ Successfully subscribed, waiting for data...")
                     
-                    for attempt in range(10):
+                    for attempt in range(6):
                         time_module.sleep(0.5)
                         premium = self.get_ltp(truedata_symbol)
                         logger.info(f"📊 TrueData LTP attempt {attempt+1}: {premium} for {truedata_symbol}")
                         if premium > 0:
                             logger.info(f"✅ TrueData LTP after subscription (secondary, attempt {attempt+1}): ₹{premium} for {truedata_symbol}")
                             return premium
-                    logger.warning(f"⚠️ TrueData secondary LTP still zero after 5s wait for {truedata_symbol}")
+                    logger.warning(f"⚠️ TrueData secondary LTP still zero after 3s wait for {truedata_symbol}")
                 else:
                     logger.error(f"❌ TrueData subscription FAILED for {truedata_symbol}")
                     logger.error("   This indicates symbol format issue or TrueData rejection")

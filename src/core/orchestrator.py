@@ -1610,15 +1610,19 @@ class TradingOrchestrator:
                     'by_strategy': {}, 'recent_signals': [], 'failed_signals': []
                 }
             
-            # Increment counters
-            self.signal_stats['failed'] += 1
+            # Increment counters unless reason indicates a benign skip
+            skip_reasons = ['DUPLICATE_TODAY', 'DEDUPLICATED_TODAY', 'POSITION_EXISTS', 'BLOCKED_SYMBOL']
+            is_skip = any(r in str(reason).upper() for r in skip_reasons)
+            if not is_skip:
+                self.signal_stats['failed'] += 1
             
             strategy = signal.get('strategy', 'unknown')
             if strategy not in self.signal_stats['by_strategy']:
                 self.signal_stats['by_strategy'][strategy] = {
                     'generated': 0, 'executed': 0, 'failed': 0
                 }
-            self.signal_stats['by_strategy'][strategy]['failed'] += 1
+            if not is_skip:
+                self.signal_stats['by_strategy'][strategy]['failed'] += 1
             
             # Store failed signals for debugging (last 10)
             failed_record = {
@@ -1630,15 +1634,18 @@ class TradingOrchestrator:
                 'generated_at': signal.get('generated_at'),
                 'failed_at': datetime.now().isoformat(),
                 'failure_reason': reason,
-                'status': 'FAILED'
+                'status': 'SKIPPED' if is_skip else 'FAILED'
             }
             
             self.signal_stats['failed_signals'].append(failed_record)
             if len(self.signal_stats['failed_signals']) > 10:
                 self.signal_stats['failed_signals'].pop(0)
                 
-            self.logger.error(f"📊 SIGNAL FAILED: {signal.get('symbol')} - {reason}")
-            self.logger.info(f"📊 FAILURE STATS: Total failed: {self.signal_stats['failed']}")
+            if is_skip:
+                self.logger.info(f"📭 SIGNAL SKIPPED: {signal.get('symbol')} - {reason}")
+            else:
+                self.logger.error(f"📊 SIGNAL FAILED: {signal.get('symbol')} - {reason}")
+                self.logger.info(f"📊 FAILURE STATS: Total failed: {self.signal_stats['failed']}")
             
         except Exception as e:
             self.logger.error(f"Error tracking signal failure: {e}")

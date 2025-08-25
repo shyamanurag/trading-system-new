@@ -1088,7 +1088,7 @@ class TradeEngine:
                     total_capital_override = None
                     if self.zerodha_client:
                         margins = await self.zerodha_client.get_margins()
-                        total_capital_override = float(margins.get('equity', {}).get('available', {}).get('live_balance', 0)) if margins else None
+                        total_capital_override = float(margins.get('equity', {}).get('available', {}).get('cash', 0)) if margins else None
                     # Wrap validate_signal to pass override via OrderManager call path
                 except Exception:
                     total_capital_override = None
