@@ -613,9 +613,14 @@ class ZerodhaIntegration:
             if not self.kite:
                 return 0.0
             
+            # Determine correct exchange for the symbol
+            exchange_for_margin = 'NSE'
+            if symbol and (symbol.endswith('CE') or symbol.endswith('PE') or symbol.endswith('FUT')):
+                exchange_for_margin = 'NFO'
+
             # Use Zerodha's order margin API to get exact margin requirement
             order_params = [{
-                'exchange': 'NSE',
+                'exchange': exchange_for_margin,
                 'tradingsymbol': symbol,
                 'transaction_type': order_type.upper(),
                 'variety': 'regular',
@@ -638,9 +643,10 @@ class ZerodhaIntegration:
                 # Options: Rough estimate - premium × quantity
                 # We'll need LTP for accurate calculation
                 try:
-                    ltp = self.kite.ltp(['NSE:' + symbol])
-                    if ltp and f'NSE:{symbol}' in ltp:
-                        premium = ltp[f'NSE:{symbol}'].get('last_price', 100)
+                    ltp = self.kite.ltp([f'{exchange_for_margin}:' + symbol])
+                    key = f'{exchange_for_margin}:{symbol}'
+                    if ltp and key in ltp:
+                        premium = ltp[key].get('last_price', 100)
                         return float(premium * quantity)
                 except:
                     return float(100 * quantity)  # Default ₹100 per option
@@ -648,9 +654,10 @@ class ZerodhaIntegration:
             elif symbol.endswith('FUT'):
                 # Futures: ~10-15% of contract value
                 try:
-                    ltp = self.kite.ltp(['NSE:' + symbol])
-                    if ltp and f'NSE:{symbol}' in ltp:
-                        price = ltp[f'NSE:{symbol}'].get('last_price', 1000)
+                    ltp = self.kite.ltp([f'{exchange_for_margin}:' + symbol])
+                    key = f'{exchange_for_margin}:{symbol}'
+                    if ltp and key in ltp:
+                        price = ltp[key].get('last_price', 1000)
                         return float(price * quantity * 0.15)
                 except:
                     return float(quantity * 1000 * 0.15)

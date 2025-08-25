@@ -2893,13 +2893,16 @@ class BaseStrategy:
                 logger.info(f"   Output (TrueData): {truedata_symbol}")
                 logger.info(f"   Expected TrueData format: SYMBOL + YYMMDD + strike + CE/PE (no leading zeros)")
                 
-                # VALIDATE: Check if conversion makes sense
-                if len(truedata_symbol) < 15:
-                    logger.error(f"❌ CONVERSION ERROR: TrueData symbol too short: {truedata_symbol}")
-                elif not truedata_symbol.endswith(('CE', 'PE')):
-                    logger.error(f"❌ CONVERSION ERROR: TrueData symbol missing CE/PE: {truedata_symbol}")
-                else:
-                    logger.info(f"✅ CONVERSION VALID: TrueData symbol format looks correct")
+                # VALIDATE: Check if conversion matches expected pattern generically (no fixed length)
+                try:
+                    import re as _re
+                    # SYMBOL (A-Z+) + YYMMDD (6 digits) + STRIKE (>=2 digits) + CE/PE
+                    if not _re.match(r'^[A-Z]+\d{6}\d{2,}(CE|PE)$', truedata_symbol):
+                        logger.warning(f"⚠️ CONVERSION FORMAT UNUSUAL: {truedata_symbol} (proceeding if data available)")
+                    else:
+                        logger.info(f"✅ CONVERSION VALID: TrueData symbol format looks correct")
+                except Exception as _valid_err:
+                    logger.debug(f"Symbol format validation skipped due to error: {_valid_err}")
             except Exception as e:
                 logger.error(f"❌ Symbol conversion ERROR: {e}, using original: {options_symbol}")
                 import traceback
@@ -2948,6 +2951,15 @@ class BaseStrategy:
                     logger.error(f"❌ TrueData subscription FAILED for {truedata_symbol}")
                     logger.error("   This indicates symbol format issue or TrueData rejection")
             else:
+                # Already subscribed: re-poll briefly before declaring failure
+                logger.info(f"📡 Already subscribed on TrueData: re-polling {truedata_symbol} for fresh LTP")
+                for attempt in range(6):
+                    time_module.sleep(0.5)
+                    premium = self.get_ltp(truedata_symbol)
+                    logger.info(f"📊 TrueData re-poll attempt {attempt+1}: {premium} for {truedata_symbol}")
+                    if premium > 0:
+                        logger.info(f"✅ TrueData LTP on re-poll (attempt {attempt+1}): ₹{premium} for {truedata_symbol}")
+                        return premium
                 logger.info(f"📊 Symbol {truedata_symbol} already in subscription list")
             
             logger.error(f"❌ ALL SOURCES FAILED - ZERO LTP for {options_symbol}")
