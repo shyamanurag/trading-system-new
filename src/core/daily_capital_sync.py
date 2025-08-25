@@ -91,8 +91,9 @@ class DailyCapitalSync:
                 logger.error("❌ Failed to fetch margin data from Zerodha")
                 return {}
             
-            # Extract real available capital - FIXED: Use correct field mapping
-            available_cash = margins.get('equity', {}).get('available', {}).get('live_balance', 0)
+            # Extract real available capital - CRITICAL FIX: Use correct field mapping
+            # The margins API returns: {'equity': {'available': {'cash': 107749}}}
+            available_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
             total_margin = margins.get('equity', {}).get('available', {}).get('collateral', 0)
             
             # Use actual Zerodha user ID from environment
@@ -283,7 +284,7 @@ class DailyCapitalSync:
                 
                 # Account-specific alerts
                 for account in sync_results.get('account_details', []):
-                    account_available = account.get('available_margin', 0)
+                    account_available = account.get('available_capital', 0)  # FIXED: Use available_capital
                     if account_available < 10000:  # Less than ₹10k per account
                         user_id = account.get('user_id', 'Unknown')
                         alerts.append(f"⚠️ LOW MARGIN - {user_id}: ₹{account_available:,.0f}")
@@ -306,7 +307,7 @@ class DailyCapitalSync:
             # Account-wise details
             for account in sync_results.get('account_details', []):
                 user_id = account.get('user_id', 'Unknown')
-                available = account.get('available_margin', 0)
+                available = account.get('available_capital', 0)  # FIXED: Use available_capital not available_margin
                 used = account.get('used_margin', 0)
                 logger.info(f"   {user_id}: Available=₹{available:,.0f}, Used=₹{used:,.0f}")
             
