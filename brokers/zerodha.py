@@ -1197,16 +1197,11 @@ class ZerodhaIntegration:
             logger.warning(f"⚠️ No LTP data from Zerodha sync call for {options_symbol}")
             # Fallback: resolve instrument token from cached NFO instruments and fetch via token (sync)
             try:
-                # Ensure NFO instruments are cached
-                if self._nfo_instruments is None:
-                    # Best-effort async call from sync context
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # Schedule and wait briefly
-                        loop.run_until_complete(self.get_instruments('NFO'))
-                    else:
-                        loop.run_until_complete(self.get_instruments('NFO'))
+                # Use already cached NFO instruments (do not attempt async from sync context)
                 instruments = self._nfo_instruments or []
+                if not instruments:
+                    logger.warning("⚠️ NFO instruments cache empty in sync path; skipping token fallback")
+                    return None
 
                 instrument_token = None
                 for inst in instruments:
@@ -1215,10 +1210,10 @@ class ZerodhaIntegration:
                         break
 
                 if instrument_token:
-                    # Fetch LTP by instrument token
-                    ltp_resp = self.kite.ltp([instrument_token])
-                    if ltp_resp:
-                        for _, data in ltp_resp.items():
+                    # Fetch quote by instrument token and extract last_price
+                    quotes = self.kite.quote([instrument_token])
+                    if quotes:
+                        for _, data in quotes.items():
                             token_ltp = data.get('last_price') or data.get('last_traded_price') or 0
                             if token_ltp and token_ltp > 0:
                                 logger.info(f"✅ ZERODHA LTP (sync token): {options_symbol} = ₹{token_ltp}")
