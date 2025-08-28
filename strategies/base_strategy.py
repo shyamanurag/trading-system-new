@@ -1862,7 +1862,8 @@ class BaseStrategy:
             
             # Validate numeric ranges
             if entry_price <= 0:
-                logger.warning(f"⚠️ INVALID ENTRY PRICE for {symbol}: {entry_price}")
+                logger.error(f"❌ INVALID ENTRY PRICE for {symbol}: {entry_price} - REJECTING SIGNAL")
+                logger.error(f"   This will cause quantity = 0 and signal rejection")
                 return None
             # ========================================
             # CRITICAL: POSITION DEDUPLICATION CHECK
@@ -3685,11 +3686,12 @@ class BaseStrategy:
                         logger.error(f"🚨 CRITICAL: {underlying_symbol} hitting F&O path but should be EQUITY!")
                         logger.error(f"   options_symbol={options_symbol}, underlying_symbol={underlying_symbol}")
                     return 0
-                # CRITICAL FIX: Allow zero entry price signals to pass to orchestrator for LTP validation
+                # 🚨 CRITICAL SAFETY: Check for zero/invalid entry price BEFORE margin calculation
                 if entry_price <= 0:
-                    logger.info(f"🔄 ZERO ENTRY PRICE for {options_symbol} - using default lot size for orchestrator validation")
-                    # Return default lot size to allow signal to proceed to orchestrator
-                    return base_lot_size
+                    logger.error(f"❌ INVALID ENTRY PRICE: {entry_price} for {options_symbol}")
+                    logger.error(f"   Cannot calculate margin/quantity with zero/negative entry price")
+                    logger.error(f"   This indicates a price data issue - signal should be rejected")
+                    return 0
                 
                 # 🚨 CRITICAL FIX: Get REAL margin requirement from Zerodha API
                 margin_required = 0.0
@@ -3765,6 +3767,13 @@ class BaseStrategy:
                     )
                     return 0
                 
+                # 🚨 CRITICAL SAFETY: Check for zero/invalid entry price
+                if entry_price <= 0:
+                    logger.error(f"❌ INVALID ENTRY PRICE: {entry_price} for {underlying_symbol}")
+                    logger.error(f"   Cannot calculate quantity with zero/negative entry price")
+                    logger.error(f"   This indicates a price data issue - signal should be rejected")
+                    return 0
+
                 # 🎯 CRITICAL: Calculate shares needed for MINIMUM ₹25,000 trade value
                 min_shares_required = int(min_trade_value / entry_price)
                 cost_for_min_shares = min_shares_required * entry_price
@@ -4015,11 +4024,12 @@ class BaseStrategy:
                         logger.error(f"🚨 CRITICAL: {underlying_symbol} hitting F&O path but should be EQUITY!")
                         logger.error(f"   options_symbol={options_symbol}, underlying_symbol={underlying_symbol}")
                     return 0
-                # CRITICAL FIX: Allow zero entry price signals to pass to orchestrator for LTP validation
+                # 🚨 CRITICAL SAFETY: Check for zero/invalid entry price BEFORE margin calculation
                 if entry_price <= 0:
-                    logger.info(f"🔄 ZERO ENTRY PRICE for {options_symbol} - using default lot size for orchestrator validation")
-                    # Return default lot size to allow signal to proceed to orchestrator
-                    return base_lot_size
+                    logger.error(f"❌ INVALID ENTRY PRICE: {entry_price} for {options_symbol}")
+                    logger.error(f"   Cannot calculate margin/quantity with zero/negative entry price")
+                    logger.error(f"   This indicates a price data issue - signal should be rejected")
+                    return 0
                 
                 # 🚨 CRITICAL FIX: Get REAL margin requirement from Zerodha API
                 margin_required = 0.0
@@ -4095,6 +4105,13 @@ class BaseStrategy:
                     )
                     return 0
                 
+                # 🚨 CRITICAL SAFETY: Check for zero/invalid entry price
+                if entry_price <= 0:
+                    logger.error(f"❌ INVALID ENTRY PRICE: {entry_price} for {underlying_symbol}")
+                    logger.error(f"   Cannot calculate quantity with zero/negative entry price")
+                    logger.error(f"   This indicates a price data issue - signal should be rejected")
+                    return 0
+
                 # 🎯 CRITICAL: Calculate shares needed for MINIMUM ₹25,000 trade value
                 min_shares_required = int(min_trade_value / entry_price)
                 cost_for_min_shares = min_shares_required * entry_price

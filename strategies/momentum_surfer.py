@@ -431,6 +431,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             confidence = 9.2 + min(change_percent * 0.2, 0.8)
             ltp = data.get('ltp', 0)
             if ltp <= 0:
+                logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
             stop_loss = ltp * 0.99
             target = ltp * 1.02
@@ -459,6 +460,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             confidence = 9.2 + min(abs(change_percent) * 0.2, 0.8)
             ltp = data.get('ltp', 0)
             if ltp <= 0:
+                logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
             stop_loss = ltp * 1.01
             target = ltp * 0.98
@@ -537,6 +539,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             confidence = 9.5 + min(change_percent * 0.1, 0.5)
             ltp = data.get('ltp', 0)
             if ltp <= 0:
+                logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
             stop_loss = ltp * 0.99
             target = ltp * 1.02
@@ -566,6 +569,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             confidence = 9.5 + min(abs(change_percent) * 0.1, 0.5)
             ltp = data.get('ltp', 0)
             if ltp <= 0:
+                logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
             stop_loss = ltp * 1.01
             target = ltp * 0.98
@@ -594,6 +598,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             confidence = 9.0
             ltp = data.get('ltp', 0)
             if ltp <= 0:
+                logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
             stop_loss = ltp * 0.99
             target = ltp * 1.02
@@ -622,6 +627,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             confidence = 9.0
             ltp = data.get('ltp', 0)
             if ltp <= 0:
+                logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
             stop_loss = ltp * 1.01
             target = ltp * 0.98
@@ -652,6 +658,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             confidence = 9.3
             ltp = data.get('ltp', 0)
             if ltp <= 0:
+                logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
             stop_loss = ltp * (0.99 if signal_type == 'BUY' else 1.01)
             target = ltp * (1.02 if signal_type == 'BUY' else 0.98)
@@ -682,6 +689,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             confidence = 9.0
             ltp = data.get('ltp', 0)
             if ltp <= 0:
+                logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
             stop_loss = ltp * (0.99 if signal_type == 'BUY' else 1.01)
             target = ltp * (1.02 if signal_type == 'BUY' else 0.98)
