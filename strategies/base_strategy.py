@@ -433,84 +433,97 @@ class BaseStrategy:
             real_symbols_with_positions = set()
             
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
-                real_positions = await orchestrator.zerodha_client.get_positions()
-                if real_positions:
-                    # First, collect all symbols that have real positions
-                    for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
-                        for pos in pos_list:
-                            symbol = pos.get('tradingsymbol')
-                            qty = pos.get('quantity', 0)
-                            if qty != 0:  # Only consider non-zero positions
-                                real_symbols_with_positions.add(symbol)
-                    
-                    # Clean up local positions that don't exist in broker
-                    symbols_to_remove = []
-                    for symbol in list(self.active_positions.keys()):
-                        if symbol not in real_symbols_with_positions:
-                            logger.warning(f"🧹 CLEANING STALE POSITION: {symbol} (not in broker)")
-                            symbols_to_remove.append(symbol)
-                    
-                    for symbol in symbols_to_remove:
-                        del self.active_positions[symbol]
-                    
-                    # Now process emergency exits for REAL positions
-                    # 🚨 CRITICAL FIX: Track processed symbols to prevent duplicate exits
-                    emergency_exits_processed = set()
-                    
-                    for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
-                        for pos in pos_list:
-                            symbol = pos.get('tradingsymbol')
-                            qty = pos.get('quantity', 0)
-                            avg_price = pos.get('average_price', 0)
-                            pnl = pos.get('pnl', 0) or pos.get('unrealised', 0) or 0
-                            
-                            # Skip if no actual position (qty = 0 means position closed)
-                            if qty == 0:
-                                continue
-                            
-                            # 🚨 CRITICAL: Skip if already processed (prevents duplicate exits)
-                            if symbol in emergency_exits_processed:
-                                logger.debug(f"⏭️ Skipping {symbol} - already checked for emergency exit")
-                                continue
-                            emergency_exits_processed.add(symbol)
-                            
-                            # EMERGENCY: Exit ANY position with >₹1000 loss or >2% loss
-                            loss_threshold_amount = -1000  # ₹1000 loss
-                            loss_threshold_percent = -2.0  # 2% loss
-                            
-                            # Calculate percentage loss
-                            if avg_price > 0 and qty != 0:
-                                current_price = market_data.get(symbol, {}).get('ltp', avg_price)
-                                pnl_percent = ((current_price - avg_price) / avg_price) * 100
-                            else:
-                                pnl_percent = 0
-                            
-                            # Check if position needs emergency exit
-                            if (pnl < loss_threshold_amount) or (pnl_percent < loss_threshold_percent):
-                                logger.error(f"🚨 EMERGENCY STOP LOSS TRIGGERED: {symbol}")
-                                logger.error(f"   Loss: ₹{pnl:.2f} ({pnl_percent:.1f}%), Qty: {qty}, Avg: ₹{avg_price:.2f}")
-                                
-                                # Force immediate exit signal
-                                exit_signal = {
-                                    'symbol': symbol,
-                                    'action': 'SELL' if qty > 0 else 'BUY',
-                                    'quantity': abs(qty),
-                                    'entry_price': market_data.get(symbol, {}).get('ltp', avg_price),
-                                    'stop_loss': 0,
-                                    'target': 0,
-                                    'confidence': 10.0,  # Maximum confidence for emergency exit
-                                    'reason': f'EMERGENCY_STOP_LOSS: ₹{pnl:.2f} ({pnl_percent:.1f}%)',  # Add at top level
-                                    'metadata': {
-                                        'reason': 'EMERGENCY_STOP_LOSS',
-                                        'loss_amount': pnl,
-                                        'loss_percent': pnl_percent,
-                                        'management_action': True,
-                                        'closing_action': True,
-                                        'bypass_all_checks': True
+                try:
+                    real_positions = await orchestrator.zerodha_client.get_positions()
+
+                    # 🚨 VALIDATION: Ensure real_positions is a dict
+                    if real_positions is None:
+                        logger.warning("⚠️ get_positions returned None")
+                        real_positions = {}
+                    elif isinstance(real_positions, int):
+                        logger.error(f"❌ get_positions returned int instead of dict: {real_positions}")
+                        real_positions = {}
+                    elif not isinstance(real_positions, dict):
+                        logger.error(f"❌ get_positions returned {type(real_positions)} instead of dict: {real_positions}")
+                        real_positions = {}
+
+                    if real_positions:
+                        # First, collect all symbols that have real positions
+                        for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
+                            for pos in pos_list:
+                                symbol = pos.get('tradingsymbol')
+                                qty = pos.get('quantity', 0)
+                                if qty != 0:  # Only consider non-zero positions
+                                    real_symbols_with_positions.add(symbol)
+
+                        # Clean up local positions that don't exist in broker
+                        symbols_to_remove = []
+                        for symbol in list(self.active_positions.keys()):
+                            if symbol not in real_symbols_with_positions:
+                                logger.warning(f"🧹 CLEANING STALE POSITION: {symbol} (not in broker)")
+                                symbols_to_remove.append(symbol)
+
+                        for symbol in symbols_to_remove:
+                            del self.active_positions[symbol]
+
+                        # Now process emergency exits for REAL positions
+                        # 🚨 CRITICAL FIX: Track processed symbols to prevent duplicate exits
+                        emergency_exits_processed = set()
+
+                        for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
+                            for pos in pos_list:
+                                symbol = pos.get('tradingsymbol')
+                                qty = pos.get('quantity', 0)
+                                avg_price = pos.get('average_price', 0)
+                                pnl = pos.get('pnl', 0) or pos.get('unrealised', 0) or 0
+
+                                # Skip if no actual position (qty = 0 means position closed)
+                                if qty == 0:
+                                    continue
+
+                                # 🚨 CRITICAL: Skip if already processed (prevents duplicate exits)
+                                if symbol in emergency_exits_processed:
+                                    logger.debug(f"⏭️ Skipping {symbol} - already checked for emergency exit")
+                                    continue
+                                emergency_exits_processed.add(symbol)
+
+                                # EMERGENCY: Exit ANY position with >₹1000 loss or >2% loss
+                                loss_threshold_amount = -1000  # ₹1000 loss
+                                loss_threshold_percent = -2.0  # 2% loss
+
+                                # Calculate percentage loss
+                                if avg_price > 0 and qty != 0:
+                                    current_price = market_data.get(symbol, {}).get('ltp', avg_price)
+                                    pnl_percent = ((current_price - avg_price) / avg_price) * 100
+                                else:
+                                    pnl_percent = 0
+
+                                # Check if position needs emergency exit
+                                if (pnl < loss_threshold_amount) or (pnl_percent < loss_threshold_percent):
+                                    logger.error(f"🚨 EMERGENCY STOP LOSS TRIGGERED: {symbol}")
+                                    logger.error(f"   Loss: ₹{pnl:.2f} ({pnl_percent:.1f}%), Qty: {qty}, Avg: ₹{avg_price:.2f}")
+
+                                    # Force immediate exit signal
+                                    exit_signal = {
+                                        'symbol': symbol,
+                                        'action': 'SELL' if qty > 0 else 'BUY',
+                                        'quantity': abs(qty),
+                                        'entry_price': market_data.get(symbol, {}).get('ltp', avg_price),
+                                        'stop_loss': 0,
+                                        'target': 0,
+                                        'confidence': 10.0,  # Maximum confidence for emergency exit
+                                        'reason': f'EMERGENCY_STOP_LOSS: ₹{pnl:.2f} ({pnl_percent:.1f}%)',  # Add at top level
+                                        'metadata': {
+                                            'reason': 'EMERGENCY_STOP_LOSS',
+                                            'loss_amount': pnl,
+                                            'loss_percent': pnl_percent,
+                                            'management_action': True,
+                                            'closing_action': True,
+                                            'bypass_all_checks': True
+                                        }
                                     }
-                                }
-                                await self._execute_management_action(exit_signal)
-                                logger.error(f"🚨 EXECUTED EMERGENCY EXIT for {symbol} - Loss: ₹{pnl:.2f}")
+                                    await self._execute_management_action(exit_signal)
+                                    logger.error(f"🚨 EXECUTED EMERGENCY EXIT for {symbol} - Loss: ₹{pnl:.2f}")
             
             # ⏰ CHECK POSITION CLOSURE URGENCY based on current time
             close_urgency = self._get_position_close_urgency()
@@ -2532,9 +2545,28 @@ class BaseStrategy:
             logger.info(f"🔍 DEBUGGING AVAILABLE OPTIONS for {underlying_symbol} expiry {expiry_str}")
             
             # Get all NFO instruments
-            instruments = await orchestrator.zerodha_client.get_instruments("NFO")
-            if not instruments:
-                logger.error("❌ No NFO instruments available")
+            try:
+                instruments = await orchestrator.zerodha_client.get_instruments("NFO")
+
+                # 🚨 VALIDATION: Ensure instruments is a list
+                if instruments is None:
+                    logger.error("❌ get_instruments returned None")
+                    return
+                elif isinstance(instruments, int):
+                    logger.error(f"❌ get_instruments returned int instead of list: {instruments}")
+                    return
+                elif not isinstance(instruments, list):
+                    logger.error(f"❌ get_instruments returned {type(instruments)} instead of list: {instruments}")
+                    return
+                elif not instruments:
+                    logger.error("❌ No NFO instruments available")
+                    return
+
+            except Exception as instruments_error:
+                logger.error(f"❌ Error getting NFO instruments: {instruments_error}")
+                logger.error(f"   Error type: {type(instruments_error)}")
+                if "can't be used in 'await' expression" in str(instruments_error):
+                    logger.error("🚨 CRITICAL: Zerodha API returned non-coroutine for instruments")
                 return
             
             # Find all options for this underlying and expiry
