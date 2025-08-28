@@ -2707,10 +2707,15 @@ class BaseStrategy:
                 nearest = future_expiries[0]
                 logger.info(f"📊 INDEX {zerodha_symbol} (from {underlying_symbol}): Using nearest expiry ({days_to_first_expiry} days)")
         else:
-            # STOCKS: Only have monthly expiries, use the nearest one
-            nearest = future_expiries[0]
-            days_to_expiry = (nearest['date'] - today).days
-            logger.info(f"📊 STOCK {zerodha_symbol}: Using monthly expiry ({days_to_expiry} days)")
+            # STOCKS: Prefer monthly expiries (last-Thursday); filter out weekly expiries
+            monthly_only = [exp for exp in future_expiries if exp.get('is_monthly', False)]
+            if monthly_only:
+                nearest = monthly_only[0]
+                logger.info(f"📊 STOCK {zerodha_symbol}: Using nearest MONTHLY expiry ({(nearest['date'] - today).days} days)")
+            else:
+                # Fallback: if API doesn't flag monthly, pick the first future expiry
+                nearest = future_expiries[0]
+                logger.warning(f"⚠️ STOCK {zerodha_symbol}: No monthly flag found, using first future expiry ({(nearest['date'] - today).days} days)")
             
         # Override with preference if specified
         if preference == "next_weekly" and len(future_expiries) > 1:
