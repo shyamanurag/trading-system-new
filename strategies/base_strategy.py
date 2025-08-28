@@ -2663,8 +2663,19 @@ class BaseStrategy:
             
             # Prefer nearest weekly first; if LTP missing later, logic will escalate to next
             optimal_expiry = await self._get_optimal_expiry_for_strategy(underlying_symbol, "nearest_weekly")
-            logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
-            return optimal_expiry
+
+            # 🚨 DEFENSIVE: Validate optimal_expiry before returning
+            if optimal_expiry is None:
+                logger.error(f"❌ _get_optimal_expiry_for_strategy returned None for {underlying_symbol}")
+                logger.error("   This should not happen - falling back to calculated expiry"
+                # Continue to fallback logic below
+            elif not isinstance(optimal_expiry, str):
+                logger.error(f"❌ _get_optimal_expiry_for_strategy returned invalid type: {type(optimal_expiry)} = {optimal_expiry}")
+                logger.error("   This should not happen - falling back to calculated expiry"
+                optimal_expiry = None
+            else:
+                logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
+                return optimal_expiry
         else:
             logger.warning("⚠️ No expiry dates from Zerodha API - using calculated fallback")
             # Fallback: for stocks, choose last Thursday of current/next month; for indices, next Thursday
@@ -2775,12 +2786,33 @@ class BaseStrategy:
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
         
         # 🚨 CRITICAL FIX: Zerodha format is 07AUG25 (DD + MMM + YY), NOT 25AUG
-        zerodha_expiry = f"{exp_date.day:02d}{month_names[exp_date.month - 1]}{str(exp_date.year)[-2:]}"
-        
-        logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
-        logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
-        
-        return zerodha_expiry
+        try:
+            # 🚨 DEFENSIVE: Validate date components before formatting
+            if not (1 <= exp_date.month <= 12):
+                logger.error(f"❌ INVALID MONTH: {exp_date.month} for {underlying_symbol}")
+                return None
+
+            if not (1 <= exp_date.day <= 31):
+                logger.error(f"❌ INVALID DAY: {exp_date.day} for {underlying_symbol}")
+                return None
+
+            zerodha_expiry = f"{exp_date.day:02d}{month_names[exp_date.month - 1]}{str(exp_date.year)[-2:]}"
+
+            # 🚨 DEFENSIVE: Validate the formatted result
+            if not isinstance(zerodha_expiry, str) or len(zerodha_expiry) != 7:
+                logger.error(f"❌ INVALID EXPIRY FORMAT: {zerodha_expiry} (type: {type(zerodha_expiry)}) for {underlying_symbol}")
+                return None
+
+            logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
+            logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
+
+            return zerodha_expiry
+
+        except Exception as format_error:
+            logger.error(f"❌ EXPIRY FORMATTING ERROR for {underlying_symbol}: {format_error}")
+            logger.error(f"   Date object: {exp_date} (type: {type(exp_date)})")
+            logger.error(f"   Month: {getattr(exp_date, 'month', 'MISSING')} Day: {getattr(exp_date, 'day', 'MISSING')} Year: {getattr(exp_date, 'year', 'MISSING')}")
+            return None
     
     async def _get_available_expiries_from_zerodha(self, underlying_symbol: str) -> List[Dict]:
         """
@@ -2792,63 +2824,68 @@ class BaseStrategy:
             zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
             if zerodha_symbol != underlying_symbol:
                 logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {zerodha_symbol}")
-            
+
             # Get orchestrator instance to access Zerodha client
             from src.core.orchestrator import get_orchestrator_instance
             orchestrator = get_orchestrator_instance()
-            
+
             if not orchestrator or not orchestrator.zerodha_client:
                 logger.error("❌ Zerodha client not available for expiry lookup - NO FALLBACK")
                 return []
-            
-            # Use the new async method - we'll need to handle this synchronously
-            import asyncio
-            loop = asyncio.get_event_loop()
-            
+
+            # 🚨 DEFENSIVE: Try to get expiries for the specific underlying symbol first
+            try:
+                logger.info(f"🔍 Trying to get expiries directly for {zerodha_symbol}")
+                expiries = await orchestrator.zerodha_client.get_available_expiries_for_symbol(zerodha_symbol)
+
+                # 🚨 DEFENSIVE: Validate the response
+                if expiries is None:
+                    logger.error(f"❌ get_available_expiries_for_symbol returned None for {zerodha_symbol}")
+                    expiries = []
+                elif isinstance(expiries, int):
+                    logger.error(f"❌ get_available_expiries_for_symbol returned int instead of list: {expiries} for {zerodha_symbol}")
+                    expiries = []
+                elif not isinstance(expiries, list):
+                    logger.error(f"❌ get_available_expiries_for_symbol returned {type(expiries)} instead of list: {expiries} for {zerodha_symbol}")
+                    expiries = []
+                elif expiries:  # List is not empty
+                    logger.info(f"✅ Found {len(expiries)} expiries for {zerodha_symbol}")
+                    return expiries
+            except Exception as direct_err:
+                logger.warning(f"⚠️ Direct expiry fetch failed for {zerodha_symbol}: {direct_err}")
+
+            # Fallback: Try common symbols if direct fetch failed
+            logger.info(f"🔄 Falling back to common symbols for expiry lookup")
+
             # Try to get expiries for common underlying symbols we trade
-            all_expiries = set()
-            
-            # Get expiries for indices and stocks we commonly trade
             common_symbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'POWERGRID', 'RELIANCE', 'TCS']
-            
+
             for symbol in common_symbols:
                 try:
-                    # 🎯 CRITICAL FIX: Handle both sync and async contexts properly
-                    if loop.is_running():
-                        # We're in async context - use asyncio.create_task() instead
-                        import asyncio
-                        try:
-                            # Create a new task to avoid "cannot be called from a running event loop"
-                            task = asyncio.create_task(
-                                orchestrator.zerodha_client.get_available_expiries_for_symbol(symbol)
-                            )
-                            # Get the result - this works in async context
-                            expiries = await task
-                            
-                            if expiries:
-                                logger.info(f"📅 Using expiries from {symbol}: {len(expiries)} found")
-                                return expiries
-                        except Exception as async_err:
-                            logger.warning(f"⚠️ Async expiry fetch failed for {symbol}: {async_err}")
-                            continue
-                    else:
-                        # Run the async method
-                        expiries = loop.run_until_complete(
-                            orchestrator.zerodha_client.get_available_expiries_for_symbol(symbol)
-                        )
-                        
-                        if expiries:
-                            # Use expiries from the first successful symbol lookup
-                            logger.info(f"📅 Using expiries from {symbol}: {len(expiries)} found")
-                            return expiries
+                    logger.info(f"🔍 Trying common symbol {symbol} for expiry data")
+                    expiries = await orchestrator.zerodha_client.get_available_expiries_for_symbol(symbol)
+
+                    # 🚨 DEFENSIVE: Validate the response
+                    if expiries is None:
+                        logger.warning(f"⚠️ get_available_expiries_for_symbol returned None for {symbol}")
+                        continue
+                    elif isinstance(expiries, int):
+                        logger.error(f"❌ get_available_expiries_for_symbol returned int instead of list: {expiries} for {symbol}")
+                        continue
+                    elif not isinstance(expiries, list):
+                        logger.error(f"❌ get_available_expiries_for_symbol returned {type(expiries)} instead of list: {expiries} for {symbol}")
+                        continue
+                    elif expiries:  # List is not empty
+                        logger.info(f"📅 Using expiries from {symbol}: {len(expiries)} found")
+                        return expiries
                 except Exception as e:
                     logger.warning(f"⚠️ Error fetching expiries for {symbol}: {e}")
                     continue
-            
+
             # If no expiries found from API, REJECT signal
             logger.error("❌ No expiries found from Zerodha API - NO FALLBACK")
             return []
-            
+
         except Exception as e:
             logger.error(f"❌ Error fetching available expiries: {e}")
             # Add debug info to help identify the issue
