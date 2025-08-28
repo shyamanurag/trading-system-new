@@ -302,7 +302,7 @@ def is_fo_enabled(symbol: str) -> bool:
             logger.info(f"🔍 F&O CHECK (cache): {symbol} → {clean_symbol} → {result}")
             return result
 
-        # Baseline liquid universe (kept for fast allow-list)
+        # Baseline liquid universe (kept for conservative allow-list)
         top_50_liquid_fo = {
             'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX',
             'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
@@ -315,19 +315,10 @@ def is_fo_enabled(symbol: str) -> bool:
             'GAIL', 'ADANIPORT', 'ADANIGREEN', 'PNB', 'FEDERALBNK'
         }
 
-        # Expanded curated universe already present in this module
-        try:
-            expanded_list = get_complete_fo_symbols()
-            expanded_universe = {s.replace('-I', '').strip().upper() for s in expanded_list}
-        except Exception:
-            expanded_universe = set()
-
-        static_universe = top_50_liquid_fo | expanded_universe
-
-        # If in static universe, mark True immediately
-        if clean_symbol in static_universe:
+        # Indices: always F&O enabled
+        if clean_symbol in {'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'}:
             _fo_enabled_cache[clean_symbol] = True
-            logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → F&O enabled: True (static universe)")
+            logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → True (index)")
             return True
 
         # Dynamic verification via Zerodha NFO instruments (authoritative)
@@ -343,14 +334,19 @@ def is_fo_enabled(symbol: str) -> bool:
                     for inst in instruments or []
                 )
                 _fo_enabled_cache[clean_symbol] = bool(found)
-                logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → F&O enabled: {found} (Zerodha NFO lookup)")
+                logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → {found} (Zerodha NFO lookup)")
                 return bool(found)
         except Exception as e:
             logger.debug(f"F&O dynamic lookup failed for {clean_symbol}: {e}")
 
-        # Conservative default when unknown: False
+        # If broker lookup unavailable, conservatively allow only top_50 list; otherwise False
+        if clean_symbol in top_50_liquid_fo:
+            _fo_enabled_cache[clean_symbol] = True
+            logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → True (top-50 fallback)")
+            return True
+
         _fo_enabled_cache[clean_symbol] = False
-        logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → F&O enabled: False (default)")
+        logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → False (not in NFO, not in top-50)")
         return False
 
     except Exception as e:

@@ -1975,6 +1975,7 @@ class BaseStrategy:
             fo_enabled = is_fo_enabled(symbol)
             equity_only = should_use_equity_only(symbol)
             logger.info(f"🔍 F&O CHECK for {symbol}: fo_enabled={fo_enabled}, equity_only={equity_only}")
+            logger.debug(f"   Strategy instance: {self.name}, Signal ID: {getattr(metadata, 'get', lambda x: 'unknown')('signal_id', 'unknown')}")
             
             # CRITICAL DEBUG: For problematic symbols, add extra validation
             if symbol in ['FORCEMOT', 'RCOM', 'DEVYANI', 'RAYMOND', 'ASTRAL', 'IDEA']:
@@ -2366,7 +2367,7 @@ class BaseStrategy:
                 if not expiry:
                     logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
                     return None, 'REJECTED'
-                strike = self._get_volume_based_strike(zerodha_underlying, actual_price, expiry, action)
+                strike = await self._get_volume_based_strike(zerodha_underlying, actual_price, expiry, action)
                 
                 # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
                 if action.upper() == 'BUY':
@@ -2392,7 +2393,7 @@ class BaseStrategy:
                 if not expiry:
                     logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - FALLBACK TO EQUITY")
                     return None, 'REJECTED'
-                strike = self._get_volume_based_strike(zerodha_underlying, actual_price, expiry, action)
+                strike = await self._get_volume_based_strike(zerodha_underlying, actual_price, expiry, action)
                 
                 # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
                 if action.upper() == 'BUY':
@@ -3529,36 +3530,51 @@ class BaseStrategy:
         except Exception as e:
             logger.error(f"Error getting available capital: {e}")
             return 50000.0
-    
-    def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
-        """🎯 USER REQUIREMENT: Select strike based on volume - highest or second highest for liquidity"""
+
+    async def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
+        """🎯 USER REQUIREMENT: Select strike based on volume - use closest available strike to ATM"""
         try:
             # First get ATM strike as baseline
             atm_strike = self._get_atm_strike_for_stock(current_price)
-            
-            # Get available strikes around ATM (3 strikes above and below)
-            strike_interval = 50 if underlying_symbol not in ['NIFTY', 'BANKNIFTY', 'FINNIFTY'] else (50 if underlying_symbol == 'NIFTY' else 100)
-            
-            candidate_strikes = []
-            for i in range(-3, 4):  # 7 strikes total around ATM
-                strike = atm_strike + (i * strike_interval)
-                if strike > 0:  # Only positive strikes
-                    candidate_strikes.append(strike)
-            
-            logger.info(f"🎯 SIMPLIFIED STRIKE SELECTION for {underlying_symbol}")
-            logger.info(f"   Current Price: ₹{current_price:.2f}, ATM: {atm_strike}")
-            logger.info(f"   Using ATM strike for optimal execution")
-            
-            # 🎯 SIMPLIFIED: Always use ATM strike for best execution and no volume barriers
-            return atm_strike
-                
+
+            logger.info(f"🎯 STRIKE SELECTION for {underlying_symbol}")
+            logger.info(f"   Current Price: ₹{current_price:.2f}, Calculated ATM: {atm_strike}")
+
+            # Get orchestrator to access Zerodha client
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+
+            if orchestrator and orchestrator.zerodha_client:
+                try:
+                    # Map symbol to Zerodha format
+                    zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+
+                    # Find closest available strike using Zerodha's actual instruments
+                    closest_strike = await orchestrator.zerodha_client.find_closest_available_strike(
+                        zerodha_symbol, atm_strike, expiry
+                    )
+
+                    if closest_strike:
+                        logger.info(f"✅ Using available strike: {closest_strike} (instead of {atm_strike})")
+                        return closest_strike
+                    else:
+                        logger.warning(f"⚠️ No available strikes found, using calculated ATM: {atm_strike}")
+                        return atm_strike
+
+                except Exception as zerodha_err:
+                    logger.warning(f"⚠️ Error accessing Zerodha strikes: {zerodha_err}")
+                    return atm_strike
+            else:
+                logger.warning("⚠️ Zerodha client not available, using calculated ATM strike")
+                return atm_strike
+
         except Exception as e:
             logger.error(f"Error in volume-based strike selection: {e}")
             # Fallback to ATM
             atm_strike = self._get_atm_strike_for_stock(current_price)
             logger.warning(f"⚠️ Fallback to ATM strike: {atm_strike}")
             return atm_strike
-    
+
     def _get_strikes_volume_data(self, underlying_symbol: str, strikes: List[int], expiry: str, action: str) -> Dict:
         """Get volume data for strikes from market data sources"""
         try:

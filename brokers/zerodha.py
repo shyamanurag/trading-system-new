@@ -1270,23 +1270,68 @@ class ZerodhaIntegration:
                                     logger.info(f"✅ EXACT MATCH: Found token {instrument_token}")
                                     break
                             
-                            # If no exact match, try component matching
+                            # If no exact match, try improved component matching
                             if not instrument_token:
                                 logger.info(f"🔍 SEARCHING for {underlying} options with strike {strike}...")
                                 matches_found = []
+                                exact_symbol_matches = []
+
                                 for inst in self._nfo_instruments:
                                     inst_symbol = inst.get('tradingsymbol', '')
-                                    if (underlying in inst_symbol and 
-                                        str(strike) in inst_symbol and 
-                                        opt_type in inst_symbol):
-                                        matches_found.append(inst_symbol)
-                                        if len(matches_found) <= 3:  # Log first 3 matches
-                                            logger.info(f"   📋 Similar: {inst_symbol}")
-                                
-                                if matches_found:
-                                    logger.warning(f"⚠️ Found {len(matches_found)} similar symbols but no exact match for {options_symbol}")
+
+                                    # Try multiple matching strategies
+                                    try:
+                                        # Strategy 1: Parse the instrument symbol and compare components
+                                        import re
+                                        m_inst = re.match(rf"({underlying.upper()})(.+?)(\d+)(CE|PE)", inst_symbol)
+                                        if m_inst:
+                                            inst_underlying, inst_expiry, inst_strike, inst_type = m_inst.groups()
+
+                                            # Check if components match
+                                            if (inst_underlying.upper() == underlying.upper() and
+                                                inst_strike == str(strike) and
+                                                inst_type == opt_type):
+
+                                                # Check expiry match (more flexible)
+                                                if (inst_expiry.upper() == expiry.upper() or
+                                                    inst_expiry.upper() in expiry.upper() or
+                                                    expiry.upper() in inst_expiry.upper()):
+
+                                                    exact_symbol_matches.append(inst_symbol)
+                                                    instrument_token = inst.get('instrument_token') or inst.get('token')
+                                                    logger.info(f"✅ EXACT COMPONENT MATCH: {inst_symbol} (token: {instrument_token})")
+                                                    break
+                                                else:
+                                                    matches_found.append(f"{inst_symbol} (expiry mismatch: {inst_expiry} vs {expiry})")
+                                            else:
+                                                # Partial matches for debugging
+                                                if (inst_underlying.upper() == underlying.upper() and
+                                                    inst_strike == str(strike)):
+                                                    matches_found.append(f"{inst_symbol} (type mismatch: {inst_type} vs {opt_type})")
+                                                elif (inst_underlying.upper() == underlying.upper() and
+                                                      inst_type == opt_type):
+                                                    matches_found.append(f"{inst_symbol} (strike mismatch: {inst_strike} vs {strike})")
+
+                                        # Strategy 2: Simple substring matching as fallback
+                                        elif (underlying.upper() in inst_symbol.upper() and
+                                              str(strike) in inst_symbol and
+                                              opt_type in inst_symbol):
+                                            matches_found.append(inst_symbol)
+
+                                    except Exception as match_err:
+                                        continue
+
+                                # Log results
+                                if instrument_token:
+                                    logger.info(f"✅ Found token {instrument_token} for {options_symbol}")
+                                elif exact_symbol_matches:
+                                    logger.info(f"✅ Found {len(exact_symbol_matches)} exact matches")
+                                elif matches_found:
+                                    logger.warning(f"⚠️ Found {len(matches_found)} partial matches for {options_symbol}")
+                                    for match in matches_found[:3]:  # Log first 3
+                                        logger.info(f"   📋 Similar: {match}")
                                 else:
-                                    logger.error(f"❌ NO MATCHING OPTIONS found for {underlying} strike {strike}")
+                                    logger.error(f"❌ NO MATCHING OPTIONS found for {underlying} strike {strike} expiry {expiry}")
                     except Exception as re_err:
                         logger.error(f"Symbol parse resolve failed: {re_err}")
 
@@ -1468,6 +1513,79 @@ class ZerodhaIntegration:
         except Exception as e:
             logger.error(f"❌ Error in nearby ATM options LTP fetch: {e}")
             return {}
+
+    async def get_available_strikes_for_symbol(self, underlying_symbol: str, expiry: str) -> List[int]:
+        """Get all available strike prices for a specific underlying and expiry from NFO instruments"""
+        try:
+            # Ensure NFO instruments are cached
+            if self._nfo_instruments is None:
+                await self.get_instruments('NFO')
+
+            if not self._nfo_instruments:
+                logger.warning(f"⚠️ No NFO instruments available for strike lookup")
+                return []
+
+            available_strikes = set()
+            target_expiry = expiry.upper()
+
+            for inst in self._nfo_instruments:
+                trading_symbol = inst.get('tradingsymbol', '')
+
+                # Parse the symbol to extract components
+                try:
+                    import re
+                    # Match pattern: UNDERLYING + EXPIRY + STRIKE + TYPE
+                    m = re.match(rf"({underlying_symbol.upper()})(.+?)(\d+)(CE|PE)", trading_symbol)
+                    if m:
+                        symbol_underlying, symbol_expiry, strike_str, option_type = m.groups()
+
+                        # Check if expiry matches (handle different formats)
+                        if (symbol_expiry.upper() == target_expiry or
+                            symbol_expiry.upper() in target_expiry or
+                            target_expiry in symbol_expiry.upper()):
+
+                            try:
+                                strike = int(strike_str)
+                                available_strikes.add(strike)
+                            except ValueError:
+                                continue
+
+                except Exception as parse_err:
+                    continue
+
+            sorted_strikes = sorted(list(available_strikes))
+            logger.info(f"✅ Found {len(sorted_strikes)} available strikes for {underlying_symbol} {expiry}")
+            if sorted_strikes:
+                logger.info(f"   Range: {sorted_strikes[0]} - {sorted_strikes[-1]}")
+
+            return sorted_strikes
+
+        except Exception as e:
+            logger.error(f"❌ Error getting available strikes for {underlying_symbol}: {e}")
+            return []
+
+    async def find_closest_available_strike(self, underlying_symbol: str, target_strike: int, expiry: str, option_type: str = 'CE') -> Optional[int]:
+        """Find the closest available strike to the target strike"""
+        try:
+            available_strikes = await self.get_available_strikes_for_symbol(underlying_symbol, expiry)
+
+            if not available_strikes:
+                logger.warning(f"⚠️ No available strikes found for {underlying_symbol} {expiry}")
+                return None
+
+            # Find closest strike
+            closest_strike = min(available_strikes, key=lambda x: abs(x - target_strike))
+
+            # Log the selection
+            logger.info(f"🎯 STRIKE SELECTION for {underlying_symbol}")
+            logger.info(f"   Target: {target_strike}, Closest Available: {closest_strike}")
+            logger.info(f"   Available Range: {min(available_strikes)} - {max(available_strikes)}")
+
+            return closest_strike
+
+        except Exception as e:
+            logger.error(f"❌ Error finding closest strike for {underlying_symbol}: {e}")
+            return None
         
     def get_connection_status(self) -> Dict:
         """Get detailed connection status"""
