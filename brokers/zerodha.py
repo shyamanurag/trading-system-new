@@ -1558,10 +1558,26 @@ class ZerodhaIntegration:
             if sorted_strikes:
                 logger.info(f"   Range: {sorted_strikes[0]} - {sorted_strikes[-1]}")
 
-            return sorted_strikes
+            # 🚨 FINAL VALIDATION: Ensure we return a valid list
+            if not isinstance(sorted_strikes, list):
+                logger.error(f"❌ sorted_strikes is not a list: {type(sorted_strikes)} = {sorted_strikes}")
+                return []
+
+            # Filter out any non-integer values
+            valid_strikes = []
+            for strike in sorted_strikes:
+                if isinstance(strike, int) and strike > 0:
+                    valid_strikes.append(strike)
+                else:
+                    logger.warning(f"⚠️ Filtering out invalid strike: {strike} (type: {type(strike)})")
+
+            return valid_strikes
 
         except Exception as e:
             logger.error(f"❌ Error getting available strikes for {underlying_symbol}: {e}")
+            logger.error(f"   Error type: {type(e)}")
+            import traceback
+            logger.error(f"   Full traceback: {traceback.format_exc()}")
             return []
 
     async def find_closest_available_strike(self, underlying_symbol: str, target_strike: int, expiry: str, option_type: str = 'CE') -> Optional[int]:
@@ -1569,12 +1585,49 @@ class ZerodhaIntegration:
         try:
             available_strikes = await self.get_available_strikes_for_symbol(underlying_symbol, expiry)
 
-            if not available_strikes:
+            # 🚨 CRITICAL VALIDATION: Ensure available_strikes is a list
+            if available_strikes is None:
+                logger.error(f"❌ get_available_strikes_for_symbol returned None for {underlying_symbol}")
+                return None
+            elif isinstance(available_strikes, int):
+                logger.error(f"❌ get_available_strikes_for_symbol returned int instead of list: {available_strikes} for {underlying_symbol}")
+                return None
+            elif isinstance(available_strikes, str):
+                logger.error(f"❌ get_available_strikes_for_symbol returned string instead of list: {available_strikes} for {underlying_symbol}")
+                return None
+            elif not isinstance(available_strikes, list):
+                logger.error(f"❌ get_available_strikes_for_symbol returned {type(available_strikes)} instead of list for {underlying_symbol}")
+                return None
+            elif not available_strikes:
                 logger.warning(f"⚠️ No available strikes found for {underlying_symbol} {expiry}")
                 return None
 
+            # Additional validation: ensure all elements are integers
+            try:
+                validated_strikes = []
+                for strike in available_strikes:
+                    if isinstance(strike, int) and strike > 0:
+                        validated_strikes.append(strike)
+                    else:
+                        logger.warning(f"⚠️ Skipping invalid strike: {strike} (type: {type(strike)}) for {underlying_symbol}")
+
+                if not validated_strikes:
+                    logger.error(f"❌ No valid strikes found after validation for {underlying_symbol}")
+                    return None
+
+                available_strikes = validated_strikes
+
+            except Exception as validation_error:
+                logger.error(f"❌ Error validating strikes for {underlying_symbol}: {validation_error}")
+                return None
+
             # Find closest strike
-            closest_strike = min(available_strikes, key=lambda x: abs(x - target_strike))
+            try:
+                closest_strike = min(available_strikes, key=lambda x: abs(x - target_strike))
+            except (ValueError, TypeError) as min_error:
+                logger.error(f"❌ Error finding minimum strike for {underlying_symbol}: {min_error}")
+                logger.error(f"   Available strikes: {available_strikes}")
+                return None
 
             # Log the selection
             logger.info(f"🎯 STRIKE SELECTION for {underlying_symbol}")
@@ -1585,6 +1638,9 @@ class ZerodhaIntegration:
 
         except Exception as e:
             logger.error(f"❌ Error finding closest strike for {underlying_symbol}: {e}")
+            logger.error(f"   Error type: {type(e)}")
+            import traceback
+            logger.error(f"   Full traceback: {traceback.format_exc()}")
             return None
         
     def get_connection_status(self) -> Dict:

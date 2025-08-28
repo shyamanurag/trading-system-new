@@ -2884,7 +2884,20 @@ class BaseStrategy:
 
             # If no expiries found from API, REJECT signal
             logger.error("❌ No expiries found from Zerodha API - NO FALLBACK")
-            return []
+            # 🚨 FINAL VALIDATION: Ensure we return a valid list of dictionaries
+            if not isinstance(expiries, list):
+                logger.error(f"❌ expiries is not a list: {type(expiries)} = {expiries}")
+                return []
+
+            # Validate each expiry entry
+            valid_expiries = []
+            for expiry in expiries:
+                if isinstance(expiry, dict) and 'date' in expiry and 'formatted' in expiry:
+                    valid_expiries.append(expiry)
+                else:
+                    logger.warning(f"⚠️ Filtering out invalid expiry entry: {expiry} (type: {type(expiry)})")
+
+            return valid_expiries
 
         except Exception as e:
             logger.error(f"❌ Error fetching available expiries: {e}")
