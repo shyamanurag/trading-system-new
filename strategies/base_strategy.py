@@ -1980,6 +1980,11 @@ class BaseStrategy:
             if symbol in ['FORCEMOT', 'RCOM', 'DEVYANI', 'RAYMOND', 'ASTRAL', 'IDEA']:
                 logger.info(f"🔍 PROBLEMATIC SYMBOL DEBUG: {symbol} - F&O={fo_enabled}, Equity_Only={equity_only}")
             
+            # HARD RULE: Avoid options for very low-priced stocks (illiquid contracts)
+            if entry_price and entry_price < 50:
+                logger.info(f"🎯 LOW PRICE EQUITY-ONLY: {symbol} @ ₹{entry_price:.2f} → EQUITY (avoid illiquid options)")
+                return 'EQUITY'
+
             # Force equity for known cash-only stocks
             if equity_only:
                 logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY (no F&O available)")
@@ -2939,7 +2944,7 @@ class BaseStrategy:
 
     def _get_options_premium(self, options_symbol: str, underlying_symbol: str) -> float:
         """Get real-time premium for options symbol with enhanced fallbacks"""
-        if not self.is_market_open():
+        if not self._is_trading_hours():
             logger.warning(f"⚠️ Market closed - cannot get options premium for {options_symbol}")
             return 0.0
         
