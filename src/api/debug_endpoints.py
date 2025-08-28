@@ -10,12 +10,14 @@ import os
 import asyncio
 
 from src.core.orchestrator import TradingOrchestrator
+from src.config.settings import settings
 # Use shared dependency to fix singleton issue
 from src.core.dependencies import get_orchestrator
 from models.responses import BaseResponse
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/debug")
+# Mount under API prefix so ingress routes correctly (e.g., /api/v1/debug/*)
+router = APIRouter(prefix=f"{settings.API_PREFIX}/debug")
 
 @router.get("/logs")
 async def stream_recent_logs(lines: int = 200) -> Dict[str, Any]:
