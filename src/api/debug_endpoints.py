@@ -10,14 +10,13 @@ import os
 import asyncio
 
 from src.core.orchestrator import TradingOrchestrator
-from src.config.settings import settings
 # Use shared dependency to fix singleton issue
 from src.core.dependencies import get_orchestrator
 from models.responses import BaseResponse
 
 logger = logging.getLogger(__name__)
-# Mount under API prefix so ingress routes correctly (e.g., /api/v1/debug/*)
-router = APIRouter(prefix=f"{settings.API_PREFIX}/debug")
+# Keep router at /debug; the main app mounts API prefix when including routers
+router = APIRouter(prefix="/debug")
 
 @router.get("/logs")
 async def stream_recent_logs(lines: int = 200) -> Dict[str, Any]:
@@ -38,11 +37,30 @@ async def stream_recent_logs(lines: int = 200) -> Dict[str, Any]:
             log_file = next((p for p in candidates if os.path.exists(p)), None)
         
         if not log_file:
-            return {
-                "success": False,
-                "message": "No local log file found. Set APP_LOG_FILE env or use hosting logs (e.g., platform tail).",
-                "available": []
-            }
+            # In-memory fallback from orchestrator/strategies
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                memory_lines = []
+                if orchestrator and hasattr(orchestrator, 'strategies'):
+                    for strategy_name, strategy in orchestrator.strategies.items():
+                        if hasattr(strategy, 'last_signals'):
+                            for s in getattr(strategy, 'last_signals', [])[:lines]:
+                                memory_lines.append({
+                                    "timestamp": datetime.utcnow().isoformat(),
+                                    "strategy": strategy_name,
+                                    "symbol": s.get('symbol'),
+                                    "action": s.get('action'),
+                                    "confidence": s.get('confidence'),
+                                    "message": f"{strategy_name} {s.get('symbol')} {s.get('action')} conf={s.get('confidence')}"
+                                })
+                return {"success": True, "source": "in_memory", "lines": len(memory_lines), "content": memory_lines}
+            except Exception:
+                return {
+                    "success": False,
+                    "message": "No local log file found and in-memory logs unavailable. Set APP_LOG_FILE or use platform logs.",
+                    "available": []
+                }
         
         # Read last N lines efficiently
         result_lines = []
