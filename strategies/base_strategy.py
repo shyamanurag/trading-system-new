@@ -2667,11 +2667,11 @@ class BaseStrategy:
             # 🚨 DEFENSIVE: Validate optimal_expiry before returning
             if optimal_expiry is None:
                 logger.error(f"❌ _get_optimal_expiry_for_strategy returned None for {underlying_symbol}")
-                logger.error("   This should not happen - falling back to calculated expiry"
+                logger.error("   This should not happen - falling back to calculated expiry")
                 # Continue to fallback logic below
             elif not isinstance(optimal_expiry, str):
                 logger.error(f"❌ _get_optimal_expiry_for_strategy returned invalid type: {type(optimal_expiry)} = {optimal_expiry}")
-                logger.error("   This should not happen - falling back to calculated expiry"
+                logger.error("   This should not happen - falling back to calculated expiry")
                 optimal_expiry = None
             else:
                 logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
