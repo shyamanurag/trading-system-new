@@ -524,7 +524,13 @@ class BaseStrategy:
                                     }
                                     await self._execute_management_action(exit_signal)
                                     logger.error(f"🚨 EXECUTED EMERGENCY EXIT for {symbol} - Loss: ₹{pnl:.2f}")
-            
+
+                except Exception as positions_error:
+                    logger.error(f"❌ Error processing positions: {positions_error}")
+                    logger.error(f"   Error type: {type(positions_error)}")
+                    if "can't be used in 'await' expression" in str(positions_error):
+                        logger.error("🚨 CRITICAL: Zerodha API returned non-coroutine for positions")
+
             # ⏰ CHECK POSITION CLOSURE URGENCY based on current time
             close_urgency = self._get_position_close_urgency()
             current_time_ist = datetime.now(self.ist_timezone).strftime('%H:%M:%S')
