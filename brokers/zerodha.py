@@ -1244,24 +1244,40 @@ class ZerodhaIntegration:
                 instrument_token = self._symbol_to_token.get(options_symbol)
                 if not instrument_token:
                     logger.info(f"ℹ️ No token found in index for {options_symbol}")
-                    # Attempt robust resolve by parsing symbol and scanning cached instruments
+                    # CRITICAL FIX: Enhanced symbol matching for individual stock options
                     try:
                         import re
                         m = re.match(r"([A-Z]+)(\d{2}[A-Z]{3}\d{2})(\d+)(CE|PE)", options_symbol)
                         if m and self._nfo_instruments:
                             underlying, expiry, strike, opt_type = m.groups()
+                            logger.info(f"🔍 PARSING: {options_symbol} → {underlying}, {expiry}, {strike}, {opt_type}")
+                            
+                            # Try exact match first
                             for inst in self._nfo_instruments:
                                 if inst.get('tradingsymbol') == options_symbol:
                                     instrument_token = inst.get('instrument_token') or inst.get('token')
+                                    logger.info(f"✅ EXACT MATCH: Found token {instrument_token}")
                                     break
-                                if (inst.get('name') == underlying and
-                                    str(inst.get('strike', '')) == str(strike) and
-                                    inst.get('instrument_type') == opt_type and
-                                    expiry[-2:] in str(inst.get('expiry', ''))):
-                                    instrument_token = inst.get('instrument_token') or inst.get('token')
-                                    break
+                            
+                            # If no exact match, try component matching
+                            if not instrument_token:
+                                logger.info(f"🔍 SEARCHING for {underlying} options with strike {strike}...")
+                                matches_found = []
+                                for inst in self._nfo_instruments:
+                                    inst_symbol = inst.get('tradingsymbol', '')
+                                    if (underlying in inst_symbol and 
+                                        str(strike) in inst_symbol and 
+                                        opt_type in inst_symbol):
+                                        matches_found.append(inst_symbol)
+                                        if len(matches_found) <= 3:  # Log first 3 matches
+                                            logger.info(f"   📋 Similar: {inst_symbol}")
+                                
+                                if matches_found:
+                                    logger.warning(f"⚠️ Found {len(matches_found)} similar symbols but no exact match for {options_symbol}")
+                                else:
+                                    logger.error(f"❌ NO MATCHING OPTIONS found for {underlying} strike {strike}")
                     except Exception as re_err:
-                        logger.debug(f"Symbol parse resolve failed: {re_err}")
+                        logger.error(f"Symbol parse resolve failed: {re_err}")
 
                 if instrument_token:
                     # Fetch LTP by instrument token (preferred for tokens)

@@ -2337,13 +2337,21 @@ class BaseStrategy:
                 logger.warning(f"⚠️ Using passed price ₹{actual_price:.2f} (real price unavailable)")
                 
             # Debug: Check if the price looks reasonable for this symbol
-            if underlying_symbol == 'HDFCBANK' and actual_price < 1500:
-                logger.error(f"🚨 SUSPICIOUS PRICE: HDFCBANK price ₹{actual_price:.2f} seems too low (expected ~2000)")
+            if underlying_symbol == 'HDFCBANK' and actual_price < 800:
+                logger.error(f"🚨 SUSPICIOUS PRICE: HDFCBANK price ₹{actual_price:.2f} seems too low (expected ~960)")
                 logger.error(f"🚨 This will generate wrong strike prices. Investigate price source!")
+            elif underlying_symbol == 'GAIL' and (actual_price < 150 or actual_price > 200):
+                logger.warning(f"⚠️ GAIL price ₹{actual_price:.2f} outside expected range (150-200)")
             
             # 🎯 CRITICAL FIX: Convert to Zerodha's official symbol name FIRST
-            from config.truedata_symbols import get_zerodha_symbol
+            from config.truedata_symbols import get_zerodha_symbol, is_fo_enabled
             zerodha_underlying = get_zerodha_symbol(underlying_symbol)
+            
+            # CRITICAL FIX: Check if symbol is F&O enabled before attempting options
+            if not is_fo_enabled(zerodha_underlying):
+                logger.warning(f"⚠️ {zerodha_underlying} is NOT F&O enabled - cannot trade options")
+                logger.info(f"🔄 FALLBACK: Trading {zerodha_underlying} as EQUITY instead")
+                return zerodha_underlying, 'EQUITY'
             
             # 🎯 CRITICAL FIX: Only BUY signals for options (no selling due to margin requirements)
             # 🔧 IMPORTANT: Only use indices with confirmed options contracts on Zerodha
@@ -2388,7 +2396,9 @@ class BaseStrategy:
                     option_type = 'PE'  # BUY Put when bearish
                 
                 # 🔧 CRITICAL FIX: Use Zerodha's exact symbol format for stocks too
+                # Zerodha format: GAIL02SEP25150CE should be GAIL25SEP02150CE (YYMMMDDD format)
                 options_symbol = f"{zerodha_underlying}{expiry}{strike}{option_type}"
+                logger.info(f"🔍 GENERATED OPTIONS SYMBOL: {options_symbol} (format: {zerodha_underlying} + {expiry} + {strike} + {option_type})")
                 
                 # 🚨 CRITICAL FIX: Validate if options symbol exists in Zerodha before using
                 if self._validate_options_symbol_exists(options_symbol):
