@@ -7,6 +7,7 @@ Implements signal quality scoring and filtering
 
 import logging
 import asyncio
+import time
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -38,6 +39,12 @@ class SignalDeduplicator:
 
         # Post-exit cooldown seconds (prevent immediate re-entry churn)
         self.post_exit_cooldown_seconds = 600
+
+        # Per-signal attempt tracking and TTL control
+        self.max_attempts_per_signal = 10
+        self.retry_window_seconds = 30
+        self._attempts_memory = {}
+        self._last_try_memory = {}
 
     async def _clear_signal_cache_on_startup(self):
         """Clear deployment cache on startup to prevent duplicate signals"""
@@ -114,6 +121,28 @@ class SignalDeduplicator:
         except Exception as e:
             logger.error(f"❌ Error clearing executed signals: {e}")
             return 0
+
+    async def purge_signal_everywhere(self, signal_id: str, symbol: Optional[str] = None):
+        """Remove a signal from all in-memory stores and Redis tracking."""
+        try:
+            # In-memory history
+            if signal_id in self.signal_history:
+                del self.signal_history[signal_id]
+            # In-memory recent per-symbol
+            if symbol and symbol in self.recent_signals:
+                self.recent_signals[symbol] = [s for s in self.recent_signals[symbol] if s.get('signal_id') != signal_id]
+                if not self.recent_signals[symbol]:
+                    del self.recent_signals[symbol]
+            # Redis: attempts and throttles
+            if self.redis_client:
+                try:
+                    await self.redis_client.delete(f"signal_attempts:{signal_id}")
+                    await self.redis_client.delete(f"signal_last_try:{signal_id}")
+                except Exception:
+                    pass
+            logger.info(f"🧹 Purged signal from caches: {signal_id}")
+        except Exception as e:
+            logger.error(f"❌ Error purging signal {signal_id}: {e}")
         
     def _init_redis_connection(self):
         """Initialize Redis connection for persistent signal tracking"""
@@ -223,6 +252,29 @@ class SignalDeduplicator:
         
         # Clean up old signals periodically
         self._cleanup_old_signals()
+
+        # Enforce 5-minute TTL on generated signals before they reach execution
+        ttl_filtered = []
+        now_ts = datetime.now()
+        for s in signals:
+            gen_at = s.get('generated_at')
+            if isinstance(gen_at, str):
+                try:
+                    from datetime import datetime as _dt
+                    gen_at = _dt.fromisoformat(gen_at)
+                except Exception:
+                    gen_at = now_ts
+            if not gen_at:
+                gen_at = now_ts
+            age_sec = (now_ts - gen_at).total_seconds()
+            if age_sec <= 300:
+                ttl_filtered.append(s)
+            else:
+                logger.info(f"🗑️ Dropping expired signal (>5m): {s.get('symbol')} {s.get('action')} id={s.get('signal_id')}")
+                # Also purge any cached attempt counters for this signal
+                if s.get('signal_id'):
+                    await self.purge_signal_everywhere(s['signal_id'], s.get('symbol'))
+        signals = ttl_filtered
         
         # Filter by quality first
         quality_signals = self._filter_by_quality(signals)
@@ -433,6 +485,52 @@ class SignalDeduplicator:
         
         self.last_cleanup = datetime.now()
         logger.debug(f"🧹 Cleaned up {len(old_signal_ids)} old signals")
+
+    async def register_signal_attempt(self, signal_id: str, symbol: Optional[str] = None) -> Dict:
+        """Enforce 30s spacing and max 10 attempts per signal. Returns dict with allowed flag and reason."""
+        try:
+            now = time.time()
+            # Redis-backed enforcement preferred
+            if self.redis_client:
+                last_key = f"signal_last_try:{signal_id}"
+                att_key = f"signal_attempts:{signal_id}"
+                # Check last try spacing
+                last_try = await self.redis_client.get(last_key)
+                if last_try:
+                    elapsed = now - float(last_try)
+                    if elapsed < self.retry_window_seconds:
+                        wait = int(self.retry_window_seconds - elapsed)
+                        return { 'allowed': False, 'reason': 'WAIT_WINDOW', 'retry_after_seconds': wait }
+                # Increment attempts
+                attempts = await self.redis_client.incr(att_key)
+                # Set TTL for attempts key to 1 trading day if first time
+                if attempts == 1:
+                    await self.redis_client.expire(att_key, 86400)
+                # Update last try timestamp
+                await self.redis_client.set(last_key, str(now), ex=3600)
+                if attempts > self.max_attempts_per_signal:
+                    # Purge caches and block
+                    await self.purge_signal_everywhere(signal_id, symbol)
+                    return { 'allowed': False, 'reason': 'MAX_ATTEMPTS_REACHED' }
+                return { 'allowed': True, 'reason': 'OK', 'attempts': attempts }
+            
+            # In-memory fallback
+            last_try = self._last_try_memory.get(signal_id)
+            if last_try:
+                elapsed = now - last_try
+                if elapsed < self.retry_window_seconds:
+                    wait = int(self.retry_window_seconds - elapsed)
+                    return { 'allowed': False, 'reason': 'WAIT_WINDOW', 'retry_after_seconds': wait }
+            attempts = self._attempts_memory.get(signal_id, 0) + 1
+            self._attempts_memory[signal_id] = attempts
+            self._last_try_memory[signal_id] = now
+            if attempts > self.max_attempts_per_signal:
+                await self.purge_signal_everywhere(signal_id, symbol)
+                return { 'allowed': False, 'reason': 'MAX_ATTEMPTS_REACHED' }
+            return { 'allowed': True, 'reason': 'OK', 'attempts': attempts }
+        except Exception as e:
+            logger.error(f"❌ register_signal_attempt error for {signal_id}: {e}")
+            return { 'allowed': True, 'reason': 'ERROR_FALLBACK' }
     
     def get_signal_stats(self) -> Dict:
         """Get statistics about signal processing"""

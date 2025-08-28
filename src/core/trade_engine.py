@@ -150,6 +150,13 @@ class TradeEngine:
                     # 🚨 CRITICAL FIX: Mark signal as executed to prevent duplicates across deploys
                     await self._mark_signal_executed_in_deduplicator(signal)
                     self.logger.info(f"✅ Signal executed: {signal.get('symbol')} {signal.get('action')} ({i+1}/{len(signals)})")
+                    # On success, purge attempt tracking for this signal
+                    try:
+                        from src.core.signal_deduplicator import signal_deduplicator as _ded
+                        if signal.get('signal_id'):
+                            await _ded.purge_signal_everywhere(signal['signal_id'], signal.get('symbol'))
+                    except Exception:
+                        pass
                 else:
                     execution_results.append(None)
                     # TRACK: Signal execution failed
@@ -389,8 +396,14 @@ class TradeEngine:
                 self.logger.error(f"❌ DUPLICATE ORDER BLOCKED: Existing position found for {symbol} {action}")
                 return None
             
-            # 🛡️ CRITICAL: Check order rate limits to prevent retry loops
-            rate_check = await self.rate_limiter.can_place_order(symbol, action, quantity, signal.get('entry_price', 0))
+            # 🛡️ CRITICAL: Check order rate limits to prevent retry loops (30s per-signal window, max attempts enforced elsewhere)
+            rate_check = await self.rate_limiter.can_place_order(
+                symbol,
+                action,
+                quantity,
+                signal.get('entry_price', 0),
+                signal_id=signal.get('signal_id')
+            )
             if not rate_check['allowed']:
                 self.logger.error(f"🚫 ORDER RATE LIMITED: {rate_check['message']}")
                 self.logger.error(f"🚫 Reason: {rate_check['reason']}")
@@ -1050,6 +1063,22 @@ class TradeEngine:
     async def _process_live_signal(self, signal: Dict):
         """Process signal in live trading mode"""
         try:
+            # Enforce per-signal execution spacing (30s) and max attempts (10)
+            try:
+                from src.core.signal_deduplicator import signal_deduplicator as _ded
+                provisional_id = signal.get('signal_id') or f"{signal.get('strategy','')}_{signal.get('symbol','')}_{signal.get('action','')}"
+                attempt = await _ded.register_signal_attempt(provisional_id, signal.get('symbol'))
+                if not attempt.get('allowed', False):
+                    reason = attempt.get('reason')
+                    if reason == 'WAIT_WINDOW':
+                        self.logger.info(f"⏳ Signal retry window: wait {attempt.get('retry_after_seconds', 30)}s for {signal.get('symbol')} {signal.get('action')}")
+                    elif reason == 'MAX_ATTEMPTS_REACHED':
+                        self.logger.error(f"🗑️ Signal purged after max attempts: {signal.get('signal_id') or provisional_id}")
+                    return None
+            except Exception as gate_err:
+                # Non-blocking if gating fails
+                self.logger.debug(f"Attempt gate fallback: {gate_err}")
+
             # 🎯 MANAGEMENT ACTIONS: Bypass rate limiting for position management
             is_management_action = signal.get('management_action', False)
             
