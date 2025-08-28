@@ -71,11 +71,14 @@ async def get_all_positions():
             
             logger.info(f"📊 [REAL POSITIONS] Processing {len(all_positions)} positions from Zerodha")
             
-            # CRITICAL FIX: Deduplicate positions based on symbol+quantity+product
+            # CRITICAL FIX: Include positions with P&L even if quantity is 0 (closed positions)
             unique_positions = {}
             for position in all_positions:
                 quantity = position.get('quantity', 0)
-                if quantity != 0:  # Only include active positions
+                pnl = float(position.get('pnl', 0) or position.get('unrealised_pnl', 0) or position.get('day_pnl', 0) or 0)
+
+                # Include positions that have quantity OR have P&L (for closed positions with P&L)
+                if quantity != 0 or pnl != 0:
                     symbol = position.get('tradingsymbol', '')
                     product = position.get('product', '')
                     
