@@ -2245,12 +2245,28 @@ class BaseStrategy:
         """Get real market price from TrueData cache to ensure accurate strike calculation"""
         try:
             from data.truedata_client import live_market_data
+            
+            # Debug: Log available symbols in cache
+            if live_market_data:
+                available_symbols = list(live_market_data.keys())
+                logger.info(f"🔍 DEBUG: TrueData cache has {len(available_symbols)} symbols")
+                # Check if HDFC variants exist
+                hdfc_symbols = [s for s in available_symbols if 'HDFC' in s.upper()]
+                if hdfc_symbols:
+                    logger.info(f"🔍 DEBUG: HDFC symbols in cache: {hdfc_symbols}")
+                else:
+                    logger.warning(f"⚠️ DEBUG: No HDFC symbols found in TrueData cache")
+                    
             if live_market_data and symbol in live_market_data:
                 stock_price = live_market_data[symbol].get('ltp', 0)
-                logger.debug(f"📊 Real market price for {symbol}: ₹{stock_price}")
+                logger.info(f"📊 Real market price for {symbol}: ₹{stock_price}")
                 return float(stock_price) if stock_price > 0 else None
             else:
                 logger.warning(f"⚠️ No real market data available for {symbol}")
+                # Debug: Show what symbols are available
+                if live_market_data:
+                    sample_symbols = list(live_market_data.keys())[:10]
+                    logger.info(f"🔍 DEBUG: Sample symbols in cache: {sample_symbols}")
                 return None
         except Exception as e:
             logger.error(f"Error getting real market price for {symbol}: {e}")
@@ -2310,6 +2326,8 @@ class BaseStrategy:
         
         try:
             # 🚨 CRITICAL FIX: Get REAL market price instead of using entry_price which might be wrong
+            logger.info(f"🔍 DEBUG: Converting {underlying_symbol} to options with passed price ₹{current_price:.2f}")
+            
             real_market_price = self._get_real_market_price(underlying_symbol)
             if real_market_price and real_market_price > 0:
                 actual_price = real_market_price
@@ -2317,6 +2335,11 @@ class BaseStrategy:
             else:
                 actual_price = current_price
                 logger.warning(f"⚠️ Using passed price ₹{actual_price:.2f} (real price unavailable)")
+                
+            # Debug: Check if the price looks reasonable for this symbol
+            if underlying_symbol == 'HDFCBANK' and actual_price < 1500:
+                logger.error(f"🚨 SUSPICIOUS PRICE: HDFCBANK price ₹{actual_price:.2f} seems too low (expected ~2000)")
+                logger.error(f"🚨 This will generate wrong strike prices. Investigate price source!")
             
             # 🎯 CRITICAL FIX: Convert to Zerodha's official symbol name FIRST
             from config.truedata_symbols import get_zerodha_symbol
