@@ -2334,7 +2334,7 @@ class BaseStrategy:
         try:
             # 🚨 CRITICAL FIX: Get REAL market price instead of using entry_price which might be wrong
             logger.info(f"🔍 DEBUG: Converting {underlying_symbol} to options with passed price ₹{current_price:.2f}")
-            
+
             real_market_price = self._get_real_market_price(underlying_symbol)
             if real_market_price and real_market_price > 0:
                 actual_price = real_market_price
@@ -2342,6 +2342,11 @@ class BaseStrategy:
             else:
                 actual_price = current_price
                 logger.warning(f"⚠️ Using passed price ₹{actual_price:.2f} (real price unavailable)")
+
+            # 🚨 DEFENSIVE: Validate that actual_price is not zero/negative
+            if actual_price <= 0:
+                logger.error(f"❌ INVALID ACTUAL PRICE: {actual_price} for {underlying_symbol} - cannot proceed")
+                return underlying_symbol, 'EQUITY'
                 
             # Debug: Check if the price looks reasonable for this symbol
             if underlying_symbol == 'HDFCBANK' and actual_price < 800:
@@ -2364,11 +2369,31 @@ class BaseStrategy:
             # 🔧 IMPORTANT: Only use indices with confirmed options contracts on Zerodha
             if zerodha_underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:  # REMOVED MIDCPNIFTY - no options
                 # Index options - use volume-based strike selection for liquidity
-                expiry = await self._get_next_expiry(zerodha_underlying)
-                if not expiry:
-                    logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
-                    return None, 'REJECTED'
-                strike = await self._get_volume_based_strike(zerodha_underlying, actual_price, expiry, action)
+                try:
+                    expiry = await self._get_next_expiry(zerodha_underlying)
+                    if not expiry:
+                        logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
+                        return None, 'REJECTED'
+
+                    # 🚨 DEFENSIVE: Check if expiry is valid before using
+                    if not isinstance(expiry, str):
+                        logger.error(f"❌ INVALID EXPIRY TYPE: {type(expiry)} = {expiry} for {zerodha_underlying}")
+                        return underlying_symbol, 'EQUITY'
+
+                    strike = await self._get_volume_based_strike(zerodha_underlying, actual_price, expiry, action)
+
+                    # 🚨 DEFENSIVE: Check if strike is valid
+                    if not isinstance(strike, int) or strike <= 0:
+                        logger.error(f"❌ INVALID STRIKE: {strike} (type: {type(strike)}) for {zerodha_underlying}")
+                        return underlying_symbol, 'EQUITY'
+
+                except Exception as await_error:
+                    logger.error(f"❌ AWAIT ERROR in index options: {await_error}")
+                    logger.error(f"   Error type: {type(await_error)}")
+                    if "can't be used in 'await' expression" in str(await_error):
+                        logger.error(f"🚨 CRITICAL: Attempted to await a non-coroutine for {zerodha_underlying}")
+                        logger.error(f"   This indicates a method returning wrong type instead of coroutine")
+                    return underlying_symbol, 'EQUITY'
                 
                 # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
                 if action.upper() == 'BUY':
@@ -2390,11 +2415,31 @@ class BaseStrategy:
             else:
                 # Stock options - convert equity to options using ZERODHA NAME
                 # 🎯 USER REQUIREMENT: Volume-based strike selection for liquidity
-                expiry = await self._get_next_expiry(zerodha_underlying)
-                if not expiry:
-                    logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - FALLBACK TO EQUITY")
-                    return None, 'REJECTED'
-                strike = await self._get_volume_based_strike(zerodha_underlying, actual_price, expiry, action)
+                try:
+                    expiry = await self._get_next_expiry(zerodha_underlying)
+                    if not expiry:
+                        logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - FALLBACK TO EQUITY")
+                        return None, 'REJECTED'
+
+                    # 🚨 DEFENSIVE: Check if expiry is valid before using
+                    if not isinstance(expiry, str):
+                        logger.error(f"❌ INVALID EXPIRY TYPE: {type(expiry)} = {expiry} for {zerodha_underlying}")
+                        return underlying_symbol, 'EQUITY'
+
+                    strike = await self._get_volume_based_strike(zerodha_underlying, actual_price, expiry, action)
+
+                    # 🚨 DEFENSIVE: Check if strike is valid
+                    if not isinstance(strike, int) or strike <= 0:
+                        logger.error(f"❌ INVALID STRIKE: {strike} (type: {type(strike)}) for {zerodha_underlying}")
+                        return underlying_symbol, 'EQUITY'
+
+                except Exception as await_error:
+                    logger.error(f"❌ AWAIT ERROR in stock options: {await_error}")
+                    logger.error(f"   Error type: {type(await_error)}")
+                    if "can't be used in 'await' expression" in str(await_error):
+                        logger.error(f"🚨 CRITICAL: Attempted to await a non-coroutine for {zerodha_underlying}")
+                        logger.error(f"   This indicates a method returning wrong type instead of coroutine")
+                    return underlying_symbol, 'EQUITY'
                 
                 # CRITICAL CHANGE: Always BUY options, choose CE/PE based on market direction
                 if action.upper() == 'BUY':
