@@ -1190,17 +1190,17 @@ class ZerodhaIntegration:
             exchange = self._get_exchange_for_symbol(options_symbol)
             full_symbol = f"{exchange}:{options_symbol}"
             
-            logger.info(f"🔍 Zerodha Quote Request: {full_symbol}")
+            logger.debug(f"🔍 Zerodha Quote Request: {full_symbol}")
             # Try both quote and ltp with exchange-qualified symbol
             quotes = self.kite.quote([full_symbol])
-            logger.info(f"🔍 Zerodha Quote Response: {quotes}")
+            logger.debug(f"🔍 Zerodha Quote Response: {quotes}")
             
             if quotes and full_symbol in quotes:
                 quote_data = quotes[full_symbol]
                 ltp = quote_data.get('last_price', 0)
                 
                 # Additional debugging - check all available price fields
-                logger.info(f"🔍 Quote data for {options_symbol}: {quote_data}")
+                logger.debug(f"🔍 Quote data for {options_symbol}: {quote_data}")
                 
                 if ltp and ltp > 0:
                     logger.info(f"✅ ZERODHA LTP (sync): {options_symbol} = ₹{ltp}")
@@ -1226,7 +1226,18 @@ class ZerodhaIntegration:
                 pass
             # Fallback: resolve instrument token from cached NFO instruments and fetch via token (sync)
             try:
-                # Use already cached NFO instruments (do not attempt async from sync context)
+                # Ensure NFO instruments are available (SYNC load allowed here)
+                if self._nfo_instruments is None:
+                    try:
+                        instruments = self.kite.instruments('NFO')
+                        # Cache
+                        self._nfo_instruments = instruments or []
+                        logger.info(f"✅ Loaded NFO instruments for sync path: {len(self._nfo_instruments)}")
+                    except Exception as load_err:
+                        logger.warning(f"⚠️ Could not load NFO instruments in sync path: {load_err}")
+                        self._nfo_instruments = []
+
+                # Use already cached NFO instruments (do not attempt async here)
                 # Prefer fast map if available
                 if not self._symbol_to_token and self._nfo_instruments:
                     try:
