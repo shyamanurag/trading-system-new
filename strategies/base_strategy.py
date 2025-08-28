@@ -3633,15 +3633,31 @@ class BaseStrategy:
                     zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
 
                     # Find closest available strike using Zerodha's actual instruments
-                    closest_strike = await orchestrator.zerodha_client.find_closest_available_strike(
-                        zerodha_symbol, atm_strike, expiry
-                    )
+                    try:
+                        closest_strike = await orchestrator.zerodha_client.find_closest_available_strike(
+                            zerodha_symbol, atm_strike, expiry
+                        )
 
-                    if closest_strike:
-                        logger.info(f"✅ Using available strike: {closest_strike} (instead of {atm_strike})")
-                        return closest_strike
-                    else:
-                        logger.warning(f"⚠️ No available strikes found, using calculated ATM: {atm_strike}")
+                        # 🚨 DEFENSIVE: Validate the response from find_closest_available_strike
+                        if closest_strike is None:
+                            logger.warning(f"⚠️ find_closest_available_strike returned None for {zerodha_symbol}")
+                            return atm_strike
+                        elif isinstance(closest_strike, int):
+                            if closest_strike > 0:
+                                logger.info(f"✅ Using available strike: {closest_strike} (instead of {atm_strike})")
+                                return closest_strike
+                            else:
+                                logger.warning(f"⚠️ Invalid strike value: {closest_strike}, using ATM: {atm_strike}")
+                                return atm_strike
+                        else:
+                            logger.error(f"❌ find_closest_available_strike returned {type(closest_strike)} instead of int: {closest_strike}")
+                            return atm_strike
+
+                    except Exception as strike_error:
+                        logger.error(f"❌ ERROR calling find_closest_available_strike for {zerodha_symbol}: {strike_error}")
+                        logger.error(f"   Error type: {type(strike_error)}")
+                        if "can't be used in 'await' expression" in str(strike_error):
+                            logger.error(f"🚨 CRITICAL: Zerodha API returned non-coroutine in strike lookup")
                         return atm_strike
 
                 except Exception as zerodha_err:
