@@ -247,7 +247,22 @@ class EnhancedMomentumSurfer(BaseStrategy):
         super().__init__(config)
         self.strategy_name = "institutional_momentum_specialist"
         self.description = "Institutional-Grade Momentum Specialist with professional mathematical models"
-        
+
+        # 🚨 CRITICAL FIX: Initialize missing attributes from base class
+        from datetime import time
+        import pytz
+
+        # Initialize time-based attributes (from set_market_bias method)
+        self.ist_timezone = pytz.timezone('Asia/Kolkata')
+        self.no_new_signals_after = time(15, 0)  # 3:00 PM IST - No new signals
+        self.mandatory_close_time = time(15, 20)  # 3:20 PM IST - Force close all positions
+        self.warning_close_time = time(15, 15)    # 3:15 PM IST - Start aggressive closing
+
+        # Initialize position management attributes
+        self.max_position_age_hours = 24  # Auto-close positions after 24 hours
+        self.trailing_stop_percentage = 0.5  # 0.5% trailing stop
+        self.profit_lock_percentage = 1.0  # Lock profit at 1%
+
         # PROFESSIONAL MOMENTUM MODELS
         self.momentum_models = ProfessionalMomentumModels()
         
