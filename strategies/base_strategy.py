@@ -2398,7 +2398,7 @@ class BaseStrategy:
                 # 🔧 CRITICAL FIX: Use Zerodha's exact symbol format for stocks too
                 # Zerodha format: GAIL02SEP25150CE should be GAIL25SEP02150CE (YYMMMDDD format)
                 options_symbol = f"{zerodha_underlying}{expiry}{strike}{option_type}"
-                logger.info(f"🔍 GENERATED OPTIONS SYMBOL: {options_symbol} (format: {zerodha_underlying} + {expiry} + {strike} + {option_type})")
+                logger.debug(f"🔍 GENERATED OPTIONS SYMBOL: {options_symbol} (format: {zerodha_underlying} + {expiry} + {strike} + {option_type})")
                 
                 # 🚨 CRITICAL FIX: Validate if options symbol exists in Zerodha before using
                 if self._validate_options_symbol_exists(options_symbol):
@@ -2615,17 +2615,36 @@ class BaseStrategy:
             return optimal_expiry
         else:
             logger.warning("⚠️ No expiry dates from Zerodha API - using calculated fallback")
-            # Use simple fallback calculation for next Thursday
+            # Fallback: for stocks, choose last Thursday of current/next month; for indices, next Thursday
             from datetime import datetime, timedelta
             today = datetime.now().date()
-            days_ahead = 3 - today.weekday()  # Thursday is 3 (Monday=0)
-            if days_ahead <= 0:  # If today is Thursday or later, get next Thursday
-                days_ahead += 7
-            next_thursday = today + timedelta(days=days_ahead)
-            
-            # Format as DDMMMYY for Zerodha
-            fallback_expiry = next_thursday.strftime("%d%b%y").upper()
-            logger.info(f"🔄 FALLBACK EXPIRY: {fallback_expiry} (calculated next Thursday)")
+            zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+            is_index = zerodha_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX']
+
+            def _last_thursday(year: int, month: int):
+                import calendar
+                last_day = calendar.monthrange(year, month)[1]
+                d = datetime(year, month, last_day).date()
+                # Thursday = 3
+                offset = (d.weekday() - 3) % 7
+                return d - timedelta(days=offset)
+
+            if is_index:
+                days_ahead = (3 - today.weekday()) % 7  # next Thursday including today
+                if days_ahead == 0:
+                    days_ahead = 7
+                fallback_date = today + timedelta(days=days_ahead)
+            else:
+                # Stock options: monthly expiry (last Thursday). If today >= last Thursday, move to next month
+                lt = _last_thursday(today.year, today.month)
+                if today >= lt:
+                    year = today.year + (1 if today.month == 12 else 0)
+                    month = 1 if today.month == 12 else today.month + 1
+                    lt = _last_thursday(year, month)
+                fallback_date = lt
+
+            fallback_expiry = fallback_date.strftime("%d%b%y").upper()
+            logger.info(f"🔄 FALLBACK EXPIRY: {fallback_expiry} ({'monthly last Thursday' if not is_index else 'next Thursday'})")
             return fallback_expiry
     
     async def _get_optimal_expiry_for_strategy(self, underlying_symbol: str = "NIFTY", preference: str = "nearest_weekly") -> str:
