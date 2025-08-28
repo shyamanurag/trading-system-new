@@ -17,6 +17,52 @@ from models.responses import BaseResponse
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/debug")
 
+@router.get("/logs")
+async def stream_recent_logs(lines: int = 200) -> Dict[str, Any]:
+    """Return recent runtime logs from configured log file if available; otherwise inform to use platform logs."""
+    try:
+        import os
+        # Determine log file from env or default location
+        log_file = os.getenv("APP_LOG_FILE", "logs/app.log")
+        if not os.path.exists(log_file):
+            # Fallback: look for default uvicorn/gunicorn logs
+            candidates = [
+                "logs/app.log",
+                "/var/log/app.log",
+                "/var/log/uvicorn.log",
+                "/var/log/gunicorn/error.log",
+                "/var/log/gunicorn/access.log"
+            ]
+            log_file = next((p for p in candidates if os.path.exists(p)), None)
+        
+        if not log_file:
+            return {
+                "success": False,
+                "message": "No local log file found. Set APP_LOG_FILE env or use hosting logs (e.g., platform tail).",
+                "available": []
+            }
+        
+        # Read last N lines efficiently
+        result_lines = []
+        with open(log_file, 'rb') as f:
+            f.seek(0, os.SEEK_END)
+            file_size = f.tell()
+            block_size = 1024
+            buffer = b""
+            pos = file_size
+            while pos > 0 and len(result_lines) <= lines:
+                read_size = block_size if pos - block_size > 0 else pos
+                pos -= read_size
+                f.seek(pos)
+                buffer = f.read(read_size) + buffer
+                result_lines = buffer.splitlines()
+        
+        text_lines = [l.decode('utf-8', errors='ignore') for l in result_lines[-lines:]]
+        return { "success": True, "log_file": log_file, "lines": len(text_lines), "content": text_lines }
+    except Exception as e:
+        logger.error(f"Error reading logs: {e}")
+        return { "success": False, "error": str(e) }
+
 @router.get("/orchestrator", response_model=Dict[str, Any])
 async def get_orchestrator_debug(
     orchestrator: TradingOrchestrator = Depends(get_orchestrator)
