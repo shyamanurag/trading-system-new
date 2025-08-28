@@ -381,6 +381,15 @@ class TradeEngine:
                 self.logger.error(f"❌ Access token: {self.zerodha_client.access_token is not None}")
                 self.logger.error("❌ NO FALLBACK EXECUTION - Real broker required for all trades")
                 self.logger.error("🚨 SYSTEM DESIGNED TO FAIL WHEN BROKER UNAVAILABLE - FIX ZERODHA CONNECTION")
+
+                # 🚨 EMERGENCY DIAGNOSTIC: Log connection status for debugging
+                self.logger.error("🚨 EMERGENCY: Checking Zerodha connection diagnostics...")
+                try:
+                    connection_status = await self.zerodha_client.get_connection_status()
+                    self.logger.error(f"🚨 EMERGENCY: Connection status: {connection_status}")
+                except Exception as diag_error:
+                    self.logger.error(f"🚨 EMERGENCY: Could not get connection status: {diag_error}")
+
                 return None
             
             # CRITICAL: Check actual Zerodha wallet balance before placing order
@@ -389,11 +398,33 @@ class TradeEngine:
             if not await self._check_available_capital(estimated_order_value):
                 self.logger.error(f"❌ ORDER REJECTED: Insufficient Zerodha wallet balance for {symbol}")
                 self.logger.error(f"❌ Required: ₹{estimated_order_value:,.2f} - Check your Zerodha account balance")
+
+                # 🚨 EMERGENCY DIAGNOSTIC: Check actual balance
+                self.logger.error("🚨 EMERGENCY: Checking actual Zerodha balance...")
+                try:
+                    if hasattr(self.zerodha_client, 'get_wallet_balance'):
+                        balance = await self.zerodha_client.get_wallet_balance()
+                        self.logger.error(f"🚨 EMERGENCY: Actual balance: ₹{balance:,.2f}")
+                except Exception as balance_error:
+                    self.logger.error(f"🚨 EMERGENCY: Could not check balance: {balance_error}")
+
                 return None
-            
+
             # CRITICAL: Check for existing position BEFORE placing order
             if symbol and await self._check_existing_position(symbol, action):
                 self.logger.error(f"❌ DUPLICATE ORDER BLOCKED: Existing position found for {symbol} {action}")
+
+                # 🚨 EMERGENCY DIAGNOSTIC: Check what position exists
+                self.logger.error("🚨 EMERGENCY: Checking existing positions...")
+                try:
+                    positions = await self.zerodha_client.get_positions()
+                    for pos in positions.get('net', []):
+                        if pos.get('tradingsymbol') == symbol:
+                            self.logger.error(f"🚨 EMERGENCY: Existing position: {pos}")
+                            break
+                except Exception as pos_error:
+                    self.logger.error(f"🚨 EMERGENCY: Could not check positions: {pos_error}")
+
                 return None
             
             # 🛡️ CRITICAL: Check order rate limits to prevent retry loops (30s per-signal window, max attempts enforced elsewhere)
@@ -435,8 +466,18 @@ class TradeEngine:
                     self.logger.warning(f"⚠️ No entry price for LIMIT order: {symbol} - using MARKET as fallback")
                     order_params['order_type'] = 'MARKET'
             
+            self.logger.info(f"🔄 Placing order via Zerodha: {order_params}")
             result = await self.zerodha_client.place_order(order_params)
-            
+
+            # 🚨 EMERGENCY DIAGNOSTIC: Log order placement result
+            if result is None:
+                self.logger.error("🚨 EMERGENCY: Zerodha place_order returned None")
+                self.logger.error(f"🚨 EMERGENCY: Order params: {order_params}")
+            elif isinstance(result, str):
+                self.logger.info(f"✅ Zerodha order placed successfully: {result}")
+            else:
+                self.logger.error(f"🚨 EMERGENCY: Zerodha place_order returned unexpected type: {type(result)} = {result}")
+
             # 📊 Record order attempt in rate limiter
             order_success = result and isinstance(result, str)
             await self.rate_limiter.record_order_attempt(
