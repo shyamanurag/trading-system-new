@@ -469,6 +469,10 @@ class OptimizedVolumeScalper(BaseStrategy):
             # VOLATILITY CLUSTERING STRENGTH
             clustering_strength = self._calculate_volatility_clustering(vol_series)
             
+            # Calculate volume ratio (current volume vs average volume)
+            avg_volume = np.mean(self.volume_history.get(symbol, [current_volume])[-20:]) if symbol in self.volume_history else current_volume
+            vol_ratio = current_volume / avg_volume if avg_volume > 0 else 1.0
+
             # PROFESSIONAL VOLATILITY METRICS
             vol_data = {
                 'current_vol': current_vol,
@@ -476,6 +480,7 @@ class OptimizedVolumeScalper(BaseStrategy):
                 'vol_regime': regime,
                 'clustering_strength': clustering_strength,
                 'vol_percentile': self._calculate_vol_percentile(current_vol, vol_series),
+                'vol_ratio': vol_ratio,  # Add volume ratio for clustering detection
                 'timestamp': datetime.now()
             }
             
@@ -492,11 +497,16 @@ class OptimizedVolumeScalper(BaseStrategy):
             simple_vol = np.std(returns) * np.sqrt(252)
             if symbol not in self.volatility_history:
                 self.volatility_history[symbol] = []
+            # Calculate volume ratio for fallback case
+            avg_volume_fb = np.mean(self.volume_history.get(symbol, [current_volume])[-20:]) if symbol in self.volume_history else current_volume
+            vol_ratio_fb = current_volume / avg_volume_fb if avg_volume_fb > 0 else 1.0
+
             self.volatility_history[symbol].append({
                 'current_vol': simple_vol,
                 'garch_vol': simple_vol,
                 'vol_regime': 'NORMAL_VOLATILITY',
                 'clustering_strength': 0.0,
+                'vol_ratio': vol_ratio_fb,  # Add volume ratio to fallback data
                 'vol_percentile': 50.0,
                 'timestamp': datetime.now()
             })
@@ -1026,9 +1036,20 @@ class OptimizedVolumeScalper(BaseStrategy):
         """Detect volatility clustering for breakout trades"""
         if symbol not in self.volatility_history or len(self.volatility_history[symbol]) < 5:
             return None
-            
+
         current_vol_data = self.volatility_history[symbol][-1]
+
+        # 🚨 DEFENSIVE: Check if vol_ratio exists in the data
+        if 'vol_ratio' not in current_vol_data:
+            logger.warning(f"⚠️ vol_ratio missing in volatility data for {symbol}")
+            return None
+
         vol_ratio = current_vol_data['vol_ratio']
+
+        # 🚨 DEFENSIVE: Validate vol_ratio is a valid number
+        if not isinstance(vol_ratio, (int, float)) or vol_ratio <= 0:
+            logger.warning(f"⚠️ Invalid vol_ratio for {symbol}: {vol_ratio}")
+            return None
         
         if vol_ratio >= self.volatility_cluster_threshold:
             # High volatility cluster detected
@@ -1122,14 +1143,29 @@ class OptimizedVolumeScalper(BaseStrategy):
         """Calculate volatility persistence for clustering analysis"""
         if symbol not in self.volatility_history or len(self.volatility_history[symbol]) < 10:
             return 0.0
-            
-        vol_ratios = [v['vol_ratio'] for v in self.volatility_history[symbol][-10:]]
-        
-        # Check how many recent periods had high volatility
-        high_vol_periods = sum(1 for ratio in vol_ratios if ratio > 1.2)
-        persistence = high_vol_periods / len(vol_ratios)
-        
-        return persistence
+
+        # 🚨 DEFENSIVE: Filter out entries without vol_ratio
+        try:
+            vol_ratios = []
+            for v in self.volatility_history[symbol][-10:]:
+                if isinstance(v, dict) and 'vol_ratio' in v and isinstance(v['vol_ratio'], (int, float)):
+                    vol_ratios.append(v['vol_ratio'])
+                else:
+                    # Use default ratio of 1.0 for missing/invalid data
+                    vol_ratios.append(1.0)
+
+            if not vol_ratios:
+                return 0.0
+
+            # Check how many recent periods had high volatility
+            high_vol_periods = sum(1 for ratio in vol_ratios if ratio > 1.2)
+            persistence = high_vol_periods / len(vol_ratios)
+
+            return persistence
+
+        except Exception as e:
+            logger.warning(f"⚠️ Error calculating volatility persistence for {symbol}: {e}")
+            return 0.0
     
     async def _convert_to_trading_signal(self, symbol: str, symbol_data: Dict, ms_signal: MarketMicrostructureSignal) -> Optional[Dict]:
         """Convert microstructure signal to executable trading signal"""
