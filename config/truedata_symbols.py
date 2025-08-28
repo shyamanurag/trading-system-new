@@ -277,42 +277,85 @@ def _edit_distance(s1: str, s2: str) -> int:
     
     return previous_row[-1]
 
+_fo_enabled_cache = {}
+
 def is_fo_enabled(symbol: str) -> bool:
-    """🎯 DYNAMIC CHECK: F&O enabled for TOP 50 most liquid companies only"""
-    # TOP 50 MOST LIQUID F&O SYMBOLS - Focus on liquidity for optimal execution
-    top_50_liquid_fo = {
-        # Major Indices (5)
-        'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX',
-        
-        # TOP 45 MOST TRADED F&O STOCKS (by daily volume & liquidity)
-        'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
-        'INFY', 'KOTAKBANK', 'LT', 'AXISBANK', 'MARUTI', 'ASIANPAINT',
-        'TECHM', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO', 'NESTLEIND',
-        'HINDUNILVR', 'POWERGRID', 'NTPC', 'COALINDIA', 'ONGC', 'SUNPHARMA',
-        'DRREDDY', 'CIPLA', 'APOLLOHOSP', 'HCLTECH', 'INDUSINDBK', 'TATAMOTORS',
-        'TATASTEEL', 'JSWSTEEL', 'HINDALCO', 'VEDL', 'ITC', 'BRITANNIA',
-        'DABUR', 'GODREJCP', 'MARICO', 'IOC', 'BPCL', 'HINDPETRO',
-        'GAIL', 'ADANIPORT', 'ADANIGREEN', 'PNB', 'FEDERALBNK'
-    }
-    
-    # Remove suffixes for comparison (-I, 25, 26 etc.)
-    clean_symbol = symbol.replace('-I', '').replace('25', '').replace('26', '').strip().upper()
-    
-    # CRITICAL FIX: Block delisted/suspended symbols
-    blocked_symbols = ['RCOM', 'RELCAPITAL', 'YESBANK', 'JETAIRWAYS']
-    if clean_symbol in blocked_symbols:
-        logger.warning(f"🚫 BLOCKED SYMBOL: {clean_symbol} - Known delisted/suspended stock")
+    """🎯 DYNAMIC CHECK: Determine if F&O is enabled for a symbol.
+
+    Long-term fix: use expanded F&O universe plus live Zerodha NFO instruments lookup,
+    with a small in-memory cache to avoid repeated heavy calls.
+    """
+    try:
+        # Normalize for comparison
+        clean_symbol = symbol.replace('-I', '').replace('25', '').replace('26', '').strip().upper()
+
+        # Block delisted/suspended symbols
+        blocked_symbols = {'RCOM', 'RELCAPITAL', 'YESBANK', 'JETAIRWAYS'}
+        if clean_symbol in blocked_symbols:
+            logger.warning(f"🚫 BLOCKED SYMBOL: {clean_symbol} - Known delisted/suspended stock")
+            _fo_enabled_cache[clean_symbol] = False
+            return False
+
+        # Cache hit
+        if clean_symbol in _fo_enabled_cache:
+            result = _fo_enabled_cache[clean_symbol]
+            logger.info(f"🔍 F&O CHECK (cache): {symbol} → {clean_symbol} → {result}")
+            return result
+
+        # Baseline liquid universe (kept for fast allow-list)
+        top_50_liquid_fo = {
+            'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX',
+            'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
+            'INFY', 'KOTAKBANK', 'LT', 'AXISBANK', 'MARUTI', 'ASIANPAINT',
+            'TECHM', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO', 'NESTLEIND',
+            'HINDUNILVR', 'POWERGRID', 'NTPC', 'COALINDIA', 'ONGC', 'SUNPHARMA',
+            'DRREDDY', 'CIPLA', 'APOLLOHOSP', 'HCLTECH', 'INDUSINDBK', 'TATAMOTORS',
+            'TATASTEEL', 'JSWSTEEL', 'HINDALCO', 'VEDL', 'ITC', 'BRITANNIA',
+            'DABUR', 'GODREJCP', 'MARICO', 'IOC', 'BPCL', 'HINDPETRO',
+            'GAIL', 'ADANIPORT', 'ADANIGREEN', 'PNB', 'FEDERALBNK'
+        }
+
+        # Expanded curated universe already present in this module
+        try:
+            expanded_list = get_complete_fo_symbols()
+            expanded_universe = {s.replace('-I', '').strip().upper() for s in expanded_list}
+        except Exception:
+            expanded_universe = set()
+
+        static_universe = top_50_liquid_fo | expanded_universe
+
+        # If in static universe, mark True immediately
+        if clean_symbol in static_universe:
+            _fo_enabled_cache[clean_symbol] = True
+            logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → F&O enabled: True (static universe)")
+            return True
+
+        # Dynamic verification via Zerodha NFO instruments (authoritative)
+        try:
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            if orchestrator and getattr(orchestrator, 'zerodha_client', None) and getattr(orchestrator.zerodha_client, 'kite', None):
+                instruments = orchestrator.zerodha_client.kite.instruments('NFO')
+                # Any NFO tradingsymbol beginning with the underlying indicates options availability
+                clean_prefix = clean_symbol
+                found = any(
+                    (inst.get('tradingsymbol', '') or '').upper().startswith(clean_prefix)
+                    for inst in instruments or []
+                )
+                _fo_enabled_cache[clean_symbol] = bool(found)
+                logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → F&O enabled: {found} (Zerodha NFO lookup)")
+                return bool(found)
+        except Exception as e:
+            logger.debug(f"F&O dynamic lookup failed for {clean_symbol}: {e}")
+
+        # Conservative default when unknown: False
+        _fo_enabled_cache[clean_symbol] = False
+        logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → F&O enabled: False (default)")
         return False
-    
-    result = clean_symbol in top_50_liquid_fo
-    
-    # DEBUG: Log F&O check details
-    logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → F&O enabled: {result}")
-    if not result and clean_symbol in ['TATASTEEL', 'PNB']:
-        logger.warning(f"⚠️ {clean_symbol} should be F&O enabled but showing as false!")
-        logger.info(f"   Available F&O symbols: {sorted(list(top_50_liquid_fo))}")
-    
-    return result
+
+    except Exception as e:
+        logger.error(f"Error in is_fo_enabled for {symbol}: {e}")
+        return False
 
 def should_use_equity_only(symbol: str) -> bool:
     """🎯 CHECK: Whether to use equity only (no F&O) for a symbol"""

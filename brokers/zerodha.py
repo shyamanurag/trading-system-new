@@ -490,12 +490,12 @@ class ZerodhaIntegration:
         # Get transaction type to determine if it's a SELL order
         action = self._get_transaction_type(order_params)
         
-        # 🔧 CRITICAL FIX: NFO options require NRML, not CNC
+        # INTRADAY ONLY: Use MIS for ALL orders (equity and options)
         if 'CE' in symbol or 'PE' in symbol:
-            return 'NRML'  # Options must use NRML
+            return 'MIS'  # Options BUY with intraday auto square-off
         else:
-            # 🚨 INTRADAY ONLY FIX: Use MIS for ALL equity orders (BUY and SELL)
-            return 'MIS'  # Margin Intraday Square-off for ALL orders - auto square-off at 3:30 PM
+            # Equity intraday
+            return 'MIS'  # Margin Intraday Square-off
 
     def _get_exchange_for_symbol(self, symbol: str) -> str:
         """Get appropriate exchange for symbol - FIXED for options"""

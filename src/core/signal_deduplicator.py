@@ -278,15 +278,15 @@ class SignalDeduplicator:
         
         # Filter by quality first
         quality_signals = self._filter_by_quality(signals)
-        logger.info(f"🔍 QUALITY FILTER: {len(signals)} → {len(quality_signals)} signals passed")
+        logger.debug(f"🔍 QUALITY FILTER: {len(signals)} → {len(quality_signals)} signals passed")
         
         # Deduplicate by symbol
         deduplicated_signals = self._deduplicate_by_symbol(quality_signals)
-        logger.info(f"🔍 SYMBOL DEDUP: {len(quality_signals)} → {len(deduplicated_signals)} signals passed")
+        logger.debug(f"🔍 SYMBOL DEDUP: {len(quality_signals)} → {len(deduplicated_signals)} signals passed")
         
         # Check for timestamp collisions and resolve
         final_signals = self._resolve_timestamp_collisions(deduplicated_signals)
-        logger.info(f"🔍 TIMESTAMP RESOLVE: {len(deduplicated_signals)} → {len(final_signals)} signals passed")
+        logger.debug(f"🔍 TIMESTAMP RESOLVE: {len(deduplicated_signals)} → {len(final_signals)} signals passed")
         
         # Update signal history
         self._update_signal_history(final_signals)

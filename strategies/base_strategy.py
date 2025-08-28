@@ -1902,12 +1902,12 @@ class BaseStrategy:
                 # MOMENTUM-BASED CONFIDENCE: Lower requirements during strong trends
                 if abs(nifty_momentum) >= 0.3:  # Strong intraday move (0.3%+)
                     min_conf = 8.0  # Very aggressive for trending markets
-                    logger.info(f"🚀 STRONG MOMENTUM DETECTED: Nifty={nifty_momentum:+.2f}% - min_conf lowered to {min_conf}")
+                    logger.debug(f"🚀 STRONG MOMENTUM DETECTED: Nifty={nifty_momentum:+.2f}% - min_conf lowered to {min_conf}")
                 elif abs(nifty_momentum) >= 0.15:  # Moderate move (0.15%+)
                     min_conf = 8.3  # Moderately aggressive
-                    logger.info(f"📈 MODERATE MOMENTUM: Nifty={nifty_momentum:+.2f}% - min_conf={min_conf}")
+                    logger.debug(f"📈 MODERATE MOMENTUM: Nifty={nifty_momentum:+.2f}% - min_conf={min_conf}")
                 else:
-                    logger.info(f"🔍 SIDEWAYS MARKET: Nifty={nifty_momentum:+.2f}% - min_conf={min_conf}")
+                    logger.debug(f"🔍 SIDEWAYS MARKET: Nifty={nifty_momentum:+.2f}% - min_conf={min_conf}")
                     
             except Exception as e:
                 logger.warning(f"⚠️ Could not detect market momentum: {e}")
@@ -3534,19 +3534,19 @@ class BaseStrategy:
                 cost = max_affordable_cost
                 estimated_margin = cost * estimated_margin_factor
                 
-                logger.info(f"✅ MARGIN-OPTIMIZED: {underlying_symbol} = {final_quantity} shares")
-                logger.info(f"   💰 Trade Value: ₹{cost:,.0f}")
-                logger.info(f"   💳 Est. Margin: ₹{estimated_margin:,.0f} ({estimated_margin/available_capital:.1%} of capital)")
-                logger.info(f"   📊 Leverage: ~{cost/estimated_margin:.1f}x")
+                logger.debug(f"✅ MARGIN-OPTIMIZED: {underlying_symbol} = {final_quantity} shares")
+                logger.debug(f"   💰 Trade Value: ₹{cost:,.0f}")
+                logger.debug(f"   💳 Est. Margin: ₹{estimated_margin:,.0f} ({estimated_margin/available_capital:.1%} of capital)")
+                logger.debug(f"   📊 Leverage: ~{cost/estimated_margin:.1f}x")
                 return final_quantity
             else:
                 # Can only afford minimum - check if it fits in margin allocation
                 min_estimated_margin = cost_for_min_shares * estimated_margin_factor
                 
                 if min_estimated_margin <= max_margin_allowed:
-                    logger.info(f"✅ MINIMUM VIABLE: {underlying_symbol} = {min_shares_required} shares")
-                    logger.info(f"   💰 Trade Value: ₹{cost_for_min_shares:,.0f}")
-                    logger.info(f"   💳 Est. Margin: ₹{min_estimated_margin:,.0f}")
+                    logger.debug(f"✅ MINIMUM VIABLE: {underlying_symbol} = {min_shares_required} shares")
+                    logger.debug(f"   💰 Trade Value: ₹{cost_for_min_shares:,.0f}")
+                    logger.debug(f"   💳 Est. Margin: ₹{min_estimated_margin:,.0f}")
                     return min_shares_required
                 else:
                     logger.warning(
@@ -3828,10 +3828,10 @@ class BaseStrategy:
                     cost = max_affordable_cost
                     estimated_margin = cost * estimated_margin_factor
                     
-                    logger.info(f"✅ MARGIN-OPTIMIZED: {underlying_symbol} = {final_quantity} shares")
-                    logger.info(f"   💰 Trade Value: ₹{cost:,.0f}")
-                    logger.info(f"   💳 Est. Margin: ₹{estimated_margin:,.0f} ({estimated_margin/available_capital:.1%} of capital)")
-                    logger.info(f"   📊 Leverage: ~{cost/estimated_margin:.1f}x")
+                    logger.debug(f"✅ MARGIN-OPTIMIZED: {underlying_symbol} = {final_quantity} shares")
+                    logger.debug(f"   💰 Trade Value: ₹{cost:,.0f}")
+                    logger.debug(f"   💳 Est. Margin: ₹{estimated_margin:,.0f} ({estimated_margin/available_capital:.1%} of capital)")
+                    logger.debug(f"   📊 Leverage: ~{cost/estimated_margin:.1f}x")
                 else:
                     # Can only afford minimum - check if it fits in margin allocation
                     min_estimated_margin = cost_for_min_shares * estimated_margin_factor
@@ -3839,9 +3839,9 @@ class BaseStrategy:
                     if min_estimated_margin <= max_margin_allowed:
                         final_quantity = min_shares_required
                         cost = cost_for_min_shares
-                        logger.info(f"✅ MINIMUM VIABLE: {underlying_symbol} = {final_quantity} shares")
-                        logger.info(f"   💰 Trade Value: ₹{cost:,.0f}")
-                        logger.info(f"   💳 Est. Margin: ₹{cost * estimated_margin_factor:,.0f}")
+                        logger.debug(f"✅ MINIMUM VIABLE: {underlying_symbol} = {final_quantity} shares")
+                        logger.debug(f"   💰 Trade Value: ₹{cost:,.0f}")
+                        logger.debug(f"   💳 Est. Margin: ₹{cost * estimated_margin_factor:,.0f}")
                     else:
                         logger.warning(
                             f"❌ EQUITY REJECTED: {underlying_symbol} min trade ₹{min_trade_value:,.0f} "
@@ -3849,8 +3849,8 @@ class BaseStrategy:
                         )
                         return 0
 
-                logger.info(f"✅ EQUITY ORDER: {underlying_symbol} = {final_quantity} shares")
-                logger.info(f"   💰 Cost: ₹{cost:,.0f} / Available: ₹{available_capital:,.0f} ({cost/available_capital:.1%})")
+                logger.debug(f"✅ EQUITY ORDER: {underlying_symbol} = {final_quantity} shares")
+                logger.debug(f"   💰 Cost: ₹{cost:,.0f} / Available: ₹{available_capital:,.0f} ({cost/available_capital:.1%})")
                 
                 # CRITICAL DEBUG: Log final quantity calculation
                 if final_quantity == 0:

@@ -429,13 +429,24 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         if change_percent > 1.0:  # Strong uptrend
             confidence = 9.2 + min(change_percent * 0.2, 0.8)
-            return await self._create_options_signal(
+            ltp = data.get('ltp', 0)
+            if ltp <= 0:
+                return None
+            stop_loss = ltp * 0.99
+            target = ltp * 1.02
+            return await self.create_standard_signal(
                 symbol=symbol,
-                signal_type='buy',
+                action='BUY',
+                entry_price=ltp,
+                stop_loss=stop_loss,
+                target=target,
                 confidence=confidence,
-                market_data=market_data,
-                reasoning=f"Uptrending stock strategy - Change: {change_percent:.1f}%",
-                position_size=100
+                metadata={
+                    'strategy': self.strategy_name,
+                    'signal_type': 'OPTIONS',
+                    'reason': f"Uptrending stock strategy - Change: {change_percent:.1f}%"
+                },
+                market_bias=self.market_bias
             )
         return None
 
@@ -446,13 +457,24 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         if change_percent < -1.0:  # Strong downtrend
             confidence = 9.2 + min(abs(change_percent) * 0.2, 0.8)
-            return await self._create_options_signal(
+            ltp = data.get('ltp', 0)
+            if ltp <= 0:
+                return None
+            stop_loss = ltp * 1.01
+            target = ltp * 0.98
+            return await self.create_standard_signal(
                 symbol=symbol,
-                signal_type='sell',  # SHORT SELLING
+                action='SELL',
+                entry_price=ltp,
+                stop_loss=stop_loss,
+                target=target,
                 confidence=confidence,
-                market_data=market_data,
-                reasoning=f"Downtrending stock SHORT strategy - Change: {change_percent:.1f}%",
-                position_size=100
+                metadata={
+                    'strategy': self.strategy_name,
+                    'signal_type': 'OPTIONS',
+                    'reason': f"Downtrending stock SHORT strategy - Change: {change_percent:.1f}%"
+                },
+                market_bias=self.market_bias
             )
         return None
 
@@ -465,23 +487,43 @@ class EnhancedMomentumSurfer(BaseStrategy):
         # Range trading: buy at support, sell at resistance
         if change_percent < -0.3:  # Near support
             confidence = 9.1
-            return await self._create_options_signal(
+            if ltp <= 0:
+                return None
+            stop_loss = ltp * 0.99
+            target = ltp * 1.02
+            return await self.create_standard_signal(
                 symbol=symbol,
-                signal_type='buy',
+                action='BUY',
+                entry_price=ltp,
+                stop_loss=stop_loss,
+                target=target,
                 confidence=confidence,
-                market_data=market_data,
-                reasoning=f"Range trading: Buy at support - Change: {change_percent:.1f}%",
-                position_size=150
+                metadata={
+                    'strategy': self.strategy_name,
+                    'signal_type': 'OPTIONS',
+                    'reason': f"Range trading: Buy at support - Change: {change_percent:.1f}%"
+                },
+                market_bias=self.market_bias
             )
         elif change_percent > 0.3:  # Near resistance
             confidence = 9.1
-            return await self._create_options_signal(
+            if ltp <= 0:
+                return None
+            stop_loss = ltp * 1.01
+            target = ltp * 0.98
+            return await self.create_standard_signal(
                 symbol=symbol,
-                signal_type='sell',
+                action='SELL',
+                entry_price=ltp,
+                stop_loss=stop_loss,
+                target=target,
                 confidence=confidence,
-                market_data=market_data,
-                reasoning=f"Range trading: Sell at resistance - Change: {change_percent:.1f}%",
-                position_size=150
+                metadata={
+                    'strategy': self.strategy_name,
+                    'signal_type': 'OPTIONS',
+                    'reason': f"Range trading: Sell at resistance - Change: {change_percent:.1f}%"
+                },
+                market_bias=self.market_bias
             )
         return None
 
@@ -493,13 +535,24 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         if change_percent > 1.5 and volume > 100000:
             confidence = 9.5 + min(change_percent * 0.1, 0.5)
-            return await self._create_options_signal(
+            ltp = data.get('ltp', 0)
+            if ltp <= 0:
+                return None
+            stop_loss = ltp * 0.99
+            target = ltp * 1.02
+            return await self.create_standard_signal(
                 symbol=symbol,
-                signal_type='buy',
+                action='BUY',
+                entry_price=ltp,
+                stop_loss=stop_loss,
+                target=target,
                 confidence=confidence,
-                market_data=market_data,
-                reasoning=f"Upward breakout with volume - Change: {change_percent:.1f}%, Volume: {volume:,}",
-                position_size=200
+                metadata={
+                    'strategy': self.strategy_name,
+                    'signal_type': 'OPTIONS',
+                    'reason': f"Upward breakout with volume - Change: {change_percent:.1f}%, Volume: {volume:,}"
+                },
+                market_bias=self.market_bias
             )
         return None
 
@@ -511,13 +564,24 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         if change_percent < -1.5 and volume > 100000:
             confidence = 9.5 + min(abs(change_percent) * 0.1, 0.5)
-            return await self._create_options_signal(
+            ltp = data.get('ltp', 0)
+            if ltp <= 0:
+                return None
+            stop_loss = ltp * 1.01
+            target = ltp * 0.98
+            return await self.create_standard_signal(
                 symbol=symbol,
-                signal_type='sell',
+                action='SELL',
+                entry_price=ltp,
+                stop_loss=stop_loss,
+                target=target,
                 confidence=confidence,
-                market_data=market_data,
-                reasoning=f"Downward breakout with volume - Change: {change_percent:.1f}%, Volume: {volume:,}",
-                position_size=200
+                metadata={
+                    'strategy': self.strategy_name,
+                    'signal_type': 'OPTIONS',
+                    'reason': f"Downward breakout with volume - Change: {change_percent:.1f}%, Volume: {volume:,}"
+                },
+                market_bias=self.market_bias
             )
         return None
 
@@ -528,13 +592,24 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         if 0.5 <= change_percent <= 1.0:  # Modest upward move after decline
             confidence = 9.0
-            return await self._create_options_signal(
+            ltp = data.get('ltp', 0)
+            if ltp <= 0:
+                return None
+            stop_loss = ltp * 0.99
+            target = ltp * 1.02
+            return await self.create_standard_signal(
                 symbol=symbol,
-                signal_type='buy',
+                action='BUY',
+                entry_price=ltp,
+                stop_loss=stop_loss,
+                target=target,
                 confidence=confidence,
-                market_data=market_data,
-                reasoning=f"Upward reversal pattern - Change: {change_percent:.1f}%",
-                position_size=100
+                metadata={
+                    'strategy': self.strategy_name,
+                    'signal_type': 'OPTIONS',
+                    'reason': f"Upward reversal pattern - Change: {change_percent:.1f}%"
+                },
+                market_bias=self.market_bias
             )
         return None
 
@@ -545,13 +620,24 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         if -1.0 <= change_percent <= -0.5:  # Modest downward move after rise
             confidence = 9.0
-            return await self._create_options_signal(
+            ltp = data.get('ltp', 0)
+            if ltp <= 0:
+                return None
+            stop_loss = ltp * 1.01
+            target = ltp * 0.98
+            return await self.create_standard_signal(
                 symbol=symbol,
-                signal_type='sell',
+                action='SELL',
+                entry_price=ltp,
+                stop_loss=stop_loss,
+                target=target,
                 confidence=confidence,
-                market_data=market_data,
-                reasoning=f"Downward reversal pattern - Change: {change_percent:.1f}%",
-                position_size=100
+                metadata={
+                    'strategy': self.strategy_name,
+                    'signal_type': 'OPTIONS',
+                    'reason': f"Downward reversal pattern - Change: {change_percent:.1f}%"
+                },
+                market_bias=self.market_bias
             )
         return None
 
@@ -562,15 +648,26 @@ class EnhancedMomentumSurfer(BaseStrategy):
         volume = data.get('volume', 0)
         
         if volume > 200000 and abs(change_percent) > 0.5:
-            signal_type = 'buy' if change_percent > 0 else 'sell'
+            signal_type = 'BUY' if change_percent > 0 else 'SELL'
             confidence = 9.3
-            return await self._create_options_signal(
+            ltp = data.get('ltp', 0)
+            if ltp <= 0:
+                return None
+            stop_loss = ltp * (0.99 if signal_type == 'BUY' else 1.01)
+            target = ltp * (1.02 if signal_type == 'BUY' else 0.98)
+            return await self.create_standard_signal(
                 symbol=symbol,
-                signal_type=signal_type,
+                action=signal_type,
+                entry_price=ltp,
+                stop_loss=stop_loss,
+                target=target,
                 confidence=confidence,
-                market_data=market_data,
-                reasoning=f"High volatility momentum - Change: {change_percent:.1f}%, Volume: {volume:,}",
-                position_size=125
+                metadata={
+                    'strategy': self.strategy_name,
+                    'signal_type': 'OPTIONS',
+                    'reason': f"High volatility momentum - Change: {change_percent:.1f}%, Volume: {volume:,}"
+                },
+                market_bias=self.market_bias
             )
         return None
 
@@ -581,15 +678,26 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         # In low volatility, look for any movement
         if abs(change_percent) > 0.2:
-            signal_type = 'buy' if change_percent > 0 else 'sell'
+            signal_type = 'BUY' if change_percent > 0 else 'SELL'
             confidence = 9.0
-            return await self._create_options_signal(
+            ltp = data.get('ltp', 0)
+            if ltp <= 0:
+                return None
+            stop_loss = ltp * (0.99 if signal_type == 'BUY' else 1.01)
+            target = ltp * (1.02 if signal_type == 'BUY' else 0.98)
+            return await self.create_standard_signal(
                 symbol=symbol,
-                signal_type=signal_type,
+                action=signal_type,
+                entry_price=ltp,
+                stop_loss=stop_loss,
+                target=target,
                 confidence=confidence,
-                market_data=market_data,
-                reasoning=f"Low volatility opportunity - Change: {change_percent:.1f}%",
-                position_size=75
+                metadata={
+                    'strategy': self.strategy_name,
+                    'signal_type': 'OPTIONS',
+                    'reason': f"Low volatility opportunity - Change: {change_percent:.1f}%"
+                },
+                market_bias=self.market_bias
             )
         return None
 

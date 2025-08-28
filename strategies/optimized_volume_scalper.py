@@ -305,7 +305,7 @@ class OptimizedVolumeScalper(BaseStrategy):
         # SOPHISTICATED PARAMETERS based on academic research
         self.order_flow_lookback = 20  # bars for order flow analysis
         self.volatility_memory = 50    # bars for volatility clustering
-        self.min_liquidity_threshold = 1000000  # Min volume for valid signals
+        self.min_liquidity_threshold = 200000  # Min volume for valid signals (aligned to live feed)
         self.institutional_size_threshold = 500000  # Large trade detection
         
         # STATISTICAL EDGE PARAMETERS (evidence-based)
@@ -411,7 +411,7 @@ class OptimizedVolumeScalper(BaseStrategy):
             # Update price history
             if symbol not in self.price_history:
                 self.price_history[symbol] = []
-            price = symbol_data.get('close', 0)
+            price = symbol_data.get('ltp', symbol_data.get('close', 0))
             if price > 0:
                 self.price_history[symbol].append(price)
                 if len(self.price_history[symbol]) > 100:
@@ -539,7 +539,9 @@ class OptimizedVolumeScalper(BaseStrategy):
             
         # Proxy for order flow imbalance
         volume = symbol_data.get('volume', 0)
-        price_change = symbol_data.get('price_change', 0)
+        # Align to TrueData feed which uses change_percent in percent units
+        change_percent = symbol_data.get('change_percent', 0)
+        price_change = change_percent / 100.0 if isinstance(change_percent, (int, float)) else 0.0
         
         # Volume-weighted directional flow
         if volume > 0 and price_change != 0:

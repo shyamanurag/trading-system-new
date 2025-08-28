@@ -195,26 +195,37 @@ class EnhancedVolatilityExplosion(BaseStrategy):
             
             if not signal_type:
                 return None
-            
-            # Volume confirmation
-            if volume > 1000000:  # High volume
+
+            # Volume/volatility confirmation
+            if volume > 1000000:
                 confidence += 1.0
             elif volume > 500000:
                 confidence += 0.5
-            
-            # Volatility adjustment
-            if hasattr(self, 'current_volatility'):
-                if self.current_volatility > 2.0:
-                    confidence += 0.5  # High volatility = more opportunities
-                
+
+            if hasattr(self, 'current_volatility') and self.current_volatility > 2.0:
+                confidence += 0.5
+
             if confidence < 9.0:
                 return None
-            
-            # Determine if this is futures or options
-            if 'FUT' in symbol:
-                return await self._create_futures_signal(symbol, signal_type, confidence, reasoning, market_data)
-            else:
-                return await self._create_index_options_signal(symbol, signal_type, confidence, reasoning, market_data)
+
+            # Use standardized signal creation to ensure correct fields
+            stop_loss = ltp * (0.99 if signal_type == 'buy' else 1.01)
+            target = ltp * (1.02 if signal_type == 'buy' else 0.98)
+            action = 'BUY' if signal_type == 'buy' else 'SELL'
+            return await self.create_standard_signal(
+                symbol=symbol,
+                action=action,
+                entry_price=ltp,
+                stop_loss=stop_loss,
+                target=target,
+                confidence=confidence,
+                metadata={
+                    'strategy': self.strategy_name,
+                    'signal_type': 'OPTIONS',
+                    'reason': reasoning + " | Index regime"
+                },
+                market_bias=self.market_bias
+            )
             
         except Exception as e:
             logger.debug(f"Error analyzing Nifty opportunity for {symbol}: {e}")
