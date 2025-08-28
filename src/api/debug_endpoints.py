@@ -20,7 +20,8 @@ router = APIRouter(prefix="/debug")
 
 @router.get("/logs")
 async def stream_recent_logs(lines: int = 200) -> Dict[str, Any]:
-    """Return recent runtime logs from configured log file if available; otherwise inform to use platform logs."""
+    """DEPRECATED: This endpoint is being removed."""
+    return {"success": False, "message": "/debug/logs removed per user request"}
     try:
         import os
         # Determine log file from env or default location
