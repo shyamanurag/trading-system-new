@@ -274,14 +274,20 @@ class BaseStrategy:
             if not hasattr(self, 'ist_timezone'):
                 import pytz
                 self.ist_timezone = pytz.timezone('Asia/Kolkata')
-                
+
+            # 🚨 DEFENSIVE: Ensure mandatory_close_time exists (fallback for inheritance issues)
+            if not hasattr(self, 'mandatory_close_time'):
+                logger.warning("⚠️ mandatory_close_time not found, using default")
+                from datetime import time
+                self.mandatory_close_time = time(15, 20)  # 3:20 PM IST
+
             current_time_ist = datetime.now(self.ist_timezone).time()
-            
+
             if current_time_ist >= self.mandatory_close_time:  # After 3:20 PM
                 return "IMMEDIATE"
-            elif current_time_ist >= self.warning_close_time:  # After 3:15 PM
+            elif hasattr(self, 'warning_close_time') and current_time_ist >= self.warning_close_time:  # After 3:15 PM
                 return "URGENT"
-            elif current_time_ist >= self.no_new_signals_after:  # After 3:00 PM
+            elif hasattr(self, 'no_new_signals_after') and current_time_ist >= self.no_new_signals_after:  # After 3:00 PM
                 return "GRADUAL"
             else:
                 return "NORMAL"
@@ -710,9 +716,19 @@ class BaseStrategy:
             else:
                 profit_pct = ((entry_price - current_price) / entry_price) * 100
             
+            # 🚨 DEFENSIVE: Ensure profit_lock_percentage exists (fallback for inheritance issues)
+            if not hasattr(self, 'profit_lock_percentage'):
+                logger.warning("⚠️ profit_lock_percentage not found, using default")
+                self.profit_lock_percentage = 1.0  # Lock profit at 1%
+
             # Only set trailing stop if position is profitable
             if profit_pct > self.profit_lock_percentage:
                 
+                # 🚨 DEFENSIVE: Ensure trailing_stop_percentage exists
+                if not hasattr(self, 'trailing_stop_percentage'):
+                    logger.warning("⚠️ trailing_stop_percentage not found, using default")
+                    self.trailing_stop_percentage = 0.5  # 0.5% trailing stop
+
                 # Calculate trailing stop price
                 if action == 'BUY':
                     trailing_stop_price = current_price * (1 - self.trailing_stop_percentage / 100)

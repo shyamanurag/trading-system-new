@@ -287,7 +287,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         logger.info("✅ INSTITUTIONAL OPTIONS SPECIALIST initialized with professional models")
 
     # BACKTESTING METHODS
-    def run_backtest(self, historical_data: Dict[str, List], start_date: str = None, end_date: str = None) -> Dict:
+    async def run_backtest(self, historical_data: Dict[str, List], start_date: str = None, end_date: str = None) -> Dict:
         """
         Run comprehensive options backtest on historical data
         """

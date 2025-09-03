@@ -341,7 +341,7 @@ class RegimeAdaptiveController:
                 'risk_multiplier': 0.7,
                 'confidence_threshold': 0.8
             }
-        }
+        })
         
         # PERFORMANCE TRACKING
         self.regime_performance_history = {}
@@ -391,7 +391,7 @@ class RegimeAdaptiveController:
         return True
 
     # BACKTESTING METHODS
-    def run_backtest(self, historical_data: Dict[str, List], start_date: str = None, end_date: str = None) -> Dict:
+    async def run_backtest(self, historical_data: Dict[str, List], start_date: str = None, end_date: str = None) -> Dict:
         """
         Run comprehensive regime detection backtest
         Args:

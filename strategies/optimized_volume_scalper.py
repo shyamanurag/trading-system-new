@@ -379,7 +379,7 @@ class OptimizedVolumeScalper(BaseStrategy):
         return market_open <= now <= market_close
         
     # BACKTESTING METHODS
-    def run_backtest(self, historical_data: Dict[str, List], start_date: str = None, end_date: str = None) -> Dict:
+    async def run_backtest(self, historical_data: Dict[str, List], start_date: str = None, end_date: str = None) -> Dict:
         """
         Run comprehensive backtest on historical data
         Args:
