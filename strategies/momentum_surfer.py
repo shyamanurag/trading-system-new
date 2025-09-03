@@ -266,13 +266,13 @@ class EnhancedMomentumSurfer(BaseStrategy):
         # PROFESSIONAL MOMENTUM MODELS
         self.momentum_models = ProfessionalMomentumModels()
         
-        # PROFESSIONAL PARAMETERS
-        self.momentum_threshold = 0.015  # 1.5% momentum threshold (statistically significant)
-        self.trend_strength_threshold = 0.25  # R-squared > 0.25 for trend confirmation
-        self.mean_reversion_threshold = 0.7   # 70% probability for mean reversion signals
-        
-        # INSTITUTIONAL STOCK UNIVERSE (expanded for better diversification)
-        self.focus_stocks = [
+        # CONFIGURABLE PARAMETERS (NO HARDCODED VALUES)
+        self.momentum_threshold = config.get('momentum_threshold', 0.015)  # Configurable momentum threshold
+        self.trend_strength_threshold = config.get('trend_strength_threshold', 0.25)  # Configurable trend confirmation
+        self.mean_reversion_threshold = config.get('mean_reversion_threshold', 0.7)   # Configurable mean reversion probability
+
+        # CONFIGURABLE STOCK UNIVERSE
+        self.focus_stocks = config.get('focus_stocks', [
             # Large Cap Leaders
             'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'ITC',
             'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
@@ -280,12 +280,27 @@ class EnhancedMomentumSurfer(BaseStrategy):
             # Mid Cap Momentum Leaders
             'BAJFINANCE', 'BAJAJFINSV', 'HDFCLIFE', 'SBILIFE', 'TECHM',
             'TITAN', 'NESTLEIND', 'ULTRACEMCO', 'JSWSTEEL', 'TATASTEEL'
-        ]
-        
-        # PROFESSIONAL POSITION MANAGEMENT
-        self.max_momentum_positions = 8  # Increased for better diversification
-        self.profit_booking_threshold = 0.25  # 25% profit booking (institutional standard)
-        self.stop_loss_threshold = 0.12      # 12% stop loss (tighter control)
+        ])
+
+        # CONFIGURABLE POSITION MANAGEMENT
+        self.max_momentum_positions = config.get('max_momentum_positions', 8)
+        self.profit_booking_threshold = config.get('profit_booking_threshold', 0.25)
+        self.stop_loss_threshold = config.get('stop_loss_threshold', 0.12)
+
+        # ENHANCED RISK MANAGEMENT (CONFIGURABLE)
+        self.max_daily_loss = config.get('max_daily_loss', -2000)  # Max daily loss in rupees
+        self.max_single_trade_loss = config.get('max_single_trade_loss', -500)  # Max loss per trade
+        self.max_daily_trades = config.get('max_daily_trades', 20)  # Max trades per day
+        self.min_win_rate = config.get('min_win_rate', 0.50)  # Minimum required win rate
+        self.max_consecutive_losses = config.get('max_consecutive_losses', 3)  # Max consecutive losses
+        self.risk_multiplier = config.get('risk_multiplier', 1.0)  # Overall risk multiplier
+
+        # DYNAMIC RISK ADJUSTMENT
+        self.daily_pnl = 0.0
+        self.daily_trades = 0
+        self.consecutive_losses = 0
+        self.risk_reduction_level = 1.0  # Reduces position size when risk increases
+        self.emergency_stop = False
         
         # MOMENTUM REGIME TRACKING
         self.current_momentum_regime = "NEUTRAL"
@@ -322,8 +337,418 @@ class EnhancedMomentumSurfer(BaseStrategy):
             'high_volatility': self._high_volatility_strategy,
             'low_volatility': self._low_volatility_strategy
         }
+
+        # BACKTESTING FRAMEWORK
+        self.backtest_mode = config.get('backtest_mode', False)
+        self.backtest_results = {
+            'total_signals': 0,
+            'profitable_signals': 0,
+            'total_pnl': 0.0,
+            'max_drawdown': 0.0,
+            'win_rate': 0.0,
+            'sharpe_ratio': 0.0,
+            'avg_profit': 0.0,
+            'avg_loss': 0.0,
+            'profit_factor': 0.0,
+            'signals_by_condition': {}
+        }
+        self.backtest_trades = []
         
         logger.info("✅ SmartIntradayOptions strategy initialized")
+
+    # BACKTESTING METHODS
+    def run_backtest(self, historical_data: Dict[str, List], start_date: str = None, end_date: str = None) -> Dict:
+        """
+        Run comprehensive backtest on historical data
+        Args:
+            historical_data: Dict[symbol, List[price_data]]
+            start_date: Start date for backtest (YYYY-MM-DD)
+            end_date: End date for backtest (YYYY-MM-DD)
+        Returns:
+            Backtest results dictionary
+        """
+        logger.info("🔬 STARTING MOMENTUM STRATEGY BACKTEST")
+        self.backtest_mode = True
+        self.backtest_trades = []
+        self.backtest_results = {
+            'total_signals': 0,
+            'profitable_signals': 0,
+            'total_pnl': 0.0,
+            'max_drawdown': 0.0,
+            'win_rate': 0.0,
+            'sharpe_ratio': 0.0,
+            'avg_profit': 0.0,
+            'avg_loss': 0.0,
+            'profit_factor': 0.0,
+            'signals_by_condition': {}
+        }
+
+        try:
+            # Process each symbol's historical data
+            for symbol, price_history in historical_data.items():
+                if len(price_history) < 50:  # Minimum data requirement
+                    logger.warning(f"⚠️ Insufficient data for {symbol}: {len(price_history)} points")
+                    continue
+
+                logger.info(f"📊 Backtesting {symbol} with {len(price_history)} data points")
+
+                # Simulate trading through historical data
+                await self._simulate_historical_trading(symbol, price_history)
+
+            # Calculate comprehensive backtest statistics
+            self._calculate_backtest_statistics()
+
+            logger.info("✅ BACKTEST COMPLETED")
+            logger.info(f"📈 Total Signals: {self.backtest_results['total_signals']}")
+            logger.info(f"💰 Total P&L: ₹{self.backtest_results['total_pnl']:,.2f}")
+            logger.info(f"🎯 Win Rate: {self.backtest_results['win_rate']:.1%}")
+            logger.info(f"📊 Sharpe Ratio: {self.backtest_results['sharpe_ratio']:.2f}")
+
+            return self.backtest_results
+
+        except Exception as e:
+            logger.error(f"❌ Backtest failed: {e}")
+            return self.backtest_results
+
+    async def _simulate_historical_trading(self, symbol: str, price_history: List[Dict]):
+        """Simulate trading through historical data"""
+        try:
+            # Reset strategy state for this symbol
+            self.current_positions = {}
+            self.symbol_cooldowns = {}
+
+            # Process each historical data point
+            for i, data_point in enumerate(price_history):
+                if i < 20:  # Skip initial data for indicator warmup
+                    continue
+
+                # Create market data dict for strategy
+                market_data = {symbol: data_point}
+
+                # Generate signals (run async method synchronously for backtest)
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+                try:
+                    signals = loop.run_until_complete(self.generate_signals(market_data))
+                    loop.close()
+                except Exception as e:
+                    logger.warning(f"⚠️ Signal generation failed for {symbol}: {e}")
+                    continue
+
+                # Process each generated signal
+                for signal in signals:
+                    await self._process_backtest_signal(signal, price_history[i:], symbol)
+
+        except Exception as e:
+            logger.error(f"❌ Historical trading simulation failed for {symbol}: {e}")
+
+    async def _process_backtest_signal(self, signal: Dict, future_prices: List[Dict], symbol: str):
+        """Process a signal in backtest mode"""
+        try:
+            entry_price = signal.get('entry_price', 0)
+            stop_loss = signal.get('stop_loss', 0)
+            target = signal.get('target', 0)
+            confidence = signal.get('confidence', 0)
+
+            if entry_price <= 0:
+                return
+
+            # Record signal
+            self.backtest_results['total_signals'] += 1
+            signal_condition = signal.get('market_condition', 'unknown')
+
+            if signal_condition not in self.backtest_results['signals_by_condition']:
+                self.backtest_results['signals_by_condition'][signal_condition] = 0
+            self.backtest_results['signals_by_condition'][signal_condition] += 1
+
+            # Simulate trade execution and exit
+            trade_pnl, exit_reason = self._simulate_trade_exit(entry_price, stop_loss, target, future_prices)
+
+            # Record trade
+            trade_record = {
+                'symbol': symbol,
+                'entry_price': entry_price,
+                'exit_price': entry_price + trade_pnl,
+                'pnl': trade_pnl,
+                'confidence': confidence,
+                'condition': signal_condition,
+                'exit_reason': exit_reason
+            }
+
+            self.backtest_trades.append(trade_record)
+
+            if trade_pnl > 0:
+                self.backtest_results['profitable_signals'] += 1
+
+            self.backtest_results['total_pnl'] += trade_pnl
+
+            logger.debug(f"📊 Backtest Trade: {symbol} @ {entry_price:.2f} → {trade_record['exit_price']:.2f} (P&L: ₹{trade_pnl:.2f})")
+
+        except Exception as e:
+            logger.error(f"❌ Backtest signal processing failed: {e}")
+
+    def _simulate_trade_exit(self, entry_price: float, stop_loss: float, target: float, future_prices: List[Dict]) -> Tuple[float, str]:
+        """Simulate when a trade would exit based on stop loss or target"""
+        try:
+            # Simulate holding for up to 50 periods or until stop/target hit
+            for i, future_data in enumerate(future_prices[:50]):
+                high = future_data.get('high', future_data.get('close', 0))
+                low = future_data.get('low', future_data.get('close', 0))
+
+                # Check for stop loss hit
+                if low <= stop_loss:
+                    pnl = stop_loss - entry_price
+                    return pnl, 'stop_loss'
+
+                # Check for target hit
+                if high >= target:
+                    pnl = target - entry_price
+                    return pnl, 'target'
+
+            # Exit at end of simulation period (assume market close)
+            exit_price = future_prices[-1].get('close', entry_price)
+            pnl = exit_price - entry_price
+            return pnl, 'time_exit'
+
+        except Exception as e:
+            logger.error(f"❌ Trade exit simulation failed: {e}")
+            return 0.0, 'error'
+
+    def _calculate_backtest_statistics(self):
+        """Calculate comprehensive backtest statistics"""
+        try:
+            if not self.backtest_trades:
+                logger.warning("⚠️ No trades recorded in backtest")
+                return
+
+            trades = self.backtest_trades
+
+            # Basic statistics
+            self.backtest_results['total_signals'] = len(trades)
+            self.backtest_results['profitable_signals'] = sum(1 for t in trades if t['pnl'] > 0)
+
+            if self.backtest_results['total_signals'] > 0:
+                self.backtest_results['win_rate'] = self.backtest_results['profitable_signals'] / self.backtest_results['total_signals']
+
+            # P&L statistics
+            pnl_values = [t['pnl'] for t in trades]
+            self.backtest_results['total_pnl'] = sum(pnl_values)
+
+            if pnl_values:
+                profitable_trades = [p for p in pnl_values if p > 0]
+                losing_trades = [p for p in pnl_values if p < 0]
+
+                if profitable_trades:
+                    self.backtest_results['avg_profit'] = sum(profitable_trades) / len(profitable_trades)
+                if losing_trades:
+                    self.backtest_results['avg_loss'] = abs(sum(losing_trades) / len(losing_trades))
+
+                if self.backtest_results['avg_loss'] > 0:
+                    self.backtest_results['profit_factor'] = (self.backtest_results['avg_profit'] * len(profitable_trades)) / (self.backtest_results['avg_loss'] * len(losing_trades))
+
+            # Sharpe ratio calculation
+            if len(pnl_values) > 1:
+                returns = np.array(pnl_values)
+                sharpe = np.mean(returns) / np.std(returns) * np.sqrt(252) if np.std(returns) > 0 else 0
+                self.backtest_results['sharpe_ratio'] = sharpe
+
+            # Maximum drawdown
+            cumulative_pnl = np.cumsum(pnl_values)
+            peak = np.maximum.accumulate(cumulative_pnl)
+            drawdown = cumulative_pnl - peak
+            self.backtest_results['max_drawdown'] = abs(np.min(drawdown)) if len(drawdown) > 0 else 0
+
+            logger.info("📊 BACKTEST STATISTICS CALCULATED")
+            logger.info(f"🔍 Total Trades: {self.backtest_results['total_signals']}")
+            logger.info(f"💰 Total P&L: ₹{self.backtest_results['total_pnl']:,.2f}")
+            logger.info(f"🎯 Win Rate: {self.backtest_results['win_rate']:.1%}")
+            logger.info(f"⚡ Profit Factor: {self.backtest_results['profit_factor']:.2f}")
+            logger.info(f"📉 Max Drawdown: ₹{self.backtest_results['max_drawdown']:,.2f}")
+
+        except Exception as e:
+            logger.error(f"❌ Backtest statistics calculation failed: {e}")
+
+    def get_backtest_report(self) -> str:
+        """Generate detailed backtest report"""
+        try:
+            report = []
+            report.append("📊 MOMENTUM STRATEGY BACKTEST REPORT")
+            report.append("=" * 50)
+            report.append(f"Total Signals: {self.backtest_results['total_signals']}")
+            report.append(f"Profitable Signals: {self.backtest_results['profitable_signals']}")
+            report.append(f"Win Rate: {self.backtest_results['win_rate']:.1%}")
+            report.append(f"Total P&L: ₹{self.backtest_results['total_pnl']:,.2f}")
+            report.append(f"Average Profit: ₹{self.backtest_results['avg_profit']:,.2f}")
+            report.append(f"Average Loss: ₹{self.backtest_results['avg_loss']:,.2f}")
+            report.append(f"Profit Factor: {self.backtest_results['profit_factor']:.2f}")
+            report.append(f"Sharpe Ratio: {self.backtest_results['sharpe_ratio']:.2f}")
+            report.append(f"Max Drawdown: ₹{self.backtest_results['max_drawdown']:,.2f}")
+
+            # Signals by condition
+            report.append("\n📈 SIGNALS BY MARKET CONDITION:")
+            for condition, count in self.backtest_results['signals_by_condition'].items():
+                report.append(f"  {condition}: {count}")
+
+            return "\n".join(report)
+
+        except Exception as e:
+            logger.error(f"❌ Backtest report generation failed: {e}")
+            return "Backtest report generation failed"
+
+    # RISK MANAGEMENT METHODS
+    def assess_risk_before_trade(self, symbol: str, entry_price: float, stop_loss: float, confidence: float) -> Tuple[bool, str, float]:
+        """
+        Comprehensive risk assessment before allowing a trade
+        Returns: (allowed, reason, adjusted_quantity_multiplier)
+        """
+        try:
+            # Emergency stop check
+            if self.emergency_stop:
+                return False, "EMERGENCY_STOP_ACTIVE", 0.0
+
+            # Daily loss limit check
+            if self.daily_pnl <= self.max_daily_loss:
+                self.emergency_stop = True
+                logger.critical(f"🚨 EMERGENCY STOP: Daily loss limit reached ₹{self.daily_pnl:.2f}")
+                return False, "DAILY_LOSS_LIMIT_EXCEEDED", 0.0
+
+            # Daily trade limit check
+            if self.daily_trades >= self.max_daily_trades:
+                return False, "DAILY_TRADE_LIMIT_EXCEEDED", 0.0
+
+            # Single trade loss limit check
+            potential_loss = abs(entry_price - stop_loss)
+            if potential_loss > abs(self.max_single_trade_loss):
+                return False, f"TRADE_LOSS_TOO_LARGE_₹{potential_loss:.2f}", 0.0
+
+            # Consecutive losses check
+            if self.consecutive_losses >= self.max_consecutive_losses:
+                return False, f"CONSECUTIVE_LOSSES_LIMIT_{self.consecutive_losses}", 0.0
+
+            # Confidence threshold check
+            if confidence < 7.0:  # Minimum confidence required
+                return False, f"LOW_CONFIDENCE_{confidence:.1f}", 0.0
+
+            # Calculate dynamic risk multiplier
+            risk_multiplier = self._calculate_dynamic_risk_multiplier()
+
+            # Market condition risk adjustment
+            market_risk = self._assess_market_risk()
+            final_multiplier = risk_multiplier * market_risk * self.risk_multiplier
+
+            logger.info(f"🛡️ Risk Assessment PASSED for {symbol}: multiplier={final_multiplier:.2f}")
+            return True, "APPROVED", final_multiplier
+
+        except Exception as e:
+            logger.error(f"❌ Risk assessment failed for {symbol}: {e}")
+            return False, f"RISK_ASSESSMENT_ERROR_{str(e)}", 0.0
+
+    def _calculate_dynamic_risk_multiplier(self) -> float:
+        """Calculate risk multiplier based on current performance"""
+        try:
+            base_multiplier = 1.0
+
+            # Reduce risk after losses
+            if self.daily_pnl < -500:
+                base_multiplier *= 0.7
+            elif self.daily_pnl < -1000:
+                base_multiplier *= 0.5
+            elif self.daily_pnl < -1500:
+                base_multiplier *= 0.3
+
+            # Reduce risk after consecutive losses
+            if self.consecutive_losses >= 2:
+                base_multiplier *= 0.6
+            elif self.consecutive_losses >= 3:
+                base_multiplier *= 0.4
+
+            # Increase risk after consistent wins (but not too much)
+            if self.consecutive_losses == 0 and self.daily_trades > 5:
+                base_multiplier *= 1.2
+
+            return min(base_multiplier, 2.0)  # Cap at 2x
+
+        except Exception as e:
+            logger.error(f"❌ Dynamic risk multiplier calculation failed: {e}")
+            return 1.0
+
+    def _assess_market_risk(self) -> float:
+        """Assess current market risk level"""
+        try:
+            # High volatility periods = higher risk
+            if self.current_momentum_regime == "HIGH_VOLATILITY":
+                return 0.7
+            elif self.current_momentum_regime == "CRISIS":
+                return 0.5
+
+            # Normal conditions
+            return 1.0
+
+        except Exception as e:
+            logger.error(f"❌ Market risk assessment failed: {e}")
+            return 1.0
+
+    def update_risk_metrics(self, trade_result: float, symbol: str):
+        """Update risk metrics after each trade"""
+        try:
+            self.daily_pnl += trade_result
+            self.daily_trades += 1
+
+            # Track consecutive losses
+            if trade_result < 0:
+                self.consecutive_losses += 1
+                logger.warning(f"⚠️ Consecutive losses: {self.consecutive_losses}")
+            else:
+                self.consecutive_losses = 0
+
+            # Emergency stop triggers
+            if self.daily_pnl <= self.max_daily_loss:
+                self.emergency_stop = True
+                logger.critical(f"🚨 EMERGENCY STOP ACTIVATED: Daily P&L ₹{self.daily_pnl:.2f}")
+
+            if self.consecutive_losses >= self.max_consecutive_losses:
+                logger.warning(f"⚠️ MAX CONSECUTIVE LOSSES REACHED: {self.consecutive_losses}")
+
+            logger.info(f"📊 Risk Update: Daily P&L ₹{self.daily_pnl:.2f}, Trades: {self.daily_trades}, Consecutive Losses: {self.consecutive_losses}")
+
+        except Exception as e:
+            logger.error(f"❌ Risk metrics update failed: {e}")
+
+    def reset_daily_risk_metrics(self):
+        """Reset daily risk metrics (call at market open)"""
+        try:
+            self.daily_pnl = 0.0
+            self.daily_trades = 0
+            self.consecutive_losses = 0
+            self.emergency_stop = False
+            self.risk_reduction_level = 1.0
+
+            logger.info("🌅 Daily risk metrics reset - Fresh trading day")
+
+        except Exception as e:
+            logger.error(f"❌ Daily risk reset failed: {e}")
+
+    def get_risk_status_report(self) -> str:
+        """Generate comprehensive risk status report"""
+        try:
+            report = []
+            report.append("🛡️ RISK MANAGEMENT STATUS REPORT")
+            report.append("=" * 40)
+            report.append(f"Daily P&L: ₹{self.daily_pnl:.2f}")
+            report.append(f"Daily Trades: {self.daily_trades}/{self.max_daily_trades}")
+            report.append(f"Consecutive Losses: {self.consecutive_losses}/{self.max_consecutive_losses}")
+            report.append(f"Emergency Stop: {'ACTIVE' if self.emergency_stop else 'INACTIVE'}")
+            report.append(f"Risk Reduction Level: {self.risk_reduction_level:.2f}")
+            report.append(f"Max Daily Loss Limit: ₹{self.max_daily_loss:.2f}")
+            report.append(f"Current Risk Level: {'HIGH' if self.emergency_stop else 'NORMAL'}")
+
+            return "\n".join(report)
+
+        except Exception as e:
+            logger.error(f"❌ Risk status report failed: {e}")
+            return "Risk status report generation failed"
 
     async def initialize(self):
         """Initialize the strategy"""
