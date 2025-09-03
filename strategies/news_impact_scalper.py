@@ -216,23 +216,23 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         # PROFESSIONAL OPTIONS MODELS
         self.options_models = ProfessionalOptionsModels()
         
-        # INTRADAY OPTIONS PARAMETERS - CRITICAL TIME FACTOR
-        self.iv_rank_threshold = 30  # Trade when IV rank > 30th percentile
-        self.delta_range = (0.20, 0.80)  # Wider delta range for opportunities
-        self.max_days_to_expiry = 7   # INTRADAY FOCUS: Max 1 week to expiry
-        self.min_days_to_expiry = 0   # INTRADAY: Allow same-day expiry (high theta)
-        self.max_hours_to_expiry = 24  # INTRADAY: Maximum 24 hours to expiry
-        self.min_hours_to_expiry = 1   # INTRADAY: Minimum 1 hour for safety
-        
-        # INSTITUTIONAL RISK MANAGEMENT
-        self.max_position_size = 0.03  # 3% of capital per trade (professional sizing)
-        self.profit_target = 0.40  # 40% profit target (institutional standard)
-        self.stop_loss = 0.20  # 20% stop loss (tighter control)
-        
-        # PROFESSIONAL EXECUTION
-        self.max_bid_ask_spread = 0.12  # Tighter spread control
-        self.min_open_interest = 100    # Minimum liquidity requirement
-        self.max_gamma_exposure = 0.10  # Maximum gamma exposure per position
+        # CONFIGURABLE INTRADAY OPTIONS PARAMETERS
+        self.iv_rank_threshold = config.get('iv_rank_threshold', 30)
+        self.delta_range = config.get('delta_range', (0.20, 0.80))
+        self.max_days_to_expiry = config.get('max_days_to_expiry', 7)
+        self.min_days_to_expiry = config.get('min_days_to_expiry', 0)
+        self.max_hours_to_expiry = config.get('max_hours_to_expiry', 24)
+        self.min_hours_to_expiry = config.get('min_hours_to_expiry', 1)
+
+        # CONFIGURABLE INSTITUTIONAL RISK MANAGEMENT
+        self.max_position_size = config.get('max_position_size', 0.03)
+        self.profit_target = config.get('profit_target', 0.40)
+        self.stop_loss = config.get('stop_loss', 0.20)
+
+        # CONFIGURABLE PROFESSIONAL EXECUTION
+        self.max_bid_ask_spread = config.get('max_bid_ask_spread', 0.12)
+        self.min_open_interest = config.get('min_open_interest', 100)
+        self.max_gamma_exposure = config.get('max_gamma_exposure', 0.10)
         
         # GREEKS MONITORING
         self.portfolio_greeks = {
@@ -247,11 +247,35 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         self.options_performance = {
             'total_premium_collected': 0.0,
             'total_premium_paid': 0.0,
-            'theta_pnl': 0.0,  # P&L from time decay
-            'delta_pnl': 0.0,  # P&L from directional moves
-            'vega_pnl': 0.0,   # P&L from volatility changes
-            'gamma_pnl': 0.0   # P&L from gamma scalping
         }
+
+        # BACKTESTING FRAMEWORK
+        self.backtest_mode = config.get('backtest_mode', False)
+        self.backtest_results = {
+            'total_signals': 0,
+            'profitable_signals': 0,
+            'total_pnl': 0.0,
+            'max_drawdown': 0.0,
+            'win_rate': 0.0,
+            'sharpe_ratio': 0.0,
+            'avg_profit': 0.0,
+            'avg_loss': 0.0,
+            'profit_factor': 0.0,
+            'greeks_performance': {}
+        }
+        self.backtest_trades = []
+
+        # ENHANCED RISK MANAGEMENT
+        self.max_daily_loss = config.get('max_daily_loss', -4000)  # Options strategy more conservative
+        self.max_single_trade_loss = config.get('max_single_trade_loss', -1000)  # Higher for options
+        self.max_daily_trades = config.get('max_daily_trades', 10)  # Lower frequency for options
+        self.max_consecutive_losses = config.get('max_consecutive_losses', 3)
+
+        # DYNAMIC RISK ADJUSTMENT
+        self.daily_pnl = 0.0
+        self.daily_trades = 0
+        self.consecutive_losses = 0
+        self.emergency_stop = False
         
         # ARBITRAGE DETECTION
         self.parity_violations = []
@@ -261,6 +285,345 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         self.truedata_symbols = []
         
         logger.info("✅ INSTITUTIONAL OPTIONS SPECIALIST initialized with professional models")
+
+    # BACKTESTING METHODS
+    def run_backtest(self, historical_data: Dict[str, List], start_date: str = None, end_date: str = None) -> Dict:
+        """
+        Run comprehensive options backtest on historical data
+        """
+        logger.info("🔬 STARTING OPTIONS BACKTEST")
+        self.backtest_mode = True
+        self.backtest_trades = []
+
+        # Reset backtest results
+        self.backtest_results = {
+            'total_signals': 0,
+            'profitable_signals': 0,
+            'total_pnl': 0.0,
+            'max_drawdown': 0.0,
+            'win_rate': 0.0,
+            'sharpe_ratio': 0.0,
+            'avg_profit': 0.0,
+            'avg_loss': 0.0,
+            'profit_factor': 0.0,
+            'greeks_performance': {}
+        }
+
+        try:
+            # Process each symbol's historical data
+            for symbol, price_history in historical_data.items():
+                if len(price_history) < 100:
+                    logger.warning(f"⚠️ Insufficient data for {symbol}: {len(price_history)} points")
+                    continue
+
+                logger.info(f"📊 Backtesting options for {symbol} with {len(price_history)} data points")
+                await self._simulate_options_backtest(symbol, price_history)
+
+            # Calculate comprehensive backtest statistics
+            self._calculate_options_backtest_statistics()
+
+            logger.info("✅ OPTIONS BACKTEST COMPLETED")
+            logger.info(f"📈 Total Signals: {self.backtest_results['total_signals']}")
+            logger.info(f"💰 Total P&L: ₹{self.backtest_results['total_pnl']:,.2f}")
+            logger.info(f"🎯 Win Rate: {self.backtest_results['win_rate']:.1%}")
+
+            return self.backtest_results
+
+        except Exception as e:
+            logger.error(f"❌ Options backtest failed: {e}")
+            return self.backtest_results
+
+    async def _simulate_options_backtest(self, symbol: str, price_history: List[Dict]):
+        """Simulate options trading through historical data"""
+        try:
+            # Reset strategy state
+            self.portfolio_greeks = {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0, 'rho': 0.0}
+            self.iv_surface = {}
+
+            for i, data_point in enumerate(price_history):
+                if i < 50: continue
+
+                market_data = {symbol: data_point}
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+                try:
+                    signals = loop.run_until_complete(self.generate_signals(market_data))
+                    loop.close()
+                except Exception as e:
+                    logger.warning(f"⚠️ Signal generation failed for {symbol}: {e}")
+                    continue
+
+                for signal in signals:
+                    await self._process_options_backtest_signal(signal, price_history[i:], symbol)
+
+        except Exception as e:
+            logger.error(f"❌ Options backtest simulation failed for {symbol}: {e}")
+
+    async def _process_options_backtest_signal(self, signal: Dict, future_prices: List[Dict], symbol: str):
+        """Process options signal in backtest mode"""
+        try:
+            entry_price = signal.get('entry_price', 0)
+            confidence = signal.get('confidence', 0)
+
+            if entry_price <= 0: return
+
+            self.backtest_results['total_signals'] += 1
+            trade_pnl, exit_reason = self._simulate_options_trade_exit(entry_price, signal, future_prices)
+
+            trade_record = {
+                'symbol': symbol,
+                'entry_price': entry_price,
+                'exit_price': entry_price + trade_pnl,
+                'pnl': trade_pnl,
+                'confidence': confidence,
+                'option_type': signal.get('option_type', 'unknown'),
+                'exit_reason': exit_reason
+            }
+
+            self.backtest_trades.append(trade_record)
+
+            if trade_pnl > 0:
+                self.backtest_results['profitable_signals'] += 1
+
+            self.backtest_results['total_pnl'] += trade_pnl
+
+        except Exception as e:
+            logger.error(f"❌ Options backtest signal processing failed: {e}")
+
+    def _simulate_options_trade_exit(self, entry_price: float, signal: Dict, future_prices: List[Dict]) -> Tuple[float, str]:
+        """Simulate options trade exit"""
+        try:
+            max_holding_period = 20
+
+            for i, future_data in enumerate(future_prices[:max_holding_period]):
+                future_price = future_data.get('close', entry_price)
+                profit_pct = (future_price - entry_price) / entry_price
+
+                if profit_pct >= self.profit_target:
+                    pnl = future_price - entry_price
+                    return pnl, 'profit_target'
+
+                if profit_pct <= -self.stop_loss:
+                    pnl = future_price - entry_price
+                    return pnl, 'stop_loss'
+
+                if i >= 10:
+                    pnl = future_price - entry_price
+                    return pnl, 'time_exit'
+
+            exit_price = future_prices[-1].get('close', entry_price)
+            pnl = exit_price - entry_price
+            return pnl, 'time_exit'
+
+        except Exception as e:
+            logger.error(f"❌ Options trade exit simulation failed: {e}")
+            return 0.0, 'error'
+
+    def _calculate_options_backtest_statistics(self):
+        """Calculate comprehensive options backtest statistics"""
+        try:
+            if not self.backtest_results['total_signals']:
+                logger.warning("⚠️ No signals recorded in options backtest")
+                return
+
+            trades = self.backtest_trades
+
+            if self.backtest_results['total_signals'] > 0:
+                self.backtest_results['win_rate'] = self.backtest_results['profitable_signals'] / self.backtest_results['total_signals']
+
+            pnl_values = [t['pnl'] for t in trades]
+            self.backtest_results['total_pnl'] = sum(pnl_values)
+
+            if pnl_values:
+                profitable_trades = [p for p in pnl_values if p > 0]
+                losing_trades = [p for p in pnl_values if p < 0]
+
+                if profitable_trades:
+                    self.backtest_results['avg_profit'] = sum(profitable_trades) / len(profitable_trades)
+                if losing_trades:
+                    self.backtest_results['avg_loss'] = abs(sum(losing_trades) / len(losing_trades))
+
+                if self.backtest_results['avg_loss'] > 0:
+                    self.backtest_results['profit_factor'] = (self.backtest_results['avg_profit'] * len(profitable_trades)) / (self.backtest_results['avg_loss'] * len(losing_trades))
+
+            if len(pnl_values) > 1:
+                returns = np.array(pnl_values)
+                sharpe = np.mean(returns) / np.std(returns) * np.sqrt(252) if np.std(returns) > 0 else 0
+                self.backtest_results['sharpe_ratio'] = sharpe
+
+            cumulative_pnl = np.cumsum(pnl_values)
+            peak = np.maximum.accumulate(cumulative_pnl)
+            drawdown = cumulative_pnl - peak
+            self.backtest_results['max_drawdown'] = abs(np.min(drawdown)) if len(drawdown) > 0 else 0
+
+            logger.info("📊 OPTIONS BACKTEST STATISTICS CALCULATED")
+
+        except Exception as e:
+            logger.error(f"❌ Options backtest statistics calculation failed: {e}")
+
+    def get_backtest_report(self) -> str:
+        """Generate detailed options backtest report"""
+        try:
+            report = []
+            report.append("📊 OPTIONS SPECIALIST BACKTEST REPORT")
+            report.append("=" * 50)
+            report.append(f"Total Signals: {self.backtest_results['total_signals']}")
+            report.append(f"Profitable Signals: {self.backtest_results['profitable_signals']}")
+            report.append(f"Win Rate: {self.backtest_results['win_rate']:.1%}")
+            report.append(f"Total P&L: ₹{self.backtest_results['total_pnl']:,.2f}")
+            report.append(f"Average Profit: ₹{self.backtest_results['avg_profit']:.2f}")
+            report.append(f"Average Loss: ₹{self.backtest_results['avg_loss']:.2f}")
+            report.append(f"Profit Factor: {self.backtest_results['profit_factor']:.2f}")
+            report.append(f"Sharpe Ratio: {self.backtest_results['sharpe_ratio']:.2f}")
+            report.append(f"Max Drawdown: ₹{self.backtest_results['max_drawdown']:.2f}")
+
+            return "\n".join(report)
+
+        except Exception as e:
+            logger.error(f"❌ Options backtest report generation failed: {e}")
+            return "Options backtest report generation failed"
+
+    # RISK MANAGEMENT METHODS
+    def assess_risk_before_trade(self, symbol: str, entry_price: float, stop_loss: float, confidence: float) -> Tuple[bool, str, float]:
+        """
+        Comprehensive risk assessment for options trading
+        """
+        try:
+            if self.emergency_stop:
+                return False, "EMERGENCY_STOP_ACTIVE", 0.0
+
+            if self.daily_pnl <= self.max_daily_loss:
+                self.emergency_stop = True
+                logger.critical(f"🚨 EMERGENCY STOP: Options daily loss limit reached ₹{self.daily_pnl:.2f}")
+                return False, "DAILY_LOSS_LIMIT_EXCEEDED", 0.0
+
+            if self.daily_trades >= self.max_daily_trades:
+                return False, "DAILY_TRADE_LIMIT_EXCEEDED", 0.0
+
+            potential_loss = abs(entry_price - stop_loss)
+            if potential_loss > abs(self.max_single_trade_loss):
+                return False, f"TRADE_LOSS_TOO_LARGE_₹{potential_loss:.2f}", 0.0
+
+            if self.consecutive_losses >= self.max_consecutive_losses:
+                return False, f"CONSECUTIVE_LOSSES_LIMIT_{self.consecutive_losses}", 0.0
+
+            if confidence < 8.5:
+                return False, f"LOW_CONFIDENCE_{confidence:.1f}", 0.0
+
+            if not self._check_greeks_risk():
+                return False, "GREEKS_RISK_EXCEEDED", 0.0
+
+            risk_multiplier = self._calculate_options_risk_multiplier()
+
+            logger.info(f"🛡️ Options Risk Assessment PASSED for {symbol}: multiplier={risk_multiplier:.2f}")
+            return True, "APPROVED", risk_multiplier
+
+        except Exception as e:
+            logger.error(f"❌ Options risk assessment failed for {symbol}: {e}")
+            return False, f"RISK_ASSESSMENT_ERROR_{str(e)}", 0.0
+
+    def _check_greeks_risk(self) -> bool:
+        """Check Greeks exposure limits"""
+        try:
+            if abs(self.portfolio_greeks.get('gamma', 0)) > self.max_gamma_exposure:
+                logger.warning("⚠️ Gamma exposure too high")
+                return False
+
+            delta = abs(self.portfolio_greeks.get('delta', 0))
+            if delta > 0.5:
+                logger.warning(f"⚠️ Delta exposure too high: {delta}")
+                return False
+
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Greeks risk check failed: {e}")
+            return True
+
+    def _calculate_options_risk_multiplier(self) -> float:
+        """Calculate risk multiplier for options"""
+        try:
+            base_multiplier = 1.0
+
+            if self.daily_pnl < -1500:
+                base_multiplier *= 0.6
+            elif self.daily_pnl < -2500:
+                base_multiplier *= 0.4
+            elif self.daily_pnl < -3500:
+                base_multiplier *= 0.2
+
+            if self.consecutive_losses >= 2:
+                base_multiplier *= 0.7
+            elif self.consecutive_losses >= 3:
+                base_multiplier *= 0.5
+
+            return min(base_multiplier, 1.5)
+
+        except Exception as e:
+            logger.error(f"❌ Options risk multiplier calculation failed: {e}")
+            return 1.0
+
+    def update_risk_metrics(self, trade_result: float, symbol: str):
+        """Update options risk metrics after each trade"""
+        try:
+            self.daily_pnl += trade_result
+            self.daily_trades += 1
+
+            if trade_result < 0:
+                self.consecutive_losses += 1
+                logger.warning(f"⚠️ Options consecutive losses: {self.consecutive_losses}")
+            else:
+                self.consecutive_losses = 0
+
+            if self.daily_pnl <= self.max_daily_loss:
+                self.emergency_stop = True
+                logger.critical(f"🚨 OPTIONS EMERGENCY STOP ACTIVATED: Daily P&L ₹{self.daily_pnl:.2f}")
+
+            if self.consecutive_losses >= self.max_consecutive_losses:
+                logger.warning(f"⚠️ MAX CONSECUTIVE LOSSES REACHED: {self.consecutive_losses}")
+
+            logger.info(f"📊 Options Risk Update: Daily P&L ₹{self.daily_pnl:.2f}, Trades: {self.daily_trades}, Consecutive Losses: {self.consecutive_losses}")
+
+        except Exception as e:
+            logger.error(f"❌ Options risk metrics update failed: {e}")
+
+    def reset_daily_risk_metrics(self):
+        """Reset daily risk metrics for options strategy"""
+        try:
+            self.daily_pnl = 0.0
+            self.daily_trades = 0
+            self.consecutive_losses = 0
+            self.emergency_stop = False
+            self.portfolio_greeks = {'delta': 0.0, 'gamma': 0.0, 'theta': 0.0, 'vega': 0.0, 'rho': 0.0}
+
+            logger.info("🌅 Options daily risk metrics reset - Fresh trading day")
+
+        except Exception as e:
+            logger.error(f"❌ Options daily risk reset failed: {e}")
+
+    def get_risk_status_report(self) -> str:
+        """Generate comprehensive options risk status report"""
+        try:
+            report = []
+            report.append("🛡️ OPTIONS SPECIALIST RISK REPORT")
+            report.append("=" * 45)
+            report.append(f"Daily P&L: ₹{self.daily_pnl:.2f}")
+            report.append(f"Daily Trades: {self.daily_trades}/{self.max_daily_trades}")
+            report.append(f"Consecutive Losses: {self.consecutive_losses}/{self.max_consecutive_losses}")
+            report.append(f"Emergency Stop: {'ACTIVE' if self.emergency_stop else 'INACTIVE'}")
+            report.append(f"Max Daily Loss Limit: ₹{self.max_daily_loss:.2f}")
+            report.append(f"Portfolio Delta: {self.portfolio_greeks.get('delta', 0):.3f}")
+            report.append(f"Portfolio Gamma: {self.portfolio_greeks.get('gamma', 0):.3f}")
+            report.append(f"Portfolio Theta: {self.portfolio_greeks.get('theta', 0):.3f}")
+            report.append(f"Portfolio Vega: {self.portfolio_greeks.get('vega', 0):.3f}")
+
+            return "\n".join(report)
+
+        except Exception as e:
+            logger.error(f"❌ Options risk status report failed: {e}")
+            return "Options risk status report generation failed"
 
     def is_market_open(self) -> bool:
         """Check if market is currently open (IST)"""
