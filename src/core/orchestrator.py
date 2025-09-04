@@ -2124,9 +2124,16 @@ class TradingOrchestrator:
                 # Remove strike price (digits)
                 while base and base[-1].isdigit():
                     base = base[:-1]
-                # Remove expiry (format: 25SEP)
-                if len(base) > 5 and base[-5:-2].isalpha():
-                    base = base[:-5]
+                # Remove expiry (format: 25SEP or similar)
+                # Check if we have a valid expiry pattern (2 digits + 3 letters)
+                if len(base) >= 5:
+                    # Check last 5 chars for expiry pattern
+                    potential_expiry = base[-5:]
+                    if (len(potential_expiry) == 5 and 
+                        potential_expiry[:2].isdigit() and 
+                        potential_expiry[2:].isalpha() and 
+                        potential_expiry[2:].isupper()):
+                        base = base[:-5]
                 return base
             return symbol
         except Exception as e:
