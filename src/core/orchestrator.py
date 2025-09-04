@@ -451,7 +451,7 @@ class TradingOrchestrator:
         self.strategy_backtest_results = {}  # strategy_name -> backtest results
         self.min_required_sharpe = 0.5  # Minimum Sharpe ratio to allow live trading
         self.min_required_win_rate = 0.45  # Minimum 45% win rate
-        self.backtest_days = 30  # Test on last 30 days of data
+        self.backtest_days = 20  # Test on last 20 days of data (TrueData subscription limit)
         self.strategies_validated = False
         
         # Check environment variable to disable validation (EMERGENCY USE ONLY)
@@ -2079,22 +2079,44 @@ class TradingOrchestrator:
     async def _fetch_historical_data_for_backtest(self) -> Dict[str, List]:
         """Fetch historical data for backtesting"""
         try:
-            # Try to use real market data from TrueData cache or database
+            # Try to use real market data from TrueData (20 days subscribed)
             historical_data = {}
             
             # Get symbols from strategies focus lists
             symbols = ['RELIANCE', 'TCS', 'INFY', 'HDFC', 'ICICIBANK', 'NIFTY', 'BANKNIFTY']
             
-            # First try to get from database if available
-            if hasattr(self, 'db_manager') and self.db_manager:
+            # Check if TrueData client is available (after deployment)
+            if hasattr(self, 'shared_truedata_client') and self.shared_truedata_client:
                 try:
-                    for symbol in symbols:
-                        # Fetch from database (placeholder - implement actual DB query)
-                        pass
-                except Exception as db_err:
-                    self.logger.warning(f"Database fetch failed: {db_err}")
+                    self.logger.info("📊 Attempting to fetch 20 days historical data from TrueData...")
+                    # TrueData provides historical data after deployment
+                    # TODO: Implement actual TrueData historical data fetch
+                    # For now, this is a placeholder that will work after deployment
+                    
+                    # Check if TrueData has historical data method
+                    if hasattr(self.shared_truedata_client, 'get_historical_data'):
+                        for symbol in symbols:
+                            try:
+                                # Fetch 20 days of historical data from TrueData
+                                hist_data = await self.shared_truedata_client.get_historical_data(symbol, days=20)
+                                if hist_data:
+                                    historical_data[symbol] = hist_data
+                                    self.logger.info(f"✅ Fetched {len(hist_data)} days of data for {symbol}")
+                            except Exception as symbol_err:
+                                self.logger.warning(f"Failed to fetch data for {symbol}: {symbol_err}")
+                    else:
+                        self.logger.info("⚠️ TrueData historical data method not available yet")
+                    
+                    if historical_data:
+                        self.logger.info(f"📊 Successfully fetched TrueData historical data for {len(historical_data)} symbols")
+                        return historical_data
+                        
+                except Exception as td_err:
+                    self.logger.warning(f"TrueData historical fetch failed: {td_err}")
+            else:
+                self.logger.info("⚠️ TrueData client not available yet - will be available after deployment")
             
-            # If no data yet, create sample data for now
+            # If no data yet, create sample data for testing
             if not historical_data:
                 try:
                     import sys
@@ -2102,10 +2124,13 @@ class TradingOrchestrator:
                     from backtest_runner import BacktestRunner
                     runner = BacktestRunner()
                     
-                    for symbol in symbols:
-                        historical_data.update(runner.create_sample_historical_data(symbol, self.backtest_days))
+                    # Use only 20 days to match subscription
+                    backtest_days = min(self.backtest_days, 20)
                     
-                    self.logger.info(f"📊 Created sample historical data for {len(symbols)} symbols, {self.backtest_days} days each")
+                    for symbol in symbols:
+                        historical_data.update(runner.create_sample_historical_data(symbol, backtest_days))
+                    
+                    self.logger.info(f"📊 Created sample historical data for {len(symbols)} symbols, {backtest_days} days each")
                 except Exception as sample_err:
                     self.logger.error(f"Sample data creation failed: {sample_err}")
                     # Return minimal data to allow strategies to load
