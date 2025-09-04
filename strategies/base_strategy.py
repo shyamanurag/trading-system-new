@@ -196,7 +196,14 @@ class BaseStrategy:
         self.market_bias = None  # Will be set by orchestrator
         self.position_entry_times = {}  # symbol -> entry timestamp
         self.failed_options_symbols = set()  # Track symbols that failed subscription
-    
+
+    # 🚨 CRITICAL FIX: Method override to ensure async version is always used
+    def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
+        """🚨 METHOD OVERRIDE: This should never be called - use async version instead"""
+        logger.error("❌ CRITICAL: Non-async _get_volume_based_strike called - this should use async version!")
+        logger.error("   This indicates a method resolution bug - signal will be rejected")
+        return 0  # Return 0 to reject signal
+
     def purge_symbol_state(self, symbol: str) -> None:
         """Remove cached state for a symbol so strategy decides fresh next cycle."""
         try:
