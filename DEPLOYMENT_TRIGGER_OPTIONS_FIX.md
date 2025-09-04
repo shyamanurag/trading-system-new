@@ -1,8 +1,8 @@
 # DEPLOYMENT TRIGGER - OPTIONS TRADING FIX
 
 **Date**: September 4, 2025  
-**Commit**: bda9dcb  
-**Priority**: CRITICAL
+**Commit**: 2ad2d4a  
+**Priority**: CRITICAL - DEPLOY IMMEDIATELY
 
 ## Issues Fixed
 
@@ -21,6 +21,12 @@
 - System was finding 0 available strikes but still creating options symbols
 - This led to invalid symbols like `BAJFINANCE30SEP25950CE` with no LTP data
 - Fixed regex and expiry matching logic should now properly find available strikes
+
+### 4. **CRITICAL: Expiry Date Format Mismatch**
+- System was generating: `30SEP25` (DDMMMYY format)
+- Zerodha actually uses: `25SEP` (YYMM format)
+- Examples from logs: `BAJFINANCE25SEP950CE`, `M&M25SEP3500CE`
+- Fixed expiry formatting and regex patterns to match actual Zerodha format
 
 ## Expected Improvements
 
