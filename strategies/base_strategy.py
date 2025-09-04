@@ -197,13 +197,6 @@ class BaseStrategy:
         self.position_entry_times = {}  # symbol -> entry timestamp
         self.failed_options_symbols = set()  # Track symbols that failed subscription
 
-    # 🚨 CRITICAL FIX: Method override to ensure async version is always used
-    def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
-        """🚨 METHOD OVERRIDE: This should never be called - use async version instead"""
-        logger.error("❌ CRITICAL: Non-async _get_volume_based_strike called - this should use async version!")
-        logger.error("   This indicates a method resolution bug - signal will be rejected")
-        return 0  # Return 0 to reject signal
-
     def purge_symbol_state(self, symbol: str) -> None:
         """Remove cached state for a symbol so strategy decides fresh next cycle."""
         try:
@@ -4057,35 +4050,6 @@ class BaseStrategy:
             logger.error(f"Error getting dynamic available capital: {e}")
             return 1000.0  # Minimal amount to prevent trades on error
     
-    def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
-        """🎯 USER REQUIREMENT: Select strike based on volume - highest or second highest for liquidity"""
-        try:
-            # First get ATM strike as baseline
-            atm_strike = self._get_atm_strike_for_stock(current_price)
-            
-            # Get available strikes around ATM (3 strikes above and below)
-            strike_interval = 50 if underlying_symbol not in ['NIFTY', 'BANKNIFTY', 'FINNIFTY'] else (50 if underlying_symbol == 'NIFTY' else 100)
-            
-            candidate_strikes = []
-            for i in range(-3, 4):  # 7 strikes total around ATM
-                strike = atm_strike + (i * strike_interval)
-                if strike > 0:  # Only positive strikes
-                    candidate_strikes.append(strike)
-            
-            logger.info(f"🎯 SIMPLIFIED STRIKE SELECTION for {underlying_symbol}")
-            logger.info(f"   Current Price: ₹{current_price:.2f}, ATM: {atm_strike}")
-            logger.info(f"   Using ATM strike for optimal execution")
-            
-            # 🎯 SIMPLIFIED: Always use ATM strike for best execution and no volume barriers
-            return atm_strike
-                
-        except Exception as e:
-            logger.error(f"Error in volume-based strike selection: {e}")
-            # Fallback to ATM
-            atm_strike = self._get_atm_strike_for_stock(current_price)
-            logger.warning(f"⚠️ Fallback to ATM strike: {atm_strike}")
-            return atm_strike
-    
     def _get_strikes_volume_data(self, underlying_symbol: str, strikes: List[int], expiry: str, action: str) -> Dict:
         """Get volume data for strikes from market data sources"""
         try:
@@ -4394,35 +4358,6 @@ class BaseStrategy:
         except Exception as e:
             logger.error(f"Error getting dynamic available capital: {e}")
             return 1000.0  # Minimal amount to prevent trades on error
-    
-    def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
-        """🎯 USER REQUIREMENT: Select strike based on volume - highest or second highest for liquidity"""
-        try:
-            # First get ATM strike as baseline
-            atm_strike = self._get_atm_strike_for_stock(current_price)
-            
-            # Get available strikes around ATM (3 strikes above and below)
-            strike_interval = 50 if underlying_symbol not in ['NIFTY', 'BANKNIFTY', 'FINNIFTY'] else (50 if underlying_symbol == 'NIFTY' else 100)
-            
-            candidate_strikes = []
-            for i in range(-3, 4):  # 7 strikes total around ATM
-                strike = atm_strike + (i * strike_interval)
-                if strike > 0:  # Only positive strikes
-                    candidate_strikes.append(strike)
-            
-            logger.info(f"🎯 SIMPLIFIED STRIKE SELECTION for {underlying_symbol}")
-            logger.info(f"   Current Price: ₹{current_price:.2f}, ATM: {atm_strike}")
-            logger.info(f"   Using ATM strike for optimal execution")
-            
-            # 🎯 SIMPLIFIED: Always use ATM strike for best execution and no volume barriers
-            return atm_strike
-                
-        except Exception as e:
-            logger.error(f"Error in volume-based strike selection: {e}")
-            # Fallback to ATM
-            atm_strike = self._get_atm_strike_for_stock(current_price)
-            logger.warning(f"⚠️ Fallback to ATM strike: {atm_strike}")
-            return atm_strike
     
     def _get_strikes_volume_data(self, underlying_symbol: str, strikes: List[int], expiry: str, action: str) -> Dict:
         """Get volume data for strikes from market data sources"""
