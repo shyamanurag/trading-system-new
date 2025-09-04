@@ -271,8 +271,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
         self.trend_strength_threshold = config.get('trend_strength_threshold', 0.25)  # Configurable trend confirmation
         self.mean_reversion_threshold = config.get('mean_reversion_threshold', 0.7)   # Configurable mean reversion probability
 
-        # CONFIGURABLE STOCK UNIVERSE
-        self.focus_stocks = config.get('focus_stocks', [
+        # CONFIGURABLE STOCK UNIVERSE - now using base class symbol filtering
+        self.watchlist = set(config.get('focus_stocks', [
             # Large Cap Leaders
             'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'ITC',
             'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
@@ -280,7 +280,15 @@ class EnhancedMomentumSurfer(BaseStrategy):
             # Mid Cap Momentum Leaders
             'BAJFINANCE', 'BAJAJFINSV', 'HDFCLIFE', 'SBILIFE', 'TECHM',
             'TITAN', 'NESTLEIND', 'ULTRACEMCO', 'JSWSTEEL', 'TATASTEEL'
-        ])
+        ]))
+        
+        # Set symbol filters for momentum strategy
+        self.symbol_filters = {
+            'min_volume': 500000,  # Minimum 5 lakh volume
+            'min_price': 100,      # Min price ₹100
+            'max_price': 10000,    # Max price ₹10,000
+            'min_change_percent': 0.5  # Minimum 0.5% movement
+        }
 
         # CONFIGURABLE POSITION MANAGEMENT
         self.max_momentum_positions = config.get('max_momentum_positions', 8)
@@ -787,8 +795,11 @@ class EnhancedMomentumSurfer(BaseStrategy):
             max_signals_per_cycle = config.get('max_signals_per_cycle', 5)
             logger.info(f"🎯 Signal limit: {max_signals_per_cycle} per cycle")
 
-            # Analyze each focus stock
-            for stock in self.focus_stocks:
+            # Update active symbols based on market conditions
+            self.update_active_symbols(market_data)
+            
+            # Analyze each active symbol
+            for stock in self.active_symbols:
                 # 🚨 BREAK EARLY: Stop if we've reached the signal limit
                 if len(signals) >= max_signals_per_cycle:
                     logger.warning(f"⚠️ SIGNAL LIMIT REACHED: {len(signals)}/{max_signals_per_cycle} - stopping analysis")

@@ -187,6 +187,12 @@ class BaseStrategy:
         self.historical_data = {}  # symbol -> list of price data
         self.max_history = 50  # Keep last 50 data points per symbol
         
+        # Symbol filtering and selection
+        self.watchlist = set()  # Symbols this strategy is interested in
+        self.active_symbols = set()  # Symbols currently being analyzed
+        self.symbol_filters = config.get('symbol_filters', {})
+        self.max_symbols_to_analyze = config.get('max_symbols_to_analyze', 20)
+        
         # CRITICAL: Position Management System
         self.active_positions = {}  # symbol -> position data with strategy linkage
         self.position_metadata = {}  # symbol -> strategy-specific position data
@@ -3109,8 +3115,147 @@ class BaseStrategy:
         logger.info(f"Initializing {self.name} strategy")
         self.is_active = True
     
+    def should_analyze_symbol(self, symbol: str, market_data: Dict) -> bool:
+        """Determine if this symbol should be analyzed based on strategy criteria"""
+        try:
+            # Skip if already at max capacity
+            if len(self.active_symbols) >= self.max_symbols_to_analyze:
+                return symbol in self.active_symbols  # Only analyze if already tracking
+            
+            # Check symbol-specific filters
+            symbol_data = market_data.get(symbol, {})
+            
+            # Volume filter
+            if 'min_volume' in self.symbol_filters:
+                volume = symbol_data.get('volume', 0)
+                if volume < self.symbol_filters['min_volume']:
+                    return False
+            
+            # Price range filter
+            if 'min_price' in self.symbol_filters or 'max_price' in self.symbol_filters:
+                ltp = symbol_data.get('ltp', 0)
+                if 'min_price' in self.symbol_filters and ltp < self.symbol_filters['min_price']:
+                    return False
+                if 'max_price' in self.symbol_filters and ltp > self.symbol_filters['max_price']:
+                    return False
+            
+            # Change percent filter (volatility)
+            if 'min_change_percent' in self.symbol_filters:
+                change_pct = abs(symbol_data.get('change_percent', 0))
+                if change_pct < self.symbol_filters['min_change_percent']:
+                    return False
+            
+            # Strategy-specific watchlist
+            if self.watchlist and symbol not in self.watchlist:
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error in symbol filter for {symbol}: {e}")
+            return False
+    
+    def update_active_symbols(self, market_data: Dict):
+        """Update list of actively analyzed symbols based on current market conditions"""
+        try:
+            # Remove symbols with no recent data
+            symbols_to_remove = set()
+            for symbol in self.active_symbols:
+                if symbol not in market_data:
+                    symbols_to_remove.add(symbol)
+            
+            for symbol in symbols_to_remove:
+                self.active_symbols.discard(symbol)
+                logger.info(f"🔄 Removed {symbol} from active analysis (no data)")
+            
+            # Add new promising symbols if under capacity
+            if len(self.active_symbols) < self.max_symbols_to_analyze:
+                # Sort symbols by selection criteria (volume, volatility, etc)
+                candidates = []
+                for symbol, data in market_data.items():
+                    if symbol not in self.active_symbols and self.should_analyze_symbol(symbol, market_data):
+                        score = self._calculate_symbol_score(symbol, data)
+                        candidates.append((symbol, score))
+                
+                # Add top candidates
+                candidates.sort(key=lambda x: x[1], reverse=True)
+                for symbol, score in candidates[:self.max_symbols_to_analyze - len(self.active_symbols)]:
+                    self.active_symbols.add(symbol)
+                    logger.info(f"➕ Added {symbol} to active analysis (score: {score:.2f})")
+            
+        except Exception as e:
+            logger.error(f"Error updating active symbols: {e}")
+    
+    def _calculate_symbol_score(self, symbol: str, data: Dict) -> float:
+        """Calculate score for symbol selection (higher = better)"""
+        try:
+            score = 0.0
+            
+            # Volume score (normalized)
+            volume = data.get('volume', 0)
+            if volume > 1000000:
+                score += 10.0
+            elif volume > 500000:
+                score += 5.0
+            elif volume > 100000:
+                score += 2.0
+            
+            # Volatility score
+            change_pct = abs(data.get('change_percent', 0))
+            score += min(change_pct * 2, 10.0)  # Cap at 10
+            
+            # Liquidity score (based on price)
+            ltp = data.get('ltp', 0)
+            if 100 < ltp < 5000:  # Sweet spot for liquidity
+                score += 5.0
+            
+            # Momentum score
+            if data.get('change_percent', 0) > 0:
+                score += 2.0  # Slight bias towards gainers
+            
+            return score
+            
+        except Exception as e:
+            logger.error(f"Error calculating score for {symbol}: {e}")
+            return 0.0
+    
     async def on_market_data(self, data: Dict):
         """Handle incoming market data - to be implemented by subclasses"""
+        # Update active symbols before processing
+        self.update_active_symbols(data)
+        
+        # Store historical data only for active symbols
+        for symbol in self.active_symbols:
+            if symbol in data:
+                self._update_historical_data(symbol, data[symbol])
+    
+    def _update_historical_data(self, symbol: str, data: Dict):
+        """Update historical data for a symbol"""
+        try:
+            if symbol not in self.historical_data:
+                self.historical_data[symbol] = []
+            
+            # Add current data point
+            data_point = {
+                'timestamp': data.get('timestamp', datetime.now()),
+                'open': data.get('open', 0),
+                'high': data.get('high', 0),
+                'low': data.get('low', 0),
+                'close': data.get('close', data.get('ltp', 0)),
+                'volume': data.get('volume', 0),
+                'ltp': data.get('ltp', 0),
+                'change_percent': data.get('change_percent', 0)
+            }
+            
+            self.historical_data[symbol].append(data_point)
+            
+            # Trim history if needed
+            if len(self.historical_data[symbol]) > self.max_history:
+                self.historical_data[symbol].pop(0)
+                
+        except Exception as e:
+            logger.error(f"Error updating historical data for {symbol}: {e}")
+        
         pass
     
     async def shutdown(self):
