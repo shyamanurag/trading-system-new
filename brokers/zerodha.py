@@ -682,21 +682,34 @@ class ZerodhaIntegration:
         """Get available margin synchronously (for real-time capital tracking)"""
         try:
             if not self.kite:
+                logger.error("❌ Kite client is None - cannot get margins")
                 return 0.0
-            
+
             margins = self.kite.margins()
+
+            # 🚨 CRITICAL VALIDATION: Ensure margins is a dict
+            if margins is None:
+                logger.error("❌ kite.margins() returned None")
+                return 0.0
+            elif isinstance(margins, int):
+                logger.error(f"❌ kite.margins() returned int instead of dict: {margins}")
+                return 0.0
+            elif not isinstance(margins, dict):
+                logger.error(f"❌ kite.margins() returned {type(margins)} instead of dict: {margins}")
+                return 0.0
+
             if margins and 'equity' in margins:
                 equity = margins['equity']
-                
+
                 # Get net available (this is what's actually free to trade)
                 net = equity.get('net', 0)
-                
+
                 # Get available breakdown
                 available = equity.get('available', {})
                 cash = available.get('cash', 0)
                 collateral = available.get('collateral', 0)
                 intraday_payin = available.get('intraday_payin', 0)
-                
+
                 # Get used margin
                 utilised = equity.get('utilised', {})
                 used_debits = utilised.get('debits', 0)
@@ -704,9 +717,9 @@ class ZerodhaIntegration:
                 used_m2m = utilised.get('m2m', 0)
                 used_option_premium = utilised.get('option_premium', 0)
                 used_holding_sales = utilised.get('holding_sales', 0)
-                
+
                 total_used = used_debits + used_exposure + used_m2m + used_option_premium + used_holding_sales
-                
+
                 # Real available = net (Zerodha calculates this correctly)
                 # But if net is 0, calculate manually
                 if net > 0:
@@ -714,14 +727,18 @@ class ZerodhaIntegration:
                 else:
                     total_funds = cash + collateral + intraday_payin
                     real_available = max(0, total_funds - total_used)
-                
+
                 logger.info(f"💰 MARGIN STATUS: Available=₹{real_available:,.2f}, Used=₹{total_used:,.2f}, Cash=₹{cash:,.2f}")
                 return float(real_available)
-            
+
+            logger.warning("⚠️ No equity data in margins response")
             return 0.0
-            
+
         except Exception as e:
-            logger.debug(f"Could not get margins sync: {e}")
+            logger.error(f"❌ Error getting margins sync: {e}")
+            logger.error(f"   Error type: {type(e)}")
+            import traceback
+            logger.error(f"   Full traceback: {traceback.format_exc()}")
             return 0.0
     
     async def get_positions(self) -> Dict:
@@ -731,7 +748,7 @@ class ZerodhaIntegration:
         if hasattr(self, '_positions_cache') and hasattr(self, '_positions_cache_time') and now - self._positions_cache_time < 10:
             logger.info("📊 Using cached positions (preventing API hammering)")
             return self._positions_cache
-        
+
         # CRITICAL FIX: Check if kite client is None
         if not self.kite:
             logger.error("❌ Zerodha kite client is None - attempting to reinitialize")
@@ -739,21 +756,36 @@ class ZerodhaIntegration:
             if not self.kite:
                 logger.error("❌ Zerodha kite client reinitialize failed")
                 return {'net': [], 'day': []}
-        
+
         for attempt in range(self.max_retries):
             try:
                 logger.info(f"📊 Getting positions from Zerodha (attempt {attempt + 1}) - CACHE MISS")
                 result = await self._async_api_call(self.kite.positions)
+
+                # 🚨 CRITICAL VALIDATION: Ensure result is a dict
+                if result is None:
+                    logger.error(f"❌ kite.positions returned None")
+                    return {'net': [], 'day': []}
+                elif isinstance(result, int):
+                    logger.error(f"❌ kite.positions returned int instead of dict: {result}")
+                    return {'net': [], 'day': []}
+                elif not isinstance(result, dict):
+                    logger.error(f"❌ kite.positions returned {type(result)} instead of dict: {result}")
+                    return {'net': [], 'day': []}
+
                 logger.info(f"✅ Got positions: {len(result.get('net', []))} net, {len(result.get('day', []))} day")
-                
+
                 # Cache the result for 10 seconds
                 self._positions_cache = result
                 self._positions_cache_time = now
                 logger.info(f"📊 Cached positions result for 10 seconds")
-                
+
                 return result
             except Exception as e:
                 logger.error(f"❌ Get positions attempt {attempt + 1} failed: {e}")
+                logger.error(f"   Error type: {type(e)}")
+                import traceback
+                logger.error(f"   Full traceback: {traceback.format_exc()}")
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay)
         return {'net': [], 'day': []}
@@ -985,30 +1017,49 @@ class ZerodhaIntegration:
         Returns list of {date: datetime.date, formatted: str, is_weekly: bool, is_monthly: bool}
         """
         try:
+            # 🚨 CRITICAL VALIDATION: Check if kite client exists
+            if not self.kite:
+                logger.error(f"❌ Kite client is None - cannot get expiries for {underlying_symbol}")
+                return []
+
             # Get all instruments for the exchange
             instruments = await self.get_instruments(exchange)
-            
+
+            # 🚨 CRITICAL VALIDATION: Ensure instruments is a list
+            if instruments is None:
+                logger.error(f"❌ get_instruments returned None for {underlying_symbol}")
+                return []
+            elif isinstance(instruments, int):
+                logger.error(f"❌ get_instruments returned int instead of list: {instruments} for {underlying_symbol}")
+                return []
+            elif not isinstance(instruments, list):
+                logger.error(f"❌ get_instruments returned {type(instruments)} instead of list for {underlying_symbol}")
+                return []
+
             if not instruments:
                 logger.warning(f"⚠️ No instruments data available for {underlying_symbol}")
                 return []
-            
+
             # Filter options for the specific underlying
             options_contracts = []
             for instrument in instruments:
+                if not isinstance(instrument, dict):
+                    continue
+
                 trading_symbol = instrument.get('tradingsymbol', '')
                 instrument_type = instrument.get('instrument_type', '')
-                
+
                 # Check if it's an option for our underlying
-                if (underlying_symbol.upper() in trading_symbol.upper() and 
+                if (underlying_symbol.upper() in trading_symbol.upper() and
                     instrument_type in ['CE', 'PE'] and
                     instrument.get('expiry')):
-                    
+
                     options_contracts.append(instrument)
-            
+
             if not options_contracts:
                 logger.warning(f"⚠️ No options contracts found for {underlying_symbol}")
                 return []
-            
+
             # Extract unique expiry dates
             expiry_dates = set()
             for contract in options_contracts:
@@ -1028,40 +1079,43 @@ class ZerodhaIntegration:
                         else:
                             # Try to convert to string first, then parse
                             expiry_date = datetime.strptime(str(expiry_value), '%Y-%m-%d').date()
-                        
+
                         expiry_dates.add(expiry_date)
                     except (ValueError, AttributeError) as e:
                         logger.debug(f"⚠️ Could not parse expiry '{expiry_value}' for contract: {e}")
                         continue
-            
+
             # Convert to list and sort
             sorted_expiries = sorted(list(expiry_dates))
-            
+
             # Format for strategy use
             formatted_expiries = []
             month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                           'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
-            
+
             for expiry_date in sorted_expiries:
                 # Format for Zerodha: 31JUL25
                 formatted = f"{expiry_date.day:02d}{month_names[expiry_date.month - 1]}{str(expiry_date.year)[-2:]}"
-                
+
                 # Determine if it's monthly (last Thursday of month)
                 next_week = expiry_date + timedelta(days=7)
                 is_monthly = next_week.month != expiry_date.month
-                
+
                 formatted_expiries.append({
                     'date': expiry_date,
                     'formatted': formatted,
                     'is_weekly': True,
                     'is_monthly': is_monthly
                 })
-            
+
             logger.info(f"📅 Found {len(formatted_expiries)} expiries for {underlying_symbol}: {[e['formatted'] for e in formatted_expiries[:3]]}...")
             return formatted_expiries
-            
+
         except Exception as e:
             logger.error(f"❌ Error getting expiries for {underlying_symbol}: {e}")
+            logger.error(f"   Error type: {type(e)}")
+            import traceback
+            logger.error(f"   Full traceback: {traceback.format_exc()}")
             return []
 
     async def validate_options_symbol(self, options_symbol: str) -> bool:
@@ -1517,9 +1571,24 @@ class ZerodhaIntegration:
     async def get_available_strikes_for_symbol(self, underlying_symbol: str, expiry: str) -> List[int]:
         """Get all available strike prices for a specific underlying and expiry from NFO instruments"""
         try:
+            # 🚨 CRITICAL VALIDATION: Check if kite client exists
+            if not self.kite:
+                logger.error(f"❌ Kite client is None - cannot get strikes for {underlying_symbol}")
+                return []
+
             # Ensure NFO instruments are cached
             if self._nfo_instruments is None:
-                await self.get_instruments('NFO')
+                instruments_result = await self.get_instruments('NFO')
+                # 🚨 CRITICAL VALIDATION: Ensure get_instruments returns a list
+                if instruments_result is None:
+                    logger.error(f"❌ get_instruments returned None for {underlying_symbol}")
+                    return []
+                elif isinstance(instruments_result, int):
+                    logger.error(f"❌ get_instruments returned int instead of list: {instruments_result} for {underlying_symbol}")
+                    return []
+                elif not isinstance(instruments_result, list):
+                    logger.error(f"❌ get_instruments returned {type(instruments_result)} instead of list for {underlying_symbol}")
+                    return []
 
             if not self._nfo_instruments:
                 logger.warning(f"⚠️ No NFO instruments available for strike lookup")
@@ -1529,6 +1598,9 @@ class ZerodhaIntegration:
             target_expiry = expiry.upper()
 
             for inst in self._nfo_instruments:
+                if not isinstance(inst, dict):
+                    continue
+
                 trading_symbol = inst.get('tradingsymbol', '')
 
                 # Parse the symbol to extract components
