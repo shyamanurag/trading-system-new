@@ -153,14 +153,9 @@ class EnhancedVolatilityExplosion(BaseStrategy):
                 # Create market data dict for strategy
                 market_data = {symbol: data_point}
 
-                # Generate signals (run async method synchronously for backtest)
-                import asyncio
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
+                # Generate signals (we're already in async context)
                 try:
-                    signals = loop.run_until_complete(self.generate_signals(market_data))
-                    loop.close()
+                    signals = await self.generate_signals(market_data)
                 except Exception as e:
                     logger.warning(f"⚠️ Signal generation failed for {symbol}: {e}")
                     continue

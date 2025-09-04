@@ -344,13 +344,10 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 if i < 50: continue
 
                 market_data = {symbol: data_point}
-                import asyncio
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
 
                 try:
-                    signals = loop.run_until_complete(self.generate_signals(market_data))
-                    loop.close()
+                    # Call generate_signals directly since we're already in async context
+                    signals = await self.generate_signals(market_data)
                 except Exception as e:
                     logger.warning(f"⚠️ Signal generation failed for {symbol}: {e}")
                     continue

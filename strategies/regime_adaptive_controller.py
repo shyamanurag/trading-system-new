@@ -461,14 +461,9 @@ class RegimeAdaptiveController:
                 # Create market data dict for strategy
                 market_data = {symbol: data_point}
 
-                # Detect regime (run async method synchronously for backtest)
-                import asyncio
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
+                # Detect regime (we're already in async context)
                 try:
-                    await loop.create_task(self.detect_regime(market_data))
-                    loop.close()
+                    await self.detect_regime(market_data)
                 except Exception as e:
                     logger.warning(f"⚠️ Regime detection failed for {symbol}: {e}")
                     continue
