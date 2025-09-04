@@ -289,14 +289,35 @@ class BaseStrategy:
 
             current_time_ist = datetime.now(self.ist_timezone).time()
 
-            if current_time_ist >= self.mandatory_close_time:  # After 3:20 PM
+            # Ensure all time attributes are time objects, not strings
+            mandatory_close = self.mandatory_close_time
+            if isinstance(mandatory_close, str):
+                from datetime import time
+                hour, minute = map(int, mandatory_close.split(':'))
+                mandatory_close = time(hour, minute)
+            
+            if current_time_ist >= mandatory_close:  # After 3:20 PM
                 return "IMMEDIATE"
-            elif hasattr(self, 'warning_close_time') and current_time_ist >= self.warning_close_time:  # After 3:15 PM
-                return "URGENT"
-            elif hasattr(self, 'no_new_signals_after') and current_time_ist >= self.no_new_signals_after:  # After 3:00 PM
-                return "GRADUAL"
-            else:
-                return "NORMAL"
+            
+            if hasattr(self, 'warning_close_time'):
+                warning_close = self.warning_close_time
+                if isinstance(warning_close, str):
+                    from datetime import time
+                    hour, minute = map(int, warning_close.split(':'))
+                    warning_close = time(hour, minute)
+                if current_time_ist >= warning_close:  # After 3:15 PM
+                    return "URGENT"
+            
+            if hasattr(self, 'no_new_signals_after'):
+                no_new_signals = self.no_new_signals_after
+                if isinstance(no_new_signals, str):
+                    from datetime import time
+                    hour, minute = map(int, no_new_signals.split(':'))
+                    no_new_signals = time(hour, minute)
+                if current_time_ist >= no_new_signals:  # After 3:00 PM
+                    return "GRADUAL"
+            
+            return "NORMAL"
                 
         except Exception as e:
             logger.error(f"Error determining close urgency: {e}")
@@ -2910,7 +2931,11 @@ class BaseStrategy:
             orchestrator = get_orchestrator_instance()
 
             if not orchestrator or not orchestrator.zerodha_client:
-                logger.error("❌ Zerodha client not available for expiry lookup - NO FALLBACK")
+                # During backtesting, Zerodha client won't be available - use fallback
+                if hasattr(self, 'backtest_mode') and self.backtest_mode:
+                    logger.info("📊 In backtest mode - using calculated expiries")
+                else:
+                    logger.error("❌ Zerodha client not available for expiry lookup")
                 return []
 
             # 🚨 DEFENSIVE: Try to get expiries for the specific underlying symbol first

@@ -314,7 +314,7 @@ def is_fo_enabled(symbol: str) -> bool:
             'DABUR', 'GODREJCP', 'MARICO', 'IOC', 'BPCL', 'HINDPETRO',
             'GAIL', 'ADANIPORT', 'ADANIGREEN', 'PNB', 'FEDERALBNK',
             # Additional F&O enabled stocks from expanded universe
-            'FORCEMOT', 'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'MAHINDRA'
+            'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'MAHINDRA'
         }
 
         # Indices: always F&O enabled
