@@ -223,8 +223,8 @@ class BacktestRunner:
             print(f"   Areas to improve: {', '.join(failed_checks)}")
 
         # Recommendations
-        print("
-💡 RECOMMENDATIONS:"        if win_rate < 0.55:
+        print("\n💡 RECOMMENDATIONS:")
+        if win_rate < 0.55:
             print("   - Increase selectivity (higher thresholds)")
         if profit_factor < 1.5:
             print("   - Improve risk-reward ratio")
