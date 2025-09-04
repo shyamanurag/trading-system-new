@@ -779,24 +779,34 @@ class EnhancedMomentumSurfer(BaseStrategy):
         """Generate signals based on comprehensive market condition analysis"""
         try:
             signals = []
-            
+
             if not market_data:
                 return signals
-            
+
+            # 🚨 SIGNAL LIMIT: Prevent excessive signals that can overwhelm the system
+            max_signals_per_cycle = config.get('max_signals_per_cycle', 5)
+            logger.info(f"🎯 Signal limit: {max_signals_per_cycle} per cycle")
+
             # Analyze each focus stock
             for stock in self.focus_stocks:
+                # 🚨 BREAK EARLY: Stop if we've reached the signal limit
+                if len(signals) >= max_signals_per_cycle:
+                    logger.warning(f"⚠️ SIGNAL LIMIT REACHED: {len(signals)}/{max_signals_per_cycle} - stopping analysis")
+                    break
+
                 if stock in market_data:
                     # Detect market condition for this stock
                     market_condition = self._detect_market_condition(stock, market_data)
-                    
+
                     # Generate signal based on condition
                     signal = await self._generate_condition_based_signal(stock, market_condition, market_data)
                     if signal:
                         signals.append(signal)
-            
-            logger.info(f"📊 Smart Intraday Options generated {len(signals)} signals")
+                        logger.info(f"✅ Signal generated for {stock}: {len(signals)}/{max_signals_per_cycle}")
+
+            logger.info(f"📊 Smart Intraday Options generated {len(signals)} signals (limit: {max_signals_per_cycle})")
             return signals
-            
+
         except Exception as e:
             logger.error(f"Error in Smart Intraday Options: {e}")
             return []
