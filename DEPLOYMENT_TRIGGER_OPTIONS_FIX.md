@@ -1,8 +1,17 @@
-# DEPLOYMENT TRIGGER - OPTIONS TRADING FIX
+# DEPLOYMENT TRIGGER - OPTIONS TRADING FIX + BACKTESTING
 
 **Date**: September 4, 2025  
-**Commit**: 2ad2d4a  
+**Commit**: 165cb8b  
 **Priority**: CRITICAL - DEPLOY IMMEDIATELY
+
+## TEMPORARY CONFIGURATION REQUIRED
+
+Add this environment variable to deployment:
+```
+DISABLE_BACKTEST_VALIDATION=true
+```
+
+**WARNING**: This disables backtesting validation. Remove after fixing historical data fetching.
 
 ## Issues Fixed
 

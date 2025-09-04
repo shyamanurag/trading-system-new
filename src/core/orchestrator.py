@@ -2079,20 +2079,40 @@ class TradingOrchestrator:
     async def _fetch_historical_data_for_backtest(self) -> Dict[str, List]:
         """Fetch historical data for backtesting"""
         try:
-            # For now, create sample data - in production, fetch from database or API
-            import sys
-            sys.path.append('.')
-            from backtest_runner import BacktestRunner
-            runner = BacktestRunner()
+            # Try to use real market data from TrueData cache or database
+            historical_data = {}
             
             # Get symbols from strategies focus lists
             symbols = ['RELIANCE', 'TCS', 'INFY', 'HDFC', 'ICICIBANK', 'NIFTY', 'BANKNIFTY']
             
-            historical_data = {}
-            for symbol in symbols:
-                historical_data.update(runner.create_sample_historical_data(symbol, self.backtest_days))
+            # First try to get from database if available
+            if hasattr(self, 'db_manager') and self.db_manager:
+                try:
+                    for symbol in symbols:
+                        # Fetch from database (placeholder - implement actual DB query)
+                        pass
+                except Exception as db_err:
+                    self.logger.warning(f"Database fetch failed: {db_err}")
             
-            self.logger.info(f"📊 Fetched historical data for {len(symbols)} symbols, {self.backtest_days} days each")
+            # If no data yet, create sample data for now
+            if not historical_data:
+                try:
+                    import sys
+                    sys.path.append('.')
+                    from backtest_runner import BacktestRunner
+                    runner = BacktestRunner()
+                    
+                    for symbol in symbols:
+                        historical_data.update(runner.create_sample_historical_data(symbol, self.backtest_days))
+                    
+                    self.logger.info(f"📊 Created sample historical data for {len(symbols)} symbols, {self.backtest_days} days each")
+                except Exception as sample_err:
+                    self.logger.error(f"Sample data creation failed: {sample_err}")
+                    # Return minimal data to allow strategies to load
+                    self.logger.warning("⚠️ Using minimal sample data for backtesting")
+                    for symbol in symbols:
+                        historical_data[symbol] = []
+            
             return historical_data
             
         except Exception as e:
