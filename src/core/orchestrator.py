@@ -447,6 +447,22 @@ class TradingOrchestrator:
         self.db_config = DatabaseConfig()
         self.logger.info("✅ Database configuration initialized")
         
+        # CRITICAL: Backtesting validation for real money safety
+        self.strategy_backtest_results = {}  # strategy_name -> backtest results
+        self.min_required_sharpe = 0.5  # Minimum Sharpe ratio to allow live trading
+        self.min_required_win_rate = 0.45  # Minimum 45% win rate
+        self.backtest_days = 30  # Test on last 30 days of data
+        self.strategies_validated = False
+        
+        # Check environment variable to disable validation (EMERGENCY USE ONLY)
+        import os
+        disable_validation = os.environ.get('DISABLE_BACKTEST_VALIDATION', 'false').lower() == 'true'
+        if disable_validation:
+            self.logger.critical("⚠️⚠️⚠️ BACKTESTING VALIDATION DISABLED - UNSAFE FOR REAL MONEY! ⚠️⚠️⚠️")
+            self.require_backtest_validation = False
+        else:
+            self.require_backtest_validation = True
+        
         # Initialize position tracker
         from src.core.position_tracker import ProductionPositionTracker
         self.position_tracker = ProductionPositionTracker()
@@ -1989,6 +2005,100 @@ class TradingOrchestrator:
         # Only flag if they actually end with CE/PE and have proper options structure
         return False
 
+    async def _validate_strategy_with_backtest(self, strategy_name: str, strategy_instance: Any) -> bool:
+        """Validate strategy performance with backtesting before allowing live trading"""
+        try:
+            self.logger.info(f"🔬 Validating {strategy_name} with backtesting...")
+            
+            # Skip validation if explicitly disabled (testing only)
+            if not self.require_backtest_validation:
+                self.logger.warning(f"⚠️ Backtesting validation DISABLED for {strategy_name} - UNSAFE for real money!")
+                return True
+            
+            # Check if strategy has backtest method
+            if not hasattr(strategy_instance, 'run_backtest'):
+                self.logger.error(f"❌ Strategy {strategy_name} missing run_backtest method - REJECTED")
+                return False
+            
+            # Get historical data for backtesting
+            historical_data = await self._fetch_historical_data_for_backtest()
+            if not historical_data:
+                self.logger.error(f"❌ No historical data available for backtesting - REJECTING {strategy_name}")
+                return False
+            
+            # Run backtest
+            self.logger.info(f"📊 Running {self.backtest_days}-day backtest for {strategy_name}...")
+            backtest_results = await strategy_instance.run_backtest(
+                historical_data, 
+                start_date=(datetime.now() - timedelta(days=self.backtest_days)).isoformat(),
+                end_date=datetime.now().isoformat()
+            )
+            
+            # Store results
+            self.strategy_backtest_results[strategy_name] = backtest_results
+            
+            # Validate performance metrics
+            win_rate = backtest_results.get('win_rate', 0)
+            sharpe_ratio = backtest_results.get('sharpe_ratio', 0)
+            total_pnl = backtest_results.get('total_pnl', 0)
+            max_drawdown = backtest_results.get('max_drawdown', 0)
+            total_signals = backtest_results.get('total_signals', 0)
+            
+            self.logger.info(f"📈 {strategy_name} Backtest Results:")
+            self.logger.info(f"   Total Signals: {total_signals}")
+            self.logger.info(f"   Win Rate: {win_rate:.1%}")
+            self.logger.info(f"   Sharpe Ratio: {sharpe_ratio:.2f}")
+            self.logger.info(f"   Total P&L: ₹{total_pnl:,.2f}")
+            self.logger.info(f"   Max Drawdown: ₹{max_drawdown:,.2f}")
+            
+            # Check if strategy generated any signals
+            if total_signals == 0:
+                self.logger.error(f"❌ {strategy_name} FAILED: No signals generated in backtest")
+                return False
+            
+            # Check minimum requirements
+            if win_rate < self.min_required_win_rate:
+                self.logger.error(f"❌ {strategy_name} FAILED: Win rate {win_rate:.1%} < required {self.min_required_win_rate:.1%}")
+                return False
+                
+            if sharpe_ratio < self.min_required_sharpe:
+                self.logger.error(f"❌ {strategy_name} FAILED: Sharpe {sharpe_ratio:.2f} < required {self.min_required_sharpe:.2f}")
+                return False
+                
+            if total_pnl < 0:
+                self.logger.error(f"❌ {strategy_name} FAILED: Negative P&L ₹{total_pnl:,.2f}")
+                return False
+                
+            self.logger.info(f"✅ {strategy_name} PASSED backtesting validation - APPROVED for live trading")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Backtesting validation failed for {strategy_name}: {e}")
+            return False
+    
+    async def _fetch_historical_data_for_backtest(self) -> Dict[str, List]:
+        """Fetch historical data for backtesting"""
+        try:
+            # For now, create sample data - in production, fetch from database or API
+            import sys
+            sys.path.append('.')
+            from backtest_runner import BacktestRunner
+            runner = BacktestRunner()
+            
+            # Get symbols from strategies focus lists
+            symbols = ['RELIANCE', 'TCS', 'INFY', 'HDFC', 'ICICIBANK', 'NIFTY', 'BANKNIFTY']
+            
+            historical_data = {}
+            for symbol in symbols:
+                historical_data.update(runner.create_sample_historical_data(symbol, self.backtest_days))
+            
+            self.logger.info(f"📊 Fetched historical data for {len(symbols)} symbols, {self.backtest_days} days each")
+            return historical_data
+            
+        except Exception as e:
+            self.logger.error(f"Failed to fetch historical data: {e}")
+            return {}
+    
     async def _load_strategies(self):
         """Load and initialize trading strategies"""
         try:
@@ -2036,15 +2146,22 @@ class TradingOrchestrator:
                     # Initialize strategy
                     await strategy_instance.initialize()
                     
-                    # Store strategy instance
-                    self.strategies[strategy_key] = {
-                        'name': strategy_key,
-                        'instance': strategy_instance,
-                        'active': True,
-                        'last_signal': None
-                    }
-                    self.active_strategies.append(strategy_key)
-                    self.logger.info(f"✓ Loaded and initialized strategy: {strategy_key}")
+                    # CRITICAL: Validate strategy with backtesting before allowing live trading
+                    if await self._validate_strategy_with_backtest(strategy_key, strategy_instance):
+                        # Store strategy instance only if validation passed
+                        self.strategies[strategy_key] = {
+                            'name': strategy_key,
+                            'instance': strategy_instance,
+                            'active': True,
+                            'last_signal': None
+                        }
+                        self.active_strategies.append(strategy_key)
+                        self.logger.info(f"✓ Loaded and validated strategy: {strategy_key}")
+                    else:
+                        self.logger.error(f"❌ Strategy {strategy_key} FAILED validation - NOT loaded for live trading")
+                        # Shutdown the strategy instance
+                        if hasattr(strategy_instance, 'shutdown'):
+                            await strategy_instance.shutdown()
                     
                 except Exception as e:
                     self.logger.error(f"✗ Failed to load strategy {strategy_key}: {e}")
