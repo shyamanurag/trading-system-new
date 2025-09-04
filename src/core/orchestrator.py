@@ -2083,7 +2083,15 @@ class TradingOrchestrator:
             historical_data = {}
             
             # Get symbols from strategies focus lists
-            symbols = ['RELIANCE', 'TCS', 'INFY', 'HDFC', 'ICICIBANK', 'NIFTY', 'BANKNIFTY']
+            # Use TrueData format for indices
+            symbols = ['RELIANCE', 'TCS', 'INFY', 'HDFC', 'ICICIBANK', 'NIFTY-I', 'BANKNIFTY-I']
+            
+            # Also check for special mappings
+            from config.truedata_symbols import ZERODHA_SYMBOL_MAPPING
+            
+            # Add commonly traded symbols with proper mapping
+            additional_symbols = ['BAJFINANCE', 'M&M', 'TATAMOTORS', 'ADANIPORT']
+            symbols.extend(additional_symbols)
             
             # Check if TrueData client is available (after deployment)
             if hasattr(self, 'shared_truedata_client') and self.shared_truedata_client:
@@ -2097,11 +2105,24 @@ class TradingOrchestrator:
                     if hasattr(self.shared_truedata_client, 'get_historical_data'):
                         for symbol in symbols:
                             try:
+                                # Ensure proper symbol format for TrueData
+                                truedata_symbol = symbol
+                                
+                                # Log symbol being fetched
+                                self.logger.info(f"🔍 Fetching historical data for: {truedata_symbol}")
+                                
                                 # Fetch 20 days of historical data from TrueData
-                                hist_data = await self.shared_truedata_client.get_historical_data(symbol, days=20)
+                                hist_data = await self.shared_truedata_client.get_historical_data(truedata_symbol, days=20)
                                 if hist_data:
+                                    # Store with original symbol for strategy use
                                     historical_data[symbol] = hist_data
                                     self.logger.info(f"✅ Fetched {len(hist_data)} days of data for {symbol}")
+                                    
+                                    # Also store with mapped symbol if different
+                                    if symbol in ZERODHA_SYMBOL_MAPPING:
+                                        mapped_symbol = ZERODHA_SYMBOL_MAPPING[symbol]
+                                        historical_data[mapped_symbol] = hist_data
+                                        self.logger.info(f"   Also mapped to: {mapped_symbol}")
                             except Exception as symbol_err:
                                 self.logger.warning(f"Failed to fetch data for {symbol}: {symbol_err}")
                     else:
@@ -2143,6 +2164,35 @@ class TradingOrchestrator:
         except Exception as e:
             self.logger.error(f"Failed to fetch historical data: {e}")
             return {}
+    
+    def _parse_historical_data_format(self, raw_data: Any, symbol: str) -> List[Dict]:
+        """Parse historical data from TrueData format to standard format"""
+        try:
+            parsed_data = []
+            
+            # Handle different possible formats from TrueData
+            if isinstance(raw_data, list):
+                for item in raw_data:
+                    if isinstance(item, dict):
+                        # Standard format expected by strategies
+                        parsed_item = {
+                            'timestamp': item.get('timestamp', item.get('datetime', '')),
+                            'symbol': symbol,
+                            'open': float(item.get('open', 0)),
+                            'high': float(item.get('high', 0)),
+                            'low': float(item.get('low', 0)),
+                            'close': float(item.get('close', 0)),
+                            'volume': int(item.get('volume', 0)),
+                            'ltp': float(item.get('close', item.get('ltp', 0))),
+                            'change_percent': float(item.get('change_percent', 0))
+                        }
+                        parsed_data.append(parsed_item)
+            
+            return parsed_data
+            
+        except Exception as e:
+            self.logger.error(f"Error parsing historical data for {symbol}: {e}")
+            return []
     
     async def _load_strategies(self):
         """Load and initialize trading strategies"""
