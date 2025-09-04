@@ -1597,24 +1597,42 @@ class ZerodhaIntegration:
             available_strikes = set()
             target_expiry = expiry.upper()
 
+            # Debug: Log sample symbols for this underlying
+            debug_logged = False
+            
             for inst in self._nfo_instruments:
                 if not isinstance(inst, dict):
                     continue
 
                 trading_symbol = inst.get('tradingsymbol', '')
+                
+                # Debug logging for first few matching symbols
+                if not debug_logged and underlying_symbol.upper() in trading_symbol:
+                    logger.debug(f"🔍 Sample {underlying_symbol} symbol: {trading_symbol}")
+                    debug_logged = True
 
                 # Parse the symbol to extract components
                 try:
                     import re
                     # Match pattern: UNDERLYING + EXPIRY + STRIKE + TYPE
-                    m = re.match(rf"({underlying_symbol.upper()})(.+?)(\d+)(CE|PE)", trading_symbol)
+                    # CRITICAL FIX: Make regex more specific for Zerodha format
+                    # Zerodha format: BAJFINANCE25SEP950CE or BAJFINANCE25SEP24950CE
+                    m = re.match(rf"^({underlying_symbol.upper()})(\d{{2}}[A-Z]{{3}}\d{{0,2}})(\d+)(CE|PE)$", trading_symbol)
                     if m:
                         symbol_underlying, symbol_expiry, strike_str, option_type = m.groups()
+                        
+                        # Debug first match
+                        if len(available_strikes) == 0:
+                            logger.debug(f"🔍 First match: {trading_symbol} -> Expiry: {symbol_expiry}, Target: {target_expiry}")
 
                         # Check if expiry matches (handle different formats)
+                        # Normalize expiry formats (25SEP vs 25SEP25 vs SEP25)
                         if (symbol_expiry.upper() == target_expiry or
                             symbol_expiry.upper() in target_expiry or
-                            target_expiry in symbol_expiry.upper()):
+                            target_expiry in symbol_expiry.upper() or
+                            # Handle year suffix differences
+                            symbol_expiry.upper().replace('25', '') == target_expiry.replace('25', '') or
+                            symbol_expiry.upper().replace('24', '') == target_expiry.replace('24', '')):
 
                             try:
                                 strike = int(strike_str)
