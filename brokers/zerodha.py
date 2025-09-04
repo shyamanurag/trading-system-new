@@ -1094,8 +1094,9 @@ class ZerodhaIntegration:
                           'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
 
             for expiry_date in sorted_expiries:
-                # Format for Zerodha: 31JUL25
-                formatted = f"{expiry_date.day:02d}{month_names[expiry_date.month - 1]}{str(expiry_date.year)[-2:]}"
+                # CRITICAL FIX: Zerodha uses YYMM format (e.g., 25SEP) not DDMMMYY
+                # Based on actual symbols: BAJFINANCE25SEP950CE, M&M25SEP3500CE
+                formatted = f"{str(expiry_date.year)[-2:]}{month_names[expiry_date.month - 1]}"
 
                 # Determine if it's monthly (last Thursday of month)
                 next_week = expiry_date + timedelta(days=7)
@@ -1615,9 +1616,9 @@ class ZerodhaIntegration:
                 try:
                     import re
                     # Match pattern: UNDERLYING + EXPIRY + STRIKE + TYPE
-                    # CRITICAL FIX: Make regex more specific for Zerodha format
-                    # Zerodha format: BAJFINANCE25SEP950CE or BAJFINANCE25SEP24950CE
-                    m = re.match(rf"^({underlying_symbol.upper()})(\d{{2}}[A-Z]{{3}}\d{{0,2}})(\d+)(CE|PE)$", trading_symbol)
+                    # CRITICAL FIX: Zerodha format is UNDERLYING + YYMM + STRIKE + CE/PE
+                    # Examples: BAJFINANCE25SEP950CE, M&M25SEP3500CE
+                    m = re.match(rf"^({underlying_symbol.upper()})(\d{{2}}[A-Z]{{3}})(\d+)(CE|PE)$", trading_symbol)
                     if m:
                         symbol_underlying, symbol_expiry, strike_str, option_type = m.groups()
                         
@@ -1625,14 +1626,9 @@ class ZerodhaIntegration:
                         if len(available_strikes) == 0:
                             logger.debug(f"🔍 First match: {trading_symbol} -> Expiry: {symbol_expiry}, Target: {target_expiry}")
 
-                        # Check if expiry matches (handle different formats)
-                        # Normalize expiry formats (25SEP vs 25SEP25 vs SEP25)
-                        if (symbol_expiry.upper() == target_expiry or
-                            symbol_expiry.upper() in target_expiry or
-                            target_expiry in symbol_expiry.upper() or
-                            # Handle year suffix differences
-                            symbol_expiry.upper().replace('25', '') == target_expiry.replace('25', '') or
-                            symbol_expiry.upper().replace('24', '') == target_expiry.replace('24', '')):
+                        # Check if expiry matches
+                        # Target expiry is now in YYMM format (e.g., 25SEP)
+                        if symbol_expiry.upper() == target_expiry.upper():
 
                             try:
                                 strike = int(strike_str)
