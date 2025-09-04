@@ -2779,7 +2779,8 @@ class BaseStrategy:
                     lt = _last_thursday(year, month)
                 fallback_date = lt
 
-            fallback_expiry = fallback_date.strftime("%d%b%y").upper()
+            # CRITICAL FIX: Use Zerodha format YYMM not DDMMMYY
+            fallback_expiry = fallback_date.strftime("%y%b").upper()
             logger.info(f"🔄 FALLBACK EXPIRY: {fallback_expiry} ({'monthly last Thursday' if not is_index else 'next Thursday'})")
             return fallback_expiry
     
@@ -2858,7 +2859,7 @@ class BaseStrategy:
         month_names = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
         
-        # 🚨 CRITICAL FIX: Zerodha format is 07AUG25 (DD + MMM + YY), NOT 25AUG
+        # 🚨 CRITICAL FIX: Zerodha format is 25SEP (YY + MMM), NOT 30SEP25
         try:
             # 🚨 DEFENSIVE: Validate date components before formatting
             if not (1 <= exp_date.month <= 12):
@@ -2869,11 +2870,11 @@ class BaseStrategy:
                 logger.error(f"❌ INVALID DAY: {exp_date.day} for {underlying_symbol}")
                 return None
 
-            zerodha_expiry = f"{exp_date.day:02d}{month_names[exp_date.month - 1]}{str(exp_date.year)[-2:]}"
+            zerodha_expiry = f"{str(exp_date.year)[-2:]}{month_names[exp_date.month - 1]}"
 
             # 🚨 DEFENSIVE: Validate the formatted result
-            if not isinstance(zerodha_expiry, str) or len(zerodha_expiry) != 7:
-                logger.error(f"❌ INVALID EXPIRY FORMAT: {zerodha_expiry} (type: {type(zerodha_expiry)}) for {underlying_symbol}")
+            if not isinstance(zerodha_expiry, str) or len(zerodha_expiry) != 5:
+                logger.error(f"❌ INVALID EXPIRY FORMAT: {zerodha_expiry} (type: {type(zerodha_expiry)}, length: {len(zerodha_expiry)}) for {underlying_symbol}")
                 return None
 
             logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
