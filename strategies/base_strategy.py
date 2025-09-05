@@ -2437,10 +2437,10 @@ class BaseStrategy:
             if zerodha_underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:  # REMOVED MIDCPNIFTY - no options
                 # Index options - use volume-based strike selection for liquidity
                 try:
-                expiry = await self._get_next_expiry(zerodha_underlying)
-                if not expiry:
-                    logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
-                    return None, 'REJECTED'
+                    expiry = await self._get_next_expiry(zerodha_underlying)
+                    if not expiry:
+                        logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
+                        return None, 'REJECTED'
 
                     # 🚨 DEFENSIVE: Check if expiry is valid before using
                     if not isinstance(expiry, str):
@@ -2483,10 +2483,10 @@ class BaseStrategy:
                 # Stock options - convert equity to options using ZERODHA NAME
                 # 🎯 USER REQUIREMENT: Volume-based strike selection for liquidity
                 try:
-                expiry = await self._get_next_expiry(zerodha_underlying)
-                if not expiry:
-                    logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - FALLBACK TO EQUITY")
-                    return None, 'REJECTED'
+                    expiry = await self._get_next_expiry(zerodha_underlying)
+                    if not expiry:
+                        logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - FALLBACK TO EQUITY")
+                        return None, 'REJECTED'
 
                     # 🚨 DEFENSIVE: Check if expiry is valid before using
                     if not isinstance(expiry, str):
