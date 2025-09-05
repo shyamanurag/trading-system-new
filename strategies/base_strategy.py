@@ -311,7 +311,7 @@ class BaseStrategy:
                     hour, minute = map(int, warning_close.split(':'))
                     warning_close = time(hour, minute)
                 if current_time_ist >= warning_close:  # After 3:15 PM
-                return "URGENT"
+                    return "URGENT"
             
             if hasattr(self, 'no_new_signals_after'):
                 no_new_signals = self.no_new_signals_after
