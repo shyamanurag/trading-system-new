@@ -203,7 +203,7 @@ class BaseStrategy:
         self.position_entry_times = {}  # symbol -> entry timestamp
         self.failed_options_symbols = set()  # Track symbols that failed subscription
         self._last_known_capital = 0.0  # Cache for capital when API fails
-
+    
     def purge_symbol_state(self, symbol: str) -> None:
         """Remove cached state for a symbol so strategy decides fresh next cycle."""
         try:
@@ -281,7 +281,7 @@ class BaseStrategy:
             if not hasattr(self, 'ist_timezone'):
                 import pytz
                 self.ist_timezone = pytz.timezone('Asia/Kolkata')
-
+                
             # 🚨 DEFENSIVE: Ensure mandatory_close_time exists (fallback for inheritance issues)
             if not hasattr(self, 'mandatory_close_time'):
                 logger.warning("⚠️ mandatory_close_time not found, using default")
@@ -289,7 +289,7 @@ class BaseStrategy:
                 self.mandatory_close_time = time(15, 20)  # 3:20 PM IST
 
             current_time_ist = datetime.now(self.ist_timezone).time()
-
+            
             # Ensure all time attributes are time objects, not strings
             mandatory_close = self.mandatory_close_time
             if isinstance(mandatory_close, str):
@@ -307,7 +307,7 @@ class BaseStrategy:
                     hour, minute = map(int, warning_close.split(':'))
                     warning_close = time(hour, minute)
                 if current_time_ist >= warning_close:  # After 3:15 PM
-                    return "URGENT"
+                return "URGENT"
             
             if hasattr(self, 'no_new_signals_after'):
                 no_new_signals = self.no_new_signals_after
@@ -316,9 +316,9 @@ class BaseStrategy:
                     hour, minute = map(int, no_new_signals.split(':'))
                     no_new_signals = time(hour, minute)
                 if current_time_ist >= no_new_signals:  # After 3:00 PM
-                    return "GRADUAL"
+                return "GRADUAL"
             
-            return "NORMAL"
+                return "NORMAL"
                 
         except Exception as e:
             logger.error(f"Error determining close urgency: {e}")
@@ -468,7 +468,7 @@ class BaseStrategy:
             
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
                 try:
-                    real_positions = await orchestrator.zerodha_client.get_positions()
+                real_positions = await orchestrator.zerodha_client.get_positions()
 
                     # 🚨 VALIDATION: Ensure real_positions is a dict
                     if real_positions is None:
@@ -481,84 +481,84 @@ class BaseStrategy:
                         logger.error(f"❌ get_positions returned {type(real_positions)} instead of dict: {real_positions}")
                         real_positions = {}
 
-                    if real_positions:
-                        # First, collect all symbols that have real positions
-                        for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
-                            for pos in pos_list:
-                                symbol = pos.get('tradingsymbol')
-                                qty = pos.get('quantity', 0)
-                                if qty != 0:  # Only consider non-zero positions
-                                    real_symbols_with_positions.add(symbol)
-
-                        # Clean up local positions that don't exist in broker
-                        symbols_to_remove = []
-                        for symbol in list(self.active_positions.keys()):
-                            if symbol not in real_symbols_with_positions:
-                                logger.warning(f"🧹 CLEANING STALE POSITION: {symbol} (not in broker)")
-                                symbols_to_remove.append(symbol)
-
-                        for symbol in symbols_to_remove:
-                            del self.active_positions[symbol]
-
-                        # Now process emergency exits for REAL positions
-                        # 🚨 CRITICAL FIX: Track processed symbols to prevent duplicate exits
-                        emergency_exits_processed = set()
-
-                        for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
-                            for pos in pos_list:
-                                symbol = pos.get('tradingsymbol')
-                                qty = pos.get('quantity', 0)
-                                avg_price = pos.get('average_price', 0)
-                                pnl = pos.get('pnl', 0) or pos.get('unrealised', 0) or 0
-
-                                # Skip if no actual position (qty = 0 means position closed)
-                                if qty == 0:
-                                    continue
-
-                                # 🚨 CRITICAL: Skip if already processed (prevents duplicate exits)
-                                if symbol in emergency_exits_processed:
-                                    logger.debug(f"⏭️ Skipping {symbol} - already checked for emergency exit")
-                                    continue
-                                emergency_exits_processed.add(symbol)
-
-                                # EMERGENCY: Exit ANY position with >₹1000 loss or >2% loss
-                                loss_threshold_amount = -1000  # ₹1000 loss
-                                loss_threshold_percent = -2.0  # 2% loss
-
-                                # Calculate percentage loss
-                                if avg_price > 0 and qty != 0:
-                                    current_price = market_data.get(symbol, {}).get('ltp', avg_price)
-                                    pnl_percent = ((current_price - avg_price) / avg_price) * 100
-                                else:
-                                    pnl_percent = 0
-
-                                # Check if position needs emergency exit
-                                if (pnl < loss_threshold_amount) or (pnl_percent < loss_threshold_percent):
-                                    logger.error(f"🚨 EMERGENCY STOP LOSS TRIGGERED: {symbol}")
-                                    logger.error(f"   Loss: ₹{pnl:.2f} ({pnl_percent:.1f}%), Qty: {qty}, Avg: ₹{avg_price:.2f}")
-
-                                    # Force immediate exit signal
-                                    exit_signal = {
-                                        'symbol': symbol,
-                                        'action': 'SELL' if qty > 0 else 'BUY',
-                                        'quantity': abs(qty),
-                                        'entry_price': market_data.get(symbol, {}).get('ltp', avg_price),
-                                        'stop_loss': 0,
-                                        'target': 0,
-                                        'confidence': 10.0,  # Maximum confidence for emergency exit
-                                        'reason': f'EMERGENCY_STOP_LOSS: ₹{pnl:.2f} ({pnl_percent:.1f}%)',  # Add at top level
-                                        'metadata': {
-                                            'reason': 'EMERGENCY_STOP_LOSS',
-                                            'loss_amount': pnl,
-                                            'loss_percent': pnl_percent,
-                                            'management_action': True,
-                                            'closing_action': True,
-                                            'bypass_all_checks': True
-                                        }
+                if real_positions:
+                    # First, collect all symbols that have real positions
+                    for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
+                        for pos in pos_list:
+                            symbol = pos.get('tradingsymbol')
+                            qty = pos.get('quantity', 0)
+                            if qty != 0:  # Only consider non-zero positions
+                                real_symbols_with_positions.add(symbol)
+                    
+                    # Clean up local positions that don't exist in broker
+                    symbols_to_remove = []
+                    for symbol in list(self.active_positions.keys()):
+                        if symbol not in real_symbols_with_positions:
+                            logger.warning(f"🧹 CLEANING STALE POSITION: {symbol} (not in broker)")
+                            symbols_to_remove.append(symbol)
+                    
+                    for symbol in symbols_to_remove:
+                        del self.active_positions[symbol]
+                    
+                    # Now process emergency exits for REAL positions
+                    # 🚨 CRITICAL FIX: Track processed symbols to prevent duplicate exits
+                    emergency_exits_processed = set()
+                    
+                    for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
+                        for pos in pos_list:
+                            symbol = pos.get('tradingsymbol')
+                            qty = pos.get('quantity', 0)
+                            avg_price = pos.get('average_price', 0)
+                            pnl = pos.get('pnl', 0) or pos.get('unrealised', 0) or 0
+                            
+                            # Skip if no actual position (qty = 0 means position closed)
+                            if qty == 0:
+                                continue
+                            
+                            # 🚨 CRITICAL: Skip if already processed (prevents duplicate exits)
+                            if symbol in emergency_exits_processed:
+                                logger.debug(f"⏭️ Skipping {symbol} - already checked for emergency exit")
+                                continue
+                            emergency_exits_processed.add(symbol)
+                            
+                            # EMERGENCY: Exit ANY position with >₹1000 loss or >2% loss
+                            loss_threshold_amount = -1000  # ₹1000 loss
+                            loss_threshold_percent = -2.0  # 2% loss
+                            
+                            # Calculate percentage loss
+                            if avg_price > 0 and qty != 0:
+                                current_price = market_data.get(symbol, {}).get('ltp', avg_price)
+                                pnl_percent = ((current_price - avg_price) / avg_price) * 100
+                            else:
+                                pnl_percent = 0
+                            
+                            # Check if position needs emergency exit
+                            if (pnl < loss_threshold_amount) or (pnl_percent < loss_threshold_percent):
+                                logger.error(f"🚨 EMERGENCY STOP LOSS TRIGGERED: {symbol}")
+                                logger.error(f"   Loss: ₹{pnl:.2f} ({pnl_percent:.1f}%), Qty: {qty}, Avg: ₹{avg_price:.2f}")
+                                
+                                # Force immediate exit signal
+                                exit_signal = {
+                                    'symbol': symbol,
+                                    'action': 'SELL' if qty > 0 else 'BUY',
+                                    'quantity': abs(qty),
+                                    'entry_price': market_data.get(symbol, {}).get('ltp', avg_price),
+                                    'stop_loss': 0,
+                                    'target': 0,
+                                    'confidence': 10.0,  # Maximum confidence for emergency exit
+                                    'reason': f'EMERGENCY_STOP_LOSS: ₹{pnl:.2f} ({pnl_percent:.1f}%)',  # Add at top level
+                                    'metadata': {
+                                        'reason': 'EMERGENCY_STOP_LOSS',
+                                        'loss_amount': pnl,
+                                        'loss_percent': pnl_percent,
+                                        'management_action': True,
+                                        'closing_action': True,
+                                        'bypass_all_checks': True
                                     }
-                                    await self._execute_management_action(exit_signal)
-                                    logger.error(f"🚨 EXECUTED EMERGENCY EXIT for {symbol} - Loss: ₹{pnl:.2f}")
-
+                                }
+                                await self._execute_management_action(exit_signal)
+                                logger.error(f"🚨 EXECUTED EMERGENCY EXIT for {symbol} - Loss: ₹{pnl:.2f}")
+            
                 except Exception as positions_error:
                     logger.error(f"❌ Error processing positions: {positions_error}")
                     logger.error(f"   Error type: {type(positions_error)}")
@@ -748,7 +748,7 @@ class BaseStrategy:
             if not hasattr(self, 'profit_lock_percentage'):
                 logger.warning("⚠️ profit_lock_percentage not found, using default")
                 self.profit_lock_percentage = 1.0  # Lock profit at 1%
-
+            
             # Only set trailing stop if position is profitable
             if profit_pct > self.profit_lock_percentage:
                 
@@ -756,7 +756,7 @@ class BaseStrategy:
                 if not hasattr(self, 'trailing_stop_percentage'):
                     logger.warning("⚠️ trailing_stop_percentage not found, using default")
                     self.trailing_stop_percentage = 0.5  # 0.5% trailing stop
-
+                
                 # Calculate trailing stop price
                 if action == 'BUY':
                     trailing_stop_price = current_price * (1 - self.trailing_stop_percentage / 100)
@@ -2397,7 +2397,7 @@ class BaseStrategy:
         try:
             # 🚨 CRITICAL FIX: Get REAL market price instead of using entry_price which might be wrong
             logger.info(f"🔍 DEBUG: Converting {underlying_symbol} to options with passed price ₹{current_price:.2f}")
-
+            
             real_market_price = self._get_real_market_price(underlying_symbol)
             if real_market_price and real_market_price > 0:
                 actual_price = real_market_price
@@ -2433,10 +2433,10 @@ class BaseStrategy:
             if zerodha_underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:  # REMOVED MIDCPNIFTY - no options
                 # Index options - use volume-based strike selection for liquidity
                 try:
-                    expiry = await self._get_next_expiry(zerodha_underlying)
-                    if not expiry:
-                        logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
-                        return None, 'REJECTED'
+                expiry = await self._get_next_expiry(zerodha_underlying)
+                if not expiry:
+                    logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
+                    return None, 'REJECTED'
 
                     # 🚨 DEFENSIVE: Check if expiry is valid before using
                     if not isinstance(expiry, str):
@@ -2479,10 +2479,10 @@ class BaseStrategy:
                 # Stock options - convert equity to options using ZERODHA NAME
                 # 🎯 USER REQUIREMENT: Volume-based strike selection for liquidity
                 try:
-                    expiry = await self._get_next_expiry(zerodha_underlying)
-                    if not expiry:
-                        logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - FALLBACK TO EQUITY")
-                        return None, 'REJECTED'
+                expiry = await self._get_next_expiry(zerodha_underlying)
+                if not expiry:
+                    logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - FALLBACK TO EQUITY")
+                    return None, 'REJECTED'
 
                     # 🚨 DEFENSIVE: Check if expiry is valid before using
                     if not isinstance(expiry, str):
@@ -2615,7 +2615,7 @@ class BaseStrategy:
             
             # Get all NFO instruments
             try:
-                instruments = await orchestrator.zerodha_client.get_instruments("NFO")
+            instruments = await orchestrator.zerodha_client.get_instruments("NFO")
 
                 # 🚨 VALIDATION: Ensure instruments is a list
                 if instruments is None:
@@ -2628,7 +2628,7 @@ class BaseStrategy:
                     logger.error(f"❌ get_instruments returned {type(instruments)} instead of list: {instruments}")
                     return
                 elif not instruments:
-                    logger.error("❌ No NFO instruments available")
+                logger.error("❌ No NFO instruments available")
                     return
 
             except Exception as instruments_error:
@@ -2775,8 +2775,8 @@ class BaseStrategy:
                 logger.error("   This should not happen - falling back to calculated expiry")
                 optimal_expiry = None
             else:
-                logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
-                return optimal_expiry
+            logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
+            return optimal_expiry
         else:
             logger.warning("⚠️ No expiry dates from Zerodha API - using calculated fallback")
             # Fallback: for stocks, choose last Thursday of current/next month; for indices, next Thursday
@@ -2904,11 +2904,11 @@ class BaseStrategy:
             if not isinstance(zerodha_expiry, str) or len(zerodha_expiry) != 5:
                 logger.error(f"❌ INVALID EXPIRY FORMAT: {zerodha_expiry} (type: {type(zerodha_expiry)}, length: {len(zerodha_expiry)}) for {underlying_symbol}")
                 return None
-
-            logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
-            logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
-
-            return zerodha_expiry
+        
+        logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
+        logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
+        
+        return zerodha_expiry
 
         except Exception as format_error:
             logger.error(f"❌ EXPIRY FORMATTING ERROR for {underlying_symbol}: {format_error}")
@@ -2926,11 +2926,11 @@ class BaseStrategy:
             zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
             if zerodha_symbol != underlying_symbol:
                 logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {zerodha_symbol}")
-
+            
             # Get orchestrator instance to access Zerodha client
             from src.core.orchestrator import get_orchestrator_instance
             orchestrator = get_orchestrator_instance()
-
+            
             if not orchestrator or not orchestrator.zerodha_client:
                 # During backtesting, Zerodha client won't be available - use fallback
                 if hasattr(self, 'backtest_mode') and self.backtest_mode:
@@ -2938,7 +2938,7 @@ class BaseStrategy:
                 else:
                     logger.error("❌ Zerodha client not available for expiry lookup")
                 return []
-
+            
             # 🚨 DEFENSIVE: Try to get expiries for the specific underlying symbol first
             try:
                 logger.info(f"🔍 Trying to get expiries directly for {zerodha_symbol}")
@@ -2965,7 +2965,7 @@ class BaseStrategy:
 
             # Try to get expiries for common underlying symbols we trade
             common_symbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'POWERGRID', 'RELIANCE', 'TCS']
-
+            
             for symbol in common_symbols:
                 try:
                     logger.info(f"🔍 Trying common symbol {symbol} for expiry data")
@@ -2974,7 +2974,7 @@ class BaseStrategy:
                     # 🚨 DEFENSIVE: Validate the response
                     if expiries is None:
                         logger.warning(f"⚠️ get_available_expiries_for_symbol returned None for {symbol}")
-                        continue
+                            continue
                     elif isinstance(expiries, int):
                         logger.error(f"❌ get_available_expiries_for_symbol returned int instead of list: {expiries} for {symbol}")
                         continue
@@ -2982,19 +2982,19 @@ class BaseStrategy:
                         logger.error(f"❌ get_available_expiries_for_symbol returned {type(expiries)} instead of list: {expiries} for {symbol}")
                         continue
                     elif expiries:  # List is not empty
-                        logger.info(f"📅 Using expiries from {symbol}: {len(expiries)} found")
-                        return expiries
+                            logger.info(f"📅 Using expiries from {symbol}: {len(expiries)} found")
+                            return expiries
                 except Exception as e:
                     logger.warning(f"⚠️ Error fetching expiries for {symbol}: {e}")
                     continue
-
+            
             # If no expiries found from API, REJECT signal
             logger.error("❌ No expiries found from Zerodha API - NO FALLBACK")
             # 🚨 FINAL VALIDATION: Ensure we return a valid list of dictionaries
             if not isinstance(expiries, list):
                 logger.error(f"❌ expiries is not a list: {type(expiries)} = {expiries}")
-                return []
-
+            return []
+            
             # Validate each expiry entry
             valid_expiries = []
             for expiry in expiries:
@@ -3873,7 +3873,7 @@ class BaseStrategy:
                                     # Cache the value
                                     self._last_known_capital = real_available
                                     return float(real_available)
-                        else:
+                else:
                             # Run async method to get live margins
                             margins = loop.run_until_complete(zerodha_client.get_margins())
                             if margins and isinstance(margins, (int, float)) and margins > 0:
@@ -3902,23 +3902,26 @@ class BaseStrategy:
                 return self._last_known_capital
             
             # Use config capital as fallback
-            from config import config
-            config_capital = config.get('available_capital', 75000)
-            logger.info(f"✅ Using config capital: ₹{config_capital:,.2f}")
-            return float(config_capital)
+            try:
+                from config import config
+                config_capital = config.get('available_capital', 75000)
+                logger.info(f"✅ Using config capital: ₹{config_capital:,.2f}")
+                return float(config_capital)
+            except ImportError:
+                # Hardcoded fallback if config import fails
+                logger.warning("⚠️ Config import failed, using hardcoded capital: ₹75,000")
+                return 75000.0
             
         except Exception as e:
             logger.error(f"Error getting dynamic available capital: {e}")
-            # Return config capital on error
-            from config import config
-            config_capital = config.get('available_capital', 75000)
-            return float(config_capital)
+            # Return hardcoded capital on error
+            return 75000.0
     async def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
         """🎯 USER REQUIREMENT: Select strike based on volume - use closest available strike to ATM"""
         try:
             # First get ATM strike as baseline
             atm_strike = self._get_atm_strike_for_stock(current_price)
-
+            
             logger.info(f"🎯 STRIKE SELECTION for {underlying_symbol}")
             logger.info(f"   Current Price: ₹{current_price:.2f}, Calculated ATM: {atm_strike}")
 
@@ -3964,15 +3967,15 @@ class BaseStrategy:
                     return atm_strike
             else:
                 logger.warning("⚠️ Zerodha client not available, using calculated ATM strike")
-                return atm_strike
-
+            return atm_strike
+                
         except Exception as e:
             logger.error(f"Error in volume-based strike selection: {e}")
             # Fallback to ATM
             atm_strike = self._get_atm_strike_for_stock(current_price)
             logger.warning(f"⚠️ Fallback to ATM strike: {atm_strike}")
             return atm_strike
-
+    
     def _get_strikes_volume_data(self, underlying_symbol: str, strikes: List[int], expiry: str, action: str) -> Dict:
         """Get volume data for strikes from market data sources"""
         try:
@@ -4170,7 +4173,7 @@ class BaseStrategy:
                     logger.error(f"   Cannot calculate quantity with zero/negative entry price")
                     logger.error(f"   This indicates a price data issue - signal should be rejected")
                     return 0
-
+                
                 # 🎯 CRITICAL: Calculate shares needed for MINIMUM ₹25,000 trade value
                 min_shares_required = int(min_trade_value / entry_price)
                 cost_for_min_shares = min_shares_required * entry_price
@@ -4428,7 +4431,7 @@ class BaseStrategy:
                     logger.error(f"   Cannot calculate quantity with zero/negative entry price")
                     logger.error(f"   This indicates a price data issue - signal should be rejected")
                     return 0
-
+                
                 # 🎯 CRITICAL: Calculate shares needed for MINIMUM ₹25,000 trade value
                 min_shares_required = int(min_trade_value / entry_price)
                 cost_for_min_shares = min_shares_required * entry_price

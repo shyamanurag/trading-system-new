@@ -37,19 +37,22 @@ def setup_logging(service_name: str = "trading_system"):
     
     # Reduce logging in production
     if is_production:
-        # Critical modules with reduced logging
-        logging.getLogger('strategies.base_strategy').setLevel(logging.WARNING)
-        logging.getLogger('brokers.zerodha').setLevel(logging.WARNING)
-        logging.getLogger('data.truedata_client').setLevel(logging.WARNING)
-        logging.getLogger('src.core.orchestrator').setLevel(logging.WARNING)
-        logging.getLogger('src.core.signal_deduplicator').setLevel(logging.WARNING)
-        logging.getLogger('src.core.market_directional_bias').setLevel(logging.WARNING)
+        # Critical modules with ERROR only logging
+        logging.getLogger('strategies.base_strategy').setLevel(logging.ERROR)
+        logging.getLogger('brokers.zerodha').setLevel(logging.ERROR)
+        logging.getLogger('data.truedata_client').setLevel(logging.ERROR)
+        logging.getLogger('src.core.orchestrator').setLevel(logging.ERROR)
+        logging.getLogger('src.core.signal_deduplicator').setLevel(logging.ERROR)
+        logging.getLogger('src.core.market_directional_bias').setLevel(logging.ERROR)
+        logging.getLogger('config.truedata_symbols').setLevel(logging.ERROR)
+        logging.getLogger('strategies.news_impact_scalper').setLevel(logging.ERROR)
         
-        # Silence verbose debug logs
-        logging.getLogger('strategies').setLevel(logging.WARNING)
-        logging.getLogger('brokers').setLevel(logging.WARNING)
-        logging.getLogger('data').setLevel(logging.WARNING)
-        logging.getLogger('src').setLevel(logging.WARNING)
+        # Silence all verbose logs
+        logging.getLogger('strategies').setLevel(logging.ERROR)
+        logging.getLogger('brokers').setLevel(logging.ERROR)
+        logging.getLogger('data').setLevel(logging.ERROR)
+        logging.getLogger('src').setLevel(logging.ERROR)
+        logging.getLogger('config').setLevel(logging.ERROR)
     else:
         # Development mode - keep INFO level
         for module in ['strategies', 'brokers', 'data', 'src']:
