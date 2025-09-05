@@ -2619,7 +2619,7 @@ class BaseStrategy:
             
             # Get all NFO instruments
             try:
-            instruments = await orchestrator.zerodha_client.get_instruments("NFO")
+                instruments = await orchestrator.zerodha_client.get_instruments("NFO")
 
                 # 🚨 VALIDATION: Ensure instruments is a list
                 if instruments is None:
@@ -2632,7 +2632,7 @@ class BaseStrategy:
                     logger.error(f"❌ get_instruments returned {type(instruments)} instead of list: {instruments}")
                     return
                 elif not instruments:
-                logger.error("❌ No NFO instruments available")
+                    logger.error("❌ No NFO instruments available")
                     return
 
             except Exception as instruments_error:
