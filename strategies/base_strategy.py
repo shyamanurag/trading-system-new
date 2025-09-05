@@ -203,7 +203,11 @@ class BaseStrategy:
         self.position_entry_times = {}  # symbol -> entry timestamp
         self.failed_options_symbols = set()  # Track symbols that failed subscription
         self._last_known_capital = 0.0  # Cache for capital when API fails
-    
+        
+        # Signal generation throttling
+        self._last_signal_generation = {}  # symbol -> timestamp
+        self._signal_throttle_interval = 5.0  # 5 seconds between signals for same symbol
+
     def purge_symbol_state(self, symbol: str) -> None:
         """Remove cached state for a symbol so strategy decides fresh next cycle."""
         try:

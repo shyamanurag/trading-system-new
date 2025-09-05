@@ -1506,6 +1506,18 @@ class TradingOrchestrator:
                         if hasattr(strategy_instance, 'set_market_bias') and hasattr(self, 'market_bias'):
                             strategy_instance.set_market_bias(self.market_bias)
                         
+                        # Throttle strategy execution
+                        current_time = datetime.now()
+                        last_run_key = f"{strategy_key}_last_run"
+                        
+                        if hasattr(self, last_run_key):
+                            last_run = getattr(self, last_run_key)
+                            if (current_time - last_run).total_seconds() < 5.0:  # 5 second minimum between runs
+                                self.logger.debug(f"⏳ Throttling {strategy_key} - too soon since last run")
+                                continue
+                        
+                        setattr(self, last_run_key, current_time)
+                        
                         # Call strategy's on_market_data method with TRANSFORMED data
                         await strategy_instance.on_market_data(transformed_data)
                         

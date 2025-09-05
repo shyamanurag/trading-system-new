@@ -672,6 +672,16 @@ class EnhancedNewsImpactScalper(BaseStrategy):
     async def generate_signals(self, market_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate professional options signals with proper analysis"""
         try:
+            # Throttle signal generation
+            import time
+            current_time = time.time()
+            if hasattr(self, '_last_generation_time'):
+                if current_time - self._last_generation_time < 5.0:  # 5 second throttle
+                    logger.debug("⏳ Throttling signal generation - too soon since last run")
+                    return []
+            
+            self._last_generation_time = current_time
+            
             signals = []
             
             if not market_data:
