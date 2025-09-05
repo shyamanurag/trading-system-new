@@ -49,11 +49,21 @@ class ZerodhaIntegration:
         self.last_order_time = 0
         self.order_rate_limit = 1.0  # Used in place_order method
         
+        # API rate limiting cache to prevent "Too many requests" errors
+        self._margins_cache = {'value': 0.0, 'timestamp': 0}
+        self._positions_cache = {'value': {'net': [], 'day': []}, 'timestamp': 0}
+        self._instruments_cache = {'value': [], 'timestamp': 0}
+        self.cache_duration = 5  # seconds - cache API responses for 5 seconds
+        
         # WebSocket attributes (only if used in the code)
         self.ticker = None
         self.health_check_interval = 30
         self.ws_reconnect_delay = 5
         self.ws_max_reconnect_attempts = 10
+        
+        # Token refresh tracking
+        self._last_token_refresh = 0
+        self._token_refresh_interval = 3600  # 1 hour
         
         # Connection state tracking
         self.connection_state = ConnectionState.DISCONNECTED
@@ -100,10 +110,17 @@ class ZerodhaIntegration:
             from kiteconnect import KiteConnect
             self.kite = KiteConnect(api_key=self.api_key)
             self.kite.set_access_token(self.access_token)
-            logger.info("✅ KiteConnect instance initialized successfully")
+            
+            # Test connection
+            profile = self.kite.profile()
+            logger.info(f"✅ KiteConnect initialized for user: {profile.get('user_name', 'Unknown')}")
+            self._last_token_refresh = time.time()
+            self.is_connected = True
+            
         except Exception as e:
             logger.error(f"❌ Failed to initialize KiteConnect: {e}")
             self.kite = None
+            self.is_connected = False
 
     async def initialize(self) -> bool:
         """Initialize the Zerodha connection with retries"""
@@ -681,6 +698,12 @@ class ZerodhaIntegration:
     def get_margins_sync(self) -> float:
         """Get available margin synchronously (for real-time capital tracking)"""
         try:
+            # Check cache first to prevent API hammering
+            current_time = time.time()
+            if current_time - self._margins_cache['timestamp'] < self.cache_duration:
+                logger.debug(f"📊 Using cached margins (age: {current_time - self._margins_cache['timestamp']:.1f}s)")
+                return self._margins_cache['value']
+            
             if not self.kite:
                 logger.error("❌ Kite client is None - cannot get margins")
                 return 0.0
@@ -729,25 +752,39 @@ class ZerodhaIntegration:
                     real_available = max(0, total_funds - total_used)
 
                 logger.info(f"💰 MARGIN STATUS: Available=₹{real_available:,.2f}, Used=₹{total_used:,.2f}, Cash=₹{cash:,.2f}")
+                
+                # Update cache
+                self._margins_cache = {'value': float(real_available), 'timestamp': current_time}
+                
                 return float(real_available)
 
             logger.warning("⚠️ No equity data in margins response")
             return 0.0
 
         except Exception as e:
-            logger.error(f"❌ Error getting margins sync: {e}")
-            logger.error(f"   Error type: {type(e)}")
-            import traceback
-            logger.error(f"   Full traceback: {traceback.format_exc()}")
+            # Only log rate limit errors once per minute
+            if "Too many requests" in str(e):
+                if not hasattr(self, '_last_rate_limit_log') or current_time - self._last_rate_limit_log > 60:
+                    logger.error(f"❌ Rate limit hit: {e}")
+                    self._last_rate_limit_log = current_time
+            else:
+                logger.error(f"❌ Error getting margins sync: {e}")
+                logger.error(f"   Error type: {type(e)}")
+            
+            # Return cached value if available during errors
+            if self._margins_cache['value'] > 0:
+                logger.debug(f"   Using cached margin value: ₹{self._margins_cache['value']:,.2f}")
+                return self._margins_cache['value']
+            
             return 0.0
     
     async def get_positions(self) -> Dict:
         """Get positions with retry"""
-        # CRITICAL FIX: Cache positions for 10 seconds to prevent API hammering
-        now = time.time()
-        if hasattr(self, '_positions_cache') and hasattr(self, '_positions_cache_time') and now - self._positions_cache_time < 10:
-            logger.info("📊 Using cached positions (preventing API hammering)")
-            return self._positions_cache
+        # Check cache first to prevent API hammering
+        current_time = time.time()
+        if current_time - self._positions_cache['timestamp'] < self.cache_duration:
+            logger.debug(f"📊 Using cached positions (age: {current_time - self._positions_cache['timestamp']:.1f}s)")
+            return self._positions_cache['value']
 
         # CRITICAL FIX: Check if kite client is None
         if not self.kite:
@@ -775,19 +812,27 @@ class ZerodhaIntegration:
 
                 logger.info(f"✅ Got positions: {len(result.get('net', []))} net, {len(result.get('day', []))} day")
 
-                # Cache the result for 10 seconds
-                self._positions_cache = result
-                self._positions_cache_time = now
-                logger.info(f"📊 Cached positions result for 10 seconds")
+                # Update cache
+                self._positions_cache = {'value': result, 'timestamp': current_time}
 
                 return result
             except Exception as e:
-                logger.error(f"❌ Get positions attempt {attempt + 1} failed: {e}")
-                logger.error(f"   Error type: {type(e)}")
-                import traceback
-                logger.error(f"   Full traceback: {traceback.format_exc()}")
+                # Only log rate limit errors once per minute
+                if "Too many requests" in str(e):
+                    if not hasattr(self, '_last_rate_limit_log') or current_time - self._last_rate_limit_log > 60:
+                        logger.error(f"❌ Rate limit hit: {e}")
+                        self._last_rate_limit_log = current_time
+                else:
+                    logger.error(f"❌ Get positions attempt {attempt + 1} failed: {e}")
+                
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay)
+        
+        # Return cached value if available during errors
+        if self._positions_cache['value']:
+            logger.info(f"   Using cached positions (preventing API hammering)")
+            return self._positions_cache['value']
+        
         return {'net': [], 'day': []}
 
     async def get_holdings(self) -> Dict:
@@ -899,6 +944,12 @@ class ZerodhaIntegration:
     async def get_instruments(self, exchange: str = 'NFO') -> List[Dict]:
         """Get instruments with intelligent caching to prevent rate limiting"""
         try:
+            # Check cache first (instruments don't change often)
+            current_time = time.time()
+            if current_time - self._instruments_cache['timestamp'] < 300:  # 5 minute cache for instruments
+                logger.debug(f"📊 Using cached instruments (age: {current_time - self._instruments_cache['timestamp']:.1f}s)")
+                return self._instruments_cache['value']
+            
             # Check if we have cached data that's still valid
             cache_key = f"{exchange}_instruments"
             now = time.time()
@@ -945,6 +996,10 @@ class ZerodhaIntegration:
                     self._nse_instruments = instruments
                 
                 logger.info(f"✅ Cached {len(instruments)} {exchange} instruments for 1 hour")
+                
+                # Update general cache
+                self._instruments_cache = {'value': instruments, 'timestamp': current_time}
+                
                 return instruments
             else:
                 logger.warning(f"⚠️ No instruments returned from {exchange}")
