@@ -838,9 +838,10 @@ class OptimizedVolumeScalper(BaseStrategy):
         if symbol not in self.price_history or len(self.price_history[symbol]) < 10:
             return
 
-        # Get current volume at the start to avoid NameError
-        symbol_data = self._get_market_data(symbol)
-        current_volume = symbol_data.get('volume', 0) if symbol_data else 0
+        # Get current volume from volume history (most recent entry)
+        current_volume = 0
+        if symbol in self.volume_history and self.volume_history[symbol]:
+            current_volume = self.volume_history[symbol][-1]  # Most recent volume
 
         prices = self.price_history[symbol]
         returns = np.array([(prices[i] - prices[i-1]) / prices[i-1]
