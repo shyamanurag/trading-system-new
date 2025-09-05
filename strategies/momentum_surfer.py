@@ -302,6 +302,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
         self.min_win_rate = config.get('min_win_rate', 0.50)  # Minimum required win rate
         self.max_consecutive_losses = config.get('max_consecutive_losses', 3)  # Max consecutive losses
         self.risk_multiplier = config.get('risk_multiplier', 1.0)  # Overall risk multiplier
+        self.max_signals_per_cycle = config.get('max_signals_per_cycle', 5)  # Max signals per cycle
 
         # DYNAMIC RISK ADJUSTMENT
         self.daily_pnl = 0.0
@@ -787,7 +788,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 return signals
 
             # 🚨 SIGNAL LIMIT: Prevent excessive signals that can overwhelm the system
-            max_signals_per_cycle = config.get('max_signals_per_cycle', 5)
+            max_signals_per_cycle = getattr(self, 'max_signals_per_cycle', 5)
             logger.info(f"🎯 Signal limit: {max_signals_per_cycle} per cycle")
 
             # Update active symbols based on market conditions

@@ -284,6 +284,9 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         # Initialize truedata_symbols
         self.truedata_symbols = []
         
+        # Initialize backtest mode
+        self.backtest_mode = config.get('backtest_mode', False)
+        
         logger.info("✅ INSTITUTIONAL OPTIONS SPECIALIST initialized with professional models")
 
     # BACKTESTING METHODS
@@ -672,15 +675,18 @@ class EnhancedNewsImpactScalper(BaseStrategy):
     async def generate_signals(self, market_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate professional options signals with proper analysis"""
         try:
-            # Throttle signal generation
+            # Throttle signal generation ONLY in live mode, not during backtesting
             import time
             current_time = time.time()
-            if hasattr(self, '_last_generation_time'):
-                if current_time - self._last_generation_time < 5.0:  # 5 second throttle
-                    logger.debug("⏳ Throttling signal generation - too soon since last run")
-                    return []
             
-            self._last_generation_time = current_time
+            # Skip throttling during backtesting
+            if not getattr(self, 'backtest_mode', False):
+                if hasattr(self, '_last_generation_time'):
+                    if current_time - self._last_generation_time < 5.0:  # 5 second throttle
+                        logger.debug("⏳ Throttling signal generation - too soon since last run")
+                        return []
+                
+                self._last_generation_time = current_time
             
             signals = []
             
