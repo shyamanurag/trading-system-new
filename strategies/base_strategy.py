@@ -320,7 +320,7 @@ class BaseStrategy:
                     hour, minute = map(int, no_new_signals.split(':'))
                     no_new_signals = time(hour, minute)
                 if current_time_ist >= no_new_signals:  # After 3:00 PM
-                return "GRADUAL"
+                    return "GRADUAL"
             
                 return "NORMAL"
                 
@@ -472,7 +472,7 @@ class BaseStrategy:
             
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
                 try:
-                real_positions = await orchestrator.zerodha_client.get_positions()
+                    real_positions = await orchestrator.zerodha_client.get_positions()
 
                     # 🚨 VALIDATION: Ensure real_positions is a dict
                     if real_positions is None:
@@ -485,14 +485,14 @@ class BaseStrategy:
                         logger.error(f"❌ get_positions returned {type(real_positions)} instead of dict: {real_positions}")
                         real_positions = {}
 
-                if real_positions:
-                    # First, collect all symbols that have real positions
-                    for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
-                        for pos in pos_list:
-                            symbol = pos.get('tradingsymbol')
-                            qty = pos.get('quantity', 0)
-                            if qty != 0:  # Only consider non-zero positions
-                                real_symbols_with_positions.add(symbol)
+                    if real_positions:
+                        # First, collect all symbols that have real positions
+                        for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
+                            for pos in pos_list:
+                                symbol = pos.get('tradingsymbol')
+                                qty = pos.get('quantity', 0)
+                                if qty != 0:  # Only consider non-zero positions
+                                    real_symbols_with_positions.add(symbol)
                     
                     # Clean up local positions that don't exist in broker
                     symbols_to_remove = []
