@@ -2779,8 +2779,8 @@ class BaseStrategy:
                 logger.error("   This should not happen - falling back to calculated expiry")
                 optimal_expiry = None
             else:
-            logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
-            return optimal_expiry
+                logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
+                return optimal_expiry
         else:
             logger.warning("⚠️ No expiry dates from Zerodha API - using calculated fallback")
             # Fallback: for stocks, choose last Thursday of current/next month; for indices, next Thursday
@@ -2908,11 +2908,11 @@ class BaseStrategy:
             if not isinstance(zerodha_expiry, str) or len(zerodha_expiry) != 5:
                 logger.error(f"❌ INVALID EXPIRY FORMAT: {zerodha_expiry} (type: {type(zerodha_expiry)}, length: {len(zerodha_expiry)}) for {underlying_symbol}")
                 return None
-        
-        logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
-        logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
-        
-        return zerodha_expiry
+
+            logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
+            logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
+
+            return zerodha_expiry
 
         except Exception as format_error:
             logger.error(f"❌ EXPIRY FORMATTING ERROR for {underlying_symbol}: {format_error}")
