@@ -3907,13 +3907,19 @@ class BaseStrategy:
             
             # Use config capital as fallback
             try:
-                from config import config
-                config_capital = config.get('available_capital', 75000)
-                logger.info(f"✅ Using config capital: ₹{config_capital:,.2f}")
-                return float(config_capital)
-            except ImportError:
+                # 🚨 DEFENSIVE: Use self.config if available, otherwise import
+                if hasattr(self, 'config') and self.config:
+                    config_capital = self.config.get('available_capital', 75000)
+                    logger.info(f"✅ Using strategy config capital: ₹{config_capital:,.2f}")
+                    return float(config_capital)
+                else:
+                    from config import config
+                    config_capital = config.get('available_capital', 75000)
+                    logger.info(f"✅ Using global config capital: ₹{config_capital:,.2f}")
+                    return float(config_capital)
+            except (ImportError, AttributeError) as config_error:
                 # Hardcoded fallback if config import fails
-                logger.warning("⚠️ Config import failed, using hardcoded capital: ₹75,000")
+                logger.warning(f"⚠️ Config access failed ({config_error}), using hardcoded capital: ₹75,000")
                 return 75000.0
             
         except Exception as e:

@@ -50,9 +50,13 @@ class ZerodhaIntegration:
         self.order_rate_limit = 1.0  # Used in place_order method
         
         # API rate limiting cache to prevent "Too many requests" errors
+        # 🚨 DEFENSIVE: Ensure cache structure is always valid
         self._margins_cache = {'value': 0.0, 'timestamp': 0}
         self._positions_cache = {'value': {'net': [], 'day': []}, 'timestamp': 0}
         self._instruments_cache = {'value': [], 'timestamp': 0}
+        
+        # 🚨 DEFENSIVE: Initialize rate limit tracking
+        self._last_rate_limit_log = 0
         self.cache_duration = 5  # seconds - cache API responses for 5 seconds
         
         # WebSocket attributes (only if used in the code)
@@ -700,7 +704,12 @@ class ZerodhaIntegration:
         try:
             # Check cache first to prevent API hammering
             current_time = time.time()
-            if current_time - self._margins_cache['timestamp'] < self.cache_duration:
+            
+            # 🚨 DEFENSIVE: Ensure cache structure is valid
+            if (isinstance(self._margins_cache, dict) and 
+                'timestamp' in self._margins_cache and 
+                'value' in self._margins_cache and 
+                current_time - self._margins_cache['timestamp'] < self.cache_duration):
                 logger.debug(f"📊 Using cached margins (age: {current_time - self._margins_cache['timestamp']:.1f}s)")
                 return self._margins_cache['value']
             
