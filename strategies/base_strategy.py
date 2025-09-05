@@ -3842,22 +3842,32 @@ class BaseStrategy:
     def _get_available_capital(self) -> float:
         """🎯 DYNAMIC: Get available capital from Zerodha margins API in real-time"""
         try:
-            # Try to get real-time capital from Zerodha margins API
-            from src.core.orchestrator import get_orchestrator_instance
-            orchestrator = get_orchestrator_instance()
+            # First check if we have orchestrator set on this instance
+            orchestrator = getattr(self, 'orchestrator', None)
             
-            if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+            # If not, try to get from global instance
+            if not orchestrator:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                
+            # Also check for zerodha_client directly on self
+            zerodha_client = getattr(self, 'zerodha_client', None)
+            
+            # Use zerodha_client from wherever we can find it
+            if zerodha_client or (orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client):
+                if not zerodha_client:
+                    zerodha_client = orchestrator.zerodha_client
                 try:
                     # Try to get margins (available cash) from Zerodha
-                    if hasattr(orchestrator.zerodha_client, 'get_margins'):
+                    if hasattr(zerodha_client, 'get_margins'):
                         # Use async method if available
                         import asyncio
                         loop = asyncio.get_event_loop()
                         
                         if loop.is_running():
                             # 🚨 CRITICAL FIX: Use synchronous method in async context
-                            if hasattr(orchestrator.zerodha_client, 'get_margins_sync'):
-                                real_available = orchestrator.zerodha_client.get_margins_sync()
+                            if hasattr(zerodha_client, 'get_margins_sync'):
+                                real_available = zerodha_client.get_margins_sync()
                                 if real_available > 0:
                                     logger.info(f"✅ REAL-TIME CAPITAL: ₹{real_available:,.2f} (sync from Zerodha)")
                                     # Cache the value
@@ -3865,16 +3875,16 @@ class BaseStrategy:
                                     return float(real_available)
                         else:
                             # Run async method to get live margins
-                            margins = loop.run_until_complete(orchestrator.zerodha_client.get_margins())
+                            margins = loop.run_until_complete(zerodha_client.get_margins())
                             if margins and isinstance(margins, (int, float)) and margins > 0:
                                 logger.info(f"✅ DYNAMIC CAPITAL: ₹{margins:,.2f} (live from Zerodha)")
                                 self._last_known_capital = margins
                                 return float(margins)
                     
                     # Fallback: Try sync method if available
-                    if hasattr(orchestrator.zerodha_client, 'kite') and orchestrator.zerodha_client.kite:
+                    if hasattr(zerodha_client, 'kite') and zerodha_client.kite:
                         try:
-                            margins = orchestrator.zerodha_client.kite.margins()
+                            margins = zerodha_client.kite.margins()
                             equity_cash = margins.get('equity', {}).get('available', {}).get('cash', 0)
                             if equity_cash > 0:
                                 logger.info(f"✅ DYNAMIC CAPITAL: ₹{equity_cash:,.2f} (from Zerodha equity margins)")
