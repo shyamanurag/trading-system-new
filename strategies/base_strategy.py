@@ -3740,7 +3740,7 @@ class BaseStrategy:
             return 7  # 1 week fallback
     
     def _get_dynamic_lot_size(self, options_symbol: str, underlying_symbol: str) -> int:
-        """🎯 FULLY DYNAMIC: Fetch actual F&O lot sizes from Zerodha instruments API"""
+        """🎯 ROBUST LOT SIZE: Zerodha API with hardcoded fallbacks for major F&O stocks"""
         try:
             # Try to get actual lot size from Zerodha instruments API
             actual_lot_size = self._fetch_zerodha_lot_size(underlying_symbol)
@@ -3748,14 +3748,51 @@ class BaseStrategy:
                 logger.info(f"✅ DYNAMIC LOT SIZE: {underlying_symbol} = {actual_lot_size} (from Zerodha API)")
                 return actual_lot_size
             
-            # CRITICAL FIX: If no lot size available, this symbol should be equity-only
-            logger.warning(f"⚠️ NO LOT SIZE from Zerodha API for {underlying_symbol} - should be EQUITY only")
+            # 🚨 CRITICAL FALLBACK: Use hardcoded lot sizes for major F&O stocks
+            # This prevents system failure when Zerodha API is unavailable
+            hardcoded_lot_sizes = {
+                # Major Indices
+                'NIFTY': 50, 'BANKNIFTY': 15, 'FINNIFTY': 40, 'MIDCPNIFTY': 75,
+                
+                # Top Banking & Financial
+                'HDFCBANK': 550, 'ICICIBANK': 1375, 'SBIN': 3000, 'KOTAKBANK': 400,
+                'AXISBANK': 1200, 'BAJFINANCE': 125, 'INDUSINDBK': 900,
+                
+                # Top IT
+                'TCS': 300, 'INFY': 300, 'WIPRO': 3000, 'TECHM': 600, 'HCLTECH': 700,
+                
+                # Top Auto
+                'MARUTI': 100, 'TATAMOTORS': 4000, 'M&M': 300, 'BAJAJ-AUTO': 250,
+                'EICHERMOT': 100, 'HEROMOTOCO': 600,
+                
+                # Top Metals & Energy
+                'RELIANCE': 250, 'TATASTEEL': 2900, 'JSWSTEEL': 1800, 'HINDALCO': 3000,
+                'VEDL': 4800, 'COALINDIA': 4000, 'ONGC': 10000, 'NTPC': 7000,
+                
+                # Top FMCG & Pharma
+                'HINDUNILVR': 300, 'ITC': 3200, 'NESTLEIND': 50, 'BRITANNIA': 400,
+                'SUNPHARMA': 1400, 'DRREDDY': 125, 'CIPLA': 1000, 'APOLLOHOSP': 150,
+                
+                # Top Others
+                'LT': 300, 'ASIANPAINT': 150, 'ULTRACEMCO': 150, 'TITAN': 1000,
+                'POWERGRID': 4200, 'ADANIPORT': 1200
+            }
+            
+            # Check if we have a hardcoded lot size
+            clean_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+            if clean_symbol in hardcoded_lot_sizes:
+                lot_size = hardcoded_lot_sizes[clean_symbol]
+                logger.info(f"✅ FALLBACK LOT SIZE: {underlying_symbol} = {lot_size} (hardcoded)")
+                return lot_size
+            
+            # If no hardcoded lot size, this symbol should be equity-only
+            logger.warning(f"⚠️ NO LOT SIZE available for {underlying_symbol} - treating as EQUITY only")
             logger.info(f"🔄 FALLBACK: {underlying_symbol} should use EQUITY trading instead of F&O")
             return None
                 
         except Exception as e:
             logger.error(f"Error getting dynamic lot size for {options_symbol}: {e}")
-            return None  # NO FALLBACKS
+            return None
     
     def _map_truedata_to_zerodha_symbol(self, truedata_symbol: str) -> str:
         """Map TrueData symbol format to Zerodha format"""
