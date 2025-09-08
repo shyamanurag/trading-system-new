@@ -70,7 +70,7 @@ def get_complete_fo_symbols() -> List[str]:
         
         # Auto & Auto Components (15)
         'TATAMOTORS', 'M&M', 'BAJAJ-AUTO', 'EICHERMOT', 'HEROMOTOCO',
-        'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'FORCEMOT', 'MAHINDRA',
+        'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'MAHINDRA',
         'BOSCHLTD', 'MOTHERSUMI', 'BALKRISIND', 'AMARAJABAT', 'CUMMINSIND',
         
         # IT & Technology (20)
@@ -406,7 +406,7 @@ def get_complete_fo_symbols() -> List[str]:
         
         # Auto & Auto Components (15)
         'TATAMOTORS', 'M&M', 'BAJAJ-AUTO', 'EICHERMOT', 'HEROMOTOCO',
-        'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'FORCEMOT', 'MAHINDRA',
+        'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'MAHINDRA',
         'BOSCHLTD', 'MOTHERSUMI', 'BALKRISIND', 'AMARAJABAT', 'CUMMINSIND',
         
         # IT & Technology (20)

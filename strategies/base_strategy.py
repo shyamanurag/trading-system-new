@@ -217,7 +217,7 @@ class BaseStrategy:
     def _cleanup_expired_signals(self) -> None:
         """🚨 AUTOMATIC SIGNAL CLEANUP: Delete signals older than 5 minutes from memory"""
         try:
-            current_time = time.time()
+            current_time = time_module.time()
             expired_symbols = []
             
             for symbol, timestamp in list(self.signal_timestamps.items()):
@@ -248,7 +248,7 @@ class BaseStrategy:
             if symbol not in self.last_execution_attempts:
                 return True  # First execution attempt
             
-            current_time = time.time()
+            current_time = time_module.time()
             last_attempt = self.last_execution_attempts[symbol]
             time_since_last = current_time - last_attempt
             
@@ -266,7 +266,7 @@ class BaseStrategy:
     def _record_execution_attempt(self, symbol: str) -> None:
         """Record execution attempt for throttling"""
         try:
-            self.last_execution_attempts[symbol] = time.time()
+            self.last_execution_attempts[symbol] = time_module.time()
             logger.debug(f"📊 Execution attempt recorded: {symbol}")
         except Exception as e:
             logger.error(f"❌ Error recording execution attempt: {e}")
@@ -274,7 +274,7 @@ class BaseStrategy:
     def _track_signal_creation(self, symbol: str) -> None:
         """🚨 SIGNAL TRACKING: Record when a signal is created"""
         try:
-            self.signal_timestamps[symbol] = time.time()
+            self.signal_timestamps[symbol] = time_module.time()
             logger.debug(f"📝 Signal timestamp recorded: {symbol}")
         except Exception as e:
             logger.error(f"❌ Error tracking signal creation: {e}")
@@ -1433,7 +1433,7 @@ class BaseStrategy:
                 'quantity': signal.get('quantity', 1),
                 'strategy': self.name,
                 'entry_time': datetime.now(),
-                'timestamp': __import__('time').time()
+                'timestamp': time_module.time()
             }
             
             # Store entry time for age tracking
