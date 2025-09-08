@@ -790,15 +790,25 @@ class OptimizedVolumeScalper(BaseStrategy):
                         aligned.append(s)
                 quality_signals = aligned
             
+            # 🚨 SIGNAL EXPIRY: Clean up expired signals first
+            self._cleanup_expired_signals()
+            
             # CRITICAL FIX: Store signals in current_positions for orchestrator to find
             for signal in quality_signals:
                 symbol = signal.get('symbol')
                 if symbol:
+                    # 🚨 EXECUTION THROTTLING: Check if we can execute this signal
+                    if not self._can_execute_signal(symbol):
+                        logger.info(f"⏳ THROTTLED: {symbol} execution blocked (30s cooldown)")
+                        continue
+                    
                     # Store signal in current_positions for orchestrator detection
                     self.current_positions[symbol] = signal
+                    self._track_signal_creation(symbol)
                     logger.info(f"🎯 MICROSTRUCTURE EDGE: {signal['symbol']} {signal['action']} "
                                f"Confidence: {signal['confidence']:.1f}/10 "
-                               f"Edge: {signal.get('metadata', {}).get('edge_source', 'Unknown')}")
+                               f"Edge: {signal.get('metadata', {}).get('edge_source', 'Unknown')} "
+                               f"(expires in 5 min)")
                 
         except Exception as e:
             logger.error(f"Error in {self.name} strategy: {str(e)}")

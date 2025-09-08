@@ -658,6 +658,9 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             return
             
         try:
+            # 🚨 SIGNAL EXPIRY: Clean up expired signals first
+            self._cleanup_expired_signals()
+            
             # Generate signals using the existing method
             signals = await self.generate_signals(data)
             
@@ -665,9 +668,17 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             for signal in signals:
                 symbol = signal.get('symbol')
                 if symbol:
+                    # 🚨 EXECUTION THROTTLING: Check if we can execute this signal
+                    if not self._can_execute_signal(symbol):
+                        logger.info(f"⏳ THROTTLED: {symbol} execution blocked (30s cooldown)")
+                        continue
+                    
+                    # Store signal and track creation time
                     self.current_positions[symbol] = signal
+                    self._track_signal_creation(symbol)
                     logger.info(f"🎯 PROFESSIONAL OPTIONS: {signal['symbol']} {signal['action']} "
-                               f"Confidence: {signal.get('confidence', 0):.1f}/10")
+                               f"Confidence: {signal.get('confidence', 0):.1f}/10 "
+                               f"(expires in 5 min)")
                 
         except Exception as e:
             logger.error(f"Error in Professional Options Engine: {e}")

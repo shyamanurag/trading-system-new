@@ -3,6 +3,7 @@ Signal Deduplication and Quality Filtering System
 =================================================
 Prevents multiple signals for the same symbol at the same timestamp
 Implements signal quality scoring and filtering
+Includes 5-minute signal expiry and 30-second execution throttling
 """
 
 import logging
@@ -45,6 +46,11 @@ class SignalDeduplicator:
         self.retry_window_seconds = 30
         self._attempts_memory = {}
         self._last_try_memory = {}
+        
+        # 🚨 NEW: Signal expiry and execution throttling
+        from src.core.signal_expiry_manager import signal_expiry_manager
+        self.expiry_manager = signal_expiry_manager
+        logger.info("✅ Signal expiry and throttling manager integrated")
 
     async def _clear_signal_cache_on_startup(self):
         """Clear deployment cache on startup to prevent duplicate signals"""

@@ -207,6 +207,90 @@ class BaseStrategy:
         # Signal generation throttling
         self._last_signal_generation = {}  # symbol -> timestamp
         self._signal_throttle_interval = 5.0  # 5 seconds between signals for same symbol
+        
+        # 🚨 SIGNAL EXPIRY AND EXECUTION THROTTLING
+        self.signal_expiry_seconds = 300  # 5 minutes - signals deleted from memory after this
+        self.execution_throttle_seconds = 30  # 30 seconds between execution attempts
+        self.signal_timestamps = {}  # symbol -> signal generation timestamp
+        self.last_execution_attempts = {}  # symbol -> last execution attempt timestamp
+
+    def _cleanup_expired_signals(self) -> None:
+        """🚨 AUTOMATIC SIGNAL CLEANUP: Delete signals older than 5 minutes from memory"""
+        try:
+            current_time = time.time()
+            expired_symbols = []
+            
+            for symbol, timestamp in list(self.signal_timestamps.items()):
+                age_seconds = current_time - timestamp
+                if age_seconds > self.signal_expiry_seconds:
+                    expired_symbols.append(symbol)
+            
+            # Delete expired signals from memory
+            for symbol in expired_symbols:
+                if symbol in self.current_positions:
+                    signal = self.current_positions[symbol]
+                    if isinstance(signal, dict) and signal.get('action') != 'HOLD':
+                        logger.info(f"🗑️ EXPIRED SIGNAL DELETED: {symbol} (age: {age_seconds:.1f}s)")
+                        del self.current_positions[symbol]
+                
+                # Clean up tracking data
+                if symbol in self.signal_timestamps:
+                    del self.signal_timestamps[symbol]
+                if symbol in self.last_execution_attempts:
+                    del self.last_execution_attempts[symbol]
+                    
+        except Exception as e:
+            logger.error(f"❌ Error cleaning up expired signals: {e}")
+    
+    def _can_execute_signal(self, symbol: str) -> bool:
+        """🚨 EXECUTION THROTTLING: Check if signal can be executed (30-second throttle)"""
+        try:
+            if symbol not in self.last_execution_attempts:
+                return True  # First execution attempt
+            
+            current_time = time.time()
+            last_attempt = self.last_execution_attempts[symbol]
+            time_since_last = current_time - last_attempt
+            
+            if time_since_last < self.execution_throttle_seconds:
+                remaining_time = self.execution_throttle_seconds - time_since_last
+                logger.info(f"⏳ EXECUTION THROTTLED: {symbol} ({remaining_time:.1f}s remaining)")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error checking execution throttle: {e}")
+            return False
+    
+    def _record_execution_attempt(self, symbol: str) -> None:
+        """Record execution attempt for throttling"""
+        try:
+            self.last_execution_attempts[symbol] = time.time()
+            logger.debug(f"📊 Execution attempt recorded: {symbol}")
+        except Exception as e:
+            logger.error(f"❌ Error recording execution attempt: {e}")
+    
+    def _track_signal_creation(self, symbol: str) -> None:
+        """🚨 SIGNAL TRACKING: Record when a signal is created"""
+        try:
+            self.signal_timestamps[symbol] = time.time()
+            logger.debug(f"📝 Signal timestamp recorded: {symbol}")
+        except Exception as e:
+            logger.error(f"❌ Error tracking signal creation: {e}")
+    
+    async def on_market_data(self, data: Dict):
+        """🚨 BASE SIGNAL PROCESSING: Clean up expired signals before processing"""
+        try:
+            # 1. Clean up expired signals (older than 5 minutes)
+            self._cleanup_expired_signals()
+            
+            # 2. Call the strategy-specific implementation
+            # This method should be overridden by child strategies
+            pass
+            
+        except Exception as e:
+            logger.error(f"❌ Error in base on_market_data: {e}")
 
     def purge_symbol_state(self, symbol: str) -> None:
         """Remove cached state for a symbol so strategy decides fresh next cycle."""
