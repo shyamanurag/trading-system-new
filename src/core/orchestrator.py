@@ -526,20 +526,30 @@ class TradingOrchestrator:
         self.market_bias = MarketDirectionalBias()
         self.logger.info("✅ Market Directional Bias System initialized")
         
-        # Initialize trade engine with all required components and configuration
-        self.trade_engine = TradeEngine(
-            self.db_config,
-            self.order_manager,
-            self.position_tracker,
-            self.performance_tracker,
-            self.notification_manager,
-            trade_engine_config
-        )
-        
-        # Set additional components after initialization
-        self.trade_engine.zerodha_client = self.zerodha_client
-        self.trade_engine.risk_manager = self.risk_manager
-        self.trade_engine.market_bias = self.market_bias  # Add bias system to trade engine
+        # Initialize trade engine with fallback to SimpleTradeEngine
+        if TradeEngine is not None:
+            try:
+                self.trade_engine = TradeEngine(
+                    self.db_config,
+                    self.order_manager,
+                    self.position_tracker,
+                    self.performance_tracker,
+                    self.notification_manager,
+                    trade_engine_config
+                )
+                
+                # Set additional components after initialization
+                self.trade_engine.zerodha_client = self.zerodha_client
+                self.trade_engine.risk_manager = self.risk_manager
+                self.trade_engine.market_bias = self.market_bias  # Add bias system to trade engine
+                self.logger.info("✅ Full TradeEngine initialized successfully")
+            except Exception as e:
+                self.logger.error(f"❌ Full TradeEngine initialization failed: {e}")
+                self.logger.info("🔄 Falling back to SimpleTradeEngine...")
+                self.trade_engine = SimpleTradeEngine(self.zerodha_client)
+        else:
+            self.logger.warning("⚠️ Full TradeEngine not available, using SimpleTradeEngine")
+            self.trade_engine = SimpleTradeEngine(self.zerodha_client)
         
         # CRITICAL FIX: Initialize real-time P&L calculator
         self.pnl_calculator = None
@@ -1611,9 +1621,9 @@ class TradingOrchestrator:
 
                 # Global throttle: limit signals processed per cycle to reduce order churn and margin rejections
                 try:
-                    max_signals_per_cycle = int(os.getenv('MAX_SIGNALS_PER_CYCLE', '1'))
+                    max_signals_per_cycle = int(os.getenv('MAX_SIGNALS_PER_CYCLE', '3'))
                 except Exception:
-                    max_signals_per_cycle = 1
+                    max_signals_per_cycle = 3
                 if len(filtered_signals) > max_signals_per_cycle:
                     self.logger.info(f"⚖️ Throttling signals: {len(filtered_signals)} → {max_signals_per_cycle} per cycle")
                     filtered_signals = filtered_signals[:max_signals_per_cycle]
