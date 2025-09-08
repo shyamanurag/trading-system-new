@@ -120,7 +120,7 @@ class SimpleTradeEngine:
             await self.risk_manager.initialize()
             
             # Initialize order manager with fallback system
-            await self._initialize_order_manager_with_fallback()
+            self.order_manager = None  # SimpleTradeEngine uses direct Zerodha fallback
             
             # Start batch processing
             self.is_running = True
@@ -138,19 +138,27 @@ class SimpleTradeEngine:
     async def process_signals(self, signals: List[Dict]):
         """Process trading signals and execute orders"""
         if not signals:
+            self.logger.info("📭 No signals to process")
             return
             
         try:
-            self.logger.info(f"📬 Queued {len(signals)} signals for batch processing")
+            self.logger.info(f"🚀 STARTING SIGNAL EXECUTION: Processing {len(signals)} signals")
             
             # Process each signal
-            for signal in signals:
+            for i, signal in enumerate(signals):
                 try:
+                    symbol = signal.get('symbol', 'UNKNOWN')
+                    action = signal.get('action', 'UNKNOWN')
+                    quantity = signal.get('quantity', 0)
+                    
+                    self.logger.info(f"📋 EXECUTING SIGNAL {i+1}/{len(signals)}: {symbol} {action} qty={quantity}")
+                    
                     # Try order manager first
                     if self.order_manager:
+                        self.logger.info(f"🔄 Using order manager for {symbol}")
                         await self._process_signal_through_order_manager(signal)
                     else:
-                        # Fallback to direct Zerodha
+                        self.logger.info(f"🔄 Using direct Zerodha for {symbol}")
                         await self._process_signal_through_zerodha(signal)
                     
                     # CRITICAL FIX: Increment executed trades count
@@ -166,17 +174,19 @@ class SimpleTradeEngine:
                     
                     # Process signal
                     signal['processed'] = True
+                    self.logger.info(f"✅ SIGNAL EXECUTED: {symbol} {action} - Trade #{self.executed_trades}")
                     
                 except Exception as e:
-                    self.logger.error(f"Error processing signal: {e}")
+                    self.logger.error(f"❌ SIGNAL EXECUTION FAILED: {symbol} {action} - Error: {e}")
                     signal['processed'] = False
                     
             # Calculate processing time
             processing_time = len(signals) * 1.0  # Simulate processing time
-            self.logger.info(f"⚡ Processed batch of {len(signals)} signals in {processing_time:.1f}ms")
+            self.logger.info(f"🎯 EXECUTION COMPLETE: {len(signals)} signals processed in {processing_time:.1f}ms")
+            self.logger.info(f"📊 TOTAL EXECUTED TRADES: {self.executed_trades}")
                     
         except Exception as e:
-            self.logger.error(f"Error in batch processing: {e}")
+            self.logger.error(f"❌ CRITICAL ERROR in signal execution: {e}")
             
     async def _process_signal_through_order_manager(self, signal: Dict):
         """Process signal through order manager"""
@@ -1630,8 +1640,15 @@ class TradingOrchestrator:
                 
                 if filtered_signals:
                     if self.trade_engine:
-                        self.logger.info(f"🚀 Processing {len(filtered_signals)} high-quality signals through trade engine")
+                        self.logger.info(f"🚀 SENDING {len(filtered_signals)} signals to trade engine for execution")
+                        for i, signal in enumerate(filtered_signals):
+                            symbol = signal.get('symbol', 'UNKNOWN')
+                            action = signal.get('action', 'UNKNOWN')
+                            quantity = signal.get('quantity', 0)
+                            self.logger.info(f"   📋 Signal {i+1}: {symbol} {action} qty={quantity}")
+                        
                         await self.trade_engine.process_signals(filtered_signals)
+                        self.logger.info(f"✅ Trade engine processing completed for {len(filtered_signals)} signals")
                     else:
                         self.logger.error("❌ Trade engine not available - signals cannot be processed")
                         # TRACK: Mark all signals as failed due to no trade engine
