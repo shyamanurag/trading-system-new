@@ -126,6 +126,16 @@ class ZerodhaIntegration:
             self.kite = None
             self.is_connected = False
 
+    def _reset_caches(self):
+        """🚨 DEFENSIVE: Reset all caches to prevent corruption"""
+        try:
+            self._margins_cache = {'value': 0.0, 'timestamp': 0}
+            self._positions_cache = {'value': {'net': [], 'day': []}, 'timestamp': 0}
+            self._instruments_cache = {'value': [], 'timestamp': 0}
+            logger.debug("✅ All caches reset successfully")
+        except Exception as e:
+            logger.error(f"❌ Error resetting caches: {e}")
+
     async def initialize(self) -> bool:
         """Initialize the Zerodha connection with retries"""
         logger.info("🔄 Initializing Zerodha connection...")
@@ -779,6 +789,11 @@ class ZerodhaIntegration:
             else:
                 logger.error(f"❌ Error getting margins sync: {e}")
                 logger.error(f"   Error type: {type(e)}")
+                
+                # 🚨 DEFENSIVE: Reset cache if corrupted
+                if "'timestamp'" in str(e) or "KeyError" in str(e):
+                    logger.warning("🔄 Cache corruption detected - resetting margins cache")
+                    self._reset_caches()
             
             # Return cached value if available during errors
             if self._margins_cache['value'] > 0:
@@ -791,7 +806,12 @@ class ZerodhaIntegration:
         """Get positions with retry"""
         # Check cache first to prevent API hammering
         current_time = time.time()
-        if current_time - self._positions_cache['timestamp'] < self.cache_duration:
+        
+        # 🚨 DEFENSIVE: Ensure cache structure is valid
+        if (isinstance(self._positions_cache, dict) and 
+            'timestamp' in self._positions_cache and 
+            'value' in self._positions_cache and 
+            current_time - self._positions_cache['timestamp'] < self.cache_duration):
             logger.debug(f"📊 Using cached positions (age: {current_time - self._positions_cache['timestamp']:.1f}s)")
             return self._positions_cache['value']
 
@@ -833,6 +853,11 @@ class ZerodhaIntegration:
                         self._last_rate_limit_log = current_time
                 else:
                     logger.error(f"❌ Get positions attempt {attempt + 1} failed: {e}")
+                    
+                    # 🚨 DEFENSIVE: Reset cache if corrupted
+                    if "'timestamp'" in str(e) or "KeyError" in str(e):
+                        logger.warning("🔄 Cache corruption detected - resetting positions cache")
+                        self._reset_caches()
                 
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay)
@@ -955,7 +980,12 @@ class ZerodhaIntegration:
         try:
             # Check cache first (instruments don't change often)
             current_time = time.time()
-            if current_time - self._instruments_cache['timestamp'] < 300:  # 5 minute cache for instruments
+            
+            # 🚨 DEFENSIVE: Ensure cache structure is valid
+            if (isinstance(self._instruments_cache, dict) and 
+                'timestamp' in self._instruments_cache and 
+                'value' in self._instruments_cache and 
+                current_time - self._instruments_cache['timestamp'] < 300):  # 5 minute cache for instruments
                 logger.debug(f"📊 Using cached instruments (age: {current_time - self._instruments_cache['timestamp']:.1f}s)")
                 return self._instruments_cache['value']
             
@@ -1016,6 +1046,11 @@ class ZerodhaIntegration:
                 
         except Exception as e:
             logger.error(f"❌ Get instruments attempt failed: {e}")
+            
+            # 🚨 DEFENSIVE: Reset cache if corrupted
+            if "'timestamp'" in str(e) or "KeyError" in str(e):
+                logger.warning("🔄 Cache corruption detected - resetting instruments cache")
+                self._reset_caches()
             
             # Return cached data if available, even if expired
             if exchange == 'NFO' and self._nfo_instruments:
