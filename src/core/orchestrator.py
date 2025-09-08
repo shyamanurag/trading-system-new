@@ -1535,7 +1535,7 @@ class TradingOrchestrator:
                                         strategy_instance._record_execution_attempt(symbol)
                                     
                                     # 🎯 POST-SIGNAL LTP VALIDATION: Fix 0.0 entry prices
-                                    validated_signal = await self._validate_and_fix_signal_ltp(signal)
+                                    validated_signal = self._validate_and_fix_signal_ltp(signal)
                                     
                                     if validated_signal and validated_signal.get('entry_price', 0) > 0:
                                         # Add strategy info to validated signal
