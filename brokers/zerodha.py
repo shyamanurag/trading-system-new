@@ -1335,6 +1335,10 @@ class ZerodhaIntegration:
     
     def get_options_ltp_sync(self, options_symbol: str) -> Optional[float]:
         """Get real-time LTP for options symbol from Zerodha (synchronous version)"""
+        logger.info(f"🚨 DEBUG: get_options_ltp_sync called for {options_symbol}")
+        logger.info(f"   kite: {self.kite is not None}")
+        logger.info(f"   is_connected: {self.is_connected}")
+        
         try:
             if not self.kite or not self.is_connected:
                 logger.warning("⚠️ Zerodha not connected - cannot get options LTP")
