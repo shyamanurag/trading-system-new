@@ -1340,14 +1340,54 @@ class ZerodhaIntegration:
                 logger.warning("⚠️ Zerodha not connected - cannot get options LTP")
                 return None
             
+            # 🚨 DEBUG: Test basic Zerodha connectivity first
+            try:
+                test_margins = self.kite.margins()
+                logger.info(f"✅ Zerodha connectivity test passed - margins call successful")
+            except Exception as conn_test_error:
+                logger.error(f"❌ Zerodha connectivity test FAILED: {conn_test_error}")
+                logger.error(f"   This means the access token or API key is invalid")
+                return None
+            
             # Get quotes for the options symbol
             exchange = self._get_exchange_for_symbol(options_symbol)
             full_symbol = f"{exchange}:{options_symbol}"
             
-            logger.debug(f"🔍 Zerodha Quote Request: {full_symbol}")
+            logger.info(f"🔍 Zerodha Quote Request: {full_symbol}")
+            logger.info(f"   Original symbol: {options_symbol}")
+            logger.info(f"   Exchange: {exchange}")
+            logger.info(f"   Full symbol: {full_symbol}")
+            
             # Try both quote and ltp with exchange-qualified symbol
-            quotes = self.kite.quote([full_symbol])
-            logger.debug(f"🔍 Zerodha Quote Response: {quotes}")
+            try:
+                quotes = self.kite.quote([full_symbol])
+                logger.info(f"🔍 Zerodha Quote Response: {quotes}")
+            except Exception as quote_error:
+                logger.error(f"❌ Error getting Zerodha LTP sync for {options_symbol}: {quote_error}")
+                logger.error(f"Error type: {type(quote_error)}")
+                
+                # 🚨 DEBUG: Try different symbol formats to identify the issue
+                logger.info(f"🔍 Testing different symbol formats for debugging:")
+                
+                # Test 1: Try without exchange prefix
+                try:
+                    logger.info(f"   Testing format 1: {options_symbol} (no exchange)")
+                    test1 = self.kite.quote([options_symbol])
+                    logger.info(f"   Format 1 SUCCESS: {test1}")
+                except Exception as e1:
+                    logger.info(f"   Format 1 FAILED: {e1}")
+                
+                # Test 2: Try with different exchange
+                try:
+                    test_symbol2 = f"NSE:{options_symbol}"
+                    logger.info(f"   Testing format 2: {test_symbol2}")
+                    test2 = self.kite.quote([test_symbol2])
+                    logger.info(f"   Format 2 SUCCESS: {test2}")
+                except Exception as e2:
+                    logger.info(f"   Format 2 FAILED: {e2}")
+                
+                # Re-raise original error
+                raise quote_error
             
             if quotes and full_symbol in quotes:
                 quote_data = quotes[full_symbol]

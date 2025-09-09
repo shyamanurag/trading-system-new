@@ -3433,8 +3433,11 @@ class BaseStrategy:
                 except Exception as quote_err:
                     logger.warning(f"⚠️ Zerodha quote primary fallback failed for {options_symbol}: {quote_err}")
             
-            # Secondary: Disable TrueData fallback for options premia in production
-            logger.debug("Skipping TrueData fallback for options premium; relying on Zerodha only")
+            # 🚨 INVESTIGATION: Log detailed error information for debugging
+            logger.error(f"❌ ALL ZERODHA METHODS FAILED for {options_symbol}")
+            logger.error(f"   - LTP method failed")
+            logger.error(f"   - Quote method failed")
+            logger.error(f"   - Need to investigate specific API endpoint issues")
             return 0.0
         
         except Exception as e:
