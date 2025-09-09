@@ -795,6 +795,11 @@ class OptimizedVolumeScalper(BaseStrategy):
             
             # CRITICAL FIX: Store signals in current_positions for orchestrator to find
             for signal in quality_signals:
+                # 🚨 CRITICAL FIX: Validate signal is a dictionary, not a coroutine
+                if not isinstance(signal, dict):
+                    logger.error(f"❌ INVALID SIGNAL TYPE: Expected dict, got {type(signal)} - {signal}")
+                    continue
+                
                 symbol = signal.get('symbol')
                 if symbol:
                     # 🚨 EXECUTION THROTTLING: Check if we can execute this signal
