@@ -1599,6 +1599,10 @@ class TradingOrchestrator:
                                     if hasattr(strategy_instance, '_record_execution_attempt'):
                                         strategy_instance._record_execution_attempt(symbol)
                                     
+                                    # 🚨 CRITICAL: Record order placement to prevent duplicates
+                                    if hasattr(strategy_instance, '_record_order_placement'):
+                                        strategy_instance._record_order_placement(symbol)
+                                    
                                     # 🎯 POST-SIGNAL LTP VALIDATION: Fix 0.0 entry prices
                                     validated_signal = self._validate_and_fix_signal_ltp(signal)
                                     

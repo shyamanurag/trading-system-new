@@ -151,6 +151,9 @@ class BaseStrategy:
         # PROFESSIONAL MATHEMATICAL FOUNDATION
         self.math_foundation = ProfessionalMathFoundation()
         
+        # 🚨 CRITICAL: Duplicate order prevention system
+        self._recent_orders = {}  # Track recent orders to prevent duplicates
+        
         # PROFESSIONAL PERFORMANCE TRACKING
         self.strategy_returns = []
         self.trade_history = []
@@ -467,29 +470,68 @@ class BaseStrategy:
         """Increment signal counters when a signal is generated"""
         self.signals_generated_this_hour += 1
         self.strategy_signals_this_hour += 1
+        
+    def _record_order_placement(self, symbol: str):
+        """🚨 CRITICAL: Record when an order is placed to prevent duplicates"""
+        try:
+            current_time = time_module.time()
+            recent_order_key = f"recent_order_{symbol}"
+            self._recent_orders[recent_order_key] = current_time
+            logger.info(f"📝 RECORDED ORDER: {symbol} at {current_time}")
+            
+            # Clean up old entries (older than 1 hour)
+            cutoff_time = current_time - 3600
+            keys_to_remove = [k for k, v in self._recent_orders.items() if v < cutoff_time]
+            for key in keys_to_remove:
+                del self._recent_orders[key]
+                
+        except Exception as e:
+            logger.error(f"Error recording order placement: {e}")
     
     # ========================================
     # CRITICAL: POSITION MANAGEMENT SYSTEM
     # ========================================
     
     def has_existing_position(self, symbol: str) -> bool:
-        """Check if strategy already has active position in symbol with phantom cleanup"""
-        # CRITICAL FIX: Check ACTUAL Zerodha positions first, not just local dict
+        """🚨 CRITICAL FIX: Check for existing positions to prevent DUPLICATE ORDERS"""
+        
+        # 🚨 STEP 1: Check REAL Zerodha positions first (most authoritative)
         try:
             from src.core.orchestrator import get_orchestrator_instance
             orchestrator = get_orchestrator_instance()
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
                 # Get real positions from Zerodha
-                positions = orchestrator.zerodha_client.get_positions_sync()  # Use sync version
-                if positions:
+                positions = orchestrator.zerodha_client.get_positions_sync()
+                if positions and isinstance(positions, dict):
+                    # Check both net and day positions
                     for pos_list in [positions.get('net', []), positions.get('day', [])]:
-                        for pos in pos_list:
-                            if pos.get('tradingsymbol') == symbol and pos.get('quantity', 0) != 0:
-                                logger.warning(f"🚫 REAL POSITION EXISTS: {symbol} qty={pos.get('quantity')} - BLOCKING DUPLICATE")
-                                return True
+                        if isinstance(pos_list, list):
+                            for pos in pos_list:
+                                if (pos.get('tradingsymbol') == symbol and 
+                                    pos.get('quantity', 0) != 0):
+                                    logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} has REAL position qty={pos.get('quantity')}")
+                                    return True
         except Exception as e:
             logger.debug(f"Could not check Zerodha positions: {e}")
         
+        # 🚨 STEP 2: Check recent order history to prevent rapid duplicates
+        try:
+            # Check if we've placed an order for this symbol in the last 5 minutes
+            current_time = time_module.time()
+            recent_order_key = f"recent_order_{symbol}"
+            
+            if hasattr(self, '_recent_orders'):
+                last_order_time = self._recent_orders.get(recent_order_key, 0)
+                if current_time - last_order_time < 300:  # 5 minutes
+                    logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} ordered {(current_time - last_order_time):.0f}s ago")
+                    return True
+            else:
+                self._recent_orders = {}
+                
+        except Exception as e:
+            logger.debug(f"Could not check recent orders: {e}")
+        
+        # 🚨 STEP 3: Check local strategy positions
         if symbol in self.active_positions:
             # Check for phantom positions (older than 30 minutes)
             position_data = self.active_positions[symbol]
@@ -1329,6 +1371,11 @@ class BaseStrategy:
     async def _execute_management_action(self, signal: Dict):
         """🚀 EXECUTE MANAGEMENT ACTION - Send management signals for immediate execution"""
         try:
+            # 🚨 CRITICAL: Record order placement to prevent duplicates
+            symbol = signal.get('symbol')
+            if symbol:
+                self._record_order_placement(symbol)
+            
             # Get orchestrator instance for execution
             orchestrator = self._get_orchestrator_instance()
             
