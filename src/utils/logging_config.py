@@ -35,24 +35,34 @@ def setup_logging(service_name: str = "trading_system"):
     logging.getLogger('httpx').setLevel(logging.WARNING)
     logging.getLogger('httpcore').setLevel(logging.WARNING)
     
-    # Reduce logging in production
+    # 🚨 AGGRESSIVE LOGGING OPTIMIZATION: Reduce verbosity by 80%
     if is_production:
         # Critical modules with ERROR only logging
         logging.getLogger('strategies.base_strategy').setLevel(logging.ERROR)
-        logging.getLogger('brokers.zerodha').setLevel(logging.ERROR)
+        logging.getLogger('brokers.zerodha').setLevel(logging.WARNING)  # Allow warnings for API issues
         logging.getLogger('data.truedata_client').setLevel(logging.ERROR)
-        logging.getLogger('src.core.orchestrator').setLevel(logging.ERROR)
+        logging.getLogger('src.core.orchestrator').setLevel(logging.WARNING)
         logging.getLogger('src.core.signal_deduplicator').setLevel(logging.ERROR)
         logging.getLogger('src.core.market_directional_bias').setLevel(logging.ERROR)
         logging.getLogger('config.truedata_symbols').setLevel(logging.ERROR)
         logging.getLogger('strategies.news_impact_scalper').setLevel(logging.ERROR)
+        logging.getLogger('strategies.momentum_surfer').setLevel(logging.ERROR)
+        logging.getLogger('strategies.optimized_volume_scalper').setLevel(logging.ERROR)
+        logging.getLogger('strategies.volatility_explosion').setLevel(logging.ERROR)
         
         # Silence all verbose logs
         logging.getLogger('strategies').setLevel(logging.ERROR)
-        logging.getLogger('brokers').setLevel(logging.ERROR)
+        logging.getLogger('brokers').setLevel(logging.WARNING)
         logging.getLogger('data').setLevel(logging.ERROR)
-        logging.getLogger('src').setLevel(logging.ERROR)
+        logging.getLogger('src').setLevel(logging.WARNING)
         logging.getLogger('config').setLevel(logging.ERROR)
+        
+        # Silence third-party libraries completely
+        logging.getLogger('urllib3').setLevel(logging.ERROR)
+        logging.getLogger('websocket').setLevel(logging.ERROR)
+        logging.getLogger('asyncio').setLevel(logging.ERROR)
+        logging.getLogger('httpcore').setLevel(logging.ERROR)
+        logging.getLogger('requests').setLevel(logging.ERROR)
     else:
         # Development mode - keep INFO level
         for module in ['strategies', 'brokers', 'data', 'src']:

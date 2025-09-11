@@ -59,6 +59,17 @@ class ZerodhaIntegration:
         self._last_rate_limit_log = 0
         self.cache_duration = 5  # seconds - cache API responses for 5 seconds
         
+        # 🚨 AGGRESSIVE CACHING: Enhanced caching system
+        self._enhanced_cache = {}
+        self._cache_ttl = {
+            'margins': 300,        # 5 minutes
+            'positions': 60,       # 1 minute
+            'instruments': 3600,   # 1 hour
+            'ltp': 5,             # 5 seconds
+            'quote': 3,           # 3 seconds
+            'orders': 30          # 30 seconds
+        }
+        
         # WebSocket attributes (only if used in the code)
         self.ticker = None
         self.health_check_interval = 30
@@ -107,6 +118,33 @@ class ZerodhaIntegration:
             self._initialize_kite()
         else:
             logger.warning("⚠️ Zerodha credentials incomplete")
+
+    def _get_cached_data(self, cache_key: str, cache_type: str = 'default') -> Any:
+        """Get cached data if still valid"""
+        import time
+        
+        if cache_key not in self._enhanced_cache:
+            return None
+            
+        entry = self._enhanced_cache[cache_key]
+        ttl = self._cache_ttl.get(cache_type, 60)
+        
+        if time.time() - entry['timestamp'] < ttl:
+            logger.debug(f"📊 Using cached {cache_type} data")
+            return entry['data']
+        else:
+            # Expired, remove from cache
+            del self._enhanced_cache[cache_key]
+            return None
+            
+    def _set_cached_data(self, cache_key: str, data: Any, cache_type: str = 'default') -> None:
+        """Cache data with timestamp"""
+        import time
+        
+        self._enhanced_cache[cache_key] = {
+            'data': data,
+            'timestamp': time.time()
+        }
 
     def _initialize_kite(self):
         """Initialize KiteConnect instance"""
@@ -1487,7 +1525,10 @@ class ZerodhaIntegration:
                     # CRITICAL FIX: Enhanced symbol matching for individual stock options
                     try:
                         import re
-                        m = re.match(r"([A-Z]+)(\d{2}[A-Z]{3}\d{2})(\d+)(CE|PE)", options_symbol)
+                        # 🚨 CRITICAL FIX: Corrected regex pattern for options symbols
+                        # Pattern: SYMBOL + DDMMM + STRIKE + CE/PE (not DDMMMDD)
+                        # Example: ITC25SEP400PE, RELIANCE25SEP3000CE
+                        m = re.match(r"([A-Z]+)(\d{2}[A-Z]{3})(\d+)(CE|PE)", options_symbol)
                         if m and self._nfo_instruments:
                             underlying, expiry, strike, opt_type = m.groups()
                             logger.info(f"🔍 PARSING: {options_symbol} → {underlying}, {expiry}, {strike}, {opt_type}")

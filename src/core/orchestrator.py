@@ -1453,6 +1453,52 @@ class TradingOrchestrator:
             self.logger.error(f"❌ Error accessing TrueData cache: {e}")
             return {}
     
+    def _optimize_market_data_processing(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Optimize market data processing to reduce system load"""
+        try:
+            if not market_data:
+                return {}
+                
+            # 🚨 PERFORMANCE: Limit symbols processed per cycle
+            MAX_SYMBOLS_PER_CYCLE = 50  # Reduced from 150+
+            
+            # Priority symbols (always process these first)
+            priority_symbols = [
+                'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'RELIANCE', 'TCS', 'INFY',
+                'HDFCBANK', 'ICICIBANK', 'KOTAKBANK', 'BHARTIARTL', 'ITC'
+            ]
+            
+            optimized_data = {}
+            processed_count = 0
+            
+            # Process priority symbols first
+            for symbol in priority_symbols:
+                if symbol in market_data and processed_count < MAX_SYMBOLS_PER_CYCLE:
+                    optimized_data[symbol] = market_data[symbol]
+                    processed_count += 1
+            
+            # Process remaining symbols up to limit
+            for symbol, data in market_data.items():
+                if processed_count >= MAX_SYMBOLS_PER_CYCLE:
+                    break
+                if symbol not in optimized_data:
+                    optimized_data[symbol] = data
+                    processed_count += 1
+            
+            # Log optimization (reduced frequency)
+            if not hasattr(self, '_optimization_log_counter'):
+                self._optimization_log_counter = 0
+            self._optimization_log_counter += 1
+            
+            if self._optimization_log_counter % 20 == 0:  # Log every 20th cycle
+                self.logger.info(f"📊 Market data optimized: {processed_count}/{len(market_data)} symbols processed")
+            
+            return optimized_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error optimizing market data: {e}")
+            return market_data  # Return original if optimization fails
+
     async def _process_market_data(self):
         """Process market data from shared connection and run strategies"""
         try:
@@ -1476,9 +1522,8 @@ class TradingOrchestrator:
         """Run all active strategies with transformed data and collect signals"""
         try:
             all_signals = []
-            # CRITICAL FIX: Use the already-transformed data passed in, don't re-transform
-            # transformed_data = self._transform_market_data_for_strategies(market_data)  # ❌ REMOVED: Causes double processing
-            transformed_data = market_data  # ✅ FIXED: Use pre-transformed data
+            # 🚨 PERFORMANCE OPTIMIZATION: Reduce market data processing load
+            transformed_data = self._optimize_market_data_processing(market_data)
             
             # CRITICAL: Update Market Directional Bias BEFORE running strategies
             try:

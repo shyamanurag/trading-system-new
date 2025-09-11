@@ -883,17 +883,35 @@ class EnhancedMomentumSurfer(BaseStrategy):
 
     async def _generate_condition_based_signal(self, symbol: str, condition: str, 
                                              market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Generate signal based on detected market condition"""
+        """Generate signal based on detected market condition - FIXED: Returns dict, not coroutine"""
         try:
             strategy_func = self.strategies_by_condition.get(condition)
             if not strategy_func:
-                return None
+                return {}  # Return empty dict instead of None
             
-            return await strategy_func(symbol, market_data)
+            # 🚨 CRITICAL FIX: Ensure we await the strategy function properly
+            result = await strategy_func(symbol, market_data)
+            
+            # 🚨 CRITICAL FIX: Validate result is a dictionary
+            if result and isinstance(result, dict):
+                return result
+            elif hasattr(result, '__await__'):
+                logger.error(f"❌ COROUTINE DETECTED: {symbol} strategy returned coroutine")
+                # Try to await it
+                try:
+                    actual_result = await result
+                    if isinstance(actual_result, dict):
+                        return actual_result
+                except Exception as await_error:
+                    logger.error(f"❌ Failed to await coroutine: {await_error}")
+            
+            # If result is not a dict or is None, return empty dict
+            logger.warning(f"⚠️ Invalid signal type for {symbol}: {type(result)}")
+            return {}
             
         except Exception as e:
-            logger.debug(f"Error generating condition-based signal for {symbol}: {e}")
-            return None
+            logger.error(f"❌ Error generating condition-based signal for {symbol}: {e}")
+            return {}  # Always return dict, never None
 
     async def _trending_up_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Strategy for uptrending stocks"""
