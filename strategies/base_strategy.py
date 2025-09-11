@@ -2567,10 +2567,10 @@ class BaseStrategy:
                 # Stock options - convert equity to options using ZERODHA NAME
                 # 🎯 USER REQUIREMENT: Volume-based strike selection for liquidity
                 try:
-                expiry = await self._get_next_expiry(zerodha_underlying)
-                if not expiry:
-                    logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - FALLBACK TO EQUITY")
-                    return None, 'REJECTED'
+                    expiry = await self._get_next_expiry(zerodha_underlying)
+                    if not expiry:
+                        logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - FALLBACK TO EQUITY")
+                        return None, 'REJECTED'
 
                     # 🚨 DEFENSIVE: Check if expiry is valid before using
                     if not isinstance(expiry, str):
@@ -2703,7 +2703,7 @@ class BaseStrategy:
             
             # Get all NFO instruments
             try:
-            instruments = await orchestrator.zerodha_client.get_instruments("NFO")
+                instruments = await orchestrator.zerodha_client.get_instruments("NFO")
 
                 # 🚨 VALIDATION: Ensure instruments is a list
                 if instruments is None:
@@ -2716,7 +2716,7 @@ class BaseStrategy:
                     logger.error(f"❌ get_instruments returned {type(instruments)} instead of list: {instruments}")
                     return
                 elif not instruments:
-                logger.error("❌ No NFO instruments available")
+                    logger.error("❌ No NFO instruments available")
                     return
 
             except Exception as instruments_error:
@@ -2863,8 +2863,8 @@ class BaseStrategy:
                 logger.error("   This should not happen - falling back to calculated expiry")
                 optimal_expiry = None
             else:
-            logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
-            return optimal_expiry
+                logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
+                return optimal_expiry
         else:
             logger.warning("⚠️ No expiry dates from Zerodha API - using calculated fallback")
             # Fallback: for stocks, choose last Thursday of current/next month; for indices, next Thursday
@@ -2993,10 +2993,10 @@ class BaseStrategy:
                 logger.error(f"❌ INVALID EXPIRY FORMAT: {zerodha_expiry} (type: {type(zerodha_expiry)}, length: {len(zerodha_expiry)}) for {underlying_symbol}")
                 return None
         
-        logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
-        logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
-        
-        return zerodha_expiry
+            logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
+            logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
+            
+            return zerodha_expiry
 
         except Exception as format_error:
             logger.error(f"❌ EXPIRY FORMATTING ERROR for {underlying_symbol}: {format_error}")
