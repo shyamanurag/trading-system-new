@@ -3404,6 +3404,13 @@ class BaseStrategy:
                 logger.info(f"📊 Zerodha LTP Response: {zerodha_ltp} for {options_symbol}")
                 if zerodha_ltp and zerodha_ltp > 0:
                     logger.info(f"✅ Primary Zerodha LTP for {options_symbol}: ₹{zerodha_ltp}")
+                    
+                    # 🚨 CRITICAL: Reject ultra-low premium options (< ₹1.00)
+                    if zerodha_ltp < 1.00:
+                        logger.warning(f"⚠️ REJECTING LOW PREMIUM: {options_symbol} premium ₹{zerodha_ltp:.2f} < ₹1.00 minimum")
+                        logger.warning(f"   Reason: Insufficient liquidity and tick size constraints for proper risk management")
+                        return 0.0  # Return 0 to trigger rejection
+                    
                     return zerodha_ltp
                 else:
                     logger.warning(f"⚠️ Zerodha LTP is zero or None: {zerodha_ltp} for {options_symbol}")
@@ -4224,8 +4231,8 @@ class BaseStrategy:
                         margin_required = contract_value * 0.10  # 10% margin estimate
                         logger.info(f"📊 Futures margin estimate: ₹{margin_required:,.2f}")
                 
-                # 🎯 MARGIN-BASED ALLOCATION: 30% margin limit per trade (increased for better capital utilization)
-                max_margin_per_trade_pct = 0.30  # 30% of available capital per trade  
+                # 🎯 MARGIN-BASED ALLOCATION: 40% margin limit per trade (increased for better capital utilization)
+                max_margin_per_trade_pct = 0.40  # 40% of available capital per trade  
                 max_margin_allowed = available_capital * max_margin_per_trade_pct
 
                 # CRITICAL: Options should ALWAYS be 1 lot (as per user requirement)
@@ -4482,8 +4489,8 @@ class BaseStrategy:
                         margin_required = contract_value * 0.10  # 10% margin estimate
                         logger.info(f"📊 Futures margin estimate: ₹{margin_required:,.2f}")
                 
-                # 🎯 MARGIN-BASED ALLOCATION: 30% margin limit per trade (increased for better capital utilization)
-                max_margin_per_trade_pct = 0.30  # 30% of available capital per trade  
+                # 🎯 MARGIN-BASED ALLOCATION: 40% margin limit per trade (increased for better capital utilization)
+                max_margin_per_trade_pct = 0.40  # 40% of available capital per trade  
                 max_margin_allowed = available_capital * max_margin_per_trade_pct
 
                 # CRITICAL: Options should ALWAYS be 1 lot (as per user requirement)
