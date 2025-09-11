@@ -843,6 +843,9 @@ class ZerodhaIntegration:
 
                 # Update cache
                 self._positions_cache = {'value': result, 'timestamp': current_time}
+                
+                # Track successful API call
+                self._last_successful_call = f"positions at {datetime.now().strftime('%H:%M:%S')}"
 
                 return result
             except Exception as e:
@@ -853,6 +856,34 @@ class ZerodhaIntegration:
                         self._last_rate_limit_log = current_time
                 else:
                     logger.error(f"❌ Get positions attempt {attempt + 1} failed: {e}")
+                    
+                    # 🚨 ENHANCED DEBUGGING: Track token invalidation patterns
+                    if "Incorrect `api_key` or `access_token`" in str(e):
+                        logger.error(f"🚨 TOKEN INVALIDATION DETECTED:")
+                        logger.error(f"   Time since last token refresh: {current_time - self._last_token_refresh:.1f}s")
+                        logger.error(f"   Kite client exists: {self.kite is not None}")
+                        logger.error(f"   Access token length: {len(self.access_token) if self.access_token else 0}")
+                        logger.error(f"   Is connected flag: {self.is_connected}")
+                        logger.error(f"   Connection state: {self.connection_state}")
+                        logger.error(f"   Last successful API call: {getattr(self, '_last_successful_call', 'Never')}")
+                        
+                        # Try to reinitialize the kite client
+                        logger.warning("🔄 Attempting to reinitialize KiteConnect client...")
+                        self._initialize_kite()
+                        
+                        if self.kite and self.is_connected:
+                            logger.info("✅ KiteConnect reinitialized successfully")
+                            # Try the API call once more with fresh client
+                            try:
+                                result = await self._async_api_call(self.kite.positions)
+                                if result:
+                                    logger.info("✅ Position fetch successful after reinitialize")
+                                    self._positions_cache = {'value': result, 'timestamp': current_time}
+                                    return result
+                            except Exception as retry_e:
+                                logger.error(f"❌ Retry after reinitialize failed: {retry_e}")
+                        else:
+                            logger.error("❌ KiteConnect reinitialization failed")
                     
                     # 🚨 DEFENSIVE: Reset cache if corrupted
                     if "'timestamp'" in str(e) or "KeyError" in str(e):
