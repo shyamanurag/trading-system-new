@@ -3820,9 +3820,9 @@ class BaseStrategy:
         """🎯 DYNAMIC: Fetch actual lot size from Zerodha instruments API"""
         try:
             # Log symbol mapping for debugging
-            zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
-            if zerodha_symbol != underlying_symbol:
-                logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {zerodha_symbol}")
+            clean_underlying = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+            if clean_underlying != underlying_symbol:
+                logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {clean_underlying}")
             
             # Get orchestrator instance to access Zerodha client
             from src.core.orchestrator import get_orchestrator_instance
@@ -3837,23 +3837,29 @@ class BaseStrategy:
                 try:
                     # Get NFO instruments (F&O contracts)
                     instruments = orchestrator.zerodha_client.kite.instruments('NFO')
+                    logger.debug(f"🔍 Searching for lot size: {underlying_symbol} → {clean_underlying}")
                     
                     # Look for the underlying symbol in F&O instruments
                     for instrument in instruments:
                         trading_symbol = instrument.get('tradingsymbol', '')
                         segment = instrument.get('segment', '')
+                        name = instrument.get('name', '')
                         
-                        # CRITICAL FIX: Use proper symbol mapping function
-                        clean_underlying = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+                        # 🚨 ENHANCED MATCHING: Multiple matching strategies
+                        symbol_matches = (
+                            trading_symbol.startswith(clean_underlying) or  # RELIANCE25SEP...
+                            (name and clean_underlying in name.upper()) or  # Company name in 'name' field
+                            (clean_underlying in trading_symbol and len(clean_underlying) > 3)  # Partial match for longer symbols
+                        )
                         
-                        # Match underlying symbol (e.g., NIFTY, RELIANCE, etc.)
-                        if (clean_underlying in trading_symbol and 
+                        if (symbol_matches and 
                             segment == 'NFO-OPT' and  # Options only
                             ('CE' in trading_symbol or 'PE' in trading_symbol)):
                             
                             lot_size = instrument.get('lot_size', 0)
                             if lot_size > 0:
                                 logger.info(f"✅ ZERODHA LOT SIZE: {underlying_symbol} = {lot_size}")
+                                logger.debug(f"   Matched instrument: {trading_symbol} (segment: {segment})")
                                 return lot_size
                     
                     logger.debug(f"🔍 No F&O lot size found for {underlying_symbol} in Zerodha instruments")
@@ -3869,6 +3875,7 @@ class BaseStrategy:
         except Exception as e:
             logger.debug(f"Error fetching Zerodha lot size for {underlying_symbol}: {e}")
             return None
+    
     
     # REMOVED: Duplicate function - using the complete implementation below
             # For options: margin is typically much less than premium cost
@@ -4144,59 +4151,6 @@ class BaseStrategy:
             logger.error(f"Error getting volume data: {e}")
             return {}
     
-    def _fetch_zerodha_lot_size(self, underlying_symbol: str) -> int:
-        """🎯 DYNAMIC: Fetch actual lot size from Zerodha instruments API"""
-        try:
-            # Log symbol mapping for debugging
-            zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
-            if zerodha_symbol != underlying_symbol:
-                logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {zerodha_symbol}")
-            
-            # Get orchestrator instance to access Zerodha client
-            from src.core.orchestrator import get_orchestrator_instance
-            orchestrator = get_orchestrator_instance()
-            
-            if not orchestrator or not orchestrator.zerodha_client:
-                logger.debug(f"⚠️ Zerodha client not available for lot size lookup: {underlying_symbol}")
-                return None
-            
-            # Try to get instruments data
-            if hasattr(orchestrator.zerodha_client, 'kite') and orchestrator.zerodha_client.kite:
-                try:
-                    # Get NFO instruments (F&O contracts)
-                    instruments = orchestrator.zerodha_client.kite.instruments('NFO')
-                    
-                    # Look for the underlying symbol in F&O instruments
-                    for instrument in instruments:
-                        trading_symbol = instrument.get('tradingsymbol', '')
-                        segment = instrument.get('segment', '')
-                        
-                        # CRITICAL FIX: Use proper symbol mapping function
-                        clean_underlying = self._map_truedata_to_zerodha_symbol(underlying_symbol)
-                        
-                        # Match underlying symbol (e.g., NIFTY, RELIANCE, etc.)
-                        if (clean_underlying in trading_symbol and 
-                            segment == 'NFO-OPT' and  # Options only
-                            ('CE' in trading_symbol or 'PE' in trading_symbol)):
-                            
-                            lot_size = instrument.get('lot_size', 0)
-                            if lot_size > 0:
-                                logger.info(f"✅ ZERODHA LOT SIZE: {underlying_symbol} = {lot_size}")
-                                return lot_size
-                    
-                    logger.debug(f"🔍 No F&O lot size found for {underlying_symbol} in Zerodha instruments")
-                    return None
-                    
-                except Exception as e:
-                    logger.debug(f"⚠️ Error fetching Zerodha instruments for {underlying_symbol}: {e}")
-                    return None
-            else:
-                logger.debug(f"⚠️ Zerodha KiteConnect not initialized for lot size lookup")
-                return None
-                
-        except Exception as e:
-            logger.debug(f"Error fetching Zerodha lot size for {underlying_symbol}: {e}")
-            return None
     
     def _get_capital_constrained_quantity(self, options_symbol: str, underlying_symbol: str, entry_price: float) -> int:
         """🎯 SMART QUANTITY: F&O uses lots, Equity uses shares based on capital"""
@@ -4402,59 +4356,6 @@ class BaseStrategy:
             logger.error(f"Error getting volume data: {e}")
             return {}
     
-    def _fetch_zerodha_lot_size(self, underlying_symbol: str) -> int:
-        """🎯 DYNAMIC: Fetch actual lot size from Zerodha instruments API"""
-        try:
-            # Log symbol mapping for debugging
-            zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
-            if zerodha_symbol != underlying_symbol:
-                logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {zerodha_symbol}")
-            
-            # Get orchestrator instance to access Zerodha client
-            from src.core.orchestrator import get_orchestrator_instance
-            orchestrator = get_orchestrator_instance()
-            
-            if not orchestrator or not orchestrator.zerodha_client:
-                logger.debug(f"⚠️ Zerodha client not available for lot size lookup: {underlying_symbol}")
-                return None
-            
-            # Try to get instruments data
-            if hasattr(orchestrator.zerodha_client, 'kite') and orchestrator.zerodha_client.kite:
-                try:
-                    # Get NFO instruments (F&O contracts)
-                    instruments = orchestrator.zerodha_client.kite.instruments('NFO')
-                    
-                    # Look for the underlying symbol in F&O instruments
-                    for instrument in instruments:
-                        trading_symbol = instrument.get('tradingsymbol', '')
-                        segment = instrument.get('segment', '')
-                        
-                        # CRITICAL FIX: Use proper symbol mapping function
-                        clean_underlying = self._map_truedata_to_zerodha_symbol(underlying_symbol)
-                        
-                        # Match underlying symbol (e.g., NIFTY, RELIANCE, etc.)
-                        if (clean_underlying in trading_symbol and 
-                            segment == 'NFO-OPT' and  # Options only
-                            ('CE' in trading_symbol or 'PE' in trading_symbol)):
-                            
-                            lot_size = instrument.get('lot_size', 0)
-                            if lot_size > 0:
-                                logger.info(f"✅ ZERODHA LOT SIZE: {underlying_symbol} = {lot_size}")
-                                return lot_size
-                    
-                    logger.debug(f"🔍 No F&O lot size found for {underlying_symbol} in Zerodha instruments")
-                    return None
-                    
-                except Exception as e:
-                    logger.debug(f"⚠️ Error fetching Zerodha instruments for {underlying_symbol}: {e}")
-                    return None
-            else:
-                logger.debug(f"⚠️ Zerodha KiteConnect not initialized for lot size lookup")
-                return None
-                
-        except Exception as e:
-            logger.debug(f"Error fetching Zerodha lot size for {underlying_symbol}: {e}")
-            return None
     
     def _get_capital_constrained_quantity(self, options_symbol: str, underlying_symbol: str, entry_price: float) -> int:
         """🎯 SMART QUANTITY: F&O uses lots, Equity uses shares based on capital"""
