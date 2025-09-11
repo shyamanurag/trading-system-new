@@ -395,7 +395,7 @@ class BaseStrategy:
                     hour, minute = map(int, warning_close.split(':'))
                     warning_close = time(hour, minute)
                 if current_time_ist >= warning_close:  # After 3:15 PM
-                return "URGENT"
+                    return "URGENT"
             
             if hasattr(self, 'no_new_signals_after'):
                 no_new_signals = self.no_new_signals_after
@@ -404,7 +404,7 @@ class BaseStrategy:
                     hour, minute = map(int, no_new_signals.split(':'))
                     no_new_signals = time(hour, minute)
                 if current_time_ist >= no_new_signals:  # After 3:00 PM
-                return "GRADUAL"
+                    return "GRADUAL"
             
                 return "NORMAL"
                 
@@ -556,7 +556,7 @@ class BaseStrategy:
             
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
                 try:
-                real_positions = await orchestrator.zerodha_client.get_positions()
+                    real_positions = await orchestrator.zerodha_client.get_positions()
 
                     # 🚨 VALIDATION: Ensure real_positions is a dict
                     if real_positions is None:
@@ -569,45 +569,45 @@ class BaseStrategy:
                         logger.error(f"❌ get_positions returned {type(real_positions)} instead of dict: {real_positions}")
                         real_positions = {}
 
-                if real_positions:
-                    # First, collect all symbols that have real positions
-                    for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
-                        for pos in pos_list:
-                            symbol = pos.get('tradingsymbol')
-                            qty = pos.get('quantity', 0)
-                            if qty != 0:  # Only consider non-zero positions
-                                real_symbols_with_positions.add(symbol)
+                    if real_positions:
+                        # First, collect all symbols that have real positions
+                        for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
+                            for pos in pos_list:
+                                symbol = pos.get('tradingsymbol')
+                                qty = pos.get('quantity', 0)
+                                if qty != 0:  # Only consider non-zero positions
+                                    real_symbols_with_positions.add(symbol)
+                        
+                        # Clean up local positions that don't exist in broker
+                        symbols_to_remove = []
+                        for symbol in list(self.active_positions.keys()):
+                            if symbol not in real_symbols_with_positions:
+                                logger.warning(f"🧹 CLEANING STALE POSITION: {symbol} (not in broker)")
+                                symbols_to_remove.append(symbol)
+                        
+                        for symbol in symbols_to_remove:
+                            del self.active_positions[symbol]
                     
-                    # Clean up local positions that don't exist in broker
-                    symbols_to_remove = []
-                    for symbol in list(self.active_positions.keys()):
-                        if symbol not in real_symbols_with_positions:
-                            logger.warning(f"🧹 CLEANING STALE POSITION: {symbol} (not in broker)")
-                            symbols_to_remove.append(symbol)
-                    
-                    for symbol in symbols_to_remove:
-                        del self.active_positions[symbol]
-                    
-                    # Now process emergency exits for REAL positions
-                    # 🚨 CRITICAL FIX: Track processed symbols to prevent duplicate exits
-                    emergency_exits_processed = set()
-                    
-                    for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
-                        for pos in pos_list:
-                            symbol = pos.get('tradingsymbol')
-                            qty = pos.get('quantity', 0)
-                            avg_price = pos.get('average_price', 0)
-                            pnl = pos.get('pnl', 0) or pos.get('unrealised', 0) or 0
-                            
-                            # Skip if no actual position (qty = 0 means position closed)
-                            if qty == 0:
-                                continue
-                            
-                            # 🚨 CRITICAL: Skip if already processed (prevents duplicate exits)
-                            if symbol in emergency_exits_processed:
-                                logger.debug(f"⏭️ Skipping {symbol} - already checked for emergency exit")
-                                continue
-                            emergency_exits_processed.add(symbol)
+                        # Now process emergency exits for REAL positions
+                        # 🚨 CRITICAL FIX: Track processed symbols to prevent duplicate exits
+                        emergency_exits_processed = set()
+                        
+                        for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
+                            for pos in pos_list:
+                                symbol = pos.get('tradingsymbol')
+                                qty = pos.get('quantity', 0)
+                                avg_price = pos.get('average_price', 0)
+                                pnl = pos.get('pnl', 0) or pos.get('unrealised', 0) or 0
+                                
+                                # Skip if no actual position (qty = 0 means position closed)
+                                if qty == 0:
+                                    continue
+                                
+                                # 🚨 CRITICAL: Skip if already processed (prevents duplicate exits)
+                                if symbol in emergency_exits_processed:
+                                    logger.debug(f"⏭️ Skipping {symbol} - already checked for emergency exit")
+                                    continue
+                                emergency_exits_processed.add(symbol)
                             
                             # EMERGENCY: Exit ANY position with >₹1000 loss or >2% loss
                             loss_threshold_amount = -1000  # ₹1000 loss
