@@ -1908,8 +1908,11 @@ class BaseStrategy:
                     min_step = max(0.05, entry_price * 0.0015)  # 0.15%
                 elif entry_price >= 100:
                     min_step = max(0.05, entry_price * 0.002)   # 0.20%
-                else:
+                elif entry_price >= 1.0:
                     min_step = max(0.05, entry_price * 0.003)   # 0.30%
+                else:
+                    # 🚨 ULTRA-LOW PREMIUM OPTIONS: Use tick size (₹0.05) or 10% of entry price
+                    min_step = max(0.05, entry_price * 0.10)    # 10% for ultra-low premium options
                 if not (stop_loss < entry_price < target):
                     logger.warning(f"Invalid BUY signal levels: SL={stop_loss}, Entry={entry_price}, Target={target}")
                     return False
@@ -1924,8 +1927,11 @@ class BaseStrategy:
                     min_step = max(0.05, entry_price * 0.0015)
                 elif entry_price >= 100:
                     min_step = max(0.05, entry_price * 0.002)
-                else:
+                elif entry_price >= 1.0:
                     min_step = max(0.05, entry_price * 0.003)
+                else:
+                    # 🚨 ULTRA-LOW PREMIUM OPTIONS: Use tick size (₹0.05) or 10% of entry price
+                    min_step = max(0.05, entry_price * 0.10)    # 10% for ultra-low premium options
                 if not (target < entry_price < stop_loss):
                     logger.warning(f"Invalid SELL signal levels: SL={stop_loss}, Entry={entry_price}, Target={target}")
                     return False
