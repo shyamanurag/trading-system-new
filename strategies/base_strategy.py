@@ -291,7 +291,7 @@ class BaseStrategy:
             
         except Exception as e:
             logger.error(f"❌ Error in base on_market_data: {e}")
-
+    
     def purge_symbol_state(self, symbol: str) -> None:
         """Remove cached state for a symbol so strategy decides fresh next cycle."""
         try:
@@ -375,7 +375,7 @@ class BaseStrategy:
                 logger.warning("⚠️ mandatory_close_time not found, using default")
                 from datetime import time
                 self.mandatory_close_time = time(15, 20)  # 3:20 PM IST
-
+                
             current_time_ist = datetime.now(self.ist_timezone).time()
             
             # Ensure all time attributes are time objects, not strings
@@ -395,7 +395,7 @@ class BaseStrategy:
                     hour, minute = map(int, warning_close.split(':'))
                     warning_close = time(hour, minute)
                 if current_time_ist >= warning_close:  # After 3:15 PM
-                    return "URGENT"
+                return "URGENT"
             
             if hasattr(self, 'no_new_signals_after'):
                 no_new_signals = self.no_new_signals_after
@@ -404,7 +404,7 @@ class BaseStrategy:
                     hour, minute = map(int, no_new_signals.split(':'))
                     no_new_signals = time(hour, minute)
                 if current_time_ist >= no_new_signals:  # After 3:00 PM
-                    return "GRADUAL"
+                return "GRADUAL"
             
                 return "NORMAL"
                 
@@ -556,7 +556,7 @@ class BaseStrategy:
             
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
                 try:
-                    real_positions = await orchestrator.zerodha_client.get_positions()
+                real_positions = await orchestrator.zerodha_client.get_positions()
 
                     # 🚨 VALIDATION: Ensure real_positions is a dict
                     if real_positions is None:
@@ -569,14 +569,14 @@ class BaseStrategy:
                         logger.error(f"❌ get_positions returned {type(real_positions)} instead of dict: {real_positions}")
                         real_positions = {}
 
-                    if real_positions:
-                        # First, collect all symbols that have real positions
-                        for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
-                            for pos in pos_list:
-                                symbol = pos.get('tradingsymbol')
-                                qty = pos.get('quantity', 0)
-                                if qty != 0:  # Only consider non-zero positions
-                                    real_symbols_with_positions.add(symbol)
+                if real_positions:
+                    # First, collect all symbols that have real positions
+                    for pos_list in [real_positions.get('net', []), real_positions.get('day', [])]:
+                        for pos in pos_list:
+                            symbol = pos.get('tradingsymbol')
+                            qty = pos.get('quantity', 0)
+                            if qty != 0:  # Only consider non-zero positions
+                                real_symbols_with_positions.add(symbol)
                     
                     # Clean up local positions that don't exist in broker
                     symbols_to_remove = []
@@ -652,7 +652,7 @@ class BaseStrategy:
                     logger.error(f"   Error type: {type(positions_error)}")
                     if "can't be used in 'await' expression" in str(positions_error):
                         logger.error("🚨 CRITICAL: Zerodha API returned non-coroutine for positions")
-
+            
             # ⏰ CHECK POSITION CLOSURE URGENCY based on current time
             close_urgency = self._get_position_close_urgency()
             current_time_ist = datetime.now(self.ist_timezone).strftime('%H:%M:%S')
@@ -2521,10 +2521,10 @@ class BaseStrategy:
             if zerodha_underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:  # REMOVED MIDCPNIFTY - no options
                 # Index options - use volume-based strike selection for liquidity
                 try:
-                    expiry = await self._get_next_expiry(zerodha_underlying)
-                    if not expiry:
-                        logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
-                        return None, 'REJECTED'
+                expiry = await self._get_next_expiry(zerodha_underlying)
+                if not expiry:
+                    logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - REJECTING SIGNAL")
+                    return None, 'REJECTED'
 
                     # 🚨 DEFENSIVE: Check if expiry is valid before using
                     if not isinstance(expiry, str):
@@ -2567,10 +2567,10 @@ class BaseStrategy:
                 # Stock options - convert equity to options using ZERODHA NAME
                 # 🎯 USER REQUIREMENT: Volume-based strike selection for liquidity
                 try:
-                    expiry = await self._get_next_expiry(zerodha_underlying)
-                    if not expiry:
-                        logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - FALLBACK TO EQUITY")
-                        return None, 'REJECTED'
+                expiry = await self._get_next_expiry(zerodha_underlying)
+                if not expiry:
+                    logger.error(f"❌ No valid expiry from Zerodha for {zerodha_underlying} - FALLBACK TO EQUITY")
+                    return None, 'REJECTED'
 
                     # 🚨 DEFENSIVE: Check if expiry is valid before using
                     if not isinstance(expiry, str):
@@ -2703,7 +2703,7 @@ class BaseStrategy:
             
             # Get all NFO instruments
             try:
-                instruments = await orchestrator.zerodha_client.get_instruments("NFO")
+            instruments = await orchestrator.zerodha_client.get_instruments("NFO")
 
                 # 🚨 VALIDATION: Ensure instruments is a list
                 if instruments is None:
@@ -2716,7 +2716,7 @@ class BaseStrategy:
                     logger.error(f"❌ get_instruments returned {type(instruments)} instead of list: {instruments}")
                     return
                 elif not instruments:
-                    logger.error("❌ No NFO instruments available")
+                logger.error("❌ No NFO instruments available")
                     return
 
             except Exception as instruments_error:
@@ -2863,8 +2863,8 @@ class BaseStrategy:
                 logger.error("   This should not happen - falling back to calculated expiry")
                 optimal_expiry = None
             else:
-                logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
-                return optimal_expiry
+            logger.info(f"🎯 SELECTED EXPIRY: {optimal_expiry}")
+            return optimal_expiry
         else:
             logger.warning("⚠️ No expiry dates from Zerodha API - using calculated fallback")
             # Fallback: for stocks, choose last Thursday of current/next month; for indices, next Thursday
@@ -2992,11 +2992,11 @@ class BaseStrategy:
             if not isinstance(zerodha_expiry, str) or len(zerodha_expiry) != 5:
                 logger.error(f"❌ INVALID EXPIRY FORMAT: {zerodha_expiry} (type: {type(zerodha_expiry)}, length: {len(zerodha_expiry)}) for {underlying_symbol}")
                 return None
-
-            logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
-            logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
-
-            return zerodha_expiry
+        
+        logger.info(f"🎯 OPTIMAL EXPIRY: {zerodha_expiry} (from {nearest['formatted']})")
+        logger.info(f"   Date: {exp_date}, Days ahead: {(exp_date - today).days}")
+        
+        return zerodha_expiry
 
         except Exception as format_error:
             logger.error(f"❌ EXPIRY FORMATTING ERROR for {underlying_symbol}: {format_error}")
@@ -3062,7 +3062,7 @@ class BaseStrategy:
                     # 🚨 DEFENSIVE: Validate the response
                     if expiries is None:
                         logger.warning(f"⚠️ get_available_expiries_for_symbol returned None for {symbol}")
-                        continue
+                            continue
                     elif isinstance(expiries, int):
                         logger.error(f"❌ get_available_expiries_for_symbol returned int instead of list: {expiries} for {symbol}")
                         continue
@@ -3092,7 +3092,7 @@ class BaseStrategy:
                     logger.warning(f"⚠️ Filtering out invalid expiry entry: {expiry} (type: {type(expiry)})")
 
             return valid_expiries
-
+            
         except Exception as e:
             logger.error(f"❌ Error fetching available expiries: {e}")
             # Add debug info to help identify the issue
@@ -3751,45 +3751,8 @@ class BaseStrategy:
                 logger.info(f"✅ DYNAMIC LOT SIZE: {underlying_symbol} = {actual_lot_size} (from Zerodha API)")
                 return actual_lot_size
             
-            # 🚨 CRITICAL FALLBACK: Use hardcoded lot sizes for major F&O stocks
-            # This prevents system failure when Zerodha API is unavailable
-            hardcoded_lot_sizes = {
-                # Major Indices
-                'NIFTY': 50, 'BANKNIFTY': 15, 'FINNIFTY': 40, 'MIDCPNIFTY': 75,
-                
-                # Top Banking & Financial
-                'HDFCBANK': 550, 'ICICIBANK': 1375, 'SBIN': 3000, 'KOTAKBANK': 400,
-                'AXISBANK': 1200, 'BAJFINANCE': 125, 'INDUSINDBK': 900,
-                
-                # Top IT
-                'TCS': 300, 'INFY': 300, 'WIPRO': 3000, 'TECHM': 600, 'HCLTECH': 700,
-                
-                # Top Auto
-                'MARUTI': 100, 'TATAMOTORS': 4000, 'M&M': 300, 'BAJAJ-AUTO': 250,
-                'EICHERMOT': 100, 'HEROMOTOCO': 600,
-                
-                # Top Metals & Energy
-                'RELIANCE': 250, 'TATASTEEL': 2900, 'JSWSTEEL': 1800, 'HINDALCO': 3000,
-                'VEDL': 4800, 'COALINDIA': 4000, 'ONGC': 10000, 'NTPC': 7000,
-                
-                # Top FMCG & Pharma
-                'HINDUNILVR': 300, 'ITC': 3200, 'NESTLEIND': 50, 'BRITANNIA': 400,
-                'SUNPHARMA': 1400, 'DRREDDY': 125, 'CIPLA': 1000, 'APOLLOHOSP': 150,
-                
-                # Top Others
-                'LT': 300, 'ASIANPAINT': 150, 'ULTRACEMCO': 150, 'TITAN': 1000,
-                'POWERGRID': 4200, 'ADANIPORT': 1200
-            }
-            
-            # Check if we have a hardcoded lot size
-            clean_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
-            if clean_symbol in hardcoded_lot_sizes:
-                lot_size = hardcoded_lot_sizes[clean_symbol]
-                logger.info(f"✅ FALLBACK LOT SIZE: {underlying_symbol} = {lot_size} (hardcoded)")
-                return lot_size
-            
-            # If no hardcoded lot size, this symbol should be equity-only
-            logger.warning(f"⚠️ NO LOT SIZE available for {underlying_symbol} - treating as EQUITY only")
+            # 🚨 DYNAMIC ONLY: No hardcoded fallbacks - if Zerodha API fails, treat as equity
+            logger.warning(f"⚠️ NO DYNAMIC LOT SIZE available for {underlying_symbol} - treating as EQUITY only")
             logger.info(f"🔄 FALLBACK: {underlying_symbol} should use EQUITY trading instead of F&O")
             return None
                 
@@ -4001,7 +3964,7 @@ class BaseStrategy:
                                     # Cache the value
                                     self._last_known_capital = real_available
                                     return float(real_available)
-                        else:
+                else:
                             # Run async method to get live margins
                             margins = loop.run_until_complete(zerodha_client.get_margins())
                             if margins and isinstance(margins, (int, float)) and margins > 0:
