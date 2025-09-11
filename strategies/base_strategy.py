@@ -197,6 +197,7 @@ class BaseStrategy:
         self.active_positions = {}  # symbol -> position data with strategy linkage
         self.position_metadata = {}  # symbol -> strategy-specific position data
         self.trailing_stops = {}
+        self.emergency_exits_processed = {}  # symbol -> timestamp (prevent repeated emergency exits)
         
         # 🎯 MARKET BIAS COORDINATION
         self.market_bias = None  # Will be set by orchestrator
@@ -608,44 +609,65 @@ class BaseStrategy:
                                     logger.debug(f"⏭️ Skipping {symbol} - already checked for emergency exit")
                                     continue
                                 emergency_exits_processed.add(symbol)
-                            
-                            # EMERGENCY: Exit ANY position with >₹1000 loss or >2% loss
-                            loss_threshold_amount = -1000  # ₹1000 loss
-                            loss_threshold_percent = -2.0  # 2% loss
-                            
-                            # Calculate percentage loss
-                            if avg_price > 0 and qty != 0:
-                                current_price = market_data.get(symbol, {}).get('ltp', avg_price)
-                                pnl_percent = ((current_price - avg_price) / avg_price) * 100
-                            else:
-                                pnl_percent = 0
-                            
-                            # Check if position needs emergency exit
-                            if (pnl < loss_threshold_amount) or (pnl_percent < loss_threshold_percent):
-                                logger.error(f"🚨 EMERGENCY STOP LOSS TRIGGERED: {symbol}")
-                                logger.error(f"   Loss: ₹{pnl:.2f} ({pnl_percent:.1f}%), Qty: {qty}, Avg: ₹{avg_price:.2f}")
                                 
-                                # Force immediate exit signal
-                                exit_signal = {
-                                    'symbol': symbol,
-                                    'action': 'SELL' if qty > 0 else 'BUY',
-                                    'quantity': abs(qty),
-                                    'entry_price': market_data.get(symbol, {}).get('ltp', avg_price),
-                                    'stop_loss': 0,
-                                    'target': 0,
-                                    'confidence': 10.0,  # Maximum confidence for emergency exit
-                                    'reason': f'EMERGENCY_STOP_LOSS: ₹{pnl:.2f} ({pnl_percent:.1f}%)',  # Add at top level
-                                    'metadata': {
-                                        'reason': 'EMERGENCY_STOP_LOSS',
-                                        'loss_amount': pnl,
-                                        'loss_percent': pnl_percent,
-                                        'management_action': True,
-                                        'closing_action': True,
-                                        'bypass_all_checks': True
-                                    }
-                                }
-                                await self._execute_management_action(exit_signal)
-                                logger.error(f"🚨 EXECUTED EMERGENCY EXIT for {symbol} - Loss: ₹{pnl:.2f}")
+                                # 🚨 COOLDOWN: Skip if emergency exit was recently processed for this symbol
+                                current_time = datetime.now()
+                                if symbol in self.emergency_exits_processed:
+                                    last_exit_time = self.emergency_exits_processed[symbol]
+                                    time_since_exit = (current_time - last_exit_time).total_seconds()
+                                    if time_since_exit < 300:  # 5 minute cooldown
+                                        logger.debug(f"⏳ Emergency exit cooldown: {symbol} ({time_since_exit:.0f}s remaining)")
+                                        continue
+                                
+                                # EMERGENCY: Exit ANY position with >₹1000 loss or >2% loss
+                                loss_threshold_amount = -1000  # ₹1000 loss
+                                loss_threshold_percent = -2.0  # 2% loss
+                                
+                                # Calculate percentage loss
+                                if avg_price > 0 and qty != 0:
+                                    current_price = market_data.get(symbol, {}).get('ltp', avg_price)
+                                    pnl_percent = ((current_price - avg_price) / avg_price) * 100
+                                else:
+                                    pnl_percent = 0
+                                
+                                # Check if position needs emergency exit
+                                if (pnl < loss_threshold_amount) or (pnl_percent < loss_threshold_percent):
+                                    logger.error(f"🚨 EMERGENCY STOP LOSS TRIGGERED: {symbol}")
+                                    logger.error(f"   Loss: ₹{pnl:.2f} ({pnl_percent:.1f}%), Qty: {qty}, Avg: ₹{avg_price:.2f}")
+                                    
+                                    # 🚨 CRITICAL FIX: Only place exit order if position actually exists (qty != 0)
+                                    if qty != 0:
+                                        # Force immediate exit signal
+                                        exit_signal = {
+                                            'symbol': symbol,
+                                            'action': 'SELL' if qty > 0 else 'BUY',
+                                            'quantity': abs(qty),
+                                            'entry_price': market_data.get(symbol, {}).get('ltp', avg_price),
+                                            'stop_loss': 0,
+                                            'target': 0,
+                                            'confidence': 10.0,  # Maximum confidence for emergency exit
+                                            'reason': f'EMERGENCY_STOP_LOSS: ₹{pnl:.2f} ({pnl_percent:.1f}%)',  # Add at top level
+                                            'metadata': {
+                                                'reason': 'EMERGENCY_STOP_LOSS',
+                                                'loss_amount': pnl,
+                                                'loss_percent': pnl_percent,
+                                                'management_action': True,
+                                                'closing_action': True,
+                                                'bypass_all_checks': True
+                                            }
+                                        }
+                                        await self._execute_management_action(exit_signal)
+                                        logger.error(f"🚨 EXECUTED EMERGENCY EXIT for {symbol} - Loss: ₹{pnl:.2f}")
+                                        
+                                        # 🚨 COOLDOWN: Record emergency exit to prevent repeats
+                                        self.emergency_exits_processed[symbol] = current_time
+                                    else:
+                                        # Position already closed, just log the loss and clean up
+                                        logger.error(f"🚨 POSITION ALREADY CLOSED: {symbol} - Loss recorded: ₹{pnl:.2f}")
+                                        logger.error(f"   No exit order needed (quantity = 0) - cleaning up tracking")
+                                        # Clean up tracking for closed position
+                                        if symbol in self.active_positions:
+                                            del self.active_positions[symbol]
             
                 except Exception as positions_error:
                     logger.error(f"❌ Error processing positions: {positions_error}")
