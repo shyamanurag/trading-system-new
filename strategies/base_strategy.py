@@ -3062,7 +3062,7 @@ class BaseStrategy:
                     # 🚨 DEFENSIVE: Validate the response
                     if expiries is None:
                         logger.warning(f"⚠️ get_available_expiries_for_symbol returned None for {symbol}")
-                            continue
+                        continue
                     elif isinstance(expiries, int):
                         logger.error(f"❌ get_available_expiries_for_symbol returned int instead of list: {expiries} for {symbol}")
                         continue
@@ -3964,7 +3964,7 @@ class BaseStrategy:
                                     # Cache the value
                                     self._last_known_capital = real_available
                                     return float(real_available)
-                else:
+                        else:
                             # Run async method to get live margins
                             margins = loop.run_until_complete(zerodha_client.get_margins())
                             if margins and isinstance(margins, (int, float)) and margins > 0:
