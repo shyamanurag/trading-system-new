@@ -1678,11 +1678,11 @@ class TradingOrchestrator:
                 except Exception:
                     pass
 
-                # Global throttle: limit signals processed per cycle to reduce order churn and margin rejections
+                # 🚨 CRITICAL FIX: Increase orchestrator signal limit to allow trading
                 try:
-                    max_signals_per_cycle = int(os.getenv('MAX_SIGNALS_PER_CYCLE', '3'))
+                    max_signals_per_cycle = int(os.getenv('MAX_SIGNALS_PER_CYCLE', '5'))  # Increased from 3 to 5
                 except Exception:
-                    max_signals_per_cycle = 3
+                    max_signals_per_cycle = 5  # FIXED: Allow 5 signals per cycle
                 if len(filtered_signals) > max_signals_per_cycle:
                     self.logger.info(f"⚖️ Throttling signals: {len(filtered_signals)} → {max_signals_per_cycle} per cycle")
                     filtered_signals = filtered_signals[:max_signals_per_cycle]
