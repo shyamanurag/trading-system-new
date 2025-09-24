@@ -90,7 +90,43 @@ async def get_all_positions():
                     avg_price = float(position.get('average_price', 0) or 0)
                     last_price = float(position.get('last_price', 0) or 0)
                     
+                    # 🚨 CRITICAL DEBUG: Log price data to identify the issue
+                    logger.info(f"📊 [REAL POSITIONS] {symbol} PRICE DEBUG:")
+                    logger.info(f"   Average Price: ₹{avg_price}")
+                    logger.info(f"   Last Price: ₹{last_price}")
+                    logger.info(f"   P&L: ₹{pnl}")
+                    logger.info(f"   Quantity: {quantity}")
+                    
+                    # 🚨 CRITICAL FIX: If last_price is 0 or same as avg_price, try to get real-time price
+                    if last_price <= 0 or last_price == avg_price:
+                        logger.warning(f"⚠️ {symbol} last_price issue: {last_price} (avg: {avg_price})")
+                        
+                        # Try to get real-time price from TrueData
+                        try:
+                            from data.truedata_client import live_market_data
+                            if symbol in live_market_data:
+                                market_ltp = live_market_data[symbol].get('ltp', 0)
+                                if market_ltp > 0 and market_ltp != avg_price:
+                                    last_price = float(market_ltp)
+                                    logger.info(f"✅ {symbol} updated with TrueData LTP: ₹{last_price}")
+                        except Exception as e:
+                            logger.debug(f"Could not get TrueData price for {symbol}: {e}")
+                    
                     logger.info(f"📊 [REAL POSITIONS] Raw position data: {position}")
+                    
+                    # 🚨 CRITICAL FIX: Recalculate P&L with corrected last_price
+                    if last_price > 0 and avg_price > 0 and quantity != 0:
+                        # Recalculate P&L based on current vs average price
+                        calculated_pnl = (last_price - avg_price) * quantity
+                        if abs(calculated_pnl - pnl) > 1:  # If difference > ₹1, use calculated
+                            logger.info(f"🔧 {symbol} P&L corrected: Zerodha ₹{pnl} → Calculated ₹{calculated_pnl}")
+                            pnl = calculated_pnl
+                    
+                    # Calculate P&L percentage
+                    pnl_percent = 0.0
+                    if avg_price > 0 and quantity != 0:
+                        position_value = abs(avg_price * quantity)
+                        pnl_percent = (pnl / position_value) * 100 if position_value > 0 else 0
                     
                     # Only add if not already seen (deduplication)
                     if unique_key not in unique_positions:
@@ -98,8 +134,10 @@ async def get_all_positions():
                             "symbol": symbol,
                             "quantity": quantity,
                             "average_price": avg_price,
-                            "last_price": last_price,
+                            "current_price": last_price,  # 🚨 FIXED: Use current_price instead of last_price
+                            "last_price": last_price,     # Keep for compatibility
                             "pnl": round(pnl, 2),
+                            "pnl_percent": round(pnl_percent, 2),  # 🚨 NEW: Add P&L percentage
                             "product": product,
                             "exchange": position.get('exchange', ''),
                             "instrument_token": position.get('instrument_token', '')
