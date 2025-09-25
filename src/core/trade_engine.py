@@ -804,7 +804,7 @@ class TradeEngine:
             self.logger.error(f"❌ Risk management orders failed for {symbol}: {e}")
     
     async def _update_position_tracker_with_trade(self, trade_data: Dict):
-        """Update position tracker with actual executed trade data"""
+        """Update position tracker with actual executed trade data - ENHANCED with orphan prevention"""
         try:
             symbol = trade_data.get('symbol')
             side = trade_data.get('side')  # BUY or SELL
@@ -814,35 +814,119 @@ class TradeEngine:
             
             if not all([symbol, side, quantity, price]):
                 self.logger.warning(f"⚠️ Incomplete trade data for position tracker: {trade_data}")
-                return
+                return False
             
-            # Create position data structure
-            position_data = {
-                'symbol': symbol,
-                'quantity': quantity if side == 'BUY' else -quantity,  # Negative for SELL
-                'average_price': price,
-                'side': side,
-                'trade_id': trade_id,
-                'timestamp': trade_data.get('executed_at'),
-                'pnl': 0.0,  # Will be calculated by position tracker
-                'status': 'ACTIVE'
-            }
+            # 🚨 CRITICAL: Multiple attempts to prevent orphaned positions
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    # Update position tracker using existing method
+                    success = await self.position_tracker.update_position(
+                        symbol=symbol,
+                        quantity=quantity if side == 'BUY' else -quantity,
+                        price=price,
+                        side='long' if side == 'BUY' else 'short'
+                    )
+                    
+                    if success:
+                        self.logger.info(f"✅ Position tracker updated with {symbol} {side} {quantity}@₹{price}")
+                        
+                        # 🚨 VERIFICATION: Confirm position was actually recorded
+                        verification_position = await self.position_tracker.get_position(symbol)
+                        if verification_position and verification_position.quantity != 0:
+                            self.logger.info(f"✅ Position verification successful for {symbol}")
+                            return True
+                        else:
+                            self.logger.warning(f"⚠️ Position verification failed for {symbol} - position not found or zero quantity")
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(0.5)  # Brief delay before retry
+                                continue
+                    else:
+                        self.logger.error(f"❌ Failed to update position tracker for {symbol} (attempt {attempt + 1})")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(0.5)  # Brief delay before retry
+                            continue
+                            
+                except Exception as retry_error:
+                    self.logger.error(f"❌ Position tracker update attempt {attempt + 1} failed: {retry_error}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(0.5)
+                        continue
+                    else:
+                        raise retry_error
             
-            # Update position tracker using existing method
-            success = await self.position_tracker.update_position(
-                symbol=symbol,
-                quantity=quantity if side == 'BUY' else -quantity,
-                price=price,
-                side='long' if side == 'BUY' else 'short'
-            )
+            # 🚨 ORPHAN PREVENTION: If all retries failed, trigger emergency sync
+            self.logger.error(f"🚨 ORPHAN ALERT: Position tracker update failed for {symbol} after {max_retries} attempts")
+            self.logger.error(f"🚨 TRIGGERING EMERGENCY POSITION SYNC to prevent orphaned position")
             
-            if success:
-                self.logger.info(f"✅ Position tracker updated with {symbol} {side} {quantity}@₹{price}")
-            else:
-                self.logger.error(f"❌ Failed to update position tracker for {symbol}")
+            # Schedule emergency sync (don't wait for it to complete)
+            asyncio.create_task(self._emergency_position_sync(symbol, trade_data))
+            
+            return False
             
         except Exception as e:
             self.logger.error(f"❌ Error updating position tracker with trade: {e}")
+            return False
+    
+    async def _emergency_position_sync(self, symbol: str, trade_data: Dict):
+        """Emergency position sync to recover from orphaned position"""
+        try:
+            self.logger.warning(f"🚨 EMERGENCY SYNC: Attempting to recover orphaned position for {symbol}")
+            
+            # Wait a moment for any pending operations to complete
+            await asyncio.sleep(2)
+            
+            # Force sync with Zerodha positions
+            await self.sync_actual_zerodha_positions()
+            
+            # Verify the position is now tracked
+            if self.position_tracker:
+                position = await self.position_tracker.get_position(symbol)
+                if position and position.quantity != 0:
+                    self.logger.info(f"✅ RECOVERY SUCCESS: Position {symbol} recovered via emergency sync")
+                else:
+                    self.logger.error(f"🚨 RECOVERY FAILED: Position {symbol} still orphaned after emergency sync")
+                    
+                    # Last resort: Manual position creation from trade data
+                    await self._manual_position_recovery(symbol, trade_data)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Emergency position sync failed: {e}")
+    
+    async def _manual_position_recovery(self, symbol: str, trade_data: Dict):
+        """Manual position recovery as last resort"""
+        try:
+            self.logger.warning(f"🚨 MANUAL RECOVERY: Creating position manually for {symbol}")
+            
+            side = trade_data.get('side')
+            quantity = int(trade_data.get('quantity', 0))
+            price = float(trade_data.get('price', 0))
+            
+            # Force create position directly
+            if self.position_tracker:
+                from src.core.position_tracker import ProfessionalPosition
+                from datetime import datetime
+                
+                position = ProfessionalPosition(
+                    symbol=symbol,
+                    quantity=abs(quantity),
+                    average_price=price,
+                    current_price=price,
+                    pnl=0.0,
+                    unrealized_pnl=0.0,
+                    side='long' if side == 'BUY' else 'short',
+                    entry_time=datetime.now(),
+                    last_updated=datetime.now(),
+                    strategy_source='MANUAL_RECOVERY'
+                )
+                
+                # Force add to position tracker
+                self.position_tracker.positions[symbol] = position
+                
+                self.logger.info(f"✅ MANUAL RECOVERY SUCCESS: Position {symbol} manually created")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Manual position recovery failed: {e}")
     
     async def _update_with_actual_execution_data(self, actual_trade: Dict):
         """Update internal trade records with ACTUAL execution data from Zerodha"""

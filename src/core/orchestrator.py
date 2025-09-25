@@ -3078,39 +3078,103 @@ class TradingOrchestrator:
             return False
 
     async def _sync_real_positions_to_strategy(self, strategy_instance):
-        """Sync real Zerodha positions to strategy for re-evaluation"""
+        """Sync real Zerodha positions to strategy for re-evaluation - ENHANCED with orphan detection"""
         try:
-            # Get all real positions from position tracker
-            all_positions = await self.position_tracker.get_all_positions()
+            # 🚨 STEP 1: Get positions from multiple sources for cross-validation
+            position_tracker_positions = await self.position_tracker.get_all_positions() if self.position_tracker else {}
+            zerodha_positions = {}
             
-            if not all_positions:
-                return
+            # Get direct Zerodha positions for verification
+            if self.zerodha_client:
+                try:
+                    zerodha_data = await self.zerodha_client.get_positions()
+                    if zerodha_data:
+                        # Process net and day positions
+                        for pos_list in [zerodha_data.get('net', []), zerodha_data.get('day', [])]:
+                            for pos in pos_list:
+                                if pos.get('quantity', 0) != 0:
+                                    symbol = pos.get('tradingsymbol')
+                                    zerodha_positions[symbol] = pos
+                except Exception as e:
+                    self.logger.warning(f"Could not fetch Zerodha positions for verification: {e}")
             
-            # Convert position tracker format to strategy format
-            real_positions = {}
-            for symbol, position in all_positions.items():
-                if position.quantity != 0:  # Only active positions
-                    # CRITICAL FIX: Ensure all numeric values are floats, not strings
-                    real_positions[symbol] = {
+            # 🚨 STEP 2: Cross-validate positions and detect orphans
+            orphaned_positions = []
+            verified_positions = {}
+            
+            # Check position tracker positions against Zerodha
+            for symbol, position in position_tracker_positions.items():
+                if position.quantity != 0:
+                    if symbol in zerodha_positions:
+                        # Position exists in both - verified
+                        verified_positions[symbol] = {
+                            'symbol': symbol,
+                            'quantity': int(position.quantity) if position.quantity else 0,
+                            'entry_price': float(position.average_price) if position.average_price else 0.0,
+                            'current_price': float(position.current_price) if position.current_price else 0.0,
+                            'stop_loss': float(position.stop_loss) if position.stop_loss else 0.0,
+                            'target': float(position.target) if position.target else 0.0,
+                            'pnl': float(position.unrealized_pnl) if position.unrealized_pnl else 0.0,
+                            'timestamp': position.entry_time.isoformat() if position.entry_time else None,
+                            'source': 'VERIFIED_ZERODHA'
+                        }
+                    else:
+                        # Position in tracker but not in Zerodha - potential phantom
+                        self.logger.warning(f"⚠️ PHANTOM POSITION DETECTED: {symbol} in tracker but not in Zerodha")
+            
+            # Check for positions in Zerodha but not in tracker - orphaned positions
+            for symbol, zerodha_pos in zerodha_positions.items():
+                if symbol not in position_tracker_positions:
+                    orphaned_positions.append({
                         'symbol': symbol,
-                        'quantity': int(position.quantity) if position.quantity else 0,
-                        'entry_price': float(position.average_price) if position.average_price else 0.0,
-                        'current_price': float(position.current_price) if position.current_price else 0.0,
-                        'stop_loss': float(position.stop_loss) if position.stop_loss else 0.0,
-                        'target': float(position.target) if position.target else 0.0,
-                        'pnl': float(position.unrealized_pnl) if position.unrealized_pnl else 0.0,
-                        'timestamp': position.entry_time.isoformat() if position.entry_time else None,
-                        'source': 'REAL_ZERODHA'
-                    }
+                        'quantity': zerodha_pos.get('quantity', 0),
+                        'average_price': zerodha_pos.get('average_price', 0),
+                        'current_price': zerodha_pos.get('last_price', 0),
+                        'pnl': zerodha_pos.get('pnl', 0),
+                        'source': 'ORPHANED_ZERODHA'
+                    })
+                    self.logger.error(f"🚨 ORPHANED POSITION DETECTED: {symbol} in Zerodha but not tracked")
             
-            # Update strategy's active positions with real data
+            # 🚨 STEP 3: Recover orphaned positions
+            if orphaned_positions:
+                self.logger.error(f"🚨 RECOVERING {len(orphaned_positions)} ORPHANED POSITIONS")
+                for orphan in orphaned_positions:
+                    try:
+                        if self.position_tracker:
+                            await self.position_tracker.update_position(
+                                symbol=orphan['symbol'],
+                                quantity=orphan['quantity'],
+                                price=orphan['average_price'],
+                                side='long' if orphan['quantity'] > 0 else 'short'
+                            )
+                            
+                            # Add to verified positions
+                            verified_positions[orphan['symbol']] = {
+                                'symbol': orphan['symbol'],
+                                'quantity': int(orphan['quantity']),
+                                'entry_price': float(orphan['average_price']),
+                                'current_price': float(orphan['current_price']),
+                                'stop_loss': 0.0,
+                                'target': 0.0,
+                                'pnl': float(orphan['pnl']),
+                                'timestamp': None,
+                                'source': 'RECOVERED_ORPHAN'
+                            }
+                            
+                            self.logger.info(f"✅ ORPHAN RECOVERED: {orphan['symbol']}")
+                    except Exception as recovery_error:
+                        self.logger.error(f"❌ Failed to recover orphaned position {orphan['symbol']}: {recovery_error}")
+            
+            # 🚨 STEP 4: Update strategy with verified positions
             if hasattr(strategy_instance, 'active_positions'):
-                # Clear phantom positions and update with real ones
+                # Clear phantom positions and update with verified ones
                 strategy_instance.active_positions.clear()
-                strategy_instance.active_positions.update(real_positions)
+                strategy_instance.active_positions.update(verified_positions)
                 
-                if real_positions:
-                    self.logger.info(f"🔄 Synced {len(real_positions)} real positions to {strategy_instance.strategy_name}")
+                if verified_positions:
+                    self.logger.info(f"🔄 Synced {len(verified_positions)} verified positions to {strategy_instance.strategy_name}")
+                    if orphaned_positions:
+                        self.logger.info(f"✅ Recovered {len(orphaned_positions)} orphaned positions")
             
         except Exception as e:
             self.logger.error(f"❌ Error syncing real positions to strategy: {e}")

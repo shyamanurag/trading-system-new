@@ -213,6 +213,24 @@ class OrderManager:
                 
                 await self.capital_manager.update_capital_after_trade(user_id, trade)
                 
+                # 🚨 CRITICAL: Update position tracker immediately after successful execution
+                if hasattr(self, 'position_tracker') and self.position_tracker:
+                    try:
+                        position_update_success = await self.position_tracker.update_position(
+                            symbol=order.symbol,
+                            quantity=order.quantity if order.side == OrderSide.BUY else -order.quantity,
+                            price=result['average_price'],
+                            side='long' if order.side == OrderSide.BUY else 'short'
+                        )
+                        
+                        if position_update_success:
+                            logger.info(f"✅ Position tracker updated for {order.symbol}")
+                        else:
+                            logger.error(f"❌ Position tracker update failed for {order.symbol}")
+                            
+                    except Exception as pos_error:
+                        logger.error(f"❌ Position tracker update error for {order.symbol}: {pos_error}")
+                
                 # Record trade in database
                 if db_ops:
                     trade_data = {
