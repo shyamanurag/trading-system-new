@@ -44,7 +44,9 @@ class ZerodhaTokenManager:
                     'socket_timeout': 10,
                     'socket_connect_timeout': 10,
                     'retry_on_timeout': True,
-                    'health_check_interval': 30
+                    'health_check_interval': 30,
+                    'max_connections': 20,  # Connection pooling
+                    'retry_on_error': [redis.ConnectionError, redis.TimeoutError]
                 }
                 
                 # CRITICAL FIX: DigitalOcean Redis requires SSL even with redis:// URLs
