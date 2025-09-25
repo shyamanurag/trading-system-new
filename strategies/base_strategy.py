@@ -706,23 +706,33 @@ class BaseStrategy:
                         })
                         continue
                 
-                # 2. ACTIVE POSITION MANAGEMENT (only during normal hours and if not exiting)
+                # 2. ENHANCED OPEN POSITION DECISION ANALYSIS
                 if close_urgency == "NORMAL":
+                    # Use enhanced decision system for comprehensive position analysis
+                    decision_result = await self._evaluate_open_position_decision(
+                        symbol, current_price, position, market_data[symbol]
+                    )
+                    
+                    # Execute decision based on enhanced analysis
+                    await self._execute_position_decision(symbol, current_price, position, decision_result)
+                    
+                    # FALLBACK: Legacy position management for compatibility
                     management_actions = await self.analyze_position_management(symbol, current_price, position, market_data[symbol])
                     
-                    # 3. UPDATE TRAILING STOPS
-                    await self.update_trailing_stop(symbol, current_price, position)
+                    # 3. UPDATE TRAILING STOPS (if not handled by enhanced system)
+                    if decision_result.action.value not in ['TRAIL_STOP', 'ADJUST_STOP']:
+                        await self.update_trailing_stop(symbol, current_price, position)
                     
-                    # 4. PARTIAL PROFIT BOOKING
-                    if management_actions.get('book_partial_profits'):
+                    # 4. PARTIAL PROFIT BOOKING (if not handled by enhanced system)
+                    if decision_result.action.value != 'EXIT_PARTIAL' and management_actions.get('book_partial_profits'):
                         await self.book_partial_profits(symbol, current_price, position, management_actions['partial_percentage'])
                     
-                    # 5. SCALE INTO POSITION (only during normal hours)
-                    if management_actions.get('scale_position'):
+                    # 5. SCALE INTO POSITION (if not handled by enhanced system)
+                    if decision_result.action.value != 'SCALE_IN' and management_actions.get('scale_position'):
                         await self.scale_into_position(symbol, current_price, position, management_actions['scale_quantity'])
                     
-                    # 6. DYNAMIC STOP LOSS ADJUSTMENT
-                    if management_actions.get('adjust_stop_loss'):
+                    # 6. DYNAMIC STOP LOSS ADJUSTMENT (if not handled by enhanced system)
+                    if decision_result.action.value not in ['ADJUST_STOP', 'TRAIL_STOP'] and management_actions.get('adjust_stop_loss'):
                         await self.adjust_dynamic_stop_loss(symbol, current_price, position, management_actions['new_stop_loss'])
                     
                     # 7. TIME-BASED PROFIT PROTECTION
@@ -742,6 +752,94 @@ class BaseStrategy:
                 
         except Exception as e:
             logger.error(f"Error managing existing positions: {e}")
+    
+    async def _evaluate_open_position_decision(self, symbol: str, current_price: float, 
+                                             position: Dict, market_data: Dict):
+        """Evaluate open position using enhanced decision system"""
+        try:
+            # Import the enhanced open position decision system
+            from src.core.open_position_decision import evaluate_open_position
+            
+            # Get market bias if available
+            market_bias = getattr(self, 'market_bias', None)
+            
+            # Evaluate position decision
+            decision_result = await evaluate_open_position(
+                position=position,
+                current_price=current_price,
+                market_data=market_data,
+                market_bias=market_bias,
+                portfolio_context={'strategy_name': self.name}
+            )
+            
+            logger.info(f"🎯 POSITION DECISION: {symbol} -> {decision_result.action.value} "
+                       f"(Confidence: {decision_result.confidence:.1f}, Urgency: {decision_result.urgency})")
+            logger.info(f"   Reasoning: {decision_result.reasoning}")
+            
+            return decision_result
+            
+        except Exception as e:
+            logger.error(f"❌ Error evaluating open position decision for {symbol}: {e}")
+            # Return default HOLD decision
+            from src.core.open_position_decision import OpenPositionDecisionResult, OpenPositionAction
+            return OpenPositionDecisionResult(
+                action=OpenPositionAction.HOLD,
+                exit_reason=None,
+                confidence=0.0,
+                urgency="LOW",
+                quantity_percentage=0.0,
+                new_stop_loss=None,
+                new_target=None,
+                reasoning=f"Decision evaluation error: {str(e)} - Defaulting to HOLD",
+                metadata={'error': str(e)}
+            )
+    
+    async def _execute_position_decision(self, symbol: str, current_price: float, 
+                                       position: Dict, decision_result):
+        """Execute the decision from enhanced position analysis"""
+        try:
+            action = decision_result.action
+            
+            if action.value == "EXIT_FULL":
+                # Full position exit
+                await self.exit_position(symbol, current_price, decision_result.exit_reason.value)
+                logger.info(f"✅ EXECUTED: Full exit for {symbol} - {decision_result.reasoning}")
+                
+            elif action.value == "EXIT_PARTIAL":
+                # Partial position exit
+                percentage = decision_result.quantity_percentage
+                await self.book_partial_profits(symbol, current_price, position, percentage)
+                logger.info(f"✅ EXECUTED: Partial exit {percentage}% for {symbol} - {decision_result.reasoning}")
+                
+            elif action.value == "EMERGENCY_EXIT":
+                # Emergency exit
+                await self.exit_position(symbol, current_price, "EMERGENCY_EXIT")
+                logger.warning(f"🚨 EXECUTED: Emergency exit for {symbol} - {decision_result.reasoning}")
+                
+            elif action.value == "SCALE_IN":
+                # Scale into position
+                percentage = decision_result.quantity_percentage
+                current_quantity = position.get('quantity', 0)
+                scale_quantity = int(current_quantity * percentage / 100)
+                if scale_quantity > 0:
+                    await self.scale_into_position(symbol, current_price, position, scale_quantity)
+                    logger.info(f"✅ EXECUTED: Scale in {scale_quantity} shares for {symbol} - {decision_result.reasoning}")
+                
+            elif action.value in ["TRAIL_STOP", "ADJUST_STOP"]:
+                # Adjust stop loss
+                if decision_result.new_stop_loss:
+                    await self.adjust_dynamic_stop_loss(symbol, current_price, position, decision_result.new_stop_loss)
+                    logger.info(f"✅ EXECUTED: Stop adjustment to ₹{decision_result.new_stop_loss:.2f} for {symbol}")
+                
+            elif action.value == "HOLD":
+                # Hold position - no action needed
+                logger.debug(f"📊 HOLDING: {symbol} - {decision_result.reasoning}")
+                
+            else:
+                logger.warning(f"⚠️ Unknown position action: {action.value} for {symbol}")
+                
+        except Exception as e:
+            logger.error(f"❌ Error executing position decision for {symbol}: {e}")
     
     async def should_exit_position(self, symbol: str, current_price: float, position: Dict) -> Dict:
         """Determine if position should be exited based on trailing stops, targets, time"""
