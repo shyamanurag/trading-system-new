@@ -1606,6 +1606,20 @@ class TradingOrchestrator:
                                     # 🎯 POST-SIGNAL LTP VALIDATION: Fix 0.0 entry prices
                                     validated_signal = self._validate_and_fix_signal_ltp(signal)
                                     
+                                    # 🚨 ENHANCED POSITION OPENING DECISION
+                                    if validated_signal:
+                                        decision_result = await self._evaluate_position_opening_decision(
+                                            validated_signal, market_data, strategy_instance
+                                        )
+                                        
+                                        if decision_result.decision.value != "APPROVED":
+                                            self.logger.info(f"🚫 POSITION REJECTED: {validated_signal.get('symbol')} - {decision_result.reasoning}")
+                                            continue  # Skip this signal
+                                        else:
+                                            # Update signal with optimized position size
+                                            validated_signal['quantity'] = decision_result.position_size
+                                            self.logger.info(f"✅ POSITION APPROVED: {validated_signal.get('symbol')} - Size: {decision_result.position_size}")
+                                    
                                     if validated_signal and validated_signal.get('entry_price', 0) > 0:
                                         # Add strategy info to validated signal
                                         validated_signal['strategy'] = strategy_key
@@ -3178,6 +3192,52 @@ class TradingOrchestrator:
             
         except Exception as e:
             self.logger.error(f"❌ Error syncing real positions to strategy: {e}")
+    
+    async def _evaluate_position_opening_decision(self, signal: Dict, market_data: Dict, strategy_instance) -> Any:
+        """Evaluate whether to open a new position using enhanced decision system"""
+        try:
+            # Import the position opening decision system
+            from src.core.position_opening_decision import evaluate_position_opening
+            
+            # Get current positions from strategy
+            current_positions = getattr(strategy_instance, 'active_positions', {})
+            
+            # Get available capital (use a reasonable default if not available)
+            available_capital = 500000.0  # Default ₹5L, should be replaced with actual capital
+            
+            # Try to get actual available capital from various sources
+            try:
+                if hasattr(self, 'zerodha_client') and self.zerodha_client:
+                    margins = await self.zerodha_client.get_margins()
+                    if margins and 'equity' in margins:
+                        available_capital = float(margins['equity'].get('available', {}).get('cash', 500000))
+            except Exception as capital_error:
+                self.logger.debug(f"Could not get actual capital, using default: {capital_error}")
+            
+            # Evaluate position opening decision
+            decision_result = await evaluate_position_opening(
+                signal=signal,
+                market_data=market_data,
+                current_positions=current_positions,
+                available_capital=available_capital,
+                market_bias=getattr(self, 'market_bias', None),
+                risk_manager=getattr(self, 'risk_manager', None)
+            )
+            
+            return decision_result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error evaluating position opening decision: {e}")
+            # Return a default rejection result
+            from src.core.position_opening_decision import PositionDecisionResult, PositionDecision
+            return PositionDecisionResult(
+                decision=PositionDecision.REJECTED_RISK,
+                confidence_score=0.0,
+                risk_score=10.0,
+                position_size=0,
+                reasoning=f"Evaluation error: {str(e)}",
+                metadata={'error': str(e)}
+            )
     
     async def _validate_and_fix_signal_ltp(self, signal: Dict) -> Optional[Dict]:
         """Validate signal and fetch real LTP for options if entry_price is 0.0"""
