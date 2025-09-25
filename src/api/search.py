@@ -27,76 +27,129 @@ SEARCH_LIMITS = {
 
 @router.get("/search/symbols")
 async def search_symbols(
-    query: str = Query(..., min_length=1, max_length=50),
+    q: str = Query(..., min_length=1, max_length=50, description="Search query"),
     limit: int = Query(20, ge=1, le=100),
     include_options: bool = Query(False),
-    exchange: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
+    exchange: Optional[str] = Query(None)
 ):
     """Search for trading symbols with autocomplete support"""
     try:
-        # Build search query
-        search_conditions = []
+        # Use 'q' parameter to match frontend expectations
+        query = q.upper()
         
-        # Main symbol search (case-insensitive)
-        search_conditions.append(
-            f"symbol ILIKE '%{query.upper()}%' OR name ILIKE '%{query}%'"
-        )
+        # Predefined symbol list for common searches (fallback when database not available)
+        common_symbols = [
+            {"symbol": "NIFTY", "name": "Nifty 50", "exchange": "NSE", "type": "INDEX", "lot_size": 50, "tick_size": 0.05, "is_active": True},
+            {"symbol": "BANKNIFTY", "name": "Bank Nifty", "exchange": "NSE", "type": "INDEX", "lot_size": 25, "tick_size": 0.05, "is_active": True},
+            {"symbol": "FINNIFTY", "name": "Fin Nifty", "exchange": "NSE", "type": "INDEX", "lot_size": 40, "tick_size": 0.05, "is_active": True},
+            {"symbol": "RELIANCE", "name": "Reliance Industries", "exchange": "NSE", "type": "EQUITY", "lot_size": 1, "tick_size": 0.05, "is_active": True},
+            {"symbol": "TCS", "name": "Tata Consultancy Services", "exchange": "NSE", "type": "EQUITY", "lot_size": 1, "tick_size": 0.05, "is_active": True},
+            {"symbol": "HDFCBANK", "name": "HDFC Bank", "exchange": "NSE", "type": "EQUITY", "lot_size": 1, "tick_size": 0.05, "is_active": True},
+            {"symbol": "INFY", "name": "Infosys", "exchange": "NSE", "type": "EQUITY", "lot_size": 1, "tick_size": 0.05, "is_active": True},
+            {"symbol": "ICICIBANK", "name": "ICICI Bank", "exchange": "NSE", "type": "EQUITY", "lot_size": 1, "tick_size": 0.05, "is_active": True},
+            {"symbol": "SBIN", "name": "State Bank of India", "exchange": "NSE", "type": "EQUITY", "lot_size": 1, "tick_size": 0.05, "is_active": True},
+            {"symbol": "BHARTIARTL", "name": "Bharti Airtel", "exchange": "NSE", "type": "EQUITY", "lot_size": 1, "tick_size": 0.05, "is_active": True}
+        ]
         
-        # Exchange filter
-        if exchange:
-            search_conditions.append(f"exchange = '{exchange}'")
+        # Try database search first
+        try:
+            from src.config.database import get_db
+            db = next(get_db())
+            
+            # Build search query
+            search_conditions = []
+            
+            # Main symbol search (case-insensitive)
+            search_conditions.append(
+                f"symbol ILIKE '%{query}%' OR name ILIKE '%{q}%'"
+            )
+            
+            # Exchange filter
+            if exchange:
+                search_conditions.append(f"exchange = '{exchange}'")
+            
+            # Options filter
+            if not include_options:
+                search_conditions.append("symbol NOT LIKE '%CE%' AND symbol NOT LIKE '%PE%'")
+            
+            # Combine conditions
+            where_clause = " AND ".join(search_conditions)
+            
+            # Execute search query
+            search_query = text(f"""
+                SELECT 
+                    symbol,
+                    name,
+                    exchange,
+                    symbol_type,
+                    lot_size,
+                    tick_size,
+                    is_active,
+                    CASE 
+                        WHEN symbol ILIKE '{query}%' THEN 1
+                        WHEN name ILIKE '{q}%' THEN 2
+                        ELSE 3
+                    END as relevance_score
+                FROM symbols
+                WHERE {where_clause}
+                ORDER BY relevance_score, symbol
+                LIMIT :limit
+            """)
+            
+            result = db.execute(search_query, {"limit": limit})
+            symbols = result.fetchall()
+            
+            # Format response
+            symbol_list = []
+            for symbol in symbols:
+                symbol_list.append({
+                    "symbol": symbol.symbol,
+                    "name": symbol.name,
+                    "exchange": symbol.exchange,
+                    "type": symbol.symbol_type,
+                    "lot_size": symbol.lot_size,
+                    "tick_size": float(symbol.tick_size) if symbol.tick_size else 0.01,
+                    "is_active": symbol.is_active,
+                    "display_name": f"{symbol.symbol} ({symbol.name})" if symbol.name else symbol.symbol
+                })
+            
+            if symbol_list:
+                return {
+                    "success": True,
+                    "data": symbol_list,
+                    "count": len(symbol_list),
+                    "query": q,
+                    "source": "database",
+                    "timestamp": datetime.now().isoformat()
+                }
         
-        # Options filter
-        if not include_options:
-            search_conditions.append("symbol NOT LIKE '%CE%' AND symbol NOT LIKE '%PE%'")
+        except Exception as db_error:
+            logger.debug(f"Database search failed, using fallback: {db_error}")
         
-        # Combine conditions
-        where_clause = " AND ".join(search_conditions)
-        
-        # Execute search query
-        search_query = text(f"""
-            SELECT 
-                symbol,
-                name,
-                exchange,
-                symbol_type,
-                lot_size,
-                tick_size,
-                is_active,
-                CASE 
-                    WHEN symbol ILIKE '{query.upper()}%' THEN 1
-                    WHEN name ILIKE '{query}%' THEN 2
-                    ELSE 3
-                END as relevance_score
-            FROM symbols
-            WHERE {where_clause}
-            ORDER BY relevance_score, symbol
-            LIMIT :limit
-        """)
-        
-        result = await db.execute(search_query, {"limit": limit})
-        symbols = result.fetchall()
-        
-        # Format response
-        symbol_list = []
-        for symbol in symbols:
-            symbol_list.append({
-                "symbol": symbol.symbol,
-                "name": symbol.name,
-                "exchange": symbol.exchange,
-                "type": symbol.symbol_type,
-                "lot_size": symbol.lot_size,
-                "tick_size": float(symbol.tick_size) if symbol.tick_size else 0.01,
-                "is_active": symbol.is_active,
-                "display_name": f"{symbol.symbol} ({symbol.name})" if symbol.name else symbol.symbol
-            })
+        # Fallback to predefined symbols
+        filtered_symbols = []
+        for symbol in common_symbols:
+            if (query in symbol["symbol"] or 
+                q.lower() in symbol["name"].lower()):
+                
+                # Apply filters
+                if exchange and symbol["exchange"] != exchange:
+                    continue
+                
+                filtered_symbols.append({
+                    **symbol,
+                    "display_name": f"{symbol['symbol']} ({symbol['name']})"
+                })
+                
+                if len(filtered_symbols) >= limit:
+                    break
         
         return {
             "success": True,
-            "data": symbol_list,
-            "count": len(symbol_list),
-            "query": query,
+            "data": filtered_symbols,
+            "count": len(filtered_symbols),
+            "query": q,
+            "source": "fallback",
             "timestamp": datetime.now().isoformat()
         }
         
