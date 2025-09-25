@@ -49,28 +49,23 @@ class ZerodhaIntegration:
         self.last_order_time = 0
         self.order_rate_limit = 1.0  # Used in place_order method
         
-        # API rate limiting cache to prevent "Too many requests" errors
-        # 🚨 DEFENSIVE: Ensure cache structure is always valid
-        self._margins_cache = {'value': 0.0, 'timestamp': 0}
-        self._positions_cache = {'value': {'net': [], 'day': []}, 'timestamp': 0}
-        self._instruments_cache = {'value': [], 'timestamp': 0}
-        
-        # 🚨 DEFENSIVE: Initialize rate limit tracking
-        self._last_rate_limit_log = 0
-        self.cache_duration = 5  # seconds - cache API responses for 5 seconds
-        
-        # 🚨 AGGRESSIVE CACHING: Enhanced caching system
-        self._enhanced_cache = {}
+        # 🚀 UNIFIED CACHING SYSTEM - Consolidated and optimized
+        self._unified_cache = {}
         self._cache_ttl = {
             'margins': 300,        # 5 minutes
             'positions': 60,       # 1 minute
             'instruments': 3600,   # 1 hour
             'ltp': 5,             # 5 seconds
             'quote': 3,           # 3 seconds
-            'orders': 30          # 30 seconds
+            'orders': 30,         # 30 seconds
+            'nfo_instruments': 3600,  # 1 hour
+            'nse_instruments': 3600   # 1 hour
         }
         
-        # WebSocket attributes (only if used in the code)
+        # Rate limit tracking
+        self._last_rate_limit_log = 0
+        
+        # WebSocket attributes
         self.ticker = None
         self.health_check_interval = 30
         self.ws_reconnect_delay = 5
@@ -89,11 +84,6 @@ class ZerodhaIntegration:
         self.reconnect_attempts = 0
         self.ws_reconnect_attempts = 0
         self.ws_last_reconnect = None
-        
-        # 🚨 FIX: Add instruments caching to prevent rate limiting
-        self._instruments_cache = {}
-        self._cache_expiry = {}
-        self._cache_duration = 600  # 10 minutes cache
         
         # Separate cache for different exchanges
         self._nfo_instruments = None
@@ -120,31 +110,60 @@ class ZerodhaIntegration:
             logger.warning("⚠️ Zerodha credentials incomplete")
 
     def _get_cached_data(self, cache_key: str, cache_type: str = 'default') -> Any:
-        """Get cached data if still valid"""
+        """Get cached data from unified cache if still valid"""
         import time
         
-        if cache_key not in self._enhanced_cache:
-            return None
+        try:
+            current_time = time.time()
+            if cache_key not in self._unified_cache:
+                return None
             
-        entry = self._enhanced_cache[cache_key]
-        ttl = self._cache_ttl.get(cache_type, 60)
-        
-        if time.time() - entry['timestamp'] < ttl:
-            logger.debug(f"📊 Using cached {cache_type} data")
-            return entry['data']
-        else:
-            # Expired, remove from cache
-            del self._enhanced_cache[cache_key]
+            entry = self._unified_cache[cache_key]
+            ttl = self._cache_ttl.get(cache_type, 60)
+            
+            if current_time - entry['timestamp'] < ttl:
+                logger.debug(f"📊 Using cached {cache_type} data (age: {current_time - entry['timestamp']:.1f}s)")
+                return entry['data']
+            else:
+                # Expired, remove from cache
+                del self._unified_cache[cache_key]
+                logger.debug(f"🗑️ Expired cache entry removed: {cache_key}")
+                return None
+        except Exception as e:
+            logger.error(f"❌ Error getting cached data for {cache_key}: {e}")
             return None
             
     def _set_cached_data(self, cache_key: str, data: Any, cache_type: str = 'default') -> None:
-        """Cache data with timestamp"""
+        """Cache data with timestamp in unified cache"""
         import time
         
-        self._enhanced_cache[cache_key] = {
-            'data': data,
-            'timestamp': time.time()
-        }
+        try:
+            current_time = time.time()
+            self._unified_cache[cache_key] = {
+                'data': data,
+                'timestamp': current_time,
+                'type': cache_type
+            }
+            logger.debug(f"📊 Cached {cache_type} data: {cache_key}")
+        except Exception as e:
+            logger.error(f"❌ Error caching data for {cache_key}: {e}")
+    
+    def _clear_cache(self, cache_type: Optional[str] = None) -> None:
+        """Clear cache entries by type or all if type is None"""
+        try:
+            if cache_type is None:
+                self._unified_cache.clear()
+                logger.info("🗑️ All cache entries cleared")
+            else:
+                keys_to_remove = [
+                    key for key, entry in self._unified_cache.items() 
+                    if entry.get('type') == cache_type
+                ]
+                for key in keys_to_remove:
+                    del self._unified_cache[key]
+                logger.info(f"🗑️ Cleared {len(keys_to_remove)} {cache_type} cache entries")
+        except Exception as e:
+            logger.error(f"❌ Error clearing cache: {e}")
 
     def _initialize_kite(self):
         """Initialize KiteConnect instance"""
@@ -167,10 +186,12 @@ class ZerodhaIntegration:
     def _reset_caches(self):
         """🚨 DEFENSIVE: Reset all caches to prevent corruption"""
         try:
-            self._margins_cache = {'value': 0.0, 'timestamp': 0}
-            self._positions_cache = {'value': {'net': [], 'day': []}, 'timestamp': 0}
-            self._instruments_cache = {'value': [], 'timestamp': 0}
-            logger.debug("✅ All caches reset successfully")
+            self._unified_cache.clear()
+            # Reset separate instrument caches
+            self._nfo_instruments = None
+            self._nse_instruments = None
+            self._instruments_last_fetched = {}
+            logger.info("✅ All caches reset successfully")
         except Exception as e:
             logger.error(f"❌ Error resetting caches: {e}")
 
@@ -750,16 +771,10 @@ class ZerodhaIntegration:
     def get_margins_sync(self) -> float:
         """Get available margin synchronously (for real-time capital tracking)"""
         try:
-            # Check cache first to prevent API hammering
-            current_time = time.time()
-            
-            # 🚨 DEFENSIVE: Ensure cache structure is valid
-            if (isinstance(self._margins_cache, dict) and 
-                'timestamp' in self._margins_cache and 
-                'value' in self._margins_cache and 
-                current_time - self._margins_cache['timestamp'] < self.cache_duration):
-                logger.debug(f"📊 Using cached margins (age: {current_time - self._margins_cache['timestamp']:.1f}s)")
-                return self._margins_cache['value']
+            # Check unified cache first to prevent API hammering
+            cached_margins = self._get_cached_data('margins', 'margins')
+            if cached_margins is not None:
+                return cached_margins
             
             if not self.kite:
                 logger.error("❌ Kite client is None - cannot get margins")
@@ -810,8 +825,8 @@ class ZerodhaIntegration:
 
                 logger.info(f"💰 MARGIN STATUS: Available=₹{real_available:,.2f}, Used=₹{total_used:,.2f}, Cash=₹{cash:,.2f}")
                 
-                # Update cache
-                self._margins_cache = {'value': float(real_available), 'timestamp': current_time}
+                # Update unified cache
+                self._set_cached_data('margins', float(real_available), 'margins')
                 
                 return float(real_available)
 
@@ -834,24 +849,19 @@ class ZerodhaIntegration:
                     self._reset_caches()
             
             # Return cached value if available during errors
-            if self._margins_cache['value'] > 0:
-                logger.debug(f"   Using cached margin value: ₹{self._margins_cache['value']:,.2f}")
-                return self._margins_cache['value']
+            cached_fallback = self._get_cached_data('margins', 'margins')
+            if cached_fallback and cached_fallback > 0:
+                logger.debug(f"   Using cached margin value: ₹{cached_fallback:,.2f}")
+                return cached_fallback
             
             return 0.0
     
     async def get_positions(self) -> Dict:
         """Get positions with retry"""
-        # Check cache first to prevent API hammering
-        current_time = time.time()
-        
-        # 🚨 DEFENSIVE: Ensure cache structure is valid
-        if (isinstance(self._positions_cache, dict) and 
-            'timestamp' in self._positions_cache and 
-            'value' in self._positions_cache and 
-            current_time - self._positions_cache['timestamp'] < self.cache_duration):
-            logger.debug(f"📊 Using cached positions (age: {current_time - self._positions_cache['timestamp']:.1f}s)")
-            return self._positions_cache['value']
+        # Check unified cache first to prevent API hammering
+        cached_positions = self._get_cached_data('positions', 'positions')
+        if cached_positions is not None:
+            return cached_positions
 
         # CRITICAL FIX: Check if kite client is None
         if not self.kite:
@@ -879,8 +889,8 @@ class ZerodhaIntegration:
 
                 logger.info(f"✅ Got positions: {len(result.get('net', []))} net, {len(result.get('day', []))} day")
 
-                # Update cache
-                self._positions_cache = {'value': result, 'timestamp': current_time}
+                # Update unified cache
+                self._set_cached_data('positions', result, 'positions')
                 
                 # Track successful API call
                 self._last_successful_call = f"positions at {datetime.now().strftime('%H:%M:%S')}"
@@ -916,7 +926,7 @@ class ZerodhaIntegration:
                                 result = await self._async_api_call(self.kite.positions)
                                 if result:
                                     logger.info("✅ Position fetch successful after reinitialize")
-                                    self._positions_cache = {'value': result, 'timestamp': current_time}
+                                    self._set_cached_data('positions', result, 'positions')
                                     return result
                             except Exception as retry_e:
                                 logger.error(f"❌ Retry after reinitialize failed: {retry_e}")
@@ -932,9 +942,10 @@ class ZerodhaIntegration:
                     await asyncio.sleep(self.retry_delay)
         
         # Return cached value if available during errors
-        if self._positions_cache['value']:
+        cached_fallback = self._get_cached_data('positions', 'positions')
+        if cached_fallback:
             logger.info(f"   Using cached positions (preventing API hammering)")
-            return self._positions_cache['value']
+            return cached_fallback
         
         return {'net': [], 'day': []}
 
@@ -954,10 +965,11 @@ class ZerodhaIntegration:
 
     async def get_margins(self) -> Dict:
         """Get margins with retry and caching"""
-        now = time.time()
-        if hasattr(self, '_margins_cache') and hasattr(self, '_margins_cache_time') and now - self._margins_cache_time < 10:
+        # Check unified cache first
+        cached_margins = self._get_cached_data('margins_dict', 'margins')
+        if cached_margins is not None:
             logger.info("Using cached margins")
-            return self._margins_cache
+            return cached_margins
         
         # CRITICAL FIX: Check if kite client is None
         if not self.kite:
@@ -973,9 +985,8 @@ class ZerodhaIntegration:
                 result = await self._async_api_call(self.kite.margins)
                 logger.info(f"✅ Got margins: ₹{result.get('equity', {}).get('available', {}).get('cash', 0)}")
                 
-                # Cache the result
-                self._margins_cache = result
-                self._margins_cache_time = now
+                # Cache the result in unified cache
+                self._set_cached_data('margins_dict', result, 'margins')
                 return result
             except Exception as e:
                 logger.error(f"❌ Get margins attempt {attempt + 1} failed: {e}")
