@@ -30,101 +30,10 @@ import math
 import warnings
 warnings.filterwarnings('ignore')
 
-logger = logging.getLogger(__name__)
+# Import our professional mathematical foundation
+from src.core.enhanced_strategy.mathematical_foundation import ProfessionalMathFoundation
 
-class ProfessionalMathFoundation:
-    """Professional mathematical foundation for all strategies"""
-    
-    @staticmethod
-    def garch_atr(prices: np.ndarray, period: int = 14) -> float:
-        """GARCH-enhanced ATR calculation"""
-        try:
-            if len(prices) < period + 5:
-                return np.std(prices) * 0.02 if len(prices) > 1 else 0.02
-            
-            # Calculate returns
-            returns = np.diff(prices) / prices[:-1]
-            
-            # Simple GARCH(1,1) for volatility
-            alpha, beta, omega = 0.1, 0.85, 0.0001
-            variance = np.var(returns[-period:])
-            
-            for i in range(1, min(len(returns), period)):
-                variance = omega + alpha * (returns[-i] ** 2) + beta * variance
-            
-            # ATR with GARCH volatility
-            atr = np.sqrt(variance) * np.mean(prices[-period:])
-            return max(atr, 0.01)  # Minimum ATR
-            
-        except Exception as e:
-            logger.error(f"GARCH ATR calculation failed: {e}")
-            return 0.02
-    
-    @staticmethod
-    def kelly_position_size(win_rate: float, avg_win: float, avg_loss: float, 
-                          capital: float, max_kelly: float = 0.25) -> float:
-        """Kelly criterion for optimal position sizing"""
-        try:
-            if avg_loss <= 0 or win_rate <= 0:
-                return 0.01  # Conservative fallback
-            
-            # Kelly formula: f = (bp - q) / b
-            # where b = avg_win/avg_loss, p = win_rate, q = 1-win_rate
-            b = avg_win / abs(avg_loss)
-            p = win_rate
-            q = 1 - win_rate
-            
-            kelly_fraction = (b * p - q) / b
-            
-            # Cap Kelly fraction for safety
-            kelly_fraction = max(0.01, min(kelly_fraction, max_kelly))
-            
-            return kelly_fraction * capital
-            
-        except Exception as e:
-            logger.error(f"Kelly position sizing failed: {e}")
-            return capital * 0.02  # 2% fallback
-    
-    @staticmethod
-    def sharpe_ratio(returns: np.ndarray, risk_free_rate: float = 0.06) -> float:
-        """Calculate Sharpe ratio"""
-        try:
-            if len(returns) < 2:
-                return 0.0
-            
-            excess_returns = returns - (risk_free_rate / 252)  # Daily risk-free rate
-            return np.mean(excess_returns) / np.std(excess_returns) * np.sqrt(252)
-            
-        except Exception as e:
-            logger.error(f"Sharpe ratio calculation failed: {e}")
-            return 0.0
-    
-    @staticmethod
-    def var_calculation(returns: np.ndarray, confidence: float = 0.05) -> float:
-        """Value at Risk calculation"""
-        try:
-            if len(returns) < 10:
-                return 0.02  # 2% default VaR
-            
-            return np.percentile(returns, confidence * 100)
-            
-        except Exception as e:
-            logger.error(f"VaR calculation failed: {e}")
-            return 0.02
-    
-    @staticmethod
-    def statistical_significance_test(returns: np.ndarray, benchmark: float = 0.0) -> float:
-        """T-test for statistical significance"""
-        try:
-            if len(returns) < 5:
-                return 1.0  # No significance
-            
-            t_stat, p_value = stats.ttest_1samp(returns, benchmark)
-            return p_value
-            
-        except Exception as e:
-            logger.error(f"Statistical significance test failed: {e}")
-            return 1.0
+logger = logging.getLogger(__name__)
 
 class BaseStrategy:
     """
@@ -148,8 +57,7 @@ class BaseStrategy:
         self.last_signal_time = None
         self.signal_cooldown = config.get('signal_cooldown_seconds', 1)
         
-        # PROFESSIONAL MATHEMATICAL FOUNDATION
-        self.math_foundation = ProfessionalMathFoundation()
+        # PROFESSIONAL MATHEMATICAL FOUNDATION - Using static methods
         
         # 🚨 CRITICAL: Duplicate order prevention system
         self._recent_orders = {}  # Track recent orders to prevent duplicates
@@ -1663,7 +1571,7 @@ class BaseStrategy:
                 prices = np.array([h['close'] for h in history])
                 
                 # GARCH-enhanced ATR (our competitive advantage)
-                garch_atr = self.math_foundation.garch_atr(prices, period)
+                garch_atr = ProfessionalMathFoundation.garch_atr(prices, period)
                 
                 # Traditional ATR for ensemble
                 traditional_atr = self._calculate_traditional_atr_internal(history, period)
@@ -1754,9 +1662,9 @@ class BaseStrategy:
                 recent_returns = np.array(self.strategy_returns[-20:])  # Last 20 trades
                 
                 # Update professional metrics
-                self.performance_attribution['sharpe_ratio'] = self.math_foundation.sharpe_ratio(recent_returns)
-                self.performance_attribution['var_95'] = self.math_foundation.var_calculation(recent_returns)
-                self.performance_attribution['statistical_significance'] = self.math_foundation.statistical_significance_test(recent_returns)
+                self.performance_attribution['sharpe_ratio'] = ProfessionalMathFoundation.sharpe_ratio(recent_returns)
+                self.performance_attribution['var_95'] = ProfessionalMathFoundation.var_calculation(recent_returns)
+                self.performance_attribution['statistical_significance'] = ProfessionalMathFoundation.statistical_significance_test(recent_returns)
                 
                 # Calculate win rate and average win/loss
                 wins = recent_returns[recent_returns > 0]
@@ -1768,7 +1676,7 @@ class BaseStrategy:
                 
                 # Calculate Kelly optimal size
                 if len(wins) > 0 and len(losses) > 0:
-                    self.performance_attribution['kelly_optimal_size'] = self.math_foundation.kelly_position_size(
+                    self.performance_attribution['kelly_optimal_size'] = ProfessionalMathFoundation.kelly_position_size(
                         self.performance_attribution['win_rate'],
                         abs(self.performance_attribution['avg_win']),
                         abs(self.performance_attribution['avg_loss']),
