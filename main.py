@@ -227,6 +227,14 @@ async def lifespan(app: FastAPI):
             # Store the instance globally for API access
             set_orchestrator_instance(orchestrator)
             logger.info("✅ Trading Orchestrator initialized successfully!")
+            
+            # Initialize signal lifecycle manager
+            try:
+                from src.core.signal_lifecycle_manager import start_signal_lifecycle_management
+                await start_signal_lifecycle_management()
+                logger.info("✅ Signal lifecycle manager started")
+            except Exception as e:
+                logger.error(f"❌ Failed to start signal lifecycle manager: {e}")
             logger.info("🎯 Autonomous trading endpoints should now work")
         else:
             logger.error("❌ Failed to initialize orchestrator instance")

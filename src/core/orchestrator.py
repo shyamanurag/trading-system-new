@@ -1625,6 +1625,25 @@ class TradingOrchestrator:
                                         validated_signal['strategy'] = strategy_key
                                         validated_signal['signal_id'] = f"{strategy_key}_{symbol}_{int(datetime.now().timestamp())}"
                                         validated_signal['generated_at'] = datetime.now().isoformat()
+                                        
+                                        # 🎯 RECORD SIGNAL TO ELITE RECOMMENDATIONS
+                                        try:
+                                            from src.core.signal_recorder import record_signal
+                                            signal_id = await record_signal(validated_signal, strategy_key)
+                                            validated_signal['recorded_signal_id'] = signal_id
+                                            self.logger.info(f"📊 SIGNAL RECORDED TO ELITE: {signal_id} - {symbol} {validated_signal.get('action')}")
+                                            
+                                            # 🎯 REGISTER SIGNAL IN LIFECYCLE MANAGER
+                                            try:
+                                                from src.core.signal_lifecycle_manager import register_signal_lifecycle, SignalLifecycleStage
+                                                await register_signal_lifecycle(signal_id, validated_signal, SignalLifecycleStage.VALIDATED)
+                                                self.logger.debug(f"📝 Signal registered in lifecycle manager: {signal_id}")
+                                            except Exception as lifecycle_error:
+                                                self.logger.error(f"❌ Failed to register signal in lifecycle manager: {lifecycle_error}")
+                                                
+                                        except Exception as record_error:
+                                            self.logger.error(f"❌ Failed to record signal to elite recommendations: {record_error}")
+                                        
                                         all_signals.append(validated_signal.copy())
                                         signals_generated += 1
                                         self.logger.info(f"✅ VALIDATED SIGNAL: {strategy_key} -> {validated_signal}")

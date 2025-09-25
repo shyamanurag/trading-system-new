@@ -150,6 +150,17 @@ class TradeEngine:
                     # 🚨 CRITICAL FIX: Mark signal as executed to prevent duplicates across deploys
                     await self._mark_signal_executed_in_deduplicator(signal)
                     self.logger.info(f"✅ Signal executed: {signal.get('symbol')} {signal.get('action')} ({i+1}/{len(signals)})")
+                    
+                    # 🎯 UPDATE SIGNAL LIFECYCLE STAGE
+                    try:
+                        from src.core.signal_lifecycle_manager import update_signal_lifecycle_stage, SignalLifecycleStage
+                        recorded_signal_id = signal.get('recorded_signal_id')
+                        if recorded_signal_id:
+                            await update_signal_lifecycle_stage(recorded_signal_id, SignalLifecycleStage.EXECUTED)
+                            self.logger.debug(f"📝 Signal lifecycle updated: {recorded_signal_id} -> EXECUTED")
+                    except Exception as lifecycle_error:
+                        self.logger.error(f"❌ Failed to update signal lifecycle: {lifecycle_error}")
+                    
                     # On success, purge attempt tracking for this signal
                     try:
                         from src.core.signal_deduplicator import signal_deduplicator as _ded
@@ -162,6 +173,16 @@ class TradeEngine:
                     # TRACK: Signal execution failed
                     self._track_signal_execution_failed(signal, "Execution returned None")
                     self.logger.error(f"❌ Signal execution failed: {signal.get('symbol')} {signal.get('action')} ({i+1}/{len(signals)})")
+                    
+                    # 🎯 UPDATE SIGNAL LIFECYCLE STAGE TO FAILED
+                    try:
+                        from src.core.signal_lifecycle_manager import update_signal_lifecycle_stage, SignalLifecycleStage
+                        recorded_signal_id = signal.get('recorded_signal_id')
+                        if recorded_signal_id:
+                            await update_signal_lifecycle_stage(recorded_signal_id, SignalLifecycleStage.FAILED)
+                            self.logger.debug(f"📝 Signal lifecycle updated: {recorded_signal_id} -> FAILED")
+                    except Exception as lifecycle_error:
+                        self.logger.error(f"❌ Failed to update signal lifecycle: {lifecycle_error}")
                     
             except Exception as e:
                 execution_results.append(None)

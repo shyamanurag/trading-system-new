@@ -439,35 +439,58 @@ autonomous_scanner = AutonomousEliteScanner()
 
 @router.get("/")
 async def get_elite_recommendations():
-    """Get current elite trading recommendations using REAL strategies"""
+    """Get current elite trading recommendations using REAL strategies + Live Signal Recorder"""
     try:
-        # Use intelligent caching
+        # Get live recorded signals from signal recorder
+        from src.core.signal_recorder import get_all_elite_recommendations
+        live_recommendations = await get_all_elite_recommendations()
+        
+        # Use intelligent caching for strategy-based recommendations
         cache_duration_seconds = 30
         
         if autonomous_scanner.last_scan_time is None or \
            (datetime.now() - autonomous_scanner.last_scan_time).total_seconds() > cache_duration_seconds:
             logger.info("🔄 Running fresh elite scan using REAL strategies...")
-            recommendations = await autonomous_scanner.scan_for_elite_setups()
-            autonomous_scanner.cached_recommendations = recommendations
+            strategy_recommendations = await autonomous_scanner.scan_for_elite_setups()
+            autonomous_scanner.cached_recommendations = strategy_recommendations
         else:
             logger.info("⚡ Using cached elite recommendations")
-            recommendations = autonomous_scanner.cached_recommendations
+            strategy_recommendations = autonomous_scanner.cached_recommendations
         
-        # Filter only ACTIVE recommendations
-        active_recommendations = [r for r in recommendations if r.get('status') == 'ACTIVE']
+        # Combine live signals with strategy recommendations
+        all_recommendations = live_recommendations + strategy_recommendations
+        
+        # Filter only ACTIVE recommendations and remove duplicates
+        seen_symbols = set()
+        active_recommendations = []
+        
+        for rec in all_recommendations:
+            if rec.get('status') in ['ACTIVE', 'GENERATED', 'PENDING_EXECUTION']:
+                symbol = rec.get('symbol')
+                if symbol not in seen_symbols:
+                    active_recommendations.append(rec)
+                    seen_symbols.add(symbol)
+        
+        # Sort by timestamp (newest first)
+        active_recommendations.sort(
+            key=lambda x: x.get('generated_at', ''), 
+            reverse=True
+        )
         
         return {
             "success": True,
             "recommendations": active_recommendations,
             "total_count": len(active_recommendations),
+            "live_signals": len(live_recommendations),
+            "strategy_signals": len(strategy_recommendations),
             "status": "ACTIVE",
-            "message": f"Found {len(active_recommendations)} elite recommendations from REAL strategies",
-            "data_source": "REAL_STRATEGY_GENERATED",
+            "message": f"Found {len(active_recommendations)} elite recommendations ({len(live_recommendations)} live + {len(strategy_recommendations)} strategy)",
+            "data_source": "LIVE_SIGNALS_AND_REAL_STRATEGIES",
             "scan_timestamp": autonomous_scanner.last_scan_time.isoformat() if autonomous_scanner.last_scan_time else datetime.now().isoformat(),
             "timestamp": datetime.now().isoformat(),
             "next_scan": (datetime.now() + timedelta(minutes=autonomous_scanner.scan_interval_minutes)).isoformat(),
             "strategies_used": list(autonomous_scanner.strategies.keys()) if autonomous_scanner.strategies else [],
-            "cache_status": "REAL_STRATEGY_BASED_RECOMMENDATIONS"
+            "cache_status": "LIVE_SIGNALS_INTEGRATED"
         }
         
     except Exception as e:
@@ -566,3 +589,71 @@ async def get_scanner_status():
     except Exception as e:
         logger.error(f"Error getting scanner status: {e}")
         raise HTTPException(status_code=500, detail="Failed to get scanner status")
+
+@router.get("/signal-statistics")
+async def get_signal_statistics():
+    """Get comprehensive signal statistics from live trading"""
+    try:
+        from src.core.signal_recorder import signal_recorder
+        stats = await signal_recorder.get_signal_statistics()
+        
+        return {
+            "success": True,
+            "statistics": stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting signal statistics: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get signal statistics")
+
+@router.get("/live-signals")
+async def get_live_signals():
+    """Get all live signals recorded from strategies"""
+    try:
+        from src.core.signal_recorder import get_all_elite_recommendations
+        live_signals = await get_all_elite_recommendations()
+        
+        return {
+            "success": True,
+            "live_signals": live_signals,
+            "total_count": len(live_signals),
+            "message": f"Retrieved {len(live_signals)} live signals from active trading",
+            "data_source": "LIVE_SIGNAL_RECORDER",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting live signals: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get live signals")
+
+@router.get("/signal-lifecycle")
+async def get_signal_lifecycle_stats():
+    """Get comprehensive signal lifecycle statistics"""
+    try:
+        from src.core.signal_lifecycle_manager import get_signal_lifecycle_stats
+        stats = await get_signal_lifecycle_stats()
+        
+        return {
+            "success": True,
+            "lifecycle_stats": stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting signal lifecycle stats: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get signal lifecycle statistics")
+
+@router.post("/cleanup-expired-signals")
+async def cleanup_expired_signals():
+    """Manually trigger cleanup of expired signals"""
+    try:
+        from src.core.signal_lifecycle_manager import cleanup_expired_signals
+        cleanup_results = await cleanup_expired_signals()
+        
+        return {
+            "success": True,
+            "cleanup_results": cleanup_results,
+            "message": f"Cleaned up {cleanup_results.get('expired_signals', 0)} expired signals",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error cleaning up expired signals: {e}")
+        raise HTTPException(status_code=500, detail="Failed to cleanup expired signals")

@@ -231,6 +231,26 @@ class OrderManager:
                     except Exception as pos_error:
                         logger.error(f"❌ Position tracker update error for {order.symbol}: {pos_error}")
                 
+                # 🎯 UPDATE SIGNAL STATUS IN ELITE RECOMMENDATIONS
+                try:
+                    from src.core.signal_recorder import update_signal_status, SignalStatus
+                    # Check if this order has a recorded signal ID
+                    recorded_signal_id = getattr(order, 'recorded_signal_id', None)
+                    if recorded_signal_id:
+                        execution_data = {
+                            'timestamp': datetime.now(),
+                            'price': result.get('average_price', order.price),
+                            'status': result.get('status'),
+                            'pnl': None,  # Will be updated when position is closed
+                            'pnl_percent': None,
+                            'outcome': None
+                        }
+                        
+                        await update_signal_status(recorded_signal_id, SignalStatus.EXECUTED, execution_data)
+                        logger.info(f"📊 SIGNAL STATUS UPDATED: {recorded_signal_id} -> EXECUTED")
+                except Exception as status_error:
+                    logger.error(f"❌ Failed to update signal status in elite recommendations: {status_error}")
+                
                 # Record trade in database
                 if db_ops:
                     trade_data = {
