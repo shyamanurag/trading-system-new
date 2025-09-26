@@ -1608,7 +1608,7 @@ class TradingOrchestrator:
                                         strategy_instance._record_order_placement(symbol)
                                     
                                     # 🎯 POST-SIGNAL LTP VALIDATION: Fix 0.0 entry prices
-                                    validated_signal = self._validate_and_fix_signal_ltp(signal)
+                                    validated_signal = await self._validate_and_fix_signal_ltp(signal)
                                     
                                     # 🚨 ENHANCED POSITION OPENING DECISION
                                     if validated_signal:
