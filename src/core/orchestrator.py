@@ -3232,7 +3232,7 @@ class TradingOrchestrator:
             try:
                 if hasattr(self, 'zerodha_client') and self.zerodha_client:
                     margins = await self.zerodha_client.get_margins()
-                    if margins and 'equity' in margins:
+                    if margins and isinstance(margins, dict) and 'equity' in margins:
                         available_capital = float(margins['equity'].get('available', {}).get('cash', 500000))
             except Exception as capital_error:
                 self.logger.debug(f"Could not get actual capital, using default: {capital_error}")

@@ -433,7 +433,27 @@ class EnhancedPositionOpeningDecision:
             # Use risk manager if available
             if risk_manager:
                 try:
-                    risk_validation = await risk_manager.validate_signal(signal)
+                    # Convert dictionary signal to Signal object for risk manager
+                    from src.core.models import Signal, OrderSide, OptionType
+                    
+                    # Create Signal object from dictionary
+                    signal_obj = Signal(
+                        signal_id=signal.get('signal_id', f"pos_decision_{symbol}_{int(datetime.now().timestamp())}"),
+                        strategy_name=signal.get('strategy', 'unknown'),
+                        symbol=symbol,
+                        option_type=OptionType.CALL if 'CE' in symbol else OptionType.PUT if 'PE' in symbol else OptionType.CALL,
+                        strike=float(signal.get('strike', 0.0)),
+                        action=OrderSide.BUY if action == 'BUY' else OrderSide.SELL,
+                        quality_score=float(signal.get('confidence', 0.0)),
+                        quantity=int(signal.get('quantity', 100)),
+                        entry_price=entry_price,
+                        stop_loss_percent=float(signal.get('stop_loss_percent', 5.0)),  # Default 5%
+                        target_percent=float(signal.get('target_percent', 10.0)),  # Default 10%
+                        timestamp=datetime.now(),
+                        metadata=signal.get('metadata', {})
+                    )
+                    
+                    risk_validation = await risk_manager.validate_signal(signal_obj)
                     if not risk_validation.get('approved', False):
                         return PositionDecisionResult(
                             decision=PositionDecision.REJECTED_RISK,
