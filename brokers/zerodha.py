@@ -107,7 +107,12 @@ class ZerodhaIntegration:
             logger.info("✅ Zerodha access token set")
             self._initialize_kite()
         else:
-            logger.warning("⚠️ Zerodha credentials incomplete")
+            logger.warning("⚠️ Zerodha credentials incomplete - KiteConnect not initialized")
+            logger.warning(f"   API Key: {'✅' if self.api_key else '❌'}")
+            logger.warning(f"   Access Token: {'✅' if self.access_token else '❌'}")
+            logger.warning("   Will NOT attempt continuous reconnection without valid credentials")
+            self.kite = None
+            self.is_connected = False
 
     def _get_cached_data(self, cache_key: str, cache_type: str = 'default') -> Any:
         """Get cached data from unified cache if still valid"""
@@ -168,6 +173,19 @@ class ZerodhaIntegration:
     def _initialize_kite(self):
         """Initialize KiteConnect instance"""
         try:
+            # Validate required parameters
+            if not self.api_key:
+                logger.error("❌ ZERODHA_API_KEY not provided")
+                self.kite = None
+                self.is_connected = False
+                return
+                
+            if not self.access_token:
+                logger.error("❌ ZERODHA_ACCESS_TOKEN not provided")
+                self.kite = None
+                self.is_connected = False
+                return
+            
             from kiteconnect import KiteConnect
             self.kite = KiteConnect(api_key=self.api_key)
             self.kite.set_access_token(self.access_token)
@@ -865,11 +883,14 @@ class ZerodhaIntegration:
 
         # CRITICAL FIX: Check if kite client is None
         if not self.kite:
-            logger.error("❌ Zerodha kite client is None - attempting to reinitialize")
-            self._initialize_kite()
-            if not self.kite:
-                logger.error("❌ Zerodha kite client reinitialize failed")
-                return {'net': [], 'day': []}
+            if self.api_key and self.access_token:
+                logger.error("❌ Zerodha kite client is None - attempting to reinitialize")
+                self._initialize_kite()
+                if not self.kite:
+                    logger.error("❌ Zerodha kite client reinitialize failed")
+            else:
+                logger.debug("⚠️ Zerodha kite client is None - missing credentials, skipping reinitialize")
+            return {'net': [], 'day': []}
 
         for attempt in range(self.max_retries):
             try:
@@ -973,11 +994,14 @@ class ZerodhaIntegration:
         
         # CRITICAL FIX: Check if kite client is None
         if not self.kite:
-            logger.error("❌ Zerodha kite client is None - attempting to reinitialize")
-            self._initialize_kite()
-            if not self.kite:
-                logger.error("❌ Zerodha kite client reinitialize failed")
-                return {'equity': {'available': {'cash': 0}}}
+            if self.api_key and self.access_token:
+                logger.error("❌ Zerodha kite client is None - attempting to reinitialize")
+                self._initialize_kite()
+                if not self.kite:
+                    logger.error("❌ Zerodha kite client reinitialize failed")
+            else:
+                logger.debug("⚠️ Zerodha kite client is None - missing credentials, skipping reinitialize")
+            return {'equity': {'available': {'cash': 0}}}
         
         for attempt in range(self.max_retries):
             try:
@@ -1004,11 +1028,14 @@ class ZerodhaIntegration:
         
         # CRITICAL FIX: Check if kite client is None
         if not self.kite:
-            logger.error("❌ Zerodha kite client is None - attempting to reinitialize")
-            self._initialize_kite()
-            if not self.kite:
-                logger.error("❌ Zerodha kite client reinitialize failed")
-                return []
+            if self.api_key and self.access_token:
+                logger.error("❌ Zerodha kite client is None - attempting to reinitialize")
+                self._initialize_kite()
+                if not self.kite:
+                    logger.error("❌ Zerodha kite client reinitialize failed")
+            else:
+                logger.debug("⚠️ Zerodha kite client is None - missing credentials, skipping reinitialize")
+            return []
         
         for attempt in range(self.max_retries):
             try:

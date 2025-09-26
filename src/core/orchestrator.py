@@ -1173,7 +1173,8 @@ class TradingOrchestrator:
         """Initialize Zerodha client from environment variables"""
         try:
             api_key = os.environ.get('ZERODHA_API_KEY')
-            user_id = os.environ.get('ZERODHA_USER_ID')  # Note: corrected variable name
+            user_id = os.environ.get('ZERODHA_USER_ID', 'QSW899')  # Use default if not set
+            api_secret = os.environ.get('ZERODHA_API_SECRET')
             
             if api_key and user_id:
                 self.logger.info(f"✅ Using Zerodha credentials from environment: API Key: {api_key[:8]}..., User ID: {user_id}")
@@ -1290,11 +1291,14 @@ class TradingOrchestrator:
                     if access_token:
                         self.logger.info(f"✅ Zerodha initializing with token for user {user_id}: {access_token[:10]}...")
                     else:
-                        self.logger.info(f"🔧 Zerodha initializing WITHOUT token for user {user_id} - will accept token from frontend")
+                        self.logger.warning(f"⚠️ Zerodha initializing WITHOUT token for user {user_id} - this will cause authentication failures!")
+                        self.logger.warning("   Please ensure ZERODHA_ACCESS_TOKEN is set or token is stored in Redis")
                     self.logger.info("🔄 Zerodha using REAL API for live trading")
                 else:
                     self.logger.error(f"❌ Missing Zerodha API credentials - cannot initialize")
-                    raise ValueError("Missing required Zerodha API credentials")
+                    self.logger.error(f"   API Key: {'✅' if api_key else '❌'}")
+                    self.logger.error(f"   User ID: {'✅' if user_id else '❌'}")
+                    return None
                 
                 # Create unified broker instance with built-in resilience
                 zerodha_client = ZerodhaIntegration(unified_config)
