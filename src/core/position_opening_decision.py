@@ -182,6 +182,10 @@ class EnhancedPositionOpeningDecision:
                 
         except Exception as e:
             logger.error(f"❌ Error evaluating position opening: {e}")
+            logger.error(f"❌ Error type: {type(e)}")
+            logger.error(f"❌ Error details: {str(e)}")
+            import traceback
+            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
             return PositionDecisionResult(
                 decision=PositionDecision.REJECTED_RISK,
                 confidence_score=0.0,

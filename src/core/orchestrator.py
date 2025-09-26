@@ -3251,6 +3251,10 @@ class TradingOrchestrator:
             
         except Exception as e:
             self.logger.error(f"❌ Error evaluating position opening decision: {e}")
+            self.logger.error(f"❌ Error type: {type(e)}")
+            self.logger.error(f"❌ Error details: {str(e)}")
+            import traceback
+            self.logger.error(f"❌ Full traceback: {traceback.format_exc()}")
             # Return a default rejection result
             from src.core.position_opening_decision import PositionDecisionResult, PositionDecision
             return PositionDecisionResult(
