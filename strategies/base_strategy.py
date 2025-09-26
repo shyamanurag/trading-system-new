@@ -2367,8 +2367,8 @@ class BaseStrategy:
                 'target': self._round_to_tick_size(options_target),            # 🎯 FIXED: Tick size rounding
                 'strategy': self.name,  # Use 'strategy' for compatibility
                 'strategy_name': self.name,  # Also include strategy_name for new components
-                'confidence': round(min(confidence, 0.9), 2),
-                'quality_score': round(min(confidence, 0.9), 2),  # Map confidence to quality_score
+                'confidence': round(confidence, 2),
+                'quality_score': round(confidence, 2),  # Map confidence to quality_score
                 
                 # Risk metrics
                 'risk_metrics': {
