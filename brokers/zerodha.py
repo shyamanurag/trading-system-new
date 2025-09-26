@@ -65,6 +65,12 @@ class ZerodhaIntegration:
         # Rate limit tracking
         self._last_rate_limit_log = 0
         
+        # Instruments cache attributes (missing initialization)
+        self._instruments_cache = {}
+        self._nfo_instruments = None
+        self._nse_instruments = None
+        self._instruments_last_fetched = {}
+        
         # WebSocket attributes
         self.ticker = None
         self.health_check_interval = 30
@@ -206,6 +212,7 @@ class ZerodhaIntegration:
         try:
             self._unified_cache.clear()
             # Reset separate instrument caches
+            self._instruments_cache = {}
             self._nfo_instruments = None
             self._nse_instruments = None
             self._instruments_last_fetched = {}
