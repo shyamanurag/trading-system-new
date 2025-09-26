@@ -304,27 +304,102 @@ class SignalRecorder:
             return False
     
     async def get_elite_recommendations(self) -> List[Dict[str, Any]]:
-        """Get all current elite recommendations"""
+        """Get all current elite recommendations with LIVE price updates"""
         try:
             # Clean up expired recommendations
             await self._cleanup_expired_signals()
             
-            # Return active recommendations sorted by timestamp (newest first)
+            # Get active recommendations
             active_recommendations = [
                 rec for rec in self.elite_recommendations 
                 if rec.get('status') in ['ACTIVE', 'GENERATED', 'PENDING_EXECUTION']
             ]
             
-            active_recommendations.sort(
+            # 🎯 UPDATE CURRENT PRICES for all active recommendations
+            updated_recommendations = []
+            for rec in active_recommendations:
+                try:
+                    # Create a copy to avoid modifying original
+                    updated_rec = rec.copy()
+                    
+                    # Get current price from TrueData
+                    symbol = rec.get('symbol', '')
+                    current_price = await self._get_current_price(symbol)
+                    
+                    if current_price and current_price > 0:
+                        # Update current price
+                        updated_rec['current_price'] = current_price
+                        
+                        # Recalculate P&L if we have entry price
+                        entry_price = rec.get('entry_price', 0)
+                        if entry_price > 0:
+                            action = rec.get('action', 'BUY').upper()
+                            if action == 'BUY':
+                                pnl_percent = ((current_price - entry_price) / entry_price) * 100
+                            else:  # SELL
+                                pnl_percent = ((entry_price - current_price) / entry_price) * 100
+                            
+                            updated_rec['pnl_percent'] = round(pnl_percent, 2)
+                            updated_rec['pnl_amount'] = round((current_price - entry_price) * rec.get('quantity', 1), 2)
+                            
+                            # Update status based on P&L
+                            if abs(pnl_percent) > 0.1:  # More than 0.1% movement
+                                updated_rec['price_updated'] = True
+                                updated_rec['last_price_update'] = datetime.now().isoformat()
+                    else:
+                        # Keep original entry price as current if no live data
+                        updated_rec['current_price'] = rec.get('entry_price', 0)
+                        updated_rec['pnl_percent'] = 0.0
+                        updated_rec['pnl_amount'] = 0.0
+                    
+                    updated_recommendations.append(updated_rec)
+                    
+                except Exception as price_error:
+                    logger.warning(f"⚠️ Could not update price for {rec.get('symbol')}: {price_error}")
+                    # Add original recommendation without price update
+                    updated_recommendations.append(rec)
+            
+            # Sort by timestamp (newest first)
+            updated_recommendations.sort(
                 key=lambda x: datetime.fromisoformat(x['generated_at']), 
                 reverse=True
             )
             
-            return active_recommendations
+            return updated_recommendations
             
         except Exception as e:
             logger.error(f"❌ Error getting elite recommendations: {e}")
             return []
+    
+    async def _get_current_price(self, symbol: str) -> Optional[float]:
+        """Get current price for a symbol from TrueData shared cache"""
+        try:
+            # Get from TrueData shared cache
+            from data.truedata_client import live_market_data
+            
+            if symbol in live_market_data:
+                price = live_market_data[symbol].get('ltp', 0)
+                if price > 0:
+                    return float(price)
+            
+            # Fallback: Try to get from orchestrator market data
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                
+                if orchestrator and hasattr(orchestrator, 'market_data_cache'):
+                    market_data = orchestrator.market_data_cache.get(symbol, {})
+                    price = market_data.get('ltp', 0)
+                    if price > 0:
+                        return float(price)
+            except Exception:
+                pass
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Error getting current price for {symbol}: {e}")
+            return None
     
     async def get_signal_statistics(self) -> Dict[str, Any]:
         """Get comprehensive signal statistics"""
