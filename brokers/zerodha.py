@@ -70,6 +70,10 @@ class ZerodhaIntegration:
         self._nfo_instruments = None
         self._nse_instruments = None
         self._instruments_last_fetched = {}
+        self._instruments_cache_duration = 3600  # 1 hour cache for instruments
+        self._last_instruments_call = 0  # Track last instruments API call for rate limiting
+        self._symbol_to_token = {}  # Fast lookup for instrument tokens by tradingsymbol
+        self._last_successful_call = None  # Track last successful API call
         
         # WebSocket attributes
         self.ticker = None
@@ -96,8 +100,6 @@ class ZerodhaIntegration:
         self._nse_instruments = None
         self._instruments_last_fetched = {}
         self._instruments_cache_duration = 3600  # 1 hour cache for instruments
-        # Fast lookup for instrument tokens by tradingsymbol
-        self._symbol_to_token: Dict[str, Any] = {}
         
         # Circuit breaker for symbol validation to prevent rate limiting
         self._validation_circuit_breaker = {
