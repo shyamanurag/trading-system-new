@@ -69,8 +69,18 @@ def setup_redis_client():
 # Call setup at module level
 setup_redis_client()
 
-def safe_json_serialize(obj):
-    """Safely serialize objects to JSON, handling complex types and circular references"""
+def safe_json_serialize(obj, _depth=0, _seen=None):
+    """Safely serialize objects to JSON with recursion and circular reference protection"""
+    # CRITICAL FIX: Prevent infinite recursion
+    MAX_DEPTH = 10
+    if _depth > MAX_DEPTH:
+        logger.warning(f"⚠️ Max serialization depth ({MAX_DEPTH}) exceeded")
+        return str(obj)[:100]  # Truncate to prevent memory issues
+    
+    # CRITICAL FIX: Track seen objects to prevent circular references
+    if _seen is None:
+        _seen = set()
+    
     try:
         # Handle datetime objects
         if hasattr(obj, 'isoformat'):
@@ -90,18 +100,33 @@ def safe_json_serialize(obj):
         
         # Handle lists and tuples
         if isinstance(obj, (list, tuple)):
-            return [safe_json_serialize(item) for item in obj]
+            obj_id = id(obj)
+            if obj_id in _seen:
+                return "[CIRCULAR_REFERENCE]"
+            _seen.add(obj_id)
+            result = [safe_json_serialize(item, _depth + 1, _seen) for item in obj]
+            _seen.discard(obj_id)
+            return result
         
         # Handle dictionaries
         if isinstance(obj, dict):
-            return {str(k): safe_json_serialize(v) for k, v in obj.items()}
+            obj_id = id(obj)
+            if obj_id in _seen:
+                return {"error": "CIRCULAR_REFERENCE"}
+            _seen.add(obj_id)
+            result = {str(k): safe_json_serialize(v, _depth + 1, _seen) for k, v in obj.items()}
+            _seen.discard(obj_id)
+            return result
         
         # For other objects, convert to string representation
-        return str(obj)
+        return str(obj)[:200]  # Truncate long strings
         
+    except RecursionError as re:
+        logger.error(f"❌ RECURSION ERROR in safe_json_serialize: {re}")
+        return "[RECURSION_ERROR]"
     except Exception as e:
         logger.warning(f"⚠️ JSON serialization error: {e}")
-        return str(obj)
+        return str(obj)[:100]
 
 def create_safe_market_data(market_data):
     """Create a safe version of market data for Redis storage"""
@@ -831,10 +856,25 @@ class TrueDataClient:
         if not self.td_obj:
             logger.error("❌ TrueData object is None - cannot setup callback")
             return
+        
+        # CRITICAL FIX: Track callback execution to prevent recursion loops
+        callback_execution_count = {'count': 0, 'last_reset': time.time()}
+        MAX_CALLBACKS_PER_SECOND = 1000  # Reasonable limit for high-frequency data
             
         @self.td_obj.trade_callback
         def on_tick_data(tick_data):
             """Process tick data from TrueData with Redis caching - OPTIONS PREMIUM AWARE"""
+            # CRITICAL FIX: Rate limit callback execution to prevent runaway recursion
+            current_time = time.time()
+            if current_time - callback_execution_count['last_reset'] > 1.0:
+                callback_execution_count['count'] = 0
+                callback_execution_count['last_reset'] = current_time
+            
+            callback_execution_count['count'] += 1
+            if callback_execution_count['count'] > MAX_CALLBACKS_PER_SECOND:
+                logger.error(f"❌ CALLBACK RATE LIMIT EXCEEDED: {callback_execution_count['count']}/sec - Dropping tick")
+                return  # Drop this tick to prevent system overload
+            
             try:
                 # DEBUG: Log all available attributes to understand TrueData schema
                 if hasattr(tick_data, '__dict__'):
@@ -1012,12 +1052,25 @@ class TrueDataClient:
                               f"OHLC: {'✓' if quality['has_ohlc'] else '✗'} | "
                               f"Deploy: {self._deployment_id}")
                 
+            except RecursionError as re:
+                # CRITICAL FIX: Catch recursion errors specifically to prevent cascading failures
+                logger.error(f"❌ RECURSION ERROR in tick callback: {re}")
+                logger.error("🚨 This tick will be dropped to prevent system crash")
+                # DO NOT re-raise - let the tick be dropped silently
+                return
             except Exception as e:
-                logger.error(f"Error processing tick data: {e}")
-                import traceback
-                logger.error(f"Traceback: {traceback.format_exc()}")
+                # CRITICAL FIX: Never let exceptions propagate from callback
+                # This prevents TrueData library from retrying and creating recursion loops
+                logger.error(f"❌ Error processing tick data (CONTAINED): {e}")
+                try:
+                    import traceback
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+                except:
+                    pass  # Even traceback logging shouldn't crash
+                # DO NOT re-raise - absorb all errors to prevent callback recursion
+                return
                 
-        logger.info("✅ TrueData callback setup complete with FIXED field mapping")
+        logger.info("✅ TrueData callback setup complete with RECURSION PROTECTION")
 
     def get_status(self):
         """Get comprehensive status including deployment info"""
