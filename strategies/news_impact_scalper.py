@@ -761,20 +761,53 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             option_type = 'CE' if price_change > 0 else 'PE'
             action = 'BUY'  # Always BUY options
             
-            # Generate options signal using base strategy method
+            # Calculate dynamic ATR for the underlying
+            high = underlying_data.get('high', ltp)
+            low = underlying_data.get('low', ltp)
+            prev_close = underlying_data.get('prev_close', ltp)
+            atr = self.calculate_atr(underlying_symbol, high, low, ltp, period=14)
+            
+            # Calculate dynamic stop loss using ATR (Professional risk management)
+            dynamic_stop = self.calculate_dynamic_stop_loss(
+                entry_price=ltp,
+                atr=atr,
+                action=action,
+                multiplier=2.0,  # 2x ATR for options
+                min_percent=2.0,  # Min 2% for options volatility
+                max_percent=8.0   # Max 8% for options
+            )
+            
+            # Calculate dynamic target using risk-reward ratio
+            dynamic_target = self.calculate_dynamic_target(
+                entry_price=ltp,
+                stop_loss=dynamic_stop,
+                risk_reward_ratio=None  # Auto-adapt based on market regime
+            )
+            
+            # Calculate dynamic confidence based on multiple factors
+            volume_strength = min(volume / 1000000, 1.0)  # Normalize volume
+            price_strength = min(abs(price_change) / 2.0, 1.0)  # Normalize price change
+            base_confidence = 0.7 + (volume_strength * 0.15) + (price_strength * 0.15)  # 0.7-1.0 range
+            dynamic_confidence = min(max(base_confidence, 0.75), 0.95)  # Clamp between 0.75-0.95
+            
+            # Generate options signal using base strategy method with DYNAMIC parameters
             signal = await self.create_standard_signal(
                 symbol=underlying_symbol,  # Will be converted to options symbol
                 action=action,
                 entry_price=ltp,
-                stop_loss=ltp * 0.95 if action == 'BUY' else ltp * 1.05,
-                target=ltp * 1.10 if action == 'BUY' else ltp * 0.90,
-                confidence=8.5,  # High confidence for options
+                stop_loss=dynamic_stop,
+                target=dynamic_target,
+                confidence=dynamic_confidence,
                 metadata={
                     'strategy': self.strategy_name,
                     'option_type': option_type,
                     'underlying_change': price_change,
                     'volume': volume,
-                    'signal_type': 'OPTIONS'
+                    'signal_type': 'OPTIONS',
+                    'atr': round(atr, 2),
+                    'calculated_confidence': round(dynamic_confidence, 2),
+                    'volume_strength': round(volume_strength, 2),
+                    'price_strength': round(price_strength, 2)
                 },
                 market_bias=self.market_bias  # 🎯 Pass market bias for coordination
             )

@@ -284,6 +284,54 @@ class AutonomousEliteScanner:
             reward_percent = abs((target - entry_price) / entry_price) * 100
             risk_reward_ratio = reward_percent / risk_percent if risk_percent > 0 else 3.0
             
+            # Calculate dynamic timeframe based on risk/reward and strategy
+            # Higher R:R or options = longer timeframe, scalping = shorter timeframe
+            is_options = 'CE' in signal.get('symbol', '') or 'PE' in signal.get('symbol', '')
+            if is_options:
+                timeframe = "3-7 days"  # Options with theta decay
+                valid_days = 5
+            elif risk_reward_ratio >= 2.5:
+                timeframe = "5-10 days"  # Swing trades
+                valid_days = 7
+            elif risk_reward_ratio >= 1.5:
+                timeframe = "2-5 days"  # Short-term momentum
+                valid_days = 4
+            else:
+                timeframe = "1-3 days"  # Scalping/intraday
+                valid_days = 2
+            
+            # Calculate dynamic position size based on confidence and risk
+            # Higher confidence + lower risk = larger position size
+            if signal['confidence'] >= 0.90 and risk_percent <= 2.0:
+                position_size_percent = 3.0  # 3% of capital
+            elif signal['confidence'] >= 0.85 and risk_percent <= 3.0:
+                position_size_percent = 2.5  # 2.5% of capital
+            elif signal['confidence'] >= 0.80:
+                position_size_percent = 2.0  # 2% of capital
+            elif signal['confidence'] >= 0.75:
+                position_size_percent = 1.5  # 1.5% of capital
+            else:
+                position_size_percent = 1.0  # 1% of capital (conservative)
+            
+            # Build dynamic confluence factors based on actual signal data
+            confluence_factors = [
+                f"Real Strategy: {signal['strategy']}",
+                f"Signal Confidence: {signal['confidence']:.2f} ({signal['confidence']*100:.1f}/10)",
+                f"Entry: ₹{entry_price:,.2f} | Current: ₹{current_price:,.2f}",
+                f"Risk/Reward: {risk_reward_ratio:.2f}:1 (Risk: {risk_percent:.1f}%, Reward: {reward_percent:.1f}%)"
+            ]
+            
+            # Add strategy-specific metadata if available
+            if signal.get('metadata', {}).get('atr'):
+                confluence_factors.append(f"ATR: {signal['metadata']['atr']:.2f}")
+            if signal.get('metadata', {}).get('volume'):
+                confluence_factors.append(f"Volume: {signal['metadata']['volume']:,.0f}")
+            if signal.get('metadata', {}).get('underlying_change'):
+                confluence_factors.append(f"Momentum: {signal['metadata']['underlying_change']:.2f}%")
+            
+            # Add timestamp
+            confluence_factors.append(f"Generated: {signal['metadata'].get('timestamp', datetime.now().isoformat())}")
+            
             return {
                 "recommendation_id": f"ELITE_{signal['symbol']}_{signal['strategy']}_{datetime.now().strftime('%Y%m%d_%H%M')}",
                 "symbol": signal['symbol'],
@@ -300,26 +348,19 @@ class AutonomousEliteScanner:
                 "risk_metrics": {
                     "risk_percent": round(risk_percent, 2),
                     "reward_percent": round(reward_percent, 2),
-                    "position_size": 2.0,
-                    "risk_calculation": "REAL_STRATEGY_CALCULATION"
+                    "position_size": round(position_size_percent, 1),
+                    "risk_calculation": "DYNAMIC_ATR_BASED"
                 },
-                "confluence_factors": [
-                    f"Real Strategy: {signal['strategy']}",
-                    f"Signal Confidence: {signal['confidence']:.2f}",
-                    f"Entry Price: ₹{entry_price:,.2f}",
-                    f"Current Price: ₹{current_price:,.2f}",
-                    f"Risk/Reward: {risk_reward_ratio:.2f}:1",
-                    f"Strategy Generated: {signal['metadata'].get('timestamp', 'N/A')}"
-                ],
+                "confluence_factors": confluence_factors,
                 "entry_conditions": [
                     f"Real {signal['strategy']} strategy signal",
                     "Price at strategy-calculated entry level",
-                    "Strategy-based risk management parameters",
-                    "Market conditions favorable per strategy",
-                    "Real strategy risk calculation applied"
+                    f"ATR-based dynamic risk management (R:R {risk_reward_ratio:.1f}:1)",
+                    f"Market-adaptive position sizing ({position_size_percent}% capital)",
+                    f"Confidence: {signal['confidence']*100:.0f}/10"
                 ],
-                "timeframe": "5-10 days",
-                "valid_until": (datetime.now() + timedelta(days=7)).isoformat(),
+                "timeframe": timeframe,
+                "valid_until": (datetime.now() + timedelta(days=valid_days)).isoformat(),
                 "status": "ACTIVE",
                 "generated_at": datetime.now().isoformat(),
                 "data_source": "REAL_STRATEGY_GENERATED",
