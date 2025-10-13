@@ -121,13 +121,14 @@ class BaseStrategy:
         self._signal_throttle_interval = 5.0  # 5 seconds between signals for same symbol
         
         # 🚨 SIGNAL EXPIRY AND EXECUTION THROTTLING
-        self.signal_expiry_seconds = 300  # 5 minutes - signals deleted from memory after this
+        self.signal_expiry_seconds = 120  # 2 minutes - signals valid for 2 minutes only
         self.execution_throttle_seconds = 30  # 30 seconds between execution attempts
         self.signal_timestamps = {}  # symbol -> signal generation timestamp
         self.last_execution_attempts = {}  # symbol -> last execution attempt timestamp
+        self.expired_signals_for_elite = []  # Store expired signals for Elite Recommendations
 
     def _cleanup_expired_signals(self) -> None:
-        """🚨 AUTOMATIC SIGNAL CLEANUP: Delete signals older than 5 minutes from memory"""
+        """🚨 2-MINUTE SIGNAL VALIDITY: Delete signals older than 2 minutes and route to Elite Recommendations"""
         try:
             current_time = time_module.time()
             expired_symbols = []
@@ -135,24 +136,86 @@ class BaseStrategy:
             for symbol, timestamp in list(self.signal_timestamps.items()):
                 age_seconds = current_time - timestamp
                 if age_seconds > self.signal_expiry_seconds:
-                    expired_symbols.append(symbol)
+                    expired_symbols.append((symbol, age_seconds))
             
-            # Delete expired signals from memory
-            for symbol in expired_symbols:
+            # Delete expired signals from memory and route to Elite Recommendations
+            for symbol, age_seconds in expired_symbols:
                 if symbol in self.current_positions:
                     signal = self.current_positions[symbol]
                     if isinstance(signal, dict) and signal.get('action') != 'HOLD':
-                        logger.info(f"🗑️ EXPIRED SIGNAL DELETED: {symbol} (age: {age_seconds:.1f}s)")
+                        logger.info(f"🗑️ EXPIRED SIGNAL: {symbol} (age: {age_seconds:.1f}s) - Routing to Elite Recommendations")
+                        
+                        # Route unexecuted signal to Elite Recommendations
+                        self._route_expired_signal_to_elite(signal, age_seconds)
+                        
+                        # Complete removal from system
                         del self.current_positions[symbol]
                 
-                # Clean up tracking data
+                # CRITICAL: Clean up ALL tracking data for complete removal
                 if symbol in self.signal_timestamps:
                     del self.signal_timestamps[symbol]
                 if symbol in self.last_execution_attempts:
                     del self.last_execution_attempts[symbol]
+                if symbol in self.symbol_cooldowns:
+                    del self.symbol_cooldowns[symbol]
+                if symbol in self.position_cooldowns:
+                    del self.position_cooldowns[symbol]
+                
+                # Clear recent order tracking to allow fresh signal generation
+                recent_order_key = f"recent_order_{symbol}"
+                if hasattr(self, '_recent_orders') and recent_order_key in self._recent_orders:
+                    del self._recent_orders[recent_order_key]
+                    logger.info(f"🧹 CLEARED ORDER HISTORY: {symbol} - Fresh signals now allowed")
                     
         except Exception as e:
             logger.error(f"❌ Error cleaning up expired signals: {e}")
+    
+    def _route_expired_signal_to_elite(self, signal: Dict, age_seconds: float) -> None:
+        """Route expired unexecuted signal to Elite Trade Recommendations"""
+        try:
+            import requests
+            from datetime import datetime
+            
+            # Prepare expired signal data for Elite Recommendations
+            elite_signal = {
+                'symbol': signal.get('symbol'),
+                'action': signal.get('action'),
+                'entry_price': signal.get('entry_price'),
+                'stop_loss': signal.get('stop_loss'),
+                'target': signal.get('target'),
+                'confidence': signal.get('confidence'),
+                'strategy': signal.get('strategy', self.name),
+                'status': 'EXPIRED_UNEXECUTED',
+                'expiry_reason': f'Signal expired after {age_seconds:.0f}s (2-minute validity)',
+                'generated_at': signal.get('generated_at', datetime.now().isoformat()),
+                'expired_at': datetime.now().isoformat(),
+                'signal_age_seconds': age_seconds,
+                'metadata': signal.get('metadata', {})
+            }
+            
+            # Try to send to Elite Recommendations API
+            try:
+                response = requests.post(
+                    'http://localhost:8000/api/elite-recommendations/add-expired-signal',
+                    json=elite_signal,
+                    timeout=2
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"📋 ELITE: Expired signal {signal.get('symbol')} added to recommendations")
+                else:
+                    logger.debug(f"Elite API returned {response.status_code} for expired signal")
+                    
+            except requests.exceptions.RequestException:
+                # Store locally if API unavailable
+                self.expired_signals_for_elite.append(elite_signal)
+                # Keep only last 50 expired signals
+                if len(self.expired_signals_for_elite) > 50:
+                    self.expired_signals_for_elite.pop(0)
+                logger.debug(f"Elite API unavailable - stored expired signal locally")
+                
+        except Exception as e:
+            logger.error(f"Error routing expired signal to Elite: {e}")
     
     def _can_execute_signal(self, symbol: str) -> bool:
         """🚨 EXECUTION THROTTLING: Check if signal can be executed (30-second throttle)"""
@@ -422,15 +485,15 @@ class BaseStrategy:
         except Exception as e:
             logger.debug(f"Could not check Zerodha positions: {e}")
         
-        # 🚨 STEP 2: Check recent order history to prevent rapid duplicates
+        # 🚨 STEP 2: Check recent order history to prevent rapid duplicates (2-minute window)
         try:
-            # Check if we've placed an order for this symbol in the last 5 minutes
+            # Check if we've placed an order for this symbol in the last 2 minutes (matches signal validity)
             current_time = time_module.time()
             recent_order_key = f"recent_order_{symbol}"
             
             if hasattr(self, '_recent_orders'):
                 last_order_time = self._recent_orders.get(recent_order_key, 0)
-                if current_time - last_order_time < 300:  # 5 minutes
+                if current_time - last_order_time < 120:  # 2 minutes (matches signal expiry)
                     logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} ordered {(current_time - last_order_time):.0f}s ago")
                     return True
             else:
