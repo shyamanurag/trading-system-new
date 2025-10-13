@@ -3229,11 +3229,20 @@ class TradingOrchestrator:
             available_capital = 500000.0  # Default ₹5L, should be replaced with actual capital
             
             # Try to get actual available capital from various sources
+            # CRITICAL FIX: get_margins() returns a FLOAT, not a dict
             try:
                 if hasattr(self, 'zerodha_client') and self.zerodha_client:
                     margins = await self.zerodha_client.get_margins()
-                    if margins and isinstance(margins, dict) and 'equity' in margins:
-                        available_capital = float(margins['equity'].get('available', {}).get('cash', 500000))
+                    if margins and isinstance(margins, (int, float)) and margins > 0:
+                        # get_margins() returns available capital as a float
+                        available_capital = float(margins)
+                        self.logger.info(f"✅ Position opening using real capital: ₹{available_capital:,.2f}")
+                    elif margins == 0:
+                        # SANDBOX MODE FALLBACK: Use default capital for testing
+                        self.logger.warning("⚠️ Zerodha returned zero margin - using default capital for testing")
+                        available_capital = 50000.0  # Match your actual Zerodha capital
+                    else:
+                        self.logger.warning(f"⚠️ Invalid margins value: {margins} - using default capital")
             except Exception as capital_error:
                 self.logger.debug(f"Could not get actual capital, using default: {capital_error}")
             
