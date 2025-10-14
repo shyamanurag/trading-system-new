@@ -2537,6 +2537,11 @@ class TradingOrchestrator:
                 self._trading_task = asyncio.create_task(self._trading_loop())
                 self.logger.info("🔄 Started trading loop")
             
+            # Start watchdog to monitor trading task
+            if not hasattr(self, '_watchdog_task') or self._watchdog_task is None:
+                self._watchdog_task = asyncio.create_task(self._trading_loop_watchdog())
+                self.logger.info("🐕 Started trading loop watchdog")
+            
             # CRITICAL FIX: Sync capital before trading starts
             if self.capital_sync:
                 try:
@@ -2590,6 +2595,12 @@ class TradingOrchestrator:
                 self._trading_task.cancel()
                 self._trading_task = None
                 self.logger.info("🛑 Cancelled trading loop")
+            
+            # Cancel watchdog task if running
+            if hasattr(self, '_watchdog_task') and self._watchdog_task is not None:
+                self._watchdog_task.cancel()
+                self._watchdog_task = None
+                self.logger.info("🐕 Cancelled watchdog")
             
             # Stop Position Monitor
             if self.position_monitor:
@@ -2851,13 +2862,54 @@ class TradingOrchestrator:
             }
 
     async def _trading_loop(self):
-        """Main trading loop - processes market data and generates signals"""
-        self.logger.info("🔄 Starting trading loop...")
+        """Main trading loop with connection monitoring and auto-recovery"""
+        self.logger.info("🔄 Starting enhanced trading loop with health monitoring...")
+        
+        # Health monitoring counters
+        consecutive_failures = 0
+        max_consecutive_failures = 10
+        last_successful_data = time_module.time()
+        heartbeat_interval = 60  # Log heartbeat every 60 seconds
+        last_heartbeat = time_module.time()
+        data_timeout = 300  # 5 minutes without data triggers reconnection
         
         while self.is_running:
             try:
+                # Heartbeat logging
+                current_time = time_module.time()
+                if current_time - last_heartbeat >= heartbeat_interval:
+                    self.logger.info(f"💓 TRADING LOOP HEARTBEAT - Running: {self.is_running}, "
+                                   f"Failures: {consecutive_failures}, "
+                                   f"Last data: {int(current_time - last_successful_data)}s ago")
+                    last_heartbeat = current_time
+                
+                # Check for data timeout - indicates stale connection
+                if current_time - last_successful_data > data_timeout:
+                    self.logger.error(f"🚨 DATA TIMEOUT: No data for {int(current_time - last_successful_data)}s - forcing reconnection")
+                    await self._reconnect_all_services()
+                    last_successful_data = current_time  # Reset timer
+                    consecutive_failures = 0
+                
                 # Process market data
-                await self._process_market_data()
+                market_data = await self._get_market_data_from_api()
+                
+                if market_data and len(market_data) > 0:
+                    # Data received successfully
+                    await self._process_market_data()
+                    consecutive_failures = 0
+                    last_successful_data = current_time
+                else:
+                    # No data received
+                    consecutive_failures += 1
+                    self.logger.warning(f"⚠️ No market data (failure #{consecutive_failures}/{max_consecutive_failures})")
+                    
+                    # Check if we've exceeded failure threshold
+                    if consecutive_failures >= max_consecutive_failures:
+                        self.logger.error(f"🚨 CRITICAL: {consecutive_failures} consecutive data failures - attempting reconnection")
+                        await self._reconnect_all_services()
+                        consecutive_failures = 0  # Reset counter after reconnection attempt
+                        await asyncio.sleep(10)  # Wait longer after reconnection
+                        continue
                 
                 # Small delay to prevent overwhelming the system
                 await asyncio.sleep(1)
@@ -2866,10 +2918,144 @@ class TradingOrchestrator:
                 self.logger.info("🛑 Trading loop cancelled")
                 break
             except Exception as e:
-                self.logger.error(f"Error in trading loop: {e}")
-                await asyncio.sleep(5)  # Wait before retrying
+                consecutive_failures += 1
+                self.logger.error(f"❌ Error in trading loop (failure #{consecutive_failures}): {e}")
+                import traceback
+                self.logger.error(f"Traceback: {traceback.format_exc()}")
+                
+                # If too many consecutive failures, attempt full reconnection
+                if consecutive_failures >= max_consecutive_failures:
+                    self.logger.error(f"🚨 CRITICAL: {consecutive_failures} consecutive errors - attempting reconnection")
+                    await self._reconnect_all_services()
+                    consecutive_failures = 0
+                    await asyncio.sleep(10)
+                else:
+                    await asyncio.sleep(5)  # Wait before retrying
         
         self.logger.info("🛑 Trading loop stopped")
+    
+    async def _reconnect_all_services(self):
+        """Reconnect all services (TrueData, Redis, Zerodha) after connection failures"""
+        try:
+            self.logger.info("🔄 RECONNECTING ALL SERVICES...")
+            
+            # 1. Reconnect TrueData
+            try:
+                self.logger.info("🔄 Reconnecting TrueData...")
+                from data.truedata_client import truedata_client
+                truedata_client.force_disconnect()
+                await asyncio.sleep(2)
+                truedata_client.connect()
+                self.logger.info("✅ TrueData reconnection attempted")
+            except Exception as e:
+                self.logger.error(f"❌ TrueData reconnection failed: {e}")
+            
+            # 2. Reconnect Redis
+            try:
+                if hasattr(self, 'redis_client') and self.redis_client:
+                    self.logger.info("🔄 Reconnecting Redis...")
+                    try:
+                        await self.redis_client.close()
+                    except:
+                        pass
+                    
+                    # Reinitialize Redis
+                    import redis.asyncio as redis
+                    redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379')
+                    if 'ondigitalocean.com' in redis_url:
+                        self.redis_client = await redis.from_url(
+                            redis_url, 
+                            decode_responses=True,
+                            ssl=True,
+                            ssl_cert_reqs=None
+                        )
+                    else:
+                        self.redis_client = await redis.from_url(redis_url, decode_responses=True)
+                    
+                    self.logger.info("✅ Redis reconnection successful")
+            except Exception as e:
+                self.logger.error(f"❌ Redis reconnection failed: {e}")
+            
+            # 3. Refresh Zerodha token if needed
+            try:
+                if hasattr(self, 'zerodha_client') and self.zerodha_client:
+                    self.logger.info("🔄 Checking Zerodha connection...")
+                    try:
+                        # Test connection by fetching margins
+                        await self.zerodha_client.get_margins()
+                        self.logger.info("✅ Zerodha connection verified")
+                    except Exception as zerodha_err:
+                        self.logger.warning(f"⚠️ Zerodha connection test failed: {zerodha_err}")
+                        self.logger.info("💡 Zerodha may need token refresh via /api/auth/zerodha/callback")
+            except Exception as e:
+                self.logger.error(f"❌ Zerodha check failed: {e}")
+            
+            self.logger.info("✅ Service reconnection sequence completed")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Critical error in reconnection sequence: {e}")
+    
+    async def _trading_loop_watchdog(self):
+        """Watchdog task to monitor trading loop and restart if it dies"""
+        self.logger.info("🐕 Trading loop watchdog started")
+        
+        watchdog_check_interval = 30  # Check every 30 seconds
+        max_restart_attempts = 5
+        restart_attempts = 0
+        
+        while self.is_running:
+            try:
+                await asyncio.sleep(watchdog_check_interval)
+                
+                # Check if trading task is still alive
+                if hasattr(self, '_trading_task') and self._trading_task is not None:
+                    if self._trading_task.done():
+                        # Task has finished - check if it was an error
+                        try:
+                            exception = self._trading_task.exception()
+                            if exception:
+                                self.logger.error(f"🚨 WATCHDOG ALERT: Trading loop died with exception: {exception}")
+                            else:
+                                self.logger.warning(f"⚠️ WATCHDOG ALERT: Trading loop finished normally (unexpected)")
+                        except asyncio.CancelledError:
+                            self.logger.info("🐕 Trading loop was cancelled (normal shutdown)")
+                            break
+                        except Exception as e:
+                            self.logger.error(f"🚨 WATCHDOG ALERT: Trading loop died: {e}")
+                        
+                        # Restart the trading loop if system is still supposed to be running
+                        if self.is_running and restart_attempts < max_restart_attempts:
+                            restart_attempts += 1
+                            self.logger.error(f"🔄 WATCHDOG: Restarting trading loop (attempt {restart_attempts}/{max_restart_attempts})")
+                            
+                            # Attempt reconnection first
+                            await self._reconnect_all_services()
+                            
+                            # Restart the trading loop
+                            self._trading_task = asyncio.create_task(self._trading_loop())
+                            self.logger.info("✅ WATCHDOG: Trading loop restarted")
+                            
+                            # Reset counter on successful restart
+                            await asyncio.sleep(60)  # Wait 1 minute before resetting
+                            restart_attempts = max(0, restart_attempts - 1)  # Gradually reduce count if stable
+                        elif restart_attempts >= max_restart_attempts:
+                            self.logger.error(f"🚨 WATCHDOG: Max restart attempts ({max_restart_attempts}) reached - manual intervention required")
+                            self.is_running = False  # Stop system to prevent infinite restarts
+                            break
+                else:
+                    # Trading task doesn't exist - create it
+                    if self.is_running:
+                        self.logger.warning("🐕 WATCHDOG: Trading task missing - creating new one")
+                        self._trading_task = asyncio.create_task(self._trading_loop())
+                        
+            except asyncio.CancelledError:
+                self.logger.info("🐕 Watchdog cancelled (normal shutdown)")
+                break
+            except Exception as e:
+                self.logger.error(f"❌ Error in watchdog: {e}")
+                await asyncio.sleep(60)  # Wait longer on error
+        
+        self.logger.info("🐕 Trading loop watchdog stopped")
 
     def _is_market_open(self) -> bool:
         """Check if market is currently open (IST timezone)"""
