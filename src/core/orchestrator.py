@@ -1599,10 +1599,6 @@ class TradingOrchestrator:
                             for symbol, signal in strategy_instance.current_positions.items():
                                 if isinstance(signal, dict) and 'action' in signal and signal.get('action') != 'HOLD':
                                     
-                                    # 🚨 EXECUTION THROTTLING: Record execution attempt
-                                    if hasattr(strategy_instance, '_record_execution_attempt'):
-                                        strategy_instance._record_execution_attempt(symbol)
-                                    
                                     # 🎯 POST-SIGNAL LTP VALIDATION: Fix 0.0 entry prices
                                     validated_signal = await self._validate_and_fix_signal_ltp(signal)
                                     

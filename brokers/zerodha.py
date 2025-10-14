@@ -397,27 +397,44 @@ class ZerodhaIntegration:
             logger.error(f"Error in WebSocket monitoring: {e}")
 
     async def update_access_token(self, access_token: str):
-        """Update access token after frontend authentication"""
+        """Update access token after frontend authentication - REINITIALIZE if needed"""
         try:
-            if self.kite and access_token:
-                self.access_token = access_token
-                self.kite.set_access_token(access_token)
-                logger.info(f"✅ Zerodha access token updated: {access_token[:10]}...")
-                
-                # Verify connection
-                success = await self.connect()
-                if success:
-                    # Automatically reinitialize WebSocket after token update
-                    await self._initialize_websocket()
-                    return True
-                else:
-                    logger.error("❌ Token update failed - connection verification failed")
-                    return False
-            else:
-                logger.error("❌ Cannot update token - KiteConnect not initialized or token invalid")
+            if not access_token:
+                logger.error("❌ Cannot update token - token is empty")
                 return False
+            
+            # Update access token
+            self.access_token = access_token
+            logger.info(f"✅ Zerodha access token received: {access_token[:10]}...")
+            
+            # 🚨 CRITICAL FIX: Reinitialize KiteConnect if it doesn't exist
+            if not self.kite:
+                logger.warning("⚠️ KiteConnect instance not initialized - reinitializing with new token")
+                self._initialize_kite()
+            else:
+                # Update existing kite instance
+                self.kite.set_access_token(access_token)
+                logger.info(f"✅ Updated existing KiteConnect with new token")
+            
+            # Verify connection with new token
+            success = await self.connect()
+            if success:
+                logger.info("✅ Token verified and connection established")
+                # Automatically reinitialize WebSocket after token update
+                try:
+                    await self._initialize_websocket()
+                    logger.info("✅ WebSocket reinitialized with new token")
+                except Exception as ws_error:
+                    logger.warning(f"⚠️ WebSocket reinitialization failed (non-critical): {ws_error}")
+                return True
+            else:
+                logger.error("❌ Token update failed - connection verification failed")
+                return False
+                
         except Exception as e:
             logger.error(f"❌ Error updating Zerodha access token: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return False
 
     async def place_order(self, order_params: Dict) -> Optional[str]:
