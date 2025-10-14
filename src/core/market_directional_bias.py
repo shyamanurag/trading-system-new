@@ -461,9 +461,16 @@ class MarketDirectionalBias:
             True if signal should be allowed, False if it should be rejected
         """
         try:
-            # CRITICAL FIX: Normalize confidence if it's in percentage scale
-            if signal_confidence > 10:
-                logger.debug(f"Normalizing confidence from {signal_confidence} to {signal_confidence/10}")
+            # CRITICAL FIX: Normalize confidence to 0-10 scale
+            # Strategies send confidence in 0-1 scale (0.85 = 85%)
+            # Market bias expects 0-10 scale (8.5 = 85%)
+            if signal_confidence <= 1.0:
+                # Convert from 0-1 scale to 0-10 scale
+                signal_confidence = signal_confidence * 10.0
+                logger.debug(f"Normalized confidence from 0-1 scale to 0-10 scale: {signal_confidence:.1f}/10")
+            elif signal_confidence > 10:
+                # Handle percentage scale (85 = 85%)
+                logger.debug(f"Normalizing confidence from percentage: {signal_confidence} → {signal_confidence/10}")
                 signal_confidence = signal_confidence / 10.0
             
             # Regime-aware thresholds
