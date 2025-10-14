@@ -85,12 +85,20 @@ class DailyCapitalSync:
                 return {}
             
             # Get actual margins from Zerodha
-            # CRITICAL FIX: get_margins() returns a FLOAT (available capital), not a dict
-            available_margin = await orchestrator.zerodha_client.get_margins()
+            # CRITICAL FIX: get_margins() returns a DICT, not a float
+            margins_dict = await orchestrator.zerodha_client.get_margins()
             
-            # CRITICAL FIX: margins is a float, not a dict
-            if available_margin is None or available_margin <= 0:
-                logger.warning(f"⚠️ Zerodha returned zero or null margin: {available_margin}")
+            # Extract available cash from the dict structure
+            if margins_dict and isinstance(margins_dict, dict):
+                available_cash = margins_dict.get('equity', {}).get('available', {}).get('cash', 0)
+                logger.info(f"✅ Got margins from Zerodha: ₹{available_cash:,.2f}")
+            else:
+                available_cash = 0
+                logger.warning(f"⚠️ Zerodha returned invalid margin structure: {margins_dict}")
+            
+            # Validate and apply fallback for zero capital
+            if available_cash is None or available_cash <= 0:
+                logger.warning(f"⚠️ Zerodha returned zero or null margin: {available_cash}")
                 
                 # SANDBOX MODE FALLBACK: Use default capital for sandbox testing
                 is_sandbox = os.environ.get('ZERODHA_SANDBOX_MODE', 'false').lower() == 'true'
@@ -100,12 +108,11 @@ class DailyCapitalSync:
                     available_cash = 50000.0  # Default capital for sandbox/paper trading
                     logger.info(f"✅ Using sandbox/paper trading capital: ₹{available_cash:,.2f}")
                 else:
-                    logger.error(f"❌ Real trading mode but no capital from Zerodha: {available_margin}")
+                    logger.error(f"❌ Real trading mode but no capital from Zerodha: {available_cash}")
                     return {}
             else:
-                logger.info(f"✅ Got margins from Zerodha: ₹{available_margin:,.2f}")
-                # The available_margin IS the available cash (get_margins already calculated it)
-                available_cash = float(available_margin)
+                # Ensure it's a float
+                available_cash = float(available_cash)
             
             # Use actual Zerodha user ID from environment
             user_id = os.environ.get('ZERODHA_USER_ID', 'QSW899')
