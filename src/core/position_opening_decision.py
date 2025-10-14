@@ -536,7 +536,15 @@ class EnhancedPositionOpeningDecision:
             # Apply Kelly criterion if we have historical data
             # For now, use confidence-based sizing
             confidence = float(signal.get('confidence', 5.0))
-            confidence_multiplier = min(confidence / 10.0, 1.0)  # Cap at 1.0
+            
+            # CRITICAL FIX: Normalize confidence from 0-1 scale to 0-10 scale BEFORE using as multiplier
+            # Strategies send confidence in 0-1 scale (0.9 = 90%)
+            # We need 0-10 scale for proper position sizing (9.0 = 90% confidence → 0.9 multiplier)
+            if confidence <= 1.0:
+                confidence = confidence * 10.0
+                logger.debug(f"Position sizing: normalized confidence {confidence:.1f}/10")
+            
+            confidence_multiplier = min(confidence / 10.0, 1.0)  # Now: 9.0/10 = 0.9 ✓
             
             optimal_size = int(base_size * confidence_multiplier)
             
