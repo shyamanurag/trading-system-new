@@ -114,10 +114,23 @@ class MarketDirectionalBias:
             Updated MarketBias object
         """
         try:
-            # Get NIFTY data
-            nifty_data = market_data.get('NIFTY-I', {})
-            if not nifty_data:
-                logger.warning("No NIFTY data available for bias calculation")
+            # Get NIFTY data - try multiple symbol variants
+            nifty_symbols = ['NIFTY-I', 'NIFTY 50', 'NIFTY', 'NSE:NIFTY', 'NIFTY50']
+            nifty_data = None
+            used_symbol = None
+            
+            for sym in nifty_symbols:
+                nifty_data = market_data.get(sym, {})
+                if nifty_data and nifty_data.get('ltp'):
+                    used_symbol = sym
+                    logger.debug(f"✅ Found NIFTY data using symbol: {sym}")
+                    break
+            
+            if not nifty_data or not nifty_data.get('ltp'):
+                # DEBUG: Log what symbols are available
+                available_symbols = list(market_data.keys())[:20]  # First 20 symbols
+                logger.warning(f"No NIFTY data available for bias calculation - tried: {nifty_symbols}")
+                logger.debug(f"Available symbols (first 20): {available_symbols}")
                 return self.current_bias
             
             # Debug: Log NIFTY data to understand what we're getting

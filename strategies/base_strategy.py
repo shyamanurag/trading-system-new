@@ -2424,6 +2424,13 @@ class BaseStrategy:
             # CRITICAL FIX: Generate unique signal_id for tracking
             signal_id = f"{self.name}_{options_symbol}_{int(datetime.now().timestamp())}"
             
+            # CRITICAL FIX: Validate quantity BEFORE creating signal
+            quantity = self._get_capital_constrained_quantity(options_symbol, symbol, options_entry_price)
+            if quantity <= 0:
+                logger.error(f"❌ SIGNAL REJECTED: {options_symbol} - Quantity is {quantity} (insufficient capital or invalid lot size)")
+                logger.error(f"   This signal will NOT be sent to trade engine")
+                return None
+            
             return {
                 # Core signal fields (consistent naming)
                 'signal_id': signal_id,
@@ -2431,7 +2438,7 @@ class BaseStrategy:
                 'underlying_symbol': symbol,  # Keep original for reference
                 'option_type': option_type,  # CE or PE
                 'action': final_action.upper(),  # Always BUY for options (no selling due to margin)
-                'quantity': self._get_capital_constrained_quantity(options_symbol, symbol, options_entry_price),  # 🎯 CAPITAL-AWARE: Limit lots based on capital
+                'quantity': quantity,  # 🎯 CAPITAL-AWARE: Limit lots based on capital (validated above)
                 'entry_price': self._round_to_tick_size(options_entry_price),  # 🎯 FIXED: Use tick size rounding
                 'stop_loss': self._round_to_tick_size(options_stop_loss),      # 🎯 FIXED: Tick size rounding
                 'target': self._round_to_tick_size(options_target),            # 🎯 FIXED: Tick size rounding
