@@ -523,6 +523,12 @@ class ZerodhaIntegration:
                 
                 # Add price for limit orders
                 if zerodha_params['order_type'] != self.kite.ORDER_TYPE_MARKET:
+                    # DEBUG: Log what we're looking for
+                    logger.info(f"🔍 LIMIT order needs price for {symbol}")
+                    logger.info(f"   order_params keys: {list(order_params.keys())}")
+                    logger.info(f"   order_params.get('price'): {order_params.get('price')}")
+                    logger.info(f"   order_params.get('entry_price'): {order_params.get('entry_price')}")
+                    
                     price = order_params.get('price') or order_params.get('entry_price')
                     if price:
                         zerodha_params['price'] = float(price)
@@ -530,6 +536,7 @@ class ZerodhaIntegration:
                     else:
                         # CRITICAL: LIMIT orders MUST have a price
                         logger.error(f"❌ LIMIT order requires price but none provided for {symbol}")
+                        logger.error(f"   Full order_params: {order_params}")
                         raise ValueError(f"LIMIT order for {symbol} requires price parameter")
                 
                 # Add trigger price for stop loss orders
