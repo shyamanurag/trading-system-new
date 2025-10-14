@@ -466,6 +466,17 @@ class BaseStrategy:
     def has_existing_position(self, symbol: str) -> bool:
         """🚨 CRITICAL FIX: Check for existing positions to prevent DUPLICATE ORDERS"""
         
+        # Extract underlying symbol for comprehensive checking
+        # For options: "TCS25OCT2940CE" → "TCS"
+        # For equity: "TCS" → "TCS"
+        underlying = symbol
+        if symbol.endswith('CE') or symbol.endswith('PE'):
+            # Remove expiry and strike: "TCS25OCT2940CE" → "TCS"
+            import re
+            match = re.match(r'^([A-Z]+)', symbol)
+            if match:
+                underlying = match.group(1)
+        
         # 🚨 STEP 1: Check REAL Zerodha positions first (most authoritative)
         try:
             from src.core.orchestrator import get_orchestrator_instance
@@ -478,9 +489,28 @@ class BaseStrategy:
                     for pos_list in [positions.get('net', []), positions.get('day', [])]:
                         if isinstance(pos_list, list):
                             for pos in pos_list:
-                                if (pos.get('tradingsymbol') == symbol and 
-                                    pos.get('quantity', 0) != 0):
-                                    logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} has REAL position qty={pos.get('quantity')}")
+                                pos_symbol = pos.get('tradingsymbol', '')
+                                pos_qty = pos.get('quantity', 0)
+                                
+                                if pos_qty == 0:
+                                    continue  # Skip closed positions
+                                
+                                # Check exact match first
+                                if pos_symbol == symbol:
+                                    logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} has REAL position qty={pos_qty}")
+                                    return True
+                                
+                                # CRITICAL FIX: Also check for same underlying
+                                # If TCS25OCT2940CE exists, block ALL TCS signals (TCS25OCT2950CE, TCS equity, etc.)
+                                pos_underlying = pos_symbol
+                                if pos_symbol.endswith('CE') or pos_symbol.endswith('PE'):
+                                    import re
+                                    match = re.match(r'^([A-Z]+)', pos_symbol)
+                                    if match:
+                                        pos_underlying = match.group(1)
+                                
+                                if pos_underlying == underlying:
+                                    logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} - Found existing position for underlying {underlying}: {pos_symbol} qty={pos_qty}")
                                     return True
         except Exception as e:
             logger.debug(f"Could not check Zerodha positions: {e}")
@@ -489,13 +519,41 @@ class BaseStrategy:
         try:
             # Check if we've placed an order for this symbol in the last 2 minutes (matches signal validity)
             current_time = time_module.time()
-            recent_order_key = f"recent_order_{symbol}"
             
             if hasattr(self, '_recent_orders'):
-                last_order_time = self._recent_orders.get(recent_order_key, 0)
+                # Check exact symbol match
+                exact_key = f"recent_order_{symbol}"
+                last_order_time = self._recent_orders.get(exact_key, 0)
                 if current_time - last_order_time < 120:  # 2 minutes (matches signal expiry)
                     logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} ordered {(current_time - last_order_time):.0f}s ago")
                     return True
+                
+                # CRITICAL FIX: Also check for underlying symbol
+                # If TCS25OCT2940CE was ordered, block all TCS-related signals
+                underlying_key = f"recent_order_{underlying}"
+                last_underlying_time = self._recent_orders.get(underlying_key, 0)
+                if current_time - last_underlying_time < 120:
+                    logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} - Underlying {underlying} ordered {(current_time - last_underlying_time):.0f}s ago")
+                    return True
+                    
+                # Also check all recent orders for same underlying
+                for recent_key, recent_time in self._recent_orders.items():
+                    if not recent_key.startswith('recent_order_'):
+                        continue
+                    recent_symbol = recent_key.replace('recent_order_', '')
+                    
+                    # Extract underlying from recent order
+                    recent_underlying = recent_symbol
+                    if recent_symbol.endswith('CE') or recent_symbol.endswith('PE'):
+                        import re
+                        match = re.match(r'^([A-Z]+)', recent_symbol)
+                        if match:
+                            recent_underlying = match.group(1)
+                    
+                    # Block if same underlying and within 2 minutes
+                    if recent_underlying == underlying and current_time - recent_time < 120:
+                        logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} - Related order {recent_symbol} placed {(current_time - recent_time):.0f}s ago")
+                        return True
             else:
                 self._recent_orders = {}
                 
