@@ -93,7 +93,7 @@ try:
 except ImportError:
     # Fallback if signal deduplicator is not available
     class DummySignalDeduplicator:
-        def process_signals(self, signals):
+        async def process_signals(self, signals):
             return signals
     signal_deduplicator = DummySignalDeduplicator()
 
@@ -3218,23 +3218,27 @@ class TradingOrchestrator:
             current_positions = getattr(strategy_instance, 'active_positions', {})
             
             # Get available capital (use a reasonable default if not available)
-            available_capital = 500000.0  # Default ₹5L, should be replaced with actual capital
+            available_capital = 50000.0  # Default ₹50K, matches actual Zerodha capital
             
-            # Try to get actual available capital from various sources
-            # CRITICAL FIX: get_margins() returns a FLOAT, not a dict
+            # Try to get actual available capital from Zerodha
+            # CRITICAL FIX: get_margins() returns a DICT, not a float
             try:
                 if hasattr(self, 'zerodha_client') and self.zerodha_client:
-                    margins = await self.zerodha_client.get_margins()
-                    if margins and isinstance(margins, (int, float)) and margins > 0:
-                        # get_margins() returns available capital as a float
-                        available_capital = float(margins)
-                        self.logger.info(f"✅ Position opening using real capital: ₹{available_capital:,.2f}")
-                    elif margins == 0:
-                        # SANDBOX MODE FALLBACK: Use default capital for testing
-                        self.logger.warning("⚠️ Zerodha returned zero margin - using default capital for testing")
-                        available_capital = 50000.0  # Match your actual Zerodha capital
+                    margins_dict = await self.zerodha_client.get_margins()
+                    if margins_dict and isinstance(margins_dict, dict):
+                        # Extract available cash from equity margins dict
+                        available_cash = margins_dict.get('equity', {}).get('available', {}).get('cash', 0)
+                        available_cash = float(available_cash) if available_cash else 0.0
+                        
+                        if available_cash > 0:
+                            available_capital = available_cash
+                            self.logger.info(f"✅ Position opening using real capital: ₹{available_capital:,.2f}")
+                        else:
+                            # SANDBOX MODE FALLBACK: Use default capital for testing
+                            self.logger.warning("⚠️ Zerodha returned zero margin - using default capital for testing")
+                            available_capital = 50000.0  # Match your actual Zerodha capital
                     else:
-                        self.logger.warning(f"⚠️ Invalid margins value: {margins} - using default capital")
+                        self.logger.warning(f"⚠️ Invalid margins format: {type(margins_dict)} - using default capital")
             except Exception as capital_error:
                 self.logger.debug(f"Could not get actual capital, using default: {capital_error}")
             

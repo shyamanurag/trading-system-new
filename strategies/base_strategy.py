@@ -2215,9 +2215,16 @@ class BaseStrategy:
                     logger.error(f"❌ CONFIDENCE TYPE ERROR for {symbol}: confidence is {type(confidence)} = {repr(confidence)}")
                     confidence = float(confidence) if confidence else 0.0
                 
-                if confidence < min_conf:
-                    logger.info(f"🗑️ {self.name}: LOW CONFIDENCE SIGNAL SCRAPPED for {symbol} - Confidence: {confidence:.1f}/10 (min={min_conf})")
+                # CRITICAL FIX: Normalize confidence to 0-10 scale for comparison with min_conf
+                # Strategies generate confidence in 0-1 scale (0.9 = 90%)
+                # min_conf is in 0-10 scale (8.5 = 85%)
+                confidence_normalized = confidence * 10.0 if confidence <= 1.0 else confidence
+                
+                if confidence_normalized < min_conf:
+                    logger.info(f"🗑️ {self.name}: LOW CONFIDENCE SIGNAL SCRAPPED for {symbol} - Confidence: {confidence_normalized:.1f}/10 (min={min_conf})")
                     return None
+                else:
+                    logger.debug(f"✅ Confidence check passed: {symbol} - {confidence_normalized:.1f}/10 >= {min_conf}")
             except (TypeError, ValueError) as e:
                 logger.error(f"❌ Error comparing confidence for {symbol}: {e}")
                 logger.error(f"   confidence={repr(confidence)}, min_conf={repr(min_conf)}")

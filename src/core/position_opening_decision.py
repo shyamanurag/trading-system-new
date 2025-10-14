@@ -404,6 +404,7 @@ class EnhancedPositionOpeningDecision:
         """Assess position risk and capital requirements"""
         try:
             symbol = signal.get('symbol', '')
+            action = signal.get('action', 'BUY')  # Extract action from signal
             entry_price = float(signal.get('entry_price', 0.0))
             
             # Calculate estimated position value

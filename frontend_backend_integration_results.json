@@ -1,0 +1,490 @@
+{
+  "summary": {
+    "total_endpoints": 15,
+    "successful": 13,
+    "partial_success": 1,
+    "errors": 1,
+    "success_rate": 86.66666666666667,
+    "overall_health": "HEALTHY",
+    "category_breakdown": {
+      "Elite Recommendations": {
+        "total": 4,
+        "success": 3,
+        "success_rate": 75.0
+      },
+      "Autonomous Trading": {
+        "total": 2,
+        "success": 2,
+        "success_rate": 100.0
+      },
+      "Dashboard": {
+        "total": 2,
+        "success": 2,
+        "success_rate": 100.0
+      },
+      "System": {
+        "total": 15,
+        "success": 13,
+        "success_rate": 86.66666666666667
+      },
+      "Market Data": {
+        "total": 2,
+        "success": 2,
+        "success_rate": 100.0
+      },
+      "User Management": {
+        "total": 1,
+        "success": 1,
+        "success_rate": 100.0
+      }
+    },
+    "critical_issues": [],
+    "avg_response_time": 135.2
+  },
+  "results": [
+    {
+      "name": "API Root",
+      "url": "/api",
+      "method": "GET",
+      "status": "SUCCESS",
+      "response_time_ms": 431,
+      "status_code": 200,
+      "error": null,
+      "response_data": {
+        "name": "AlgoAuto Trading System API",
+        "version": "4.2.0",
+        "available_versions": [
+          "v1"
+        ],
+        "endpoints": {
+          "v1": "/api/v1",
+          "health": "/health",
+          "auth": "/auth",
+          "docs": "/docs",
+          "routes": "/api/routes"
+        },
+        "status": "operational",
+        "debug": {
+          "user_agent": "Frontend-Backend-Integration-Tester/1.0",
+          "accept": "*/*",
+          "timestamp": "2025-09-25T12:15:46.653336"
+        }
+      },
+      "missing_fields": [],
+      "description": "API root endpoint - should return API info"
+    },
+    {
+      "name": "Health Check",
+      "url": "/health",
+      "method": "GET",
+      "status": "SUCCESS",
+      "response_time_ms": 103,
+      "status_code": 200,
+      "error": null,
+      "response_data": {
+        "status": "healthy",
+        "timestamp": "2025-09-25T12:15:46.758789"
+      },
+      "missing_fields": [],
+      "description": "Basic health check"
+    },
+    {
+      "name": "Elite Recommendations",
+      "url": "/api/v1/elite/",
+      "method": "GET",
+      "status": "SUCCESS",
+      "response_time_ms": 185,
+      "status_code": 200,
+      "error": null,
+      "response_data": {
+        "success": true,
+        "recommendations": [],
+        "total_count": 0,
+        "live_signals": 0,
+        "strategy_signals": 0,
+        "status": "ACTIVE",
+        "message": "Found 0 elite recommendations (0 live + 0 strategy)",
+        "data_source": "LIVE_SIGNALS_AND_REAL_STRATEGIES",
+        "scan_timestamp": "2025-09-25T12:15:46.947120",
+        "timestamp": "2025-09-25T12:15:46.947146",
+        "next_scan": "2025-09-25T12:16:16.947150",
+        "strategies_used": [],
+        "cache_status": "LIVE_SIGNALS_INTEGRATED"
+      },
+      "missing_fields": [],
+      "description": "Main elite recommendations endpoint"
+    },
+    {
+      "name": "Elite Signal Statistics",
+      "url": "/api/v1/elite/signal-statistics",
+      "method": "GET",
+      "status": "SUCCESS",
+      "response_time_ms": 89,
+      "status_code": 200,
+      "error": null,
+      "response_data": {
+        "success": true,
+        "statistics": {
+          "daily_stats": {
+            "total_signals": 0,
+            "executed_signals": 0,
+            "failed_signals": 0,
+            "expired_signals": 0,
+            "win_rate": 0.0,
+            "avg_pnl": 0.0
+          },
+          "strategy_performance": {},
+          "total_active_recommendations": 0,
+          "total_recorded_signals": 0,
+          "timestamp": "2025-09-25T12:15:47.075817"
+        },
+        "timestamp": "2025-09-25T12:15:47.075833"
+      },
+      "missing_fields": [],
+      "description": "Signal performance statistics"
+    },
+    {
+      "name": "Elite Live Signals",
+      "url": "/api/v1/elite/live-signals",
+      "method": "GET",
+      "status": "SUCCESS",
+      "response_time_ms": 108,
+      "status_code": 200,
+      "error": null,
+      "response_data": {
+        "success": true,
+        "live_signals": [],
+        "total_count": 0,
+        "message": "Retrieved 0 live signals from active trading",
+        "data_source": "LIVE_SIGNAL_RECORDER",
+        "timestamp": "2025-09-25T12:15:47.181781"
+      },
+      "missing_fields": [],
+      "description": "Live signals from strategies"
+    },
+    {
+      "name": "Elite Signal Lifecycle",
+      "url": "/api/v1/elite/signal-lifecycle",
+      "method": "GET",
+      "status": "PARTIAL_SUCCESS",
+      "response_time_ms": 92,
+      "status_code": 500,
+      "error": "Missing fields: lifecycle_stats",
+      "response_data": {
+        "detail": "Failed to get signal lifecycle statistics",
+        "message": "Failed to get signal lifecycle statistics",
+        "success": false
+      },
+      "missing_fields": [
+        "lifecycle_stats"
+      ],
+      "description": "Signal lifecycle statistics"
+    },
+    {
+      "name": "Autonomous Status",
+      "url": "/api/v1/autonomous/status",
+      "method": "GET",
+      "status": "SUCCESS",
+      "response_time_ms": 208,
+      "status_code": 200,
+      "error": null,
+      "response_data": {
+        "success": true,
+        "message": "Trading status retrieved successfully",
+        "data": {
+          "is_active": false,
+          "session_id": "session_1758802547",
+          "start_time": null,
+          "last_heartbeat": "2025-09-25T12:15:47.500357",
+          "active_strategies": [
+            "optimized_volume_scalper",
+            "regime_adaptive_controller",
+            "news_impact_scalper",
+            "momentum_surfer"
+          ],
+          "active_strategies_count": 4,
+          "active_positions": 0,
+          "total_trades": 0,
+          "daily_pnl": 0.0,
+          "risk_status": {
+            "max_daily_loss": 100000,
+            "max_position_size": 1000000,
+            "current_positions": 0,
+            "daily_pnl": 0.0,
+            "status": "monitoring"
+          },
+          "market_status": "CLOSED",
+          "system_ready": false,
+          "timestamp": "2025-09-25T12:15:47.500375"
+        }
+      },
+      "missing_fields": [],
+      "description": "Autonomous trading status"
+    },
+    {
+      "name": "Autonomous Strategies",
+      "url": "/api/v1/autonomous/strategies",
+      "method": "GET",
+      "status": "SUCCESS",
+      "response_time_ms": 117,
+      "status_code": 200,
+      "error": null,
+      "response_data": {
+        "success": true,
+        "message": "Strategies retrieved successfully",
+        "data": {
+          "optimized_volume_scalper": {
+            "name": "optimized_volume_scalper",
+            "active": true,
+            "last_signal": null
+          },
+          "regime_adaptive_controller": {
+            "name": "regime_adaptive_controller",
+            "active": true,
+            "last_signal": null
+          },
+          "news_impact_scalper": {
+            "name": "news_impact_scalper",
+            "active": true,
+            "last_signal": null
+          },
+          "momentum_surfer": {
+            "name": "momentum_surfer",
+            "active": true,
+            "last_signal": null
+          }
+        }
+      },
+      "missing_fields": [],
+      "description": "Available trading strategies"
+    },
+    {
+      "name": "Dashboard Summary",
+      "url": "/api/v1/dashboard/summary",
+      "method": "GET",
+      "status": "SUCCESS",
+      "response_time_ms": 100,
+      "status_code": 200,
+      "error": null,
+      "response_data": {
+        "success": true,
+        "data": [],
+        "timestamp": "2025-09-25T12:15:47.724392",
+        "total_symbols": 0
+      },
+      "missing_fields": [],
+      "description": "Dashboard summary data"
+    },
+    {
+      "name": "Daily P&L",
+      "url": "/api/v1/dashboard/daily-pnl",
+      "method": "GET",
+      "status": "SUCCESS",
+      "response_time_ms": 129,
+      "status_code": 200,
+      "error": null,
+      "response_data": {
+        "success": true,
+        "data": {
+          "total_pnl": 0,
+          "breakdown": [],
+          "date": "2025-09-25",
+          "last_updated": "2025-09-25T12:15:47.856239"
+        }
+      },
+      "missing_fields": [],
+      "description": "Daily P&L data"
+    },
+    {
+      "name": "Broker Users",
+      "url": "/api/v1/control/users/broker",
+      "method": "GET",
+      "status": "SUCCESS",
+      "response_time_ms": 91,
+      "status_code": 200,
+      "error": null,
+      "response_data": {
+        "success": true,
+        "users": [
+          {
+            "user_id": "QSW899",
+            "name": "Zerodha Account (QSW899)",
+            "username": "QSW899",
+            "avatar": "Z",
+            "initial_capital": 0.0,
+            "current_capital": 0.0,
+            "total_pnl": 0,
+            "daily_pnl": 0,
+            "total_trades": 0,
+            "win_rate": 0,
+            "is_active": true,
+            "open_trades": 0,
+            "paper_trading": true
+          }
+        ]
+      },
+      "missing_fields": [],
+      "description": "Broker user management"
+    },
+    {
+      "name": "Market Indices",
+      "url": "/api/market/indices",
+      "method": "GET",
+      "status": "SUCCESS",
+      "response_time_ms": 91,
+      "status_code": 200,
+      "error": null,
+      "response_data": {
+        "success": true,
+        "message": "Market indices data retrieved successfully",
+        "data": {
+          "indices": [
+            {
+              "symbol": "NIFTY",
+              "name": "NIFTY 50",
+              "last_price": 0,
+              "price": 0,
+              "change": 0,
+              "change_percent": 0,
+              "high": 0,
+              "low": 0,
+              "open": 0,
+              "volume": 0,
+              "status": "MARKET_CLOSED_NO_DATA",
+              "last_update": "2025-09-25T17:45:48.050974+05:30",
+              "data_age_seconds": 0.0,
+              "heartbeat": false
+            },
+            {
+              "symbol": "BANKNIFTY",
+              "name": "BANK NIFTY",
+              "last_price": 0,
+              "price": 0,
+              "change": 0,
+              "change_percent": 0,
+              "high": 0,
+              "low": 0,
+              "open": 0,
+              "volume": 0,
+              "status": "MARKET_CLOSED_NO_DATA",
+              "last_update": "2025-09-25T17:45:48.050974+05:30",
+              "data_age_seconds": 0.0,
+              "heartbeat": false
+            }
+          ],
+          "market_status": "CLOSED",
+          "provider": "TrueData",
+          "last_update": "2025-09-25T17:45:48.050974+05:30",
+          "timestamp": "2025-09-25 17:45:48 IST",
+          "truedata_connection": {
+            "symbols_available": 0,
+            "nifty_available": true,
+            "banknifty_available": true,
+            "live_data_symbols": [],
+            "connection_healthy": false,
+            "heartbeat_age_seconds": 999,
+            "data_flowing": false,
+            "total_symbols": 0,
+            "market_open": false,
+            "data_source": "FALLBACK_CLOSED_MARKET"
+          }
+        },
+        "timestamp": "2025-09-25T12:00:58.792942"
+      },
+      "missing_fields": [],
+      "description": "Market indices data"
+    },
+    {
+      "name": "Market Status",
+      "url": "/api/market/market-status",
+      "method": "GET",
+      "status": "SUCCESS",
+      "response_time_ms": 94,
+      "status_code": 200,
+      "error": null,
+      "response_data": {
+        "success": true,
+        "message": "Market is currently CLOSED",
+        "data": {
+          "market_status": "CLOSED",
+          "market_phase": "CLOSED",
+          "current_time": "2025-09-25T17:45:48.144875+05:30",
+          "timezone": "Asia/Kolkata",
+          "ist_time": "2025-09-25 17:45:48 IST",
+          "market_open": "09:15",
+          "market_close": "15:30",
+          "is_trading_hours": false,
+          "timings": {
+            "pre_open": "09:00 - 09:15",
+            "normal": "09:15 - 15:30",
+            "post_close": "15:30 - 16:00",
+            "closed": "16:00 - 09:00"
+          },
+          "is_trading_day": true,
+          "data_provider": {
+            "name": "TrueData Enhanced",
+            "status": "DISCONNECTED",
+            "user": "tdwsp697",
+            "connection_healthy": false,
+            "heartbeat_age_seconds": 999,
+            "data_flowing": false
+          }
+        },
+        "timestamp": "2025-09-25T12:00:58.792942"
+      },
+      "missing_fields": [],
+      "description": "Market status information"
+    },
+    {
+      "name": "System Status",
+      "url": "/api/v1/system/status",
+      "method": "GET",
+      "status": "SUCCESS",
+      "response_time_ms": 97,
+      "status_code": 200,
+      "error": null,
+      "response_data": {
+        "success": true,
+        "status": "operational",
+        "timestamp": "2025-09-25T12:15:48.244116",
+        "uptime": "active",
+        "services": {
+          "api": "running",
+          "database": "connected",
+          "redis": "connected",
+          "websocket": "active"
+        },
+        "version": "4.0.1"
+      },
+      "missing_fields": [],
+      "description": "System health and status"
+    },
+    {
+      "name": "Search Symbols",
+      "url": "/api/v1/search/symbols?q=NIFTY",
+      "method": "GET",
+      "status": "ERROR",
+      "response_time_ms": 93,
+      "status_code": 422,
+      "error": "HTTP 422",
+      "response_data": {
+        "detail": [
+          {
+            "type": "missing",
+            "loc": [
+              "query",
+              "query"
+            ],
+            "msg": "Field required",
+            "input": null
+          }
+        ],
+        "message": "Validation error"
+      },
+      "missing_fields": [],
+      "description": "Symbol search functionality"
+    }
+  ],
+  "timestamp": "2025-09-25T17:45:48.371323",
+  "base_url": "https://algoauto-9gx56.ondigitalocean.app"
+}
