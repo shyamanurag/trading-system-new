@@ -154,12 +154,22 @@ class SimpleTradeEngine:
                     self.logger.info(f"📋 EXECUTING SIGNAL {i+1}/{len(signals)}: {symbol} {action} qty={quantity}")
                     
                     # Try order manager first
+                    result = None
                     if self.order_manager:
                         self.logger.info(f"🔄 Using order manager for {symbol}")
-                        await self._process_signal_through_order_manager(signal)
+                        result = await self._process_signal_through_order_manager(signal)
                     else:
                         self.logger.info(f"🔄 Using direct Zerodha for {symbol}")
-                        await self._process_signal_through_zerodha(signal)
+                        result = await self._process_signal_through_zerodha(signal)
+                    
+                    # CRITICAL FIX: Mark signal as executed in deduplicator to prevent duplicates
+                    if result:
+                        try:
+                            from src.core.signal_deduplicator import signal_deduplicator
+                            await signal_deduplicator.mark_signal_executed(signal)
+                            self.logger.debug(f"✅ Marked {symbol} as executed in deduplicator")
+                        except Exception as mark_err:
+                            self.logger.warning(f"⚠️ Could not mark signal as executed: {mark_err}")
                     
                     # CRITICAL FIX: Increment executed trades count
                     if isinstance(self.executed_trades, int):
@@ -204,9 +214,11 @@ class SimpleTradeEngine:
             # Simulate order execution for paper trading
             self.logger.info(f"✅ Order executed: {order_id}")
             
+            return order_id  # CRITICAL FIX: Return order_id for deduplicator marking
+            
         except Exception as e:
             self.logger.error(f"Error processing signal through order manager: {e}")
-            raise
+            return None
             
     async def _process_signal_through_zerodha(self, signal: Dict):
         """Process signal through direct Zerodha integration"""
@@ -216,7 +228,7 @@ class SimpleTradeEngine:
                 order_id = f"ORDER_{int(time.time())}"
                 self.logger.info(f"🔧 MOCK order placed: {order_id} for {signal.get('symbol', 'UNKNOWN')}")
                 self.logger.info(f"✅ Order executed: {order_id}")
-                return
+                return order_id  # CRITICAL FIX: Return order_id for deduplicator marking
                 
             # Create order
             order = self._create_order_from_signal(signal)
@@ -228,12 +240,13 @@ class SimpleTradeEngine:
                 order_id = result.get('order_id')
                 self.logger.info(f"📋 Zerodha order placed: {order_id}")
                 self.logger.info(f"✅ Order executed: {order_id}")
+                return order_id  # CRITICAL FIX: Return order_id for deduplicator marking
             else:
                 raise Exception(f"Zerodha order failed: {result.get('error')}")
                 
         except Exception as e:
             self.logger.error(f"Error processing signal through Zerodha: {e}")
-            raise
+            return None
     
     def _calculate_position_size(self, signal: Dict) -> int:
         """Calculate position size based on signal confidence and risk management"""
