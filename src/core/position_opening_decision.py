@@ -530,7 +530,21 @@ class EnhancedPositionOpeningDecision:
     async def _calculate_optimal_position_size(self, signal: Dict, available_capital: float, current_positions: Dict) -> int:
         """Calculate optimal position size using Kelly criterion and risk management"""
         try:
-            # Base calculation
+            symbol = signal.get('symbol', '')
+            
+            # CRITICAL FIX: For OPTIONS (CE/PE), use the quantity from signal (already calculated with lot sizes)
+            # Options must trade in specific lot sizes (e.g., BHARTIARTL = 475, TITAN = 175)
+            # Strategies already calculate correct lot-based quantities
+            if symbol.endswith('CE') or symbol.endswith('PE'):
+                signal_quantity = signal.get('quantity', 0)
+                if signal_quantity > 0:
+                    logger.info(f"📊 OPTIONS: Using strategy-calculated lot size: {symbol} qty={signal_quantity}")
+                    return signal_quantity
+                else:
+                    logger.warning(f"⚠️ OPTIONS signal has no quantity: {symbol} - using 1")
+                    return 1
+            
+            # For EQUITY, calculate position size based on 2% capital rule
             base_size = self._estimate_position_quantity(signal, available_capital)
             
             # Apply Kelly criterion if we have historical data
