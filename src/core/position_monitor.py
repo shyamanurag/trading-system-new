@@ -190,7 +190,7 @@ class PositionMonitor:
         return monitor_start <= current_time <= monitor_end
     
     async def _get_market_data(self) -> Dict[str, float]:
-        """Get current market data using existing cache system"""
+        """Get current market data using existing cache system + OPTIONS from Zerodha"""
         try:
             # Use orchestrator's market data method (respects existing cache system)
             market_data = await self.orchestrator._get_market_data_from_api()
@@ -204,10 +204,64 @@ class PositionMonitor:
                 if isinstance(data, dict) and 'ltp' in data:
                     price_data[symbol] = data['ltp']
             
+            # CRITICAL FIX: Fetch OPTIONS prices from Zerodha (TrueData doesn't have them)
+            # Options symbols like "TCS25OCT2940CE" need live prices for P&L calculation
+            try:
+                positions = await self.orchestrator.position_tracker.get_all_positions()
+                options_symbols = [
+                    symbol for symbol in positions.keys() 
+                    if symbol.endswith('CE') or symbol.endswith('PE')
+                ]
+                
+                if options_symbols and self.orchestrator.zerodha_client:
+                    logger.debug(f"📊 Fetching live prices for {len(options_symbols)} options contracts")
+                    
+                    # Fetch options prices from Zerodha in batch
+                    options_prices = await self._fetch_options_prices_from_zerodha(options_symbols)
+                    
+                    # Merge options prices into price_data
+                    price_data.update(options_prices)
+                    
+                    if options_prices:
+                        logger.info(f"✅ Updated {len(options_prices)} options prices from Zerodha")
+                    
+            except Exception as options_err:
+                logger.warning(f"⚠️ Could not fetch options prices: {options_err}")
+            
             return price_data
             
         except Exception as e:
             logger.error(f"❌ Error getting market data for position monitoring: {e}")
+            return {}
+    
+    async def _fetch_options_prices_from_zerodha(self, symbols: list) -> Dict[str, float]:
+        """Fetch options prices from Zerodha quote API"""
+        try:
+            if not symbols:
+                return {}
+            
+            # Build exchange:symbol format for Zerodha
+            zerodha_symbols = [f"NFO:{symbol}" for symbol in symbols]
+            
+            # Fetch quotes from Zerodha
+            quotes = await self.orchestrator.zerodha_client.get_quote(zerodha_symbols)
+            
+            if not quotes or not isinstance(quotes, dict):
+                return {}
+            
+            # Extract LTP for each symbol
+            prices = {}
+            for zerodha_symbol, quote_data in quotes.items():
+                if isinstance(quote_data, dict) and 'last_price' in quote_data:
+                    # Remove "NFO:" prefix to get clean symbol
+                    clean_symbol = zerodha_symbol.replace('NFO:', '')
+                    prices[clean_symbol] = float(quote_data['last_price'])
+                    logger.debug(f"📊 {clean_symbol}: ₹{prices[clean_symbol]:.2f}")
+            
+            return prices
+            
+        except Exception as e:
+            logger.error(f"❌ Error fetching options prices from Zerodha: {e}")
             return {}
     
     async def _evaluate_exit_conditions(self, positions: Dict, now_ist: datetime) -> List[ExitCondition]:
