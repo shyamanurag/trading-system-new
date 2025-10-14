@@ -1719,11 +1719,26 @@ class TradingOrchestrator:
                 if filtered_signals:
                     if self.trade_engine:
                         self.logger.info(f"🚀 SENDING {len(filtered_signals)} signals to trade engine for execution")
+                        
+                        # 🚨 CRITICAL FIX: Record orders BEFORE execution to prevent duplicates
+                        # This ensures that if another signal generation cycle runs while orders are being placed,
+                        # it will see these pending orders and block duplicate signals
                         for i, signal in enumerate(filtered_signals):
                             symbol = signal.get('symbol', 'UNKNOWN')
                             action = signal.get('action', 'UNKNOWN')
                             quantity = signal.get('quantity', 0)
                             self.logger.info(f"   📋 Signal {i+1}: {symbol} {action} qty={quantity}")
+                            
+                            # Record order placement to prevent duplicates (matches base_strategy pattern)
+                            try:
+                                strategy_key = signal.get('strategy', 'unknown')
+                                if strategy_key in self.strategies:
+                                    strategy_instance = self.strategies[strategy_key].get('instance')
+                                    if strategy_instance and hasattr(strategy_instance, '_record_order_placement'):
+                                        strategy_instance._record_order_placement(symbol)
+                                        self.logger.debug(f"🔒 LOCKED: {symbol} - Duplicate prevention activated for 2 minutes")
+                            except Exception as record_err:
+                                self.logger.warning(f"Could not record order placement for {symbol}: {record_err}")
                         
                         await self.trade_engine.process_signals(filtered_signals)
                         self.logger.info(f"✅ Trade engine processing completed for {len(filtered_signals)} signals")

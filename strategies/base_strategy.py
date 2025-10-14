@@ -3623,15 +3623,45 @@ class BaseStrategy:
     
     def _calculate_options_levels(self, options_entry_price: float, original_stop_loss: float, 
                                  original_target: float, option_type: str, action: str, underlying_symbol: str) -> tuple:
-        """Dynamically calculate stop_loss and target for options premium - ENSURES 2:1 RATIO"""
+        """Dynamically calculate stop_loss and target for options premium using REAL ATR"""
         try:
+            # CRITICAL FIX: Calculate REAL ATR for the underlying symbol
+            atr = None
+            atr_percent = None
+            
+            # Try to get live market data for ATR calculation
+            try:
+                from data.truedata_client import live_market_data
+                if underlying_symbol in live_market_data:
+                    market_data = live_market_data[underlying_symbol]
+                    high = float(market_data.get('high', 0))
+                    low = float(market_data.get('low', 0))
+                    ltp = float(market_data.get('ltp', 0))
+                    
+                    if high > 0 and low > 0 and ltp > 0:
+                        atr = self.calculate_atr(underlying_symbol, high, low, ltp)
+                        atr_percent = (atr / ltp) * 100 if ltp > 0 else 0
+                        logger.info(f"📊 ATR-BASED RISK: {underlying_symbol} - ATR=₹{atr:.2f} ({atr_percent:.2f}%)")
+            except Exception as atr_err:
+                logger.debug(f"Could not calculate ATR for {underlying_symbol}: {atr_err}")
+            
+            # If ATR calculation succeeded, use it; otherwise use volatility-based fallback
+            if atr_percent and 0.5 <= atr_percent <= 10:  # Sanity check: 0.5% - 10% range
+                # Use ATR as the base risk for options
+                # Options typically need wider stops due to higher volatility
+                base_risk_percent = min(atr_percent * 1.5, 0.20)  # 1.5x ATR, max 20%
+                logger.info(f"✅ USING ATR: {underlying_symbol} - Risk={base_risk_percent*100:.1f}% (1.5x ATR)")
+            else:
+                # Fallback to volatility-based calculation
+                base_risk_percent = self._get_dynamic_risk_percentage(underlying_symbol, options_entry_price)
+                logger.info(f"⚠️ FALLBACK: {underlying_symbol} - Risk={base_risk_percent*100:.1f}% (volatility-based)")
+            
             # DYNAMIC FIX: Use market-based reward-to-risk ratio for quality trading
             target_risk_reward_ratio = self._get_dynamic_target_risk_reward_ratio(underlying_symbol, options_entry_price, option_type)
             
-            # Calculate base risk amount (DYNAMIC percentage of premium based on volatility)
-            base_risk_percent = self._get_dynamic_risk_percentage(underlying_symbol, options_entry_price)
+            # Calculate risk and reward amounts
             risk_amount = options_entry_price * base_risk_percent
-            reward_amount = risk_amount * target_risk_reward_ratio  # Dynamic reward based on market conditions
+            reward_amount = risk_amount * target_risk_reward_ratio
             
             # For BUY actions (all our options signals):
             # - stop_loss = Lower premium (cut losses)
@@ -3647,22 +3677,24 @@ class BaseStrategy:
             actual_risk = options_entry_price - options_stop_loss
             actual_reward = options_target - options_entry_price
             actual_ratio = actual_reward / actual_risk if actual_risk > 0 else 2.1
+            actual_risk_percent = (actual_risk / options_entry_price) * 100
+            actual_reward_percent = (actual_reward / options_entry_price) * 100
             
-            logger.info(f"📊 OPTIONS LEVELS (2:1 ENFORCED):")
+            logger.info(f"📊 OPTIONS LEVELS (ATR-DYNAMIC):")
             logger.info(f"   Entry: ₹{options_entry_price:.2f}")
-            logger.info(f"   Stop Loss: ₹{options_stop_loss:.2f} (Risk: ₹{actual_risk:.2f})")
-            logger.info(f"   Target: ₹{options_target:.2f} (Reward: ₹{actual_reward:.2f})")
-            logger.info(f"   Actual R:R = {actual_ratio:.2f} (Target: {target_risk_reward_ratio})")
+            logger.info(f"   Stop Loss: ₹{options_stop_loss:.2f} (Risk: ₹{actual_risk:.2f} = {actual_risk_percent:.1f}%)")
+            logger.info(f"   Target: ₹{options_target:.2f} (Reward: ₹{actual_reward:.2f} = {actual_reward_percent:.1f}%)")
+            logger.info(f"   R:R Ratio = 1:{actual_ratio:.2f} (Target: 1:{target_risk_reward_ratio})")
             
             return options_stop_loss, options_target
             
         except Exception as e:
             logger.error(f"Error calculating options levels: {e}")
-            # Dynamic fallback with market-based ratio
-            base_risk_percent = 0.15  # Conservative 15% fallback risk
+            # Conservative fallback
+            base_risk_percent = 0.15  # 15% fallback risk
             risk_amount = options_entry_price * base_risk_percent  
-            target_ratio = 2.2  # Conservative fallback ratio
-            reward_amount = risk_amount * target_ratio  # Conservative fallback reward
+            target_ratio = 2.0  # Conservative fallback ratio
+            reward_amount = risk_amount * target_ratio
             stop_loss = options_entry_price - risk_amount
             target = options_entry_price + reward_amount
             # Ensure minimum stop loss
