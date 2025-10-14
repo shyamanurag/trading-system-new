@@ -567,6 +567,13 @@ class EnhancedPositionOpeningDecision:
         try:
             base_confidence = float(signal.get('confidence', 0.0))
             
+            # CRITICAL FIX: Normalize confidence from 0-1 scale to 0-10 scale
+            # Strategies send confidence in 0-1 scale (0.9 = 90%)
+            # This module expects 0-10 scale (9.0 = 90%)
+            if base_confidence <= 1.0:
+                base_confidence = base_confidence * 10.0
+                logger.debug(f"Normalized confidence from 0-1 to 0-10 scale: {base_confidence:.1f}/10")
+            
             # Market bias alignment bonus
             if market_bias and hasattr(market_bias, 'current_bias'):
                 bias_confidence = getattr(market_bias.current_bias, 'confidence', 0.0)

@@ -498,10 +498,16 @@ class ZerodhaIntegration:
 
                 # Build Zerodha order parameters
                 # 🚨 CRITICAL FIX: Use LIMIT orders for stock options to avoid Zerodha blocking
-                default_order_type = self.kite.ORDER_TYPE_MARKET
-                if symbol and (symbol.endswith('CE') or symbol.endswith('PE')) and not any(index in symbol for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']):
-                    default_order_type = self.kite.ORDER_TYPE_LIMIT
-                    logger.info(f"🔧 Auto-switching to LIMIT order for stock option: {symbol}")
+                # Stock options MUST use LIMIT orders (Zerodha requirement for illiquid options)
+                is_stock_option = symbol and (symbol.endswith('CE') or symbol.endswith('PE')) and not any(index in symbol for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY'])
+                
+                if is_stock_option:
+                    # FORCE LIMIT order for stock options (ignore order_params)
+                    order_type = self.kite.ORDER_TYPE_LIMIT
+                    logger.info(f"🔧 ENFORCING LIMIT order for stock option: {symbol} (Zerodha requirement)")
+                else:
+                    # For index options and equity, use provided order_type or default to MARKET
+                    order_type = order_params.get('order_type', self.kite.ORDER_TYPE_MARKET)
                 
                 zerodha_params = {
                     'variety': self.kite.VARIETY_REGULAR,
@@ -510,7 +516,7 @@ class ZerodhaIntegration:
                     'transaction_type': action,
                     'quantity': quantity,
                     'product': self._get_product_type_for_symbol(symbol, order_params),  # FIXED: Dynamic product type
-                    'order_type': order_params.get('order_type', default_order_type),
+                    'order_type': order_type,
                     'validity': order_params.get('validity', self.kite.VALIDITY_DAY),
                     'tag': order_params.get('tag', 'ALGO_TRADE')
                 }
@@ -520,6 +526,11 @@ class ZerodhaIntegration:
                     price = order_params.get('price') or order_params.get('entry_price')
                     if price:
                         zerodha_params['price'] = float(price)
+                        logger.info(f"📍 LIMIT order price set: ₹{float(price):.2f}")
+                    else:
+                        # CRITICAL: LIMIT orders MUST have a price
+                        logger.error(f"❌ LIMIT order requires price but none provided for {symbol}")
+                        raise ValueError(f"LIMIT order for {symbol} requires price parameter")
                 
                 # Add trigger price for stop loss orders
                 trigger_price = order_params.get('trigger_price') or order_params.get('stop_loss')
