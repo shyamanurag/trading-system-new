@@ -93,18 +93,32 @@ class OrderManager:
                 logger.warning(f"🚨 EMERGENCY ORDER for {order_data['symbol']} - bypassing rate limits")
             
             # Place order via Zerodha
+            symbol = order_data['symbol']
             zerodha_params = {
-                'symbol': order_data['symbol'],
+                'symbol': symbol,
                 'transaction_type': order_data['side'].upper(),
                 'quantity': order_data['quantity'],
                 'order_type': order_data['order_type'].upper(),
-                'product': self._get_product_type_for_symbol(order_data['symbol']),  # FIXED: Dynamic product type
+                'product': self._get_product_type_for_symbol(symbol),  # FIXED: Dynamic product type
                 'validity': 'DAY',
                 'tag': f"OM_{order_id[:8]}"
             }
             
-            if order_data['order_type'].upper() == 'LIMIT':
-                zerodha_params['price'] = order_data['price']
+            # CRITICAL FIX: Always include price for OPTIONS (CE/PE)
+            # Stock options will be converted to LIMIT orders by broker (Zerodha requirement)
+            # So we MUST include price even if order_type is MARKET
+            is_option = symbol.endswith('CE') or symbol.endswith('PE')
+            
+            if order_data['order_type'].upper() == 'LIMIT' or is_option:
+                # Get price from order_data (could be 'price' or 'entry_price')
+                price = order_data.get('price') or order_data.get('entry_price')
+                if price:
+                    zerodha_params['price'] = float(price)
+                elif is_option:
+                    logger.warning(f"⚠️ Options order for {symbol} has no price - broker may reject")
+                    # Include entry_price if available
+                    if order_data.get('entry_price'):
+                        zerodha_params['price'] = float(order_data['entry_price'])
             
             broker_order_id = await self.zerodha_client.place_order(zerodha_params)
             
