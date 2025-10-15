@@ -166,9 +166,12 @@ class PositionMonitor:
                 # Execute exits based on priority
                 await self._execute_exits(exit_conditions)
                 
-                # Log monitoring status
+                # Log monitoring status with details
                 if positions:
-                    logger.info(f"📊 Monitoring {len(positions)} positions at {current_time.strftime('%H:%M:%S')} IST")
+                    positions_with_stops = sum(1 for p in positions.values() if hasattr(p, 'stop_loss') and p.stop_loss and p.stop_loss > 0)
+                    positions_with_targets = sum(1 for p in positions.values() if hasattr(p, 'target') and p.target and p.target > 0)
+                    logger.info(f"📊 POSITION MONITOR: Tracking {len(positions)} positions at {current_time.strftime('%H:%M:%S')} IST")
+                    logger.info(f"   ✅ {positions_with_stops}/{len(positions)} have stop loss | {positions_with_targets}/{len(positions)} have targets")
                 
                 await asyncio.sleep(self.monitoring_interval)
                 
