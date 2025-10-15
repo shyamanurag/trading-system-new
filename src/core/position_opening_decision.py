@@ -434,14 +434,21 @@ class EnhancedPositionOpeningDecision:
             # Calculate position risk as percentage of capital
             position_risk = estimated_value / available_capital if available_capital > 0 else 1.0
             
-            if position_risk > self.max_position_risk:
+            # 🎯 CRITICAL FIX: Different risk limits for options vs equity
+            # Options have limited downside (premium paid), allow 5% risk
+            # Equity can gap down, keep at 2% risk
+            is_options = symbol.endswith('CE') or symbol.endswith('PE')
+            max_risk_limit = 0.05 if is_options else self.max_position_risk  # 5% for options, 2% for equity
+            
+            if position_risk > max_risk_limit:
+                trade_type = "OPTIONS" if is_options else "EQUITY"
                 return PositionDecisionResult(
                     decision=PositionDecision.REJECTED_RISK,
                     confidence_score=signal.get('confidence', 0.0),
                     risk_score=position_risk * 10,
                     position_size=0,
-                    reasoning=f"Position risk {position_risk:.1%} exceeds limit {self.max_position_risk:.1%}",
-                    metadata={'position_risk': position_risk, 'max_risk': self.max_position_risk}
+                    reasoning=f"{trade_type} risk {position_risk:.1%} exceeds limit {max_risk_limit:.1%}",
+                    metadata={'position_risk': position_risk, 'max_risk': max_risk_limit, 'trade_type': trade_type}
                 )
             
             # Use risk manager if available
