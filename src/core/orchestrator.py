@@ -3367,9 +3367,11 @@ class TradingOrchestrator:
                 if position.quantity != 0:
                     if symbol in zerodha_positions:
                         # Position exists in both - verified
+                        qty = int(position.quantity) if position.quantity else 0
                         verified_positions[symbol] = {
                             'symbol': symbol,
-                            'quantity': int(position.quantity) if position.quantity else 0,
+                            'quantity': abs(qty),  # CRITICAL FIX: Always positive quantity
+                            'action': 'BUY' if qty > 0 else 'SELL',  # CRITICAL FIX: Determine action from quantity sign
                             'entry_price': float(position.average_price) if position.average_price else 0.0,
                             'current_price': float(position.current_price) if position.current_price else 0.0,
                             'stop_loss': float(position.stop_loss) if position.stop_loss else 0.0,
@@ -3409,9 +3411,11 @@ class TradingOrchestrator:
                             )
                             
                             # Add to verified positions
+                            orphan_qty = int(orphan['quantity'])
                             verified_positions[orphan['symbol']] = {
                                 'symbol': orphan['symbol'],
-                                'quantity': int(orphan['quantity']),
+                                'quantity': abs(orphan_qty),  # CRITICAL FIX: Always positive quantity
+                                'action': 'BUY' if orphan_qty > 0 else 'SELL',  # CRITICAL FIX: Determine action from quantity sign
                                 'entry_price': float(orphan['average_price']),
                                 'current_price': float(orphan['current_price']),
                                 'stop_loss': 0.0,
