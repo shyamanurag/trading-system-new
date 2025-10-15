@@ -573,7 +573,9 @@ class EnhancedPositionOpeningDecision:
         """Estimate position quantity based on available capital"""
         try:
             entry_price = float(signal.get('entry_price', 100.0))
-            allocation_percent = 0.02  # 2% per position
+            allocation_percent = 0.05  # CRITICAL FIX: 5% per position (was 2% - too conservative)
+            # With ₹50,000 capital: 5% = ₹2,500 per position (minimum viable size)
+            # With 2%, positions were under ₹1,000 (too small for meaningful trading)
             
             allocation_amount = available_capital * allocation_percent
             quantity = int(allocation_amount / entry_price)
