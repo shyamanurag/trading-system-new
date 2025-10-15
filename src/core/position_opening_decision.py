@@ -126,7 +126,7 @@ class EnhancedPositionOpeningDecision:
                 return duplicate_result
             
             # STEP 4: Market Bias Alignment
-            bias_result = await self._check_market_bias_alignment(action, confidence, market_bias)
+            bias_result = await self._check_market_bias_alignment(symbol, action, confidence, market_bias)
             if bias_result.decision != PositionDecision.APPROVED:
                 return bias_result
             
@@ -346,7 +346,7 @@ class EnhancedPositionOpeningDecision:
                 metadata={'error': str(e)}
             )
     
-    async def _check_market_bias_alignment(self, action: str, confidence: float, market_bias) -> PositionDecisionResult:
+    async def _check_market_bias_alignment(self, symbol: str, action: str, confidence: float, market_bias) -> PositionDecisionResult:
         """Check alignment with market bias"""
         try:
             if not market_bias:
@@ -370,8 +370,8 @@ class EnhancedPositionOpeningDecision:
                         metadata={'no_bias_system': True}
                     )
             
-            # Use market bias system
-            if market_bias.should_allow_signal(action, confidence):
+            # Use market bias system (pass symbol to identify index vs stock)
+            if market_bias.should_allow_signal(action, confidence, symbol=symbol):
                 return PositionDecisionResult(
                     decision=PositionDecision.APPROVED,
                     confidence_score=confidence,

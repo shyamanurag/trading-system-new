@@ -462,13 +462,14 @@ class MarketDirectionalBias:
         
         return consistency - 0.5  # 0.5 to 0.5 range, where 0.5 = all same direction
     
-    def should_allow_signal(self, signal_direction: str, signal_confidence: float) -> bool:
+    def should_allow_signal(self, signal_direction: str, signal_confidence: float, symbol: str = None) -> bool:
         """
         Determine if a signal should be allowed based on market bias
         
         Args:
             signal_direction: 'BUY' or 'SELL'
             signal_confidence: Signal confidence (0-10)
+            symbol: Trading symbol (optional, used to identify index vs stock)
             
         Returns:
             True if signal should be allowed, False if it should be rejected
@@ -510,36 +511,48 @@ class MarketDirectionalBias:
                 return allowed
             
             # DIRECTIONAL BIAS: Adaptive strategy based on bias strength
-            # 🎯 CRITICAL IMPROVEMENT: Mean reversion for extreme moves
+            # 🎯 CRITICAL IMPROVEMENT: Mean reversion for INDEX trades ONLY
+            # 🎯 USER INSIGHT: Stocks can swing 3-5% independently, indices limited to 1-2%
             bias_strength = getattr(self.current_bias, 'confidence', 0.0)
             nifty_change = getattr(self.current_bias, 'nifty_momentum', 0.0)  # nifty_momentum = % change
             
-            # Determine if market is OVEREXTENDED (mean reversion opportunity)
-            # 🎯 USER INSIGHT: 1% NIFTY move already limits that side's potential
-            is_overextended = abs(nifty_change) >= 1.0  # ±1.0% = limited upside/downside
+            # Detect if this is an INDEX trade (NIFTY/BANKNIFTY options) vs STOCK trade
+            is_index_trade = False
+            if symbol:
+                # Check if symbol contains index names
+                index_identifiers = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX']
+                is_index_trade = any(idx in symbol.upper() for idx in index_identifiers)
             
-            # ADAPTIVE LOGIC:
-            # 1. Moderate bias (< 1.0%): TREND FOLLOWING (ride momentum)
-            # 2. Extended bias (>= 1.0%): MEAN REVERSION (fade, upside/downside limited)
+            # Determine if market is OVEREXTENDED (mean reversion opportunity)
+            # ONLY apply to index trades - stocks have independent swings
+            is_overextended = abs(nifty_change) >= 1.0 and is_index_trade  # ±1.0% NIFTY for INDEX trades only
+            
+            # ADAPTIVE LOGIC (INDEX ONLY):
+            # 1. Moderate NIFTY (< 1.0%): TREND FOLLOWING for indices
+            # 2. Extended NIFTY (>= 1.0%): MEAN REVERSION for indices only
+            # 3. STOCKS: Always trend following (can swing independently)
             
             if is_overextended:
-                # MEAN REVERSION MODE: Fade the market move
-                # If NIFTY +1%, upside limited → favor SHORT (expect pullback)
-                # If NIFTY -1%, downside limited → favor LONG (expect bounce)
+                # MEAN REVERSION MODE: Fade the market move (INDEX ONLY)
+                # If NIFTY +1%, favor NIFTY SHORTS (index upside limited)
+                # If NIFTY -1%, favor NIFTY LONGS (index downside limited)
                 bias_aligned = (
                     (effective_direction == "BULLISH" and signal_direction == "SELL") or
                     (effective_direction == "BEARISH" and signal_direction == "BUY")
                 )
-                logger.info(f"🔄 MEAN REVERSION: NIFTY {nifty_change:+.1f}% (±1% = limited {effective_direction.lower()} room) → "
-                          f"Favoring {signal_direction} counter-trend trades")
+                logger.info(f"🔄 MEAN REVERSION (INDEX): NIFTY {nifty_change:+.1f}% (±1% = limited room) → "
+                          f"Favoring {signal_direction} {symbol} counter-trend")
             else:
                 # TREND FOLLOWING MODE: Ride the momentum
+                # For STOCKS: Always use this (independent swings)
+                # For INDEX: Use when NIFTY < 1%
                 bias_aligned = (
                     (effective_direction == "BULLISH" and signal_direction == "BUY") or
                     (effective_direction == "BEARISH" and signal_direction == "SELL")
                 )
-                logger.debug(f"📈 TREND FOLLOWING MODE: NIFTY {nifty_change:+.1f}% → "
-                           f"Favoring {signal_direction} with {effective_direction} bias")
+                symbol_type = "INDEX" if is_index_trade else "STOCK"
+                logger.debug(f"📈 TREND FOLLOWING ({symbol_type}): NIFTY {nifty_change:+.1f}% → "
+                           f"Favoring {signal_direction} {symbol} with {effective_direction} bias")
             
             if bias_aligned:
                 # Aligned signals get lower threshold
