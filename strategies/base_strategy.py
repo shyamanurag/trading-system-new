@@ -4527,9 +4527,13 @@ class BaseStrategy:
             
             if is_options:
                 # 🎯 F&O: Use lot-based calculation
-                base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
+                # 🚨 CRITICAL FIX: Map TrueData symbol to Zerodha symbol (NIFTY-I → NIFTY)
+                zerodha_underlying = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+                logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {zerodha_underlying}")
+                
+                base_lot_size = self._get_dynamic_lot_size(options_symbol, zerodha_underlying)
                 if base_lot_size is None:
-                    logger.warning(f"⚠️ NO LOT SIZE for {underlying_symbol} - FALLING BACK to EQUITY trading")
+                    logger.warning(f"⚠️ NO LOT SIZE for {zerodha_underlying} - FALLING BACK to EQUITY trading")
                     # 🎯 AUTOMATIC FALLBACK: Calculate equity quantity instead of rejecting
                     is_options = False  # Switch to equity mode
                 
@@ -4581,7 +4585,7 @@ class BaseStrategy:
 
                 # CRITICAL: Options should ALWAYS be 1 lot (as per user requirement)
                 lots_needed_for_min = 1  # Always 1 lot for options/F&O
-                logger.info(f"🎯 OPTIONS LOT SIZE: Fixed to 1 lot for {underlying_symbol}")
+                logger.info(f"🎯 OPTIONS LOT SIZE: Fixed to 1 lot for {zerodha_underlying}")
 
                 total_margin = margin_required * lots_needed_for_min if margin_required > 0 else margin_required
 
@@ -4589,7 +4593,7 @@ class BaseStrategy:
                 if total_margin <= max_margin_allowed and total_margin <= available_capital:
                     total_qty = base_lot_size * lots_needed_for_min
                     logger.info(
-                        f"✅ F&O ORDER: {underlying_symbol} = {lots_needed_for_min} lot(s) × {base_lot_size} = {total_qty} qty"
+                        f"✅ F&O ORDER: {zerodha_underlying} = {lots_needed_for_min} lot(s) × {base_lot_size} = {total_qty} qty"
                     )
                     logger.info(
                         f"   💰 Margin: ₹{total_margin:,.0f} (per lot ₹{margin_required:,.0f}) / Available: ₹{available_capital:,.0f}"
@@ -4598,7 +4602,7 @@ class BaseStrategy:
 
                 # If even 1 lot is too expensive, reject early
                 logger.warning(
-                    f"❌ F&O REJECTED: {underlying_symbol} exceeds capital limits "
+                    f"❌ F&O REJECTED: {zerodha_underlying} exceeds capital limits "
                     f"(needed ₹{total_margin:,.0f}, available ₹{available_capital:,.0f})"
                 )
                 return 0
@@ -4731,9 +4735,13 @@ class BaseStrategy:
             
             if is_options:
                 # 🎯 F&O: Use lot-based calculation
-                base_lot_size = self._get_dynamic_lot_size(options_symbol, underlying_symbol)
+                # 🚨 CRITICAL FIX: Map TrueData symbol to Zerodha symbol (NIFTY-I → NIFTY)
+                zerodha_underlying = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+                logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {zerodha_underlying}")
+                
+                base_lot_size = self._get_dynamic_lot_size(options_symbol, zerodha_underlying)
                 if base_lot_size is None:
-                    logger.warning(f"⚠️ NO LOT SIZE for {underlying_symbol} - FALLING BACK to EQUITY trading")
+                    logger.warning(f"⚠️ NO LOT SIZE for {zerodha_underlying} - FALLING BACK to EQUITY trading")
                     # 🎯 AUTOMATIC FALLBACK: Calculate equity quantity instead of rejecting
                     is_options = False  # Switch to equity mode
                 
@@ -4785,7 +4793,7 @@ class BaseStrategy:
 
                 # CRITICAL: Options should ALWAYS be 1 lot (as per user requirement)
                 lots_needed_for_min = 1  # Always 1 lot for options/F&O
-                logger.info(f"🎯 OPTIONS LOT SIZE: Fixed to 1 lot for {underlying_symbol}")
+                logger.info(f"🎯 OPTIONS LOT SIZE: Fixed to 1 lot for {zerodha_underlying}")
 
                 total_margin = margin_required * lots_needed_for_min if margin_required > 0 else margin_required
 
@@ -4793,7 +4801,7 @@ class BaseStrategy:
                 if total_margin <= max_margin_allowed and total_margin <= available_capital:
                     total_qty = base_lot_size * lots_needed_for_min
                     logger.info(
-                        f"✅ F&O ORDER: {underlying_symbol} = {lots_needed_for_min} lot(s) × {base_lot_size} = {total_qty} qty"
+                        f"✅ F&O ORDER: {zerodha_underlying} = {lots_needed_for_min} lot(s) × {base_lot_size} = {total_qty} qty"
                     )
                     logger.info(
                         f"   💰 Margin: ₹{total_margin:,.0f} (per lot ₹{margin_required:,.0f}) / Available: ₹{available_capital:,.0f}"
@@ -4802,7 +4810,7 @@ class BaseStrategy:
 
                 # If even 1 lot is too expensive, reject early
                 logger.warning(
-                    f"❌ F&O REJECTED: {underlying_symbol} exceeds capital limits "
+                    f"❌ F&O REJECTED: {zerodha_underlying} exceeds capital limits "
                     f"(needed ₹{total_margin:,.0f}, available ₹{available_capital:,.0f})"
                 )
                 return 0
