@@ -788,7 +788,8 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             volume_strength = min(volume / 1000000, 1.0)  # Normalize volume
             price_strength = min(abs(price_change) / 2.0, 1.0)  # Normalize price change
             base_confidence = 0.7 + (volume_strength * 0.15) + (price_strength * 0.15)  # 0.7-1.0 range
-            dynamic_confidence = min(max(base_confidence, 0.75), 0.95)  # Clamp between 0.75-0.95
+            dynamic_confidence_raw = min(max(base_confidence, 0.75), 0.95)  # Clamp between 0.75-0.95
+            dynamic_confidence = dynamic_confidence_raw * 10.0  # CRITICAL FIX: Scale to 0-10 range (7.5-9.5)
             
             # Generate options signal using base strategy method with DYNAMIC parameters
             signal = await self.create_standard_signal(
@@ -809,7 +810,8 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                     'volume_strength': round(volume_strength, 2),
                     'price_strength': round(price_strength, 2)
                 },
-                market_bias=self.market_bias  # 🎯 Pass market bias for coordination
+                market_bias=self.market_bias,  # 🎯 Pass market bias for coordination
+                market_data=market_data  # 🎯 CRITICAL FIX: Pass market_data for relative strength filtering
             )
             
             return signal

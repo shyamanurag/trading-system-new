@@ -4575,8 +4575,8 @@ class BaseStrategy:
                         margin_required = contract_value * 0.10  # 10% margin estimate
                         logger.info(f"📊 Futures margin estimate: ₹{margin_required:,.2f}")
                 
-                # 🎯 MARGIN-BASED ALLOCATION: 40% margin limit per trade (increased for better capital utilization)
-                max_margin_per_trade_pct = 0.40  # 40% of available capital per trade  
+                # 🎯 MARGIN-BASED ALLOCATION: 80% margin limit per trade (allow high-value positions)
+                max_margin_per_trade_pct = 0.80  # 80% of available capital per trade  
                 max_margin_allowed = available_capital * max_margin_per_trade_pct
 
                 # CRITICAL: Options should ALWAYS be 1 lot (as per user requirement)
@@ -4779,8 +4779,8 @@ class BaseStrategy:
                         margin_required = contract_value * 0.10  # 10% margin estimate
                         logger.info(f"📊 Futures margin estimate: ₹{margin_required:,.2f}")
                 
-                # 🎯 MARGIN-BASED ALLOCATION: 40% margin limit per trade (increased for better capital utilization)
-                max_margin_per_trade_pct = 0.40  # 40% of available capital per trade  
+                # 🎯 MARGIN-BASED ALLOCATION: 80% margin limit per trade (allow high-value positions)
+                max_margin_per_trade_pct = 0.80  # 80% of available capital per trade  
                 max_margin_allowed = available_capital * max_margin_per_trade_pct
 
                 # CRITICAL: Options should ALWAYS be 1 lot (as per user requirement)

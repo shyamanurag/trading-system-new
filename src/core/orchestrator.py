@@ -3370,14 +3370,31 @@ class TradingOrchestrator:
                     if symbol in zerodha_positions:
                         # Position exists in both - verified
                         qty = int(position.quantity) if position.quantity else 0
+                        entry_price = float(position.average_price) if position.average_price else 0.0
+                        existing_stop = float(position.stop_loss) if position.stop_loss else 0.0
+                        existing_target = float(position.target) if position.target else 0.0
+                        
+                        # 🚨 CRITICAL FIX: If position has no SL/target, set emergency values
+                        if existing_stop == 0.0 or existing_target == 0.0:
+                            if qty > 0:  # LONG position
+                                emergency_stop = entry_price * 0.95  # 5% below entry
+                                emergency_target = entry_price * 1.10  # 10% above entry
+                            else:  # SHORT position
+                                emergency_stop = entry_price * 1.05  # 5% above entry
+                                emergency_target = entry_price * 0.90  # 10% below entry
+                            
+                            existing_stop = emergency_stop if existing_stop == 0.0 else existing_stop
+                            existing_target = emergency_target if existing_target == 0.0 else existing_target
+                            self.logger.warning(f"🚨 EMERGENCY PROTECTION: {symbol} - Set SL: ₹{existing_stop:.2f}, Target: ₹{existing_target:.2f}")
+                        
                         verified_positions[symbol] = {
                             'symbol': symbol,
                             'quantity': abs(qty),  # CRITICAL FIX: Always positive quantity
                             'action': 'BUY' if qty > 0 else 'SELL',  # CRITICAL FIX: Determine action from quantity sign
-                            'entry_price': float(position.average_price) if position.average_price else 0.0,
+                            'entry_price': entry_price,
                             'current_price': float(position.current_price) if position.current_price else 0.0,
-                            'stop_loss': float(position.stop_loss) if position.stop_loss else 0.0,
-                            'target': float(position.target) if position.target else 0.0,
+                            'stop_loss': existing_stop,
+                            'target': existing_target,
                             'pnl': float(position.unrealized_pnl) if position.unrealized_pnl else 0.0,
                             'timestamp': position.entry_time.isoformat() if position.entry_time else None,
                             'source': 'VERIFIED_ZERODHA'
