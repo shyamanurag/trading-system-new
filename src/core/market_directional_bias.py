@@ -509,11 +509,37 @@ class MarketDirectionalBias:
                     logger.debug(f"Signal rejected: Confidence {signal_confidence:.1f} < {neutral_threshold} threshold for neutral bias (regime={regime})")
                 return allowed
             
-            # DIRECTIONAL BIAS: Check alignment
-            bias_aligned = (
-                (effective_direction == "BULLISH" and signal_direction == "BUY") or
-                (effective_direction == "BEARISH" and signal_direction == "SELL")
-            )
+            # DIRECTIONAL BIAS: Adaptive strategy based on bias strength
+            # 🎯 CRITICAL IMPROVEMENT: Mean reversion for extreme moves
+            bias_strength = getattr(self.current_bias, 'confidence', 0.0)
+            nifty_change = getattr(self.current_bias, 'nifty_momentum', 0.0)  # nifty_momentum = % change
+            
+            # Determine if market is OVEREXTENDED (mean reversion opportunity)
+            # 🎯 USER INSIGHT: 1% NIFTY move already limits that side's potential
+            is_overextended = abs(nifty_change) >= 1.0  # ±1.0% = limited upside/downside
+            
+            # ADAPTIVE LOGIC:
+            # 1. Moderate bias (< 1.0%): TREND FOLLOWING (ride momentum)
+            # 2. Extended bias (>= 1.0%): MEAN REVERSION (fade, upside/downside limited)
+            
+            if is_overextended:
+                # MEAN REVERSION MODE: Fade the market move
+                # If NIFTY +1%, upside limited → favor SHORT (expect pullback)
+                # If NIFTY -1%, downside limited → favor LONG (expect bounce)
+                bias_aligned = (
+                    (effective_direction == "BULLISH" and signal_direction == "SELL") or
+                    (effective_direction == "BEARISH" and signal_direction == "BUY")
+                )
+                logger.info(f"🔄 MEAN REVERSION: NIFTY {nifty_change:+.1f}% (±1% = limited {effective_direction.lower()} room) → "
+                          f"Favoring {signal_direction} counter-trend trades")
+            else:
+                # TREND FOLLOWING MODE: Ride the momentum
+                bias_aligned = (
+                    (effective_direction == "BULLISH" and signal_direction == "BUY") or
+                    (effective_direction == "BEARISH" and signal_direction == "SELL")
+                )
+                logger.debug(f"📈 TREND FOLLOWING MODE: NIFTY {nifty_change:+.1f}% → "
+                           f"Favoring {signal_direction} with {effective_direction} bias")
             
             if bias_aligned:
                 # Aligned signals get lower threshold

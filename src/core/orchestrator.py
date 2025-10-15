@@ -1480,9 +1480,10 @@ class TradingOrchestrator:
             MAX_SYMBOLS_PER_CYCLE = 50  # Reduced from 150+
             
             # Priority symbols (always process these first)
+            # CRITICAL FIX: Include NIFTY-I for market bias calculation
             priority_symbols = [
-                'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'RELIANCE', 'TCS', 'INFY',
-                'HDFCBANK', 'ICICIBANK', 'KOTAKBANK', 'BHARTIARTL', 'ITC'
+                'NIFTY-I', 'NIFTY', 'BANKNIFTY-I', 'BANKNIFTY', 'FINNIFTY-I', 'FINNIFTY',
+                'RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'KOTAKBANK', 'BHARTIARTL', 'ITC'
             ]
             
             optimized_data = {}
@@ -1543,9 +1544,10 @@ class TradingOrchestrator:
             transformed_data = self._optimize_market_data_processing(market_data)
             
             # CRITICAL: Update Market Directional Bias BEFORE running strategies
+            # CRITICAL FIX: Pass RAW market_data (not transformed) - bias needs NIFTY-I which is filtered out in transformed_data
             try:
                 if hasattr(self, 'market_bias') and self.market_bias:
-                    current_bias = await self.market_bias.update_market_bias(transformed_data)
+                    current_bias = await self.market_bias.update_market_bias(market_data)  # FIX: Use raw data with NIFTY-I
                     bias_summary = self.market_bias.get_current_bias_summary()
                     
                     # Log bias update every 10 cycles to avoid spam
