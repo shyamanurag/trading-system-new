@@ -1502,6 +1502,11 @@ class ZerodhaIntegration:
             except Exception as conn_test_error:
                 logger.error(f"❌ Zerodha connectivity test FAILED: {conn_test_error}")
                 logger.error(f"   This means the access token or API key is invalid")
+                # CRITICAL FIX: Mark as disconnected when token is invalid
+                self.is_connected = False
+                self.connection_state = ConnectionState.FAILED
+                logger.error(f"🚨 Connection state updated: is_connected={self.is_connected}")
+                logger.error(f"💡 Submit fresh token via /api/auth/zerodha/callback or redeploy")
                 return None
             
             # Get quotes for the options symbol

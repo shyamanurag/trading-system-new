@@ -2986,7 +2986,24 @@ class TradingOrchestrator:
                         self.logger.info("✅ Zerodha connection verified")
                     except Exception as zerodha_err:
                         self.logger.warning(f"⚠️ Zerodha connection test failed: {zerodha_err}")
-                        self.logger.info("💡 Zerodha may need token refresh via /api/auth/zerodha/callback")
+                        
+                        # CRITICAL FIX: Automatically reload token from environment
+                        self.logger.info("🔄 Attempting to reload Zerodha token from environment...")
+                        try:
+                            import os
+                            new_token = os.getenv('ZERODHA_ACCESS_TOKEN')
+                            if new_token and new_token != self.zerodha_client.access_token:
+                                self.logger.info(f"🔑 Found updated token in environment: {new_token[:10]}...")
+                                success = await self.zerodha_client.update_access_token(new_token)
+                                if success:
+                                    self.logger.info("✅ Zerodha token reloaded successfully from environment")
+                                else:
+                                    self.logger.error("❌ Token reload failed - token may still be invalid")
+                            else:
+                                self.logger.warning("⚠️ No new token found in environment")
+                                self.logger.info("💡 Submit fresh token via /api/auth/zerodha/callback")
+                        except Exception as token_err:
+                            self.logger.error(f"❌ Token reload error: {token_err}")
             except Exception as e:
                 self.logger.error(f"❌ Zerodha check failed: {e}")
             
