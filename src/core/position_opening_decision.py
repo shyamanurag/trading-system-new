@@ -125,8 +125,8 @@ class EnhancedPositionOpeningDecision:
             if duplicate_result.decision != PositionDecision.APPROVED:
                 return duplicate_result
             
-            # STEP 4: Market Bias Alignment
-            bias_result = await self._check_market_bias_alignment(symbol, action, confidence, market_bias)
+            # STEP 4: Market Bias Alignment (with Relative Strength)
+            bias_result = await self._check_market_bias_alignment(symbol, action, confidence, market_bias, market_data)
             if bias_result.decision != PositionDecision.APPROVED:
                 return bias_result
             
@@ -346,8 +346,8 @@ class EnhancedPositionOpeningDecision:
                 metadata={'error': str(e)}
             )
     
-    async def _check_market_bias_alignment(self, symbol: str, action: str, confidence: float, market_bias) -> PositionDecisionResult:
-        """Check alignment with market bias"""
+    async def _check_market_bias_alignment(self, symbol: str, action: str, confidence: float, market_bias, market_data: Dict) -> PositionDecisionResult:
+        """Check alignment with market bias including relative strength"""
         try:
             if not market_bias:
                 # No market bias system - allow with moderate confidence requirement
@@ -370,8 +370,17 @@ class EnhancedPositionOpeningDecision:
                         metadata={'no_bias_system': True}
                     )
             
-            # Use market bias system (pass symbol to identify index vs stock)
-            if market_bias.should_allow_signal(action, confidence, symbol=symbol):
+            # Extract stock's change percent for relative strength check
+            stock_change_percent = None
+            if market_data and symbol in market_data:
+                stock_data = market_data[symbol]
+                # Try to get change_percent from market data
+                stock_change_percent = stock_data.get('change_percent') or stock_data.get('provider_change_percent')
+                if stock_change_percent is not None:
+                    stock_change_percent = float(stock_change_percent)
+            
+            # Use market bias system with relative strength check
+            if market_bias.should_allow_signal(action, confidence, symbol=symbol, stock_change_percent=stock_change_percent):
                 return PositionDecisionResult(
                     decision=PositionDecision.APPROVED,
                     confidence_score=confidence,

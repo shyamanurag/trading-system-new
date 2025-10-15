@@ -115,6 +115,7 @@ class BaseStrategy:
         self.position_entry_times = {}  # symbol -> entry timestamp
         self.failed_options_symbols = set()  # Track symbols that failed subscription
         self._last_known_capital = 0.0  # Cache for capital when API fails
+        self._latest_market_data = {}  # Store latest market data for relative strength checks
         
         # Signal generation throttling
         self._last_signal_generation = {}  # symbol -> timestamp
@@ -257,6 +258,9 @@ class BaseStrategy:
     async def on_market_data(self, data: Dict):
         """🚨 BASE SIGNAL PROCESSING: Clean up expired signals before processing"""
         try:
+            # 0. Store latest market data for relative strength checks
+            self._latest_market_data = data
+            
             # 1. Clean up expired signals (older than 5 minutes)
             self._cleanup_expired_signals()
             
@@ -296,6 +300,65 @@ class BaseStrategy:
         self.max_position_age_hours = 24  # Auto-close positions after 24 hours
         self.trailing_stop_percentage = 0.5  # 0.5% trailing stop
         self.profit_lock_percentage = 1.0  # Lock profit at 1%
+    
+    def check_relative_strength(self, symbol: str, action: str, stock_change_percent: float, 
+                               nifty_change_percent: float, min_outperformance: float = 0.3) -> Tuple[bool, str]:
+        """
+        Check if stock has relative strength/weakness vs NIFTY
+        
+        PROFESSIONAL LOGIC:
+        - LONGS: Stock must OUTPERFORM market (stronger than NIFTY)
+        - SHORTS: Stock must UNDERPERFORM market (weaker than NIFTY)
+        
+        Args:
+            symbol: Stock symbol
+            action: 'BUY' or 'SELL'
+            stock_change_percent: Stock's % change
+            nifty_change_percent: NIFTY's % change
+            min_outperformance: Minimum % outperformance required (default 0.3%)
+            
+        Returns:
+            Tuple of (allowed: bool, reason: str)
+        """
+        try:
+            # Skip check for index trades (NIFTY/BANKNIFTY options)
+            index_identifiers = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX']
+            if any(idx in symbol.upper() for idx in index_identifiers):
+                return True, "Index trade - no RS check needed"
+            
+            relative_strength = stock_change_percent - nifty_change_percent
+            
+            if action.upper() == "BUY":
+                # LONG: Stock must outperform market
+                if relative_strength < min_outperformance:
+                    reason = (f"❌ WEAK STOCK: {symbol} {stock_change_percent:+.2f}% vs NIFTY {nifty_change_percent:+.2f}% "
+                            f"(RS: {relative_strength:+.2f}% < {min_outperformance:+.2f}% required)")
+                    logger.info(reason)
+                    return False, reason
+                else:
+                    reason = (f"✅ STRONG STOCK: {symbol} {stock_change_percent:+.2f}% vs NIFTY {nifty_change_percent:+.2f}% "
+                            f"(RS: {relative_strength:+.2f}%)")
+                    logger.info(reason)
+                    return True, reason
+            
+            elif action.upper() == "SELL":
+                # SHORT: Stock must underperform market
+                if relative_strength > -min_outperformance:
+                    reason = (f"❌ STRONG STOCK: {symbol} {stock_change_percent:+.2f}% vs NIFTY {nifty_change_percent:+.2f}% "
+                            f"(RS: {relative_strength:+.2f}% > {-min_outperformance:+.2f}% max)")
+                    logger.info(reason)
+                    return False, reason
+                else:
+                    reason = (f"✅ WEAK STOCK: {symbol} {stock_change_percent:+.2f}% vs NIFTY {nifty_change_percent:+.2f}% "
+                            f"(RS: {relative_strength:+.2f}%)")
+                    logger.info(reason)
+                    return True, reason
+            
+            return True, "Action not BUY/SELL"
+            
+        except Exception as e:
+            logger.warning(f"Error checking relative strength for {symbol}: {e}")
+            return True, f"RS check error: {e}"  # Allow on error to not block trading
         
         # 🎯 ACTIVE POSITION MANAGEMENT CONFIGURATION
         self.enable_active_management = self.config.get('enable_active_management', True)
@@ -2139,12 +2202,42 @@ class BaseStrategy:
     
     async def create_standard_signal(self, symbol: str, action: str, entry_price: float, 
                               stop_loss: float, target: float, confidence: float, 
-                              metadata: Dict, market_bias=None) -> Optional[Dict]:
+                              metadata: Dict, market_bias=None, market_data: Dict = None) -> Optional[Dict]:
         """Create standardized signal format - SUPPORTS EQUITY, FUTURES & OPTIONS"""
         try:
             # 🔧 TIME RESTRICTIONS MOVED TO RISK MANAGER
             # Strategies should always generate signals for analysis
             # Risk Manager will reject orders based on time restrictions
+            
+            # 🎯 RELATIVE STRENGTH CHECK: Stock must outperform/underperform market
+            # Use provided market_data or fall back to stored latest data
+            data_to_use = market_data if market_data else self._latest_market_data
+            
+            if market_bias and data_to_use:
+                # Get NIFTY change percent from market bias
+                nifty_change = getattr(getattr(market_bias, 'current_bias', None), 'nifty_momentum', None)
+                
+                # Get stock change percent from market data
+                stock_change = None
+                if symbol in data_to_use:
+                    stock_data = data_to_use[symbol]
+                    stock_change = stock_data.get('change_percent') or stock_data.get('provider_change_percent')
+                    if stock_change is not None:
+                        stock_change = float(stock_change)
+                
+                # Perform relative strength check
+                if nifty_change is not None and stock_change is not None:
+                    rs_allowed, rs_reason = self.check_relative_strength(
+                        symbol=symbol,
+                        action=action,
+                        stock_change_percent=stock_change,
+                        nifty_change_percent=nifty_change,
+                        min_outperformance=0.3  # 0.3% minimum outperformance
+                    )
+                    
+                    if not rs_allowed:
+                        logger.info(f"🚫 RELATIVE STRENGTH FILTER: {symbol} {action} rejected - {rs_reason}")
+                        return None
             
             # 🎯 MARKET BIAS COORDINATION: Filter signals based on market direction
             if market_bias:

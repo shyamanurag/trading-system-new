@@ -462,14 +462,16 @@ class MarketDirectionalBias:
         
         return consistency - 0.5  # 0.5 to 0.5 range, where 0.5 = all same direction
     
-    def should_allow_signal(self, signal_direction: str, signal_confidence: float, symbol: str = None) -> bool:
+    def should_allow_signal(self, signal_direction: str, signal_confidence: float, symbol: str = None, 
+                          stock_change_percent: float = None) -> bool:
         """
-        Determine if a signal should be allowed based on market bias
+        Determine if a signal should be allowed based on market bias with RELATIVE STRENGTH
         
         Args:
             signal_direction: 'BUY' or 'SELL'
             signal_confidence: Signal confidence (0-10)
             symbol: Trading symbol (optional, used to identify index vs stock)
+            stock_change_percent: Stock's % change (for relative strength check)
             
         Returns:
             True if signal should be allowed, False if it should be rejected
@@ -555,6 +557,37 @@ class MarketDirectionalBias:
                            f"Favoring {signal_direction} {symbol} with {effective_direction} bias")
             
             if bias_aligned:
+                # 🎯 RELATIVE STRENGTH CHECK (User insight: Stock must OUTPERFORM market)
+                # For LONGS: Stock must be stronger than NIFTY
+                # For SHORTS: Stock must be weaker than NIFTY
+                if stock_change_percent is not None and not is_index_trade:
+                    relative_strength = stock_change_percent - nifty_change
+                    min_outperformance = 0.3  # Stock must outperform by at least 0.3%
+                    
+                    if signal_direction == "BUY":
+                        # LONG: Stock must outperform market
+                        if relative_strength < min_outperformance:
+                            logger.info(f"❌ RELATIVE STRENGTH FAIL: {symbol} {signal_direction} rejected - "
+                                      f"Stock {stock_change_percent:+.2f}% vs NIFTY {nifty_change:+.2f}% "
+                                      f"(RS: {relative_strength:+.2f}% < {min_outperformance:+.2f}% required)")
+                            return False
+                        else:
+                            logger.info(f"✅ RELATIVE STRENGTH: {symbol} OUTPERFORMING - "
+                                      f"Stock {stock_change_percent:+.2f}% vs NIFTY {nifty_change:+.2f}% "
+                                      f"(RS: {relative_strength:+.2f}%)")
+                    
+                    elif signal_direction == "SELL":
+                        # SHORT: Stock must underperform market
+                        if relative_strength > -min_outperformance:
+                            logger.info(f"❌ RELATIVE WEAKNESS FAIL: {symbol} {signal_direction} rejected - "
+                                      f"Stock {stock_change_percent:+.2f}% vs NIFTY {nifty_change:+.2f}% "
+                                      f"(RS: {relative_strength:+.2f}% > {-min_outperformance:+.2f}% max)")
+                            return False
+                        else:
+                            logger.info(f"✅ RELATIVE WEAKNESS: {symbol} UNDERPERFORMING - "
+                                      f"Stock {stock_change_percent:+.2f}% vs NIFTY {nifty_change:+.2f}% "
+                                      f"(RS: {relative_strength:+.2f}%)")
+                
                 # Aligned signals get lower threshold
                 allowed = signal_confidence >= 5.5
                 if not allowed:
