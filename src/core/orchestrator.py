@@ -2892,6 +2892,15 @@ class TradingOrchestrator:
                     last_successful_data = current_time  # Reset timer
                     consecutive_failures = 0
                 
+                # 🚨 CRITICAL FIX: Check Zerodha connection health EVERY CYCLE
+                # This catches token expiry even when TrueData is still working
+                if hasattr(self, 'zerodha_client') and self.zerodha_client:
+                    if not self.zerodha_client.is_connected:
+                        self.logger.error(f"🚨 ZERODHA DISCONNECTED: Forcing reconnection to reload token")
+                        await self._reconnect_all_services()
+                        await asyncio.sleep(5)  # Give time for reload
+                        continue  # Skip this cycle, retry on next
+                
                 # Process market data
                 market_data = await self._get_market_data_from_api()
                 
@@ -2994,18 +3003,32 @@ class TradingOrchestrator:
                         try:
                             import os
                             new_token = os.getenv('ZERODHA_ACCESS_TOKEN')
-                            if new_token and new_token != self.zerodha_client.access_token:
-                                self.logger.info(f"🔑 Found updated token in environment: {new_token[:10]}...")
-                                success = await self.zerodha_client.update_access_token(new_token)
-                                if success:
-                                    self.logger.info("✅ Zerodha token reloaded successfully from environment")
+                            old_token = getattr(self.zerodha_client, 'access_token', None)
+                            
+                            self.logger.info(f"🔍 Token comparison:")
+                            self.logger.info(f"   Old token: {old_token[:10] if old_token else 'None'}...")
+                            self.logger.info(f"   New token: {new_token[:10] if new_token else 'None'}...")
+                            
+                            if new_token:
+                                if new_token != old_token:
+                                    self.logger.info(f"🔑 Found DIFFERENT token in environment - reloading...")
+                                    success = await self.zerodha_client.update_access_token(new_token)
+                                    if success:
+                                        self.logger.info("✅ Zerodha token reloaded and verified successfully")
+                                        self.logger.info(f"   is_connected: {self.zerodha_client.is_connected}")
+                                    else:
+                                        self.logger.error("❌ Token reload failed - token may still be invalid")
                                 else:
-                                    self.logger.error("❌ Token reload failed - token may still be invalid")
+                                    self.logger.warning("⚠️ Token in environment is SAME as current token (still expired)")
+                                    self.logger.info("💡 You need to generate a FRESH token via Zerodha login")
+                                    self.logger.info("💡 Submit via /api/auth/zerodha/login endpoint")
                             else:
-                                self.logger.warning("⚠️ No new token found in environment")
+                                self.logger.warning("⚠️ No token found in ZERODHA_ACCESS_TOKEN environment variable")
                                 self.logger.info("💡 Submit fresh token via /api/auth/zerodha/callback")
                         except Exception as token_err:
                             self.logger.error(f"❌ Token reload error: {token_err}")
+                            import traceback
+                            self.logger.error(f"Traceback: {traceback.format_exc()}")
             except Exception as e:
                 self.logger.error(f"❌ Zerodha check failed: {e}")
             
