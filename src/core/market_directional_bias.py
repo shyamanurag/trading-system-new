@@ -102,6 +102,11 @@ class MarketDirectionalBias:
             'AFTERNOON': (12, 0, 14, 30), # 12:00-14:30 - Momentum continuation
             'CLOSING': (14, 30, 15, 30)   # 14:30-15:30 - Final moves
         }
+    
+    @property
+    def current_regime(self) -> str:
+        """Get current market regime for easy access by strategies"""
+        return getattr(self.current_bias, 'market_regime', 'NORMAL')
         
     async def update_market_bias(self, market_data: Dict) -> MarketBias:
         """
