@@ -807,6 +807,10 @@ class EnhancedMomentumSurfer(BaseStrategy):
             max_signals_per_cycle = getattr(self, 'max_signals_per_cycle', 5)
             logger.info(f"🎯 Signal limit: {max_signals_per_cycle} per cycle")
 
+            # 🚨 CRITICAL FIX: Track processed underlyings to prevent contradictory signals
+            # This ensures we don't generate both CE and PE for same stock in one cycle
+            processed_underlyings = set()
+
             # Update active symbols based on market conditions
             self.update_active_symbols(market_data)
             
@@ -817,6 +821,12 @@ class EnhancedMomentumSurfer(BaseStrategy):
                     logger.warning(f"⚠️ SIGNAL LIMIT REACHED: {len(signals)}/{max_signals_per_cycle} - stopping analysis")
                     break
 
+                # 🚨 CRITICAL FIX: Skip if we already processed this underlying
+                # Prevents generating both CE and PE for same stock in one cycle
+                if stock in processed_underlyings:
+                    logger.debug(f"⏭️ SKIPPING {stock}: Already generated signal this cycle (prevents contradictory signals)")
+                    continue
+
                 if stock in market_data:
                     # Detect market condition for this stock
                     market_condition = self._detect_market_condition(stock, market_data)
@@ -825,6 +835,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                     signal = await self._generate_condition_based_signal(stock, market_condition, market_data)
                     if signal:
                         signals.append(signal)
+                        processed_underlyings.add(stock)  # Mark as processed
                         logger.info(f"✅ Signal generated for {stock}: {len(signals)}/{max_signals_per_cycle}")
 
             logger.info(f"📊 Smart Intraday Options generated {len(signals)} signals (limit: {max_signals_per_cycle})")

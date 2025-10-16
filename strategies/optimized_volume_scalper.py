@@ -1054,11 +1054,17 @@ class OptimizedVolumeScalper(BaseStrategy):
             # PROFESSIONAL ML ENHANCEMENT
             enhanced_signals = await self._enhance_signals_with_ml(microstructure_signals, symbol, symbol_data)
             
-            # Convert enhanced microstructure signals to trading signals
-            for ms_signal in enhanced_signals:
-                trading_signal = await self._convert_to_trading_signal(symbol, symbol_data, ms_signal)
+            # 🚨 CRITICAL FIX: Only take the HIGHEST CONFIDENCE signal per underlying
+            # This prevents generating both BUY (CE) and SELL (PE) for same stock in one cycle
+            if enhanced_signals:
+                # Sort by confidence (descending) and take only the best one
+                best_signal = max(enhanced_signals, key=lambda s: s.confidence)
+                trading_signal = await self._convert_to_trading_signal(symbol, symbol_data, best_signal)
                 if trading_signal:
                     signals.append(trading_signal)
+                    logger.info(f"✅ Selected BEST signal for {symbol}: {best_signal.signal_type} {best_signal.direction} (confidence={best_signal.confidence:.1f})")
+                    if len(enhanced_signals) > 1:
+                        logger.info(f"   📊 Rejected {len(enhanced_signals)-1} lower-confidence signals to prevent contradictory trades")
         
         return signals
     
