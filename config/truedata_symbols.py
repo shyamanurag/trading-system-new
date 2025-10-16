@@ -125,11 +125,17 @@ def get_complete_fo_symbols() -> List[str]:
 def get_autonomous_symbol_status():
     """🎯 GET: Current autonomous trading symbol status and strategy"""
     return {
-        "current_strategy": "news_impact_scalper",
+        "current_strategy": "ALL_STRATEGIES",  # 🚨 FIX: System runs ALL strategies, not just one
+        "active_strategies": [
+            "optimized_volume_scalper",  # Market microstructure + Statistical arbitrage
+            "momentum_surfer",  # Momentum specialist with Hodrick-Prescott
+            "news_impact_scalper",  # Options specialist with Black-Scholes
+            "regime_adaptive_controller"  # Meta-strategy with HMM + Kalman
+        ],
         "active_symbols": get_complete_fo_symbols(),
         "symbol_count": len(get_complete_fo_symbols()),
         "status": "active",
-        "last_update": "2025-07-31T04:10:45"
+        "last_update": "2025-10-16T13:09:00"
     }
 
 def get_zerodha_symbol(internal_symbol: str) -> str:
@@ -461,11 +467,17 @@ def get_complete_fo_symbols() -> List[str]:
 def get_autonomous_symbol_status():
     """🎯 GET: Current autonomous trading symbol status and strategy"""
     return {
-        "current_strategy": "news_impact_scalper",
+        "current_strategy": "ALL_STRATEGIES",  # 🚨 FIX: System runs ALL strategies, not just one
+        "active_strategies": [
+            "optimized_volume_scalper",  # Market microstructure + Statistical arbitrage
+            "momentum_surfer",  # Momentum specialist with Hodrick-Prescott
+            "news_impact_scalper",  # Options specialist with Black-Scholes
+            "regime_adaptive_controller"  # Meta-strategy with HMM + Kalman
+        ],
         "active_symbols": get_complete_fo_symbols(),
         "symbol_count": len(get_complete_fo_symbols()),
         "status": "active",
-        "last_update": "2025-07-31T04:10:45"
+        "last_update": "2025-10-16T13:09:00"
     }
 
 def get_zerodha_symbol(internal_symbol: str) -> str:

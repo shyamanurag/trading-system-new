@@ -109,9 +109,12 @@ class AutonomousSymbolManager:
             
             # Get autonomous symbol selection
             symbols_list = get_complete_fo_symbols()
-            self.current_strategy = get_autonomous_symbol_status()["current_strategy"]
+            status = get_autonomous_symbol_status()
+            self.current_strategy = status["current_strategy"]
             
-            logger.info(f"🧠 AUTONOMOUS DECISION: Selected {self.current_strategy} strategy")
+            logger.info(f"🧠 AUTONOMOUS DECISION: Running {self.current_strategy}")
+            if "active_strategies" in status:
+                logger.info(f"   📋 Active strategies: {', '.join(status['active_strategies'])}")
             logger.info(f"📊 Symbol allocation: {len(symbols_list)} symbols")
             
             # Record strategy decision
