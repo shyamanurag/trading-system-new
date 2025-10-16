@@ -1054,17 +1054,13 @@ class OptimizedVolumeScalper(BaseStrategy):
             # PROFESSIONAL ML ENHANCEMENT
             enhanced_signals = await self._enhance_signals_with_ml(microstructure_signals, symbol, symbol_data)
             
-            # 🚨 CRITICAL FIX: Only take the HIGHEST CONFIDENCE signal per underlying
-            # This prevents generating both BUY (CE) and SELL (PE) for same stock in one cycle
-            if enhanced_signals:
-                # Sort by confidence (descending) and take only the best one
-                best_signal = max(enhanced_signals, key=lambda s: s.confidence)
-                trading_signal = await self._convert_to_trading_signal(symbol, symbol_data, best_signal)
+            # 🎯 Convert enhanced microstructure signals to trading signals
+            # Note: Mean reversion and liquidity gap are now regime-aware (disabled in trending markets)
+            # This prevents contradictory signals from mixing trend-following with counter-trend strategies
+            for ms_signal in enhanced_signals:
+                trading_signal = await self._convert_to_trading_signal(symbol, symbol_data, ms_signal)
                 if trading_signal:
                     signals.append(trading_signal)
-                    logger.info(f"✅ Selected BEST signal for {symbol}: {best_signal.signal_type} {best_signal.direction} (confidence={best_signal.confidence:.1f})")
-                    if len(enhanced_signals) > 1:
-                        logger.info(f"   📊 Rejected {len(enhanced_signals)-1} lower-confidence signals to prevent contradictory trades")
         
         return signals
     
@@ -1501,7 +1497,15 @@ class OptimizedVolumeScalper(BaseStrategy):
         return None
     
     def _detect_mean_reversion_opportunity(self, symbol: str, symbol_data: Dict) -> Optional[MarketMicrostructureSignal]:
-        """Detect mean reversion after overreaction"""
+        """Detect mean reversion after overreaction - ONLY in ranging markets"""
+        # 🚨 CRITICAL FIX: Check market regime FIRST
+        # Mean reversion CONTRADICTS trend following - only use in choppy markets
+        if hasattr(self, 'market_bias') and self.market_bias:
+            regime = self.market_bias.current_regime
+            if regime in ['STRONG_TRENDING', 'TRENDING']:
+                logger.debug(f"⏭️ MEAN REVERSION DISABLED for {symbol}: Market is {regime} (trend-following only)")
+                return None
+        
         if symbol not in self.price_history or len(self.price_history[symbol]) < 20:
             return None
             
@@ -1542,7 +1546,15 @@ class OptimizedVolumeScalper(BaseStrategy):
         return None
     
     def _detect_liquidity_gap(self, symbol: str, symbol_data: Dict) -> Optional[MarketMicrostructureSignal]:
-        """Detect temporary liquidity gaps for quick profits"""
+        """Detect temporary liquidity gaps for quick profits - ONLY in ranging markets"""
+        # 🚨 CRITICAL FIX: Check market regime FIRST
+        # Liquidity gap fading CONTRADICTS trend following - only use in choppy markets
+        if hasattr(self, 'market_bias') and self.market_bias:
+            regime = self.market_bias.current_regime
+            if regime in ['STRONG_TRENDING', 'TRENDING']:
+                logger.debug(f"⏭️ LIQUIDITY GAP DISABLED for {symbol}: Market is {regime} (trend-following only)")
+                return None
+        
         # This is a simplified version - in reality, you'd need order book data
         volume = symbol_data.get('volume', 0)
         price_change = symbol_data.get('price_change', 0)
