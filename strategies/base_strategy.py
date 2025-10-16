@@ -59,8 +59,11 @@ class BaseStrategy:
         
         # PROFESSIONAL MATHEMATICAL FOUNDATION - Using static methods
         
-        # 🚨 CRITICAL: Duplicate order prevention system
-        self._recent_orders = {}  # Track recent orders to prevent duplicates
+        # 🚨 CRITICAL: Duplicate order prevention system (SHARED across ALL strategies)
+        # Use class-level dict so ALL strategy instances see ALL orders
+        if not hasattr(BaseStrategy, '_global_recent_orders'):
+            BaseStrategy._global_recent_orders = {}
+        self._recent_orders = BaseStrategy._global_recent_orders  # Point to shared dict
         
         # PROFESSIONAL PERFORMANCE TRACKING
         self.strategy_returns = []
@@ -506,12 +509,32 @@ class BaseStrategy:
         self.strategy_signals_this_hour += 1
         
     def _record_order_placement(self, symbol: str):
-        """🚨 CRITICAL: Record when an order is placed to prevent duplicates"""
+        """🚨 CRITICAL: Record when an order is placed to prevent duplicates (GLOBAL across all strategies)"""
         try:
             current_time = time_module.time()
+            
+            # Record exact symbol
             recent_order_key = f"recent_order_{symbol}"
             self._recent_orders[recent_order_key] = current_time
-            logger.info(f"📝 RECORDED ORDER: {symbol} at {current_time}")
+            
+            # 🚨 CRITICAL FIX: Also record UNDERLYING to block ALL related orders
+            # Extract underlying: "TITAN25OCT3650CE" → "TITAN"
+            underlying = symbol
+            if symbol.endswith('CE') or symbol.endswith('PE'):
+                import re
+                match = re.match(r'^([A-Z]+)', symbol)
+                if match:
+                    underlying = match.group(1)
+            
+            # Record underlying separately (prevents CE and PE on same stock)
+            if underlying != symbol:
+                underlying_key = f"recent_order_{underlying}"
+                self._recent_orders[underlying_key] = current_time
+                logger.info(f"📝 RECORDED ORDER (GLOBAL): {symbol} + underlying {underlying} by {self.name}")
+            else:
+                logger.info(f"📝 RECORDED ORDER (GLOBAL): {symbol} by {self.name}")
+            
+            logger.info(f"   📊 Total tracked orders: {len(self._recent_orders)}")
             
             # Clean up old entries (older than 1 hour)
             cutoff_time = current_time - 3600
@@ -596,7 +619,8 @@ class BaseStrategy:
                 underlying_key = f"recent_order_{underlying}"
                 last_underlying_time = self._recent_orders.get(underlying_key, 0)
                 if current_time - last_underlying_time < 120:
-                    logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} - Underlying {underlying} ordered {(current_time - last_underlying_time):.0f}s ago")
+                    logger.warning(f"🚫 DUPLICATE ORDER BLOCKED (GLOBAL): {symbol} - Underlying {underlying} ordered {(current_time - last_underlying_time):.0f}s ago")
+                    logger.warning(f"   🎯 Blocked by {self.name} - prevents contradictory CE/PE on same stock")
                     return True
                     
                 # Also check all recent orders for same underlying
@@ -615,7 +639,8 @@ class BaseStrategy:
                     
                     # Block if same underlying and within 2 minutes
                     if recent_underlying == underlying and current_time - recent_time < 120:
-                        logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} - Related order {recent_symbol} placed {(current_time - recent_time):.0f}s ago")
+                        logger.warning(f"🚫 DUPLICATE ORDER BLOCKED (GLOBAL): {symbol} - Related order {recent_symbol} placed {(current_time - recent_time):.0f}s ago")
+                        logger.warning(f"   🎯 Blocked by {self.name} - prevents multiple positions on {underlying}")
                         return True
             else:
                 self._recent_orders = {}
