@@ -95,6 +95,13 @@ class MarketDirectionalBias:
         self.sector_history = {}  # sector -> list of change percentages
         self.max_history = 20
         
+        # 🚨 MULTI-DAY OVERBOUGHT/OVERSOLD TRACKING
+        self.daily_closes = deque(maxlen=5)  # Track last 5 days' closing levels
+        self.daily_changes = deque(maxlen=5)  # Track last 5 days' % changes
+        self.consecutive_bullish_days = 0  # Count consecutive positive days
+        self.consecutive_bearish_days = 0  # Count consecutive negative days
+        self.cumulative_move_3d = 0.0  # 3-day cumulative % change
+        
         # TIME-OF-DAY BIAS MODIFIERS
         self.time_phases = {
             'OPENING': (9, 15, 10, 0),    # 9:15-10:00 - High volatility
@@ -155,6 +162,11 @@ class MarketDirectionalBias:
             
             # 2. ANALYZE NIFTY MOMENTUM
             nifty_momentum = self._analyze_nifty_momentum(nifty_data)
+            
+            # 🚨 2B. UPDATE MULTI-DAY TRACKING & DETECT OVERBOUGHT/OVERSOLD
+            self._update_daily_tracking(nifty_data, nifty_momentum)
+            is_multi_day_overbought = self._detect_multi_day_overbought()
+            is_multi_day_oversold = self._detect_multi_day_oversold()
             
             # 3. CALCULATE SECTOR ALIGNMENT
             sector_alignment = self._calculate_sector_alignment(market_data)
@@ -901,6 +913,104 @@ class MarketDirectionalBias:
             logger.error(f"Error checking bias change: {e}")
             return True
     
+    def _update_daily_tracking(self, nifty_data: Dict, nifty_momentum: float):
+        """Update multi-day tracking for overbought/oversold detection"""
+        try:
+            # Only update once per day (at market close or first update of the day)
+            now = datetime.now()
+            today_str = now.strftime('%Y-%m-d')
+            
+            # Track NIFTY close for the day
+            nifty_close = float(nifty_data.get('ltp', 0))
+            if nifty_close > 0:
+                # If this is a new day, record previous day's data
+                if len(self.daily_closes) == 0 or self.daily_closes[-1][0] != today_str:
+                    self.daily_closes.append((today_str, nifty_close))
+                    self.daily_changes.append((today_str, nifty_momentum))
+                    
+                    # Update consecutive days counter
+                    if nifty_momentum > 0.3:  # Bullish day (>0.3%)
+                        self.consecutive_bullish_days += 1
+                        self.consecutive_bearish_days = 0
+                    elif nifty_momentum < -0.3:  # Bearish day (<-0.3%)
+                        self.consecutive_bearish_days += 1
+                        self.consecutive_bullish_days = 0
+                    else:  # Flat day - reset counters
+                        self.consecutive_bullish_days = 0
+                        self.consecutive_bearish_days = 0
+                    
+                    # Calculate 3-day cumulative move
+                    if len(self.daily_changes) >= 3:
+                        self.cumulative_move_3d = sum([change for _, change in list(self.daily_changes)[-3:]])
+                    
+                    logger.info(f"📅 DAILY TRACKING UPDATE: Day={today_str}, Close={nifty_close:.0f}, "
+                              f"Change={nifty_momentum:+.2f}%, "
+                              f"Consecutive Bullish={self.consecutive_bullish_days}, "
+                              f"Consecutive Bearish={self.consecutive_bearish_days}, "
+                              f"3D Cumulative={self.cumulative_move_3d:+.2f}%")
+        except Exception as e:
+            logger.error(f"Error updating daily tracking: {e}")
+    
+    def _detect_multi_day_overbought(self) -> bool:
+        """
+        Detect multi-day overbought conditions
+        Returns True if market is overbought based on multi-day analysis
+        """
+        try:
+            # Criterion 1: 3+ consecutive bullish days
+            streak_overbought = self.consecutive_bullish_days >= 3
+            
+            # Criterion 2: 3-day cumulative move > +2.5%
+            cumulative_overbought = self.cumulative_move_3d > 2.5
+            
+            # Criterion 3: Today's momentum strong but 3-day extended
+            if len(self.daily_changes) >= 3:
+                today_momentum = self.daily_changes[-1][1] if self.daily_changes else 0
+                strong_today = today_momentum > 0.5  # Today is +0.5%+
+                extended_3d = self.cumulative_move_3d > 2.0  # But 3-day already +2%
+                momentum_exhaustion = strong_today and extended_3d
+            else:
+                momentum_exhaustion = False
+            
+            is_overbought = streak_overbought or cumulative_overbought or momentum_exhaustion
+            
+            if is_overbought:
+                logger.warning(f"🔴 MULTI-DAY OVERBOUGHT DETECTED:")
+                logger.warning(f"   Consecutive Bullish Days: {self.consecutive_bullish_days} {'✅ OVERBOUGHT' if streak_overbought else ''}")
+                logger.warning(f"   3-Day Cumulative: {self.cumulative_move_3d:+.2f}% {'✅ OVERBOUGHT' if cumulative_overbought else ''}")
+                logger.warning(f"   Momentum Exhaustion: {'✅ OVERBOUGHT' if momentum_exhaustion else 'No'}")
+                logger.warning(f"   🚨 CAUTION: Market may be due for pullback/consolidation")
+            
+            return is_overbought
+        except Exception as e:
+            logger.error(f"Error detecting multi-day overbought: {e}")
+            return False
+    
+    def _detect_multi_day_oversold(self) -> bool:
+        """
+        Detect multi-day oversold conditions
+        Returns True if market is oversold based on multi-day analysis
+        """
+        try:
+            # Criterion 1: 3+ consecutive bearish days
+            streak_oversold = self.consecutive_bearish_days >= 3
+            
+            # Criterion 2: 3-day cumulative move < -2.5%
+            cumulative_oversold = self.cumulative_move_3d < -2.5
+            
+            is_oversold = streak_oversold or cumulative_oversold
+            
+            if is_oversold:
+                logger.warning(f"🟢 MULTI-DAY OVERSOLD DETECTED:")
+                logger.warning(f"   Consecutive Bearish Days: {self.consecutive_bearish_days} {'✅ OVERSOLD' if streak_oversold else ''}")
+                logger.warning(f"   3-Day Cumulative: {self.cumulative_move_3d:+.2f}% {'✅ OVERSOLD' if cumulative_oversold else ''}")
+                logger.warning(f"   🚨 CAUTION: Market may be due for bounce/rally")
+            
+            return is_oversold
+        except Exception as e:
+            logger.error(f"Error detecting multi-day oversold: {e}")
+            return False
+    
     def get_current_bias_summary(self) -> Dict:
         """Get current bias summary for logging/monitoring"""
         return {
@@ -914,6 +1024,9 @@ class MarketDirectionalBias:
             'breadth_score': round(getattr(self.current_bias, 'breadth_score', 1.0), 2),
             'stability_score': round(getattr(self.current_bias, 'stability_score', 0.5), 2),
             'internals_alignment': round(getattr(self.current_bias, 'internals_alignment', 0.0), 2),
+            'consecutive_bullish_days': self.consecutive_bullish_days,
+            'consecutive_bearish_days': self.consecutive_bearish_days,
+            'cumulative_3d_move': round(self.cumulative_move_3d, 2),
             'last_updated': self.current_bias.last_updated.strftime('%H:%M:%S'),
             'age_minutes': (datetime.now() - self.current_bias.last_updated).total_seconds() / 60,
             'bias_changes': self.bias_change_count

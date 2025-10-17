@@ -356,8 +356,8 @@ class PositionMonitor:
             current_pnl_percent = ((entry_price - current_price) / entry_price) * 100
         
         # 🚨 CRITICAL FIX: TRAILING STOP-LOSS
-        # If position is in profit >= 10%, move stop-loss to lock in 50% of profit
-        if current_pnl_percent >= 10.0:
+        # If position is in profit >= 2% (aligned with max 2% risk per trade), lock profit
+        if current_pnl_percent >= 2.0:
             # Calculate trailing stop to lock in 50% of current profit
             if position.side == 'long':
                 profit_from_entry = current_price - entry_price
@@ -365,11 +365,12 @@ class PositionMonitor:
                 
                 # Update stop-loss if trailing stop is higher than current stop
                 if trailing_stop > stop_loss_price:
+                    protected_profit_pct = ((trailing_stop - entry_price) / entry_price) * 100
                     logger.info(f"📈 TRAILING STOP ACTIVATED - {symbol}:")
                     logger.info(f"   Entry: ₹{entry_price:.2f} → Current: ₹{current_price:.2f}")
-                    logger.info(f"   Profit: {current_pnl_percent:.1f}% (₹{current_pnl:.2f})")
+                    logger.info(f"   Current Profit: {current_pnl_percent:.1f}% (₹{current_pnl:.2f})")
                     logger.info(f"   OLD Stop: ₹{stop_loss_price:.2f} → NEW Trailing Stop: ₹{trailing_stop:.2f}")
-                    logger.info(f"   Protected Profit: ₹{(trailing_stop - entry_price) * position.quantity:.2f}")
+                    logger.info(f"   Protected Profit: {protected_profit_pct:.1f}% (₹{(trailing_stop - entry_price) * position.quantity:.2f})")
                     
                     # Update the position's stop-loss
                     position.stop_loss = trailing_stop
@@ -379,11 +380,12 @@ class PositionMonitor:
                 trailing_stop = entry_price - (profit_from_entry * 0.5)  # Lock 50% profit
                 
                 if trailing_stop < stop_loss_price:
+                    protected_profit_pct = ((entry_price - trailing_stop) / entry_price) * 100
                     logger.info(f"📈 TRAILING STOP ACTIVATED - {symbol}:")
                     logger.info(f"   Entry: ₹{entry_price:.2f} → Current: ₹{current_price:.2f}")
-                    logger.info(f"   Profit: {current_pnl_percent:.1f}% (₹{current_pnl:.2f})")
+                    logger.info(f"   Current Profit: {current_pnl_percent:.1f}% (₹{current_pnl:.2f})")
                     logger.info(f"   OLD Stop: ₹{stop_loss_price:.2f} → NEW Trailing Stop: ₹{trailing_stop:.2f}")
-                    logger.info(f"   Protected Profit: ₹{(entry_price - trailing_stop) * position.quantity:.2f}")
+                    logger.info(f"   Protected Profit: {protected_profit_pct:.1f}% (₹{(entry_price - trailing_stop) * position.quantity:.2f})")
                     
                     position.stop_loss = trailing_stop
                     stop_loss_price = trailing_stop
