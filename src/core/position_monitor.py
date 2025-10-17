@@ -387,7 +387,7 @@ class PositionMonitor:
                 exit_conditions.append(stop_loss_exit)
             
             # 3. Target conditions
-            target_exit = self._check_target_exit(symbol, position)
+            target_exit = await self._check_target_exit(symbol, position)
             if target_exit:
                 exit_conditions.append(target_exit)
             
@@ -518,7 +518,7 @@ class PositionMonitor:
         
         return None
     
-    def _check_target_exit(self, symbol: str, position) -> Optional[ExitCondition]:
+    async def _check_target_exit(self, symbol: str, position) -> Optional[ExitCondition]:
         """Check target conditions with PARTIAL PROFIT BOOKING and enhanced logging"""
         if not hasattr(position, 'target') or not position.target:
             return None
