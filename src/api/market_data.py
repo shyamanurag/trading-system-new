@@ -593,7 +593,9 @@ async def get_dashboard_summary():
         
         for symbol in symbols:
             try:
-                data = client.get_market_data(symbol)
+                # 🚨 FIX: Use get_live_data_for_symbol() instead of get_market_data()
+                from data.truedata_client import get_live_data_for_symbol
+                data = get_live_data_for_symbol(symbol)
                 if data:
                     summary_data.append({
                         "symbol": symbol,

@@ -829,6 +829,9 @@ class ZerodhaIntegration:
     
     def get_margins_sync(self) -> float:
         """Get available margin synchronously (for real-time capital tracking)"""
+        import time
+        current_time = time.time()  # 🚨 FIX: Define current_time at start
+        
         try:
             # Check unified cache first to prevent API hammering
             cached_margins = self._get_cached_data('margins', 'margins')
@@ -917,6 +920,9 @@ class ZerodhaIntegration:
     
     async def get_positions(self) -> Dict:
         """Get positions with retry"""
+        import time
+        current_time = time.time()  # 🚨 FIX: Define current_time at start
+        
         # Check unified cache first to prevent API hammering
         cached_positions = self._get_cached_data('positions', 'positions')
         if cached_positions is not None:
