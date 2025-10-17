@@ -118,6 +118,15 @@ class EnhancedPositionOpeningDecision:
             
             logger.info(f"🎯 EVALUATING POSITION OPENING: {symbol} {action} @ ₹{entry_price} (Confidence: {confidence:.1f})")
             
+            # 🚨 DATA FLOW CHECK #3: Log position evaluation context
+            logger.info(f"📊 DATA FLOW CHECK #3 - Position Evaluation Context:")
+            logger.info(f"   Available Capital: ₹{available_capital:,.0f}")
+            logger.info(f"   Current Positions: {len(current_positions)}")
+            logger.info(f"   Market Bias Available: {market_bias is not None}")
+            if market_bias:
+                logger.info(f"   Market Bias: {getattr(market_bias.current_bias, 'bias', 'unknown')}")
+                logger.info(f"   Market Regime: {getattr(market_bias.current_bias, 'market_regime', 'unknown')}")
+            
             # STEP 0: 🚨 DAILY LOSS LIMIT CHECK (CRITICAL - Check FIRST)
             daily_loss_check = await self._check_daily_loss_limit(available_capital)
             if daily_loss_check.decision != PositionDecision.APPROVED:

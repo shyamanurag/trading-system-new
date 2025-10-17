@@ -1555,13 +1555,18 @@ class TradingOrchestrator:
                     current_bias = await self.market_bias.update_market_bias(market_data)  # FIX: Use raw data with NIFTY-I
                     bias_summary = self.market_bias.get_current_bias_summary()
                     
-                    # Log bias update every 10 cycles to avoid spam
+                    # 🚨 DATA FLOW CHECK: Log every 5 cycles for debugging
                     if not hasattr(self, '_bias_log_counter'):
                         self._bias_log_counter = 0
                     self._bias_log_counter += 1
                     
-                    if self._bias_log_counter % 10 == 0:  # Log every 10th cycle
-                        self.logger.info(f"🎯 MARKET BIAS: {bias_summary['direction']} "
+                    if self._bias_log_counter % 5 == 0:  # Log every 5th cycle (was 10)
+                        self.logger.info(f"📊 DATA FLOW CHECK #1 - Market Bias Updated:")
+                        self.logger.info(f"   NIFTY in raw data: {'NIFTY-I' in market_data}")
+                        if 'NIFTY-I' in market_data:
+                            nifty_data = market_data['NIFTY-I']
+                            self.logger.info(f"   NIFTY-I: ₹{nifty_data.get('close', 0):.2f}, Change: {nifty_data.get('change_percent', 0):.2f}%")
+                        self.logger.info(f"   🎯 MARKET BIAS: {bias_summary['direction']} "
                                        f"(Confidence: {bias_summary['confidence']}/10, "
                                        f"NIFTY: {bias_summary['nifty_momentum']:+.2f}%, "
                                        f"Sectors: {bias_summary['sector_alignment']:+.2f})")
@@ -1609,6 +1614,11 @@ class TradingOrchestrator:
                                 continue
                         
                         setattr(self, last_run_key, current_time)
+                        
+                        # 🚨 DATA FLOW CHECK #2: Log data reaching strategies
+                        if self._bias_log_counter % 5 == 0:  # Same frequency as bias logging
+                            self.logger.info(f"📊 DATA FLOW CHECK #2 - Strategy '{strategy_key}' receiving data:")
+                            self.logger.info(f"   Symbols in data: {len(transformed_data)} ({list(transformed_data.keys())[:5]}...)")
                         
                         # Call strategy's on_market_data method with TRANSFORMED data
                         await strategy_instance.on_market_data(transformed_data)

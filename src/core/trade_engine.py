@@ -1354,6 +1354,35 @@ class TradeEngine:
                 reward_amount = abs(target - entry_price) * quantity
                 risk_reward_ratio = reward_amount / risk_amount if risk_amount > 0 else 0
                 
+                # 🚨 DATA FLOW FIX: Get market bias/regime from orchestrator
+                market_bias = 'neutral'
+                market_regime = 'unknown'
+                if hasattr(self, 'orchestrator') and self.orchestrator:
+                    if hasattr(self.orchestrator, 'market_bias') and self.orchestrator.market_bias:
+                        try:
+                            current_bias = self.orchestrator.market_bias.current_bias
+                            market_bias = getattr(current_bias, 'bias', 'neutral')
+                            market_regime = getattr(current_bias, 'market_regime', 'unknown')
+                        except:
+                            pass
+                
+                # Get capital from orchestrator's daily capital sync
+                current_capital = 50000
+                if hasattr(self, 'orchestrator') and hasattr(self.orchestrator, 'daily_capital_sync'):
+                    try:
+                        margins = self.orchestrator.daily_capital_sync.get_margins()
+                        if isinstance(margins, dict):
+                            current_capital = margins.get('cash', 50000)
+                        else:
+                            current_capital = float(margins) if margins else 50000
+                    except:
+                        pass
+                
+                # Get daily P&L from position decision system
+                daily_pnl = 0
+                if hasattr(self, 'orchestrator') and hasattr(self.orchestrator, 'position_decision'):
+                    daily_pnl = getattr(self.orchestrator.position_decision, 'daily_realized_pnl', 0)
+                
                 trade_data = {
                     'trade_id': order_id,
                     'symbol': signal.get('symbol'),
@@ -1365,15 +1394,16 @@ class TradeEngine:
                     'entry_order_id': order_id,
                     'strategy_name': signal.get('strategy', 'unknown'),
                     'signal_confidence': signal.get('confidence', 0),
-                    'market_bias': getattr(self, 'current_market_bias', 'neutral'),
-                    'market_regime': getattr(self, 'current_market_regime', 'unknown'),
-                    'capital_at_entry': getattr(self, 'current_capital', 50000),
+                    'market_bias': market_bias,
+                    'market_regime': market_regime,
+                    'capital_at_entry': current_capital,
                     'risk_amount': risk_amount,
                     'reward_amount': reward_amount,
                     'risk_reward_ratio': risk_reward_ratio,
-                    'daily_pnl_at_entry': getattr(self, 'daily_pnl', 0)
+                    'daily_pnl_at_entry': daily_pnl
                 }
                 
+                self.logger.info(f"📊 DATA FLOW CHECK: Bias={market_bias}, Regime={market_regime}, Capital=₹{current_capital:,.0f}, Daily P&L=₹{daily_pnl:,.0f}")
                 await self.performance_tracker.log_trade_entry(trade_data)
                 
         except Exception as e:
