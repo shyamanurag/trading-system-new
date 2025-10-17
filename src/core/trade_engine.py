@@ -1278,6 +1278,13 @@ class TradeEngine:
             # Update rate limiting
             self.last_signal_time = time.time()
             
+            # 🚨 CRITICAL FIX: Add position to tracker for monitoring
+            if order_id and hasattr(self, 'position_tracker') and self.position_tracker:
+                try:
+                    await self._add_position_to_tracker(signal, order_id)
+                except Exception as tracker_error:
+                    self.logger.error(f"❌ Failed to add position to tracker: {tracker_error}")
+            
             return order_id
             
         except Exception as e:
@@ -1305,6 +1312,16 @@ class TradeEngine:
             if order_id:
                 self.logger.info(f"📋 Zerodha order placed: {order_id}")
                 self.last_signal_time = time.time()
+                
+                # 🚨 CRITICAL FIX: Add position to tracker for monitoring
+                if hasattr(self, 'position_tracker') and self.position_tracker:
+                    try:
+                        await self._add_position_to_tracker(signal, order_id)
+                    except Exception as tracker_error:
+                        self.logger.error(f"❌ Failed to add position to tracker: {tracker_error}")
+                else:
+                    self.logger.warning("⚠️ Position tracker not available - position will be orphaned!")
+                
                 return order_id
             else:
                 self.logger.error("❌ Zerodha order failed")
@@ -1313,6 +1330,46 @@ class TradeEngine:
         except Exception as e:
             self.logger.error(f"❌ Error processing signal through Zerodha: {e}")
             return None
+    
+    async def _add_position_to_tracker(self, signal: Dict, order_id: str):
+        """Add newly opened position to tracker for monitoring"""
+        try:
+            symbol = signal.get('symbol')
+            action = signal.get('action', 'BUY').upper()
+            quantity = int(signal.get('quantity', 0))
+            entry_price = float(signal.get('entry_price', 0))
+            stop_loss = float(signal.get('stop_loss', 0))
+            target = float(signal.get('target', 0))
+            
+            if not symbol or quantity == 0:
+                self.logger.error(f"❌ Cannot add position to tracker: Invalid symbol or quantity")
+                return
+            
+            # Create position data
+            position_data = {
+                'symbol': symbol,
+                'side': 'long' if action == 'BUY' else 'short',
+                'quantity': quantity,
+                'average_price': entry_price,
+                'current_price': entry_price,  # Will be updated by market data
+                'stop_loss': stop_loss,
+                'target': target,
+                'order_id': order_id,
+                'strategy': signal.get('strategy', 'unknown'),
+                'entry_time': datetime.now(),
+                'partial_profit_booked': False  # For partial exit tracking
+            }
+            
+            # Add to position tracker
+            await self.position_tracker.add_position(symbol, position_data)
+            self.logger.info(f"✅ POSITION ADDED TO TRACKER: {symbol} {action} x{quantity} @ ₹{entry_price}")
+            self.logger.info(f"   Stop Loss: ₹{stop_loss}, Target: ₹{target}")
+            self.logger.info(f"   🎯 Position will be monitored for trailing stops and profit booking")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error adding position to tracker: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
     
     def _create_order_from_signal(self, signal: Dict) -> Dict:
         """Create order parameters from signal"""
