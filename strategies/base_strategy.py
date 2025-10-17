@@ -1758,7 +1758,9 @@ class BaseStrategy:
             market_open = time(9, 15)
             market_close = time(15, 30)
             
-            # INTRADAY SQUARE-OFF: Stop new positions 30 minutes before close
+            # 🚨 CRITICAL FIX: Stop OPTIONS positions 90 minutes before close
+            # Options decay rapidly in last hour - avoid late entries
+            options_cutoff_time = time(14, 0)  # 2:00 PM - No new OPTIONS after this
             square_off_time = time(15, 0)  # 3:00 PM - Start square-off
             
             # Check if it's a weekday (Monday=0, Sunday=6)
@@ -1768,6 +1770,7 @@ class BaseStrategy:
             
             is_trading_time = market_open <= current_time <= market_close
             is_square_off_time = square_off_time <= current_time <= market_close
+            is_options_late = options_cutoff_time <= current_time <= market_close
             
             if not is_trading_time:
                 logger.info(f"🚫 SAFETY: Trading blocked outside market hours. Current IST time: {current_time} "
@@ -1776,6 +1779,10 @@ class BaseStrategy:
             elif is_square_off_time:
                 logger.warning(f"⚠️ INTRADAY SQUARE-OFF: New positions blocked. Current time: {current_time} "
                               f"(Square-off starts: {square_off_time})")
+                return False
+            elif option_type in ['CE', 'PE'] and is_options_late:
+                logger.warning(f"🚫 OPTIONS CUTOFF: No new options after {options_cutoff_time} (avoid theta decay)")
+                logger.info(f"   Current time: {current_time} | Options cutoff: {options_cutoff_time}")
                 return False
             else:
                 logger.info(f"✅ TRADING HOURS: Market open for new positions. Current IST time: {current_time}")
@@ -2477,34 +2484,36 @@ class BaseStrategy:
             
             # Factors for signal type selection (F&O enabled symbols)
             is_index = symbol.endswith('-I') or symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
-            is_high_confidence = normalized_confidence >= 0.8
+            # 🚨 MATHEMATICAL FIX: Raise confidence threshold to 85% (was 80%)
+            is_high_confidence = normalized_confidence >= 0.85
+            # 🚨 STRICTER OPTIONS FILTER: Need 90% confidence for scalping (was 85%)
+            is_very_high_confidence = normalized_confidence >= 0.90
             is_scalping = metadata.get('risk_type', '').startswith('SCALPING')
             volatility_score = metadata.get('volume_score', 0)
             
-            # 🎯 DECISION LOGIC FOR F&O ENABLED SYMBOLS (BALANCED APPROACH):
+            # 🎯 DECISION LOGIC FOR F&O ENABLED SYMBOLS (STRICTER APPROACH):
             # 1. Index symbols → OPTIONS (standard)
-            # 2. Very high confidence (0.85+) + Scalping → OPTIONS (leverage)
-            # 3. High volatility stocks + Very high confidence → OPTIONS
+            # 2. VERY high confidence (0.90+) + Scalping → OPTIONS (leverage)
+            # 3. High volatility stocks + VERY high confidence → OPTIONS
             # 4. Medium-High confidence (0.65-0.84) → EQUITY (balanced approach)
             # 5. Low confidence → EQUITY (safest)
             
             if is_index:
                 logger.info(f"🎯 INDEX SIGNAL: {symbol} → OPTIONS (F&O enabled)")
                 return 'OPTIONS'
-            elif is_high_confidence and normalized_confidence >= 0.80:  # High confidence for options
-                logger.info(f"🎯 HIGH CONFIDENCE: {symbol} → OPTIONS (F&O enabled, conf={normalized_confidence:.2f})")
+            elif is_very_high_confidence:  # 🚨 STRICTER: Need 90% confidence for stock options
+                logger.info(f"🎯 VERY HIGH CONFIDENCE: {symbol} → OPTIONS (F&O enabled, conf={normalized_confidence:.2f})")
                 return 'OPTIONS'
-            elif volatility_score >= 0.8 and normalized_confidence >= 0.75:  # High volatility + good confidence
+            elif volatility_score >= 0.8 and normalized_confidence >= 0.85:  # 🚨 RAISED: High volatility needs 85% (was 75%)
                 logger.info(f"🎯 HIGH VOLATILITY: {symbol} → OPTIONS (vol={volatility_score:.2f}, conf={normalized_confidence:.2f})")
                 return 'OPTIONS'
-            elif is_scalping and normalized_confidence >= 0.75:  # Scalping needs good confidence for options
+            elif is_scalping and is_very_high_confidence:  # 🚨 RAISED: Scalping needs 90% (was 75%)
                 logger.info(f"🎯 SCALPING SIGNAL: {symbol} → OPTIONS (conf={normalized_confidence:.2f})")
                 return 'OPTIONS'
-            elif normalized_confidence >= 0.70:  # Medium-high confidence → Try F&O with smaller position
-                logger.info(f"🎯 MEDIUM-HIGH CONFIDENCE: {symbol} → OPTIONS (moderate risk, conf={normalized_confidence:.2f})")
-                return 'OPTIONS'
             else:
-                logger.info(f"🎯 BELOW THRESHOLD: {symbol} → EQUITY (conf={normalized_confidence:.2f} < 0.70)")
+                # 🚨 CRITICAL FIX: Default to EQUITY for stock signals below 90% confidence
+                # This prevents weak options trades that cause losses
+                logger.info(f"🎯 BELOW THRESHOLD: {symbol} → EQUITY (conf={normalized_confidence:.2f} < 0.90)")
                 return 'EQUITY'
                 
         except Exception as e:
@@ -3823,10 +3832,10 @@ class BaseStrategy:
             
             # If ATR calculation succeeded, use it; otherwise use volatility-based fallback
             if atr_percent and 0.5 <= atr_percent <= 10:  # Sanity check: 0.5% - 10% range
-                # Use ATR as the base risk for options
-                # Options typically need wider stops due to higher volatility
-                base_risk_percent = min(atr_percent * 1.5, 0.20)  # 1.5x ATR, max 20%
-                logger.info(f"✅ USING ATR: {underlying_symbol} - Risk={base_risk_percent*100:.1f}% (1.5x ATR)")
+                # 🚨 MATHEMATICAL FIX: Tighter multiplier for options
+                # Options have limited downside (premium), need tighter stops to preserve capital
+                base_risk_percent = min(atr_percent * 1.0, 0.10)  # 1.0x ATR (was 1.5x), max 10% (was 20%)
+                logger.info(f"✅ USING ATR: {underlying_symbol} - Risk={base_risk_percent*100:.1f}% (1.0x ATR, TIGHTENED)")
             else:
                 # Fallback to volatility-based calculation
                 base_risk_percent = self._get_dynamic_risk_percentage(underlying_symbol, options_entry_price)
@@ -3866,15 +3875,15 @@ class BaseStrategy:
             
         except Exception as e:
             logger.error(f"Error calculating options levels: {e}")
-            # Conservative fallback
-            base_risk_percent = 0.15  # 15% fallback risk
+            # 🚨 MATHEMATICAL FIX: Tighter conservative fallback
+            base_risk_percent = 0.08  # 8% fallback risk (was 15%)
             risk_amount = options_entry_price * base_risk_percent  
-            target_ratio = 2.0  # Conservative fallback ratio
+            target_ratio = 2.5  # Better fallback ratio (was 2.0)
             reward_amount = risk_amount * target_ratio
             stop_loss = options_entry_price - risk_amount
             target = options_entry_price + reward_amount
             # Ensure minimum stop loss
-            stop_loss = max(stop_loss, options_entry_price * 0.05)
+            stop_loss = max(stop_loss, options_entry_price * 0.10)  # Max 90% loss (was 95%)
             return stop_loss, target
     
     def _calculate_dynamic_options_multiplier(self, option_type: str, options_entry_price: float) -> float:
@@ -4009,11 +4018,12 @@ class BaseStrategy:
             
             # Options-specific adjustments
             if option_type in ['CE', 'PE']:
-                # Options can have higher targets due to leverage
-                target_ratio *= 1.1
+                # 🚨 MATHEMATICAL FIX: Higher minimum R:R for options to justify risk
+                # Need at least 2:1 to overcome theta decay and slippage
+                target_ratio *= 1.2  # Increased from 1.1
             
-            # Cap the ratio at reasonable bounds
-            return max(1.5, min(target_ratio, 3.5))
+            # 🚨 STRICTER BOUNDS: Minimum 2:1 R:R for options (was 1.5:1)
+            return max(2.0, min(target_ratio, 3.5))
             
         except Exception as e:
             logger.error(f"Error calculating dynamic target R:R ratio: {e}")
@@ -4025,25 +4035,26 @@ class BaseStrategy:
             # Get volatility indicators
             volatility_multiplier = self._get_volatility_multiplier(symbol, price)
             
-            # Base risk percentage
-            base_risk = 0.12  # 12% base risk
+            # 🚨 CRITICAL FIX: Reduced from 12% to 8% to prevent consecutive losses
+            # Options are already leveraged, they need tighter stops
+            base_risk = 0.08  # 8% base risk (was 12%)
             
             # Adjust based on volatility:
             # High volatility = lower risk percentage (to account for bigger moves)
-            # Low volatility = higher risk percentage (smaller moves, need wider stops)
+            # Low volatility = moderate risk percentage (tighter stops for options)
             if volatility_multiplier > 2.0:
-                risk_percent = base_risk * 0.8  # 9.6% for high volatility
+                risk_percent = base_risk * 0.85  # 6.8% for high volatility
             elif volatility_multiplier > 1.5:
-                risk_percent = base_risk * 0.9  # 10.8% for medium volatility
+                risk_percent = base_risk * 1.0  # 8.0% for medium volatility
             else:
-                risk_percent = base_risk * 1.1  # 13.2% for low volatility
+                risk_percent = base_risk * 1.1  # 8.8% for low volatility (was 13.2%)
             
-            # Ensure reasonable bounds
-            return max(0.08, min(risk_percent, 0.20))  # Between 8% and 20%
+            # 🚨 TIGHTER BOUNDS: Cap at 12% max (was 20%)
+            return max(0.06, min(risk_percent, 0.12))  # Between 6% and 12%
             
         except Exception as e:
             logger.error(f"Error calculating dynamic risk percentage: {e}")
-            return 0.15  # 15% fallback
+            return 0.08  # 🚨 TIGHTENED: 8% fallback (was 15%)
     
     def _get_volatility_multiplier(self, symbol: str, price: float) -> float:
         """Get volatility multiplier for the symbol based on recent price action"""
