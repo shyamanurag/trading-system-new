@@ -1758,9 +1758,10 @@ class BaseStrategy:
             market_open = time(9, 15)
             market_close = time(15, 30)
             
-            # 🚨 CRITICAL FIX: Stop OPTIONS positions 90 minutes before close
-            # Options decay rapidly in last hour - avoid late entries
-            options_cutoff_time = time(14, 0)  # 2:00 PM - No new OPTIONS after this
+            # 🚨 DAVID VS GOLIATH: Stop OPTIONS even EARLIER (avoid theta decay trap)
+            # Market makers win in the last 2 hours via time decay
+            # Exit before they feast on our premiums
+            options_cutoff_time = time(13, 30)  # 1:30 PM - No new OPTIONS after this (was 2:00 PM)
             square_off_time = time(15, 0)  # 3:00 PM - Start square-off
             
             # Check if it's a weekday (Monday=0, Sunday=6)
@@ -2119,20 +2120,21 @@ class BaseStrategy:
             except:
                 pass
             
-            # MARKET-ADAPTIVE RISK-REWARD RATIO
+            # 🚨 DAVID VS GOLIATH: HIGHER R:R to compensate for tighter stops
+            # Tighter stops (3-7%) mean we need bigger targets to be profitable
             if risk_reward_ratio is None:
-                # RANGING MARKET: Lower risk-reward (faster exits)
+                # RANGING MARKET: Still conservative but higher (was 1.2)
                 if abs(nifty_momentum) < 0.15 or market_regime in ('ranging', 'sideways', 'CHOPPY'):
-                    risk_reward_ratio = 1.2  # 1:1.2 for quick scalping profits
-                    logger.debug(f"🔄 RANGING MARKET: Using conservative R:R = 1:{risk_reward_ratio}")
-                # TRENDING MARKET: Higher risk-reward (ride the trend)
+                    risk_reward_ratio = 1.8  # 1:1.8 (was 1.2) - tighter stops need bigger targets
+                    logger.debug(f"🔄 RANGING MARKET: Using higher R:R = 1:{risk_reward_ratio} (tight stops)")
+                # TRENDING MARKET: Significantly higher (was 2.0)
                 elif abs(nifty_momentum) >= 0.3:
-                    risk_reward_ratio = 2.0  # 1:2 for trend following
-                    logger.debug(f"📈 TRENDING MARKET: Using aggressive R:R = 1:{risk_reward_ratio}")
-                # MODERATE MOMENTUM: Balanced approach
+                    risk_reward_ratio = 2.5  # 1:2.5 (was 2.0) - ride the trend harder
+                    logger.debug(f"📈 TRENDING MARKET: Using aggressive R:R = 1:{risk_reward_ratio} (tight stops)")
+                # MODERATE MOMENTUM: Higher balanced (was 1.5)
                 else:
-                    risk_reward_ratio = 1.5  # 1:1.5 standard
-                    logger.debug(f"⚖️ MODERATE MARKET: Using balanced R:R = 1:{risk_reward_ratio}")
+                    risk_reward_ratio = 2.0  # 1:2.0 (was 1.5)
+                    logger.debug(f"⚖️ MODERATE MARKET: Using improved R:R = 1:{risk_reward_ratio} (tight stops)")
             
             # Calculate risk distance
             risk_distance = abs(entry_price - stop_loss)
@@ -2485,35 +2487,39 @@ class BaseStrategy:
             # Factors for signal type selection (F&O enabled symbols)
             is_index = symbol.endswith('-I') or symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
             # 🚨 MATHEMATICAL FIX: Raise confidence threshold to 85% (was 80%)
-            is_high_confidence = normalized_confidence >= 0.85
-            # 🚨 STRICTER OPTIONS FILTER: Need 90% confidence for scalping (was 85%)
-            is_very_high_confidence = normalized_confidence >= 0.90
+            # 🚨 DAVID VS GOLIATH: EXTREME selectivity for options
+            # 4 days of losses = we only take THE BEST setups
+            is_high_confidence = normalized_confidence >= 0.92  # Was 0.85, now 0.92 (TOP 8% signals only)
+            is_very_high_confidence = normalized_confidence >= 0.95  # Was 0.90, now 0.95 (TOP 5% signals)
             is_scalping = metadata.get('risk_type', '').startswith('SCALPING')
             volatility_score = metadata.get('volume_score', 0)
             
-            # 🎯 DECISION LOGIC FOR F&O ENABLED SYMBOLS (STRICTER APPROACH):
-            # 1. Index symbols → OPTIONS (standard)
-            # 2. VERY high confidence (0.90+) + Scalping → OPTIONS (leverage)
-            # 3. High volatility stocks + VERY high confidence → OPTIONS
-            # 4. Medium-High confidence (0.65-0.84) → EQUITY (balanced approach)
-            # 5. Low confidence → EQUITY (safest)
+            # 🚨 DAVID VS GOLIATH: ULTRA-STRICT decision logic
+            # After 4 days of losses, we're being EXTREMELY selective
+            # Only the absolute best setups get options leverage
             
+            # 1. Index symbols: STILL allow options (but tight stops)
             if is_index:
                 logger.info(f"🎯 INDEX SIGNAL: {symbol} → OPTIONS (F&O enabled)")
                 return 'OPTIONS'
-            elif is_very_high_confidence:  # 🚨 STRICTER: Need 90% confidence for stock options
-                logger.info(f"🎯 VERY HIGH CONFIDENCE: {symbol} → OPTIONS (F&O enabled, conf={normalized_confidence:.2f})")
+            
+            # 2. STOCK OPTIONS: Need 95% confidence (was 90%)
+            # We're fighting against market makers with deep pockets
+            # Only take setups where we have MASSIVE edge
+            elif is_very_high_confidence:  # 95%+ confidence
+                logger.info(f"🎯 ELITE CONFIDENCE: {symbol} → OPTIONS (conf={normalized_confidence:.2f} ≥ 0.95)")
                 return 'OPTIONS'
-            elif volatility_score >= 0.8 and normalized_confidence >= 0.85:  # 🚨 RAISED: High volatility needs 85% (was 75%)
-                logger.info(f"🎯 HIGH VOLATILITY: {symbol} → OPTIONS (vol={volatility_score:.2f}, conf={normalized_confidence:.2f})")
+            
+            # 3. High volatility + 92%+ confidence (was 85%)
+            elif volatility_score >= 0.85 and normalized_confidence >= 0.92:
+                logger.info(f"🎯 HIGH VOL + STRONG CONF: {symbol} → OPTIONS (vol={volatility_score:.2f}, conf={normalized_confidence:.2f})")
                 return 'OPTIONS'
-            elif is_scalping and is_very_high_confidence:  # 🚨 RAISED: Scalping needs 90% (was 75%)
-                logger.info(f"🎯 SCALPING SIGNAL: {symbol} → OPTIONS (conf={normalized_confidence:.2f})")
-                return 'OPTIONS'
+            
+            # 4. ALL OTHER CASES: Default to EQUITY (safer)
+            # Better to make small gains in equity than big losses in options
             else:
-                # 🚨 CRITICAL FIX: Default to EQUITY for stock signals below 90% confidence
-                # This prevents weak options trades that cause losses
-                logger.info(f"🎯 BELOW THRESHOLD: {symbol} → EQUITY (conf={normalized_confidence:.2f} < 0.90)")
+                logger.info(f"🎯 CONSERVATIVE CHOICE: {symbol} → EQUITY (conf={normalized_confidence:.2f} < 0.95)")
+                logger.info(f"   Reason: David vs Goliath - only taking elite options setups")
                 return 'EQUITY'
                 
         except Exception as e:
@@ -4030,31 +4036,37 @@ class BaseStrategy:
             return 2.2  # Conservative fallback
     
     def _get_dynamic_risk_percentage(self, symbol: str, price: float) -> float:
-        """Calculate risk percentage based on market volatility and price level"""
+        """
+        🚨 DAVID VS GOLIATH: Ultra-tight risk for options survival
+        4 days of losses = need MUCH tighter stops
+        """
         try:
             # Get volatility indicators
             volatility_multiplier = self._get_volatility_multiplier(symbol, price)
             
-            # 🚨 CRITICAL FIX: Reduced from 12% to 8% to prevent consecutive losses
-            # Options are already leveraged, they need tighter stops
-            base_risk = 0.08  # 8% base risk (was 12%)
+            # 🚨 DRASTIC REDUCTION: 8% → 5% base risk
+            # Options decay FAST, we need to exit losers IMMEDIATELY
+            base_risk = 0.05  # 5% base risk (was 8%, was 12% before that)
             
-            # Adjust based on volatility:
-            # High volatility = lower risk percentage (to account for bigger moves)
-            # Low volatility = moderate risk percentage (tighter stops for options)
+            # Adjust based on volatility (even tighter):
+            # High volatility = VERY tight stops (options will whipsaw)
+            # Low volatility = still tight but slightly more room
             if volatility_multiplier > 2.0:
-                risk_percent = base_risk * 0.85  # 6.8% for high volatility
+                risk_percent = base_risk * 0.75  # 3.75% for high vol (was 6.8%)
             elif volatility_multiplier > 1.5:
-                risk_percent = base_risk * 1.0  # 8.0% for medium volatility
+                risk_percent = base_risk * 0.90  # 4.5% for medium vol (was 8.0%)
             else:
-                risk_percent = base_risk * 1.1  # 8.8% for low volatility (was 13.2%)
+                risk_percent = base_risk * 1.0  # 5.0% for low vol (was 8.8%)
             
-            # 🚨 TIGHTER BOUNDS: Cap at 12% max (was 20%)
-            return max(0.06, min(risk_percent, 0.12))  # Between 6% and 12%
+            # 🚨 ULTRA-TIGHT BOUNDS: 3-7% max (was 6-12%)
+            # Example: ₹60 premium option
+            #   3% = ₹1.80 stop (exit FAST if wrong)
+            #   7% = ₹4.20 stop (maximum allowed loss)
+            return max(0.03, min(risk_percent, 0.07))  # Between 3% and 7%
             
         except Exception as e:
             logger.error(f"Error calculating dynamic risk percentage: {e}")
-            return 0.08  # 🚨 TIGHTENED: 8% fallback (was 15%)
+            return 0.05  # 🚨 ULTRA-TIGHT: 5% fallback (was 8%)
     
     def _get_volatility_multiplier(self, symbol: str, price: float) -> float:
         """Get volatility multiplier for the symbol based on recent price action"""
