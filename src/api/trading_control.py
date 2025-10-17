@@ -717,4 +717,238 @@ async def test_zerodha_manual_system():
             "/api/v1/control/zerodha-manual/test"
         ],
         "workflow": "TrueData → Complete Testing → Zerodha Authorization → Trading Ready"
-    } 
+    }
+
+# 🚨 MANUAL OVERRIDE ENDPOINTS
+
+class ManualOverride(BaseModel):
+    """Manual override command"""
+    action: str  # 'pause_trading', 'resume_trading', 'close_position', 'close_all', 'override_loss_limit'
+    symbol: Optional[str] = None
+    reason: str
+
+@router.post("/manual/override")
+async def manual_override(command: ManualOverride):
+    """
+    Manual trading override - EMERGENCY CONTROL
+    
+    Actions:
+    - pause_trading: Stop new position entries (keep monitoring existing)
+    - resume_trading: Resume normal trading
+    - close_position: Close specific position immediately
+    - close_all: Close all open positions immediately
+    - override_loss_limit: Temporarily override daily loss limit (use with caution)
+    """
+    try:
+        orchestrator = trading_state.get("orchestrator")
+        if not orchestrator:
+            raise HTTPException(status_code=400, detail="Trading system not running")
+        
+        action = command.action.lower()
+        logger.warning(f"🚨 MANUAL OVERRIDE: {action} - Reason: {command.reason}")
+        
+        if action == 'pause_trading':
+            orchestrator.manual_trading_paused = True
+            
+            # Log system event
+            if hasattr(orchestrator, 'performance_tracker') and orchestrator.performance_tracker:
+                await orchestrator.performance_tracker.log_system_event({
+                    'event_type': 'manual_override',
+                    'severity': 'warning',
+                    'component': 'manual_control',
+                    'title': 'Trading Paused Manually',
+                    'description': f'Manual pause initiated. Reason: {command.reason}',
+                    'capital_at_event': getattr(orchestrator, 'current_capital', 0),
+                    'daily_pnl_at_event': getattr(orchestrator.position_decision, 'daily_realized_pnl', 0),
+                    'open_positions_count': len(orchestrator.position_tracker.positions) if hasattr(orchestrator, 'position_tracker') else 0
+                })
+            
+            return {
+                "success": True,
+                "message": "Trading paused - no new positions will be opened",
+                "action": "pause_trading",
+                "timestamp": datetime.now().isoformat(),
+                "note": "Existing positions continue to be monitored"
+            }
+        
+        elif action == 'resume_trading':
+            orchestrator.manual_trading_paused = False
+            
+            if hasattr(orchestrator, 'performance_tracker') and orchestrator.performance_tracker:
+                await orchestrator.performance_tracker.log_system_event({
+                    'event_type': 'manual_override',
+                    'severity': 'info',
+                    'component': 'manual_control',
+                    'title': 'Trading Resumed Manually',
+                    'description': f'Manual resume initiated. Reason: {command.reason}',
+                    'capital_at_event': getattr(orchestrator, 'current_capital', 0),
+                    'daily_pnl_at_event': getattr(orchestrator.position_decision, 'daily_realized_pnl', 0),
+                    'open_positions_count': len(orchestrator.position_tracker.positions) if hasattr(orchestrator, 'position_tracker') else 0
+                })
+            
+            return {
+                "success": True,
+                "message": "Trading resumed - normal operations",
+                "action": "resume_trading",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        elif action == 'close_position':
+            if not command.symbol:
+                raise HTTPException(status_code=400, detail="Symbol required for close_position")
+            
+            # Close specific position
+            if hasattr(orchestrator, 'position_monitor') and orchestrator.position_monitor:
+                position = await orchestrator.position_tracker.get_position(command.symbol)
+                if not position:
+                    return {"success": False, "error": f"Position not found: {command.symbol}"}
+                
+                # Create manual exit condition
+                from src.core.position_monitor import ExitCondition
+                exit_condition = ExitCondition(
+                    condition_type='manual_override',
+                    symbol=command.symbol,
+                    trigger_price=position.current_price,
+                    reason=f'Manual close: {command.reason}',
+                    priority=0  # Highest priority
+                )
+                
+                success = await orchestrator.position_monitor._execute_exit(exit_condition)
+                
+                if hasattr(orchestrator, 'performance_tracker') and orchestrator.performance_tracker:
+                    await orchestrator.performance_tracker.log_system_event({
+                        'event_type': 'manual_override',
+                        'severity': 'warning',
+                        'component': 'manual_control',
+                        'title': f'Position Closed Manually: {command.symbol}',
+                        'description': f'Reason: {command.reason}',
+                        'affected_symbols': [command.symbol],
+                        'capital_at_event': getattr(orchestrator, 'current_capital', 0),
+                        'daily_pnl_at_event': getattr(orchestrator.position_decision, 'daily_realized_pnl', 0),
+                        'open_positions_count': len(orchestrator.position_tracker.positions) if hasattr(orchestrator, 'position_tracker') else 0
+                    })
+                
+                return {
+                    "success": success,
+                    "message": f"Position {command.symbol} closed manually",
+                    "action": "close_position",
+                    "symbol": command.symbol,
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                return {"success": False, "error": "Position monitor not available"}
+        
+        elif action == 'close_all':
+            closed_positions = []
+            failed_positions = []
+            
+            if hasattr(orchestrator, 'position_tracker') and orchestrator.position_tracker:
+                positions = orchestrator.position_tracker.positions
+                
+                for symbol, position in positions.items():
+                    try:
+                        from src.core.position_monitor import ExitCondition
+                        exit_condition = ExitCondition(
+                            condition_type='manual_override',
+                            symbol=symbol,
+                            trigger_price=position.current_price,
+                            reason=f'Manual close all: {command.reason}',
+                            priority=0
+                        )
+                        
+                        success = await orchestrator.position_monitor._execute_exit(exit_condition)
+                        if success:
+                            closed_positions.append(symbol)
+                        else:
+                            failed_positions.append(symbol)
+                    except Exception as e:
+                        logger.error(f"Failed to close {symbol}: {e}")
+                        failed_positions.append(symbol)
+                
+                if hasattr(orchestrator, 'performance_tracker') and orchestrator.performance_tracker:
+                    await orchestrator.performance_tracker.log_system_event({
+                        'event_type': 'manual_override',
+                        'severity': 'critical',
+                        'component': 'manual_control',
+                        'title': 'All Positions Closed Manually',
+                        'description': f'Reason: {command.reason}. Closed: {len(closed_positions)}, Failed: {len(failed_positions)}',
+                        'affected_symbols': closed_positions + failed_positions,
+                        'capital_at_event': getattr(orchestrator, 'current_capital', 0),
+                        'daily_pnl_at_event': getattr(orchestrator.position_decision, 'daily_realized_pnl', 0),
+                        'open_positions_count': 0
+                    })
+                
+                return {
+                    "success": True,
+                    "message": "All positions closed",
+                    "action": "close_all",
+                    "closed_positions": closed_positions,
+                    "failed_positions": failed_positions,
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                return {"success": False, "error": "Position tracker not available"}
+        
+        elif action == 'override_loss_limit':
+            if hasattr(orchestrator, 'position_decision'):
+                orchestrator.position_decision.daily_loss_limit_breached = False
+                orchestrator.position_decision.daily_loss_breach_time = None
+                
+                logger.critical(f"🚨 DAILY LOSS LIMIT OVERRIDDEN - Reason: {command.reason}")
+                
+                if hasattr(orchestrator, 'performance_tracker') and orchestrator.performance_tracker:
+                    await orchestrator.performance_tracker.log_system_event({
+                        'event_type': 'manual_override',
+                        'severity': 'critical',
+                        'component': 'manual_control',
+                        'title': 'Daily Loss Limit Overridden',
+                        'description': f'⚠️ CAUTION: Loss limit bypassed. Reason: {command.reason}',
+                        'capital_at_event': getattr(orchestrator, 'current_capital', 0),
+                        'daily_pnl_at_event': orchestrator.position_decision.daily_realized_pnl,
+                        'open_positions_count': len(orchestrator.position_tracker.positions) if hasattr(orchestrator, 'position_tracker') else 0
+                    })
+                
+                return {
+                    "success": True,
+                    "message": "⚠️ Daily loss limit overridden - USE WITH EXTREME CAUTION",
+                    "action": "override_loss_limit",
+                    "current_daily_pnl": orchestrator.position_decision.daily_realized_pnl,
+                    "timestamp": datetime.now().isoformat(),
+                    "warning": "System will accept new trades despite exceeding 2% loss limit"
+                }
+            else:
+                return {"success": False, "error": "Position decision system not available"}
+        
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Manual override failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Override failed: {str(e)}")
+
+@router.get("/manual/status")
+async def get_manual_status():
+    """Get current manual override status"""
+    try:
+        orchestrator = trading_state.get("orchestrator")
+        if not orchestrator:
+            return {"trading_active": False, "message": "System not running"}
+        
+        status = {
+            "trading_active": trading_state.get("is_running", False),
+            "manual_paused": getattr(orchestrator, 'manual_trading_paused', False),
+            "loss_limit_breached": getattr(orchestrator.position_decision, 'daily_loss_limit_breached', False) if hasattr(orchestrator, 'position_decision') else False,
+            "daily_pnl": getattr(orchestrator.position_decision, 'daily_realized_pnl', 0) if hasattr(orchestrator, 'position_decision') else 0,
+            "open_positions": len(orchestrator.position_tracker.positions) if hasattr(orchestrator, 'position_tracker') else 0,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        return status
+    
+    except Exception as e:
+        logger.error(f"Error getting manual status: {e}")
+        return {"error": str(e)} 

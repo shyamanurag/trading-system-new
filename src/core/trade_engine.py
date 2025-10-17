@@ -1284,6 +1284,12 @@ class TradeEngine:
                     await self._add_position_to_tracker(signal, order_id)
                 except Exception as tracker_error:
                     self.logger.error(f"❌ Failed to add position to tracker: {tracker_error}")
+                
+                # 🚨 CRITICAL: Log trade entry to performance database
+                try:
+                    await self._log_trade_to_database(signal, order_id, 'entry')
+                except Exception as db_error:
+                    self.logger.error(f"❌ Failed to log trade to database: {db_error}")
             
             return order_id
             
@@ -1330,6 +1336,48 @@ class TradeEngine:
         except Exception as e:
             self.logger.error(f"❌ Error processing signal through Zerodha: {e}")
             return None
+    
+    async def _log_trade_to_database(self, signal: Dict, order_id: str, event_type: str):
+        """Log trade entry to performance database"""
+        try:
+            if not hasattr(self, 'performance_tracker') or not self.performance_tracker:
+                return  # Performance tracker not initialized
+            
+            if event_type == 'entry':
+                # Calculate risk/reward for database
+                entry_price = float(signal.get('entry_price', 0))
+                stop_loss = float(signal.get('stop_loss', 0))
+                target = float(signal.get('target', 0))
+                quantity = int(signal.get('quantity', 0))
+                
+                risk_amount = abs(entry_price - stop_loss) * quantity
+                reward_amount = abs(target - entry_price) * quantity
+                risk_reward_ratio = reward_amount / risk_amount if risk_amount > 0 else 0
+                
+                trade_data = {
+                    'trade_id': order_id,
+                    'symbol': signal.get('symbol'),
+                    'instrument_type': 'OPTIONS' if (signal.get('symbol', '').endswith('CE') or signal.get('symbol', '').endswith('PE')) else 'EQUITY',
+                    'entry_time': datetime.now(),
+                    'entry_price': entry_price,
+                    'quantity': quantity,
+                    'side': 'long' if signal.get('action', 'BUY') == 'BUY' else 'short',
+                    'entry_order_id': order_id,
+                    'strategy_name': signal.get('strategy', 'unknown'),
+                    'signal_confidence': signal.get('confidence', 0),
+                    'market_bias': getattr(self, 'current_market_bias', 'neutral'),
+                    'market_regime': getattr(self, 'current_market_regime', 'unknown'),
+                    'capital_at_entry': getattr(self, 'current_capital', 50000),
+                    'risk_amount': risk_amount,
+                    'reward_amount': reward_amount,
+                    'risk_reward_ratio': risk_reward_ratio,
+                    'daily_pnl_at_entry': getattr(self, 'daily_pnl', 0)
+                }
+                
+                await self.performance_tracker.log_trade_entry(trade_data)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error logging trade to database: {e}")
     
     async def _add_position_to_tracker(self, signal: Dict, order_id: str):
         """Add newly opened position to tracker for monitoring"""
