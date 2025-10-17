@@ -1614,6 +1614,15 @@ class TradingOrchestrator:
                             for symbol, signal in strategy_instance.current_positions.items():
                                 if isinstance(signal, dict) and 'action' in signal and signal.get('action') != 'HOLD':
                                     
+                                    # 🚨 CRITICAL FIX: Check signal age - reject if older than 2 minutes
+                                    signal_age_check = self._check_signal_age(strategy_instance, symbol)
+                                    if not signal_age_check['valid']:
+                                        self.logger.warning(f"🗑️ EXPIRED SIGNAL: {symbol} - Age: {signal_age_check['age_seconds']:.0f}s (max 120s)")
+                                        self.logger.warning(f"   Signal will NOT be executed - too old to be relevant")
+                                        # Clear the expired signal
+                                        strategy_instance.current_positions[symbol] = None
+                                        continue
+                                    
                                     # 🎯 POST-SIGNAL LTP VALIDATION: Fix 0.0 entry prices
                                     validated_signal = await self._validate_and_fix_signal_ltp(signal)
                                     
@@ -3508,6 +3517,44 @@ class TradingOrchestrator:
             
         except Exception as e:
             self.logger.error(f"❌ Error syncing real positions to strategy: {e}")
+    
+    def _check_signal_age(self, strategy_instance, symbol: str) -> Dict:
+        """
+        Check if signal is still valid based on its age
+        Returns: {'valid': bool, 'age_seconds': float}
+        """
+        try:
+            import time
+            
+            # Check if strategy has signal timestamps
+            if not hasattr(strategy_instance, 'signal_timestamps'):
+                # No timestamp tracking - allow signal
+                return {'valid': True, 'age_seconds': 0}
+            
+            # Get signal timestamp
+            if symbol not in strategy_instance.signal_timestamps:
+                # No timestamp found - this is a new signal, allow it
+                return {'valid': True, 'age_seconds': 0}
+            
+            # Calculate signal age
+            signal_timestamp = strategy_instance.signal_timestamps[symbol]
+            current_time = time.time()
+            age_seconds = current_time - signal_timestamp
+            
+            # Check against expiry (120 seconds = 2 minutes)
+            max_age = getattr(strategy_instance, 'signal_expiry_seconds', 120)
+            is_valid = age_seconds <= max_age
+            
+            return {
+                'valid': is_valid,
+                'age_seconds': age_seconds,
+                'max_age': max_age
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error checking signal age: {e}")
+            # On error, be conservative and reject signal
+            return {'valid': False, 'age_seconds': 999, 'error': str(e)}
     
     async def _evaluate_position_opening_decision(self, signal: Dict, market_data: Dict, strategy_instance) -> Any:
         """Evaluate whether to open a new position using enhanced decision system"""
