@@ -79,6 +79,14 @@ class EnhancedPositionOpeningDecision:
         self.recent_decisions = []
         self.max_decision_history = 1000
         
+        # 🚨 DAILY LOSS LIMIT TRACKING
+        self.daily_loss_limit_pct = 0.02  # 2% max loss per day (HARD LIMIT)
+        self.daily_start_capital = None  # Will be set at market open
+        self.daily_realized_pnl = 0.0  # Track realized P&L from closed positions
+        self.daily_loss_limit_breached = False
+        self.daily_loss_breach_time = None
+        self.last_reset_date = None
+        
     async def evaluate_position_opening(
         self, 
         signal: Dict,
@@ -109,6 +117,11 @@ class EnhancedPositionOpeningDecision:
             entry_price = float(signal.get('entry_price', 0.0))
             
             logger.info(f"🎯 EVALUATING POSITION OPENING: {symbol} {action} @ ₹{entry_price} (Confidence: {confidence:.1f})")
+            
+            # STEP 0: 🚨 DAILY LOSS LIMIT CHECK (CRITICAL - Check FIRST)
+            daily_loss_check = await self._check_daily_loss_limit(available_capital)
+            if daily_loss_check.decision != PositionDecision.APPROVED:
+                return daily_loss_check
             
             # STEP 1: Basic Signal Validation
             validation_result = await self._validate_basic_signal(signal)
@@ -193,6 +206,118 @@ class EnhancedPositionOpeningDecision:
                 position_size=0,
                 reasoning=f"Evaluation error: {str(e)}",
                 metadata={'error': str(e)}
+            )
+    
+    async def _check_daily_loss_limit(self, available_capital: float) -> PositionDecisionResult:
+        """
+        🚨 CRITICAL: Check if daily loss limit (2%) has been breached
+        This is the FIRST check - prevents any new trades if limit hit
+        """
+        try:
+            from datetime import datetime, date
+            import pytz
+            
+            ist = pytz.timezone('Asia/Kolkata')
+            current_datetime = datetime.now(ist)
+            current_date = current_datetime.date()
+            
+            # Reset daily tracking at market open (new trading day)
+            if self.last_reset_date != current_date:
+                logger.info(f"📅 NEW TRADING DAY: Resetting daily loss tracking")
+                logger.info(f"   Previous date: {self.last_reset_date}")
+                logger.info(f"   Current date: {current_date}")
+                
+                self.daily_start_capital = available_capital
+                self.daily_realized_pnl = 0.0
+                self.daily_loss_limit_breached = False
+                self.daily_loss_breach_time = None
+                self.last_reset_date = current_date
+                
+                logger.info(f"   Starting capital: ₹{self.daily_start_capital:,.2f}")
+                logger.info(f"   Daily loss limit: {self.daily_loss_limit_pct*100}% = ₹{self.daily_start_capital * self.daily_loss_limit_pct:,.2f}")
+            
+            # If already breached, reject immediately
+            if self.daily_loss_limit_breached:
+                time_since_breach = current_datetime - self.daily_loss_breach_time if self.daily_loss_breach_time else None
+                logger.error(f"🚨 DAILY LOSS LIMIT BREACHED: NO NEW POSITIONS ALLOWED")
+                logger.error(f"   Breach time: {self.daily_loss_breach_time}")
+                logger.error(f"   Time elapsed: {time_since_breach}")
+                logger.error(f"   Total realized loss: ₹{abs(self.daily_realized_pnl):,.2f}")
+                
+                return PositionDecisionResult(
+                    decision=PositionDecision.REJECTED,
+                    reasoning=f"DAILY LOSS LIMIT BREACHED: Lost {abs(self.daily_realized_pnl):,.0f} (>{self.daily_loss_limit_pct*100}% limit). NO NEW TRADES TODAY.",
+                    confidence_adjustment=0.0,
+                    risk_level=RiskLevel.CRITICAL
+                )
+            
+            # Calculate current daily P&L
+            if self.daily_start_capital is None or self.daily_start_capital == 0:
+                self.daily_start_capital = available_capital
+            
+            # Get unrealized P&L from open positions (passed through orchestrator)
+            unrealized_pnl = 0.0
+            if hasattr(self, '_current_unrealized_pnl'):
+                unrealized_pnl = self._current_unrealized_pnl
+            
+            # Total daily P&L = Realized + Unrealized
+            total_daily_pnl = self.daily_realized_pnl + unrealized_pnl
+            daily_pnl_pct = (total_daily_pnl / self.daily_start_capital) * 100 if self.daily_start_capital > 0 else 0.0
+            
+            # Calculate max allowed loss
+            max_allowed_loss = self.daily_start_capital * self.daily_loss_limit_pct
+            
+            # Check if limit breached
+            if total_daily_pnl < -max_allowed_loss:
+                self.daily_loss_limit_breached = True
+                self.daily_loss_breach_time = current_datetime
+                
+                logger.critical(f"🚨🚨🚨 DAILY LOSS LIMIT BREACHED 🚨🚨🚨")
+                logger.critical(f"   Starting Capital: ₹{self.daily_start_capital:,.2f}")
+                logger.critical(f"   Realized Loss: ₹{abs(self.daily_realized_pnl):,.2f}")
+                logger.critical(f"   Unrealized Loss: ₹{abs(unrealized_pnl):,.2f}")
+                logger.critical(f"   Total Daily Loss: ₹{abs(total_daily_pnl):,.2f} ({abs(daily_pnl_pct):.2f}%)")
+                logger.critical(f"   Max Allowed Loss: ₹{max_allowed_loss:,.2f} ({self.daily_loss_limit_pct*100}%)")
+                logger.critical(f"   🛑 ALL NEW TRADING HALTED FOR TODAY")
+                
+                return PositionDecisionResult(
+                    decision=PositionDecision.REJECTED,
+                    reasoning=f"DAILY LOSS LIMIT BREACHED: {abs(daily_pnl_pct):.2f}% loss (limit: {self.daily_loss_limit_pct*100}%). Trading halted.",
+                    confidence_adjustment=0.0,
+                    risk_level=RiskLevel.CRITICAL
+                )
+            
+            # Log current status (approaching limit warning)
+            loss_used_pct = (abs(total_daily_pnl) / max_allowed_loss) * 100 if total_daily_pnl < 0 else 0.0
+            
+            if total_daily_pnl < 0:
+                if loss_used_pct >= 80:
+                    logger.warning(f"⚠️ DAILY LOSS WARNING: {loss_used_pct:.0f}% of limit used")
+                    logger.warning(f"   Current loss: ₹{abs(total_daily_pnl):,.2f} ({abs(daily_pnl_pct):.2f}%)")
+                    logger.warning(f"   Remaining buffer: ₹{max_allowed_loss - abs(total_daily_pnl):,.2f}")
+                elif loss_used_pct >= 50:
+                    logger.info(f"📊 Daily Loss Status: {loss_used_pct:.0f}% of limit used")
+            else:
+                logger.info(f"✅ Daily P&L: +₹{total_daily_pnl:,.2f} ({daily_pnl_pct:.2f}%)")
+            
+            return PositionDecisionResult(
+                decision=PositionDecision.APPROVED,
+                reasoning="Daily loss limit check passed",
+                confidence_adjustment=1.0,
+                risk_level=RiskLevel.LOW
+            )
+            
+        except Exception as e:
+            logger.error(f"Error checking daily loss limit: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # FAIL SAFE: If error checking limit, allow trade (don't block on error)
+            return PositionDecisionResult(
+                decision=PositionDecision.APPROVED,
+                reasoning="Daily loss limit check failed (allowed by default)",
+                confidence_adjustment=1.0,
+                risk_level=RiskLevel.MEDIUM
             )
     
     async def _validate_basic_signal(self, signal: Dict) -> PositionDecisionResult:
@@ -698,6 +823,57 @@ class EnhancedPositionOpeningDecision:
         except Exception as e:
             logger.error(f"Error calculating final confidence: {e}")
             return signal.get('confidence', 0.0)
+    
+    def update_realized_pnl(self, pnl: float, symbol: str = None):
+        """
+        🚨 CRITICAL: Update realized P&L when a position is closed
+        Called by trade_engine or position_monitor after exit orders
+        
+        Args:
+            pnl: Realized profit/loss from closed position
+            symbol: Symbol that was closed (for logging)
+        """
+        try:
+            self.daily_realized_pnl += pnl
+            
+            symbol_info = f" ({symbol})" if symbol else ""
+            
+            if pnl > 0:
+                logger.info(f"✅ Position closed with PROFIT: +₹{pnl:,.2f}{symbol_info}")
+            else:
+                logger.warning(f"❌ Position closed with LOSS: -₹{abs(pnl):,.2f}{symbol_info}")
+            
+            logger.info(f"📊 Daily Realized P&L: ₹{self.daily_realized_pnl:,.2f}")
+            
+            # Check if approaching or breached daily loss limit
+            if self.daily_start_capital and self.daily_start_capital > 0:
+                max_allowed_loss = self.daily_start_capital * self.daily_loss_limit_pct
+                loss_used_pct = (abs(self.daily_realized_pnl) / max_allowed_loss) * 100 if self.daily_realized_pnl < 0 else 0.0
+                
+                if self.daily_realized_pnl < -max_allowed_loss:
+                    logger.critical(f"🚨 DAILY LOSS LIMIT EXCEEDED: {abs(self.daily_realized_pnl):,.2f} > {max_allowed_loss:,.2f}")
+                    logger.critical(f"   Trading will be halted on next signal evaluation")
+                elif loss_used_pct >= 80:
+                    logger.warning(f"⚠️ APPROACHING DAILY LOSS LIMIT: {loss_used_pct:.0f}% used")
+                    logger.warning(f"   Remaining buffer: ₹{max_allowed_loss - abs(self.daily_realized_pnl):,.2f}")
+                    
+        except Exception as e:
+            logger.error(f"Error updating realized P&L: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    def set_unrealized_pnl(self, unrealized_pnl: float):
+        """
+        Update unrealized P&L from open positions
+        Called by orchestrator on each market data update
+        
+        Args:
+            unrealized_pnl: Current unrealized P&L from all open positions
+        """
+        try:
+            self._current_unrealized_pnl = unrealized_pnl
+        except Exception as e:
+            logger.error(f"Error setting unrealized P&L: {e}")
 
 # Global instance
 position_decision_system = EnhancedPositionOpeningDecision()

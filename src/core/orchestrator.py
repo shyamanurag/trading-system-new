@@ -460,6 +460,11 @@ class TradingOrchestrator:
             self.logger.error("❌ TrueData client not available")
             self.truedata_cache = {}
         
+        # 🚨 CRITICAL: Initialize daily loss limit system
+        from src.core.position_opening_decision import position_decision_system
+        self.position_decision = position_decision_system
+        self.logger.info("✅ Daily loss limit system initialized (2% max loss per day)")
+        
         # Initialize Redis connection with enhanced error handling using new manager
         self.logger.info("🔄 Initializing Redis connection with ProductionRedisManager...")
         self.redis_client = None

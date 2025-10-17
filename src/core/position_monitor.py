@@ -184,6 +184,45 @@ class PositionMonitor:
         
         logger.info("🛑 Position monitoring loop stopped")
     
+    async def _update_realized_pnl_on_exit(self, condition, exit_signal: Dict):
+        """
+        🚨 CRITICAL: Update realized P&L when position exits
+        Integrates with daily loss limit tracking
+        """
+        try:
+            symbol = condition.symbol
+            position = await self.position_tracker.get_position(symbol)
+            
+            if not position:
+                logger.warning(f"⚠️ Cannot update P&L: Position not found for {symbol}")
+                return
+            
+            # Calculate realized P&L
+            entry_price = float(position.average_price)
+            exit_price = float(condition.trigger_price or position.current_price)
+            quantity = int(position.quantity)
+            side = position.side
+            
+            if side == 'long':
+                pnl = (exit_price - entry_price) * quantity
+            else:  # short
+                pnl = (entry_price - exit_price) * quantity
+            
+            # Update position_opening_decision system
+            if hasattr(self.orchestrator, 'position_decision'):
+                self.orchestrator.position_decision.update_realized_pnl(pnl, symbol)
+                logger.info(f"📊 Updated daily realized P&L: {symbol} → {'Profit' if pnl > 0 else 'Loss'} ₹{abs(pnl):,.2f}")
+            else:
+                # Fallback: Import directly
+                from src.core.position_opening_decision import position_decision_system
+                position_decision_system.update_realized_pnl(pnl, symbol)
+                logger.info(f"📊 Updated daily realized P&L (fallback): {symbol} → {'Profit' if pnl > 0 else 'Loss'} ₹{abs(pnl):,.2f}")
+                
+        except Exception as e:
+            logger.error(f"❌ Error updating realized P&L for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
     async def _execute_partial_exit(self, symbol: str, side: str, quantity: int, 
                                     current_price: float, reason: str) -> bool:
         """
@@ -810,6 +849,10 @@ class PositionMonitor:
                     
                     if placed_orders:
                         logger.info(f"✅ Exit order placed through OrderManager for {condition.symbol}")
+                        
+                        # 🚨 CRITICAL: Update realized P&L for daily loss limit tracking
+                        await self._update_realized_pnl_on_exit(condition, exit_signal)
+                        
                         return True
                     else:
                         logger.warning(f"⚠️ OrderManager returned no orders for {condition.symbol}")
