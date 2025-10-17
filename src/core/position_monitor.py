@@ -184,6 +184,65 @@ class PositionMonitor:
         
         logger.info("🛑 Position monitoring loop stopped")
     
+    async def _execute_partial_exit(self, symbol: str, side: str, quantity: int, 
+                                    current_price: float, reason: str) -> bool:
+        """
+        Execute partial exit order (book profits on portion of position)
+        
+        Args:
+            symbol: Trading symbol
+            side: Position side ('long' or 'short')
+            quantity: Quantity to exit
+            current_price: Current market price
+            reason: Exit reason for logging
+            
+        Returns:
+            bool: True if order placed successfully
+        """
+        try:
+            # Determine exit action (opposite of position side)
+            exit_action = 'SELL' if side == 'long' else 'BUY'
+            
+            logger.info(f"📤 EXECUTING PARTIAL EXIT: {symbol} {exit_action} x{quantity}")
+            logger.info(f"   Reason: {reason}")
+            logger.info(f"   Price: ₹{current_price:.2f}")
+            
+            # Create exit order parameters
+            exit_order = {
+                'symbol': symbol,
+                'action': exit_action,
+                'quantity': quantity,
+                'order_type': 'MARKET',  # Use MARKET for quick exit
+                'product': 'MIS',  # Intraday
+                'tag': 'PARTIAL_EXIT',
+                'metadata': {
+                    'exit_reason': reason,
+                    'partial_exit': True,
+                    'original_side': side
+                }
+            }
+            
+            # Place order through orchestrator's zerodha client
+            if hasattr(self.orchestrator, 'zerodha_client') and self.orchestrator.zerodha_client:
+                order_id = await self.orchestrator.zerodha_client.place_order(exit_order)
+                
+                if order_id:
+                    logger.info(f"✅ PARTIAL EXIT ORDER PLACED: {symbol} - Order ID: {order_id}")
+                    logger.info(f"   Exited {quantity} qty at ~₹{current_price:.2f}")
+                    return True
+                else:
+                    logger.error(f"❌ PARTIAL EXIT FAILED: {symbol} - Order placement returned None")
+                    return False
+            else:
+                logger.error(f"❌ PARTIAL EXIT FAILED: {symbol} - Zerodha client not available")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error executing partial exit for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+    
     def _is_monitoring_hours(self, current_time: time) -> bool:
         """Check if we should monitor positions (market hours + buffer)"""
         # Monitor from 9:00 AM to 4:00 PM IST (with buffer)
@@ -454,18 +513,38 @@ class PositionMonitor:
                 logger.info(f"   Entry: ₹{entry_price:.2f} → Current: ₹{current_price:.2f}")
                 logger.info(f"   Target: ₹{target_price:.2f}")
                 logger.info(f"   Total Profit: ₹{current_pnl:.2f} ({current_pnl_percent:.1f}%)")
-                logger.info(f"   Action: Book 50% ({position.quantity // 2} qty), Keep 50% running with trailing stop")
                 
-                # Mark as partial booked
-                position.partial_profit_booked = True
+                # Calculate partial exit quantity (50%)
+                partial_exit_qty = position.quantity // 2
+                remaining_qty = position.quantity - partial_exit_qty
                 
-                # TODO: Implement partial exit mechanism (needs order_manager integration)
-                # For now, move to breakeven + small profit as trailing stop
-                new_trailing_stop = entry_price + (profit_from_entry * 0.3) if (profit_from_entry := current_price - entry_price) > 0 else entry_price
-                position.stop_loss = max(position.stop_loss, new_trailing_stop)
+                logger.info(f"   Action: Book 50% ({partial_exit_qty} qty), Keep 50% ({remaining_qty} qty) running")
                 
-                logger.info(f"   Updated trailing stop to ₹{position.stop_loss:.2f} (30% profit locked)")
-                return None  # Don't exit yet, keep position running
+                # 🚨 CRITICAL FIX: Execute partial exit order
+                exit_success = await self._execute_partial_exit(
+                    symbol=symbol,
+                    side=position.side,
+                    quantity=partial_exit_qty,
+                    current_price=current_price,
+                    reason='Target Hit - Partial Profit Booking'
+                )
+                
+                if exit_success:
+                    # Update position quantity
+                    position.quantity = remaining_qty
+                    position.partial_profit_booked = True
+                    
+                    # Move trailing stop to protect 30% of remaining profit
+                    profit_from_entry = current_price - entry_price
+                    new_trailing_stop = entry_price + (profit_from_entry * 0.3)
+                    position.stop_loss = max(position.stop_loss, new_trailing_stop)
+                    
+                    logger.info(f"✅ PARTIAL EXIT SUCCESSFUL: Sold {partial_exit_qty}, Remaining {remaining_qty}")
+                    logger.info(f"   Updated trailing stop to ₹{position.stop_loss:.2f} (30% profit locked)")
+                else:
+                    logger.error(f"❌ PARTIAL EXIT FAILED for {symbol} - will retry on next cycle")
+                
+                return None  # Don't full exit yet, keep remaining position running
             else:
                 # Second time hitting target (price came back and re-hit target) - FULL EXIT
                 logger.info(f"🎯🎯 TARGET RE-ACHIEVED - {symbol}: FULL EXIT")
@@ -485,16 +564,38 @@ class PositionMonitor:
                 logger.info(f"   Entry: ₹{entry_price:.2f} → Current: ₹{current_price:.2f}")
                 logger.info(f"   Target: ₹{target_price:.2f}")
                 logger.info(f"   Total Profit: ₹{current_pnl:.2f} ({current_pnl_percent:.1f}%)")
-                logger.info(f"   Action: Book 50%, Keep 50% running with trailing stop")
                 
-                position.partial_profit_booked = True
+                # Calculate partial exit quantity (50%)
+                partial_exit_qty = position.quantity // 2
+                remaining_qty = position.quantity - partial_exit_qty
                 
-                # Move to breakeven + small profit as trailing stop
-                new_trailing_stop = entry_price - (profit_from_entry * 0.3) if (profit_from_entry := entry_price - current_price) > 0 else entry_price
-                position.stop_loss = min(position.stop_loss, new_trailing_stop)
+                logger.info(f"   Action: Book 50% ({partial_exit_qty} qty), Keep 50% ({remaining_qty} qty) running")
                 
-                logger.info(f"   Updated trailing stop to ₹{position.stop_loss:.2f} (30% profit locked)")
-                return None  # Keep position running
+                # 🚨 CRITICAL FIX: Execute partial exit order
+                exit_success = await self._execute_partial_exit(
+                    symbol=symbol,
+                    side=position.side,
+                    quantity=partial_exit_qty,
+                    current_price=current_price,
+                    reason='Target Hit - Partial Profit Booking'
+                )
+                
+                if exit_success:
+                    # Update position quantity
+                    position.quantity = remaining_qty
+                    position.partial_profit_booked = True
+                    
+                    # Move trailing stop to protect 30% of remaining profit
+                    profit_from_entry = entry_price - current_price
+                    new_trailing_stop = entry_price - (profit_from_entry * 0.3)
+                    position.stop_loss = min(position.stop_loss, new_trailing_stop)
+                    
+                    logger.info(f"✅ PARTIAL EXIT SUCCESSFUL: Covered {partial_exit_qty}, Remaining {remaining_qty}")
+                    logger.info(f"   Updated trailing stop to ₹{position.stop_loss:.2f} (30% profit locked)")
+                else:
+                    logger.error(f"❌ PARTIAL EXIT FAILED for {symbol} - will retry on next cycle")
+                
+                return None  # Keep remaining position running
             else:
                 logger.info(f"🎯🎯 TARGET RE-ACHIEVED - {symbol}: FULL EXIT")
                 logger.info(f"   Entry: ₹{entry_price:.2f} → Current: ₹{current_price:.2f}")
