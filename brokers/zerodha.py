@@ -397,7 +397,7 @@ class ZerodhaIntegration:
             logger.error(f"Error in WebSocket monitoring: {e}")
 
     async def update_access_token(self, access_token: str):
-        """Update access token after frontend authentication - REINITIALIZE if needed"""
+        """Update access token after frontend authentication - ALWAYS REINITIALIZE KiteConnect"""
         try:
             if not access_token:
                 logger.error("❌ Cannot update token - token is empty")
@@ -407,14 +407,11 @@ class ZerodhaIntegration:
             self.access_token = access_token
             logger.info(f"✅ Zerodha access token received: {access_token[:10]}...")
             
-            # 🚨 CRITICAL FIX: Reinitialize KiteConnect if it doesn't exist
-            if not self.kite:
-                logger.warning("⚠️ KiteConnect instance not initialized - reinitializing with new token")
-                self._initialize_kite()
-            else:
-                # Update existing kite instance
-                self.kite.set_access_token(access_token)
-                logger.info(f"✅ Updated existing KiteConnect with new token")
+            # 🚨 CRITICAL FIX: ALWAYS reinitialize KiteConnect with new token
+            # Calling set_access_token() on existing instance may not update internal auth state
+            logger.info("🔄 Reinitializing KiteConnect with fresh token...")
+            self._initialize_kite()
+            logger.info(f"✅ KiteConnect reinitialized with new token")
             
             # Verify connection with new token
             success = await self.connect()

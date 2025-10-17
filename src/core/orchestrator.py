@@ -3304,26 +3304,37 @@ class TradingOrchestrator:
                         
                         self.zerodha_client = ZerodhaIntegration(zerodha_config)
                         self.logger.info("✅ Created new Zerodha client with fresh token")
+                        
+                        # 🚨 CRITICAL FIX: Immediately assign new client to ALL components
+                        # BEFORE updating token, so everyone uses the SAME instance
+                        if hasattr(self, 'trade_engine') and self.trade_engine:
+                            self.trade_engine.zerodha_client = self.zerodha_client
+                            self.logger.info("✅ Assigned new client to trade engine IMMEDIATELY")
                     else:
                         self.logger.error("❌ Cannot create Zerodha client - missing API credentials")
                         
                 except Exception as e:
                     self.logger.error(f"❌ Failed to create new Zerodha client: {e}")
             
-            # 1. Update primary orchestrator client
+            # 1. Update primary orchestrator client (or update existing if no new one was created)
             if self.zerodha_client:
                 await self.zerodha_client.update_access_token(access_token)
                 self.logger.info("✅ Updated orchestrator Zerodha client token")
+                
+                # 🚨 CRITICAL FIX: Ensure trade engine uses SAME instance (not a separate one)
+                if hasattr(self, 'trade_engine') and self.trade_engine:
+                    if self.trade_engine.zerodha_client != self.zerodha_client:
+                        self.logger.warning("⚠️ Trade engine had DIFFERENT Zerodha client - replacing with orchestrator's")
+                        self.trade_engine.zerodha_client = self.zerodha_client
+                        self.logger.info("✅ Trade engine now uses orchestrator's Zerodha client (SAME INSTANCE)")
             
-            # 2. Update trade engine client if exists
-            if hasattr(self, 'trade_engine') and self.trade_engine and hasattr(self.trade_engine, 'zerodha_client'):
-                if self.trade_engine.zerodha_client:
-                    await self.trade_engine.zerodha_client.update_access_token(access_token)
-                    self.logger.info("✅ Updated trade engine Zerodha client token")
-                else:
-                    # 🚨 CRITICAL FIX: Set trade engine zerodha client if missing
+            # 2. Verify trade engine client (should already be synced from step 1)
+            if hasattr(self, 'trade_engine') and self.trade_engine:
+                if not self.trade_engine.zerodha_client:
                     self.trade_engine.zerodha_client = self.zerodha_client
                     self.logger.info("✅ Assigned orchestrator Zerodha client to trade engine")
+                else:
+                    self.logger.info("✅ Trade engine Zerodha client already synced")
             
             # 3. Update connection manager instances if they exist
             try:
