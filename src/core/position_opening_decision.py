@@ -434,10 +434,76 @@ class EnhancedPositionOpeningDecision:
             # Calculate position risk as percentage of capital
             position_risk = estimated_value / available_capital if available_capital > 0 else 1.0
             
-            # 🎯 CRITICAL FIX: Different risk limits for options vs equity
-            # Options have limited downside (premium paid), allow 5% risk
-            # Equity can gap down, keep at 2% risk
+            # 🚨 CRITICAL FIX: Calculate TOTAL portfolio exposure INCLUDING current positions
+            total_current_exposure = 0.0
+            options_exposure = 0.0
+            
+            if current_positions:
+                for pos in current_positions.values():
+                    try:
+                        pos_value = abs(getattr(pos, 'average_price', 0) * getattr(pos, 'quantity', 0))
+                        total_current_exposure += pos_value
+                        
+                        # Track options exposure separately
+                        pos_symbol = getattr(pos, 'symbol', '')
+                        if pos_symbol.endswith('CE') or pos_symbol.endswith('PE'):
+                            options_exposure += pos_value
+                    except Exception as e:
+                        logger.debug(f"Error calculating exposure for position {pos}: {e}")
+            
+            # Calculate new total exposure if this position is opened
             is_options = symbol.endswith('CE') or symbol.endswith('PE')
+            new_total_exposure = total_current_exposure + estimated_value
+            new_options_exposure = options_exposure + (estimated_value if is_options else 0)
+            
+            # Express as percentage of capital
+            total_exposure_pct = new_total_exposure / available_capital if available_capital > 0 else 1.0
+            options_exposure_pct = new_options_exposure / available_capital if available_capital > 0 else 1.0
+            
+            logger.info(f"📊 PORTFOLIO EXPOSURE CHECK: {symbol}")
+            logger.info(f"   Current exposure: ₹{total_current_exposure:,.0f} ({total_current_exposure/available_capital*100 if available_capital > 0 else 0:.1f}%)")
+            logger.info(f"   New position: ₹{estimated_value:,.0f} ({position_risk*100:.1f}%)")
+            logger.info(f"   Total after: ₹{new_total_exposure:,.0f} ({total_exposure_pct*100:.1f}%)")
+            logger.info(f"   Options exposure after: ₹{new_options_exposure:,.0f} ({options_exposure_pct*100:.1f}%)")
+            
+            # 🚨 HARD LIMIT: Max 50% of capital in OPTIONS at any time
+            # This prevents what happened today: 80%+ capital in 3 options positions
+            MAX_OPTIONS_EXPOSURE = 0.50  # 50%
+            if options_exposure_pct > MAX_OPTIONS_EXPOSURE:
+                return PositionDecisionResult(
+                    decision=PositionDecision.REJECTED_RISK,
+                    confidence_score=signal.get('confidence', 0.0),
+                    risk_score=10.0,
+                    position_size=0,
+                    reasoning=f"🚨 OPTIONS EXPOSURE LIMIT: {options_exposure_pct:.1%} exceeds {MAX_OPTIONS_EXPOSURE:.1%} (Current: ₹{options_exposure:,.0f}, New: +₹{estimated_value:,.0f})",
+                    metadata={
+                        'options_exposure_pct': options_exposure_pct,
+                        'max_options_exposure': MAX_OPTIONS_EXPOSURE,
+                        'current_options_exposure': options_exposure,
+                        'new_position_value': estimated_value
+                    }
+                )
+            
+            # 🚨 HARD LIMIT: Max 70% total portfolio exposure (options + equity)
+            MAX_TOTAL_EXPOSURE = 0.70  # 70%
+            if total_exposure_pct > MAX_TOTAL_EXPOSURE:
+                return PositionDecisionResult(
+                    decision=PositionDecision.REJECTED_CAPITAL,
+                    confidence_score=signal.get('confidence', 0.0),
+                    risk_score=10.0,
+                    position_size=0,
+                    reasoning=f"🚨 TOTAL EXPOSURE LIMIT: {total_exposure_pct:.1%} exceeds {MAX_TOTAL_EXPOSURE:.1%} (Current: ₹{total_current_exposure:,.0f}, New: +₹{estimated_value:,.0f})",
+                    metadata={
+                        'total_exposure_pct': total_exposure_pct,
+                        'max_total_exposure': MAX_TOTAL_EXPOSURE,
+                        'current_exposure': total_current_exposure,
+                        'new_position_value': estimated_value
+                    }
+                )
+            
+            # 🎯 INDIVIDUAL POSITION LIMITS: Different risk limits for options vs equity
+            # Options have limited downside (premium paid), allow 5% risk per position
+            # Equity can gap down, keep at 2% risk per position
             max_risk_limit = 0.05 if is_options else self.max_position_risk  # 5% for options, 2% for equity
             
             if position_risk > max_risk_limit:
@@ -447,7 +513,7 @@ class EnhancedPositionOpeningDecision:
                     confidence_score=signal.get('confidence', 0.0),
                     risk_score=position_risk * 10,
                     position_size=0,
-                    reasoning=f"{trade_type} risk {position_risk:.1%} exceeds limit {max_risk_limit:.1%}",
+                    reasoning=f"{trade_type} position risk {position_risk:.1%} exceeds limit {max_risk_limit:.1%}",
                     metadata={'position_risk': position_risk, 'max_risk': max_risk_limit, 'trade_type': trade_type}
                 )
             
