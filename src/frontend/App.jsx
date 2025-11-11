@@ -97,28 +97,52 @@ function App() {
                         setUserInfo(JSON.parse(storedUserInfo));
                         setIsAuthenticated(true);
                     } else {
-                        // ⚡ FIXED: If token validation fails, just skip auth (for local use)
-                        console.log('Token validation failed, skipping authentication (local mode)');
-                        localStorage.removeItem('access_token');
-                        localStorage.removeItem('user_info');
-                        // Skip to dashboard without auth
-                        setIsAuthenticated(true);
-                        setUserInfo({ username: 'Local User', role: 'admin' });
+                        // ⚡ ENVIRONMENT-AWARE: Only bypass auth in development mode
+                        const isDevelopment = import.meta.env.MODE === 'development' || 
+                                            window.location.hostname === 'localhost';
+                        
+                        if (isDevelopment) {
+                            console.log('Token validation failed, using local mode (development)');
+                            localStorage.removeItem('access_token');
+                            localStorage.removeItem('user_info');
+                            // Allow bypass in development
+                            setIsAuthenticated(true);
+                            setUserInfo({ username: 'Local User', role: 'admin' });
+                        } else {
+                            // Force login in production
+                            console.log('Token validation failed, requiring authentication (production)');
+                            setIsAuthenticated(false);
+                        }
                     }
                 } catch (e) {
-                    // ⚡ FIXED: If auth endpoint doesn't exist, bypass authentication
-                    console.log('Authentication endpoint not available, using local mode');
-                    localStorage.removeItem('access_token');
-                    localStorage.removeItem('user_info');
-                    // Skip to dashboard without auth
-                    setIsAuthenticated(true);
-                    setUserInfo({ username: 'Local User', role: 'admin' });
+                    // ⚡ ENVIRONMENT-AWARE: Only bypass if development mode
+                    const isDevelopment = import.meta.env.MODE === 'development' || 
+                                        window.location.hostname === 'localhost';
+                    
+                    if (isDevelopment) {
+                        console.log('Authentication endpoint not available, using local mode (development)');
+                        localStorage.removeItem('access_token');
+                        localStorage.removeItem('user_info');
+                        setIsAuthenticated(true);
+                        setUserInfo({ username: 'Local User', role: 'admin' });
+                    } else {
+                        console.error('Authentication endpoint not available (production)');
+                        setIsAuthenticated(false);
+                    }
                 }
             } else {
-                // ⚡ FIXED: No token? Just skip auth for local use
-                console.log('No authentication token, using local mode');
-                setIsAuthenticated(true);
-                setUserInfo({ username: 'Local User', role: 'admin' });
+                // ⚡ ENVIRONMENT-AWARE: Only bypass if development mode
+                const isDevelopment = import.meta.env.MODE === 'development' || 
+                                    window.location.hostname === 'localhost';
+                
+                if (isDevelopment) {
+                    console.log('No authentication token, using local mode (development)');
+                    setIsAuthenticated(true);
+                    setUserInfo({ username: 'Local User', role: 'admin' });
+                } else {
+                    console.log('No authentication token (production)');
+                    setIsAuthenticated(false);
+                }
             }
             setLoading(false);
         };

@@ -35,6 +35,8 @@ class WebSocketService extends EventTarget {
   private url: string;
   private isConnecting = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private isOnline = true;
+  private networkHandlers: { online: () => void; offline: () => void } | null = null;
 
   constructor(config?: Partial<WebSocketConfig>) {
     super();
@@ -52,6 +54,50 @@ class WebSocketService extends EventTarget {
     this.heartbeatInterval = config?.heartbeatInterval || 30000;
     this.batchSize = config?.batchSize || 50;
     this.batchInterval = config?.batchInterval || 100;
+    
+    // Setup network detection
+    this.setupNetworkDetection();
+  }
+  
+  private setupNetworkDetection(): void {
+    this.isOnline = navigator.onLine;
+    
+    const handleOnline = () => {
+      console.log('[Network] Back online, attempting to reconnect WebSocket');
+      this.isOnline = true;
+      this.dispatchEvent(new Event('network_online'));
+      if (!this.isConnected() && !this.isConnecting) {
+        this.reconnectAttempts = 0; // Reset attempts on network recovery
+        this.connect();
+      }
+    };
+    
+    const handleOffline = () => {
+      console.warn('[Network] Offline detected, pausing WebSocket');
+      this.isOnline = false;
+      this.dispatchEvent(new Event('network_offline'));
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    this.networkHandlers = { online: handleOnline, offline: handleOffline };
+  }
+  
+  private cleanupNetworkDetection(): void {
+    if (this.networkHandlers) {
+      window.removeEventListener('online', this.networkHandlers.online);
+      window.removeEventListener('offline', this.networkHandlers.offline);
+      this.networkHandlers = null;
+    }
+  }
+  
+  getNetworkStatus(): boolean {
+    return this.isOnline;
   }
 
   connect(callbacks?: WebSocketCallbacks): void {
@@ -119,6 +165,12 @@ class WebSocketService extends EventTarget {
   }
 
   private handleReconnect(): void {
+    // Don't reconnect if offline
+    if (!this.isOnline) {
+      console.log('[Network] Offline, skipping reconnect attempt');
+      return;
+    }
+    
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
@@ -185,6 +237,11 @@ class WebSocketService extends EventTarget {
     this.stopHeartbeat();
     this.stopBatchTimer();
     this.flushMessageQueue();
+    this.cleanupNetworkDetection();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.ws) {
       this.ws.close();
       this.ws = null;

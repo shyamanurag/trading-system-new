@@ -37,7 +37,7 @@ import {
     Toolbar,
     Typography
 } from '@mui/material';
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import {
     Area,
     AreaChart,
@@ -52,17 +52,27 @@ import fetchWithAuth from '../api/fetchWithAuth';
 
 // Import safe rendering utility to prevent React Error #31
 import { safeRender } from '../utils/safeRender';
+import ErrorBoundary from './ErrorBoundary';
 
-// Import existing components
-import AutonomousTradingDashboard from './AutonomousTradingDashboard';
-import EliteRecommendationsDashboard from './EliteRecommendationsDashboard';
-import TodaysTradeReport from './TodaysTradeReport';
-import UserPerformanceDashboard from './UserPerformanceDashboard';
+// Lazy load heavy components for better performance
+const AutonomousTradingDashboard = lazy(() => import('./AutonomousTradingDashboard'));
+const EliteRecommendationsDashboard = lazy(() => import('./EliteRecommendationsDashboard'));
+const TodaysTradeReport = lazy(() => import('./TodaysTradeReport'));
+const UserPerformanceDashboard = lazy(() => import('./UserPerformanceDashboard'));
+const DynamicUserManagement = lazy(() => import('./DynamicUserManagement'));
+const SystemHealthMonitor = lazy(() => import('./SystemHealthMonitor'));
 
-import DynamicUserManagement from './DynamicUserManagement';
+// Import lightweight components normally
 import MarketIndicesWidget from './MarketIndicesWidget';
 import SearchComponent from './SearchComponent';
-import SystemHealthMonitor from './SystemHealthMonitor';
+
+// Loading fallback component
+const LoadingFallback = () => (
+    <Box display="flex" justifyContent="center" alignItems="center" height="400px">
+        <CircularProgress />
+        <Typography variant="body2" sx={{ ml: 2 }}>Loading component...</Typography>
+    </Box>
+);
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://algoauto-9gx56.ondigitalocean.app';
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
@@ -836,19 +846,31 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
 
                     {/* System Health Monitor - Full Width */}
                     <Grid item xs={12}>
-                        <SystemHealthMonitor />
+                        <ErrorBoundary>
+                            <Suspense fallback={<LoadingFallback />}>
+                                <SystemHealthMonitor />
+                            </Suspense>
+                        </ErrorBoundary>
                     </Grid>
                 </Grid>
             </TabPanel>
 
             {/* Elite Recommendations Tab */}
             <TabPanel value={selectedTab} index={1}>
-                <EliteRecommendationsDashboard tradingData={dashboardData} />
+                <ErrorBoundary>
+                    <Suspense fallback={<LoadingFallback />}>
+                        <EliteRecommendationsDashboard tradingData={dashboardData} />
+                    </Suspense>
+                </ErrorBoundary>
             </TabPanel>
 
             {/* User Performance Tab */}
             <TabPanel value={selectedTab} index={2}>
-                <UserPerformanceDashboard tradingData={dashboardData} />
+                <ErrorBoundary>
+                    <Suspense fallback={<LoadingFallback />}>
+                        <UserPerformanceDashboard tradingData={dashboardData} />
+                    </Suspense>
+                </ErrorBoundary>
             </TabPanel>
 
             {/* Portfolio Analytics Tab */}
@@ -1077,7 +1099,11 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
 
             {/* Autonomous Trading Tab */}
             <TabPanel value={selectedTab} index={5}>
-                <AutonomousTradingDashboard tradingData={dashboardData} />
+                <ErrorBoundary>
+                    <Suspense fallback={<LoadingFallback />}>
+                        <AutonomousTradingDashboard tradingData={dashboardData} />
+                    </Suspense>
+                </ErrorBoundary>
             </TabPanel>
 
             {/* User Management Tab */}
@@ -1095,13 +1121,21 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                     </Alert>
 
                     {/* Dynamic User Management Component */}
-                    <DynamicUserManagement />
+                    <ErrorBoundary>
+                        <Suspense fallback={<LoadingFallback />}>
+                            <DynamicUserManagement />
+                        </Suspense>
+                    </ErrorBoundary>
                 </Box>
             </TabPanel>
 
             {/* Today's Trades Tab - WAS MISSING! */}
             <TabPanel value={selectedTab} index={7}>
-                <TodaysTradeReport tradingData={dashboardData} />
+                <ErrorBoundary>
+                    <Suspense fallback={<LoadingFallback />}>
+                        <TodaysTradeReport tradingData={dashboardData} />
+                    </Suspense>
+                </ErrorBoundary>
             </TabPanel>
 
             {/* Mobile Search Drawer */}

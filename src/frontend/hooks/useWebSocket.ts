@@ -1,10 +1,41 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { websocketService, WebSocketMessage, WebSocketCallbacks } from '../services/websocket';
 
 export const useWebSocket = (callbacks?: WebSocketCallbacks) => {
+  const [isConnected, setIsConnected] = useState(false);
+  const [networkStatus, setNetworkStatus] = useState(true);
+
   useEffect(() => {
-    websocketService.connect(callbacks);
+    // Enhanced callbacks with connection state tracking
+    const enhancedCallbacks: WebSocketCallbacks = {
+      ...callbacks,
+      onConnect: () => {
+        setIsConnected(true);
+        callbacks?.onConnect?.();
+      },
+      onDisconnect: () => {
+        setIsConnected(false);
+        callbacks?.onDisconnect?.();
+      }
+    };
+
+    // Setup WebSocket connection
+    websocketService.connect(enhancedCallbacks);
+    
+    // Setup network status monitoring
+    const handleNetworkOnline = () => setNetworkStatus(true);
+    const handleNetworkOffline = () => setNetworkStatus(false);
+    
+    websocketService.addEventListener('network_online', handleNetworkOnline);
+    websocketService.addEventListener('network_offline', handleNetworkOffline);
+    
+    // Initial state
+    setIsConnected(websocketService.isConnected());
+    setNetworkStatus(websocketService.getNetworkStatus());
+
     return () => {
+      websocketService.removeEventListener('network_online', handleNetworkOnline);
+      websocketService.removeEventListener('network_offline', handleNetworkOffline);
       websocketService.disconnect();
     };
   }, [callbacks]);
@@ -18,13 +49,12 @@ export const useWebSocket = (callbacks?: WebSocketCallbacks) => {
     return () => websocketService.unsubscribe(event, callback);
   }, []);
 
-  const isConnected = useCallback(() => {
-    return websocketService.isConnected();
-  }, []);
-
   return {
     send,
     subscribe,
-    isConnected
+    isConnected,
+    networkStatus,
+    reconnectAttempts: websocketService.getReconnectAttempts(),
+    queueSize: websocketService.getMessageQueueSize()
   };
 }; 

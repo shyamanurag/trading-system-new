@@ -379,3 +379,45 @@ class ConditionalOrder:
     created_at: datetime = field(default_factory=datetime.now)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+
+# ===== STANDARDIZED API RESPONSE MODELS =====
+
+@dataclass
+class APIResponse:
+    """Standardized API response format"""
+    success: bool
+    message: Optional[str] = None
+    data: Optional[Any] = None
+    error: Optional[str] = None
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    
+    def to_dict(self) -> Dict:
+        response = {
+            "success": self.success,
+            "timestamp": self.timestamp
+        }
+        if self.message:
+            response["message"] = self.message
+        if self.data is not None:
+            response["data"] = self.data
+        if self.error:
+            response["error"] = self.error
+        return response
+
+
+def success_response(data: Any = None, message: Optional[str] = None) -> Dict:
+    """Helper to create standardized success response"""
+    return APIResponse(
+        success=True,
+        data=data,
+        message=message
+    ).to_dict()
+
+
+def error_response(error: str, data: Any = None) -> Dict:
+    """Helper to create standardized error response"""
+    return APIResponse(
+        success=False,
+        error=error,
+        data=data
+    ).to_dict()
