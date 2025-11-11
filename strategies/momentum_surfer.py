@@ -906,7 +906,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
                     logger.error(f"❌ Failed to await coroutine: {await_error}")
             
             # If result is not a dict or is None, return empty dict
-            logger.warning(f"⚠️ Invalid signal type for {symbol}: {type(result)}")
+            # Note: None is expected when confidence is below threshold
+            logger.debug(f"No signal generated for {symbol} (result type: {type(result)})")
             return {}
             
         except Exception as e:
