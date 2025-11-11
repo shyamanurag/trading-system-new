@@ -1485,14 +1485,139 @@ class TradingOrchestrator:
                 except Exception as api_error:
                     self.logger.debug(f"API fallback failed (fast fail): {api_error}")
             
-            self.logger.debug("⚠️ All TrueData access methods failed (fast fail)")
+            # 🎯 STRATEGY 4: ZERODHA QUOTES FALLBACK (when TrueData fails)
+            self.logger.info("🔄 TrueData unavailable, fetching from Zerodha...")
+            if self.zerodha_client:
+                try:
+                    zerodha_data = await self._fetch_market_data_from_zerodha()
+                    if zerodha_data:
+                        self.logger.info(f"✅ Using Zerodha quotes: {len(zerodha_data)} symbols")
+                        return zerodha_data
+                except Exception as zerodha_error:
+                    self.logger.error(f"❌ Zerodha fallback failed: {zerodha_error}")
+            
+            self.logger.warning("⚠️ All data sources failed - no market data available")
             return {}
                 
         except ImportError:
-            self.logger.warning("⚠️ TrueData client not available")
+            self.logger.warning("⚠️ TrueData client not available - trying Zerodha")
+            if self.zerodha_client:
+                try:
+                    zerodha_data = await self._fetch_market_data_from_zerodha()
+                    if zerodha_data:
+                        self.logger.info(f"✅ Using Zerodha quotes: {len(zerodha_data)} symbols")
+                        return zerodha_data
+                except Exception as e:
+                    self.logger.error(f"❌ Zerodha fallback error: {e}")
             return {}
         except Exception as e:
-            self.logger.error(f"❌ Error accessing TrueData cache: {e}")
+            self.logger.error(f"❌ Error accessing market data: {e}")
+            return {}
+    
+    async def _fetch_market_data_from_zerodha(self) -> Dict[str, Any]:
+        """
+        🎯 NEW: Fetch real-time market data from Zerodha as fallback
+        Returns dict in TrueData format for compatibility
+        """
+        try:
+            if not self.zerodha_client:
+                return {}
+            
+            # Get watchlist symbols from strategies
+            all_symbols = set()
+            for strategy_info in self.strategies.values():
+                if 'instance' in strategy_info:
+                    strategy = strategy_info['instance']
+                    if hasattr(strategy, 'symbols'):
+                        all_symbols.update(strategy.symbols)
+            
+            # Add NIFTY and BANKNIFTY indices
+            indices = ['NIFTY 50', 'NIFTY BANK']
+            
+            # Convert to Zerodha format (NSE:SYMBOL)
+            zerodha_symbols = []
+            for symbol in all_symbols:
+                if '-' in symbol:  # Options format
+                    continue  # Skip options for now
+                zerodha_symbols.append(f"NSE:{symbol}")
+            
+            # Add indices
+            for index in indices:
+                zerodha_symbols.append(f"NSE:{index}")
+            
+            if not zerodha_symbols:
+                # Default watchlist if no symbols configured
+                zerodha_symbols = [
+                    "NSE:RELIANCE", "NSE:TCS", "NSE:INFY", "NSE:HDFCBANK",
+                    "NSE:ICICIBANK", "NSE:SBIN", "NSE:NIFTY 50", "NSE:NIFTY BANK"
+                ]
+            
+            self.logger.info(f"📊 Fetching {len(zerodha_symbols)} symbols from Zerodha")
+            
+            # Fetch quotes from Zerodha
+            quotes = await asyncio.to_thread(
+                self.zerodha_client.kite.quote, 
+                zerodha_symbols
+            )
+            
+            if not quotes:
+                self.logger.warning("⚠️ Zerodha returned no quotes")
+                return {}
+            
+            # Transform to TrueData-compatible format
+            market_data = {}
+            for symbol_key, quote in quotes.items():
+                try:
+                    # Extract symbol name (remove NSE: prefix)
+                    symbol = symbol_key.split(':')[-1]
+                    
+                    # Handle index names
+                    if symbol == 'NIFTY 50':
+                        symbol = 'NIFTY-I'
+                    elif symbol == 'NIFTY BANK':
+                        symbol = 'BANKNIFTY-I'
+                    
+                    # Transform to TrueData format
+                    ltp = quote.get('last_price', 0)
+                    open_price = quote.get('ohlc', {}).get('open', ltp)
+                    high = quote.get('ohlc', {}).get('high', ltp)
+                    low = quote.get('ohlc', {}).get('low', ltp)
+                    close = quote.get('ohlc', {}).get('close', ltp)
+                    volume = quote.get('volume', 0)
+                    
+                    # Calculate change
+                    if close > 0:
+                        change = ltp - close
+                        change_percent = (change / close) * 100
+                    else:
+                        change = 0
+                        change_percent = 0
+                    
+                    market_data[symbol] = {
+                        'symbol': symbol,
+                        'ltp': ltp,
+                        'open': open_price,
+                        'high': high,
+                        'low': low,
+                        'close': close,
+                        'volume': volume,
+                        'change': change,
+                        'change_percent': change_percent,
+                        'timestamp': datetime.now().isoformat(),
+                        'source': 'zerodha'  # Mark source
+                    }
+                    
+                except Exception as symbol_error:
+                    self.logger.debug(f"Error processing {symbol_key}: {symbol_error}")
+                    continue
+            
+            self.logger.info(f"✅ Fetched {len(market_data)} symbols from Zerodha")
+            return market_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error fetching Zerodha market data: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return {}
     
     def _optimize_market_data_processing(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
