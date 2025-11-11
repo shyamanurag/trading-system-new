@@ -1605,34 +1605,52 @@ class TradingOrchestrator:
                     elif symbol == 'SENSEX':
                         symbol = 'SENSEX-I'
                     
-                    # Transform to TrueData format
+                    # Transform to TrueData-compatible format - EXACT MATCH
                     ltp = quote.get('last_price', 0)
                     open_price = quote.get('ohlc', {}).get('open', ltp)
                     high = quote.get('ohlc', {}).get('high', ltp)
                     low = quote.get('ohlc', {}).get('low', ltp)
-                    close = quote.get('ohlc', {}).get('close', ltp)
+                    prev_close = quote.get('ohlc', {}).get('close', ltp)  # Yesterday's close for change calc
                     volume = quote.get('volume', 0)
                     
+                    # Get bid/ask from depth if available
+                    depth = quote.get('depth', {})
+                    bid = depth.get('buy', [{}])[0].get('price', 0) if depth.get('buy') else 0
+                    ask = depth.get('sell', [{}])[0].get('price', 0) if depth.get('sell') else 0
+                    
                     # Calculate change
-                    if close > 0:
-                        change = ltp - close
-                        change_percent = (change / close) * 100
+                    if prev_close > 0:
+                        change = ltp - prev_close
+                        change_percent = (change / prev_close) * 100
                     else:
                         change = 0
                         change_percent = 0
                     
+                    # 🎯 EXACT TrueData format match to prevent parsing errors
                     market_data[symbol] = {
                         'symbol': symbol,
+                        'truedata_symbol': symbol,  # TrueData compatibility
                         'ltp': ltp,
-                        'open': open_price,
+                        'close': ltp,  # TrueData sets close=ltp (not prev close)
                         'high': high,
                         'low': low,
-                        'close': close,
+                        'open': open_price,
                         'volume': volume,
                         'change': change,
-                        'change_percent': change_percent,
+                        'changeper': change_percent,  # TrueData field name
+                        'change_percent': change_percent,  # Duplicate for compatibility
+                        'bid': bid,
+                        'ask': ask,
                         'timestamp': datetime.now().isoformat(),
-                        'source': 'zerodha'  # Mark source
+                        'source': 'zerodha_fallback',  # Mark source
+                        'deployment_id': 'zerodha_fallback',  # TrueData compatibility
+                        # Data quality indicators (TrueData compatibility)
+                        'data_quality': {
+                            'has_ohlc': all([high != ltp, low != ltp, open_price != ltp]),
+                            'has_volume': volume > 0,
+                            'has_change_percent': change_percent != 0,
+                            'calculated_change_percent': True  # Always calculated for Zerodha
+                        }
                     }
                     
                 except Exception as symbol_error:
