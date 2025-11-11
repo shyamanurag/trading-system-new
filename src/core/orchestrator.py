@@ -1565,6 +1565,7 @@ class TradingOrchestrator:
             # 🎯 Batch requests to avoid rate limits (max 500 per request, but we use 200 to be safe)
             BATCH_SIZE = 200
             all_quotes = {}
+            requested_symbols = set(zerodha_symbols)
             
             for i in range(0, len(zerodha_symbols), BATCH_SIZE):
                 batch = zerodha_symbols[i:i+BATCH_SIZE]
@@ -1585,6 +1586,18 @@ class TradingOrchestrator:
                 return {}
             
             quotes = all_quotes
+            
+            # 🎯 Log missing symbols for debugging
+            fetched_symbols = set(quotes.keys())
+            missing_symbols = requested_symbols - fetched_symbols
+            if missing_symbols:
+                missing_count = len(missing_symbols)
+                self.logger.warning(f"⚠️ {missing_count} symbols not available on Zerodha")
+                # Show first 10 missing symbols
+                sample_missing = list(missing_symbols)[:10]
+                self.logger.warning(f"⚠️ Sample missing symbols: {sample_missing}")
+                if missing_count > 10:
+                    self.logger.warning(f"... and {missing_count - 10} more")
             
             # Transform to TrueData-compatible format
             market_data = {}
