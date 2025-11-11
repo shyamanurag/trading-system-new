@@ -1686,7 +1686,7 @@ class TradingOrchestrator:
                 return {}
                 
             # 🚨 PERFORMANCE: Limit symbols processed per cycle
-            MAX_SYMBOLS_PER_CYCLE = 50  # Reduced from 150+
+            MAX_SYMBOLS_PER_CYCLE = 200  # Increased to accommodate full watchlist (187 symbols)
             
             # Priority symbols (always process these first)
             # CRITICAL FIX: Include NIFTY-I for market bias calculation
