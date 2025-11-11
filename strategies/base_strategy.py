@@ -2104,6 +2104,501 @@ class BaseStrategy:
             else:
                 return entry_price * (1 + fallback_percent / 100)
     
+    def calculate_rsi_divergence(self, symbol: str, prices: List[float], rsi_values: List[float]) -> Optional[str]:
+        """
+        🎯 CODE ENHANCEMENT: Detect RSI divergence for high-probability reversals
+        RSI divergence is one of the most reliable reversal signals
+        
+        Returns: 'bullish', 'bearish', or None
+        """
+        try:
+            if len(prices) < 14 or len(rsi_values) < 14:
+                return None
+            
+            # Find recent peaks and troughs
+            recent_prices = prices[-14:]
+            recent_rsi = rsi_values[-14:]
+            
+            # Bullish divergence: Price makes lower low, RSI makes higher low
+            price_low_1 = min(recent_prices[:7])
+            price_low_2 = min(recent_prices[7:])
+            
+            # Find corresponding RSI values
+            price_low_1_idx = recent_prices[:7].index(price_low_1)
+            price_low_2_idx = 7 + recent_prices[7:].index(price_low_2)
+            
+            rsi_at_low_1 = recent_rsi[price_low_1_idx]
+            rsi_at_low_2 = recent_rsi[price_low_2_idx]
+            
+            # Bullish divergence detected
+            if price_low_2 < price_low_1 and rsi_at_low_2 > rsi_at_low_1:
+                logger.info(f"📈 BULLISH DIVERGENCE detected for {symbol}: Price {price_low_1:.2f}→{price_low_2:.2f}, RSI {rsi_at_low_1:.1f}→{rsi_at_low_2:.1f}")
+                return 'bullish'
+            
+            # Bearish divergence: Price makes higher high, RSI makes lower high
+            price_high_1 = max(recent_prices[:7])
+            price_high_2 = max(recent_prices[7:])
+            
+            price_high_1_idx = recent_prices[:7].index(price_high_1)
+            price_high_2_idx = 7 + recent_prices[7:].index(price_high_2)
+            
+            rsi_at_high_1 = recent_rsi[price_high_1_idx]
+            rsi_at_high_2 = recent_rsi[price_high_2_idx]
+            
+            # Bearish divergence detected
+            if price_high_2 > price_high_1 and rsi_at_high_2 < rsi_at_high_1:
+                logger.info(f"📉 BEARISH DIVERGENCE detected for {symbol}: Price {price_high_1:.2f}→{price_high_2:.2f}, RSI {rsi_at_high_1:.1f}→{rsi_at_high_2:.1f}")
+                return 'bearish'
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error calculating RSI divergence: {e}")
+            return None
+    
+    def detect_bollinger_squeeze(self, symbol: str, prices: List[float], period: int = 20) -> Dict:
+        """
+        🎯 CODE ENHANCEMENT: Detect Bollinger Band squeeze (precedes big moves)
+        When bands squeeze tight, a large move is imminent
+        
+        Returns: {'squeezing': bool, 'breakout_direction': str, 'squeeze_intensity': float}
+        """
+        try:
+            if len(prices) < period:
+                return {'squeezing': False, 'breakout_direction': None, 'squeeze_intensity': 0.0}
+            
+            recent_prices = prices[-period:]
+            
+            # Calculate Bollinger Bands
+            sma = np.mean(recent_prices)
+            std = np.std(recent_prices)
+            upper_band = sma + (2 * std)
+            lower_band = sma - (2 * std)
+            bandwidth = (upper_band - lower_band) / sma
+            
+            # Historical bandwidth for comparison
+            if len(prices) >= period * 2:
+                historical_prices = prices[-period*2:-period]
+                hist_sma = np.mean(historical_prices)
+                hist_std = np.std(historical_prices)
+                hist_bandwidth = (2 * hist_std * 2) / hist_sma
+                
+                # Squeeze detected when current bandwidth < 75% of historical
+                is_squeezing = bandwidth < (hist_bandwidth * 0.75)
+                squeeze_intensity = 1 - (bandwidth / hist_bandwidth) if hist_bandwidth > 0 else 0
+                
+                # Detect breakout direction
+                current_price = prices[-1]
+                breakout_direction = None
+                
+                if is_squeezing:
+                    # Check momentum
+                    recent_momentum = (prices[-1] - prices[-5]) / prices[-5] if len(prices) >= 5 else 0
+                    
+                    if current_price > sma and recent_momentum > 0.002:  # Breaking up
+                        breakout_direction = 'UP'
+                        logger.info(f"🎯 SQUEEZE BREAKOUT UP detected for {symbol}: Intensity {squeeze_intensity:.2%}")
+                    elif current_price < sma and recent_momentum < -0.002:  # Breaking down
+                        breakout_direction = 'DOWN'
+                        logger.info(f"🎯 SQUEEZE BREAKOUT DOWN detected for {symbol}: Intensity {squeeze_intensity:.2%}")
+                
+                return {
+                    'squeezing': is_squeezing,
+                    'breakout_direction': breakout_direction,
+                    'squeeze_intensity': squeeze_intensity,
+                    'bandwidth': bandwidth
+                }
+            
+            return {'squeezing': False, 'breakout_direction': None, 'squeeze_intensity': 0.0}
+            
+        except Exception as e:
+            logger.error(f"Error detecting Bollinger squeeze: {e}")
+            return {'squeezing': False, 'breakout_direction': None, 'squeeze_intensity': 0.0}
+    
+    def calculate_macd_signal(self, prices: List[float], fast: int = 12, slow: int = 26, signal: int = 9) -> Dict:
+        """
+        🎯 CODE ENHANCEMENT: MACD with histogram divergence detection
+        MACD is excellent for trend strength and momentum
+        
+        Returns: {'macd': float, 'signal': float, 'histogram': float, 'divergence': str}
+        """
+        try:
+            if len(prices) < slow + signal:
+                return {'macd': 0, 'signal': 0, 'histogram': 0, 'divergence': None}
+            
+            prices_array = np.array(prices)
+            
+            # Calculate EMAs
+            ema_fast = self._calculate_ema(prices_array, fast)
+            ema_slow = self._calculate_ema(prices_array, slow)
+            
+            # MACD line
+            macd_line = ema_fast - ema_slow
+            
+            # Signal line (EMA of MACD)
+            macd_series = prices_array[-len(macd_line):]
+            signal_line = self._calculate_ema(macd_line, signal)
+            
+            # Histogram
+            histogram = macd_line[-len(signal_line):] - signal_line
+            
+            # Detect histogram divergence
+            divergence = None
+            if len(histogram) >= 10:
+                recent_hist = histogram[-10:]
+                # Positive divergence: histogram making higher lows
+                if recent_hist[-1] > recent_hist[-5] and recent_hist[-1] < 0:
+                    divergence = 'bullish'
+                # Negative divergence: histogram making lower highs
+                elif recent_hist[-1] < recent_hist[-5] and recent_hist[-1] > 0:
+                    divergence = 'bearish'
+            
+            return {
+                'macd': macd_line[-1],
+                'signal': signal_line[-1],
+                'histogram': histogram[-1],
+                'divergence': divergence,
+                'crossover': 'bullish' if macd_line[-1] > signal_line[-1] and macd_line[-2] < signal_line[-2] else 'bearish' if macd_line[-1] < signal_line[-1] and macd_line[-2] > signal_line[-2] else None
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating MACD: {e}")
+            return {'macd': 0, 'signal': 0, 'histogram': 0, 'divergence': None}
+    
+    def _calculate_ema(self, data: np.ndarray, period: int) -> np.ndarray:
+        """Calculate Exponential Moving Average"""
+        multiplier = 2 / (period + 1)
+        ema = np.zeros(len(data))
+        ema[0] = data[0]
+        
+        for i in range(1, len(data)):
+            ema[i] = (data[i] * multiplier) + (ema[i-1] * (1 - multiplier))
+        
+        return ema
+    
+    def detect_market_regime(self, symbol: str, prices: List[float], volumes: List[float]) -> Dict:
+        """
+        🎯 CODE ENHANCEMENT: Sophisticated market regime detection
+        Different strategies work in different regimes
+        
+        Returns: {'regime': str, 'strength': float, 'volatility': str}
+        """
+        try:
+            if len(prices) < 50:
+                return {'regime': 'UNKNOWN', 'strength': 0.0, 'volatility': 'NORMAL'}
+            
+            recent_prices = np.array(prices[-50:])
+            recent_volumes = np.array(volumes[-50:]) if len(volumes) >= 50 else None
+            
+            # Calculate metrics
+            returns = np.diff(recent_prices) / recent_prices[:-1]
+            
+            # 1. Trend detection (using ADX concept)
+            sma_20 = np.mean(recent_prices[-20:])
+            sma_50 = np.mean(recent_prices)
+            trend_slope = (recent_prices[-1] - recent_prices[0]) / recent_prices[0]
+            
+            # 2. Volatility regime
+            volatility = np.std(returns) * np.sqrt(252)
+            hist_volatility = np.std(np.diff(prices[-100:-50]) / prices[-100:-50]) * np.sqrt(252) if len(prices) >= 100 else volatility
+            
+            volatility_regime = 'HIGH' if volatility > hist_volatility * 1.3 else 'LOW' if volatility < hist_volatility * 0.7 else 'NORMAL'
+            
+            # 3. Determine regime
+            if abs(trend_slope) > 0.05 and sma_20 > sma_50 * 1.01:
+                regime = 'STRONG_TRENDING_UP'
+                strength = min(abs(trend_slope) * 10, 1.0)
+            elif abs(trend_slope) > 0.05 and sma_20 < sma_50 * 0.99:
+                regime = 'STRONG_TRENDING_DOWN'
+                strength = min(abs(trend_slope) * 10, 1.0)
+            elif abs(trend_slope) > 0.02:
+                regime = 'TRENDING_UP' if trend_slope > 0 else 'TRENDING_DOWN'
+                strength = min(abs(trend_slope) * 10, 1.0)
+            elif volatility_regime == 'HIGH':
+                regime = 'VOLATILE_RANGING'
+                strength = 0.5
+            else:
+                regime = 'RANGING'
+                strength = 0.3
+            
+            logger.debug(f"📊 Market Regime for {symbol}: {regime} (strength: {strength:.2f}, vol: {volatility_regime})")
+            
+            return {
+                'regime': regime,
+                'strength': strength,
+                'volatility': volatility_regime,
+                'trend_slope': trend_slope,
+                'current_volatility': volatility
+            }
+            
+        except Exception as e:
+            logger.error(f"Error detecting market regime: {e}")
+            return {'regime': 'UNKNOWN', 'strength': 0.0, 'volatility': 'NORMAL'}
+    
+    def calculate_smart_entry_score(self, symbol: str, signal_type: str, market_data: Dict) -> float:
+        """
+        🎯 CODE ENHANCEMENT: Multi-factor entry quality score
+        Combines multiple technical factors for optimal entry timing
+        
+        Returns: Score 0.0-1.0 (1.0 = perfect entry setup)
+        """
+        try:
+            data = market_data.get(symbol, {})
+            
+            # Get price history
+            if symbol not in self.price_history or len(self.price_history[symbol]) < 20:
+                return 0.5  # Neutral if insufficient data
+            
+            prices = self.price_history[symbol]
+            volumes = self.volume_history.get(symbol, [])
+            
+            score_factors = []
+            
+            # Factor 1: RSI positioning (30% weight)
+            if len(prices) >= 14:
+                rsi = self._calculate_rsi(prices, 14)
+                if signal_type == 'BUY':
+                    # Prefer RSI 30-50 (oversold but recovering)
+                    if 30 <= rsi <= 50:
+                        score_factors.append(0.3)
+                    elif 25 <= rsi < 30 or 50 < rsi <= 55:
+                        score_factors.append(0.2)
+                    else:
+                        score_factors.append(0.1)
+                else:  # SELL
+                    # Prefer RSI 50-70 (overbought but weakening)
+                    if 50 <= rsi <= 70:
+                        score_factors.append(0.3)
+                    elif 45 <= rsi < 50 or 70 < rsi <= 75:
+                        score_factors.append(0.2)
+                    else:
+                        score_factors.append(0.1)
+            
+            # Factor 2: Volume confirmation (25% weight)
+            if len(volumes) >= 20:
+                current_vol = volumes[-1]
+                avg_vol = np.mean(volumes[-20:])
+                vol_ratio = current_vol / avg_vol if avg_vol > 0 else 1
+                
+                if vol_ratio > 1.5:
+                    score_factors.append(0.25)  # Strong volume
+                elif vol_ratio > 1.2:
+                    score_factors.append(0.18)  # Good volume
+                elif vol_ratio > 1.0:
+                    score_factors.append(0.12)  # Above average
+                else:
+                    score_factors.append(0.05)  # Weak volume
+            
+            # Factor 3: Price action alignment (25% weight)
+            if len(prices) >= 5:
+                short_momentum = (prices[-1] - prices[-3]) / prices[-3]
+                medium_momentum = (prices[-1] - prices[-5]) / prices[-5]
+                
+                if signal_type == 'BUY':
+                    if short_momentum > 0 and medium_momentum > 0:
+                        score_factors.append(0.25)  # Aligned momentum
+                    elif short_momentum > 0:
+                        score_factors.append(0.15)  # Short-term momentum
+                    else:
+                        score_factors.append(0.05)  # Against momentum
+                else:  # SELL
+                    if short_momentum < 0 and medium_momentum < 0:
+                        score_factors.append(0.25)  # Aligned momentum
+                    elif short_momentum < 0:
+                        score_factors.append(0.15)  # Short-term momentum
+                    else:
+                        score_factors.append(0.05)  # Against momentum
+            
+            # Factor 4: Support/Resistance proximity (20% weight)
+            current_price = data.get('ltp', 0)
+            if current_price > 0 and len(prices) >= 20:
+                recent_high = max(prices[-20:])
+                recent_low = min(prices[-20:])
+                price_range = recent_high - recent_low
+                
+                if signal_type == 'BUY':
+                    # Better entry near support (lower 25% of range)
+                    distance_from_low = (current_price - recent_low) / price_range if price_range > 0 else 0.5
+                    if distance_from_low < 0.25:
+                        score_factors.append(0.20)
+                    elif distance_from_low < 0.40:
+                        score_factors.append(0.15)
+                    else:
+                        score_factors.append(0.05)
+                else:  # SELL
+                    # Better entry near resistance (upper 25% of range)
+                    distance_from_high = (recent_high - current_price) / price_range if price_range > 0 else 0.5
+                    if distance_from_high < 0.25:
+                        score_factors.append(0.20)
+                    elif distance_from_high < 0.40:
+                        score_factors.append(0.15)
+                    else:
+                        score_factors.append(0.05)
+            
+            total_score = sum(score_factors)
+            
+            logger.debug(f"📊 Entry Score for {symbol} {signal_type}: {total_score:.2f}")
+            
+            return total_score
+            
+        except Exception as e:
+            logger.error(f"Error calculating entry score: {e}")
+            return 0.5
+    
+    def _calculate_rsi(self, prices: List[float], period: int = 14) -> float:
+        """Calculate RSI indicator"""
+        try:
+            if len(prices) < period + 1:
+                return 50.0
+            
+            prices_array = np.array(prices[-period-1:])
+            deltas = np.diff(prices_array)
+            
+            gains = np.where(deltas > 0, deltas, 0)
+            losses = np.where(deltas < 0, -deltas, 0)
+            
+            avg_gain = np.mean(gains) if len(gains) > 0 else 0
+            avg_loss = np.mean(losses) if len(losses) > 0 else 0
+            
+            if avg_loss == 0:
+                return 100.0
+            
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
+            
+            return rsi
+            
+        except Exception as e:
+            logger.error(f"Error calculating RSI: {e}")
+            return 50.0
+    
+    def calculate_volatility_adjusted_position_size(self, symbol: str, base_quantity: int, 
+                                                    entry_price: float, stop_loss: float) -> int:
+        """
+        🎯 CODE ENHANCEMENT: Dynamic position sizing based on volatility
+        Reduces position size in high volatility, increases in low volatility
+        
+        Returns: Adjusted quantity
+        """
+        try:
+            # Get price history
+            if symbol not in self.price_history or len(self.price_history[symbol]) < 20:
+                return base_quantity
+            
+            prices = self.price_history[symbol]
+            
+            # Calculate current volatility
+            returns = np.diff(prices[-20:]) / prices[-20:-1]
+            current_vol = np.std(returns) * np.sqrt(252)  # Annualized
+            
+            # Calculate historical volatility (last 50 days if available)
+            if len(prices) >= 50:
+                hist_returns = np.diff(prices[-50:]) / prices[-50:-1]
+                hist_vol = np.std(hist_returns) * np.sqrt(252)
+            else:
+                hist_vol = current_vol
+            
+            # Volatility ratio
+            vol_ratio = current_vol / hist_vol if hist_vol > 0 else 1.0
+            
+            # Calculate risk per share
+            risk_per_share = abs(entry_price - stop_loss)
+            risk_percent = risk_per_share / entry_price if entry_price > 0 else 0.05
+            
+            # Adjust position size based on volatility
+            if vol_ratio > 1.5:  # High volatility
+                adjustment_factor = 0.6  # Reduce to 60%
+                logger.info(f"⚠️ HIGH VOLATILITY for {symbol}: Reducing position size to 60%")
+            elif vol_ratio > 1.2:  # Elevated volatility
+                adjustment_factor = 0.8  # Reduce to 80%
+                logger.info(f"⚠️ ELEVATED VOLATILITY for {symbol}: Reducing position size to 80%")
+            elif vol_ratio < 0.7:  # Low volatility
+                adjustment_factor = 1.2  # Increase to 120%
+                logger.info(f"✅ LOW VOLATILITY for {symbol}: Increasing position size to 120%")
+            else:  # Normal volatility
+                adjustment_factor = 1.0
+            
+            # Also consider risk percentage
+            if risk_percent > 0.05:  # Risk > 5% per share
+                risk_adjustment = 0.05 / risk_percent
+                adjustment_factor *= risk_adjustment
+                logger.info(f"⚠️ HIGH RISK/SHARE for {symbol}: Further reducing position")
+            
+            adjusted_quantity = int(base_quantity * adjustment_factor)
+            
+            # Ensure minimum quantity
+            adjusted_quantity = max(adjusted_quantity, 1)
+            
+            logger.info(f"📊 Position Size for {symbol}: {base_quantity} → {adjusted_quantity} (vol_ratio: {vol_ratio:.2f}, risk: {risk_percent:.2%})")
+            
+            return adjusted_quantity
+            
+        except Exception as e:
+            logger.error(f"Error calculating volatility-adjusted position size: {e}")
+            return base_quantity
+    
+    def calculate_trailing_stop_with_atr(self, symbol: str, entry_price: float, current_price: float,
+                                        position_type: str, atr_multiplier: float = 2.0) -> float:
+        """
+        🎯 CODE ENHANCEMENT: ATR-based trailing stop (adapts to volatility)
+        Uses Average True Range for volatility-adjusted stops
+        
+        Returns: Trailing stop price
+        """
+        try:
+            # Get price history for ATR calculation
+            if symbol not in self.price_history or len(self.price_history[symbol]) < 14:
+                # Fallback to fixed percentage
+                if position_type.upper() == 'LONG':
+                    return current_price * 0.98  # 2% trailing stop
+                else:
+                    return current_price * 1.02
+            
+            prices = self.price_history[symbol][-14:]
+            
+            # Calculate True Range
+            tr_list = []
+            for i in range(1, len(prices)):
+                high = prices[i]
+                low = prices[i]
+                prev_close = prices[i-1]
+                
+                tr = max(
+                    high - low,
+                    abs(high - prev_close),
+                    abs(low - prev_close)
+                )
+                tr_list.append(tr)
+            
+            # Average True Range
+            atr = np.mean(tr_list) if tr_list else (current_price * 0.02)
+            
+            # Calculate trailing stop
+            if position_type.upper() == 'LONG':
+                trailing_stop = current_price - (atr * atr_multiplier)
+                # Never move stop down
+                if entry_price > current_price:  # In loss
+                    initial_stop = entry_price * 0.98
+                    trailing_stop = max(trailing_stop, initial_stop)
+            else:  # SHORT
+                trailing_stop = current_price + (atr * atr_multiplier)
+                # Never move stop up
+                if entry_price < current_price:  # In loss
+                    initial_stop = entry_price * 1.02
+                    trailing_stop = min(trailing_stop, initial_stop)
+            
+            logger.debug(f"📊 ATR Trailing Stop for {symbol}: ATR={atr:.2f}, Stop={trailing_stop:.2f}")
+            
+            return trailing_stop
+            
+        except Exception as e:
+            logger.error(f"Error calculating ATR trailing stop: {e}")
+            # Fallback
+            if position_type.upper() == 'LONG':
+                return current_price * 0.98
+            else:
+                return current_price * 1.02
+    
     def calculate_dynamic_target(self, entry_price: float, stop_loss: float, 
                                 risk_reward_ratio: float = None) -> float:
         """Calculate dynamic target with MARKET-ADAPTIVE risk/reward ratio"""
