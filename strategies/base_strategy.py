@@ -5472,3 +5472,210 @@ class BaseStrategy:
         except Exception as e:
             logger.error(f"Error getting volume data: {e}")
             return {} 
+    
+    # ==================================================================================
+    # OPTION CHAIN UTILITIES - Access and analyze comprehensive option chain data
+    # ==================================================================================
+    
+    def get_option_chain(self, underlying_symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Get option chain data for a given underlying from market data
+        
+        Returns:
+            Dict with structure:
+            {
+                'underlying': str,
+                'expiry': str,
+                'atm_strike': float,
+                'spot_price': float,
+                'chain': {'calls': {...}, 'puts': {...}},
+                'analytics': {'pcr': float, 'max_pain': float, 'iv_mean': float, ...}
+            }
+        """
+        try:
+            if '_option_chains' not in market_data:
+                return None
+            
+            option_chains = market_data['_option_chains']
+            return option_chains.get(underlying_symbol)
+            
+        except Exception as e:
+            logger.debug(f"Error getting option chain for {underlying_symbol}: {e}")
+            return None
+    
+    def get_pcr_ratio(self, underlying_symbol: str, market_data: Dict[str, Any]) -> float:
+        """
+        Get Put-Call Ratio (OI based) for underlying
+        PCR > 1.0 indicates more puts than calls (bearish sentiment)
+        PCR < 1.0 indicates more calls than puts (bullish sentiment)
+        """
+        try:
+            chain = self.get_option_chain(underlying_symbol, market_data)
+            if chain and 'analytics' in chain:
+                return chain['analytics'].get('pcr', 0)
+            return 0
+        except:
+            return 0
+    
+    def get_max_pain_strike(self, underlying_symbol: str, market_data: Dict[str, Any]) -> float:
+        """
+        Get max pain strike - where option writers lose least
+        Price tends to gravitate towards max pain near expiry
+        """
+        try:
+            chain = self.get_option_chain(underlying_symbol, market_data)
+            if chain and 'analytics' in chain:
+                return chain['analytics'].get('max_pain', 0)
+            return 0
+        except:
+            return 0
+    
+    def get_option_support_resistance(self, underlying_symbol: str, market_data: Dict[str, Any]) -> Tuple[float, float]:
+        """
+        Get support and resistance levels based on max OI
+        
+        Returns:
+            (support_strike, resistance_strike)
+        """
+        try:
+            chain = self.get_option_chain(underlying_symbol, market_data)
+            if chain and 'analytics' in chain:
+                analytics = chain['analytics']
+                support = analytics.get('support', 0)
+                resistance = analytics.get('resistance', 0)
+                return (support, resistance)
+            return (0, 0)
+        except:
+            return (0, 0)
+    
+    def get_iv_skew(self, underlying_symbol: str, market_data: Dict[str, Any]) -> Dict[str, float]:
+        """
+        Get IV skew data
+        Positive skew means OTM puts have higher IV than OTM calls (fear/protection buying)
+        Negative skew means OTM calls have higher IV (unusual, indicates bullish speculation)
+        
+        Returns:
+            {'otm_call_iv': float, 'otm_put_iv': float, 'skew': float}
+        """
+        try:
+            chain = self.get_option_chain(underlying_symbol, market_data)
+            if chain and 'analytics' in chain:
+                return chain['analytics'].get('iv_skew', {})
+            return {}
+        except:
+            return {}
+    
+    def is_high_iv_environment(self, underlying_symbol: str, market_data: Dict[str, Any], threshold: float = 25.0) -> bool:
+        """
+        Check if we're in a high IV environment
+        High IV is good for option selling, low IV for option buying
+        
+        Args:
+            threshold: IV percentage threshold (default 25%)
+        """
+        try:
+            chain = self.get_option_chain(underlying_symbol, market_data)
+            if chain and 'analytics' in chain:
+                iv_mean = chain['analytics'].get('iv_mean', 0)
+                return iv_mean > threshold
+            return False
+        except:
+            return False
+    
+    def get_option_greeks(self, options_symbol: str, underlying_symbol: str, market_data: Dict[str, Any]) -> Dict[str, float]:
+        """
+        Get Greeks (delta, gamma, theta, vega) for a specific option
+        
+        Returns:
+            {'delta': float, 'gamma': float, 'theta': float, 'vega': float}
+        """
+        try:
+            chain = self.get_option_chain(underlying_symbol, market_data)
+            if not chain or 'chain' not in chain:
+                return {}
+            
+            # Parse option symbol to get strike and type
+            import re
+            match = re.match(r"([A-Z]+)(\d{2}[A-Z]{3})(\d+)(CE|PE)", options_symbol)
+            if not match:
+                return {}
+            
+            _, _, strike_str, option_type = match.groups()
+            strike = float(strike_str)
+            
+            # Get the option data
+            option_data = None
+            if option_type == 'CE':
+                option_data = chain['chain']['calls'].get(strike)
+            else:
+                option_data = chain['chain']['puts'].get(strike)
+            
+            if option_data and 'greeks' in option_data:
+                return option_data['greeks']
+            
+            return {}
+            
+        except Exception as e:
+            logger.debug(f"Error getting Greeks for {options_symbol}: {e}")
+            return {}
+    
+    def should_avoid_option_trade_based_on_chain(self, underlying_symbol: str, action: str, 
+                                                  market_data: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Use option chain analytics to filter out bad trade setups
+        
+        Args:
+            underlying_symbol: Underlying symbol
+            action: 'BUY' or 'SELL'
+            market_data: Market data with option chain
+        
+        Returns:
+            (should_avoid: bool, reason: str)
+        """
+        try:
+            chain = self.get_option_chain(underlying_symbol, market_data)
+            if not chain:
+                return (False, "")
+            
+            analytics = chain.get('analytics', {})
+            spot_price = chain.get('spot_price', 0)
+            max_pain = analytics.get('max_pain', 0)
+            pcr = analytics.get('pcr', 0)
+            support, resistance = self.get_option_support_resistance(underlying_symbol, market_data)
+            
+            # Rule 1: Avoid buying calls near resistance
+            if action == 'BUY' and resistance > 0:
+                distance_to_resistance = (resistance - spot_price) / spot_price * 100
+                if 0 < distance_to_resistance < 1.0:  # Within 1% of resistance
+                    return (True, f"Near resistance at {resistance} (OI-based)")
+            
+            # Rule 2: Avoid buying puts near support
+            if action == 'SELL' and support > 0:
+                distance_to_support = (spot_price - support) / spot_price * 100
+                if 0 < distance_to_support < 1.0:  # Within 1% of support
+                    return (True, f"Near support at {support} (OI-based)")
+            
+            # Rule 3: Consider max pain - price gravitates towards it near expiry
+            if max_pain > 0:
+                distance_to_max_pain = abs(spot_price - max_pain) / spot_price * 100
+                if distance_to_max_pain > 5.0:  # More than 5% away from max pain
+                    # If we're above max pain and buying calls, be cautious
+                    if action == 'BUY' and spot_price > max_pain:
+                        return (True, f"Spot â‚¹{spot_price:.0f} far above max pain â‚¹{max_pain:.0f}")
+                    # If we're below max pain and buying puts, be cautious
+                    if action == 'SELL' and spot_price < max_pain:
+                        return (True, f"Spot â‚¹{spot_price:.0f} far below max pain â‚¹{max_pain:.0f}")
+            
+            # Rule 4: Extreme PCR can indicate reversals
+            if pcr > 2.0:  # Very high PCR - oversold, potential reversal up
+                if action == 'SELL':
+                    return (True, f"Extreme PCR {pcr:.2f} indicates potential reversal (avoid shorts)")
+            elif pcr < 0.5:  # Very low PCR - overbought, potential reversal down
+                if action == 'BUY':
+                    return (True, f"Extreme PCR {pcr:.2f} indicates potential reversal (avoid longs)")
+            
+            return (False, "")
+            
+        except Exception as e:
+            logger.debug(f"Error checking option chain filters: {e}")
+            return (False, "")

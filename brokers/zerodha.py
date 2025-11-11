@@ -2234,6 +2234,317 @@ class ZerodhaIntegration:
             'last_order_time': self.last_order_time
         }
 
+    async def get_option_chain(self, underlying_symbol: str, expiry: str = None, strikes: int = 10) -> Dict[str, Any]:
+        """
+        🎯 COMPREHENSIVE OPTION CHAIN FETCHER
+        Fetches full option chain with Greeks, IV, OI, and depth for given underlying
+        
+        Args:
+            underlying_symbol: Underlying symbol (e.g., 'NIFTY', 'BANKNIFTY', 'RELIANCE')
+            expiry: Expiry date in format 'DDMMMYY' (e.g., '25DEC24'). If None, uses nearest expiry
+            strikes: Number of strikes on each side of ATM (default: 10, means 10 ITM + ATM + 10 OTM = 21 strikes)
+        
+        Returns:
+            Dict with structure:
+            {
+                'underlying': str,
+                'expiry': str,
+                'atm_strike': float,
+                'spot_price': float,
+                'timestamp': str,
+                'chain': {
+                    'calls': {strike: {...data...}, ...},
+                    'puts': {strike: {...data...}, ...}
+                },
+                'analytics': {
+                    'pcr': float,  # Put-Call Ratio (OI)
+                    'max_pain': float,  # Strike with max pain
+                    'iv_mean': float,
+                    'iv_skew': Dict
+                }
+            }
+        """
+        try:
+            if not self.kite or not self.is_connected:
+                logger.warning(f"⚠️ Zerodha not connected - cannot get option chain for {underlying_symbol}")
+                return {}
+            
+            logger.info(f"🔍 Fetching option chain for {underlying_symbol} expiry={expiry}")
+            
+            # Step 1: Get spot price of underlying
+            exchange = self._get_exchange_for_symbol(underlying_symbol)
+            full_symbol = f"{exchange}:{underlying_symbol}"
+            
+            spot_quote = self.kite.quote([full_symbol])
+            if not spot_quote or full_symbol not in spot_quote:
+                logger.error(f"❌ Could not fetch spot price for {underlying_symbol}")
+                return {}
+            
+            spot_price = spot_quote[full_symbol].get('last_price', 0)
+            if not spot_price:
+                logger.error(f"❌ Invalid spot price for {underlying_symbol}")
+                return {}
+            
+            logger.info(f"✅ Spot price for {underlying_symbol}: ₹{spot_price}")
+            
+            # Step 2: Ensure NFO instruments are loaded
+            if self._nfo_instruments is None:
+                await self.get_instruments('NFO')
+            
+            if not self._nfo_instruments:
+                logger.error("❌ No NFO instruments available")
+                return {}
+            
+            # Step 3: Filter options for this underlying and expiry
+            options_list = []
+            for inst in self._nfo_instruments:
+                if inst.get('name') == underlying_symbol and inst.get('instrument_type') in ['CE', 'PE']:
+                    # If expiry specified, filter by it
+                    inst_expiry = inst.get('expiry')
+                    if expiry:
+                        # Convert expiry format if needed
+                        if inst_expiry and self._compare_expiry(inst_expiry, expiry):
+                            options_list.append(inst)
+                    else:
+                        # No expiry specified - collect all
+                        options_list.append(inst)
+            
+            if not options_list:
+                logger.warning(f"⚠️ No options found for {underlying_symbol}")
+                return {}
+            
+            # Step 4: If no expiry specified, find nearest expiry
+            if not expiry:
+                unique_expiries = sorted(set(inst.get('expiry') for inst in options_list if inst.get('expiry')))
+                if unique_expiries:
+                    expiry = unique_expiries[0]  # Nearest expiry
+                    options_list = [inst for inst in options_list if inst.get('expiry') == expiry]
+                    logger.info(f"📅 Using nearest expiry: {expiry}")
+            
+            # Step 5: Find ATM strike
+            available_strikes = sorted(set(inst.get('strike') for inst in options_list if inst.get('strike')))
+            atm_strike = min(available_strikes, key=lambda x: abs(x - spot_price))
+            logger.info(f"🎯 ATM Strike: {atm_strike}")
+            
+            # Step 6: Select strikes within range
+            atm_index = available_strikes.index(atm_strike)
+            start_index = max(0, atm_index - strikes)
+            end_index = min(len(available_strikes), atm_index + strikes + 1)
+            selected_strikes = available_strikes[start_index:end_index]
+            logger.info(f"📊 Selected {len(selected_strikes)} strikes: {selected_strikes[0]} to {selected_strikes[-1]}")
+            
+            # Step 7: Build symbol list for batch quote fetch
+            symbols_to_fetch = []
+            symbol_map = {}  # Map full_symbol -> (strike, option_type)
+            
+            for inst in options_list:
+                strike = inst.get('strike')
+                if strike in selected_strikes:
+                    tradingsymbol = inst.get('tradingsymbol')
+                    option_type = inst.get('instrument_type')
+                    full_sym = f"NFO:{tradingsymbol}"
+                    symbols_to_fetch.append(full_sym)
+                    symbol_map[full_sym] = (strike, option_type, tradingsymbol)
+            
+            logger.info(f"🔄 Fetching quotes for {len(symbols_to_fetch)} option contracts...")
+            
+            # Step 8: Fetch all quotes in batch (max 500 per call)
+            all_quotes = {}
+            batch_size = 200  # Conservative batch size
+            for i in range(0, len(symbols_to_fetch), batch_size):
+                batch = symbols_to_fetch[i:i+batch_size]
+                try:
+                    batch_quotes = self.kite.quote(batch)
+                    if batch_quotes:
+                        all_quotes.update(batch_quotes)
+                    # Rate limit protection
+                    await asyncio.sleep(0.1)
+                except Exception as e:
+                    logger.error(f"❌ Error fetching batch {i}-{i+batch_size}: {e}")
+            
+            logger.info(f"✅ Fetched {len(all_quotes)} option quotes")
+            
+            # Step 9: Parse and structure data
+            calls_data = {}
+            puts_data = {}
+            
+            for full_sym, quote_data in all_quotes.items():
+                if full_sym not in symbol_map:
+                    continue
+                
+                strike, option_type, tradingsymbol = symbol_map[full_sym]
+                
+                # Extract comprehensive data including Greeks
+                option_data = {
+                    'symbol': tradingsymbol,
+                    'ltp': quote_data.get('last_price', 0),
+                    'change': quote_data.get('change', 0),
+                    'change_percent': quote_data.get('change', 0),  # Calculate properly if needed
+                    'volume': quote_data.get('volume', 0),
+                    'oi': quote_data.get('oi', 0),
+                    'oi_day_high': quote_data.get('oi_day_high', 0),
+                    'oi_day_low': quote_data.get('oi_day_low', 0),
+                    'bid': quote_data.get('depth', {}).get('buy', [{}])[0].get('price', 0),
+                    'ask': quote_data.get('depth', {}).get('sell', [{}])[0].get('price', 0),
+                    'bid_qty': quote_data.get('depth', {}).get('buy', [{}])[0].get('quantity', 0),
+                    'ask_qty': quote_data.get('depth', {}).get('sell', [{}])[0].get('quantity', 0),
+                    'ohlc': quote_data.get('ohlc', {}),
+                    # Greeks and IV (if available from Zerodha)
+                    'greeks': {
+                        'delta': quote_data.get('delta', 0),
+                        'gamma': quote_data.get('gamma', 0),
+                        'theta': quote_data.get('theta', 0),
+                        'vega': quote_data.get('vega', 0)
+                    },
+                    'iv': quote_data.get('iv', 0),  # Implied Volatility
+                    'depth': quote_data.get('depth', {}),
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                # Categorize by type
+                if option_type == 'CE':
+                    calls_data[strike] = option_data
+                else:
+                    puts_data[strike] = option_data
+            
+            # Step 10: Calculate analytics
+            analytics = self._calculate_option_chain_analytics(
+                calls_data, puts_data, atm_strike, spot_price
+            )
+            
+            result = {
+                'underlying': underlying_symbol,
+                'expiry': expiry,
+                'atm_strike': atm_strike,
+                'spot_price': spot_price,
+                'timestamp': datetime.now().isoformat(),
+                'chain': {
+                    'calls': calls_data,
+                    'puts': puts_data
+                },
+                'analytics': analytics
+            }
+            
+            logger.info(f"✅ Option chain built: {len(calls_data)} calls, {len(puts_data)} puts")
+            logger.info(f"📊 Analytics: PCR={analytics.get('pcr', 0):.2f}, Max Pain={analytics.get('max_pain', 0)}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Error fetching option chain for {underlying_symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+    
+    def _compare_expiry(self, expiry1: date, expiry2: str) -> bool:
+        """Compare expiry dates in different formats"""
+        try:
+            # expiry1 is a date object, expiry2 is string like '25DEC24'
+            if isinstance(expiry1, date):
+                exp1_str = expiry1.strftime('%d%b%y').upper()
+                return exp1_str == expiry2.upper()
+            return False
+        except:
+            return False
+    
+    def _calculate_option_chain_analytics(self, calls_data: Dict, puts_data: Dict, 
+                                         atm_strike: float, spot_price: float) -> Dict[str, Any]:
+        """Calculate option chain analytics: PCR, Max Pain, IV Skew"""
+        try:
+            analytics = {}
+            
+            # 1. Put-Call Ratio (OI based)
+            total_call_oi = sum(data.get('oi', 0) for data in calls_data.values())
+            total_put_oi = sum(data.get('oi', 0) for data in puts_data.values())
+            analytics['pcr'] = total_put_oi / total_call_oi if total_call_oi > 0 else 0
+            analytics['total_call_oi'] = total_call_oi
+            analytics['total_put_oi'] = total_put_oi
+            
+            # 2. Max Pain - Strike with maximum pain for option writers
+            max_pain_strike = self._calculate_max_pain(calls_data, puts_data)
+            analytics['max_pain'] = max_pain_strike
+            
+            # 3. IV Analysis
+            call_ivs = [data.get('iv', 0) for data in calls_data.values() if data.get('iv', 0) > 0]
+            put_ivs = [data.get('iv', 0) for data in puts_data.values() if data.get('iv', 0) > 0]
+            
+            analytics['iv_mean'] = (sum(call_ivs + put_ivs) / len(call_ivs + put_ivs)) if (call_ivs + put_ivs) else 0
+            analytics['iv_call_mean'] = (sum(call_ivs) / len(call_ivs)) if call_ivs else 0
+            analytics['iv_put_mean'] = (sum(put_ivs) / len(put_ivs)) if put_ivs else 0
+            
+            # 4. IV Skew - Compare OTM put IV vs OTM call IV
+            otm_calls = {strike: data for strike, data in calls_data.items() if strike > spot_price}
+            otm_puts = {strike: data for strike, data in puts_data.items() if strike < spot_price}
+            
+            otm_call_ivs = [data.get('iv', 0) for data in otm_calls.values() if data.get('iv', 0) > 0]
+            otm_put_ivs = [data.get('iv', 0) for data in otm_puts.values() if data.get('iv', 0) > 0]
+            
+            avg_otm_call_iv = (sum(otm_call_ivs) / len(otm_call_ivs)) if otm_call_ivs else 0
+            avg_otm_put_iv = (sum(otm_put_ivs) / len(otm_put_ivs)) if otm_put_ivs else 0
+            
+            analytics['iv_skew'] = {
+                'otm_call_iv': avg_otm_call_iv,
+                'otm_put_iv': avg_otm_put_iv,
+                'skew': avg_otm_put_iv - avg_otm_call_iv  # Positive = fear (higher put IV)
+            }
+            
+            # 5. OI Distribution - Support/Resistance levels
+            call_oi_by_strike = {strike: data.get('oi', 0) for strike, data in calls_data.items()}
+            put_oi_by_strike = {strike: data.get('oi', 0) for strike, data in puts_data.items()}
+            
+            max_call_oi_strike = max(call_oi_by_strike, key=call_oi_by_strike.get) if call_oi_by_strike else 0
+            max_put_oi_strike = max(put_oi_by_strike, key=put_oi_by_strike.get) if put_oi_by_strike else 0
+            
+            analytics['resistance'] = max_call_oi_strike  # Strike with max call OI
+            analytics['support'] = max_put_oi_strike  # Strike with max put OI
+            
+            return analytics
+            
+        except Exception as e:
+            logger.error(f"❌ Error calculating option chain analytics: {e}")
+            return {}
+    
+    def _calculate_max_pain(self, calls_data: Dict, puts_data: Dict) -> float:
+        """Calculate max pain strike - where option writers lose least"""
+        try:
+            # Get all unique strikes
+            all_strikes = sorted(set(list(calls_data.keys()) + list(puts_data.keys())))
+            
+            if not all_strikes:
+                return 0
+            
+            max_pain_values = {}
+            
+            for test_strike in all_strikes:
+                total_pain = 0
+                
+                # Calculate pain from calls (ITM if strike > test_strike)
+                for strike, data in calls_data.items():
+                    if strike < test_strike:
+                        # Call is ITM, writers lose
+                        oi = data.get('oi', 0)
+                        pain = (test_strike - strike) * oi
+                        total_pain += pain
+                
+                # Calculate pain from puts (ITM if strike < test_strike)
+                for strike, data in puts_data.items():
+                    if strike > test_strike:
+                        # Put is ITM, writers lose
+                        oi = data.get('oi', 0)
+                        pain = (strike - test_strike) * oi
+                        total_pain += pain
+                
+                max_pain_values[test_strike] = total_pain
+            
+            # Max pain is strike with minimum total pain
+            max_pain_strike = min(max_pain_values, key=max_pain_values.get) if max_pain_values else 0
+            
+            return max_pain_strike
+            
+        except Exception as e:
+            logger.error(f"❌ Error calculating max pain: {e}")
+            return 0
+
     def is_market_open(self) -> bool:
         """Check if market is open"""
         now = datetime.now()

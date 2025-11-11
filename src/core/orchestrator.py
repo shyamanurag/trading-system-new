@@ -1828,6 +1828,84 @@ class TradingOrchestrator:
         except Exception as e:
             self.logger.error(f"❌ Error enriching market data with options: {e}")
             return underlying_data  # Fallback to original data
+    
+    async def _fetch_and_merge_option_chains(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        🎯 FETCH OPTION CHAINS for key underlyings and merge into market data
+        Provides comprehensive options data including Greeks, IV, OI, PCR, Max Pain
+        """
+        try:
+            if not self.zerodha_client:
+                return market_data
+            
+            # Define key underlyings to fetch option chains for
+            # Focus on indices and high-liquidity stocks
+            key_underlyings = ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
+            
+            # Also extract unique underlyings from active positions
+            active_underlyings = set()
+            for strategy_info in self.strategies.values():
+                if 'instance' in strategy_info:
+                    strategy = strategy_info['instance']
+                    if hasattr(strategy, 'active_positions'):
+                        for symbol in strategy.active_positions.keys():
+                            # Extract underlying from option symbol (e.g., "RELIANCE25DEC3000CE" -> "RELIANCE")
+                            if 'CE' in symbol or 'PE' in symbol:
+                                import re
+                                match = re.match(r"([A-Z]+)\d{2}[A-Z]{3}", symbol)
+                                if match:
+                                    underlying = match.group(1)
+                                    active_underlyings.add(underlying)
+            
+            # Combine key underlyings with active position underlyings
+            all_underlyings = set(key_underlyings) | active_underlyings
+            
+            # Limit to avoid rate limits (max 5 underlyings per cycle)
+            underlyings_to_fetch = list(all_underlyings)[:5]
+            
+            if not underlyings_to_fetch:
+                return market_data
+            
+            self.logger.info(f"🔍 Fetching option chains for: {underlyings_to_fetch}")
+            
+            # Fetch option chains for each underlying
+            option_chain_data = {}
+            for underlying in underlyings_to_fetch:
+                try:
+                    chain = await self.zerodha_client.get_option_chain(
+                        underlying_symbol=underlying,
+                        expiry=None,  # Nearest expiry
+                        strikes=10  # 10 strikes on each side of ATM
+                    )
+                    
+                    if chain and 'chain' in chain:
+                        option_chain_data[underlying] = chain
+                        
+                        # Log analytics
+                        analytics = chain.get('analytics', {})
+                        self.logger.info(
+                            f"📊 {underlying} Chain: PCR={analytics.get('pcr', 0):.2f}, "
+                            f"Max Pain={analytics.get('max_pain', 0)}, "
+                            f"Support={analytics.get('support', 0)}, "
+                            f"Resistance={analytics.get('resistance', 0)}"
+                        )
+                    
+                    # Rate limit protection
+                    await asyncio.sleep(0.2)
+                    
+                except Exception as e:
+                    self.logger.debug(f"Could not fetch option chain for {underlying}: {e}")
+            
+            # Store option chain data in a dedicated key for strategies to access
+            if option_chain_data:
+                market_data['_option_chains'] = option_chain_data
+                self.logger.info(f"✅ Added {len(option_chain_data)} option chains to market data")
+            
+            return market_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error fetching option chains: {e}")
+            return market_data
 
     async def _process_market_data(self):
         """Process market data from shared connection and run strategies"""
@@ -1854,6 +1932,17 @@ class TradingOrchestrator:
             all_signals = []
             # 🚨 PERFORMANCE OPTIMIZATION: Reduce market data processing load
             transformed_data = self._optimize_market_data_processing(market_data)
+            
+            # 🎯 STEP 1: FETCH OPTION CHAINS for key underlyings (every 5th cycle to avoid rate limits)
+            if not hasattr(self, '_option_chain_cycle_counter'):
+                self._option_chain_cycle_counter = 0
+            self._option_chain_cycle_counter += 1
+            
+            if self._option_chain_cycle_counter % 5 == 0:  # Fetch option chains every 5th cycle
+                try:
+                    transformed_data = await self._fetch_and_merge_option_chains(transformed_data)
+                except Exception as e:
+                    self.logger.debug(f"Could not fetch option chains: {e}")
             
             # CRITICAL: Update Market Directional Bias BEFORE running strategies
             # CRITICAL FIX: Pass RAW market_data (not transformed) - bias needs NIFTY-I which is filtered out in transformed_data
