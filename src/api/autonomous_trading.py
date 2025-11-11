@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any
 from datetime import datetime
 import logging
+import asyncio  # ⚡ FIXED: Added missing import
 from src.models.responses import (
     BaseResponse,
     TradingStatusResponse,
