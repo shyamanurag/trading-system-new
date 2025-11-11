@@ -1094,15 +1094,21 @@ class OptimizedVolumeScalper(BaseStrategy):
         if imbalance_ratio >= self.order_flow_imbalance_threshold:
             direction = 'BUY' if buy_flow > sell_flow else 'SELL'
             
-            # PROFESSIONAL CONFIDENCE CALCULATION
-            base_confidence = imbalance_ratio * 10
-            institutional_boost = institutional_ratio * 2.0
-            vwap_boost = min(abs(vwap_deviation) * 5, 1.0)
+            # 🎯 ENHANCED: More realistic confidence calculation
+            # Microstructure edges are powerful but fleeting - be conservative
+            # Base from imbalance (max 6.0)
+            # Institutional flow boost (max 1.5)
+            # VWAP confirmation (max 0.8)
+            # Statistical significance (max 0.7)
+            base_confidence = min(imbalance_ratio * 6.0, 6.0)
+            institutional_boost = min(institutional_ratio * 1.5, 1.5)
+            vwap_boost = min(abs(vwap_deviation) * 4, 0.8)
             
             # STATISTICAL VALIDATION
             flow_significance = self._test_flow_significance(recent_flows)
+            stat_boost = 0.7 if flow_significance < 0.05 else 0.3  # p-value check
             
-            confidence = min(base_confidence + institutional_boost + vwap_boost, 9.8)
+            confidence = min(base_confidence + institutional_boost + vwap_boost + stat_boost, 8.5)
             
             # RISK-ADJUSTED RETURN ESTIMATION
             volatility = self._get_current_volatility(symbol)
@@ -1296,8 +1302,10 @@ class OptimizedVolumeScalper(BaseStrategy):
                     if abs(z_score) > 2.0:  # 2 standard deviations
                         direction = 'BUY' if z_score < -2.0 else 'SELL'
                         
-                        # PROFESSIONAL ARBITRAGE SIGNAL
-                        confidence = min(9.0 + (abs(z_score) - 2.0) * 0.5, 9.8)
+                        # 🎯 ENHANCED: More realistic arbitrage confidence
+                        # Start at 7.0 for 2-sigma, increase with z-score
+                        # Max 8.0 even for extreme mispricings
+                        confidence = min(7.0 + (abs(z_score) - 2.0) * 0.3, 8.0)
                         expected_return = self._estimate_arbitrage_return(abs(z_score), p_value)
                         
                         signal = MarketMicrostructureSignal(
@@ -1481,9 +1489,10 @@ class OptimizedVolumeScalper(BaseStrategy):
             if abs(price_change) > 0.003:  # 0.3% move required
                 direction = 'BUY' if price_change > 0 else 'SELL'
                 
-                # Confidence based on volatility persistence
+                # 🎯 ENHANCED: More realistic volatility breakout confidence
+                # Volatility breakouts are risky - be conservative
                 vol_persistence = self._calculate_volatility_persistence(symbol)
-                confidence = min(7.0 + vol_persistence * 2, 9.5)  # 0-10 scale
+                confidence = min(6.5 + vol_persistence * 1.2, 7.8)  # Cap at 7.8
                 
                 return MarketMicrostructureSignal(
                     signal_type=direction,
@@ -1532,7 +1541,8 @@ class OptimizedVolumeScalper(BaseStrategy):
             volume_ratio = volume / avg_volume if avg_volume > 0 else 1
             
             if volume_ratio >= 1.5:  # 50% above average volume
-                confidence = min(6.0 + abs(z_score) * 1.0 + volume_ratio * 0.5, 9.5)  # 0-10 scale
+                # 🎯 ENHANCED: More realistic mean reversion confidence
+                confidence = min(6.0 + abs(z_score) * 0.6 + volume_ratio * 0.3, 7.5)  # Cap at 7.5
                 
                 return MarketMicrostructureSignal(
                     signal_type=direction,
@@ -1564,8 +1574,9 @@ class OptimizedVolumeScalper(BaseStrategy):
             direction = 'SELL' if price_change > 0 else 'BUY'  # Fade the move
             
             # Quick reversion opportunity
+            # 🎯 ENHANCED: Low liquidity trades are highest risk - be very conservative
             strength = abs(price_change) * 100
-            confidence = min(5.0 + strength * 0.5, 8.5)  # Conservative for liquidity trades (0-10 scale)
+            confidence = min(5.0 + strength * 0.3, 6.5)  # Very conservative for illiquid trades
             
             return MarketMicrostructureSignal(
                 signal_type=direction,

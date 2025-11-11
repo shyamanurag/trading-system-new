@@ -107,6 +107,16 @@ except ImportError:
             return signals
     strategy_coordinator = DummyStrategyCoordinator()
 
+# Import signal enhancer for quality improvement
+try:
+    from src.core.signal_enhancement import signal_enhancer
+except ImportError:
+    # Fallback if signal enhancer is not available
+    class DummySignalEnhancer:
+        async def enhance_signals(self, signals, market_data):
+            return signals
+    signal_enhancer = DummySignalEnhancer()
+
 class SimpleTradeEngine:
     """Simple trade engine for fallback - renamed to avoid conflict"""
     
@@ -1807,7 +1817,17 @@ class TradingOrchestrator:
                     self.logger.error(f"all_signals type: {type(all_signals)}, contents: {all_signals[:3] if len(all_signals) > 3 else all_signals}")
                     return
                 
-                # 🎯 STRATEGY COORDINATION: Resolve conflicts before deduplication
+                # 🎯 STEP 1: SIGNAL ENHANCEMENT - Apply quality filters and confluence checks
+                try:
+                    self.logger.info(f"🎯 ENHANCING {len(all_signals)} signals with quality filters...")
+                    enhanced_signals = await signal_enhancer.enhance_signals(all_signals, market_data)
+                    self.logger.info(f"✅ ENHANCEMENT: {len(all_signals)} → {len(enhanced_signals)} signals passed quality filters")
+                    all_signals = enhanced_signals
+                except Exception as enhance_err:
+                    self.logger.error(f"❌ Signal enhancement error: {enhance_err}")
+                    # Continue with unenhanced signals (fallback)
+                
+                # 🎯 STEP 2: STRATEGY COORDINATION - Resolve conflicts
                 try:
                     # Get current market regime
                     current_regime = 'NEUTRAL'  # Default
@@ -1822,6 +1842,7 @@ class TradingOrchestrator:
                     self.logger.error(f"❌ Strategy coordination error: {coord_err}")
                     # Continue with uncoordinated signals (fallback)
                 
+                # 🎯 STEP 3: DEDUPLICATION - Remove duplicates
                 filtered_signals = await signal_deduplicator.process_signals(all_signals)
 
                 # Generic executed-today suppression at orchestrator level (no hardcoded symbols)

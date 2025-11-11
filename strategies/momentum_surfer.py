@@ -919,7 +919,9 @@ class EnhancedMomentumSurfer(BaseStrategy):
         change_percent = data.get('change_percent', 0)
         
         if change_percent > 1.0:  # Strong uptrend
-            confidence = 9.2 + min(change_percent * 0.2, 0.8)
+            # 🎯 ENHANCED: More realistic momentum confidence
+            # Start at 7.0, increase with strength, cap at 8.2
+            confidence = 7.0 + min(change_percent * 0.15, 1.2)
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -948,7 +950,9 @@ class EnhancedMomentumSurfer(BaseStrategy):
         change_percent = data.get('change_percent', 0)
         
         if change_percent < -1.0:  # Strong downtrend
-            confidence = 9.2 + min(abs(change_percent) * 0.2, 0.8)
+            # 🎯 ENHANCED: More realistic downtrend momentum confidence
+            # Start at 7.0, increase with strength, cap at 8.2
+            confidence = 7.0 + min(abs(change_percent) * 0.15, 1.2)
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -979,7 +983,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         # Range trading: buy at support, sell at resistance
         if change_percent < -0.3:  # Near support
-            confidence = 9.1
+            # 🎯 ENHANCED: Ranging markets are harder to trade
+            confidence = 6.8
             if ltp <= 0:
                 return None
             stop_loss = ltp * 0.99
@@ -999,7 +1004,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 market_bias=self.market_bias
             )
         elif change_percent > 0.3:  # Near resistance
-            confidence = 9.1
+            # 🎯 ENHANCED: Range resistance fades are risky
+            confidence = 6.5
             if ltp <= 0:
                 return None
             stop_loss = ltp * 1.01
@@ -1027,7 +1033,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
         volume = data.get('volume', 0)
         
         if change_percent > 1.5 and volume > 100000:
-            confidence = 9.5 + min(change_percent * 0.1, 0.5)
+            # 🎯 ENHANCED: Breakouts fail often - be conservative
+            confidence = 7.2 + min(change_percent * 0.08, 0.8)
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -1057,7 +1064,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
         volume = data.get('volume', 0)
         
         if change_percent < -1.5 and volume > 100000:
-            confidence = 9.5 + min(abs(change_percent) * 0.1, 0.5)
+            # 🎯 ENHANCED: Breakdown trades carry significant risk
+            confidence = 7.2 + min(abs(change_percent) * 0.08, 0.8)
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -1086,7 +1094,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
         change_percent = data.get('change_percent', 0)
         
         if 0.5 <= change_percent <= 1.0:  # Modest upward move after decline
-            confidence = 9.0
+            # 🎯 ENHANCED: Reversal timing is difficult
+            confidence = 6.8
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -1115,7 +1124,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
         change_percent = data.get('change_percent', 0)
         
         if -1.0 <= change_percent <= -0.5:  # Modest downward move after rise
-            confidence = 9.0
+            # 🎯 ENHANCED: Catching falling knives is risky
+            confidence = 6.5
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -1146,7 +1156,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         if volume > 200000 and abs(change_percent) > 0.5:
             signal_type = 'BUY' if change_percent > 0 else 'SELL'
-            confidence = 9.3
+            # 🎯 ENHANCED: High volatility trades need caution
+            confidence = 7.0
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -1177,7 +1188,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
         # In low volatility, look for any movement
         if abs(change_percent) > 0.2:
             signal_type = 'BUY' if change_percent > 0 else 'SELL'
-            confidence = 9.0
+            # 🎯 ENHANCED: Low volatility moves lack conviction
+            confidence = 6.2
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")

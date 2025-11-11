@@ -162,104 +162,93 @@ async def reset_orchestrator():
 async def start_trading(
     orchestrator: Any = Depends(get_orchestrator)
 ):
-    """Start autonomous trading with forced initialization for deployment"""
+    """
+    Start autonomous trading - Returns immediately, initialization happens in background
+    ⚡ FIXED: No more 504 timeouts
+    """
     try:
         logger.info("🚀 Starting autonomous trading system...")
         
-        # CRITICAL FIX: Create orchestrator on-demand if not available
-        if not orchestrator:
-            logger.warning("❌ Orchestrator not available - creating new instance...")
+        # 🚀 CRITICAL FIX: Start initialization in background to avoid 504 timeout
+        async def background_startup():
+            """Background task to initialize and start trading"""
             try:
-                from src.core.orchestrator import TradingOrchestrator, set_orchestrator_instance
+                logger.info("🔄 Background startup initiated...")
                 
-                # Create orchestrator instance directly (bypass get_instance method)
-                logger.info("🔧 Creating orchestrator instance directly...")
-                orchestrator = TradingOrchestrator()
-                
-                # Initialize the orchestrator
-                init_success = await orchestrator.initialize()
-                
-                if init_success and orchestrator:
-                    # Store globally for future access
-                    set_orchestrator_instance(orchestrator)
-                    logger.info("✅ Successfully created and initialized orchestrator instance")
-                else:
-                    logger.error("❌ Failed to initialize orchestrator instance")
-                    raise HTTPException(status_code=500, detail="Failed to initialize orchestrator instance")
+                # Get or create orchestrator
+                local_orchestrator = orchestrator
+                if not local_orchestrator:
+                    logger.warning("❌ Orchestrator not available - creating new instance...")
+                    from src.core.orchestrator import TradingOrchestrator, set_orchestrator_instance
                     
-            except Exception as create_error:
-                logger.error(f"❌ Failed to create orchestrator: {create_error}")
-                raise HTTPException(status_code=500, detail=f"Failed to create orchestrator: {str(create_error)}")
+                    logger.info("🔧 Creating orchestrator instance...")
+                    local_orchestrator = TradingOrchestrator()
+                    
+                    # Initialize the orchestrator
+                    init_success = await local_orchestrator.initialize()
+                    
+                    if init_success and local_orchestrator:
+                        set_orchestrator_instance(local_orchestrator)
+                        logger.info("✅ Orchestrator created and initialized")
+                    else:
+                        logger.error("❌ Failed to initialize orchestrator")
+                        return
+                
+                # Force complete system initialization
+                logger.info("🔄 Forcing complete system initialization...")
+                
+                # Clear any existing problematic state
+                if hasattr(local_orchestrator, 'is_initialized'):
+                    local_orchestrator.is_initialized = False
+                if hasattr(local_orchestrator, 'is_running'):
+                    local_orchestrator.is_running = False
+                
+                # Force full initialization
+                init_success = await local_orchestrator.initialize()
+                
+                if not init_success:
+                    logger.error("❌ System initialization failed")
+                    return
+                
+                logger.info(f"✅ System initialized with {len(local_orchestrator.strategies) if hasattr(local_orchestrator, 'strategies') else 0} strategies")
+                
+                # Force trading start
+                logger.info("🚀 Force starting trading system...")
+                
+                # Set running state directly
+                local_orchestrator.is_running = True
+                
+                # Activate all strategies
+                if hasattr(local_orchestrator, 'strategies'):
+                    for strategy_key in local_orchestrator.strategies:
+                        local_orchestrator.strategies[strategy_key]['active'] = True
+                        if hasattr(local_orchestrator, 'active_strategies'):
+                            if strategy_key not in local_orchestrator.active_strategies:
+                                local_orchestrator.active_strategies.append(strategy_key)
+                
+                # Start the trading loop if available
+                if hasattr(local_orchestrator, 'start_trading'):
+                    try:
+                        await local_orchestrator.start_trading()
+                        logger.info("✅ Trading loop started successfully")
+                    except Exception as start_error:
+                        logger.warning(f"⚠️ Trading loop start failed: {start_error}")
+                
+                logger.info("✅ Autonomous trading system fully initialized and running")
+                
+            except Exception as bg_error:
+                logger.error(f"❌ Background startup failed: {bg_error}")
         
-        # CRITICAL FIX: Force complete system initialization
-        logger.info("🔄 Forcing complete system initialization...")
+        # Start background task
+        asyncio.create_task(background_startup())
         
-        # Clear any existing problematic state
-        if hasattr(orchestrator, 'is_initialized'):
-            orchestrator.is_initialized = False
-        if hasattr(orchestrator, 'is_running'):
-            orchestrator.is_running = False
+        # Return immediately (don't wait for initialization)
+        logger.info("✅ Autonomous trading startup initiated in background")
         
-        # Force full initialization
-        init_success = await orchestrator.initialize()
-        
-        if not init_success:
-            logger.error("❌ System initialization failed")
-            raise HTTPException(status_code=500, detail="Failed to initialize trading system")
-        
-        logger.info(f"✅ System initialized with {len(orchestrator.strategies) if hasattr(orchestrator, 'strategies') else 0} strategies")
-        
-        # CRITICAL FIX: Force trading start regardless of conditions
-        logger.info("🚀 Force starting trading system...")
-        
-        # Set running state directly
-        orchestrator.is_running = True
-        
-        # Activate all strategies
-        if hasattr(orchestrator, 'strategies'):
-            for strategy_key in orchestrator.strategies:
-                orchestrator.strategies[strategy_key]['active'] = True
-                if hasattr(orchestrator, 'active_strategies'):
-                    if strategy_key not in orchestrator.active_strategies:
-                        orchestrator.active_strategies.append(strategy_key)
-        
-        # Start the trading loop if available
-        if hasattr(orchestrator, 'start_trading'):
-            try:
-                await orchestrator.start_trading()
-                logger.info("✅ Trading loop started successfully")
-            except Exception as start_error:
-                logger.warning(f"⚠️ Trading loop start failed: {start_error}")
-                # Continue anyway - we've forced the state
-        
-        logger.info("🚀 Autonomous trading forced to active state")
-        
-        # Verify the system is actually running
-        try:
-            final_status = await orchestrator.get_trading_status()
-            is_active = final_status.get('is_active', False)
-            active_strategies = final_status.get('active_strategies', [])
-            
-            # CRITICAL FIX: Override status if needed
-            if not is_active:
-                logger.warning("❌ Trading system not active after start - FORCING ACTIVATION")
-                orchestrator.is_running = True
-                is_active = True
-            
-            logger.info(f"✅ Final status: is_active={is_active}, strategies={len(active_strategies)}")
-            
-            return BaseResponse(
-                success=True,
-                message=f"✅ Autonomous trading ACTIVATED - System is now LIVE with {len(orchestrator.strategies) if hasattr(orchestrator, 'strategies') else 0} strategies!"
-            )
-            
-        except Exception as status_error:
-            logger.error(f"Status verification failed: {status_error}")
-            # Still return success since we forced the state
-            return BaseResponse(
-                success=True,
-                message=f"✅ Autonomous trading ACTIVATED - System is now LIVE (status check bypassed)"
-            )
+        return BaseResponse(
+            success=True,
+            message="🚀 Trading system is starting in background. Check /status endpoint in 10-15 seconds."
+        )
             
     except HTTPException:
         raise

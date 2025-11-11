@@ -784,12 +784,16 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 risk_reward_ratio=None  # Auto-adapt based on market regime
             )
             
-            # Calculate dynamic confidence based on multiple factors
+            # 🎯 ENHANCED: More conservative and realistic confidence for options
+            # Base: 0.55 (55%) - Start lower for options due to theta decay
+            # Volume: +10% for strong volume
+            # Price: +10% for strong momentum
+            # Max: 0.75 (75%) - Even exceptional options trades carry higher risk
             volume_strength = min(volume / 1000000, 1.0)  # Normalize volume
             price_strength = min(abs(price_change) / 2.0, 1.0)  # Normalize price change
-            base_confidence = 0.7 + (volume_strength * 0.15) + (price_strength * 0.15)  # 0.7-1.0 range
-            dynamic_confidence_raw = min(max(base_confidence, 0.75), 0.95)  # Clamp between 0.75-0.95
-            dynamic_confidence = dynamic_confidence_raw * 10.0  # CRITICAL FIX: Scale to 0-10 range (7.5-9.5)
+            base_confidence = 0.55 + (volume_strength * 0.10) + (price_strength * 0.10)  # 0.55-0.75 range
+            dynamic_confidence_raw = min(max(base_confidence, 0.55), 0.75)  # Clamp between 0.55-0.75
+            dynamic_confidence = dynamic_confidence_raw * 10.0  # Scale to 0-10 range (5.5-7.5)
             
             # Generate options signal using base strategy method with DYNAMIC parameters
             signal = await self.create_standard_signal(
