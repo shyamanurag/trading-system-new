@@ -1485,8 +1485,18 @@ class TradingOrchestrator:
                 except Exception as api_error:
                     self.logger.debug(f"API fallback failed (fast fail): {api_error}")
             
-            # 🎯 STRATEGY 4: ZERODHA QUOTES FALLBACK (when TrueData fails)
-            self.logger.info("🔄 TrueData unavailable, fetching from Zerodha...")
+            # 🎯 STRATEGY 4: ZERODHA WEBSOCKET TICKS (Real-time fallback)
+            if self.zerodha_client and hasattr(self.zerodha_client, 'ticker_connected') and self.zerodha_client.ticker_connected:
+                try:
+                    websocket_data = self.zerodha_client.get_websocket_ticks()
+                    if websocket_data and len(websocket_data) > 0:
+                        self.logger.info(f"🎯 Using Zerodha WebSocket ticks: {len(websocket_data)} symbols (real-time)")
+                        return websocket_data
+                except Exception as ws_error:
+                    self.logger.debug(f"WebSocket fallback failed: {ws_error}")
+            
+            # 🎯 STRATEGY 5: ZERODHA QUOTES FALLBACK (HTTP polling when WebSocket unavailable)
+            self.logger.info("🔄 TrueData & WebSocket unavailable, fetching from Zerodha HTTP API...")
             if self.zerodha_client:
                 try:
                     zerodha_data = await self._fetch_market_data_from_zerodha()
@@ -2902,6 +2912,23 @@ class TradingOrchestrator:
                     self.logger.info("✅ Dynamic capital sync completed - using real broker funds")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Capital sync failed, using defaults: {e}")
+            
+            # 🎯 NEW: Start Zerodha WebSocket for real-time tick data
+            if self.zerodha_client:
+                try:
+                    # Get watchlist symbols from config
+                    from config.truedata_symbols import get_complete_fo_symbols
+                    watchlist_symbols = get_complete_fo_symbols()
+                    
+                    self.logger.info(f"📡 Starting Zerodha WebSocket for {len(watchlist_symbols)} symbols...")
+                    ws_success = await self.zerodha_client.start_websocket_for_symbols(watchlist_symbols)
+                    
+                    if ws_success:
+                        self.logger.info("✅ Zerodha WebSocket started - real-time tick data active")
+                    else:
+                        self.logger.warning("⚠️ Zerodha WebSocket failed to start - using HTTP polling fallback")
+                except Exception as ws_error:
+                    self.logger.warning(f"⚠️ WebSocket startup failed: {ws_error} - using HTTP polling fallback")
             
             # Start Position Monitor for continuous auto square-off
             if self.position_monitor:

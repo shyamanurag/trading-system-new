@@ -78,7 +78,9 @@ class ZerodhaIntegration:
         self._instruments_cache_duration = 3600  # 1 hour cache for instruments
         self._last_instruments_call = 0  # Track last instruments API call for rate limiting
         self._symbol_to_token = {}  # Fast lookup for instrument tokens by tradingsymbol
+        self._token_to_symbol = {}  # Reverse lookup for WebSocket ticks
         self._last_successful_call = None  # Track last successful API call
+        self._websocket_tokens = []  # Instrument tokens for WebSocket subscription
         
         # WebSocket attributes
         self.ticker = None
@@ -672,41 +674,110 @@ class ZerodhaIntegration:
         else:
             return 'NSE'  # Default to NSE for equities
 
-    async def _initialize_websocket(self):
-        """Initialize WebSocket connection for real-time data"""
+    async def _initialize_websocket(self, instrument_tokens: List[int] = None):
+        """Initialize WebSocket connection for real-time tick data"""
         try:
             if not self.kite:
                 logger.warning("⚠️ WebSocket unavailable - KiteConnect not initialized")
-                return
+                return False
                 
             if not KiteTicker or not self.api_key or not self.access_token:
                 logger.warning("⚠️ WebSocket unavailable - missing KiteTicker or credentials")
-                return
-                    
-                self.ticker = KiteTicker(self.api_key, self.access_token)
-                self.ticker.on_ticks = self._on_ticks
-                self.ticker.on_connect = self._on_connect
-                self.ticker.on_close = self._on_close
-                self.ticker.on_error = self._on_error
-                
-                # Connect in threaded mode
-                self.ticker.connect(threaded=True)
-                self.ticker_connected = True
-                logger.info("✅ Real WebSocket connection established")
+                return False
+            
+            # Create ticker instance
+            self.ticker = KiteTicker(self.api_key, self.access_token)
+            self.ticker.on_ticks = self._on_ticks
+            self.ticker.on_connect = self._on_connect
+            self.ticker.on_close = self._on_close
+            self.ticker.on_error = self._on_error
+            
+            # Store tokens for subscription
+            self._websocket_tokens = instrument_tokens or []
+            
+            # Connect in threaded mode
+            self.ticker.connect(threaded=True)
+            logger.info("✅ WebSocket ticker initialized - waiting for connection")
+            return True
+            
         except Exception as e:
             logger.error(f"❌ WebSocket initialization failed: {e}")
             self.ticker_connected = False
+            return False
 
     def _on_ticks(self, ws, ticks):
-        """Handle incoming WebSocket ticks"""
-        logger.debug(f"📊 Received {len(ticks)} ticks")
-        # Add tick processing logic here
+        """
+        Handle incoming WebSocket ticks and store in Redis cache
+        Tick format from Zerodha: {instrument_token, last_price, ohlc, volume, depth, etc.}
+        """
+        try:
+            if not ticks:
+                return
+            
+            logger.debug(f"📊 Received {len(ticks)} ticks from WebSocket")
+            
+            # Process each tick and store in Redis
+            for tick in ticks:
+                try:
+                    instrument_token = tick.get('instrument_token')
+                    if not instrument_token:
+                        continue
+                    
+                    # Map token to symbol (need to maintain reverse mapping)
+                    symbol = self._token_to_symbol.get(instrument_token, f"TOKEN_{instrument_token}")
+                    
+                    # Transform to standard format matching quote API
+                    tick_data = {
+                        'symbol': symbol,
+                        'ltp': tick.get('last_price', 0),
+                        'open': tick.get('ohlc', {}).get('open', 0),
+                        'high': tick.get('ohlc', {}).get('high', 0),
+                        'low': tick.get('ohlc', {}).get('low', 0),
+                        'close': tick.get('ohlc', {}).get('close', 0),
+                        'volume': tick.get('volume', 0),
+                        'change': tick.get('change', 0),
+                        'changeper': tick.get('change', 0) / tick.get('ohlc', {}).get('close', 1) * 100 if tick.get('ohlc', {}).get('close', 0) > 0 else 0,
+                        'bid': tick.get('depth', {}).get('buy', [{}])[0].get('price', 0) if tick.get('depth', {}).get('buy') else 0,
+                        'ask': tick.get('depth', {}).get('sell', [{}])[0].get('price', 0) if tick.get('depth', {}).get('sell') else 0,
+                        'depth': tick.get('depth', {}),
+                        'timestamp': datetime.now().isoformat(),
+                        'source': 'zerodha_websocket',
+                        'instrument_token': instrument_token
+                    }
+                    
+                    # Store in cache with symbol key
+                    cache_key = f'websocket_tick:{symbol}'
+                    self._unified_cache[cache_key] = {
+                        'data': tick_data,
+                        'timestamp': time.time(),
+                        'ttl': 5  # 5 second TTL for ticks
+                    }
+                    
+                except Exception as tick_error:
+                    logger.debug(f"Error processing tick for {instrument_token}: {tick_error}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"❌ Error in _on_ticks: {e}")
 
     def _on_connect(self, ws, response):
-        """Handle WebSocket connection"""
-        logger.info("✅ WebSocket connected successfully")
-        self.ticker_connected = True
-        self.ws_reconnect_attempts = 0
+        """Handle WebSocket connection and subscribe to symbols"""
+        try:
+            logger.info(f"✅ WebSocket connected successfully - Response: {response}")
+            self.ticker_connected = True
+            self.ws_reconnect_attempts = 0
+            
+            # Subscribe to stored instrument tokens
+            if hasattr(self, '_websocket_tokens') and self._websocket_tokens:
+                logger.info(f"📡 Subscribing to {len(self._websocket_tokens)} instruments")
+                ws.subscribe(self._websocket_tokens)
+                ws.set_mode(ws.MODE_FULL, self._websocket_tokens)  # Full mode for depth data
+                logger.info(f"✅ Subscribed to {len(self._websocket_tokens)} instruments in FULL mode")
+            else:
+                logger.warning("⚠️ No instrument tokens to subscribe")
+                
+        except Exception as e:
+            logger.error(f"❌ Error in _on_connect: {e}")
 
     def _on_close(self, ws, code, reason):
         """Handle WebSocket disconnection"""
@@ -717,6 +788,98 @@ class ZerodhaIntegration:
         """Handle WebSocket error"""
         logger.error(f"❌ WebSocket error: {code} - {reason}")
         self.ticker_connected = False
+    
+    async def start_websocket_for_symbols(self, symbols: List[str]) -> bool:
+        """
+        Start WebSocket connection for list of symbols
+        Converts symbols to instrument tokens and subscribes
+        """
+        try:
+            if not symbols:
+                logger.warning("⚠️ No symbols provided for WebSocket")
+                return False
+            
+            # Get NSE instruments to map symbols to tokens
+            instruments = await self.get_instruments('NSE')
+            if not instruments:
+                logger.error("❌ Could not fetch NSE instruments")
+                return False
+            
+            # Build symbol to token mapping
+            token_map = {}
+            for inst in instruments:
+                symbol = inst.get('tradingsymbol', '')
+                token = inst.get('instrument_token')
+                if symbol and token:
+                    token_map[symbol] = token
+                    self._token_to_symbol[token] = symbol
+            
+            # Convert symbols to tokens
+            instrument_tokens = []
+            for symbol in symbols:
+                # Remove exchange prefix if present
+                clean_symbol = symbol.replace('NSE:', '').replace('NFO:', '')
+                # Remove -I suffix for indices
+                clean_symbol = clean_symbol.replace('-I', '')
+                
+                token = token_map.get(clean_symbol)
+                if token:
+                    instrument_tokens.append(token)
+                else:
+                    logger.debug(f"⚠️ Token not found for symbol: {clean_symbol}")
+            
+            if not instrument_tokens:
+                logger.error("❌ No valid instrument tokens found")
+                return False
+            
+            logger.info(f"📡 Starting WebSocket for {len(instrument_tokens)} symbols")
+            
+            # Initialize WebSocket with tokens
+            success = await self._initialize_websocket(instrument_tokens)
+            
+            if success:
+                logger.info(f"✅ WebSocket started for {len(instrument_tokens)} symbols")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"❌ Error starting WebSocket: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+    
+    def get_websocket_ticks(self, symbols: List[str] = None) -> Dict[str, Any]:
+        """
+        Get latest WebSocket tick data from cache
+        Returns dict matching quote API format
+        """
+        try:
+            result = {}
+            
+            # Get all cached ticks
+            current_time = time.time()
+            for cache_key, cache_value in list(self._unified_cache.items()):
+                if not cache_key.startswith('websocket_tick:'):
+                    continue
+                
+                # Check if cache is still valid
+                if current_time - cache_value['timestamp'] > cache_value['ttl']:
+                    continue
+                
+                tick_data = cache_value['data']
+                symbol = tick_data.get('symbol')
+                
+                # Filter by symbols if provided
+                if symbols and symbol not in symbols:
+                    continue
+                
+                result[symbol] = tick_data
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting WebSocket ticks: {e}")
+            return {}
 
     # API Methods with retry logic
     async def get_order_status(self, order_id: str) -> Optional[Dict]:
