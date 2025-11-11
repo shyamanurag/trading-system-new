@@ -16,7 +16,7 @@ Built to compete with hedge funds using superior mathematical rigor.
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime, time, timedelta
 import numpy as np
 import pandas as pd

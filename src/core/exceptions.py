@@ -8,6 +8,9 @@ class TradingSystemException(Exception):
     """Base exception for trading system"""
     pass
 
+# Alias for compatibility
+TradingSystemError = TradingSystemException
+
 class OrderExecutionException(TradingSystemException):
     """Exception for order execution errors"""
     pass

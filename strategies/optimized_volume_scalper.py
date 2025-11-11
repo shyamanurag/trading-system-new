@@ -22,7 +22,7 @@ import scipy.stats as stats
 from scipy.optimize import minimize
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from strategies.base_strategy import BaseStrategy
