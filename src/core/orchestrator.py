@@ -1523,46 +1523,68 @@ class TradingOrchestrator:
             if not self.zerodha_client:
                 return {}
             
-            # Get watchlist symbols from strategies
-            all_symbols = set()
-            for strategy_info in self.strategies.values():
-                if 'instance' in strategy_info:
-                    strategy = strategy_info['instance']
-                    if hasattr(strategy, 'symbols'):
-                        all_symbols.update(strategy.symbols)
-            
-            # Add NIFTY and BANKNIFTY indices
-            indices = ['NIFTY 50', 'NIFTY BANK']
-            
-            # Convert to Zerodha format (NSE:SYMBOL)
-            zerodha_symbols = []
-            for symbol in all_symbols:
-                if '-' in symbol:  # Options format
-                    continue  # Skip options for now
-                zerodha_symbols.append(f"NSE:{symbol}")
-            
-            # Add indices
-            for index in indices:
-                zerodha_symbols.append(f"NSE:{index}")
-            
-            if not zerodha_symbols:
-                # Default watchlist if no symbols configured
-                zerodha_symbols = [
-                    "NSE:RELIANCE", "NSE:TCS", "NSE:INFY", "NSE:HDFCBANK",
-                    "NSE:ICICIBANK", "NSE:SBIN", "NSE:NIFTY 50", "NSE:NIFTY BANK"
+            # 🎯 Import the complete watchlist from truedata_symbols config
+            try:
+                from config.truedata_symbols import get_complete_fo_symbols
+                all_watchlist_symbols = get_complete_fo_symbols()
+                self.logger.info(f"📊 Loaded {len(all_watchlist_symbols)} symbols from watchlist config")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not load watchlist: {e}, using fallback")
+                all_watchlist_symbols = [
+                    'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I',
+                    'RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN'
                 ]
+            
+            # 🎯 Convert TrueData format to Zerodha format
+            zerodha_symbols = []
+            for symbol in all_watchlist_symbols:
+                # Skip options contracts
+                if 'CE' in symbol or 'PE' in symbol:
+                    continue
+                
+                # Convert index symbols
+                if symbol == 'NIFTY-I':
+                    zerodha_symbols.append("NSE:NIFTY 50")
+                elif symbol == 'BANKNIFTY-I':
+                    zerodha_symbols.append("NSE:NIFTY BANK")
+                elif symbol == 'FINNIFTY-I':
+                    zerodha_symbols.append("NSE:FINNIFTY")
+                elif symbol == 'MIDCPNIFTY-I':
+                    zerodha_symbols.append("NSE:MIDCPNIFTY")
+                elif symbol == 'SENSEX-I':
+                    zerodha_symbols.append("NSE:SENSEX")
+                elif '-I' in symbol:
+                    # Generic index format
+                    zerodha_symbols.append(f"NSE:{symbol.replace('-I', '')}")
+                else:
+                    # Regular stock - add NSE prefix
+                    zerodha_symbols.append(f"NSE:{symbol}")
             
             self.logger.info(f"📊 Fetching {len(zerodha_symbols)} symbols from Zerodha")
             
-            # Fetch quotes from Zerodha
-            quotes = await asyncio.to_thread(
-                self.zerodha_client.kite.quote, 
-                zerodha_symbols
-            )
+            # 🎯 Batch requests to avoid rate limits (max 500 per request, but we use 200 to be safe)
+            BATCH_SIZE = 200
+            all_quotes = {}
             
-            if not quotes:
+            for i in range(0, len(zerodha_symbols), BATCH_SIZE):
+                batch = zerodha_symbols[i:i+BATCH_SIZE]
+                try:
+                    batch_quotes = await asyncio.to_thread(
+                        self.zerodha_client.kite.quote, 
+                        batch
+                    )
+                    if batch_quotes:
+                        all_quotes.update(batch_quotes)
+                        self.logger.debug(f"✅ Fetched batch {i//BATCH_SIZE + 1}: {len(batch_quotes)} symbols")
+                except Exception as batch_error:
+                    self.logger.warning(f"⚠️ Failed to fetch batch {i//BATCH_SIZE + 1}: {batch_error}")
+                    continue
+            
+            if not all_quotes:
                 self.logger.warning("⚠️ Zerodha returned no quotes")
                 return {}
+            
+            quotes = all_quotes
             
             # Transform to TrueData-compatible format
             market_data = {}
@@ -1571,11 +1593,17 @@ class TradingOrchestrator:
                     # Extract symbol name (remove NSE: prefix)
                     symbol = symbol_key.split(':')[-1]
                     
-                    # Handle index names
+                    # Handle index names - convert back to TrueData format
                     if symbol == 'NIFTY 50':
                         symbol = 'NIFTY-I'
                     elif symbol == 'NIFTY BANK':
                         symbol = 'BANKNIFTY-I'
+                    elif symbol == 'FINNIFTY':
+                        symbol = 'FINNIFTY-I'
+                    elif symbol == 'MIDCPNIFTY':
+                        symbol = 'MIDCPNIFTY-I'
+                    elif symbol == 'SENSEX':
+                        symbol = 'SENSEX-I'
                     
                     # Transform to TrueData format
                     ltp = quote.get('last_price', 0)
