@@ -1626,10 +1626,24 @@ class TradingOrchestrator:
                     prev_close = quote.get('ohlc', {}).get('close', ltp)  # Yesterday's close for change calc
                     volume = quote.get('volume', 0)
                     
-                    # Get bid/ask from depth if available
+                    # 🎯 Extract full market depth (5 levels) for order flow analysis
                     depth = quote.get('depth', {})
-                    bid = depth.get('buy', [{}])[0].get('price', 0) if depth.get('buy') else 0
-                    ask = depth.get('sell', [{}])[0].get('price', 0) if depth.get('sell') else 0
+                    bid_depth = depth.get('buy', [])
+                    ask_depth = depth.get('sell', [])
+                    
+                    # Top level bid/ask
+                    bid = bid_depth[0].get('price', 0) if bid_depth else 0
+                    ask = ask_depth[0].get('price', 0) if ask_depth else 0
+                    
+                    # Calculate liquidity metrics
+                    bid_quantity = sum(level.get('quantity', 0) for level in bid_depth)
+                    ask_quantity = sum(level.get('quantity', 0) for level in ask_depth)
+                    spread = ask - bid if (ask > 0 and bid > 0) else 0
+                    spread_percent = (spread / ltp * 100) if ltp > 0 else 0
+                    
+                    # Order imbalance (positive = buying pressure, negative = selling pressure)
+                    total_quantity = bid_quantity + ask_quantity
+                    order_imbalance = ((bid_quantity - ask_quantity) / total_quantity * 100) if total_quantity > 0 else 0
                     
                     # Calculate change
                     if prev_close > 0:
@@ -1657,12 +1671,25 @@ class TradingOrchestrator:
                         'timestamp': datetime.now().isoformat(),
                         'source': 'zerodha_fallback',  # Mark source
                         'deployment_id': 'zerodha_fallback',  # TrueData compatibility
+                        # 🆕 Market depth & liquidity metrics (Zerodha advantage)
+                        'depth': {
+                            'buy': bid_depth,  # All 5 levels
+                            'sell': ask_depth  # All 5 levels
+                        },
+                        'liquidity': {
+                            'spread': spread,
+                            'spread_percent': spread_percent,
+                            'bid_quantity': bid_quantity,
+                            'ask_quantity': ask_quantity,
+                            'order_imbalance': order_imbalance  # +ve = buying, -ve = selling
+                        },
                         # Data quality indicators (TrueData compatibility)
                         'data_quality': {
                             'has_ohlc': all([high != ltp, low != ltp, open_price != ltp]),
                             'has_volume': volume > 0,
                             'has_change_percent': change_percent != 0,
-                            'calculated_change_percent': True  # Always calculated for Zerodha
+                            'calculated_change_percent': True,  # Always calculated for Zerodha
+                            'has_depth': len(bid_depth) > 0 and len(ask_depth) > 0
                         }
                     }
                     
