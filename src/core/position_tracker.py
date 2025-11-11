@@ -392,6 +392,14 @@ class ProductionPositionTracker:
             # Remove position
             del self.positions[symbol]
             
+            # 🎯 Release strategy ownership when position closes
+            try:
+                from src.core.strategy_coordinator import strategy_coordinator
+                strategy_coordinator.release_symbol(symbol)
+                self.logger.info(f"🔓 Released strategy ownership for {symbol}")
+            except Exception as coord_err:
+                self.logger.debug(f"Strategy coordinator release failed: {coord_err}")
+            
             # Publish position closed event
             if self.event_bus:
                 await self.event_bus.publish('position_closed', {

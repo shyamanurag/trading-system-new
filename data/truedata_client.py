@@ -323,6 +323,18 @@ class TrueDataClient:
             error_msg = str(e).lower()
             logger.error(f"❌ Direct connection failed: {e}")
             
+            # 🚨 CRITICAL FIX: Detect subscription expired error and block further attempts
+            if "subscription expired" in error_msg or "user subscription expired" in error_msg:
+                logger.error("❌ SUBSCRIPTION EXPIRED - Blocking further connection attempts")
+                logger.error("💡 Please renew your TrueData subscription")
+                logger.error(f"📅 Subscription validity ended: Check TrueData portal")
+                # Set permanent block flag
+                truedata_connection_status['permanent_block'] = True
+                truedata_connection_status['error'] = 'SUBSCRIPTION_EXPIRED'
+                self._circuit_breaker_active = True
+                self._circuit_breaker_timeout = 86400  # 24 hours - don't retry until manual reset
+                return False
+            
             if "user already connected" in error_msg or "already connected" in error_msg:
                 logger.warning("⚠️ User Already Connected error detected")
                 return False
@@ -336,6 +348,13 @@ class TrueDataClient:
         with self._lock:
             if self._shutdown_requested:
                 logger.info("🛑 Shutdown requested - skipping connection")
+                return False
+            
+            # 🚨 CRITICAL: Check for permanent block (subscription expired)
+            if truedata_connection_status.get('permanent_block', False):
+                logger.error("❌ TrueData connection PERMANENTLY BLOCKED - Subscription expired")
+                logger.error("💡 SOLUTION: Renew your TrueData subscription and restart the application")
+                logger.error("📞 Contact TrueData support to renew subscription")
                 return False
                 
             # Circuit breaker check
@@ -432,7 +451,17 @@ class TrueDataClient:
             return self._direct_connect()
             
         except Exception as e:
+            error_msg = str(e).lower()
             logger.error(f"❌ Optimized graceful takeover failed: {e}")
+            
+            # 🚨 CRITICAL: Check for subscription expired during takeover
+            if "subscription expired" in error_msg or "user subscription expired" in error_msg:
+                logger.error("❌ SUBSCRIPTION EXPIRED detected during takeover")
+                truedata_connection_status['permanent_block'] = True
+                truedata_connection_status['error'] = 'SUBSCRIPTION_EXPIRED'
+                self._circuit_breaker_active = True
+                self._circuit_breaker_timeout = 86400
+            
             return False
 
     def _activate_circuit_breaker(self):

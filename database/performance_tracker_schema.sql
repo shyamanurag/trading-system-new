@@ -370,3 +370,4 @@ ORDER BY total_pnl DESC;
 -- Initial Data Verification
 SELECT 'Performance tracking database schema created successfully!' as status;
 
+

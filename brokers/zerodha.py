@@ -7,6 +7,7 @@ import asyncio
 import logging
 import json
 import time
+import threading
 from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
@@ -48,6 +49,10 @@ class ZerodhaIntegration:
         self.order_semaphore = asyncio.Semaphore(1)
         self.last_order_time = 0
         self.order_rate_limit = 1.0  # Used in place_order method
+        
+        # 🚨 CRITICAL: Lock for KiteConnect initialization to prevent race conditions
+        self._kite_init_lock = threading.Lock()
+        self._kite_reinit_in_progress = False
         
         # 🚀 UNIFIED CACHING SYSTEM - Consolidated and optimized
         self._unified_cache = {}
@@ -179,35 +184,46 @@ class ZerodhaIntegration:
             logger.error(f"❌ Error clearing cache: {e}")
 
     def _initialize_kite(self):
-        """Initialize KiteConnect instance"""
-        try:
-            # Validate required parameters
-            if not self.api_key:
-                logger.error("❌ ZERODHA_API_KEY not provided")
-                self.kite = None
-                self.is_connected = False
-                return
+        """Initialize KiteConnect instance with race condition protection"""
+        # 🚨 CRITICAL: Use lock to prevent multiple simultaneous initializations
+        with self._kite_init_lock:
+            try:
+                # Check if already reinitializing
+                if self._kite_reinit_in_progress:
+                    logger.warning("⚠️ KiteConnect reinitialization already in progress, skipping duplicate")
+                    return
                 
-            if not self.access_token:
-                logger.error("❌ ZERODHA_ACCESS_TOKEN not provided")
+                self._kite_reinit_in_progress = True
+                
+                # Validate required parameters
+                if not self.api_key:
+                    logger.error("❌ ZERODHA_API_KEY not provided")
+                    self.kite = None
+                    self.is_connected = False
+                    return
+                    
+                if not self.access_token:
+                    logger.error("❌ ZERODHA_ACCESS_TOKEN not provided")
+                    self.kite = None
+                    self.is_connected = False
+                    return
+                
+                from kiteconnect import KiteConnect
+                self.kite = KiteConnect(api_key=self.api_key)
+                self.kite.set_access_token(self.access_token)
+                
+                # Test connection
+                profile = self.kite.profile()
+                logger.info(f"✅ KiteConnect initialized for user: {profile.get('user_name', 'Unknown')}")
+                self._last_token_refresh = time.time()
+                self.is_connected = True
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize KiteConnect: {e}")
                 self.kite = None
                 self.is_connected = False
-                return
-            
-            from kiteconnect import KiteConnect
-            self.kite = KiteConnect(api_key=self.api_key)
-            self.kite.set_access_token(self.access_token)
-            
-            # Test connection
-            profile = self.kite.profile()
-            logger.info(f"✅ KiteConnect initialized for user: {profile.get('user_name', 'Unknown')}")
-            self._last_token_refresh = time.time()
-            self.is_connected = True
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize KiteConnect: {e}")
-            self.kite = None
-            self.is_connected = False
+            finally:
+                self._kite_reinit_in_progress = False
 
     def _reset_caches(self):
         """🚨 DEFENSIVE: Reset all caches to prevent corruption"""
@@ -1054,7 +1070,12 @@ class ZerodhaIntegration:
             try:
                 logger.info(f"📊 Getting margins from Zerodha (attempt {attempt + 1})")
                 result = await self._async_api_call(self.kite.margins)
-                logger.info(f"✅ Got margins: ₹{result.get('equity', {}).get('available', {}).get('cash', 0)}")
+                
+                # 🚨 FIX: Log total available margin (net), not just cash
+                equity_data = result.get('equity', {})
+                total_margin = equity_data.get('net', 0)
+                cash = equity_data.get('available', {}).get('cash', 0)
+                logger.info(f"✅ Got margins: Total=₹{total_margin:,.2f} (Cash=₹{cash:,.2f})")
                 
                 # Cache the result in unified cache
                 self._set_cached_data('margins_dict', result, 'margins')

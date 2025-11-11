@@ -97,6 +97,16 @@ except ImportError:
             return signals
     signal_deduplicator = DummySignalDeduplicator()
 
+# Import strategy coordinator for conflict resolution
+try:
+    from src.core.strategy_coordinator import strategy_coordinator
+except ImportError:
+    # Fallback if strategy coordinator is not available
+    class DummyStrategyCoordinator:
+        async def coordinate_signals(self, signals, regime):
+            return signals
+    strategy_coordinator = DummyStrategyCoordinator()
+
 class SimpleTradeEngine:
     """Simple trade engine for fallback - renamed to avoid conflict"""
     
@@ -1522,6 +1532,72 @@ class TradingOrchestrator:
             self.logger.error(f"❌ Error optimizing market data: {e}")
             return market_data  # Return original if optimization fails
 
+    async def _enrich_market_data_with_options(self, underlying_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        🎯 ENRICH market data with OPTIONS quotes for active positions
+        Ensures strategies can monitor BOTH underlying AND options in same data flow
+        """
+        try:
+            enriched_data = underlying_data.copy()
+            
+            # 🚨 STEP 1: Get all option symbols from active positions across all strategies
+            option_symbols_needed = set()
+            
+            for strategy_info in self.strategies.values():
+                if 'instance' in strategy_info:
+                    strategy = strategy_info['instance']
+                    if hasattr(strategy, 'active_positions'):
+                        for symbol in strategy.active_positions.keys():
+                            # Check if it's an option symbol (contains CE or PE)
+                            if 'CE' in symbol or 'PE' in symbol:
+                                option_symbols_needed.add(symbol)
+            
+            if not option_symbols_needed:
+                # No options positions - return underlying data as is
+                return enriched_data
+            
+            self.logger.debug(f"📊 Enriching data with {len(option_symbols_needed)} option symbols")
+            
+            # 🚨 STEP 2: Fetch option quotes from Zerodha for active positions
+            if self.zerodha_client and option_symbols_needed:
+                try:
+                    # Fetch quotes for all option symbols at once
+                    option_quotes = await self.zerodha_client.get_quotes(list(option_symbols_needed))
+                    
+                    if option_quotes:
+                        for symbol, quote_data in option_quotes.items():
+                            if quote_data:
+                                # Add option data to enriched dataset
+                                enriched_data[symbol] = {
+                                    'ltp': quote_data.get('last_price', 0),
+                                    'close': quote_data.get('last_price', 0),
+                                    'open': quote_data.get('ohlc', {}).get('open', 0),
+                                    'high': quote_data.get('ohlc', {}).get('high', 0),
+                                    'low': quote_data.get('ohlc', {}).get('low', 0),
+                                    'volume': quote_data.get('volume', 0),
+                                    'change_percent': quote_data.get('change', 0),
+                                    'price_change': quote_data.get('change', 0),
+                                    'symbol_type': 'OPTION'
+                                }
+                                self.logger.debug(f"✅ Enriched {symbol}: ₹{enriched_data[symbol]['ltp']:.2f}")
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Could not fetch option quotes: {e}")
+                    # Fallback: Try to get from TrueData cache if available
+                    if hasattr(self, 'truedata_cache'):
+                        for symbol in option_symbols_needed:
+                            cached_data = self.truedata_cache.get(symbol)
+                            if cached_data:
+                                enriched_data[symbol] = cached_data
+                                self.logger.debug(f"✅ Enriched {symbol} from cache")
+            
+            self.logger.debug(f"📊 Enriched data: {len(underlying_data)} → {len(enriched_data)} symbols (added {len(enriched_data) - len(underlying_data)} options)")
+            return enriched_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error enriching market data with options: {e}")
+            return underlying_data  # Fallback to original data
+
     async def _process_market_data(self):
         """Process market data from shared connection and run strategies"""
         try:
@@ -1586,13 +1662,17 @@ class TradingOrchestrator:
                         strategy_instance = strategy_info['instance']
                         self.logger.info(f"🔍 Processing strategy: {strategy_key}")
                         
-                        # CRITICAL FIX: Sync real positions to strategy before processing
+                        # 🚨 STEP 1: ALWAYS sync real Zerodha positions first (prevent orphans)
                         if self.position_tracker:
                             await self._sync_real_positions_to_strategy(strategy_instance)
+                            self.logger.debug(f"✅ Position sync completed for {strategy_key}")
                         
-                        # 🎯 ACTIVE POSITION MANAGEMENT: Manage existing positions before generating new signals
+                        # 🚨 STEP 2: Enrich market data with OPTIONS data for position management
+                        enriched_data = await self._enrich_market_data_with_options(transformed_data)
+                        
+                        # 🎯 STEP 3: ACTIVE POSITION MANAGEMENT (with enriched data including options)
                         if hasattr(strategy_instance, 'manage_existing_positions') and len(strategy_instance.active_positions) > 0:
-                            await strategy_instance.manage_existing_positions(transformed_data)
+                            await strategy_instance.manage_existing_positions(enriched_data)
                             self.logger.debug(f"🎯 {strategy_key}: Active position management completed for {len(strategy_instance.active_positions)} positions")
                         
                         # 🔄 PROCESS PENDING MANAGEMENT ACTIONS: Handle any queued management actions from previous cycles
@@ -1620,8 +1700,8 @@ class TradingOrchestrator:
                             self.logger.info(f"📊 DATA FLOW CHECK #2 - Strategy '{strategy_key}' receiving data:")
                             self.logger.info(f"   Symbols in data: {len(transformed_data)} ({list(transformed_data.keys())[:5]}...)")
                         
-                        # Call strategy's on_market_data method with TRANSFORMED data
-                        await strategy_instance.on_market_data(transformed_data)
+                        # Call strategy's on_market_data method with ENRICHED data (includes options)
+                        await strategy_instance.on_market_data(enriched_data)
                         
                         # Collect signals and POST-PROCESS them for LTP validation
                         signals_generated = 0
@@ -1726,6 +1806,21 @@ class TradingOrchestrator:
                     self.logger.error(f"❌ Error in signal deduplication preparation: {e}")
                     self.logger.error(f"all_signals type: {type(all_signals)}, contents: {all_signals[:3] if len(all_signals) > 3 else all_signals}")
                     return
+                
+                # 🎯 STRATEGY COORDINATION: Resolve conflicts before deduplication
+                try:
+                    # Get current market regime
+                    current_regime = 'NEUTRAL'  # Default
+                    if hasattr(self, 'market_bias') and self.market_bias:
+                        current_regime = getattr(self.market_bias, 'current_regime', 'NEUTRAL')
+                    
+                    self.logger.info(f"🎯 COORDINATING strategies in {current_regime} regime...")
+                    coordinated_signals = await strategy_coordinator.coordinate_signals(all_signals, current_regime)
+                    self.logger.info(f"✅ COORDINATION: {len(all_signals)} → {len(coordinated_signals)} signals after conflict resolution")
+                    all_signals = coordinated_signals
+                except Exception as coord_err:
+                    self.logger.error(f"❌ Strategy coordination error: {coord_err}")
+                    # Continue with uncoordinated signals (fallback)
                 
                 filtered_signals = await signal_deduplicator.process_signals(all_signals)
 

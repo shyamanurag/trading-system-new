@@ -88,43 +88,58 @@ class DailyCapitalSync:
             # CRITICAL FIX: get_margins() returns a DICT, not a float
             margins_dict = await orchestrator.zerodha_client.get_margins()
             
-            # Extract available cash from the dict structure
+            # 🚨 CRITICAL FIX: Use 'net' field which is TOTAL available margin, not just 'cash'
+            # Zerodha structure: equity.net = cash + collateral + intraday_payin (total available)
             if margins_dict and isinstance(margins_dict, dict):
-                available_cash = margins_dict.get('equity', {}).get('available', {}).get('cash', 0)
-                logger.info(f"✅ Got margins from Zerodha: ₹{available_cash:,.2f}")
+                equity_data = margins_dict.get('equity', {})
+                
+                # Priority 1: Use 'net' which is total available margin
+                available_margin = equity_data.get('net', 0)
+                
+                # Priority 2: If net is 0, calculate from available components
+                if available_margin <= 0:
+                    available_dict = equity_data.get('available', {})
+                    cash = available_dict.get('cash', 0)
+                    collateral = available_dict.get('collateral', 0)
+                    intraday_payin = available_dict.get('intraday_payin', 0)
+                    available_margin = cash + collateral + intraday_payin
+                
+                logger.info(f"✅ Got margins from Zerodha: ₹{available_margin:,.2f}")
+                logger.info(f"   Breakdown: Cash=₹{equity_data.get('available', {}).get('cash', 0):,.2f}, "
+                           f"Collateral=₹{equity_data.get('available', {}).get('collateral', 0):,.2f}")
             else:
-                available_cash = 0
+                available_margin = 0
                 logger.warning(f"⚠️ Zerodha returned invalid margin structure: {margins_dict}")
             
             # Validate and apply fallback for zero capital
-            if available_cash is None or available_cash <= 0:
-                logger.warning(f"⚠️ Zerodha returned zero or null margin: {available_cash}")
+            if available_margin is None or available_margin <= 0:
+                logger.warning(f"⚠️ Zerodha returned zero or null margin: {available_margin}")
                 
                 # SANDBOX MODE FALLBACK: Use default capital for sandbox testing
                 is_sandbox = os.environ.get('ZERODHA_SANDBOX_MODE', 'false').lower() == 'true'
                 is_paper_trading = os.environ.get('PAPER_TRADING', 'true').lower() == 'true'
                 
                 if is_sandbox or is_paper_trading:
-                    available_cash = 50000.0  # Default capital for sandbox/paper trading
-                    logger.info(f"✅ Using sandbox/paper trading capital: ₹{available_cash:,.2f}")
+                    available_margin = 50000.0  # Default capital for sandbox/paper trading
+                    logger.info(f"✅ Using sandbox/paper trading capital: ₹{available_margin:,.2f}")
                 else:
-                    logger.error(f"❌ Real trading mode but no capital from Zerodha: {available_cash}")
+                    logger.error(f"❌ Real trading mode but no capital from Zerodha: {available_margin}")
                     return {}
             else:
                 # Ensure it's a float
-                available_cash = float(available_cash)
+                available_margin = float(available_margin)
             
             # Use actual Zerodha user ID from environment
             user_id = os.environ.get('ZERODHA_USER_ID', 'QSW899')
             
             # Store real capital data
             capital_data = {
-                user_id: available_cash
+                user_id: available_margin
             }
             
             logger.info(f"💰 REAL Zerodha Capital Synced:")
             logger.info(f"   User: {user_id}")
-            logger.info(f"   Available Capital: ₹{available_cash:,.2f}")
+            logger.info(f"   Available Capital: ₹{available_margin:,.2f}")
             logger.info("🚫 ELIMINATED: All hardcoded capital amounts")
             
             return capital_data
