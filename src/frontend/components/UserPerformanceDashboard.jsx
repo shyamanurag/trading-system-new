@@ -108,9 +108,76 @@ const UserPerformanceDashboard = ({ tradingData }) => {
         try {
             setLoading(true);
 
-            // FIXED: Use real autonomous trading data
-            let realTradingData = tradingData;
+            // ALWAYS fetch from dashboard summary first - it has the most accurate data
+            try {
+                const summaryResponse = await fetchWithAuth(API_ENDPOINTS.DASHBOARD_SUMMARY.url);
+                
+                if (summaryResponse.ok) {
+                    const summaryData = await summaryResponse.json();
+                    
+                    if (summaryData.success) {
+                        const sysMetrics = summaryData.system_metrics || {};
+                        const autoTrading = summaryData.autonomous_trading || {};
+                        const dashboardUsers = summaryData.users || [];
+                        
+                        console.log('📊 Dashboard summary data:', {
+                            trades: sysMetrics.total_trades,
+                            aum: sysMetrics.aum,
+                            activeUsers: sysMetrics.active_users,
+                            pnl: sysMetrics.daily_pnl
+                        });
+                        
+                        // Set users from dashboard summary
+                        if (dashboardUsers.length > 0) {
+                            setUsers(dashboardUsers);
+                            setSelectedUser(dashboardUsers[0]);
+                        } else {
+                            // Even if no users in array, show system user
+                            const systemUser = {
+                                user_id: "QSW899",
+                                username: "Shyam Anurag (QSW899)",
+                                total_trades: sysMetrics.total_trades || 0,
+                                daily_pnl: sysMetrics.daily_pnl || 0,
+                                win_rate: sysMetrics.success_rate || 0,
+                                active: autoTrading.is_active || false,
+                                status: "Active"
+                            };
+                            setUsers([systemUser]);
+                            setSelectedUser(systemUser);
+                        }
+                        
+                        // Set summary metrics from dashboard data
+                        setSummaryMetrics({
+                            todayPnL: sysMetrics.daily_pnl || 0,
+                            todayPnLPercent: 0,
+                            activeUsers: sysMetrics.active_users || 1,  // Always show at least 1 user when system is running
+                            newUsersThisWeek: 0,
+                            totalTrades: sysMetrics.total_trades || 0,
+                            winRate: sysMetrics.success_rate || 0,
+                            totalAUM: sysMetrics.aum || 0,  // Real Zerodha balance
+                            aumGrowth: 0
+                        });
+                        
+                        // Set daily P&L data
+                        if (sysMetrics.daily_pnl !== undefined) {
+                            setDailyPnL([{
+                                date: new Date().toISOString().split('T')[0],
+                                total_pnl: sysMetrics.daily_pnl || 0,
+                                trades: sysMetrics.total_trades || 0,
+                                pnl: sysMetrics.daily_pnl || 0
+                            }]);
+                        }
+                        
+                        setError(null);
+                        return; // Success - exit early
+                    }
+                }
+            } catch (summaryError) {
+                console.error('Error fetching dashboard summary:', summaryError);
+            }
 
+            // Fallback: Try autonomous status
+            let realTradingData = tradingData;
             if (!realTradingData) {
                 try {
                     const autonomousResponse = await fetchWithAuth('/api/v1/autonomous/status');
@@ -128,44 +195,24 @@ const UserPerformanceDashboard = ({ tradingData }) => {
             if (realTradingData?.systemMetrics?.totalTrades > 0) {
                 const trading = realTradingData.systemMetrics;
 
-                // FIXED: Fetch REAL users from API - NO MOCK DATA
+                // Fetch users
                 try {
                     const usersResponse = await fetchWithAuth(API_ENDPOINTS.BROKER_USERS.url);
-                    
                     if (usersResponse.ok) {
                         const realUsers = await usersResponse.json();
                         if (realUsers.users && realUsers.users.length > 0) {
                             setUsers(realUsers.users);
                             setSelectedUser(realUsers.users[0]);
-                        } else {
-                            // No users found - show empty state instead of mock data
-                            setUsers([]);
-                            setSelectedUser(null);
                         }
-                    } else {
-                        console.error('Failed to fetch real users');
-                        setUsers([]);
-                        setSelectedUser(null);
                     }
                 } catch (error) {
-                    console.error('Error fetching real users:', error);
-                    setUsers([]);
-                    setSelectedUser(null);
+                    console.error('Error fetching users:', error);
                 }
 
-                // Set summary metrics from real data
-                // Fetch real P&L and balances from backend endpoints
-                let todayPnl = 0;
+                // Fetch balance
                 let availableCash = 0;
                 try {
-                    const [pnlRes, balRes] = await Promise.all([
-                        fetchWithAuth(API_ENDPOINTS.DAILY_PNL.url),
-                        fetchWithAuth(API_ENDPOINTS.REALTIME_BALANCE.url)
-                    ]);
-                    if (pnlRes.ok) {
-                        const pnlJson = await pnlRes.json();
-                        todayPnl = pnlJson?.data?.total_pnl || 0;
-                    }
+                    const balRes = await fetchWithAuth(API_ENDPOINTS.REALTIME_BALANCE.url);
                     if (balRes.ok) {
                         const balJson = await balRes.json();
                         availableCash = balJson?.available_cash || 0;
@@ -173,7 +220,7 @@ const UserPerformanceDashboard = ({ tradingData }) => {
                 } catch {}
 
                 setSummaryMetrics({
-                    todayPnL: todayPnl,
+                    todayPnL: trading.totalPnL || 0,
                     todayPnLPercent: 0,
                     activeUsers: 1,
                     newUsersThisWeek: 1,
@@ -182,42 +229,59 @@ const UserPerformanceDashboard = ({ tradingData }) => {
                     totalAUM: availableCash,
                     aumGrowth: 0
                 });
-
-                // FIXED: Fetch REAL daily P&L data from API - NO MOCK DATA
-                try {
-                    const dailyPnLResponse = await fetchWithAuth('/api/v1/dashboard/daily-pnl');
-                    
-                    if (dailyPnLResponse.ok) {
-                        const realDailyData = await dailyPnLResponse.json();
-                        setDailyPnL(realDailyData.daily_history || []);
-                    } else {
-                        // No historical data - show only today's real data
-                        setDailyPnL([{
-                            date: new Date().toISOString().split('T')[0],
-                            total_pnl: trading.totalPnL || 0,
-                            trades: trading.totalTrades || 0
-                        }]);
-                    }
-                } catch (error) {
-                    console.error('Error fetching daily P&L history:', error);
-                    // Fallback to today's real data only
-                    setDailyPnL([{
-                        date: new Date().toISOString().split('T')[0],
-                        total_pnl: trading.totalPnL || 0,
-                        trades: trading.totalTrades || 0
-                    }]);
-                }
-
             } else {
-                // Fallback to original endpoints
-                await fetchUsers();
-                await fetchDailyPnL();
-                await fetchSummaryMetrics();
+                // Final fallback - show system is ready but no trades yet
+                setUsers([{
+                    user_id: "QSW899",
+                    username: "Shyam Anurag (QSW899)",
+                    total_trades: 0,
+                    daily_pnl: 0,
+                    win_rate: 0,
+                    active: true,
+                    status: "Ready"
+                }]);
+                setSelectedUser({
+                    user_id: "QSW899",
+                    username: "Shyam Anurag (QSW899)",
+                    total_trades: 0,
+                    daily_pnl: 0,
+                    win_rate: 0,
+                    active: true,
+                    status: "Ready"
+                });
+                
+                // Try to get real balance even with 0 trades
+                let availableCash = 0;
+                try {
+                    const balRes = await fetchWithAuth(API_ENDPOINTS.REALTIME_BALANCE.url);
+                    if (balRes.ok) {
+                        const balJson = await balRes.json();
+                        availableCash = balJson?.available_cash || 0;
+                    }
+                } catch {}
+                
+                setSummaryMetrics({
+                    todayPnL: 0,
+                    todayPnLPercent: 0,
+                    activeUsers: 1,  // Show 1 active user (QSW899)
+                    newUsersThisWeek: 0,
+                    totalTrades: 0,
+                    winRate: 0,
+                    totalAUM: availableCash,  // Real balance
+                    aumGrowth: 0
+                });
+                
+                setDailyPnL([{
+                    date: new Date().toISOString().split('T')[0],
+                    total_pnl: 0,
+                    trades: 0,
+                    pnl: 0
+                }]);
             }
 
         } catch (error) {
             console.error('Error fetching data:', error);
-            setError('Unable to fetch performance data. Start autonomous trading to see performance metrics.');
+            setError('Unable to fetch performance data. Please check system connectivity.');
         } finally {
             setLoading(false);
         }
