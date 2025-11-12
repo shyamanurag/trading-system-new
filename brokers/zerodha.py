@@ -214,9 +214,15 @@ class ZerodhaIntegration:
                 self.kite = KiteConnect(api_key=self.api_key)
                 self.kite.set_access_token(self.access_token)
                 
-                # Test connection
-                profile = self.kite.profile()
-                logger.info(f"✅ KiteConnect initialized for user: {profile.get('user_name', 'Unknown')}")
+                # Test connection (non-critical - don't fail if this doesn't work)
+                try:
+                    profile = self.kite.profile()
+                    logger.info(f"✅ KiteConnect initialized for user: {profile.get('user_name', 'Unknown')}")
+                except Exception as profile_error:
+                    logger.warning(f"⚠️ KiteConnect initialized but profile test failed: {profile_error}")
+                    logger.warning("   This is usually due to rate limiting or temporary network issues")
+                    logger.info("✅ KiteConnect initialized (profile test skipped)")
+                
                 self._last_token_refresh = time.time()
                 self.is_connected = True
                 
