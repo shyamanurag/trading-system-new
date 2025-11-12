@@ -3018,11 +3018,15 @@ class TradingOrchestrator:
                     from config.truedata_symbols import get_complete_fo_symbols
                     watchlist_symbols = get_complete_fo_symbols()
                     
-                    self.logger.info(f"📡 Starting Zerodha WebSocket for {len(watchlist_symbols)} symbols...")
-                    ws_success = await self.zerodha_client.start_websocket_for_symbols(watchlist_symbols)
+                    # CRITICAL FIX: ALWAYS include index symbols for market bias and options strategies
+                    index_symbols = ['NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I']
+                    all_symbols = list(set(watchlist_symbols + index_symbols))  # Remove duplicates
+                    
+                    self.logger.info(f"📡 Starting Zerodha WebSocket for {len(watchlist_symbols)} stocks + {len(index_symbols)} indices...")
+                    ws_success = await self.zerodha_client.start_websocket_for_symbols(all_symbols)
                     
                     if ws_success:
-                        self.logger.info("✅ Zerodha WebSocket started - real-time tick data active")
+                        self.logger.info("✅ Zerodha WebSocket started - real-time tick data active (including indices)")
                     else:
                         self.logger.warning("⚠️ Zerodha WebSocket failed to start - using HTTP polling fallback")
                 except Exception as ws_error:
