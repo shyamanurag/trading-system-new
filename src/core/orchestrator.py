@@ -1545,27 +1545,36 @@ class TradingOrchestrator:
                     'RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN'
                 ]
             
-            # 🎯 Convert TrueData format to Zerodha format
+            # 🎯 Convert TrueData format to Zerodha format with symbol mapping
+            from config.truedata_symbols import ZERODHA_SYMBOL_MAPPING
+            
             zerodha_symbols = []
             for symbol in all_watchlist_symbols:
                 # Skip options contracts
                 if 'CE' in symbol or 'PE' in symbol:
                     continue
                 
+                # Check symbol mapping first
+                if symbol in ZERODHA_SYMBOL_MAPPING:
+                    mapped_symbol = ZERODHA_SYMBOL_MAPPING[symbol]
+                    if mapped_symbol is None:
+                        # Skip symbols marked as None (delisted/invalid)
+                        self.logger.debug(f"⏭️ Skipping invalid symbol: {symbol}")
+                        continue
+                    symbol = mapped_symbol
+                
                 # Convert index symbols
-                if symbol == 'NIFTY-I':
+                if symbol == 'NIFTY-I' or symbol == 'NIFTY':
                     zerodha_symbols.append("NSE:NIFTY 50")
-                elif symbol == 'BANKNIFTY-I':
+                elif symbol == 'BANKNIFTY-I' or symbol == 'BANKNIFTY':
                     zerodha_symbols.append("NSE:NIFTY BANK")
-                elif symbol == 'FINNIFTY-I':
+                elif symbol == 'FINNIFTY-I' or symbol == 'FINNIFTY':
                     zerodha_symbols.append("NSE:FINNIFTY")
-                elif symbol == 'MIDCPNIFTY-I':
+                elif symbol == 'MIDCPNIFTY-I' or symbol == 'MIDCPNIFTY':
                     zerodha_symbols.append("NSE:MIDCPNIFTY")
-                elif symbol == 'SENSEX-I':
-                    zerodha_symbols.append("NSE:SENSEX")
                 elif '-I' in symbol:
-                    # Generic index format
-                    zerodha_symbols.append(f"NSE:{symbol.replace('-I', '')}")
+                    # Generic index format (skip SENSEX-I as it's BSE)
+                    continue
                 else:
                     # Regular stock - add NSE prefix
                     zerodha_symbols.append(f"NSE:{symbol}")

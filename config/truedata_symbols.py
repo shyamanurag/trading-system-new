@@ -13,13 +13,22 @@ ZERODHA_SYMBOL_MAPPING = {
     # 🎯 CRITICAL MAPPINGS ONLY - Rest will be auto-detected
     'BAJAJFINSV': 'BAJFINANCE',      # ✅ CRITICAL: Different company name
     'ADANIPORTS': 'ADANIPORT',       # ✅ CRITICAL: Plural vs singular
+    'ADANIENTS': 'ADANIENT',         # ✅ CRITICAL: Plural vs singular
+    'MOTHERSUMI': 'MOTHERSON',       # ✅ CRITICAL: Company name change
+    'CADILAHC': 'ZYDUSLIFE',         # ✅ CRITICAL: Company renamed
+    'MAHINDRA': 'M&M',               # ✅ CRITICAL: Use stock ticker
+    'ADITTYABIRLA': None,            # ⚠️ SKIP: Not a traded symbol (group name)
+    'NOVARTIS': None,                # ⚠️ SKIP: Delisted from NSE
+    'AMARAJABAT': 'AMARAJABAT',      # ✅ Valid symbol
+    'TATAMOTORS': 'TATAMOTORS',      # ✅ Valid symbol
+    'ZOMATO': 'ZOMATO',              # ✅ Valid symbol
     
     # Index mappings (these are consistent)  
     'NIFTY-I': 'NIFTY',              # ✅ CRITICAL: Remove -I suffix
     'BANKNIFTY-I': 'BANKNIFTY',      # ✅ CRITICAL: Remove -I suffix
     'FINNIFTY-I': 'FINNIFTY',        # ✅ CRITICAL: Remove -I suffix
     'MIDCPNIFTY-I': 'MIDCPNIFTY',    # ✅ CRITICAL: Remove -I suffix
-    'SENSEX-I': 'SENSEX',            # ✅ CRITICAL: Remove -I suffix
+    'SENSEX-I': None,                # ⚠️ SKIP: BSE index, not available on NSE
     
     # Everything else will be auto-detected dynamically
 }
