@@ -820,38 +820,67 @@ class ZerodhaIntegration:
                 logger.warning("⚠️ No symbols provided for WebSocket")
                 return False
             
-            # Get NSE instruments to map symbols to tokens
-            instruments = await self.get_instruments('NSE')
-            if not instruments:
-                logger.error("❌ Could not fetch NSE instruments")
+            # Get NSE instruments (stocks) AND INDICES (NIFTY, BANKNIFTY, etc.)
+            nse_instruments = await self.get_instruments('NSE')
+            indices_instruments = await self.get_instruments('INDICES')
+            
+            if not nse_instruments and not indices_instruments:
+                logger.error("❌ Could not fetch NSE or INDICES instruments")
                 return False
             
-            # Build symbol to token mapping
+            # Build symbol to token mapping from BOTH sources
             token_map = {}
-            for inst in instruments:
+            all_instruments = (nse_instruments or []) + (indices_instruments or [])
+            
+            for inst in all_instruments:
                 symbol = inst.get('tradingsymbol', '')
                 token = inst.get('instrument_token')
                 if symbol and token:
                     token_map[symbol] = token
                     self._token_to_symbol[token] = symbol
             
+            logger.info(f"📊 Built token map with {len(token_map)} instruments ({len(nse_instruments or [])} NSE + {len(indices_instruments or [])} INDICES)")
+            
             # Convert symbols to tokens
             instrument_tokens = []
+            symbol_mapping = {}  # Track which symbols were found
+            
             for symbol in symbols:
                 # Remove exchange prefix if present
                 clean_symbol = symbol.replace('NSE:', '').replace('NFO:', '')
-                # Remove -I suffix for indices
-                clean_symbol = clean_symbol.replace('-I', '')
+                
+                # Map internal index symbols to Zerodha trading symbols
+                index_map = {
+                    'NIFTY-I': 'NIFTY 50',
+                    'NIFTY': 'NIFTY 50',
+                    'BANKNIFTY-I': 'NIFTY BANK',
+                    'BANKNIFTY': 'NIFTY BANK',
+                    'FINNIFTY-I': 'FINNIFTY',
+                    'MIDCPNIFTY-I': 'NIFTY MID SELECT'
+                }
+                
+                # Check if it's an index symbol
+                if clean_symbol in index_map:
+                    clean_symbol = index_map[clean_symbol]
+                else:
+                    # Remove -I suffix for other indices
+                    clean_symbol = clean_symbol.replace('-I', '')
                 
                 token = token_map.get(clean_symbol)
                 if token:
                     instrument_tokens.append(token)
+                    symbol_mapping[symbol] = clean_symbol
                 else:
-                    logger.debug(f"⚠️ Token not found for symbol: {clean_symbol}")
+                    logger.debug(f"⚠️ Token not found for symbol: {symbol} (tried: {clean_symbol})")
             
             if not instrument_tokens:
                 logger.error("❌ No valid instrument tokens found")
                 return False
+            
+            # Log index symbols that were successfully mapped
+            index_symbols = [s for s in symbol_mapping.keys() if 'NIFTY' in s or 'BANKNIFTY' in s or 'FINNIFTY' in s]
+            if index_symbols:
+                logger.info(f"📊 Index symbols subscribed: {', '.join(index_symbols)}")
             
             logger.info(f"📡 Starting WebSocket for {len(instrument_tokens)} symbols")
             
