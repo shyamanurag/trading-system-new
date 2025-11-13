@@ -15,14 +15,6 @@ from collections import deque
 
 logger = logging.getLogger(__name__)
 
-# Import professional mean reversion detector
-try:
-    from src.core.mean_reversion_detector import ProfessionalMeanReversionDetector
-    MEAN_REVERSION_AVAILABLE = True
-except ImportError:
-    MEAN_REVERSION_AVAILABLE = False
-    logger.warning("⚠️ Professional Mean Reversion Detector not available")
-
 @dataclass
 class MarketBias:
     """Market bias data structure"""
@@ -55,6 +47,9 @@ class MarketDirectionalBias:
     """
     
     def __init__(self):
+        # 🔥 STORE LATEST NIFTY DATA: For strategy access without orchestrator dependency
+        self.nifty_data = {}  # Latest NIFTY tick data
+        
         self.current_bias = MarketBias(
             direction="NEUTRAL",
             confidence=0.0,
@@ -75,13 +70,6 @@ class MarketDirectionalBias:
             self.internals_analyzer = None
             self.use_internals = False
             logger.warning("⚠️ Market Internals not available, using basic bias calculation")
-        
-        # Initialize professional mean reversion detector
-        if MEAN_REVERSION_AVAILABLE:
-            self.mean_reversion_detector = ProfessionalMeanReversionDetector()
-            logger.info("✅ Professional Mean Reversion Detector integrated")
-        else:
-            self.mean_reversion_detector = None
         
         # BIAS CALCULATION PARAMETERS
         self.nifty_trend_threshold = 0.1  # Lowered to 0.1% for more sensitivity in low-movement markets
@@ -174,6 +162,9 @@ class MarketDirectionalBias:
                 logger.debug(f"Available symbols (first 20): {available_symbols}")
                 return self.current_bias
             
+            # 🔥 STORE FOR STRATEGY ACCESS (no orchestrator dependency)
+            self.nifty_data = nifty_data
+            
             # Debug: Log NIFTY data to understand what we're getting
             if 'ltp' in nifty_data and 'open' in nifty_data:
                 ltp = float(nifty_data.get('ltp', 0))
@@ -235,30 +226,11 @@ class MarketDirectionalBias:
                 bias_direction = self.current_bias.direction
                 confidence = self.current_bias.confidence * 0.95  # Slight decay
             
-            # 9. 🔥 CHECK FOR MEAN REVERSION (Multi-indicator professional system)
-            if self.mean_reversion_detector:
-                # Use professional multi-indicator detector
-                mr_signal = self.mean_reversion_detector.detect_mean_reversion(nifty_data, market_data)
-                confidence *= mr_signal.bias_adjustment
-                
-                # If extreme reversion detected, consider flipping bias
-                if mr_signal.mode == 'EXTREME_REVERSION':
-                    if confidence > 5.0:
-                        # Flip to counter-trend
-                        bias_direction = 'BEARISH' if bias_direction == 'BULLISH' else 'BULLISH'
-                        confidence = min(confidence * 0.8, 6.0)
-                        logger.warning(f"🔄 EXTREME REVERSION: Flipped bias to {bias_direction} (MR confidence: {mr_signal.confidence:.1f})")
-                    else:
-                        bias_direction = 'NEUTRAL'
-                        confidence = 0.0
-                
-                logger.info(f"🎯 Mean Reversion Mode: {mr_signal.mode} | Action: {mr_signal.recommended_action} | "
-                           f"Bias Adjustment: {mr_signal.bias_adjustment:.2f}x")
-            else:
-                # Fallback to simple points-based check
-                exhaustion_adjustment = self._check_move_exhaustion(nifty_data, bias_direction, confidence)
-                bias_direction = exhaustion_adjustment['direction']
-                confidence = exhaustion_adjustment['confidence']
+            # 9. 🔥 CHECK FOR INTRADAY MOVE EXHAUSTION (Points-based rubber band effect)
+            exhaustion_adjustment = self._check_move_exhaustion(nifty_data, bias_direction, confidence)
+            bias_direction = exhaustion_adjustment['direction']
+            confidence = exhaustion_adjustment['confidence']
+            move_zone = exhaustion_adjustment['zone']
             
             # 10. ENFORCE LOW-CONFIDENCE NEUTRALIZATION
             # TUNED: Lowered from 3.0 to 1.5 to allow more trades in choppy markets

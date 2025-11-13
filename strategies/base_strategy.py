@@ -2657,6 +2657,147 @@ class BaseStrategy:
             else:  # SELL trade
                 return entry_price * (1 - target_percent)
     
+    def _calculate_adaptive_confidence_threshold(self, symbol: str, action: str, confidence: float) -> Tuple[float, str]:
+        """
+        🔥 PROFESSIONAL MEAN REVERSION-AWARE CONFIDENCE THRESHOLD
+        
+        Adjusts minimum confidence based on NIFTY move from open using multi-indicator system:
+        - Points from open (NIFTY-specific zones: 0-50-100-150+ pts)
+        - Market regime (TRENDING/CHOPPY)
+        - Bias confidence
+        - Signal alignment (with or against trend)
+        
+        Returns:
+            (min_confidence_threshold, reason_string)
+        """
+        try:
+            # Default threshold (TUNED: lowered from 8.5 to 7.5)
+            min_conf = 7.5
+            reasons = []
+            
+            # Get market bias if available
+            if not (hasattr(self, 'market_bias') and self.market_bias):
+                return min_conf, "default"
+            
+            current_bias = self.market_bias.current_bias
+            
+            # Get NIFTY data for mean reversion analysis
+            nifty_data = self._get_nifty_data_from_bias()
+            if not nifty_data:
+                return min_conf, "no_nifty_data"
+            
+            # Calculate NIFTY move from open
+            ltp = float(nifty_data.get('ltp', 0))
+            open_price = float(nifty_data.get('open', 0))
+            
+            if not (ltp and open_price):
+                return min_conf, "insufficient_nifty_data"
+            
+            move_from_open = ltp - open_price
+            abs_move = abs(move_from_open)
+            
+            # Determine move zone (NIFTY-specific thresholds)
+            if abs_move < 50:
+                zone = 'EARLY'
+                zone_adjustment = -1.0  # Lower threshold (encourage trading)
+                reasons.append(f"EARLY:{abs_move:.0f}pts")
+            elif abs_move < 100:
+                zone = 'MID'
+                zone_adjustment = 0.0  # Normal threshold
+                reasons.append(f"MID:{abs_move:.0f}pts")
+            elif abs_move < 150:
+                zone = 'EXTENDED'
+                # Check if chasing or fading
+                bias_direction = current_bias.direction
+                if (action == 'BUY' and bias_direction == 'BULLISH' and move_from_open > 0) or \
+                   (action == 'SELL' and bias_direction == 'BEARISH' and move_from_open < 0):
+                    # Chasing extended move - DISCOURAGE
+                    zone_adjustment = +1.5
+                    reasons.append(f"EXTENDED_CHASE:{abs_move:.0f}pts⚠️")
+                else:
+                    # Fading extended move - ENCOURAGE
+                    zone_adjustment = -0.5
+                    reasons.append(f"EXTENDED_FADE:{abs_move:.0f}pts✅")
+            else:  # >= 150 points
+                zone = 'EXTREME'
+                bias_direction = current_bias.direction
+                if (action == 'BUY' and bias_direction == 'BULLISH' and move_from_open > 0) or \
+                   (action == 'SELL' and bias_direction == 'BEARISH' and move_from_open < 0):
+                    # Chasing EXTREME move - STRONGLY DISCOURAGE
+                    zone_adjustment = +2.0
+                    reasons.append(f"EXTREME_CHASE:{abs_move:.0f}pts🔴")
+                else:
+                    # Fading EXTREME move - STRONGLY ENCOURAGE
+                    zone_adjustment = -1.5
+                    reasons.append(f"EXTREME_FADE:{abs_move:.0f}pts✅✅")
+            
+            min_conf += zone_adjustment
+            
+            # Market regime adjustment
+            market_regime = getattr(current_bias, 'market_regime', 'NORMAL')
+            if market_regime == 'CHOPPY':
+                min_conf += 0.5
+                reasons.append("CHOPPY+0.5")
+            elif market_regime in ['STRONG_TRENDING', 'TRENDING']:
+                min_conf -= 0.5
+                reasons.append("TRENDING-0.5")
+            
+            # Bias confidence adjustment
+            bias_confidence = getattr(current_bias, 'confidence', 0.0)
+            if bias_confidence >= 7.0:
+                # High bias confidence = lower threshold for aligned signals
+                if (action == 'BUY' and current_bias.direction == 'BULLISH') or \
+                   (action == 'SELL' and current_bias.direction == 'BEARISH'):
+                    min_conf -= 0.5
+                    reasons.append("ALIGNED-0.5")
+            elif bias_confidence <= 3.0:
+                # Low bias confidence = higher threshold
+                min_conf += 0.5
+                reasons.append("WEAK_BIAS+0.5")
+            
+            # Clamp to reasonable range (5.5 to 9.5)
+            min_conf = max(5.5, min(min_conf, 9.5))
+            
+            reason_str = " | ".join(reasons) if reasons else "default"
+            return min_conf, reason_str
+            
+        except Exception as e:
+            logger.error(f"Error calculating adaptive threshold: {e}")
+            return 7.5, f"error"
+    
+    def _get_nifty_data_from_bias(self) -> Optional[Dict]:
+        """Get NIFTY data from market bias system"""
+        try:
+            if not (hasattr(self, 'market_bias') and self.market_bias):
+                return None
+            
+            # Try to get NIFTY data from bias system's latest update
+            if hasattr(self.market_bias, 'current_bias'):
+                # The bias system stores NIFTY data internally
+                # Check for various NIFTY representations
+                for attr in ['nifty_data', '_nifty_data', 'latest_nifty_data']:
+                    if hasattr(self.market_bias, attr):
+                        data = getattr(self.market_bias, attr, None)
+                        if data and isinstance(data, dict):
+                            return data
+            
+            # Fallback: Try to access orchestrator's data
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                if orchestrator and hasattr(orchestrator, '_latest_market_data'):
+                    for symbol in ['NIFTY-I', 'NIFTY', 'NIFTY 50']:
+                        if symbol in orchestrator._latest_market_data:
+                            return orchestrator._latest_market_data[symbol]
+            except:
+                pass
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Could not get NIFTY data: {e}")
+            return None
+    
     def validate_signal_levels(self, entry_price: float, stop_loss: float, 
                               target: float, action: str) -> bool:
         """Validate that signal levels make logical sense"""
