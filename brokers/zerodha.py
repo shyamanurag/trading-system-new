@@ -735,6 +735,41 @@ class ZerodhaIntegration:
             if not ticks:
                 return
             
+            # VISIBILITY FIX: Log at INFO level periodically to show ticks are flowing
+            if not hasattr(self, '_tick_counter'):
+                self._tick_counter = 0
+                self._last_tick_log = time.time()
+                self._tick_symbols = set()
+                self._first_tick_logged = False
+            
+            # Log first tick received (one-time)
+            if not self._first_tick_logged:
+                logger.info(f"🎉 First WebSocket ticks received! {len(ticks)} symbols in first batch")
+                self._first_tick_logged = True
+            
+            self._tick_counter += len(ticks)
+            
+            # Collect symbols from this batch
+            for tick in ticks:
+                token = tick.get('instrument_token')
+                if token and token in self._token_to_symbol:
+                    self._tick_symbols.add(self._token_to_symbol[token])
+            
+            # Log every 30 seconds to show activity without flooding
+            if time.time() - self._last_tick_log >= 30:
+                # Show sample symbols including any indices
+                sample_symbols = list(self._tick_symbols)[:10]
+                index_symbols = [s for s in self._tick_symbols if 'NIFTY' in s or 'BANKNIFTY' in s or 'FINNIFTY' in s]
+                
+                logger.info(f"📊 WebSocket ACTIVE: {self._tick_counter} ticks in 30s | {len(self._tick_symbols)} unique symbols")
+                if index_symbols:
+                    logger.info(f"   📈 Index ticks received: {', '.join(index_symbols)}")
+                logger.info(f"   📊 Sample symbols: {', '.join(sample_symbols[:5])}")
+                
+                self._tick_counter = 0
+                self._tick_symbols.clear()
+                self._last_tick_log = time.time()
+            
             logger.debug(f"📊 Received {len(ticks)} ticks from WebSocket")
             
             # Process each tick and store in Redis
