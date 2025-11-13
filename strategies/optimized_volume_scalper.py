@@ -26,6 +26,7 @@ from typing import Dict, List, Optional, Tuple, Union, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from strategies.base_strategy import BaseStrategy
+from strategies.mean_reversion_integration import StrategyMeanReversionHelper
 import pytz
 import warnings
 warnings.filterwarnings('ignore')
@@ -259,6 +260,9 @@ class OptimizedVolumeScalper(BaseStrategy):
         super().__init__(config)
         self.name = "InstitutionalMicrostructureStrategy"
         self.strategy_name = "InstitutionalMicrostructureStrategy"
+        
+        # 🔥 MEAN REVERSION INTEGRATION (prevents chasing exhausted moves)
+        self.mr_helper = StrategyMeanReversionHelper(self)
         
         # PROFESSIONAL COMPONENTS INITIALIZATION
         self.math_models = ProfessionalMathModels()
@@ -1678,7 +1682,15 @@ class OptimizedVolumeScalper(BaseStrategy):
             stop_loss = self._round_to_tick_size(stop_loss)
             target = self._round_to_tick_size(target)
             
-            # Create high-quality signal
+            # 🔥 MEAN REVERSION CHECK: Should we trade this signal?
+            should_trade, mr_reason = self.mr_helper.should_generate_signal(
+                symbol, ms_signal.signal_type, ms_signal.confidence
+            )
+            if not should_trade:
+                logger.info(f"🚫 {self.name}: Signal blocked for {symbol} {ms_signal.signal_type} - {mr_reason}")
+                return None
+            
+            # Create high-quality signal (only if MR check passed)
             signal = await self.create_standard_signal(
                 symbol=symbol,
                 action=ms_signal.signal_type,

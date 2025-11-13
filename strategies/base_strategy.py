@@ -2861,33 +2861,11 @@ class BaseStrategy:
                 return None
             
             # ========================================
-            # CRITICAL: CONFIDENCE FILTERING FOR INTRADAY TRADING
+            # 🔥 PROFESSIONAL MEAN REVERSION-AWARE CONFIDENCE THRESHOLD
             # ========================================
-            # INTRADAY FOCUSED: Lower confidence requirements for faster signal generation
-            min_conf = 8.5  # Lowered from 9.0 for intraday momentum capture
-            
-            try:
-                from src.core.orchestrator import get_orchestrator_instance
-                orchestrator = get_orchestrator_instance()
-                
-                # Get market momentum for dynamic confidence
-                nifty_momentum = 0.0
-                if orchestrator and hasattr(orchestrator, 'market_bias') and orchestrator.market_bias:
-                    nifty_momentum = getattr(orchestrator.market_bias.current_bias, 'nifty_momentum', 0.0)
-                
-                # MOMENTUM-BASED CONFIDENCE: Lower requirements during strong trends
-                if abs(nifty_momentum) >= 0.3:  # Strong intraday move (0.3%+)
-                    min_conf = 8.0  # Very aggressive for trending markets
-                    logger.debug(f"🚀 STRONG MOMENTUM DETECTED: Nifty={nifty_momentum:+.2f}% - min_conf lowered to {min_conf}")
-                elif abs(nifty_momentum) >= 0.15:  # Moderate move (0.15%+)
-                    min_conf = 8.3  # Moderately aggressive
-                    logger.debug(f"📈 MODERATE MOMENTUM: Nifty={nifty_momentum:+.2f}% - min_conf={min_conf}")
-                else:
-                    logger.debug(f"🔍 SIDEWAYS MARKET: Nifty={nifty_momentum:+.2f}% - min_conf={min_conf}")
-                    
-            except Exception as e:
-                logger.warning(f"⚠️ Could not detect market momentum: {e}")
-                min_conf = 8.5  # Default intraday confidence
+            # Multi-indicator system prevents chasing exhausted moves (150+ points)
+            min_conf, adjustment_reason = self._calculate_adaptive_confidence_threshold(symbol, action, confidence)
+            logger.debug(f"📊 Adaptive Threshold: {symbol} {action} -> min_conf={min_conf:.1f} ({adjustment_reason})")
 
             # Ensure confidence is numeric before comparison
             try:
