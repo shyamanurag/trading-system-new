@@ -1152,8 +1152,72 @@ class BaseStrategy:
                         })
                         logger.info(f"🎯 {self.name}: Updated trailing stop for {symbol} to ₹{trailing_stop_price:.2f} (profit: {profit_pct:.2f}%)")
                         
+                        # 🔥 CRITICAL FIX: Send trailing stop to broker
+                        await self._modify_broker_stop_loss(symbol, trailing_stop_price, action)
+                        
         except Exception as e:
             logger.error(f"Error updating trailing stop for {symbol}: {e}")
+    
+    async def _modify_broker_stop_loss(self, symbol: str, new_sl_price: float, action: str):
+        """🔥 CRITICAL: Modify stop loss order at broker for trailing stops"""
+        try:
+            # Get orchestrator to access zerodha client
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if not (orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client):
+                logger.debug(f"⚠️ Cannot modify SL - zerodha client not available")
+                return
+            
+            zerodha = orchestrator.zerodha_client
+            
+            # Get current open SL order for this symbol
+            try:
+                orders = await zerodha.get_orders()
+                if not orders:
+                    logger.debug(f"⚠️ No orders found for {symbol}")
+                    return
+            except Exception as e:
+                logger.error(f"Error fetching orders for {symbol}: {e}")
+                return
+            
+            # Find the active SL order for this symbol
+            sl_order = None
+            for order in orders:
+                if (order.get('tradingsymbol') == symbol and 
+                    order.get('order_type') in ['SL', 'SL-M'] and
+                    order.get('status') in ['OPEN', 'TRIGGER PENDING'] and
+                    order.get('tag') == 'ALGO_SL'):
+                    sl_order = order
+                    break
+            
+            if not sl_order:
+                logger.debug(f"⚠️ No open SL order found for {symbol} (may have been filled)")
+                return
+            
+            order_id = sl_order.get('order_id')
+            old_trigger = sl_order.get('trigger_price', 0)
+            
+            # Only modify if new SL is significantly different (avoid spam)
+            if abs(new_sl_price - old_trigger) < 0.50:  # Less than ₹0.50 change
+                logger.debug(f"Skipping SL modification for {symbol} - change too small")
+                return
+            
+            # Modify the SL order with new trigger price
+            modify_params = {
+                'trigger_price': new_sl_price,
+                'order_type': 'SL-M'
+            }
+            
+            result = await zerodha.modify_order(order_id, modify_params)
+            
+            if result:
+                logger.info(f"✅ BROKER SL UPDATED: {symbol} {old_trigger:.2f} -> {new_sl_price:.2f} (Order: {order_id})")
+            else:
+                logger.warning(f"⚠️ SL modification returned no result for {symbol}")
+                
+        except Exception as e:
+            logger.error(f"❌ Error modifying broker SL for {symbol}: {e}")
     
     async def analyze_position_management(self, symbol: str, current_price: float, position: Dict, market_data: Dict) -> Dict:
         """🧠 INTELLIGENT POSITION ANALYSIS - Determine optimal management actions"""
@@ -2808,42 +2872,71 @@ class BaseStrategy:
             target = float(target)
             if action.upper() == 'BUY':
                 # For BUY: stop_loss < entry_price < target
-                # Enforce adaptive minimum separations by price band (tick-size aware)
-                if entry_price >= 1000:
-                    min_step = max(0.05, entry_price * 0.001)   # 0.10%
-                elif entry_price >= 300:
-                    min_step = max(0.05, entry_price * 0.0015)  # 0.15%
-                elif entry_price >= 100:
-                    min_step = max(0.05, entry_price * 0.002)   # 0.20%
-                elif entry_price >= 1.0:
-                    min_step = max(0.05, entry_price * 0.003)   # 0.30%
-                else:
-                    # 🚨 ULTRA-LOW PREMIUM OPTIONS: Use tick size (₹0.05) or 10% of entry price
-                    min_step = max(0.05, entry_price * 0.10)    # 10% for ultra-low premium options
                 if not (stop_loss < entry_price < target):
-                    logger.warning(f"Invalid BUY signal levels: SL={stop_loss}, Entry={entry_price}, Target={target}")
+                    logger.warning(f"❌ Invalid BUY signal levels: SL={stop_loss}, Entry={entry_price}, Target={target}")
                     return False
-                if (entry_price - stop_loss) < min_step or (target - entry_price) < min_step:
-                    logger.warning(f"Invalid BUY signal distances (too tight): step={min_step:.4f} for Entry={entry_price}")
+                
+                # 🔥 ENHANCED: Percentage-based minimum spreads (protects against order rejections)
+                sl_spread_pct = ((entry_price - stop_loss) / entry_price) * 100
+                target_spread_pct = ((target - entry_price) / entry_price) * 100
+                
+                # Define minimums based on price band
+                if entry_price >= 1000:
+                    MIN_SL_SPREAD = 0.3  # 0.3% for high-priced stocks
+                    MIN_TARGET_SPREAD = 0.5  # 0.5% minimum target
+                elif entry_price >= 100:
+                    MIN_SL_SPREAD = 0.4  # 0.4% for mid-priced
+                    MIN_TARGET_SPREAD = 0.6  # 0.6% minimum target
+                elif entry_price >= 10:
+                    MIN_SL_SPREAD = 0.5  # 0.5% for low-priced
+                    MIN_TARGET_SPREAD = 0.8  # 0.8% minimum target
+                else:
+                    # Options/Ultra-low: Use absolute ₹0.10 minimum
+                    MIN_SL_SPREAD = (0.10 / entry_price) * 100
+                    MIN_TARGET_SPREAD = (0.15 / entry_price) * 100
+                
+                if sl_spread_pct < MIN_SL_SPREAD:
+                    logger.warning(f"❌ BUY: SL too close to entry: {sl_spread_pct:.2f}% < {MIN_SL_SPREAD:.2f}% "
+                                 f"(SL={stop_loss:.2f}, Entry={entry_price:.2f})")
+                    return False
+                
+                if target_spread_pct < MIN_TARGET_SPREAD:
+                    logger.warning(f"❌ BUY: Target too close to entry: {target_spread_pct:.2f}% < {MIN_TARGET_SPREAD:.2f}% "
+                                 f"(Entry={entry_price:.2f}, Target={target:.2f})")
                     return False
             else:  # SELL
                 # For SELL: target < entry_price < stop_loss
-                if entry_price >= 1000:
-                    min_step = max(0.05, entry_price * 0.001)
-                elif entry_price >= 300:
-                    min_step = max(0.05, entry_price * 0.0015)
-                elif entry_price >= 100:
-                    min_step = max(0.05, entry_price * 0.002)
-                elif entry_price >= 1.0:
-                    min_step = max(0.05, entry_price * 0.003)
-                else:
-                    # 🚨 ULTRA-LOW PREMIUM OPTIONS: Use tick size (₹0.05) or 10% of entry price
-                    min_step = max(0.05, entry_price * 0.10)    # 10% for ultra-low premium options
                 if not (target < entry_price < stop_loss):
-                    logger.warning(f"Invalid SELL signal levels: SL={stop_loss}, Entry={entry_price}, Target={target}")
+                    logger.warning(f"❌ Invalid SELL signal levels: Target={target}, Entry={entry_price}, SL={stop_loss}")
                     return False
-                if (stop_loss - entry_price) < min_step or (entry_price - target) < min_step:
-                    logger.warning(f"Invalid SELL signal distances (too tight): step={min_step:.4f} for Entry={entry_price}")
+                
+                # 🔥 ENHANCED: Percentage-based minimum spreads
+                sl_spread_pct = ((stop_loss - entry_price) / entry_price) * 100
+                target_spread_pct = ((entry_price - target) / entry_price) * 100
+                
+                # Define minimums based on price band
+                if entry_price >= 1000:
+                    MIN_SL_SPREAD = 0.3  # 0.3% for high-priced stocks
+                    MIN_TARGET_SPREAD = 0.5  # 0.5% minimum target
+                elif entry_price >= 100:
+                    MIN_SL_SPREAD = 0.4  # 0.4% for mid-priced
+                    MIN_TARGET_SPREAD = 0.6  # 0.6% minimum target
+                elif entry_price >= 10:
+                    MIN_SL_SPREAD = 0.5  # 0.5% for low-priced
+                    MIN_TARGET_SPREAD = 0.8  # 0.8% minimum target
+                else:
+                    # Options/Ultra-low: Use absolute ₹0.10 minimum
+                    MIN_SL_SPREAD = (0.10 / entry_price) * 100
+                    MIN_TARGET_SPREAD = (0.15 / entry_price) * 100
+                
+                if sl_spread_pct < MIN_SL_SPREAD:
+                    logger.warning(f"❌ SELL: SL too close to entry: {sl_spread_pct:.2f}% < {MIN_SL_SPREAD:.2f}% "
+                                 f"(Entry={entry_price:.2f}, SL={stop_loss:.2f})")
+                    return False
+                
+                if target_spread_pct < MIN_TARGET_SPREAD:
+                    logger.warning(f"❌ SELL: Target too close to entry: {target_spread_pct:.2f}% < {MIN_TARGET_SPREAD:.2f}% "
+                                 f"(Target={target:.2f}, Entry={entry_price:.2f})")
                     return False
             
             # Check for identical levels (problematic for low-priced stocks)
