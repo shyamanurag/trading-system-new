@@ -848,6 +848,7 @@ class ZerodhaIntegration:
             for symbol in symbols:
                 # Remove exchange prefix if present
                 clean_symbol = symbol.replace('NSE:', '').replace('NFO:', '')
+                original_symbol = clean_symbol  # Store for reverse mapping
                 
                 # Map internal index symbols to Zerodha trading symbols
                 index_map = {
@@ -870,6 +871,9 @@ class ZerodhaIntegration:
                 if token:
                     instrument_tokens.append(token)
                     symbol_mapping[symbol] = clean_symbol
+                    # CRITICAL FIX: Store original internal symbol for reverse mapping
+                    # This ensures ticks are stored with keys the system expects (NIFTY-I, not NIFTY 50)
+                    self._token_to_symbol[token] = original_symbol
                 else:
                     logger.debug(f"⚠️ Token not found for symbol: {symbol} (tried: {clean_symbol})")
             
@@ -2321,13 +2325,27 @@ class ZerodhaIntegration:
             
             logger.info(f"🔍 Fetching option chain for {underlying_symbol} expiry={expiry}")
             
-            # Step 1: Get spot price of underlying
+            # Step 1: Map internal symbol to Zerodha trading symbol
+            symbol_map = {
+                'NIFTY-I': 'NIFTY 50',
+                'NIFTY': 'NIFTY 50',
+                'BANKNIFTY-I': 'NIFTY BANK',
+                'BANKNIFTY': 'NIFTY BANK',
+                'FINNIFTY-I': 'FINNIFTY',
+                'FINNIFTY': 'FINNIFTY',
+                'MIDCPNIFTY-I': 'NIFTY MID SELECT',
+                'MIDCPNIFTY': 'NIFTY MID SELECT'
+            }
+            
+            zerodha_symbol = symbol_map.get(underlying_symbol, underlying_symbol)
+            
+            # Step 2: Get spot price of underlying
             exchange = self._get_exchange_for_symbol(underlying_symbol)
-            full_symbol = f"{exchange}:{underlying_symbol}"
+            full_symbol = f"{exchange}:{zerodha_symbol}"
             
             spot_quote = self.kite.quote([full_symbol])
             if not spot_quote or full_symbol not in spot_quote:
-                logger.error(f"❌ Could not fetch spot price for {underlying_symbol}")
+                logger.error(f"❌ Could not fetch spot price for {underlying_symbol} (tried: {full_symbol})")
                 return {}
             
             spot_price = spot_quote[full_symbol].get('last_price', 0)
