@@ -15,6 +15,14 @@ from collections import deque
 
 logger = logging.getLogger(__name__)
 
+# Import professional mean reversion detector
+try:
+    from src.core.mean_reversion_detector import ProfessionalMeanReversionDetector
+    MEAN_REVERSION_AVAILABLE = True
+except ImportError:
+    MEAN_REVERSION_AVAILABLE = False
+    logger.warning("⚠️ Professional Mean Reversion Detector not available")
+
 @dataclass
 class MarketBias:
     """Market bias data structure"""
@@ -68,6 +76,13 @@ class MarketDirectionalBias:
             self.use_internals = False
             logger.warning("⚠️ Market Internals not available, using basic bias calculation")
         
+        # Initialize professional mean reversion detector
+        if MEAN_REVERSION_AVAILABLE:
+            self.mean_reversion_detector = ProfessionalMeanReversionDetector()
+            logger.info("✅ Professional Mean Reversion Detector integrated")
+        else:
+            self.mean_reversion_detector = None
+        
         # BIAS CALCULATION PARAMETERS
         self.nifty_trend_threshold = 0.1  # Lowered to 0.1% for more sensitivity in low-movement markets
         self.sector_alignment_threshold = 0.6  # 60% sector alignment required
@@ -101,6 +116,20 @@ class MarketDirectionalBias:
         self.consecutive_bullish_days = 0  # Count consecutive positive days
         self.consecutive_bearish_days = 0  # Count consecutive negative days
         self.cumulative_move_3d = 0.0  # 3-day cumulative % change
+        
+        # 🔥 INTRADAY MOVE EXHAUSTION TRACKING (User insight: 150+ points = stretched)
+        self.todays_open = None  # Track today's opening price
+        self.todays_high = None  # Track today's high
+        self.todays_low = None  # Track today's low
+        self.typical_daily_range = 200  # NIFTY typical daily range in points
+        
+        # Mean reversion zones based on points moved from open
+        self.move_zones = {
+            'EARLY': (0, 50),        # 0-50 points: Fresh move, trend-following
+            'MID': (50, 100),        # 50-100 points: Established, cautious trend
+            'EXTENDED': (100, 150),  # 100-150 points: Stretched, watch for reversal
+            'EXTREME': (150, 250)    # 150+ points: Mean reversion mode
+        }
         
         # TIME-OF-DAY BIAS MODIFIERS
         self.time_phases = {
@@ -206,11 +235,38 @@ class MarketDirectionalBias:
                 bias_direction = self.current_bias.direction
                 confidence = self.current_bias.confidence * 0.95  # Slight decay
             
-            # 9. ENFORCE LOW-CONFIDENCE NEUTRALIZATION
-            if confidence < 3.0:
+            # 9. 🔥 CHECK FOR MEAN REVERSION (Multi-indicator professional system)
+            if self.mean_reversion_detector:
+                # Use professional multi-indicator detector
+                mr_signal = self.mean_reversion_detector.detect_mean_reversion(nifty_data, market_data)
+                confidence *= mr_signal.bias_adjustment
+                
+                # If extreme reversion detected, consider flipping bias
+                if mr_signal.mode == 'EXTREME_REVERSION':
+                    if confidence > 5.0:
+                        # Flip to counter-trend
+                        bias_direction = 'BEARISH' if bias_direction == 'BULLISH' else 'BULLISH'
+                        confidence = min(confidence * 0.8, 6.0)
+                        logger.warning(f"🔄 EXTREME REVERSION: Flipped bias to {bias_direction} (MR confidence: {mr_signal.confidence:.1f})")
+                    else:
+                        bias_direction = 'NEUTRAL'
+                        confidence = 0.0
+                
+                logger.info(f"🎯 Mean Reversion Mode: {mr_signal.mode} | Action: {mr_signal.recommended_action} | "
+                           f"Bias Adjustment: {mr_signal.bias_adjustment:.2f}x")
+            else:
+                # Fallback to simple points-based check
+                exhaustion_adjustment = self._check_move_exhaustion(nifty_data, bias_direction, confidence)
+                bias_direction = exhaustion_adjustment['direction']
+                confidence = exhaustion_adjustment['confidence']
+            
+            # 10. ENFORCE LOW-CONFIDENCE NEUTRALIZATION
+            # TUNED: Lowered from 3.0 to 1.5 to allow more trades in choppy markets
+            # Exhaustion logic above already prevents bad trades in extended moves
+            if confidence < 1.5:
                 bias_direction = "NEUTRAL"
 
-            # 10. UPDATE CURRENT BIAS
+            # 11. UPDATE CURRENT BIAS
             self.current_bias = MarketBias(
                 direction=bias_direction,
                 confidence=confidence,
@@ -243,6 +299,120 @@ class MarketDirectionalBias:
         except Exception as e:
             logger.error(f"Error updating market bias: {e}")
             return self.current_bias
+    
+    def _check_move_exhaustion(self, nifty_data: Dict, bias_direction: str, confidence: float) -> Dict:
+        """
+        🔥 CHECK FOR INTRADAY MOVE EXHAUSTION
+        
+        User insight: When NIFTY has moved 150+ points from open, further moves in same 
+        direction become difficult. System should:
+        - Reduce confidence for trend continuation
+        - Favor mean reversion trades
+        - Prevent chasing exhausted moves
+        
+        Returns:
+            Dict with adjusted direction, confidence, and move zone
+        """
+        try:
+            ltp = float(nifty_data.get('ltp', 0))
+            open_price = float(nifty_data.get('open', 0))
+            high = float(nifty_data.get('high', ltp))
+            low = float(nifty_data.get('low', ltp))
+            
+            if not all([ltp, open_price]):
+                return {'direction': bias_direction, 'confidence': confidence, 'zone': 'UNKNOWN'}
+            
+            # Update today's tracking
+            if self.todays_open is None or open_price != self.todays_open:
+                self.todays_open = open_price
+                self.todays_high = high
+                self.todays_low = low
+            else:
+                self.todays_high = max(self.todays_high, high)
+                self.todays_low = min(self.todays_low, low)
+            
+            # Calculate move from open in POINTS
+            move_from_open = ltp - open_price
+            abs_move = abs(move_from_open)
+            
+            # Determine move zone
+            move_zone = 'EARLY'
+            for zone_name, (min_pts, max_pts) in self.move_zones.items():
+                if min_pts <= abs_move < max_pts:
+                    move_zone = zone_name
+                    break
+            
+            # Determine current move direction
+            current_move_direction = 'BULLISH' if move_from_open > 0 else 'BEARISH'
+            
+            # Calculate how much room is left in typical daily range
+            daily_range_used = (self.todays_high - self.todays_low)
+            range_exhaustion_pct = (daily_range_used / self.typical_daily_range) * 100
+            
+            # Adjust confidence based on move zone and direction alignment
+            adjusted_confidence = confidence
+            adjusted_direction = bias_direction
+            
+            if move_zone == 'EARLY':
+                # 0-50 points: Fresh move, boost trend-following
+                if bias_direction == current_move_direction:
+                    adjusted_confidence *= 1.2  # +20% confidence for aligned trend
+                    logger.info(f"🚀 EARLY MOVE ({abs_move:.0f} pts): Boosting {bias_direction} confidence +20%")
+                    
+            elif move_zone == 'MID':
+                # 50-100 points: Established move, normal operation
+                logger.debug(f"📊 MID MOVE ({abs_move:.0f} pts): Normal operation")
+                
+            elif move_zone == 'EXTENDED':
+                # 100-150 points: Stretched, reduce trend-following confidence
+                if bias_direction == current_move_direction:
+                    adjusted_confidence *= 0.7  # -30% for chasing extended moves
+                    logger.info(f"⚠️ EXTENDED MOVE ({abs_move:.0f} pts): Reducing {bias_direction} confidence -30% (stretched)")
+                else:
+                    # Counter-trend (mean reversion) gets boost
+                    adjusted_confidence *= 1.1
+                    logger.info(f"🔄 EXTENDED MOVE ({abs_move:.0f} pts): Boosting {bias_direction} counter-trend +10% (mean reversion)")
+                    
+            elif move_zone == 'EXTREME':
+                # 150+ points: STRONG mean reversion mode
+                if bias_direction == current_move_direction:
+                    # DON'T chase extreme moves - neutralize or flip
+                    if confidence > 5.0:
+                        # High confidence trend = flip to mean reversion
+                        adjusted_direction = 'BEARISH' if current_move_direction == 'BULLISH' else 'BULLISH'
+                        adjusted_confidence = min(confidence * 0.8, 6.0)  # Cap at 6.0 for mean reversion
+                        logger.warning(f"🔴 EXTREME MOVE ({abs_move:.0f} pts): FLIPPING to {adjusted_direction} "
+                                     f"mean reversion mode (was {bias_direction})")
+                    else:
+                        # Low confidence = neutralize to avoid chasing
+                        adjusted_direction = 'NEUTRAL'
+                        adjusted_confidence = 0.0
+                        logger.warning(f"🔴 EXTREME MOVE ({abs_move:.0f} pts): NEUTRALIZING to avoid chasing {current_move_direction} move")
+                else:
+                    # Already counter-trend = strong boost for mean reversion
+                    adjusted_confidence *= 1.3  # +30% for mean reversion in extreme zone
+                    logger.info(f"✅ EXTREME MOVE ({abs_move:.0f} pts): Boosting {bias_direction} mean reversion +30%")
+            
+            # Additional check: Daily range exhaustion
+            if range_exhaustion_pct > 80:
+                if bias_direction == current_move_direction:
+                    adjusted_confidence *= 0.6  # Heavy penalty for chasing when range exhausted
+                    logger.warning(f"📏 RANGE EXHAUSTED ({range_exhaustion_pct:.0f}%): Reducing {bias_direction} confidence -40%")
+            
+            # Log move analysis
+            logger.info(f"📊 MOVE ANALYSIS: {move_from_open:+.0f} pts from open | Zone: {move_zone} | "
+                       f"Range: {daily_range_used:.0f}/{self.typical_daily_range:.0f} pts ({range_exhaustion_pct:.0f}%) | "
+                       f"Bias: {adjusted_direction} @ {adjusted_confidence:.1f}/10")
+            
+            return {
+                'direction': adjusted_direction,
+                'confidence': adjusted_confidence,
+                'zone': move_zone
+            }
+            
+        except Exception as e:
+            logger.error(f"Error checking move exhaustion: {e}")
+            return {'direction': bias_direction, 'confidence': confidence, 'zone': 'ERROR'}
     
     def _analyze_nifty_momentum(self, nifty_data: Dict) -> float:
         """Analyze NIFTY intraday momentum from today's open (percent)"""
@@ -710,20 +880,22 @@ class MarketDirectionalBias:
             elif adr >= 1.2:
                 breadth_confidence = 1.0
             # Bearish breadth
-            elif adr <= 0.67 and up_vol <= 40:
+            # TUNED: Widened from 0.67 to 0.70 to catch more bearish breadth signals
+            elif adr <= 0.70 and up_vol <= 40:
                 breadth_confidence = 2.0
                 internals_direction = "BEARISH" if internals_direction == "NEUTRAL" else internals_direction
             elif adr <= 0.85:
                 breadth_confidence = 1.0
             
             # 4. Regime adjustment (10% weight)
+            # TUNED: Reduced CHOPPY penalty from 0.5 to 0.7 (was too harsh)
             regime_multiplier = 1.0
             if internals.market_regime == "CHOPPY":
-                regime_multiplier = 0.5  # Reduce confidence in choppy markets
+                regime_multiplier = 0.7  # Moderate reduction in choppy markets
             elif internals.market_regime == "TRENDING":
                 regime_multiplier = 1.2  # Increase confidence in trending markets
             elif internals.market_regime == "VOLATILE_CHOPPY":
-                regime_multiplier = 0.3  # Very low confidence in volatile chop
+                regime_multiplier = 0.4  # Low confidence in volatile chop (was 0.3)
             
             # 2.5 Opening gap component (time-phase weighted)
             gap_pct = self._analyze_gap_component(nifty_data or {})
@@ -793,7 +965,8 @@ class MarketDirectionalBias:
             total_confidence = max(total_confidence, 0.0)
             
             # Check minimum threshold
-            if total_confidence < 3.0:
+            # TUNED: Lowered from 3.0 to 1.5 (same as basic calculation)
+            if total_confidence < 1.5:
                 final_direction = "NEUTRAL"
                 total_confidence = 0.0
             
