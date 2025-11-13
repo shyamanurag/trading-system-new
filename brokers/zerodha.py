@@ -686,12 +686,12 @@ class ZerodhaIntegration:
             return 'MIS'  # Margin Intraday Square-off
 
     def _get_exchange_for_symbol(self, symbol: str) -> str:
-        """Get appropriate exchange for symbol - FIXED for options"""
+        """Get appropriate exchange for symbol - FIXED for options and indices"""
         # 🔧 CRITICAL FIX: Options contracts (CE/PE) trade on NFO, not NSE
         if 'CE' in symbol or 'PE' in symbol:
             return 'NFO'  # Options contracts
-        elif symbol.endswith('-I'):
-            return 'NSE'  # Indices on NSE
+        elif symbol.endswith('-I') or symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX']:
+            return 'NSE'  # Indices on NSE (Zerodha uses NSE for index quotes)
         else:
             return 'NSE'  # Default to NSE for equities
 
@@ -2390,12 +2390,26 @@ class ZerodhaIntegration:
             
             logger.info(f"✅ Spot price for {underlying_symbol}: ₹{spot_price}")
             
-            # Step 2: Ensure NFO instruments are loaded
-            if self._nfo_instruments is None:
-                await self.get_instruments('NFO')
+            # Step 2: Ensure NFO instruments are loaded with retry
+            if self._nfo_instruments is None or len(self._nfo_instruments) == 0:
+                logger.info(f"🔄 Loading NFO instruments for {underlying_symbol} option chain...")
+                
+                # Try up to 3 times with delay
+                for attempt in range(3):
+                    nfo_result = await self.get_instruments('NFO')
+                    if nfo_result and len(nfo_result) > 0:
+                        logger.info(f"✅ Loaded {len(nfo_result)} NFO instruments (attempt {attempt + 1})")
+                        break
+                    
+                    if attempt < 2:
+                        logger.warning(f"⚠️ NFO instruments fetch attempt {attempt + 1} returned empty, retrying in 2s...")
+                        await asyncio.sleep(2)
+                else:
+                    logger.error(f"❌ Failed to fetch NFO instruments after 3 attempts for {underlying_symbol}")
+                    return {}
             
-            if not self._nfo_instruments:
-                logger.error("❌ No NFO instruments available")
+            if not self._nfo_instruments or len(self._nfo_instruments) == 0:
+                logger.error(f"❌ No NFO instruments available for {underlying_symbol} option chain")
                 return {}
             
             # Step 3: Filter options for this underlying and expiry

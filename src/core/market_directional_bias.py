@@ -247,19 +247,22 @@ class MarketDirectionalBias:
     def _analyze_nifty_momentum(self, nifty_data: Dict) -> float:
         """Analyze NIFTY intraday momentum from today's open (percent)"""
         try:
-            # Try multiple possible field names for price change
+            # CRITICAL FIX: ALWAYS calculate change from LTP and open
+            # Don't trust the provided change_percent field as it's often stale/wrong
             change_percent = 0.0
-            for field in ['change_percent', 'price_change', 'change_pct', 'change', 'pct_change']:
-                if field in nifty_data:
-                    change_percent = float(nifty_data[field])
-                    break
-            
-            # If still zero, try to calculate from price data
-            if change_percent == 0.0 and 'ltp' in nifty_data and 'open' in nifty_data:
+            if 'ltp' in nifty_data and 'open' in nifty_data:
                 ltp = float(nifty_data.get('ltp', 0))
                 open_price = float(nifty_data.get('open', 0))
                 if open_price > 0:
                     change_percent = ((ltp - open_price) / open_price) * 100
+                    logger.debug(f"✅ Calculated NIFTY change: {change_percent:+.2f}% (LTP={ltp:.2f}, Open={open_price:.2f})")
+            else:
+                # Fallback: Try to get from tick data fields if LTP/open not available
+                for field in ['change_percent', 'price_change', 'change_pct', 'change', 'pct_change']:
+                    if field in nifty_data:
+                        change_percent = float(nifty_data[field])
+                        logger.debug(f"⚠️ Using provided {field}: {change_percent:+.2f}% (LTP/open not available)")
+                        break
                     
             ltp = float(nifty_data.get('ltp', 0))
             
