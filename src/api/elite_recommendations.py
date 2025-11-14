@@ -520,9 +520,12 @@ autonomous_scanner = AutonomousEliteScanner()
 async def get_elite_recommendations():
     """Get current elite trading recommendations using REAL strategies + Live Signal Recorder"""
     try:
+        logger.info("📊 ELITE RECOMMENDATIONS ENDPOINT CALLED - Fetching live signals...")
+        
         # Get live recorded signals from signal recorder
         from src.core.signal_recorder import get_all_elite_recommendations
         live_recommendations = await get_all_elite_recommendations()
+        logger.info(f"✅ Retrieved {len(live_recommendations)} live recommendations from signal recorder")
         
         # Use intelligent caching for strategy-based recommendations
         cache_duration_seconds = 30
@@ -532,9 +535,11 @@ async def get_elite_recommendations():
             logger.info("🔄 Running fresh elite scan using REAL strategies...")
             strategy_recommendations = await autonomous_scanner.scan_for_elite_setups()
             autonomous_scanner.cached_recommendations = strategy_recommendations
+            logger.info(f"✅ Fresh scan completed: {len(strategy_recommendations)} strategy recommendations")
         else:
             logger.info("⚡ Using cached elite recommendations")
             strategy_recommendations = autonomous_scanner.cached_recommendations
+            logger.info(f"📦 Cached recommendations: {len(strategy_recommendations)}")
         
         # Combine live signals with strategy recommendations
         all_recommendations = live_recommendations + strategy_recommendations
@@ -563,6 +568,20 @@ async def get_elite_recommendations():
             reverse=True
         )
         
+        logger.info(f"📊 FINAL RESULT: {len(active_recommendations)} active recommendations "
+                   f"({len(live_recommendations)} live + {len(strategy_recommendations)} strategy)")
+        logger.info(f"   Filtered from {len(all_recommendations)} total recommendations")
+        
+        if len(active_recommendations) == 0:
+            logger.warning("⚠️ NO ACTIVE RECOMMENDATIONS FOUND - Check:")
+            logger.warning("   1. Are strategies generating signals?")
+            logger.warning("   2. Are signals meeting min_confidence threshold (0.75)?")
+            logger.warning("   3. Are signals in ACTIVE/GENERATED/PENDING_EXECUTION status?")
+        else:
+            logger.info(f"✅ Returning {len(active_recommendations)} recommendations:")
+            for i, rec in enumerate(active_recommendations[:3], 1):  # Log first 3
+                logger.info(f"   {i}. {rec.get('symbol')} - {rec.get('direction')} - Confidence: {rec.get('confidence')}%")
+        
         return {
             "success": True,
             "recommendations": active_recommendations,
@@ -576,7 +595,12 @@ async def get_elite_recommendations():
             "timestamp": datetime.now().isoformat(),
             "next_scan": (datetime.now() + timedelta(minutes=autonomous_scanner.scan_interval_minutes)).isoformat(),
             "strategies_used": list(autonomous_scanner.strategies.keys()) if autonomous_scanner.strategies else [],
-            "cache_status": "LIVE_SIGNALS_INTEGRATED"
+            "cache_status": "LIVE_SIGNALS_INTEGRATED",
+            "debug_info": {
+                "total_before_filter": len(all_recommendations),
+                "active_after_filter": len(active_recommendations),
+                "min_confidence": autonomous_scanner.min_confidence
+            }
         }
         
     except Exception as e:
