@@ -796,16 +796,20 @@ class ZerodhaIntegration:
                     symbol = self._token_to_symbol.get(instrument_token, f"TOKEN_{instrument_token}")
                     
                     # Transform to standard format matching quote API
+                    # 🔍 CRITICAL: In Zerodha ticks, ohlc.close is PREVIOUS DAY's close, NOT today's close!
+                    ohlc_data = tick.get('ohlc', {})
+                    prev_close = ohlc_data.get('close', 0)
+                    
                     tick_data = {
                         'symbol': symbol,
                         'ltp': tick.get('last_price', 0),
-                        'open': tick.get('ohlc', {}).get('open', 0),
-                        'high': tick.get('ohlc', {}).get('high', 0),
-                        'low': tick.get('ohlc', {}).get('low', 0),
-                        'close': tick.get('ohlc', {}).get('close', 0),
+                        'open': ohlc_data.get('open', 0),
+                        'high': ohlc_data.get('high', 0),
+                        'low': ohlc_data.get('low', 0),
+                        'previous_close': prev_close,  # 🎯 THIS IS PREVIOUS DAY's CLOSE
                         'volume': tick.get('volume', 0),
                         'change': tick.get('change', 0),
-                        'changeper': tick.get('change', 0) / tick.get('ohlc', {}).get('close', 1) * 100 if tick.get('ohlc', {}).get('close', 0) > 0 else 0,
+                        'change_percent': (tick.get('change', 0) / prev_close * 100) if prev_close > 0 else 0,
                         'bid': tick.get('depth', {}).get('buy', [{}])[0].get('price', 0) if tick.get('depth', {}).get('buy') else 0,
                         'ask': tick.get('depth', {}).get('sell', [{}])[0].get('price', 0) if tick.get('depth', {}).get('sell') else 0,
                         'depth': tick.get('depth', {}),

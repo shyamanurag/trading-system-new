@@ -256,14 +256,14 @@ class EnhancedPositionOpeningDecision:
                 logger.error(f"   Time elapsed: {time_since_breach}")
                 logger.error(f"   Total realized loss: ₹{abs(self.daily_realized_pnl):,.2f}")
                 
-            return PositionDecisionResult(
-                decision=PositionDecision.REJECTED_RISK,
-                confidence_score=0.0,
-                risk_score=1.0,  # Maximum risk
-                position_size=0,
-                reasoning=f"DAILY LOSS LIMIT BREACHED: Lost {abs(self.daily_realized_pnl):,.0f} (>{self.daily_loss_limit_pct*100}% limit). NO NEW TRADES TODAY.",
-                metadata={'risk_level': 'EXTREME'}
-            )
+                return PositionDecisionResult(
+                    decision=PositionDecision.REJECTED_RISK,
+                    confidence_score=0.0,
+                    risk_score=10.0,  # Maximum risk
+                    position_size=0,
+                    reasoning=f"DAILY LOSS LIMIT BREACHED: Lost {abs(self.daily_realized_pnl):,.0f} (>{self.daily_loss_limit_pct*100}% limit). NO NEW TRADES TODAY.",
+                    metadata={'risk_level': 'EXTREME'}
+                )
             
             # Calculate current daily P&L
             if self.daily_start_capital is None or self.daily_start_capital == 0:
