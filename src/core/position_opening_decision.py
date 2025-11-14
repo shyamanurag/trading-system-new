@@ -256,12 +256,14 @@ class EnhancedPositionOpeningDecision:
                 logger.error(f"   Time elapsed: {time_since_breach}")
                 logger.error(f"   Total realized loss: ₹{abs(self.daily_realized_pnl):,.2f}")
                 
-                return PositionDecisionResult(
-                    decision=PositionDecision.REJECTED,
-                    reasoning=f"DAILY LOSS LIMIT BREACHED: Lost {abs(self.daily_realized_pnl):,.0f} (>{self.daily_loss_limit_pct*100}% limit). NO NEW TRADES TODAY.",
-                    confidence_adjustment=0.0,
-                    risk_level=RiskLevel.CRITICAL
-                )
+            return PositionDecisionResult(
+                decision=PositionDecision.REJECTED,
+                confidence_score=0.0,
+                risk_score=1.0,  # Maximum risk
+                position_size=0,
+                reasoning=f"DAILY LOSS LIMIT BREACHED: Lost {abs(self.daily_realized_pnl):,.0f} (>{self.daily_loss_limit_pct*100}% limit). NO NEW TRADES TODAY.",
+                metadata={'risk_level': 'EXTREME'}
+            )
             
             # Calculate current daily P&L
             if self.daily_start_capital is None or self.daily_start_capital == 0:
@@ -292,12 +294,14 @@ class EnhancedPositionOpeningDecision:
                 logger.critical(f"   Max Allowed Loss: ₹{max_allowed_loss:,.2f} ({self.daily_loss_limit_pct*100}%)")
                 logger.critical(f"   🛑 ALL NEW TRADING HALTED FOR TODAY")
                 
-                return PositionDecisionResult(
-                    decision=PositionDecision.REJECTED,
-                    reasoning=f"DAILY LOSS LIMIT BREACHED: {abs(daily_pnl_pct):.2f}% loss (limit: {self.daily_loss_limit_pct*100}%). Trading halted.",
-                    confidence_adjustment=0.0,
-                    risk_level=RiskLevel.CRITICAL
-                )
+            return PositionDecisionResult(
+                decision=PositionDecision.REJECTED,
+                confidence_score=0.0,
+                risk_score=1.0,  # Maximum risk
+                position_size=0,
+                reasoning=f"DAILY LOSS LIMIT BREACHED: {abs(daily_pnl_pct):.2f}% loss (limit: {self.daily_loss_limit_pct*100}%). Trading halted.",
+                metadata={'risk_level': 'EXTREME'}
+            )
             
             # Log current status (approaching limit warning)
             loss_used_pct = (abs(total_daily_pnl) / max_allowed_loss) * 100 if total_daily_pnl < 0 else 0.0
@@ -314,9 +318,11 @@ class EnhancedPositionOpeningDecision:
             
             return PositionDecisionResult(
                 decision=PositionDecision.APPROVED,
+                confidence_score=1.0,
+                risk_score=0.1,  # Low risk
+                position_size=0,
                 reasoning="Daily loss limit check passed",
-                confidence_adjustment=1.0,
-                risk_level=RiskLevel.LOW
+                metadata={'risk_level': 'LOW'}
             )
             
         except Exception as e:
@@ -327,9 +333,11 @@ class EnhancedPositionOpeningDecision:
             # FAIL SAFE: If error checking limit, allow trade (don't block on error)
             return PositionDecisionResult(
                 decision=PositionDecision.APPROVED,
+                confidence_score=1.0,
+                risk_score=0.3,  # Moderate risk
+                position_size=0,
                 reasoning="Daily loss limit check failed (allowed by default)",
-                confidence_adjustment=1.0,
-                risk_level=RiskLevel.MEDIUM
+                metadata={'risk_level': 'MODERATE'}
             )
     
     async def _validate_basic_signal(self, signal: Dict) -> PositionDecisionResult:
