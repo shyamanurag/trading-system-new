@@ -249,6 +249,7 @@ class EnhancedPositionOpeningDecision:
                 logger.info(f"   Daily loss limit: {self.daily_loss_limit_pct*100}% = ₹{self.daily_start_capital * self.daily_loss_limit_pct:,.2f}")
             
             # If already breached, reject immediately
+            # FIXED: 2025-11-14 - Return statement moved INSIDE if block
             if self.daily_loss_limit_breached:
                 time_since_breach = current_datetime - self.daily_loss_breach_time if self.daily_loss_breach_time else None
                 logger.error(f"🚨 DAILY LOSS LIMIT BREACHED: NO NEW POSITIONS ALLOWED")

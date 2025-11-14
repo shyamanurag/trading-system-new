@@ -806,7 +806,7 @@ class ZerodhaIntegration:
                         'open': ohlc_data.get('open', 0),
                         'high': ohlc_data.get('high', 0),
                         'low': ohlc_data.get('low', 0),
-                        'previous_close': prev_close,  # 🎯 THIS IS PREVIOUS DAY's CLOSE
+                        'previous_close': prev_close,  # 🎯 THIS IS PREVIOUS DAY's CLOSE (FIXED: 2025-11-14)
                         'volume': tick.get('volume', 0),
                         'change': tick.get('change', 0),
                         'change_percent': (tick.get('change', 0) / prev_close * 100) if prev_close > 0 else 0,
@@ -2439,6 +2439,7 @@ class ZerodhaIntegration:
             # NIFTY options → name='NIFTY'
             # BANKNIFTY options → name='NIFTY BANK'  
             # FINNIFTY options → name='FINNIFTY'
+            # FIXED: 2025-11-14 - Map internal symbols to NFO instrument names
             nfo_name_map = {
                 'NIFTY': 'NIFTY',
                 'NIFTY-I': 'NIFTY',
