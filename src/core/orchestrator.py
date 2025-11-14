@@ -4045,13 +4045,21 @@ class TradingOrchestrator:
                 if hasattr(self, 'zerodha_client') and self.zerodha_client:
                     margins_dict = await self.zerodha_client.get_margins()
                     if margins_dict and isinstance(margins_dict, dict):
-                        # Extract available cash from equity margins dict
-                        available_cash = margins_dict.get('equity', {}).get('available', {}).get('cash', 0)
-                        available_cash = float(available_cash) if available_cash else 0.0
+                        # Extract total available margin (net) from equity margins dict
+                        equity_data = margins_dict.get('equity', {})
                         
-                        if available_cash > 0:
-                            available_capital = available_cash
-                            self.logger.info(f"✅ Position opening using real capital: ₹{available_capital:,.2f}")
+                        # Priority 1: Use 'net' (total available margin including collateral)
+                        available_margin = equity_data.get('net', 0)
+                        
+                        # Priority 2: Fall back to 'available' cash if net is zero
+                        if not available_margin or available_margin <= 0:
+                            available_margin = equity_data.get('available', {}).get('cash', 0)
+                        
+                        available_margin = float(available_margin) if available_margin else 0.0
+                        
+                        if available_margin > 0:
+                            available_capital = available_margin
+                            self.logger.info(f"✅ Position opening using real Zerodha margin: ₹{available_capital:,.2f}")
                         else:
                             # SANDBOX MODE FALLBACK: Use default capital for testing
                             self.logger.warning("⚠️ Zerodha returned zero margin - using default capital for testing")
