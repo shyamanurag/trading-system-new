@@ -929,10 +929,15 @@ class ZerodhaIntegration:
                 logger.error("❌ No valid instrument tokens found")
                 return False
             
-            # Log index symbols that were successfully mapped
+            # Log index symbols that were successfully mapped with tokens
             index_symbols = [s for s in symbol_mapping.keys() if 'NIFTY' in s or 'BANKNIFTY' in s or 'FINNIFTY' in s]
             if index_symbols:
                 logger.info(f"📊 Index symbols subscribed: {', '.join(index_symbols)}")
+                # Log actual tokens for debugging
+                for idx_sym in index_symbols:
+                    zerodha_symbol = symbol_mapping.get(idx_sym)
+                    token = token_map.get(zerodha_symbol)
+                    logger.info(f"   {idx_sym} → {zerodha_symbol} → token:{token}")
             
             logger.info(f"📡 Starting WebSocket for {len(instrument_tokens)} symbols")
             
