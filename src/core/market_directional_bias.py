@@ -387,39 +387,124 @@ class MarketDirectionalBias:
             return {'direction': bias_direction, 'confidence': confidence, 'zone': 'ERROR'}
     
     def _analyze_nifty_momentum(self, nifty_data: Dict) -> float:
-        """Analyze NIFTY momentum from PREVIOUS DAY CLOSE (not today's open) - for market directional bias"""
+        """
+        DUAL-TIMEFRAME MOMENTUM ANALYSIS
+        Calculates BOTH day change (prev close → current) AND intraday change (open → current)
+        Combines them to detect: gap fades, reversals, continuations, choppy action
+        """
         try:
-            change_percent = 0.0
             ltp = float(nifty_data.get('ltp', 0))
+            if ltp <= 0:
+                return 0.0
             
-            # Priority 1: Use previous close (day's overall movement)
-            if 'ltp' in nifty_data and 'previous_close' in nifty_data:
-                previous_close = float(nifty_data.get('previous_close', 0))
-                if previous_close > 0:
-                    change_percent = ((ltp - previous_close) / previous_close) * 100
-                    logger.debug(f"✅ Calculated NIFTY change from PREV CLOSE: {change_percent:+.2f}% (LTP={ltp:.2f}, PrevClose={previous_close:.2f})")
-                    return change_percent
+            # ============= CALCULATE DAY CHANGE (Previous Close → Current) =============
+            day_change_pct = 0.0
+            previous_close = float(nifty_data.get('previous_close', 0))
             
-            # Priority 2: Use provided day change_percent (usually correct)
-            for field in ['change_percent', 'day_change_percent', 'pct_change']:
-                if field in nifty_data:
-                    change_percent = float(nifty_data[field])
-                    logger.debug(f"Using provided {field}: {change_percent:+.2f}%")
-                    return change_percent
+            if previous_close > 0:
+                day_change_pct = ((ltp - previous_close) / previous_close) * 100
+            elif 'change_percent' in nifty_data:
+                day_change_pct = float(nifty_data['change_percent'])
             
-            # Priority 3: LAST RESORT - use open (intraday only, less useful for bias)
-            if 'open' in nifty_data:
-                open_price = float(nifty_data.get('open', 0))
-                if open_price > 0:
-                    change_percent = ((ltp - open_price) / open_price) * 100
-                    logger.warning(f"⚠️ Using INTRADAY change from open: {change_percent:+.2f}% (LTP={ltp:.2f}, Open={open_price:.2f}) - less accurate for bias")
-                    return change_percent
-                    
-            ltp = float(nifty_data.get('ltp', 0))
+            # ============= CALCULATE INTRADAY CHANGE (Open → Current) =============
+            intraday_change_pct = 0.0
+            open_price = float(nifty_data.get('open', 0))
             
+            if open_price > 0:
+                intraday_change_pct = ((ltp - open_price) / open_price) * 100
+            
+            # ============= DETECT GAP & REVERSAL PATTERNS =============
+            gap_open_pct = 0.0
+            if previous_close > 0 and open_price > 0:
+                gap_open_pct = ((open_price - previous_close) / previous_close) * 100
+            
+            # Pattern detection
+            pattern = self._detect_market_pattern(day_change_pct, intraday_change_pct, gap_open_pct)
+            
+            # ============= CALCULATE WEIGHTED BIAS =============
+            # Day change = 60% weight (overall trend)
+            # Intraday change = 40% weight (current momentum)
+            weighted_change = (day_change_pct * 0.6) + (intraday_change_pct * 0.4)
+            
+            # Log comprehensive analysis
+            logger.info(
+                f"📊 NIFTY DUAL-TIMEFRAME ANALYSIS:\n"
+                f"   LTP: {ltp:.2f} | Prev Close: {previous_close:.2f} | Open: {open_price:.2f}\n"
+                f"   📈 Day Change: {day_change_pct:+.2f}% (Prev Close → Now)\n"
+                f"   ⚡ Intraday: {intraday_change_pct:+.2f}% (Open → Now)\n"
+                f"   🎯 Gap at Open: {gap_open_pct:+.2f}%\n"
+                f"   🔍 Pattern: {pattern}\n"
+                f"   ⚖️  Weighted Bias: {weighted_change:+.2f}% (60% day, 40% intraday)"
+            )
+            
+            # Store for strategies to access
+            self.nifty_data = {
+                'ltp': ltp,
+                'day_change_pct': day_change_pct,
+                'intraday_change_pct': intraday_change_pct,
+                'gap_open_pct': gap_open_pct,
+                'pattern': pattern,
+                'weighted_bias': weighted_change
+            }
+            
+            # Update history
+            self._update_nifty_history(weighted_change, ltp)
+            
+            return weighted_change
+            
+        except Exception as e:
+            logger.error(f"Error in dual-timeframe NIFTY analysis: {e}")
+            return 0.0
+    
+    def _detect_market_pattern(self, day_change: float, intraday_change: float, gap_pct: float) -> str:
+        """
+        Detect market patterns based on day vs intraday movement
+        Returns: Pattern description for logging and decision making
+        """
+        try:
+            # Both positive = Bullish continuation
+            if day_change > 0.2 and intraday_change > 0.15:
+                return "BULLISH CONTINUATION"
+            
+            # Both negative = Bearish continuation
+            if day_change < -0.2 and intraday_change < -0.15:
+                return "BEARISH CONTINUATION"
+            
+            # Gap down but recovering = Potential reversal
+            if gap_pct < -0.3 and intraday_change > 0.2:
+                recovery_pct = abs(intraday_change / gap_pct) * 100 if gap_pct != 0 else 0
+                return f"GAP DOWN RECOVERY ({recovery_pct:.0f}% recovered)"
+            
+            # Gap up but fading = Weakness
+            if gap_pct > 0.3 and intraday_change < -0.2:
+                fade_pct = abs(intraday_change / gap_pct) * 100 if gap_pct != 0 else 0
+                return f"GAP UP FADE ({fade_pct:.0f}% faded)"
+            
+            # Day bearish but intraday bullish = Intraday reversal attempt
+            if day_change < -0.2 and intraday_change > 0.15:
+                return "INTRADAY BULLISH REVERSAL"
+            
+            # Day bullish but intraday bearish = Losing momentum
+            if day_change > 0.2 and intraday_change < -0.15:
+                return "INTRADAY WEAKNESS"
+            
+            # Low movement = Choppy
+            if abs(day_change) < 0.15 and abs(intraday_change) < 0.15:
+                return "CHOPPY/RANGE-BOUND"
+            
+            # Default
+            return "MIXED SIGNALS"
+            
+        except Exception as e:
+            logger.error(f"Error detecting pattern: {e}")
+            return "UNKNOWN"
+    
+    def _update_nifty_history(self, weighted_change: float, ltp: float):
+        """Update NIFTY history with weighted change"""
+        try:
             # Update NIFTY history
             self.nifty_history.append({
-                'change_percent': change_percent,
+                'change_percent': weighted_change,
                 'ltp': ltp,
                 'timestamp': datetime.now()
             })
@@ -427,26 +512,9 @@ class MarketDirectionalBias:
             # Keep only recent history
             if len(self.nifty_history) > self.max_history:
                 self.nifty_history = self.nifty_history[-self.max_history:]
-            
-            # Calculate momentum strength
-            if len(self.nifty_history) >= 5:
-                # Use moving average of recent changes for trend confirmation
-                recent_changes = [h['change_percent'] for h in self.nifty_history[-5:]]
-                momentum = np.mean(recent_changes)
-                
-                # Apply trend consistency bonus
-                trend_consistency = self._calculate_trend_consistency(recent_changes)
-                momentum *= (1 + trend_consistency * 0.5)  # Up to 50% bonus for consistency
-                
-                logger.debug(f"🎯 NIFTY momentum calculated: {momentum:.2f}% (from {len(recent_changes)} recent changes)")
-                return momentum
-            else:
-                logger.debug(f"🎯 NIFTY momentum (single point): {change_percent:.2f}%")
-                return change_percent
                 
         except Exception as e:
-            logger.warning(f"Error analyzing NIFTY momentum: {e}")
-            return 0.0
+            logger.warning(f"Error updating NIFTY history: {e}")
 
     def _analyze_gap_component(self, nifty_data: Dict) -> float:
         """Analyze overnight gap: today open vs yesterday close (percent)"""

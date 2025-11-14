@@ -2862,6 +2862,141 @@ class BaseStrategy:
             logger.debug(f"Could not get NIFTY data: {e}")
             return None
     
+    def analyze_stock_dual_timeframe(self, symbol: str, stock_data: Dict) -> Dict:
+        """
+        DUAL-TIMEFRAME STOCK ANALYSIS (same as NIFTY logic)
+        Analyzes BOTH day change (prev close → current) AND intraday change (open → current)
+        
+        Returns:
+            Dict with: day_change_pct, intraday_change_pct, gap_pct, pattern, weighted_bias, alignment_with_market
+        """
+        try:
+            ltp = float(stock_data.get('ltp', 0))
+            if ltp <= 0:
+                return {'error': 'Invalid LTP', 'weighted_bias': 0.0}
+            
+            # ============= CALCULATE DAY CHANGE (Previous Close → Current) =============
+            day_change_pct = 0.0
+            previous_close = float(stock_data.get('previous_close', 0))
+            
+            if previous_close > 0:
+                day_change_pct = ((ltp - previous_close) / previous_close) * 100
+            elif 'change_percent' in stock_data:
+                day_change_pct = float(stock_data['change_percent'])
+            
+            # ============= CALCULATE INTRADAY CHANGE (Open → Current) =============
+            intraday_change_pct = 0.0
+            open_price = float(stock_data.get('open', 0))
+            
+            if open_price > 0:
+                intraday_change_pct = ((ltp - open_price) / open_price) * 100
+            
+            # ============= DETECT GAP & REVERSAL PATTERNS =============
+            gap_pct = 0.0
+            if previous_close > 0 and open_price > 0:
+                gap_pct = ((open_price - previous_close) / previous_close) * 100
+            
+            # Pattern detection
+            pattern = self._detect_stock_pattern(day_change_pct, intraday_change_pct, gap_pct)
+            
+            # ============= CALCULATE WEIGHTED BIAS =============
+            # Day change = 60% weight (overall trend)
+            # Intraday change = 40% weight (current momentum)
+            weighted_bias = (day_change_pct * 0.6) + (intraday_change_pct * 0.4)
+            
+            # ============= ALIGN WITH MARKET (NIFTY) BIAS =============
+            # Check if stock is moving with or against overall market
+            alignment = "UNKNOWN"
+            if hasattr(self, 'market_bias') and hasattr(self.market_bias, 'nifty_data'):
+                nifty_weighted = self.market_bias.nifty_data.get('weighted_bias', 0)
+                
+                # Both positive = WITH market
+                if weighted_bias > 0.1 and nifty_weighted > 0.1:
+                    alignment = "WITH MARKET (BULL)"
+                # Both negative = WITH market
+                elif weighted_bias < -0.1 and nifty_weighted < -0.1:
+                    alignment = "WITH MARKET (BEAR)"
+                # Stock bullish, market bearish = AGAINST
+                elif weighted_bias > 0.1 and nifty_weighted < -0.1:
+                    alignment = "AGAINST MARKET (RELATIVE STRENGTH)"
+                # Stock bearish, market bullish = AGAINST
+                elif weighted_bias < -0.1 and nifty_weighted > 0.1:
+                    alignment = "AGAINST MARKET (RELATIVE WEAKNESS)"
+                else:
+                    alignment = "NEUTRAL"
+            
+            result = {
+                'symbol': symbol,
+                'ltp': ltp,
+                'previous_close': previous_close,
+                'open': open_price,
+                'day_change_pct': day_change_pct,
+                'intraday_change_pct': intraday_change_pct,
+                'gap_pct': gap_pct,
+                'pattern': pattern,
+                'weighted_bias': weighted_bias,
+                'alignment': alignment
+            }
+            
+            # Log for significant stocks/movements
+            if abs(weighted_bias) > 0.5 or abs(gap_pct) > 0.5:
+                logger.info(
+                    f"📊 {symbol} DUAL-TIMEFRAME:\n"
+                    f"   LTP: ₹{ltp:.2f} | Prev: ₹{previous_close:.2f} | Open: ₹{open_price:.2f}\n"
+                    f"   📈 Day: {day_change_pct:+.2f}% | ⚡ Intraday: {intraday_change_pct:+.2f}% | 🎯 Gap: {gap_pct:+.2f}%\n"
+                    f"   🔍 Pattern: {pattern} | ⚖️  Weighted: {weighted_bias:+.2f}%\n"
+                    f"   🌍 Market Alignment: {alignment}"
+                )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error analyzing {symbol} dual-timeframe: {e}")
+            return {'error': str(e), 'weighted_bias': 0.0}
+    
+    def _detect_stock_pattern(self, day_change: float, intraday_change: float, gap_pct: float) -> str:
+        """
+        Detect stock patterns based on day vs intraday movement
+        Same logic as NIFTY pattern detection
+        """
+        try:
+            # Both positive = Bullish continuation
+            if day_change > 0.3 and intraday_change > 0.2:
+                return "BULLISH CONTINUATION"
+            
+            # Both negative = Bearish continuation
+            if day_change < -0.3 and intraday_change < -0.2:
+                return "BEARISH CONTINUATION"
+            
+            # Gap down but recovering = Potential reversal
+            if gap_pct < -0.5 and intraday_change > 0.3:
+                recovery_pct = abs(intraday_change / gap_pct) * 100 if gap_pct != 0 else 0
+                return f"GAP DOWN RECOVERY ({recovery_pct:.0f}%)"
+            
+            # Gap up but fading = Weakness
+            if gap_pct > 0.5 and intraday_change < -0.3:
+                fade_pct = abs(intraday_change / gap_pct) * 100 if gap_pct != 0 else 0
+                return f"GAP UP FADE ({fade_pct:.0f}%)"
+            
+            # Day bearish but intraday bullish = Intraday reversal
+            if day_change < -0.3 and intraday_change > 0.2:
+                return "INTRADAY REVERSAL (BULL)"
+            
+            # Day bullish but intraday bearish = Losing momentum
+            if day_change > 0.3 and intraday_change < -0.2:
+                return "INTRADAY WEAKNESS"
+            
+            # Low movement = Choppy
+            if abs(day_change) < 0.2 and abs(intraday_change) < 0.2:
+                return "CHOPPY/RANGE"
+            
+            # Default
+            return "MIXED"
+            
+        except Exception as e:
+            logger.error(f"Error detecting stock pattern: {e}")
+            return "UNKNOWN"
+    
     def validate_signal_levels(self, entry_price: float, stop_loss: float, 
                               target: float, action: str) -> bool:
         """Validate that signal levels make logical sense"""

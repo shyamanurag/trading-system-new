@@ -492,7 +492,7 @@ class EnhancedPositionOpeningDecision:
             )
     
     async def _check_market_bias_alignment(self, symbol: str, action: str, confidence: float, market_bias, market_data: Dict) -> PositionDecisionResult:
-        """Check alignment with market bias including relative strength"""
+        """Check alignment with market bias including relative strength AND dual-timeframe analysis"""
         try:
             if not market_bias:
                 # No market bias system - allow with moderate confidence requirement
@@ -515,14 +515,38 @@ class EnhancedPositionOpeningDecision:
                         metadata={'no_bias_system': True}
                     )
             
-            # Extract stock's change percent for relative strength check
+            # ============= DUAL-TIMEFRAME STOCK ANALYSIS =============
+            dual_timeframe_data = None
             stock_change_percent = None
+            
             if market_data and symbol in market_data:
                 stock_data = market_data[symbol]
-                # Try to get change_percent from market data
-                stock_change_percent = stock_data.get('change_percent') or stock_data.get('provider_change_percent')
-                if stock_change_percent is not None:
-                    stock_change_percent = float(stock_change_percent)
+                
+                # 🎯 NEW: Analyze stock's dual-timeframe momentum
+                # (Previous Close vs Current) AND (Today's Open vs Current)
+                from strategies.base_strategy import BaseStrategy
+                temp_strategy = BaseStrategy({'signal_cooldown_seconds': 1})
+                temp_strategy.market_bias = market_bias  # Link for alignment check
+                
+                dual_timeframe_data = temp_strategy.analyze_stock_dual_timeframe(symbol, stock_data)
+                
+                # Extract for bias check
+                stock_change_percent = dual_timeframe_data.get('day_change_pct')
+                
+                # Log dual-timeframe insights
+                logger.info(
+                    f"📊 {symbol} DUAL-TIMEFRAME CHECK:\n"
+                    f"   Day: {dual_timeframe_data.get('day_change_pct', 0):+.2f}% | "
+                    f"   Intraday: {dual_timeframe_data.get('intraday_change_pct', 0):+.2f}%\n"
+                    f"   Pattern: {dual_timeframe_data.get('pattern', 'UNKNOWN')} | "
+                    f"   Alignment: {dual_timeframe_data.get('alignment', 'UNKNOWN')}"
+                )
+                
+                # Fallback to traditional method if dual-timeframe fails
+                if stock_change_percent is None:
+                    stock_change_percent = stock_data.get('change_percent') or stock_data.get('provider_change_percent')
+                    if stock_change_percent is not None:
+                        stock_change_percent = float(stock_change_percent)
             
             # Use market bias system with relative strength check
             if market_bias.should_allow_signal(action, confidence, symbol=symbol, stock_change_percent=stock_change_percent):
