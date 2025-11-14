@@ -2435,9 +2435,27 @@ class ZerodhaIntegration:
                 return {}
             
             # Step 3: Filter options for this underlying and expiry
+            # NFO instrument 'name' field mapping:
+            # NIFTY options → name='NIFTY'
+            # BANKNIFTY options → name='NIFTY BANK'  
+            # FINNIFTY options → name='FINNIFTY'
+            nfo_name_map = {
+                'NIFTY': 'NIFTY',
+                'NIFTY-I': 'NIFTY',
+                'BANKNIFTY': 'NIFTY BANK',
+                'BANKNIFTY-I': 'NIFTY BANK',
+                'FINNIFTY': 'FINNIFTY',
+                'FINNIFTY-I': 'FINNIFTY',
+                'MIDCPNIFTY': 'NIFTY MID SELECT',
+                'MIDCPNIFTY-I': 'NIFTY MID SELECT'
+            }
+            
+            nfo_search_name = nfo_name_map.get(underlying_symbol, underlying_symbol)
+            logger.info(f"🔍 Searching NFO instruments for name='{nfo_search_name}' (input: {underlying_symbol})")
+            
             options_list = []
             for inst in self._nfo_instruments:
-                if inst.get('name') == underlying_symbol and inst.get('instrument_type') in ['CE', 'PE']:
+                if inst.get('name') == nfo_search_name and inst.get('instrument_type') in ['CE', 'PE']:
                     # If expiry specified, filter by it
                     inst_expiry = inst.get('expiry')
                     if expiry:
@@ -2449,7 +2467,9 @@ class ZerodhaIntegration:
                         options_list.append(inst)
             
             if not options_list:
-                logger.warning(f"⚠️ No options found for {underlying_symbol}")
+                logger.error(f"❌ No options found for {underlying_symbol} (searched name: '{nfo_search_name}')")
+                # DEBUG: Show first 3 NFO instruments to verify name format
+                logger.error(f"   DEBUG: Sample NFO instruments: {[{k: inst.get(k) for k in ['name', 'tradingsymbol', 'instrument_type']} for inst in self._nfo_instruments[:3]]}")
                 return {}
             
             # Step 4: If no expiry specified, find nearest expiry
