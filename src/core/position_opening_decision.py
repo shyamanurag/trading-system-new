@@ -22,6 +22,9 @@ from enum import Enum
 import numpy as np
 import pytz
 
+# Import RiskLevel from schema
+from src.models.schema import RiskLevel
+
 logger = logging.getLogger(__name__)
 
 class PositionDecision(Enum):
@@ -124,7 +127,7 @@ class EnhancedPositionOpeningDecision:
             logger.info(f"   Current Positions: {len(current_positions)}")
             logger.info(f"   Market Bias Available: {market_bias is not None}")
             if market_bias:
-                logger.info(f"   Market Bias: {getattr(market_bias.current_bias, 'bias', 'unknown')}")
+                logger.info(f"   Market Bias: {getattr(market_bias.current_bias, 'direction', 'unknown')}")
                 logger.info(f"   Market Regime: {getattr(market_bias.current_bias, 'market_regime', 'unknown')}")
             
             # STEP 0: 🚨 DAILY LOSS LIMIT CHECK (CRITICAL - Check FIRST)

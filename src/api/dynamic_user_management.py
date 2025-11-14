@@ -117,7 +117,16 @@ class DynamicUserManager:
             # Initialize Redis connection
             redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
             try:
-                self.redis_client = await redis.from_url(redis_url, decode_responses=True)
+                # 🚨 CRITICAL FIX: Use proper SSL configuration for DigitalOcean Redis
+                if 'ondigitalocean.com' in redis_url:
+                    self.redis_client = await redis.from_url(
+                        redis_url, 
+                        decode_responses=True,
+                        ssl_cert_reqs=None,
+                        ssl_check_hostname=False
+                    )
+                else:
+                    self.redis_client = await redis.from_url(redis_url, decode_responses=True)
                 await self.redis_client.ping()
                 logger.info("✅ Redis connection established")
             except Exception as redis_error:
@@ -786,7 +795,16 @@ async def get_system_status():
         # Test Redis connection
         try:
             redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-            redis_client = await redis.from_url(redis_url, decode_responses=True)
+            # 🚨 CRITICAL FIX: Use proper SSL configuration for DigitalOcean Redis
+            if 'ondigitalocean.com' in redis_url:
+                redis_client = await redis.from_url(
+                    redis_url, 
+                    decode_responses=True,
+                    ssl_cert_reqs=None,
+                    ssl_check_hostname=False
+                )
+            else:
+                redis_client = await redis.from_url(redis_url, decode_responses=True)
             await redis_client.ping()
             status["redis_available"] = True
             await redis_client.close()

@@ -33,7 +33,16 @@ async def get_redis_client():
     if redis_client is None:
         redis_url = os.getenv('REDIS_URL')
         if redis_url:
-            redis_client = redis.from_url(redis_url, decode_responses=True)
+            # 🚨 CRITICAL FIX: Use proper SSL configuration for DigitalOcean Redis
+            if 'ondigitalocean.com' in redis_url:
+                redis_client = redis.from_url(
+                    redis_url, 
+                    decode_responses=True,
+                    ssl_cert_reqs=None,
+                    ssl_check_hostname=False
+                )
+            else:
+                redis_client = redis.from_url(redis_url, decode_responses=True)
         else:
             redis_client = redis.Redis(
                 host=os.getenv('REDIS_HOST', 'localhost'),

@@ -324,15 +324,25 @@ class TrueDataClient:
             logger.error(f"❌ Direct connection failed: {e}")
             
             # 🚨 CRITICAL FIX: Detect subscription expired error and block further attempts
-            if "subscription expired" in error_msg or "user subscription expired" in error_msg:
-                logger.error("❌ SUBSCRIPTION EXPIRED - Blocking further connection attempts")
+            if "subscription expired" in error_msg or "user subscription expired" in error_msg or "subscription" in error_msg:
+                logger.error("❌ SUBSCRIPTION EXPIRED - Blocking reconnection attempts for 1 hour")
                 logger.error("💡 Please renew your TrueData subscription")
                 logger.error(f"📅 Subscription validity ended: Check TrueData portal")
-                # Set permanent block flag
+                logger.error("🔄 System will use Zerodha-only mode for market data")
+                # Set permanent block flag (will be auto-reset after timeout)
                 truedata_connection_status['permanent_block'] = True
                 truedata_connection_status['error'] = 'SUBSCRIPTION_EXPIRED'
+                truedata_connection_status['retry_disabled'] = True
                 self._circuit_breaker_active = True
-                self._circuit_breaker_timeout = 86400  # 24 hours - don't retry until manual reset
+                self._circuit_breaker_timeout = 3600  # 1 hour cooldown (will auto-retry after renewal)
+                self.connected = False
+                self.td_obj = None
+                # Immediately disconnect to prevent recursion
+                try:
+                    if self.td_obj:
+                        self.td_obj.disconnect()
+                except:
+                    pass
                 return False
             
             if "user already connected" in error_msg or "already connected" in error_msg:
@@ -352,10 +362,24 @@ class TrueDataClient:
             
             # 🚨 CRITICAL: Check for permanent block (subscription expired)
             if truedata_connection_status.get('permanent_block', False):
-                logger.error("❌ TrueData connection PERMANENTLY BLOCKED - Subscription expired")
-                logger.error("💡 SOLUTION: Renew your TrueData subscription and restart the application")
-                logger.error("📞 Contact TrueData support to renew subscription")
-                return False
+                # Check if circuit breaker timeout has expired (subscription may be renewed)
+                if self._circuit_breaker_active and self._last_connection_failure is not None:
+                    time_since_failure = time.time() - self._last_connection_failure
+                    if time_since_failure >= self._circuit_breaker_timeout:
+                        logger.info("🔄 Circuit breaker timeout expired - attempting reconnection after potential subscription renewal")
+                        # Reset block flags to allow retry
+                        truedata_connection_status['permanent_block'] = False
+                        truedata_connection_status['retry_disabled'] = False
+                        self._circuit_breaker_active = False
+                        self._consecutive_failures = 0
+                    else:
+                        logger.warning(f"❌ TrueData connection blocked - Subscription expired (retry in {(self._circuit_breaker_timeout - time_since_failure)/60:.0f} min)")
+                        logger.info("💡 System using Zerodha-only mode for market data")
+                        return False
+                else:
+                    logger.error("❌ TrueData connection BLOCKED - Subscription expired")
+                    logger.error("💡 SOLUTION: Renew your TrueData subscription")
+                    return False
                 
             # Circuit breaker check
             if self._circuit_breaker_active:
@@ -460,7 +484,7 @@ class TrueDataClient:
                 truedata_connection_status['permanent_block'] = True
                 truedata_connection_status['error'] = 'SUBSCRIPTION_EXPIRED'
                 self._circuit_breaker_active = True
-                self._circuit_breaker_timeout = 86400
+                self._circuit_breaker_timeout = 3600  # 1 hour cooldown
             
             return False
 
