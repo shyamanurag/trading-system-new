@@ -387,24 +387,33 @@ class MarketDirectionalBias:
             return {'direction': bias_direction, 'confidence': confidence, 'zone': 'ERROR'}
     
     def _analyze_nifty_momentum(self, nifty_data: Dict) -> float:
-        """Analyze NIFTY intraday momentum from today's open (percent)"""
+        """Analyze NIFTY momentum from PREVIOUS DAY CLOSE (not today's open) - for market directional bias"""
         try:
-            # CRITICAL FIX: ALWAYS calculate change from LTP and open
-            # Don't trust the provided change_percent field as it's often stale/wrong
             change_percent = 0.0
-            if 'ltp' in nifty_data and 'open' in nifty_data:
-                ltp = float(nifty_data.get('ltp', 0))
+            ltp = float(nifty_data.get('ltp', 0))
+            
+            # Priority 1: Use previous close (day's overall movement)
+            if 'ltp' in nifty_data and 'previous_close' in nifty_data:
+                previous_close = float(nifty_data.get('previous_close', 0))
+                if previous_close > 0:
+                    change_percent = ((ltp - previous_close) / previous_close) * 100
+                    logger.debug(f"✅ Calculated NIFTY change from PREV CLOSE: {change_percent:+.2f}% (LTP={ltp:.2f}, PrevClose={previous_close:.2f})")
+                    return change_percent
+            
+            # Priority 2: Use provided day change_percent (usually correct)
+            for field in ['change_percent', 'day_change_percent', 'pct_change']:
+                if field in nifty_data:
+                    change_percent = float(nifty_data[field])
+                    logger.debug(f"Using provided {field}: {change_percent:+.2f}%")
+                    return change_percent
+            
+            # Priority 3: LAST RESORT - use open (intraday only, less useful for bias)
+            if 'open' in nifty_data:
                 open_price = float(nifty_data.get('open', 0))
                 if open_price > 0:
                     change_percent = ((ltp - open_price) / open_price) * 100
-                    logger.debug(f"✅ Calculated NIFTY change: {change_percent:+.2f}% (LTP={ltp:.2f}, Open={open_price:.2f})")
-            else:
-                # Fallback: Try to get from tick data fields if LTP/open not available
-                for field in ['change_percent', 'price_change', 'change_pct', 'change', 'pct_change']:
-                    if field in nifty_data:
-                        change_percent = float(nifty_data[field])
-                        logger.debug(f"⚠️ Using provided {field}: {change_percent:+.2f}% (LTP/open not available)")
-                        break
+                    logger.warning(f"⚠️ Using INTRADAY change from open: {change_percent:+.2f}% (LTP={ltp:.2f}, Open={open_price:.2f}) - less accurate for bias")
+                    return change_percent
                     
             ltp = float(nifty_data.get('ltp', 0))
             
