@@ -257,7 +257,7 @@ class EnhancedPositionOpeningDecision:
                 logger.error(f"   Total realized loss: ₹{abs(self.daily_realized_pnl):,.2f}")
                 
             return PositionDecisionResult(
-                decision=PositionDecision.REJECTED,
+                decision=PositionDecision.REJECTED_RISK,
                 confidence_score=0.0,
                 risk_score=1.0,  # Maximum risk
                 position_size=0,
@@ -295,7 +295,7 @@ class EnhancedPositionOpeningDecision:
                 logger.critical(f"   🛑 ALL NEW TRADING HALTED FOR TODAY")
                 
             return PositionDecisionResult(
-                decision=PositionDecision.REJECTED,
+                decision=PositionDecision.REJECTED_RISK,
                 confidence_score=0.0,
                 risk_score=1.0,  # Maximum risk
                 position_size=0,
