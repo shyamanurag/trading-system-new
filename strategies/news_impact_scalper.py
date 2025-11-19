@@ -750,15 +750,17 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             if ltp == 0 or volume == 0:
                 return None
             
-            # Determine signal direction based on underlying analysis
-            # Simple momentum analysis for options direction
-            price_change = underlying_data.get('change_percent', 0)
+            # 🎯 ENHANCED: Use Dual-Timeframe Analysis for robust direction
+            dual_analysis = self.analyze_stock_dual_timeframe(underlying_symbol, underlying_data)
+            weighted_bias = dual_analysis.get('weighted_bias', 0.0)
+            alignment = dual_analysis.get('alignment', 'UNKNOWN')
             
-            if abs(price_change) < 0.5:  # Not enough movement
+            # Require minimum weighted movement
+            if abs(weighted_bias) < 0.5:  # Not enough movement
                 return None
                 
-            # Determine call or put based on momentum
-            option_type = 'CE' if price_change > 0 else 'PE'
+            # Determine call or put based on weighted bias
+            option_type = 'CE' if weighted_bias > 0 else 'PE'
             action = 'BUY'  # Always BUY options
             
             # Calculate dynamic ATR for the underlying
@@ -788,10 +790,18 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             # Base: 0.55 (55%) - Start lower for options due to theta decay
             # Volume: +10% for strong volume
             # Price: +10% for strong momentum
-            # Max: 0.75 (75%) - Even exceptional options trades carry higher risk
+            # Alignment: +5% for market alignment
             volume_strength = min(volume / 1000000, 1.0)  # Normalize volume
-            price_strength = min(abs(price_change) / 2.0, 1.0)  # Normalize price change
-            base_confidence = 0.55 + (volume_strength * 0.10) + (price_strength * 0.10)  # 0.55-0.75 range
+            price_strength = min(abs(weighted_bias) / 2.0, 1.0)  # Normalize price change
+            
+            base_confidence = 0.55 + (volume_strength * 0.10) + (price_strength * 0.10)
+            
+            # Market alignment boost
+            if "WITH MARKET" in alignment:
+                base_confidence += 0.05
+            elif "AGAINST MARKET" in alignment:
+                base_confidence -= 0.10
+                
             dynamic_confidence_raw = min(max(base_confidence, 0.55), 0.75)  # Clamp between 0.55-0.75
             dynamic_confidence = dynamic_confidence_raw * 10.0  # Scale to 0-10 range (5.5-7.5)
             
@@ -806,7 +816,8 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 metadata={
                     'strategy': self.strategy_name,
                     'option_type': option_type,
-                    'underlying_change': price_change,
+                    'underlying_bias': weighted_bias,
+                    'market_alignment': alignment,
                     'volume': volume,
                     'signal_type': 'OPTIONS',
                     'atr': round(atr, 2),

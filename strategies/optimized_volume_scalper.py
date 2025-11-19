@@ -1623,7 +1623,25 @@ class OptimizedVolumeScalper(BaseStrategy):
             current_price = symbol_data.get('close', 0)
             if current_price <= 0:
                 return None
-                
+            
+            # 🎯 ENHANCED: Dual-Timeframe Validation
+            # Check if microstructure signal conflicts with broad market bias
+            dual_analysis = self.analyze_stock_dual_timeframe(symbol, symbol_data)
+            weighted_bias = dual_analysis.get('weighted_bias', 0.0)
+            alignment = dual_analysis.get('alignment', 'UNKNOWN')
+            
+            # Logic: If microstructure signal is BUY but stock is crashing in dual-timeframe, BE CAREFUL
+            if ms_signal.signal_type == 'BUY' and weighted_bias < -1.0:
+                if ms_signal.edge_source != "MEAN_REVERSION": # Mean reversion expects a drop
+                    logger.info(f"⚠️ FILTERED: {symbol} BUY signal rejected due to strong negative bias ({weighted_bias:.1f}%)")
+                    return None
+            
+            # Logic: If microstructure signal is SELL but stock is rocketing
+            if ms_signal.signal_type == 'SELL' and weighted_bias > 1.0:
+                if ms_signal.edge_source != "MEAN_REVERSION":
+                    logger.info(f"⚠️ FILTERED: {symbol} SELL signal rejected due to strong positive bias ({weighted_bias:.1f}%)")
+                    return None
+
             # Calculate position size based on expected duration and risk
             atr = self.calculate_atr(symbol, 
                                    symbol_data.get('high', current_price),

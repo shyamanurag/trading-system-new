@@ -767,7 +767,7 @@ class RegimeAdaptiveController:
             logger.error(f"Professional feature extraction failed: {e}")
     
     def _calculate_market_features(self, data: Dict) -> Optional[Dict]:
-        """Calculate comprehensive market features"""
+        """Calculate comprehensive market features with dual-timeframe awareness"""
         try:
             if not data:
                 return None
@@ -776,6 +776,36 @@ class RegimeAdaptiveController:
             prices = []
             volumes = []
             price_changes = []
+            
+            # 🎯 ENHANCED: Check for NIFTY directional bias first
+            nifty_bias = 0.0
+            nifty_pattern = "UNKNOWN"
+            if 'NIFTY-I' in data or 'NIFTY' in data:
+                nifty_symbol = 'NIFTY-I' if 'NIFTY-I' in data else 'NIFTY'
+                nifty_data = data[nifty_symbol]
+                if isinstance(nifty_data, dict):
+                    # Use change from previous close if available
+                    ltp = nifty_data.get('ltp', 0)
+                    prev_close = nifty_data.get('previous_close', 0)
+                    open_price = nifty_data.get('open', 0)
+                    
+                    if ltp > 0 and prev_close > 0:
+                        day_change = ((ltp - prev_close) / prev_close)
+                        intraday_change = ((ltp - open_price) / open_price) if open_price > 0 else day_change
+                        nifty_bias = (day_change * 0.6) + (intraday_change * 0.4)  # Weighted average
+                        
+                        # Detect pattern
+                        gap = ((open_price - prev_close) / prev_close) if open_price > 0 and prev_close > 0 else 0.0
+                        if day_change > 0.01 and intraday_change > 0.005:
+                            nifty_pattern = "BULLISH_CONTINUATION"
+                        elif day_change < -0.01 and intraday_change < -0.005:
+                            nifty_pattern = "BEARISH_CONTINUATION"
+                        elif gap < -0.005 and intraday_change > 0.005:
+                            nifty_pattern = "GAP_DOWN_RECOVERY"
+                        elif gap > 0.005 and intraday_change < -0.005:
+                            nifty_pattern = "GAP_UP_FADE"
+                        else:
+                            nifty_pattern = "CHOPPY"
             
             for symbol, symbol_data in data.items():
                 if isinstance(symbol_data, dict):
@@ -835,7 +865,9 @@ class RegimeAdaptiveController:
                 'correlation_regime': correlation_regime,
                 'skewness': skewness,
                 'kurtosis': kurtosis,
-                'n_symbols': len(prices)
+                'n_symbols': len(prices),
+                'nifty_bias': nifty_bias,  # 🎯 NEW: NIFTY directional bias from prev close
+                'nifty_pattern': nifty_pattern  # 🎯 NEW: NIFTY market pattern
             }
             
         except Exception as e:
@@ -932,22 +964,37 @@ class RegimeAdaptiveController:
             logger.error(f"Professional regime detection failed: {e}")
     
     def _classify_regime_by_rules(self, features: Dict) -> MarketRegime:
-        """Rule-based regime classification"""
+        """Rule-based regime classification with NIFTY bias awareness"""
         try:
             vol = features['volatility']
             momentum = features['momentum']
             trend_strength = features['trend_strength']
             skewness = features['skewness']
             
+            # 🎯 ENHANCED: Use NIFTY pattern for better regime detection
+            nifty_bias = features.get('nifty_bias', 0.0)
+            nifty_pattern = features.get('nifty_pattern', 'UNKNOWN')
+            
             # CRISIS DETECTION (extreme volatility + negative skewness)
             if vol > 0.15 and skewness < -1.5:
                 return MarketRegime.CRISIS
+            
+            # 🎯 ENHANCED: Use NIFTY pattern for trending regimes
+            # If NIFTY shows clear continuation, that's a strong trending signal
+            if nifty_pattern == "BULLISH_CONTINUATION" and nifty_bias > 0.01:
+                return MarketRegime.BULL_TRENDING
+            elif nifty_pattern == "BEARISH_CONTINUATION" and nifty_bias < -0.01:
+                return MarketRegime.BEAR_TRENDING
             
             # HIGH VOLATILITY REGIME
             elif vol > 0.08:
                 return MarketRegime.HIGH_VOLATILITY
             
-            # TRENDING REGIMES
+            # 🎯 ENHANCED: Detect gap recoveries as mean reversion opportunities
+            elif nifty_pattern in ["GAP_DOWN_RECOVERY", "GAP_UP_FADE"]:
+                return MarketRegime.MEAN_REVERSION
+            
+            # TRENDING REGIMES (fallback to traditional logic if no clear NIFTY pattern)
             elif trend_strength > 0.05:
                 if momentum > 0.02:
                     return MarketRegime.BULL_TRENDING
@@ -960,8 +1007,8 @@ class RegimeAdaptiveController:
             elif abs(momentum) > 0.03 and vol > 0.04:
                 return MarketRegime.MOMENTUM_BREAKOUT
             
-            # MEAN REVERSION (high volatility + low trend)
-            elif vol > 0.04 and trend_strength < 0.02:
+            # MEAN REVERSION (high volatility + low trend + choppy NIFTY)
+            elif (vol > 0.04 and trend_strength < 0.02) or nifty_pattern == "CHOPPY":
                 return MarketRegime.MEAN_REVERSION
             
             # LOW VOLATILITY (default)

@@ -592,38 +592,45 @@ class EnhancedVolatilityExplosion(BaseStrategy):
                 return None
             
             ltp = data.get('ltp', 0)
-            change_percent = data.get('change_percent', 0)
             volume = data.get('volume', 0)
             
             if ltp <= 0:
                 return None
+                
+            # 🎯 ENHANCED: Use Dual-Timeframe Analysis for NIFTY
+            # This ensures we use the "Prev Close" logic correctly even here
+            dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
+            weighted_bias = dual_analysis.get('weighted_bias', 0.0)
+            # alignment is not relevant for NIFTY itself (it IS the market)
+            
+            # Use weighted_bias for direction instead of simple change_percent
             
             # Regime-based signal generation
             signal_type = None
             confidence = 5.0
             reasoning = f"Nifty analysis in {self.current_regime} regime"
             
-            if self.current_regime == 'trending_up' and change_percent > 0.5:
+            if self.current_regime == 'trending_up' and weighted_bias > 0.5:
                 signal_type = 'buy'
                 confidence += 2.0
-                reasoning += f" - Uptrend continuation, change: {change_percent:.1f}%"
+                reasoning += f" - Uptrend continuation, Bias: {weighted_bias:.1f}%"
                 
-            elif self.current_regime == 'trending_down' and change_percent < -0.5:
+            elif self.current_regime == 'trending_down' and weighted_bias < -0.5:
                 signal_type = 'sell'
                 confidence += 2.0
-                reasoning += f" - Downtrend continuation, change: {change_percent:.1f}%"
+                reasoning += f" - Downtrend continuation, Bias: {weighted_bias:.1f}%"
                 
-            elif self.current_regime == 'volatile' and abs(change_percent) > 1.0:
+            elif self.current_regime == 'volatile' and abs(weighted_bias) > 1.0:
                 # In volatile regime, trade momentum
-                signal_type = 'buy' if change_percent > 0 else 'sell'
+                signal_type = 'buy' if weighted_bias > 0 else 'sell'
                 confidence += 1.5
-                reasoning += f" - Volatile regime momentum, change: {change_percent:.1f}%"
+                reasoning += f" - Volatile regime momentum, Bias: {weighted_bias:.1f}%"
                 
-            elif self.current_regime == 'sideways' and abs(change_percent) > 0.3:
-                # In sideways, look for mean reversion
-                signal_type = 'sell' if change_percent > 0 else 'buy'
+            elif self.current_regime == 'sideways' and abs(weighted_bias) > 0.3:
+                # In sideways, look for mean reversion (fade the move)
+                signal_type = 'sell' if weighted_bias > 0 else 'buy'
                 confidence += 1.0
-                reasoning += f" - Sideways mean reversion, change: {change_percent:.1f}%"
+                reasoning += f" - Sideways mean reversion, Bias: {weighted_bias:.1f}%"
             
             if not signal_type:
                 return None
@@ -637,7 +644,10 @@ class EnhancedVolatilityExplosion(BaseStrategy):
             if hasattr(self, 'current_volatility') and self.current_volatility > 2.0:
                 confidence += 0.5
 
-            if confidence < 9.0:
+            # 🚨 CRITICAL FIX: Realistic confidence threshold for NIFTY
+            # Max possible confidence: 5.0 + 2.0 (regime) + 1.0 (volume) + 0.5 (vol) = 8.5
+            # Require 7.5 for NIFTY/Index trades (higher than stocks due to liquidity)
+            if confidence < 7.5:
                 return None
 
             # Use standardized signal creation to ensure correct fields

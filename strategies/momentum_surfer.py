@@ -917,12 +917,24 @@ class EnhancedMomentumSurfer(BaseStrategy):
     async def _trending_up_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Strategy for uptrending stocks"""
         data = market_data.get(symbol, {})
-        change_percent = data.get('change_percent', 0)
         
-        if change_percent > 1.0:  # Strong uptrend
+        # 🎯 ENHANCED: Use Dual-Timeframe Analysis (Day + Intraday)
+        dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
+        weighted_bias = dual_analysis.get('weighted_bias', 0.0)
+        alignment = dual_analysis.get('alignment', 'UNKNOWN')
+        
+        # Use weighted bias instead of simple change_percent
+        if weighted_bias > 1.0:  # Strong uptrend (weighted)
             # 🎯 ENHANCED: More realistic momentum confidence
             # Start at 7.0, increase with strength, cap at 8.2
-            confidence = 7.0 + min(change_percent * 0.15, 1.2)
+            confidence = 7.0 + min(weighted_bias * 0.15, 1.2)
+            
+            # Boost confidence if aligned with market
+            if "WITH MARKET" in alignment:
+                confidence += 0.5
+            elif "AGAINST MARKET" in alignment:
+                confidence -= 1.0
+                
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -939,7 +951,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 metadata={
                     'strategy': self.strategy_name,
                     'signal_type': 'OPTIONS',
-                    'reason': f"Uptrending stock strategy - Change: {change_percent:.1f}%"
+                    'reason': f"Uptrending stock strategy - Bias: {weighted_bias:.1f}% ({alignment})"
                 },
                 market_bias=self.market_bias
             )
@@ -948,12 +960,23 @@ class EnhancedMomentumSurfer(BaseStrategy):
     async def _trending_down_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Strategy for downtrending stocks - SHORT SELLING"""
         data = market_data.get(symbol, {})
-        change_percent = data.get('change_percent', 0)
         
-        if change_percent < -1.0:  # Strong downtrend
+        # 🎯 ENHANCED: Use Dual-Timeframe Analysis
+        dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
+        weighted_bias = dual_analysis.get('weighted_bias', 0.0)
+        alignment = dual_analysis.get('alignment', 'UNKNOWN')
+        
+        if weighted_bias < -1.0:  # Strong downtrend (weighted)
             # 🎯 ENHANCED: More realistic downtrend momentum confidence
             # Start at 7.0, increase with strength, cap at 8.2
-            confidence = 7.0 + min(abs(change_percent) * 0.15, 1.2)
+            confidence = 7.0 + min(abs(weighted_bias) * 0.15, 1.2)
+            
+            # Boost confidence if aligned with market
+            if "WITH MARKET" in alignment:
+                confidence += 0.5
+            elif "AGAINST MARKET" in alignment:
+                confidence -= 1.0
+                
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -970,7 +993,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 metadata={
                     'strategy': self.strategy_name,
                     'signal_type': 'OPTIONS',
-                    'reason': f"Downtrending stock SHORT strategy - Change: {change_percent:.1f}%"
+                    'reason': f"Downtrending stock SHORT strategy - Bias: {weighted_bias:.1f}% ({alignment})"
                 },
                 market_bias=self.market_bias
             )
@@ -979,13 +1002,24 @@ class EnhancedMomentumSurfer(BaseStrategy):
     async def _sideways_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """RANGE TRADING strategy for sideways markets"""
         data = market_data.get(symbol, {})
-        change_percent = data.get('change_percent', 0)
+        
+        # 🎯 ENHANCED: Use Dual-Timeframe Analysis
+        dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
+        weighted_bias = dual_analysis.get('weighted_bias', 0.0)
+        alignment = dual_analysis.get('alignment', 'UNKNOWN')
+        
         ltp = data.get('ltp', 0)
         
         # Range trading: buy at support, sell at resistance
-        if change_percent < -0.3:  # Near support
+        # Use weighted_bias to confirm we aren't in a strong trend
+        if weighted_bias < -0.3 and abs(weighted_bias) < 1.0:  # Near support but not crashing
             # 🎯 ENHANCED: Ranging markets are harder to trade
             confidence = 6.8
+            
+            # Boost if aligned with market (e.g. market is also sideways/choppy)
+            if "NEUTRAL" in alignment or "UNKNOWN" in alignment:
+                confidence += 0.3
+                
             if ltp <= 0:
                 return None
             stop_loss = ltp * 0.99
@@ -1000,13 +1034,17 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 metadata={
                     'strategy': self.strategy_name,
                     'signal_type': 'OPTIONS',
-                    'reason': f"Range trading: Buy at support - Change: {change_percent:.1f}%"
+                    'reason': f"Range trading: Buy at support - Bias: {weighted_bias:.1f}% ({alignment})"
                 },
                 market_bias=self.market_bias
             )
-        elif change_percent > 0.3:  # Near resistance
+        elif weighted_bias > 0.3 and abs(weighted_bias) < 1.0:  # Near resistance but not breakout
             # 🎯 ENHANCED: Range resistance fades are risky
             confidence = 6.5
+            
+            if "NEUTRAL" in alignment or "UNKNOWN" in alignment:
+                confidence += 0.3
+                
             if ltp <= 0:
                 return None
             stop_loss = ltp * 1.01
@@ -1021,7 +1059,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 metadata={
                     'strategy': self.strategy_name,
                     'signal_type': 'OPTIONS',
-                    'reason': f"Range trading: Sell at resistance - Change: {change_percent:.1f}%"
+                    'reason': f"Range trading: Sell at resistance - Bias: {weighted_bias:.1f}% ({alignment})"
                 },
                 market_bias=self.market_bias
             )
@@ -1030,12 +1068,24 @@ class EnhancedMomentumSurfer(BaseStrategy):
     async def _breakout_up_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Strategy for upward breakouts"""
         data = market_data.get(symbol, {})
-        change_percent = data.get('change_percent', 0)
+        
+        # 🎯 ENHANCED: Use Dual-Timeframe Analysis
+        dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
+        weighted_bias = dual_analysis.get('weighted_bias', 0.0)
+        alignment = dual_analysis.get('alignment', 'UNKNOWN')
+        
         volume = data.get('volume', 0)
         
-        if change_percent > 1.5 and volume > 100000:
+        if weighted_bias > 1.5 and volume > 100000:
             # 🎯 ENHANCED: Breakouts fail often - be conservative
-            confidence = 7.2 + min(change_percent * 0.08, 0.8)
+            confidence = 7.2 + min(weighted_bias * 0.08, 0.8)
+            
+            # Boost confidence if aligned with market
+            if "WITH MARKET" in alignment:
+                confidence += 0.5
+            elif "AGAINST MARKET" in alignment:
+                confidence -= 0.5
+            
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -1052,7 +1102,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 metadata={
                     'strategy': self.strategy_name,
                     'signal_type': 'OPTIONS',
-                    'reason': f"Upward breakout with volume - Change: {change_percent:.1f}%, Volume: {volume:,}"
+                    'reason': f"Upward breakout with volume - Bias: {weighted_bias:.1f}% ({alignment}), Volume: {volume:,}"
                 },
                 market_bias=self.market_bias
             )
@@ -1061,12 +1111,24 @@ class EnhancedMomentumSurfer(BaseStrategy):
     async def _breakout_down_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Strategy for downward breakouts"""
         data = market_data.get(symbol, {})
-        change_percent = data.get('change_percent', 0)
+        
+        # 🎯 ENHANCED: Use Dual-Timeframe Analysis
+        dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
+        weighted_bias = dual_analysis.get('weighted_bias', 0.0)
+        alignment = dual_analysis.get('alignment', 'UNKNOWN')
+        
         volume = data.get('volume', 0)
         
-        if change_percent < -1.5 and volume > 100000:
+        if weighted_bias < -1.5 and volume > 100000:
             # 🎯 ENHANCED: Breakdown trades carry significant risk
-            confidence = 7.2 + min(abs(change_percent) * 0.08, 0.8)
+            confidence = 7.2 + min(abs(weighted_bias) * 0.08, 0.8)
+            
+            # Boost confidence if aligned with market
+            if "WITH MARKET" in alignment:
+                confidence += 0.5
+            elif "AGAINST MARKET" in alignment:
+                confidence -= 0.5
+            
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -1083,7 +1145,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 metadata={
                     'strategy': self.strategy_name,
                     'signal_type': 'OPTIONS',
-                    'reason': f"Downward breakout with volume - Change: {change_percent:.1f}%, Volume: {volume:,}"
+                    'reason': f"Downward breakout with volume - Bias: {weighted_bias:.1f}% ({alignment}), Volume: {volume:,}"
                 },
                 market_bias=self.market_bias
             )
@@ -1092,11 +1154,21 @@ class EnhancedMomentumSurfer(BaseStrategy):
     async def _reversal_up_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Strategy for upward reversals"""
         data = market_data.get(symbol, {})
-        change_percent = data.get('change_percent', 0)
         
-        if 0.5 <= change_percent <= 1.0:  # Modest upward move after decline
+        # 🎯 ENHANCED: Use Dual-Timeframe Analysis
+        dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
+        weighted_bias = dual_analysis.get('weighted_bias', 0.0)
+        alignment = dual_analysis.get('alignment', 'UNKNOWN')
+        
+        # Reversal logic: Modest positive move
+        if 0.5 <= weighted_bias <= 1.0:
             # 🎯 ENHANCED: Reversal timing is difficult
             confidence = 6.8
+            
+            # Stronger confidence if aligned
+            if "WITH MARKET" in alignment:
+                confidence += 0.4
+                
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -1113,7 +1185,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 metadata={
                     'strategy': self.strategy_name,
                     'signal_type': 'OPTIONS',
-                    'reason': f"Upward reversal pattern - Change: {change_percent:.1f}%"
+                    'reason': f"Upward reversal pattern - Bias: {weighted_bias:.1f}% ({alignment})"
                 },
                 market_bias=self.market_bias
             )
@@ -1122,11 +1194,21 @@ class EnhancedMomentumSurfer(BaseStrategy):
     async def _reversal_down_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Strategy for downward reversals"""
         data = market_data.get(symbol, {})
-        change_percent = data.get('change_percent', 0)
         
-        if -1.0 <= change_percent <= -0.5:  # Modest downward move after rise
+        # 🎯 ENHANCED: Use Dual-Timeframe Analysis
+        dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
+        weighted_bias = dual_analysis.get('weighted_bias', 0.0)
+        alignment = dual_analysis.get('alignment', 'UNKNOWN')
+        
+        # Reversal logic: Modest negative move
+        if -1.0 <= weighted_bias <= -0.5:
             # 🎯 ENHANCED: Catching falling knives is risky
             confidence = 6.5
+            
+            # Stronger confidence if aligned
+            if "WITH MARKET" in alignment:
+                confidence += 0.4
+                
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -1143,7 +1225,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 metadata={
                     'strategy': self.strategy_name,
                     'signal_type': 'OPTIONS',
-                    'reason': f"Downward reversal pattern - Change: {change_percent:.1f}%"
+                    'reason': f"Downward reversal pattern - Bias: {weighted_bias:.1f}% ({alignment})"
                 },
                 market_bias=self.market_bias
             )
@@ -1152,13 +1234,23 @@ class EnhancedMomentumSurfer(BaseStrategy):
     async def _high_volatility_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Strategy for high volatility periods"""
         data = market_data.get(symbol, {})
-        change_percent = data.get('change_percent', 0)
+        
+        # 🎯 ENHANCED: Use Dual-Timeframe Analysis
+        dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
+        weighted_bias = dual_analysis.get('weighted_bias', 0.0)
+        alignment = dual_analysis.get('alignment', 'UNKNOWN')
+        
         volume = data.get('volume', 0)
         
-        if volume > 200000 and abs(change_percent) > 0.5:
-            signal_type = 'BUY' if change_percent > 0 else 'SELL'
+        if volume > 200000 and abs(weighted_bias) > 0.5:
+            signal_type = 'BUY' if weighted_bias > 0 else 'SELL'
             # 🎯 ENHANCED: High volatility trades need caution
             confidence = 7.0
+            
+            # Check alignment
+            if "WITH MARKET" in alignment:
+                confidence += 0.5
+            
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
@@ -1175,7 +1267,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 metadata={
                     'strategy': self.strategy_name,
                     'signal_type': 'OPTIONS',
-                    'reason': f"High volatility momentum - Change: {change_percent:.1f}%, Volume: {volume:,}"
+                    'reason': f"High volatility momentum - Bias: {weighted_bias:.1f}% ({alignment}), Volume: {volume:,}"
                 },
                 market_bias=self.market_bias
             )
@@ -1184,11 +1276,14 @@ class EnhancedMomentumSurfer(BaseStrategy):
     async def _low_volatility_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Strategy for low volatility periods"""
         data = market_data.get(symbol, {})
-        change_percent = data.get('change_percent', 0)
+        
+        # 🎯 ENHANCED: Use Dual-Timeframe Analysis
+        dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
+        weighted_bias = dual_analysis.get('weighted_bias', 0.0)
         
         # In low volatility, look for any movement
-        if abs(change_percent) > 0.2:
-            signal_type = 'BUY' if change_percent > 0 else 'SELL'
+        if abs(weighted_bias) > 0.2:
+            signal_type = 'BUY' if weighted_bias > 0 else 'SELL'
             # 🎯 ENHANCED: Low volatility moves lack conviction
             confidence = 6.2
             ltp = data.get('ltp', 0)
@@ -1207,7 +1302,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 metadata={
                     'strategy': self.strategy_name,
                     'signal_type': 'OPTIONS',
-                    'reason': f"Low volatility opportunity - Change: {change_percent:.1f}%"
+                    'reason': f"Low volatility opportunity - Bias: {weighted_bias:.1f}%"
                 },
                 market_bias=self.market_bias
             )
