@@ -992,10 +992,12 @@ class ZerodhaIntegration:
             logger.error(f"❌ Error getting WebSocket ticks: {e}")
             return {}
     
-    def get_quotes(self, symbols: List[str]) -> Dict[str, Dict]:
+    async def get_quotes(self, symbols: List[str]) -> Dict[str, Dict]:
         """
         Get quotes for multiple symbols - REQUIRED for option position monitoring
         First tries WebSocket cache, then falls back to Zerodha API
+        
+        🎯 FIXED (2025-12-01): Made async to prevent 'dict object can't be awaited' error
         """
         try:
             if not symbols:
@@ -1024,7 +1026,7 @@ class ZerodhaIntegration:
                 else:
                     missing_symbols.append(symbol)
             
-            # Step 2: Fetch missing from Zerodha API
+            # Step 2: Fetch missing from Zerodha API (async call)
             if missing_symbols and self.kite:
                 try:
                     # Build proper instrument keys
@@ -1038,18 +1040,20 @@ class ZerodhaIntegration:
                         else:
                             instrument_keys.append(f'NSE:{symbol}')
                     
-                    api_quotes = self.kite.quote(instrument_keys)
+                    # 🎯 Use async API call to prevent blocking
+                    api_quotes = await self._async_api_call(self.kite.quote, instrument_keys)
                     
-                    for key, quote in api_quotes.items():
-                        # Extract symbol from key (e.g., "NFO:NIFTY25D0226000PE" -> "NIFTY25D0226000PE")
-                        symbol = key.split(':')[-1]
-                        result[symbol] = {
-                            'last_price': quote.get('last_price', 0),
-                            'ohlc': quote.get('ohlc', {}),
-                            'volume': quote.get('volume', 0),
-                            'change': quote.get('change', 0),
-                            'change_percent': quote.get('change', 0) / quote.get('ohlc', {}).get('close', 1) * 100 if quote.get('ohlc', {}).get('close') else 0
-                        }
+                    if api_quotes:
+                        for key, quote in api_quotes.items():
+                            # Extract symbol from key (e.g., "NFO:NIFTY25D0226000PE" -> "NIFTY25D0226000PE")
+                            symbol = key.split(':')[-1]
+                            result[symbol] = {
+                                'last_price': quote.get('last_price', 0),
+                                'ohlc': quote.get('ohlc', {}),
+                                'volume': quote.get('volume', 0),
+                                'change': quote.get('change', 0),
+                                'change_percent': quote.get('change', 0) / quote.get('ohlc', {}).get('close', 1) * 100 if quote.get('ohlc', {}).get('close') else 0
+                            }
                         
                 except Exception as api_error:
                     logger.warning(f"⚠️ API quote fetch failed for {missing_symbols}: {api_error}")
@@ -1493,33 +1497,44 @@ class ZerodhaIntegration:
         return {}
 
     async def get_instruments(self, exchange: str = 'NFO') -> List[Dict]:
-        """Get instruments with intelligent caching to prevent rate limiting"""
+        """Get instruments with intelligent caching to prevent rate limiting
+        
+        🎯 CRITICAL FIX (2025-12-01): Cache is now EXCHANGE-SPECIFIC!
+        Previously, NSE and NFO shared the same cache, causing NSE equity
+        instruments to be returned when NFO options were requested.
+        """
         try:
-            # Check cache first (instruments don't change often)
             current_time = time.time()
+            cache_key = f"{exchange}_instruments"
             
-            # 🚨 DEFENSIVE: Ensure cache structure is valid
-            if (isinstance(self._instruments_cache, dict) and 
-                'timestamp' in self._instruments_cache and 
-                'value' in self._instruments_cache and 
-                current_time - self._instruments_cache['timestamp'] < 300):  # 5 minute cache for instruments
-                logger.debug(f"📊 Using cached instruments (age: {current_time - self._instruments_cache['timestamp']:.1f}s)")
-                cached_value = self._instruments_cache['value']
-                # 🎯 CRITICAL FIX: Ensure self._nfo_instruments is set when returning cached data
+            # 🎯 FIXED (2025-12-01): Use EXCHANGE-SPECIFIC cache keys
+            # Previously _instruments_cache was a single dict, causing cross-contamination
+            if not isinstance(self._instruments_cache, dict):
+                self._instruments_cache = {}
+            
+            # Check exchange-specific cache first
+            exchange_cache = self._instruments_cache.get(exchange)
+            if (exchange_cache and isinstance(exchange_cache, dict) and
+                'timestamp' in exchange_cache and 'value' in exchange_cache and
+                current_time - exchange_cache['timestamp'] < 300):  # 5 minute cache
+                
+                cached_value = exchange_cache['value']
+                logger.debug(f"📊 Using cached {exchange} instruments (age: {current_time - exchange_cache['timestamp']:.1f}s, count: {len(cached_value) if cached_value else 0})")
+                
+                # Update exchange-specific caches
                 if exchange == 'NFO' and cached_value:
                     self._nfo_instruments = cached_value
                 elif exchange == 'NSE' and cached_value:
                     self._nse_instruments = cached_value
                 return cached_value
             
-            # Check if we have cached data that's still valid
-            cache_key = f"{exchange}_instruments"
+            # Check if we have cached data that's still valid (secondary cache)
             now = time.time()
             
             if (cache_key in self._instruments_last_fetched and 
                 now - self._instruments_last_fetched[cache_key] < self._instruments_cache_duration):
                 
-                # Return cached data
+                # Return exchange-specific cached data
                 if exchange == 'NFO' and self._nfo_instruments:
                     logger.info(f"✅ Using cached {exchange} instruments ({len(self._nfo_instruments)} instruments)")
                     return self._nfo_instruments
@@ -1541,10 +1556,18 @@ class ZerodhaIntegration:
             instruments = await self._async_api_call(self.kite.instruments, exchange)
             
             if instruments:
-                # Cache the results
+                # Cache the results with exchange-specific keys
                 self._instruments_last_fetched[cache_key] = now
+                
+                # 🎯 FIXED (2025-12-01): Store with EXCHANGE-SPECIFIC cache key
+                self._instruments_cache[exchange] = {'value': instruments, 'timestamp': current_time}
+                
                 if exchange == 'NFO':
                     self._nfo_instruments = instruments
+                    # Count options vs non-options for debugging
+                    options_count = sum(1 for inst in instruments if inst.get('instrument_type') in ['CE', 'PE'])
+                    logger.info(f"✅ Loaded {len(instruments)} NFO instruments ({options_count} are options)")
+                    
                     # Build fast lookup map for tokens
                     try:
                         self._symbol_to_token = {
@@ -1556,11 +1579,7 @@ class ZerodhaIntegration:
                         logger.debug(f"Could not build token index: {idx_err}")
                 elif exchange == 'NSE':
                     self._nse_instruments = instruments
-                
-                logger.info(f"✅ Cached {len(instruments)} {exchange} instruments for 1 hour")
-                
-                # Update general cache
-                self._instruments_cache = {'value': instruments, 'timestamp': current_time}
+                    logger.info(f"✅ Cached {len(instruments)} {exchange} instruments for 1 hour")
                 
                 return instruments
             else:
@@ -2528,10 +2547,33 @@ class ZerodhaIntegration:
             nfo_search_name = nfo_name_map.get(underlying_symbol, underlying_symbol)
             logger.info(f"🔍 Searching NFO instruments for name='{nfo_search_name}' (input: {underlying_symbol})")
             
-            # 🎯 DEBUG: Show unique names in NFO instruments to diagnose matching
+            # 🎯 DEBUG (2025-12-01): Verify NFO instruments have options (CE/PE), not just equities
             try:
-                unique_names = set(inst.get('name', 'UNKNOWN') for inst in self._nfo_instruments[:500])
-                logger.info(f"📊 NFO instrument names sample: {list(unique_names)[:10]}")
+                ce_pe_count = sum(1 for inst in self._nfo_instruments if inst.get('instrument_type') in ['CE', 'PE'])
+                eq_count = sum(1 for inst in self._nfo_instruments if inst.get('instrument_type') == 'EQ')
+                fut_count = sum(1 for inst in self._nfo_instruments if inst.get('instrument_type') == 'FUT')
+                
+                logger.info(f"📊 NFO Instruments breakdown: {len(self._nfo_instruments)} total | "
+                           f"Options (CE/PE): {ce_pe_count} | Futures: {fut_count} | EQ: {eq_count}")
+                
+                # 🚨 SANITY CHECK: If we have mostly EQ instruments, the cache is contaminated!
+                if eq_count > ce_pe_count and eq_count > 100:
+                    logger.error(f"🚨 NFO CACHE CONTAMINATED! Found {eq_count} EQ vs {ce_pe_count} options. Forcing refresh...")
+                    self._nfo_instruments = None
+                    self._instruments_cache.pop('NFO', None)  # Clear contaminated cache
+                    nfo_result = await self.get_instruments('NFO')
+                    if nfo_result:
+                        logger.info(f"✅ Refreshed NFO instruments: {len(nfo_result)} total")
+                    else:
+                        logger.error(f"❌ Failed to refresh NFO instruments")
+                        return {}
+                
+                # Show sample NIFTY options for debugging
+                nifty_options = [inst for inst in self._nfo_instruments[:1000] 
+                                if inst.get('name') in ['NIFTY', 'NIFTY 50'] and inst.get('instrument_type') in ['CE', 'PE']][:3]
+                if nifty_options:
+                    logger.info(f"📊 Sample NIFTY options: {[f\"{i.get('tradingsymbol')} ({i.get('instrument_type')})\" for i in nifty_options]}")
+                    
             except Exception as dbg_err:
                 logger.debug(f"Debug logging failed: {dbg_err}")
             
@@ -2550,14 +2592,23 @@ class ZerodhaIntegration:
             
             if not options_list:
                 logger.error(f"❌ No options found for {underlying_symbol} (searched name: '{nfo_search_name}')")
-                # DEBUG: Show first 5 NFO instruments to verify name format
-                sample_insts = [{k: inst.get(k) for k in ['name', 'tradingsymbol', 'instrument_type', 'strike']} 
-                               for inst in self._nfo_instruments[:5]]
-                logger.error(f"   DEBUG: Sample NFO instruments: {sample_insts}")
-                # DEBUG: Show all unique names to help diagnose
+                # DEBUG: Show first 5 NFO instruments that ARE options (CE/PE)
+                sample_options = [inst for inst in self._nfo_instruments if inst.get('instrument_type') in ['CE', 'PE']][:5]
+                if sample_options:
+                    sample_info = [{k: inst.get(k) for k in ['name', 'tradingsymbol', 'instrument_type', 'strike']} 
+                                   for inst in sample_options]
+                    logger.error(f"   DEBUG: Sample OPTIONS in NFO: {sample_info}")
+                else:
+                    # Show any 5 instruments to see what we have
+                    sample_insts = [{k: inst.get(k) for k in ['name', 'tradingsymbol', 'instrument_type', 'strike']} 
+                                   for inst in self._nfo_instruments[:5]]
+                    logger.error(f"   DEBUG: Sample NFO instruments (no options found!): {sample_insts}")
+                    
+                # Show unique names that have options
                 try:
-                    all_names = set(inst.get('name') for inst in self._nfo_instruments)
-                    logger.error(f"   DEBUG: All unique names in NFO: {all_names}")
+                    names_with_options = set(inst.get('name') for inst in self._nfo_instruments 
+                                            if inst.get('instrument_type') in ['CE', 'PE'])
+                    logger.error(f"   DEBUG: Unique names with options: {list(names_with_options)[:20]}")
                 except:
                     pass
                 return {}
