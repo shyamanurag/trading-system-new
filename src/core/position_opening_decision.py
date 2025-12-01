@@ -295,14 +295,15 @@ class EnhancedPositionOpeningDecision:
                 logger.critical(f"   Max Allowed Loss: ₹{max_allowed_loss:,.2f} ({self.daily_loss_limit_pct*100}%)")
                 logger.critical(f"   🛑 ALL NEW TRADING HALTED FOR TODAY")
                 
-            return PositionDecisionResult(
-                decision=PositionDecision.REJECTED_RISK,
-                confidence_score=0.0,
-                risk_score=1.0,  # Maximum risk
-                position_size=0,
-                reasoning=f"DAILY LOSS LIMIT BREACHED: {abs(daily_pnl_pct):.2f}% loss (limit: {self.daily_loss_limit_pct*100}%). Trading halted.",
-                metadata={'risk_level': 'EXTREME'}
-            )
+                # 🎯 CRITICAL FIX (2025-12-01): Return INSIDE if block, not outside!
+                return PositionDecisionResult(
+                    decision=PositionDecision.REJECTED_RISK,
+                    confidence_score=0.0,
+                    risk_score=10.0,  # Maximum risk
+                    position_size=0,
+                    reasoning=f"DAILY LOSS LIMIT BREACHED: {abs(daily_pnl_pct):.2f}% loss (limit: {self.daily_loss_limit_pct*100}%). Trading halted.",
+                    metadata={'risk_level': 'EXTREME'}
+                )
             
             # Log current status (approaching limit warning)
             loss_used_pct = (abs(total_daily_pnl) / max_allowed_loss) * 100 if total_daily_pnl < 0 else 0.0

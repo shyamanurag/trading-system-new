@@ -137,6 +137,7 @@ def create_safe_market_data(market_data):
             'truedata_symbol': str(market_data.get('truedata_symbol', '')),
             'ltp': float(market_data.get('ltp', 0)),
             'close': float(market_data.get('close', 0)),
+            'previous_close': float(market_data.get('previous_close', 0)),  # 🎯 ADDED: Critical for dual-timeframe
             'high': float(market_data.get('high', 0)),
             'low': float(market_data.get('low', 0)),
             'open': float(market_data.get('open', 0)),
@@ -153,6 +154,7 @@ def create_safe_market_data(market_data):
                 'has_ohlc': bool(market_data.get('data_quality', {}).get('has_ohlc', False)),
                 'has_volume': bool(market_data.get('data_quality', {}).get('has_volume', False)),
                 'has_change_percent': bool(market_data.get('data_quality', {}).get('has_change_percent', False)),
+                'has_previous_close': bool(market_data.get('data_quality', {}).get('has_previous_close', False)),
                 'calculated_change_percent': bool(market_data.get('data_quality', {}).get('calculated_change_percent', False))
             }
         }
@@ -346,7 +348,15 @@ class TrueDataClient:
                 return False
             
             if "user already connected" in error_msg or "already connected" in error_msg:
-                logger.warning("⚠️ User Already Connected error detected")
+                logger.warning("⚠️ User Already Connected error detected - activating circuit breaker")
+                logger.info("💡 TIP: This usually means another instance is connected. Wait 60s for auto-disconnect.")
+                # Activate circuit breaker to prevent rapid reconnection attempts
+                self._circuit_breaker_active = True
+                self._circuit_breaker_timeout = 60  # 60 second cooldown
+                self._last_connection_failure = time.time()
+                self._consecutive_failures += 1
+                truedata_connection_status['error'] = 'USER_ALREADY_CONNECTED'
+                truedata_connection_status['retry_disabled'] = True
                 return False
             
             self.connected = False
@@ -1020,41 +1030,62 @@ class TrueDataClient:
                     getattr(tick_data, 'pct_change', None)
                 )
                 
-                # FIXED: Better manual calculation logic
-                if change_percent is None or change_percent == 0:
-                    if change is not None and change != 0 and ltp > 0:
-                        try:
-                            # Calculate change_percent from absolute change
-                            change_float = float(change)
-                            previous_price = ltp - change_float
-                            if previous_price > 0:
-                                change_percent = (change_float / previous_price) * 100
-                                logger.debug(f"📊 Calculated {symbol} change_percent: {change_percent:.3f}% "
-                                           f"(ltp={ltp}, change={change}, prev={previous_price:.2f})")
-                            else:
-                                logger.warning(f"⚠️ Invalid previous price for {symbol}: {previous_price}")
-                                change_percent = 0
-                        except (ValueError, TypeError):
-                            logger.warning(f"⚠️ Invalid change value for {symbol}: {change}")
-                            change_percent = 0
-                    else:
-                        change_percent = 0
+                # 🎯 CRITICAL FIX (2025-12-01): Calculate PREVIOUS_CLOSE from change data
+                # This is essential for dual-timeframe analysis
+                previous_close = 0.0
+                
+                # Method 1: Calculate from ltp and change (most reliable)
+                if change is not None and change != 0 and ltp > 0:
+                    try:
+                        change_float = float(change)
+                        previous_close = ltp - change_float
+                        if previous_close > 0:
+                            # Also calculate change_percent if not available
+                            if change_percent is None or change_percent == 0:
+                                change_percent = (change_float / previous_close) * 100
+                            logger.debug(f"📊 Calculated {symbol} previous_close: ₹{previous_close:.2f} "
+                                       f"(ltp={ltp}, change={change}, change%={change_percent:.3f}%)")
+                        else:
+                            logger.warning(f"⚠️ Invalid previous_close for {symbol}: {previous_close}")
+                            previous_close = ltp  # Fallback to LTP
+                    except (ValueError, TypeError):
+                        logger.warning(f"⚠️ Invalid change value for {symbol}: {change}")
+                        previous_close = ltp
+                
+                # Method 2: Try 'close' field from TrueData (it's often previous close)
+                if previous_close <= 0:
+                    raw_close = getattr(tick_data, 'close', None) or getattr(tick_data, 'prev_close', None)
+                    if raw_close and raw_close > 0 and raw_close != ltp:
+                        previous_close = raw_close
+                        if change_percent is None or change_percent == 0:
+                            change_percent = ((ltp - previous_close) / previous_close) * 100 if previous_close > 0 else 0
+                        logger.debug(f"📊 Used raw close for {symbol}: ₹{previous_close:.2f}")
+                
+                # Fallback: Use LTP if nothing else works
+                if previous_close <= 0:
+                    previous_close = ltp
+                    logger.debug(f"⚠️ Using LTP as previous_close fallback for {symbol}")
+                
+                # Ensure change_percent is set
+                if change_percent is None:
+                    change_percent = 0
                 
                 # Extract additional fields with fallbacks
                 bid = getattr(tick_data, 'bid', 0) or getattr(tick_data, 'best_bid', 0)
                 ask = getattr(tick_data, 'ask', 0) or getattr(tick_data, 'best_ask', 0)
                 
-                # FIXED: Enhanced data structure with proper field mapping
+                # 🎯 ENHANCED (2025-12-01): Data structure with PREVIOUS_CLOSE for dual-timeframe analysis
                 market_data = {
                     'symbol': symbol,  # Zerodha format for strategy compatibility
                     'truedata_symbol': truedata_symbol,  # Original TrueData symbol for debugging
                     'ltp': ltp,
-                    'close': ltp,  # Map ltp to close for strategy compatibility
+                    'close': previous_close,  # 🎯 FIXED: This is PREVIOUS DAY's close, NOT current LTP!
+                    'previous_close': previous_close,  # 🎯 Explicit field for clarity
                     'high': high,
                     'low': low,
                     'open': open_price,
                     'volume': volume,
-                    'change': change,
+                    'change': change if change else (ltp - previous_close),  # Calculate if missing
                     'changeper': change_percent,
                     'change_percent': change_percent,  # Duplicate for compatibility
                     'bid': bid,
@@ -1067,6 +1098,7 @@ class TrueDataClient:
                         'has_ohlc': all([high != ltp, low != ltp, open_price != ltp]),
                         'has_volume': volume > 0,
                         'has_change_percent': change_percent != 0,
+                        'has_previous_close': previous_close > 0 and previous_close != ltp,
                         'calculated_change_percent': change_percent != getattr(tick_data, 'changeper', None)
                     }
                 }

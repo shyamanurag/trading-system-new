@@ -2451,12 +2451,24 @@ class TradingOrchestrator:
                         self.market_data_history[symbol]['volume'] = volume
                         self.market_data_history[symbol]['price'] = ltp
                         
+                        # 🎯 CRITICAL (2025-12-01): Extract PREVIOUS_CLOSE for dual-timeframe analysis
+                        # previous_close is essential for proper market bias calculation
+                        previous_close = data.get('previous_close', data.get('close', 0))
+                        if not previous_close or previous_close <= 0:
+                            # Calculate from change if available
+                            change = data.get('change', 0)
+                            if change and ltp > 0:
+                                previous_close = ltp - change
+                            else:
+                                previous_close = ltp  # Fallback
+                        
                         # Extract OHLC data with fallbacks
                         ohlc = {
                             'open': data.get('open', ltp),
                             'high': data.get('high', ltp),
                             'low': data.get('low', ltp),
-                            'close': ltp
+                            'close': ltp,
+                            'previous_close': previous_close  # 🎯 Added for dual-timeframe
                         }
                         
                         # Extract bid/ask with fallbacks
@@ -2489,6 +2501,7 @@ class TradingOrchestrator:
                             'high': float(ohlc['high']),
                             'low': float(ohlc['low']),
                             'close': float(ohlc['close']),
+                            'previous_close': float(previous_close),  # 🎯 CRITICAL for dual-timeframe analysis
                             'timestamp': current_time.isoformat(),
                             'data_source': 'truedata',
                             'market_depth': data.get('market_depth', {}),

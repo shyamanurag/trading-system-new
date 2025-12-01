@@ -1845,17 +1845,47 @@ class BaseStrategy:
                 logger.warning(f"⚠️ INTRADAY SQUARE-OFF: New positions blocked. Current time: {current_time} "
                               f"(Square-off starts: {square_off_time})")
                 return False
-            elif option_type in ['CE', 'PE'] and is_options_late:
-                logger.warning(f"🚫 OPTIONS CUTOFF: No new options after {options_cutoff_time} (avoid theta decay)")
-                logger.info(f"   Current time: {current_time} | Options cutoff: {options_cutoff_time}")
-                return False
+            # Note: Options-specific cutoff check removed - handled by _is_options_trading_hours() instead
+            # This method is for general trading hours check only
             else:
-                logger.info(f"✅ TRADING HOURS: Market open for new positions. Current IST time: {current_time}")
-                return True
+                return True  # Market is open for new positions
             
         except Exception as e:
             logger.error(f"Error checking trading hours: {e}")
             # SAFETY: If timezone check fails, default to False (safer)
+            return False
+    
+    def _is_options_trading_hours(self) -> bool:
+        """Check if within OPTIONS trading hours - stricter cutoff to avoid theta decay"""
+        try:
+            ist = pytz.timezone('Asia/Kolkata')
+            now = datetime.now(ist)
+            current_time = now.time()
+            
+            # NSE trading hours
+            market_open = time(9, 15)
+            market_close = time(15, 30)
+            
+            # 🚨 DAVID VS GOLIATH: Stop OPTIONS even EARLIER (avoid theta decay trap)
+            options_cutoff_time = time(13, 30)  # 1:30 PM - No new OPTIONS after this
+            
+            # Check if weekend
+            if now.weekday() >= 5:
+                return False
+            
+            # Check if within options trading window (9:15 AM to 1:30 PM)
+            is_within_hours = market_open <= current_time < options_cutoff_time
+            
+            if not is_within_hours and market_open <= current_time <= market_close:
+                logger.warning(f"🚫 OPTIONS CUTOFF: No new options after {options_cutoff_time} (avoid theta decay)")
+                return False
+            elif not is_within_hours:
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error checking options trading hours: {e}")
             return False
     
     def _is_intraday_square_off_time(self) -> bool:
@@ -3372,9 +3402,9 @@ class BaseStrategy:
                               stop_loss: float, target: float, confidence: float, metadata: Dict) -> Dict:
         """Create standardized signal format for options"""
         try:
-            # If market is closed, do not attempt options trading or on-demand data
-            if not self._is_trading_hours():
-                logger.warning(f"⏸️ MARKET CLOSED - Skipping options signal for {symbol}")
+            # If outside options trading hours, skip (stricter cutoff to avoid theta decay)
+            if not self._is_options_trading_hours():
+                logger.warning(f"⏸️ OPTIONS HOURS CLOSED - Skipping options signal for {symbol}")
                 return None
             # 🎯 CRITICAL FIX: Convert to options symbol and force BUY action
             options_symbol, option_type = await self._convert_to_options_symbol(symbol, entry_price, action)

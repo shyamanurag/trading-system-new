@@ -991,6 +991,74 @@ class ZerodhaIntegration:
         except Exception as e:
             logger.error(f"❌ Error getting WebSocket ticks: {e}")
             return {}
+    
+    def get_quotes(self, symbols: List[str]) -> Dict[str, Dict]:
+        """
+        Get quotes for multiple symbols - REQUIRED for option position monitoring
+        First tries WebSocket cache, then falls back to Zerodha API
+        """
+        try:
+            if not symbols:
+                return {}
+            
+            result = {}
+            missing_symbols = []
+            
+            # Step 1: Try WebSocket cache first (fastest)
+            ws_ticks = self.get_websocket_ticks(symbols)
+            for symbol in symbols:
+                if symbol in ws_ticks:
+                    tick = ws_ticks[symbol]
+                    result[symbol] = {
+                        'last_price': tick.get('ltp', 0),
+                        'ohlc': {
+                            'open': tick.get('open', 0),
+                            'high': tick.get('high', 0),
+                            'low': tick.get('low', 0),
+                            'close': tick.get('previous_close', tick.get('close', 0))
+                        },
+                        'volume': tick.get('volume', 0),
+                        'change': tick.get('change', 0),
+                        'change_percent': tick.get('change_percent', 0)
+                    }
+                else:
+                    missing_symbols.append(symbol)
+            
+            # Step 2: Fetch missing from Zerodha API
+            if missing_symbols and self.kite:
+                try:
+                    # Build proper instrument keys
+                    instrument_keys = []
+                    for symbol in missing_symbols:
+                        if 'NIFTY' in symbol or 'BANKNIFTY' in symbol or 'FINNIFTY' in symbol:
+                            if any(x in symbol for x in ['CE', 'PE']):
+                                instrument_keys.append(f'NFO:{symbol}')
+                            else:
+                                instrument_keys.append(f'NSE:{symbol}')
+                        else:
+                            instrument_keys.append(f'NSE:{symbol}')
+                    
+                    api_quotes = self.kite.quote(instrument_keys)
+                    
+                    for key, quote in api_quotes.items():
+                        # Extract symbol from key (e.g., "NFO:NIFTY25D0226000PE" -> "NIFTY25D0226000PE")
+                        symbol = key.split(':')[-1]
+                        result[symbol] = {
+                            'last_price': quote.get('last_price', 0),
+                            'ohlc': quote.get('ohlc', {}),
+                            'volume': quote.get('volume', 0),
+                            'change': quote.get('change', 0),
+                            'change_percent': quote.get('change', 0) / quote.get('ohlc', {}).get('close', 1) * 100 if quote.get('ohlc', {}).get('close') else 0
+                        }
+                        
+                except Exception as api_error:
+                    logger.warning(f"⚠️ API quote fetch failed for {missing_symbols}: {api_error}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting quotes: {e}")
+            return {}
 
     # API Methods with retry logic
     async def get_order_status(self, order_id: str) -> Optional[Dict]:
@@ -1436,7 +1504,13 @@ class ZerodhaIntegration:
                 'value' in self._instruments_cache and 
                 current_time - self._instruments_cache['timestamp'] < 300):  # 5 minute cache for instruments
                 logger.debug(f"📊 Using cached instruments (age: {current_time - self._instruments_cache['timestamp']:.1f}s)")
-                return self._instruments_cache['value']
+                cached_value = self._instruments_cache['value']
+                # 🎯 CRITICAL FIX: Ensure self._nfo_instruments is set when returning cached data
+                if exchange == 'NFO' and cached_value:
+                    self._nfo_instruments = cached_value
+                elif exchange == 'NSE' and cached_value:
+                    self._nse_instruments = cached_value
+                return cached_value
             
             # Check if we have cached data that's still valid
             cache_key = f"{exchange}_instruments"
@@ -2454,6 +2528,13 @@ class ZerodhaIntegration:
             nfo_search_name = nfo_name_map.get(underlying_symbol, underlying_symbol)
             logger.info(f"🔍 Searching NFO instruments for name='{nfo_search_name}' (input: {underlying_symbol})")
             
+            # 🎯 DEBUG: Show unique names in NFO instruments to diagnose matching
+            try:
+                unique_names = set(inst.get('name', 'UNKNOWN') for inst in self._nfo_instruments[:500])
+                logger.info(f"📊 NFO instrument names sample: {list(unique_names)[:10]}")
+            except Exception as dbg_err:
+                logger.debug(f"Debug logging failed: {dbg_err}")
+            
             options_list = []
             for inst in self._nfo_instruments:
                 if inst.get('name') == nfo_search_name and inst.get('instrument_type') in ['CE', 'PE']:
@@ -2469,8 +2550,16 @@ class ZerodhaIntegration:
             
             if not options_list:
                 logger.error(f"❌ No options found for {underlying_symbol} (searched name: '{nfo_search_name}')")
-                # DEBUG: Show first 3 NFO instruments to verify name format
-                logger.error(f"   DEBUG: Sample NFO instruments: {[{k: inst.get(k) for k in ['name', 'tradingsymbol', 'instrument_type']} for inst in self._nfo_instruments[:3]]}")
+                # DEBUG: Show first 5 NFO instruments to verify name format
+                sample_insts = [{k: inst.get(k) for k in ['name', 'tradingsymbol', 'instrument_type', 'strike']} 
+                               for inst in self._nfo_instruments[:5]]
+                logger.error(f"   DEBUG: Sample NFO instruments: {sample_insts}")
+                # DEBUG: Show all unique names to help diagnose
+                try:
+                    all_names = set(inst.get('name') for inst in self._nfo_instruments)
+                    logger.error(f"   DEBUG: All unique names in NFO: {all_names}")
+                except:
+                    pass
                 return {}
             
             # Step 4: If no expiry specified, find nearest expiry
