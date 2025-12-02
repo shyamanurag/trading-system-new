@@ -2791,6 +2791,13 @@ class BaseStrategy:
                     'GAP_UP_FADE': {'BUY': +1.5, 'SELL': -1.0},
                     'GAP_DOWN_RECOVERY': {'BUY': -1.0, 'SELL': +1.5},
                     
+                    # 🔥 RUBBER BAND SCENARIOS - Strong mean reversion plays!
+                    'RUBBER_BAND_RECOVERY': {'BUY': -2.5, 'SELL': +3.0},  # Very bullish
+                    'RUBBER_BAND_FADE': {'BUY': +3.0, 'SELL': -2.5},      # Very bearish
+                    
+                    # 🔥 EARLY RECOVERY - Gap down but starting to recover
+                    'GAP_DOWN_EARLY_RECOVERY': {'BUY': -1.5, 'SELL': +2.0},  # Favor BUY on strong stocks
+                    
                     # Flat open trending - moderate adjustments
                     'FLAT_TRENDING_UP': {'BUY': -0.5, 'SELL': +1.0},
                     'FLAT_TRENDING_DOWN': {'BUY': +1.0, 'SELL': -0.5},
@@ -3183,6 +3190,10 @@ class BaseStrategy:
             # Use provided market_data or fall back to stored latest data
             data_to_use = market_data if market_data else self._latest_market_data
             
+            # 🔥 EXCEPTIONAL RS TRACKING - Used for bias filter bypass
+            exceptional_rs = False
+            exceptional_rs_value = 0.0
+            
             if market_bias and data_to_use:
                 # Get NIFTY change percent from market bias
                 nifty_change = getattr(getattr(market_bias, 'current_bias', None), 'nifty_momentum', None)
@@ -3197,6 +3208,22 @@ class BaseStrategy:
                 
                 # Perform relative strength check
                 if nifty_change is not None and stock_change is not None:
+                    # 🔥 CALCULATE RELATIVE STRENGTH
+                    relative_strength = stock_change - nifty_change
+                    exceptional_rs_value = relative_strength
+                    
+                    # 🔥 EXCEPTIONAL RS DETECTION - Stock significantly outperforming/underperforming market
+                    EXCEPTIONAL_RS_THRESHOLD = 5.0  # 5% is exceptional
+                    
+                    if action.upper() == 'BUY' and relative_strength > EXCEPTIONAL_RS_THRESHOLD:
+                        exceptional_rs = True
+                        logger.info(f"🌟 EXCEPTIONAL RS DETECTED: {symbol} +{relative_strength:.2f}% vs NIFTY - "
+                                   f"May bypass bias filter for strong momentum play!")
+                    elif action.upper() == 'SELL' and relative_strength < -EXCEPTIONAL_RS_THRESHOLD:
+                        exceptional_rs = True
+                        logger.info(f"🌟 EXCEPTIONAL WEAKNESS DETECTED: {symbol} {relative_strength:.2f}% vs NIFTY - "
+                                   f"May bypass bias filter for weak stock short!")
+                    
                     rs_allowed, rs_reason = self.check_relative_strength(
                         symbol=symbol,
                         action=action,
@@ -3229,6 +3256,28 @@ class BaseStrategy:
                     # Fallback: if no bias method available, allow signal
                     should_allow = True
                     logger.warning(f"⚠️ Market bias object missing should_allow_signal method")
+                
+                # 🔥 EXCEPTIONAL RS OVERRIDE - Allow exceptional RS trades even against bias
+                if not should_allow and exceptional_rs:
+                    # Get current scenario
+                    scenario = getattr(self.market_bias, '_last_scenario', 'UNKNOWN') if self.market_bias else 'UNKNOWN'
+                    
+                    # Allow exceptional RS stocks during recovery/fade scenarios
+                    recovery_scenarios = ['GAP_DOWN_RECOVERY', 'GAP_DOWN_EARLY_RECOVERY', 'RUBBER_BAND_RECOVERY', 'MIXED_SIGNALS']
+                    fade_scenarios = ['GAP_UP_FADE', 'RUBBER_BAND_FADE']
+                    
+                    if action.upper() == 'BUY' and scenario in recovery_scenarios:
+                        should_allow = True
+                        logger.info(f"✅ EXCEPTIONAL RS OVERRIDE: {symbol} BUY allowed despite bearish bias - "
+                                   f"RS: +{exceptional_rs_value:.2f}% in {scenario}")
+                        metadata['exceptional_rs_override'] = True
+                        metadata['relative_strength'] = exceptional_rs_value
+                    elif action.upper() == 'SELL' and scenario in fade_scenarios:
+                        should_allow = True
+                        logger.info(f"✅ EXCEPTIONAL WEAKNESS OVERRIDE: {symbol} SELL allowed despite bullish bias - "
+                                   f"RS: {exceptional_rs_value:.2f}% in {scenario}")
+                        metadata['exceptional_rs_override'] = True
+                        metadata['relative_strength'] = exceptional_rs_value
                 
                 if not should_allow:
                     logger.info(f"🚫 BIAS FILTER: {symbol} {action} rejected by market bias "

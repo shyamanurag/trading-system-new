@@ -487,14 +487,20 @@ class MarketDirectionalBias:
         - GAP_UP_CONTINUATION: Gap up and continuing higher
         - GAP_UP_FADE: Gap up but fading (selling into strength)
         - GAP_DOWN_CONTINUATION: Gap down and continuing lower
-        - GAP_DOWN_RECOVERY: Gap down but recovering
+        - GAP_DOWN_RECOVERY: Gap down but recovering (RUBBER BAND!)
+        - RUBBER_BAND_RECOVERY: Strong snap-back from extended move (150+ pts reversal)
         - FLAT_TRENDING_UP: Flat open, trending higher
         - FLAT_TRENDING_DOWN: Flat open, trending lower
         - CHOPPY: No clear direction, range-bound
         - MIXED_SIGNALS: Conflicting signals
+        
+        🔥 RUBBER BAND DETECTION:
+        - Extended move: abs_move > 150 pts from open
+        - Reversal sign: intraday_pct direction opposite to gap_pct
         """
         GAP_THRESHOLD = 0.25  # 0.25% gap is significant
-        TREND_THRESHOLD = 0.15  # 0.15% intraday move is significant
+        TREND_THRESHOLD = 0.10  # 🔥 LOWERED from 0.15% to catch recovery earlier
+        RUBBER_BAND_POINTS = 100  # 100+ pts move from open is extended
         
         has_gap_up = gap_pct > GAP_THRESHOLD
         has_gap_down = gap_pct < -GAP_THRESHOLD
@@ -503,6 +509,21 @@ class MarketDirectionalBias:
         is_trending_up = intraday_pct > TREND_THRESHOLD
         is_trending_down = intraday_pct < -TREND_THRESHOLD
         is_flat_intraday = abs(intraday_pct) <= TREND_THRESHOLD
+        
+        # 🔥 RUBBER BAND DETECTION - Extended move reversing
+        # If market moved significantly from open and is now reversing
+        is_extended_move = abs_move > RUBBER_BAND_POINTS
+        
+        # Check for rubber band snap-back
+        if is_extended_move:
+            # Gap down + intraday up = rubber band recovery
+            if has_gap_down and intraday_pct > 0.05:  # Even small positive is significant after big drop
+                logger.info(f"🎯 RUBBER BAND DETECTED: Gap {gap_pct:.2f}% + Intraday {intraday_pct:+.2f}% = SNAP-BACK RECOVERY")
+                return 'RUBBER_BAND_RECOVERY'
+            # Gap up + intraday down = rubber band fade
+            elif has_gap_up and intraday_pct < -0.05:
+                logger.info(f"🎯 RUBBER BAND DETECTED: Gap {gap_pct:.2f}% + Intraday {intraday_pct:+.2f}% = SNAP-BACK FADE")
+                return 'RUBBER_BAND_FADE'
         
         # GAP UP scenarios
         if has_gap_up:
@@ -519,6 +540,10 @@ class MarketDirectionalBias:
                 return 'GAP_DOWN_CONTINUATION'
             elif is_trending_up:
                 return 'GAP_DOWN_RECOVERY'
+            # 🔥 NEW: Even slight positive is early recovery sign after gap down
+            elif intraday_pct > 0.05 and abs(gap_pct) > 0.4:  # Gap > 0.4% and any positive intraday
+                logger.info(f"📈 EARLY RECOVERY: Gap {gap_pct:.2f}% but intraday {intraday_pct:+.2f}% positive")
+                return 'GAP_DOWN_EARLY_RECOVERY'
             else:
                 return 'MIXED_SIGNALS'
         

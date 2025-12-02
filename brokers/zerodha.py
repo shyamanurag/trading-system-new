@@ -2857,3 +2857,199 @@ class ZerodhaIntegration:
         market_close = now.replace(hour=15, minute=30, second=0)
         
         return market_open <= now <= market_close
+    
+    # ========================================
+    # 🔥 ZERODHA HISTORICAL DATA API (FREE!)
+    # ========================================
+    
+    async def get_historical_data(
+        self, 
+        symbol: str, 
+        interval: str = "5minute",
+        from_date: datetime = None,
+        to_date: datetime = None,
+        exchange: str = "NSE"
+    ) -> List[Dict]:
+        """
+        Fetch historical OHLC candle data from Zerodha.
+        
+        🔥 THIS IS FREE with Kite Connect subscription!
+        
+        Args:
+            symbol: Trading symbol (e.g., 'RELIANCE', 'NIFTY 50')
+            interval: Candle interval - minute, 3minute, 5minute, 10minute, 
+                     15minute, 30minute, 60minute, day, week, month
+            from_date: Start date (default: 30 days ago)
+            to_date: End date (default: now)
+            exchange: NSE, BSE, NFO, MCX, etc.
+        
+        Returns:
+            List of candle dicts with: date, open, high, low, close, volume
+        
+        Example:
+            candles = await zerodha.get_historical_data('RELIANCE', '5minute')
+            # Returns last 30 days of 5-minute candles
+        """
+        try:
+            if not self.kite:
+                logger.error("❌ Kite not initialized for historical data")
+                return []
+            
+            # Get instrument token for the symbol
+            instrument_token = await self._get_instrument_token(symbol, exchange)
+            if not instrument_token:
+                logger.error(f"❌ Could not find instrument token for {symbol}")
+                return []
+            
+            # Default date range: last 30 days
+            if not to_date:
+                to_date = datetime.now()
+            if not from_date:
+                # For intraday intervals, limit to 60 days (Zerodha limit)
+                if interval in ['minute', '3minute', '5minute', '10minute', '15minute', '30minute', '60minute']:
+                    from_date = to_date - timedelta(days=60)
+                else:
+                    from_date = to_date - timedelta(days=365)  # 1 year for daily/weekly
+            
+            logger.info(f"📊 Fetching {symbol} historical data: {interval} from {from_date.date()} to {to_date.date()}")
+            
+            # Call Zerodha historical data API
+            data = await self._async_api_call(
+                self.kite.historical_data,
+                instrument_token,
+                from_date,
+                to_date,
+                interval,
+                continuous=False,
+                oi=False
+            )
+            
+            if data:
+                logger.info(f"✅ Got {len(data)} candles for {symbol} ({interval})")
+                
+                # Convert to standardized format
+                candles = []
+                for candle in data:
+                    candles.append({
+                        'timestamp': candle['date'],
+                        'open': float(candle['open']),
+                        'high': float(candle['high']),
+                        'low': float(candle['low']),
+                        'close': float(candle['close']),
+                        'volume': int(candle['volume'])
+                    })
+                
+                return candles
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"❌ Error fetching historical data for {symbol}: {e}")
+            return []
+    
+    async def _get_instrument_token(self, symbol: str, exchange: str = "NSE") -> Optional[int]:
+        """Get instrument token for a symbol"""
+        try:
+            # Check cache first
+            cache_key = f"{exchange}:{symbol}"
+            if cache_key in self._symbol_to_token:
+                return self._symbol_to_token[cache_key]
+            
+            # Fetch instruments if not cached
+            instruments = await self.get_instruments(exchange)
+            
+            for inst in instruments:
+                if inst.get('tradingsymbol') == symbol:
+                    token = inst.get('instrument_token')
+                    self._symbol_to_token[cache_key] = token
+                    return token
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting instrument token for {symbol}: {e}")
+            return None
+    
+    async def get_intraday_candles(self, symbol: str, minutes: int = 5) -> List[Dict]:
+        """
+        Get today's intraday candles for a symbol.
+        
+        Convenience method for common intraday analysis.
+        
+        Args:
+            symbol: Trading symbol
+            minutes: Candle size (1, 3, 5, 10, 15, 30, 60)
+        
+        Returns:
+            List of today's candles
+        """
+        interval_map = {
+            1: 'minute',
+            3: '3minute',
+            5: '5minute',
+            10: '10minute',
+            15: '15minute',
+            30: '30minute',
+            60: '60minute'
+        }
+        
+        interval = interval_map.get(minutes, '5minute')
+        today = datetime.now().replace(hour=9, minute=15, second=0, microsecond=0)
+        
+        return await self.get_historical_data(
+            symbol=symbol,
+            interval=interval,
+            from_date=today,
+            to_date=datetime.now()
+        )
+    
+    async def calculate_atr_from_zerodha(self, symbol: str, period: int = 14) -> float:
+        """
+        Calculate ATR using Zerodha historical data.
+        
+        🔥 Use this instead of TrueData for ATR calculation!
+        
+        Args:
+            symbol: Trading symbol
+            period: ATR period (default 14)
+        
+        Returns:
+            ATR value
+        """
+        try:
+            # Get daily candles for ATR calculation
+            candles = await self.get_historical_data(
+                symbol=symbol,
+                interval='day',
+                from_date=datetime.now() - timedelta(days=period + 5)  # Extra for buffer
+            )
+            
+            if len(candles) < period:
+                logger.warning(f"⚠️ Not enough candles for ATR: {len(candles)} < {period}")
+                return 0.0
+            
+            # Calculate True Range for each candle
+            true_ranges = []
+            for i in range(1, len(candles)):
+                high = candles[i]['high']
+                low = candles[i]['low']
+                prev_close = candles[i-1]['close']
+                
+                tr = max(
+                    high - low,
+                    abs(high - prev_close),
+                    abs(low - prev_close)
+                )
+                true_ranges.append(tr)
+            
+            # Calculate ATR as SMA of True Ranges
+            if len(true_ranges) >= period:
+                atr = sum(true_ranges[-period:]) / period
+                logger.info(f"📊 {symbol} ATR({period}): ₹{atr:.2f}")
+                return atr
+            
+            return 0.0
+            
+        except Exception as e:
+            logger.error(f"❌ Error calculating ATR for {symbol}: {e}")
+            return 0.0
