@@ -3611,6 +3611,12 @@ class BaseStrategy:
                 logger.error(f"   This signal will NOT be sent to trade engine")
                 return None
             
+            # 🔥 OPTIONS ARE ALWAYS INTRADAY: Must be squared off same day
+            is_intraday = True
+            trading_mode = 'INTRADAY'
+            timeframe = "Same Day (Intraday)"
+            square_off_time = "15:15 IST"
+            
             return {
                 # Core signal fields (consistent naming)
                 'signal_id': signal_id,
@@ -3627,6 +3633,12 @@ class BaseStrategy:
                 'confidence': round(confidence, 2),
                 'quality_score': round(confidence, 2),  # Map confidence to quality_score
                 
+                # 🔥 NEW: Trading mode indicators
+                'is_intraday': is_intraday,
+                'trading_mode': trading_mode,
+                'timeframe': timeframe,
+                'square_off_time': square_off_time,
+                
                 # Risk metrics
                 'risk_metrics': {
                     'risk_amount': round(risk_amount, 2),
@@ -3640,6 +3652,9 @@ class BaseStrategy:
                 'metadata': {
                     **metadata,
                     'signal_validation': 'PASSED',
+                    'trading_mode': trading_mode,
+                    'is_intraday': is_intraday,
+                    'timeframe': timeframe,
                     'timestamp': datetime.now().isoformat(),
                     'strategy_instance': self.name,
                     'signal_source': 'strategy_engine',
@@ -3687,6 +3702,21 @@ class BaseStrategy:
                 logger.warning(f"Equity signal below {min_risk_reward_ratio}:1 ratio: {symbol} ({risk_reward_ratio:.2f})")
                 return None
             
+            # 🔥 INTRADAY FOCUS: Determine if signal is suitable for intraday
+            # Target achievable within same day = intraday, otherwise swing
+            is_intraday = reward_percent <= 3.0  # 3% target max for intraday
+            trading_mode = 'INTRADAY' if is_intraday else 'SWING'
+            
+            # 🔥 INTRADAY TIMEFRAME: Calculate estimated time to target
+            if is_intraday:
+                timeframe = "Same Day (Intraday)"
+                square_off_time = "15:15 IST"
+            else:
+                # Estimate days based on target percentage
+                est_days = max(2, int(reward_percent / 1.5))  # ~1.5% per day
+                timeframe = f"{est_days}-{est_days+3} days (Swing)"
+                square_off_time = "N/A"
+            
             signal = {
                 'signal_id': f"{self.name}_{symbol}_{int(time_module.time())}",
                 'symbol': symbol,
@@ -3699,6 +3729,13 @@ class BaseStrategy:
                 'strategy_name': self.__class__.__name__,
                 'confidence': confidence,
                 'quality_score': confidence,
+                
+                # 🔥 NEW: Trading mode indicators
+                'is_intraday': is_intraday,
+                'trading_mode': trading_mode,
+                'timeframe': timeframe,
+                'square_off_time': square_off_time,
+                
                 'risk_metrics': {
                     'risk_amount': round(risk_amount, 2),
                     'reward_amount': round(reward_amount, 2),
@@ -3709,6 +3746,9 @@ class BaseStrategy:
                 'metadata': {
                     **metadata,
                     'signal_type': 'EQUITY',
+                    'trading_mode': trading_mode,
+                    'is_intraday': is_intraday,
+                    'timeframe': timeframe,
                     'timestamp': datetime.now().isoformat(),
                     'strategy_instance': self.__class__.__name__,
                     'signal_source': 'strategy_engine'
@@ -4280,28 +4320,44 @@ class BaseStrategy:
         zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
         is_index = zerodha_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX']
         
+        # 🚨 CRITICAL FIX 2025-12-02: ALWAYS skip current day expiry (intraday strategy)
+        # Filter out today's expiry - we need at least 1 day for proper execution
+        non_same_day_expiries = [exp for exp in future_expiries if (exp['date'] - today).days >= 1]
+        
+        if not non_same_day_expiries:
+            logger.error(f"❌ NO VALID EXPIRIES: All expiries are same-day for {zerodha_symbol}")
+            return None
+        
         if is_index:
-            # INDICES: Skip immediate expiry (too little time), use next one
-            days_to_first_expiry = (future_expiries[0]['date'] - today).days
+            # INDICES: Skip immediate expiry (too little time), use next weekly
+            days_to_first_expiry = (non_same_day_expiries[0]['date'] - today).days
             
-            if days_to_first_expiry <= 2 and len(future_expiries) > 1:
-                # Skip very near expiry (0-2 days), use next
-                nearest = future_expiries[1]
-                logger.info(f"📊 INDEX {zerodha_symbol} (from {underlying_symbol}): Skipping immediate expiry ({days_to_first_expiry} days), using next ({(nearest['date'] - today).days} days)")
+            # 🔥 INTRADAY FOCUS: For indices, skip expiries with less than 3 days
+            # This ensures we don't buy options expiring too soon (theta decay)
+            if days_to_first_expiry <= 3 and len(non_same_day_expiries) > 1:
+                # Skip very near expiry (1-3 days), use next weekly
+                nearest = non_same_day_expiries[1]
+                logger.info(f"📊 INDEX {zerodha_symbol}: SKIPPING NEAR EXPIRY ({days_to_first_expiry} days) → Using next ({(nearest['date'] - today).days} days)")
             else:
-                # First expiry has enough time
-                nearest = future_expiries[0]
-                logger.info(f"📊 INDEX {zerodha_symbol} (from {underlying_symbol}): Using nearest expiry ({days_to_first_expiry} days)")
+                nearest = non_same_day_expiries[0]
+                logger.info(f"📊 INDEX {zerodha_symbol}: Using expiry with {days_to_first_expiry} days")
         else:
-            # STOCKS: Prefer monthly expiries (last-Thursday); filter out weekly expiries
-            monthly_only = [exp for exp in future_expiries if exp.get('is_monthly', False)]
+            # STOCKS: Prefer monthly expiries for better liquidity and lower theta
+            monthly_only = [exp for exp in non_same_day_expiries if exp.get('is_monthly', False)]
+            
+            # 🔥 STOCK OPTIONS: Skip expiries with less than 5 days (theta decay issue)
+            safe_expiries = [exp for exp in non_same_day_expiries if (exp['date'] - today).days >= 5]
+            
             if monthly_only:
                 nearest = monthly_only[0]
-                logger.info(f"📊 STOCK {zerodha_symbol}: Using nearest MONTHLY expiry ({(nearest['date'] - today).days} days)")
+                logger.info(f"📊 STOCK {zerodha_symbol}: Using MONTHLY expiry ({(nearest['date'] - today).days} days)")
+            elif safe_expiries:
+                nearest = safe_expiries[0]
+                logger.info(f"📊 STOCK {zerodha_symbol}: Using safe expiry ({(nearest['date'] - today).days} days, min 5 days)")
             else:
-                # Fallback: if API doesn't flag monthly, pick the first future expiry
-                nearest = future_expiries[0]
-                logger.warning(f"⚠️ STOCK {zerodha_symbol}: No monthly flag found, using first future expiry ({(nearest['date'] - today).days} days)")
+                # Last resort: use first non-same-day expiry
+                nearest = non_same_day_expiries[0]
+                logger.warning(f"⚠️ STOCK {zerodha_symbol}: Using nearest available ({(nearest['date'] - today).days} days)")
             
         # Override with preference if specified
         if preference == "next_weekly" and len(future_expiries) > 1:

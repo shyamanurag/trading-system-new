@@ -285,21 +285,37 @@ class AutonomousEliteScanner:
             reward_percent = abs((target - entry_price) / entry_price) * 100
             risk_reward_ratio = reward_percent / risk_percent if risk_percent > 0 else 3.0
             
-            # Calculate dynamic timeframe based on risk/reward and strategy
-            # Higher R:R or options = longer timeframe, scalping = shorter timeframe
+            # 🔥 CRITICAL FIX 2025-12-02: Use signal's trading mode instead of guessing
+            # Signals now carry is_intraday and trading_mode metadata
+            is_intraday = signal.get('is_intraday', signal.get('metadata', {}).get('is_intraday', False))
+            trading_mode = signal.get('trading_mode', signal.get('metadata', {}).get('trading_mode', 'SWING'))
+            signal_timeframe = signal.get('timeframe', signal.get('metadata', {}).get('timeframe', None))
+            
+            # Determine timeframe based on signal metadata (not guessed)
             is_options = 'CE' in signal.get('symbol', '') or 'PE' in signal.get('symbol', '')
-            if is_options:
-                timeframe = "3-7 days"  # Options with theta decay
-                valid_days = 5
-            elif risk_reward_ratio >= 2.5:
-                timeframe = "5-10 days"  # Swing trades
-                valid_days = 7
-            elif risk_reward_ratio >= 1.5:
-                timeframe = "2-5 days"  # Short-term momentum
+            
+            if signal_timeframe:
+                # Use signal's own timeframe assessment
+                timeframe = signal_timeframe
+                valid_days = 1 if is_intraday else 3
+            elif is_intraday:
+                # Intraday signal - same day square off
+                timeframe = "Same Day (Intraday)"
+                valid_days = 1
+            elif is_options:
+                # Options but not intraday - medium term
+                timeframe = "2-5 days (Options)"
                 valid_days = 4
+            elif reward_percent <= 3.0:
+                # Small target = intraday suitable
+                timeframe = "Same Day (Intraday)"
+                valid_days = 1
+            elif risk_reward_ratio >= 2.5:
+                timeframe = "5-10 days (Swing)"
+                valid_days = 7
             else:
-                timeframe = "1-3 days"  # Scalping/intraday
-                valid_days = 2
+                timeframe = "2-5 days (Short-term)"
+                valid_days = 4
             
             # Calculate dynamic position size based on confidence and risk
             # Higher confidence + lower risk = larger position size
@@ -367,7 +383,13 @@ class AutonomousEliteScanner:
                 "data_source": "REAL_STRATEGY_GENERATED",
                 "strategy_metadata": signal.get('metadata', {}),
                 "autonomous": True,
-                "WARNING": "REAL_STRATEGY_NON_INTRADAY_SIGNAL"
+                
+                # 🔥 NEW: Clear trading mode indicators
+                "is_intraday": is_intraday,
+                "trading_mode": trading_mode,
+                "square_off_time": signal.get('square_off_time', "15:15 IST" if is_intraday else "N/A"),
+                "WARNING": "INTRADAY_SIGNAL_SQUARE_OFF_TODAY" if is_intraday else "SWING_SIGNAL_NOT_FOR_INTRADAY",
+                "recommendation_type": "INTRADAY" if is_intraday else "SWING"
             }
             
         except Exception as e:
