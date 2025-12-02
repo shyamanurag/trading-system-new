@@ -94,6 +94,7 @@ router_imports = {
     'dynamic_user_management': ('src.api.dynamic_user_management', 'router'),
     'user_analytics_service': ('src.api.user_analytics_service', 'router'),
     'zerodha_analytics': ('src.api.zerodha_analytics', 'router'),
+    'positions': ('src.api.positions', 'router'),
 }
 
 # Import routers dynamically

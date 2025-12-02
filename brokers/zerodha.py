@@ -2572,7 +2572,8 @@ class ZerodhaIntegration:
                 nifty_options = [inst for inst in self._nfo_instruments[:1000] 
                                 if inst.get('name') in ['NIFTY', 'NIFTY 50'] and inst.get('instrument_type') in ['CE', 'PE']][:3]
                 if nifty_options:
-                    logger.info(f"📊 Sample NIFTY options: {[f\"{i.get('tradingsymbol')} ({i.get('instrument_type')})\" for i in nifty_options]}")
+                    sample_info = [f"{i.get('tradingsymbol')} ({i.get('instrument_type')})" for i in nifty_options]
+                    logger.info(f"📊 Sample NIFTY options: {sample_info}")
                     
             except Exception as dbg_err:
                 logger.debug(f"Debug logging failed: {dbg_err}")

@@ -4,9 +4,8 @@ echo PUSHING CRITICAL FIXES TO GITHUB
 echo ==========================================
 echo.
 echo FIXES IN THIS PUSH:
-echo 1. NFO cache now EXCHANGE-SPECIFIC (prevents NSE/NFO cross-contamination)
-echo 2. get_quotes method is now async (fixes 'dict can't be awaited' error)
-echo 3. Added NFO sanity check to detect cache contamination
+echo 1. Fixed f-string backslash syntax error in zerodha.py line 2575
+echo 2. Added missing positions router import in main.py
 echo ==========================================
 
 cd /d C:\trading-system-new
@@ -21,7 +20,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "CRITICAL Dec 1 2025: Exchange-specific NFO cache + async get_quotes fix"
+git commit -m "Fix: f-string backslash syntax error in zerodha.py + add missing positions router import"
 
 echo.
 echo === Pushing to GitHub ===
