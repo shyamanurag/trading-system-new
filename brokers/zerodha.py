@@ -2529,19 +2529,20 @@ class ZerodhaIntegration:
             
             # Step 3: Filter options for this underlying and expiry
             # NFO instrument 'name' field mapping:
+            # 🔥 FIXED 2025-12-02: Zerodha uses 'BANKNIFTY' not 'NIFTY BANK'!
             # NIFTY options → name='NIFTY'
-            # BANKNIFTY options → name='NIFTY BANK'  
+            # BANKNIFTY options → name='BANKNIFTY'  
             # FINNIFTY options → name='FINNIFTY'
-            # FIXED: 2025-11-14 - Map internal symbols to NFO instrument names
+            # MIDCPNIFTY options → name='MIDCPNIFTY'
             nfo_name_map = {
                 'NIFTY': 'NIFTY',
                 'NIFTY-I': 'NIFTY',
-                'BANKNIFTY': 'NIFTY BANK',
-                'BANKNIFTY-I': 'NIFTY BANK',
+                'BANKNIFTY': 'BANKNIFTY',      # 🔥 Fixed from 'NIFTY BANK'
+                'BANKNIFTY-I': 'BANKNIFTY',    # 🔥 Fixed from 'NIFTY BANK'
                 'FINNIFTY': 'FINNIFTY',
                 'FINNIFTY-I': 'FINNIFTY',
-                'MIDCPNIFTY': 'NIFTY MID SELECT',
-                'MIDCPNIFTY-I': 'NIFTY MID SELECT'
+                'MIDCPNIFTY': 'MIDCPNIFTY',    # 🔥 Fixed from 'NIFTY MID SELECT'
+                'MIDCPNIFTY-I': 'MIDCPNIFTY'   # 🔥 Fixed from 'NIFTY MID SELECT'
             }
             
             nfo_search_name = nfo_name_map.get(underlying_symbol, underlying_symbol)

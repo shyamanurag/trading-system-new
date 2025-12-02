@@ -2751,7 +2751,8 @@ class BaseStrategy:
             else:  # SELL trade
                 return entry_price * (1 - target_percent)
     
-    def _calculate_adaptive_confidence_threshold(self, symbol: str, action: str, confidence: float) -> Tuple[float, str]:
+    def _calculate_adaptive_confidence_threshold(self, symbol: str, action: str, confidence: float, 
+                                                    relative_strength: float = None) -> Tuple[float, str]:
         """
         🔥 PROFESSIONAL MEAN REVERSION-AWARE CONFIDENCE THRESHOLD
         
@@ -2760,6 +2761,7 @@ class BaseStrategy:
         - Market regime (TRENDING/CHOPPY)
         - Bias confidence
         - Signal alignment (with or against trend)
+        - 🔥 NEW: Exceptional relative strength bonus
         
         Returns:
             (min_confidence_threshold, reason_string)
@@ -2768,6 +2770,22 @@ class BaseStrategy:
             # Default threshold (TUNED: lowered from 8.5 to 7.5)
             min_conf = 7.5
             reasons = []
+            
+            # 🔥 EXCEPTIONAL RS THRESHOLD REDUCTION
+            # Stocks with exceptional relative strength get lower thresholds
+            if relative_strength is not None:
+                if action.upper() == 'BUY' and relative_strength > 5.0:
+                    # Exceptional strength - reduce threshold significantly
+                    rs_reduction = min(2.0, relative_strength / 3.0)  # Max -2.0 reduction
+                    min_conf -= rs_reduction
+                    reasons.append(f"EXCEPTIONAL_RS:+{relative_strength:.1f}%(-{rs_reduction:.1f})")
+                    logger.info(f"🌟 {symbol} EXCEPTIONAL RS BOOST: threshold reduced by {rs_reduction:.1f} (RS: +{relative_strength:.1f}%)")
+                elif action.upper() == 'SELL' and relative_strength < -5.0:
+                    # Exceptional weakness - reduce threshold for shorts
+                    rs_reduction = min(2.0, abs(relative_strength) / 3.0)
+                    min_conf -= rs_reduction
+                    reasons.append(f"EXCEPTIONAL_WEAK:{relative_strength:.1f}%(-{rs_reduction:.1f})")
+                    logger.info(f"🌟 {symbol} EXCEPTIONAL WEAKNESS BOOST: threshold reduced by {rs_reduction:.1f} (RS: {relative_strength:.1f}%)")
             
             # Get market bias if available
             if not (hasattr(self, 'market_bias') and self.market_bias):
@@ -3354,7 +3372,10 @@ class BaseStrategy:
             # 🔥 PROFESSIONAL MEAN REVERSION-AWARE CONFIDENCE THRESHOLD
             # ========================================
             # Multi-indicator system prevents chasing exhausted moves (150+ points)
-            min_conf, adjustment_reason = self._calculate_adaptive_confidence_threshold(symbol, action, confidence)
+            # 🔥 Pass exceptional_rs_value to give bonus for exceptional RS stocks
+            min_conf, adjustment_reason = self._calculate_adaptive_confidence_threshold(
+                symbol, action, confidence, relative_strength=exceptional_rs_value
+            )
             logger.debug(f"📊 Adaptive Threshold: {symbol} {action} -> min_conf={min_conf:.1f} ({adjustment_reason})")
 
             # Ensure confidence is numeric before comparison
