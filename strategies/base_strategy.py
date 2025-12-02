@@ -4320,44 +4320,39 @@ class BaseStrategy:
         zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
         is_index = zerodha_symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX']
         
-        # 🚨 CRITICAL FIX 2025-12-02: ALWAYS skip current day expiry (intraday strategy)
-        # Filter out today's expiry - we need at least 1 day for proper execution
-        non_same_day_expiries = [exp for exp in future_expiries if (exp['date'] - today).days >= 1]
+        # 🚨 CRITICAL FIX 2025-12-02: ALWAYS SKIP NEAREST EXPIRY, USE NEXT ONE
+        # User requirement: Never buy nearest expiry options, always use next expiry
+        # This avoids theta decay and allows proper time for price movement
         
-        if not non_same_day_expiries:
-            logger.error(f"❌ NO VALID EXPIRIES: All expiries are same-day for {zerodha_symbol}")
+        if len(future_expiries) < 2:
+            logger.error(f"❌ NOT ENOUGH EXPIRIES: Need at least 2 expiries to skip nearest for {zerodha_symbol}")
             return None
         
+        # Sort by date to get proper order
+        future_expiries.sort(key=lambda x: x['date'])
+        
+        # 🔥 ALWAYS SKIP NEAREST EXPIRY - Use index [1] not [0]
+        nearest_expiry = future_expiries[0]
+        next_expiry = future_expiries[1]
+        
+        days_to_nearest = (nearest_expiry['date'] - today).days
+        days_to_next = (next_expiry['date'] - today).days
+        
+        logger.info(f"📊 EXPIRY SELECTION for {zerodha_symbol}:")
+        logger.info(f"   🚫 SKIPPING NEAREST: {nearest_expiry['formatted']} ({days_to_nearest} days)")
+        logger.info(f"   ✅ USING NEXT: {next_expiry['formatted']} ({days_to_next} days)")
+        
+        # Use next expiry (skip nearest)
+        nearest = next_expiry
+        
         if is_index:
-            # INDICES: Skip immediate expiry (too little time), use next weekly
-            days_to_first_expiry = (non_same_day_expiries[0]['date'] - today).days
-            
-            # 🔥 INTRADAY FOCUS: For indices, skip expiries with less than 3 days
-            # This ensures we don't buy options expiring too soon (theta decay)
-            if days_to_first_expiry <= 3 and len(non_same_day_expiries) > 1:
-                # Skip very near expiry (1-3 days), use next weekly
-                nearest = non_same_day_expiries[1]
-                logger.info(f"📊 INDEX {zerodha_symbol}: SKIPPING NEAR EXPIRY ({days_to_first_expiry} days) → Using next ({(nearest['date'] - today).days} days)")
-            else:
-                nearest = non_same_day_expiries[0]
-                logger.info(f"📊 INDEX {zerodha_symbol}: Using expiry with {days_to_first_expiry} days")
+            logger.info(f"📊 INDEX {zerodha_symbol}: Using NEXT expiry (skipped nearest) → {days_to_next} days")
         else:
-            # STOCKS: Prefer monthly expiries for better liquidity and lower theta
-            monthly_only = [exp for exp in non_same_day_expiries if exp.get('is_monthly', False)]
-            
-            # 🔥 STOCK OPTIONS: Skip expiries with less than 5 days (theta decay issue)
-            safe_expiries = [exp for exp in non_same_day_expiries if (exp['date'] - today).days >= 5]
-            
-            if monthly_only:
-                nearest = monthly_only[0]
-                logger.info(f"📊 STOCK {zerodha_symbol}: Using MONTHLY expiry ({(nearest['date'] - today).days} days)")
-            elif safe_expiries:
-                nearest = safe_expiries[0]
-                logger.info(f"📊 STOCK {zerodha_symbol}: Using safe expiry ({(nearest['date'] - today).days} days, min 5 days)")
+            # For stocks, check if we have monthly expiry in the next options
+            if next_expiry.get('is_monthly', False):
+                logger.info(f"📊 STOCK {zerodha_symbol}: Using NEXT MONTHLY expiry → {days_to_next} days")
             else:
-                # Last resort: use first non-same-day expiry
-                nearest = non_same_day_expiries[0]
-                logger.warning(f"⚠️ STOCK {zerodha_symbol}: Using nearest available ({(nearest['date'] - today).days} days)")
+                logger.info(f"📊 STOCK {zerodha_symbol}: Using NEXT expiry → {days_to_next} days")
             
         # Override with preference if specified
         if preference == "next_weekly" and len(future_expiries) > 1:
