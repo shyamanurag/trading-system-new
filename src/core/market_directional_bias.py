@@ -534,10 +534,6 @@ class MarketDirectionalBias:
                 return 'MIXED_SIGNALS'
         
         return 'MIXED_SIGNALS'
-            
-        except Exception as e:
-            logger.error(f"Error checking move exhaustion: {e}")
-            return {'direction': bias_direction, 'confidence': confidence, 'zone': 'ERROR'}
     
     def _analyze_nifty_momentum(self, nifty_data: Dict) -> float:
         """
