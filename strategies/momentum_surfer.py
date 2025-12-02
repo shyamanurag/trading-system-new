@@ -270,6 +270,11 @@ class EnhancedMomentumSurfer(BaseStrategy):
         self.momentum_threshold = config.get('momentum_threshold', 0.015)  # Configurable momentum threshold
         self.trend_strength_threshold = config.get('trend_strength_threshold', 0.25)  # Configurable trend confirmation
         self.mean_reversion_threshold = config.get('mean_reversion_threshold', 0.7)   # Configurable mean reversion probability
+        
+        # 🔥 MARKET CONDITION DETECTION THRESHOLDS (CRITICAL FIX - WERE MISSING!)
+        self.trending_threshold = config.get('trending_threshold', 1.5)    # 1.5% change for trending
+        self.breakout_threshold = config.get('breakout_threshold', 2.5)    # 2.5% change for breakout
+        self.sideways_range = config.get('sideways_range', 0.5)            # ±0.5% is sideways
 
         # CONFIGURABLE STOCK UNIVERSE - now using base class symbol filtering
         self.watchlist = set(config.get('focus_stocks', [
@@ -849,33 +854,39 @@ class EnhancedMomentumSurfer(BaseStrategy):
             avg_volume = volume * 0.8  # Assume current is 20% above average
             volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
             
-            # Condition detection logic
+            # Condition detection logic with debug logging
+            condition = 'sideways'  # Default
+            
             if abs(change_percent) >= self.breakout_threshold and volume_ratio > 1.5:
-                return 'breakout_up' if change_percent > 0 else 'breakout_down'
+                condition = 'breakout_up' if change_percent > 0 else 'breakout_down'
             
             elif change_percent >= self.trending_threshold:
-                return 'trending_up'
+                condition = 'trending_up'
             
             elif change_percent <= -self.trending_threshold:
-                return 'trending_down'
+                condition = 'trending_down'
             
             elif abs(change_percent) <= self.sideways_range:
-                return 'sideways'
+                condition = 'sideways'
             
             elif volume_ratio > 2.0:
-                return 'high_volatility'
+                condition = 'high_volatility'
             
             elif volume_ratio < 0.5:
-                return 'low_volatility'
+                condition = 'low_volatility'
             
             # Check for reversal patterns (simplified)
             elif change_percent > 0.5 and change_percent < self.trending_threshold:
-                return 'reversal_up'
+                condition = 'reversal_up'
             
             elif change_percent < -0.5 and change_percent > -self.trending_threshold:
-                return 'reversal_down'
+                condition = 'reversal_down'
             
-            return 'sideways'
+            # 🔥 DEBUG: Log condition detection for active symbols
+            if condition != 'sideways':
+                logger.info(f"📊 {symbol} CONDITION: {condition} (Change: {change_percent:.2f}%, Vol Ratio: {volume_ratio:.2f})")
+            
+            return condition
             
         except Exception as e:
             logger.debug(f"Error detecting market condition for {symbol}: {e}")
