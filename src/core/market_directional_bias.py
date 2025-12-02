@@ -232,6 +232,9 @@ class MarketDirectionalBias:
             confidence = exhaustion_adjustment['confidence']
             move_zone = exhaustion_adjustment['zone']
             
+            # Store scenario for strategies to access
+            self._last_scenario = exhaustion_adjustment.get('scenario', 'UNKNOWN')
+            
             # 10. ENFORCE LOW-CONFIDENCE NEUTRALIZATION
             # TUNED: Lowered from 3.0 to 1.5 to allow more trades in choppy markets
             # Exhaustion logic above already prevents bad trades in extended moves
@@ -274,25 +277,31 @@ class MarketDirectionalBias:
     
     def _check_move_exhaustion(self, nifty_data: Dict, bias_direction: str, confidence: float) -> Dict:
         """
-        🔥 CHECK FOR INTRADAY MOVE EXHAUSTION
+        🔥 COMPREHENSIVE INTRADAY MOVE & SCENARIO ANALYSIS
         
-        User insight: When NIFTY has moved 150+ points from open, further moves in same 
-        direction become difficult. System should:
-        - Reduce confidence for trend continuation
-        - Favor mean reversion trades
-        - Prevent chasing exhausted moves
+        Handles ALL market scenarios:
+        1. Gap Up + Continuation (bullish)
+        2. Gap Up + Fade (bearish reversal)
+        3. Gap Down + Continuation (bearish)
+        4. Gap Down + Recovery (bullish reversal)
+        5. Flat Open + Trending Up
+        6. Flat Open + Trending Down
+        7. Flat Open + Choppy/Range-bound
+        8. Extended Move + Exhaustion
+        9. Extreme Move + Mean Reversion
         
         Returns:
-            Dict with adjusted direction, confidence, and move zone
+            Dict with adjusted direction, confidence, zone, and scenario
         """
         try:
             ltp = float(nifty_data.get('ltp', 0))
             open_price = float(nifty_data.get('open', 0))
+            previous_close = float(nifty_data.get('previous_close', 0))
             high = float(nifty_data.get('high', ltp))
             low = float(nifty_data.get('low', ltp))
             
             if not all([ltp, open_price]):
-                return {'direction': bias_direction, 'confidence': confidence, 'zone': 'UNKNOWN'}
+                return {'direction': bias_direction, 'confidence': confidence, 'zone': 'UNKNOWN', 'scenario': 'UNKNOWN'}
             
             # Update today's tracking
             if self.todays_open is None or open_price != self.todays_open:
@@ -303,9 +312,25 @@ class MarketDirectionalBias:
                 self.todays_high = max(self.todays_high, high)
                 self.todays_low = min(self.todays_low, low)
             
-            # Calculate move from open in POINTS
+            # ============= CALCULATE KEY METRICS =============
+            # 1. Gap from previous close to open
+            gap_pct = ((open_price - previous_close) / previous_close * 100) if previous_close > 0 else 0
+            gap_pts = open_price - previous_close if previous_close > 0 else 0
+            
+            # 2. Intraday move from open
             move_from_open = ltp - open_price
             abs_move = abs(move_from_open)
+            intraday_pct = (move_from_open / open_price * 100) if open_price > 0 else 0
+            
+            # 3. Day change from previous close
+            day_change_pct = ((ltp - previous_close) / previous_close * 100) if previous_close > 0 else 0
+            
+            # 4. Daily range used
+            daily_range_used = (self.todays_high - self.todays_low)
+            range_exhaustion_pct = (daily_range_used / self.typical_daily_range) * 100
+            
+            # ============= DETERMINE MARKET SCENARIO =============
+            scenario = self._identify_market_scenario(gap_pct, intraday_pct, day_change_pct, abs_move)
             
             # Determine move zone
             move_zone = 'EARLY'
@@ -314,73 +339,201 @@ class MarketDirectionalBias:
                     move_zone = zone_name
                     break
             
-            # Determine current move direction
-            current_move_direction = 'BULLISH' if move_from_open > 0 else 'BEARISH'
+            # Determine directions
+            intraday_direction = 'BULLISH' if move_from_open > 5 else ('BEARISH' if move_from_open < -5 else 'NEUTRAL')
+            day_direction = 'BULLISH' if day_change_pct > 0.15 else ('BEARISH' if day_change_pct < -0.15 else 'NEUTRAL')
             
-            # Calculate how much room is left in typical daily range
-            daily_range_used = (self.todays_high - self.todays_low)
-            range_exhaustion_pct = (daily_range_used / self.typical_daily_range) * 100
-            
-            # Adjust confidence based on move zone and direction alignment
+            # ============= SCENARIO-BASED BIAS ADJUSTMENT =============
             adjusted_confidence = confidence
             adjusted_direction = bias_direction
             
-            if move_zone == 'EARLY':
-                # 0-50 points: Fresh move, boost trend-following
-                if bias_direction == current_move_direction:
-                    adjusted_confidence *= 1.2  # +20% confidence for aligned trend
-                    logger.info(f"🚀 EARLY MOVE ({abs_move:.0f} pts): Boosting {bias_direction} confidence +20%")
-                    
-            elif move_zone == 'MID':
-                # 50-100 points: Established move, normal operation
-                logger.debug(f"📊 MID MOVE ({abs_move:.0f} pts): Normal operation")
-                
-            elif move_zone == 'EXTENDED':
-                # 100-150 points: Stretched, reduce trend-following confidence
-                if bias_direction == current_move_direction:
-                    adjusted_confidence *= 0.7  # -30% for chasing extended moves
-                    logger.info(f"⚠️ EXTENDED MOVE ({abs_move:.0f} pts): Reducing {bias_direction} confidence -30% (stretched)")
-                else:
-                    # Counter-trend (mean reversion) gets boost
-                    adjusted_confidence *= 1.1
-                    logger.info(f"🔄 EXTENDED MOVE ({abs_move:.0f} pts): Boosting {bias_direction} counter-trend +10% (mean reversion)")
-                    
-            elif move_zone == 'EXTREME':
-                # 150+ points: STRONG mean reversion mode
-                if bias_direction == current_move_direction:
-                    # DON'T chase extreme moves - neutralize or flip
-                    if confidence > 5.0:
-                        # High confidence trend = flip to mean reversion
-                        adjusted_direction = 'BEARISH' if current_move_direction == 'BULLISH' else 'BULLISH'
-                        adjusted_confidence = min(confidence * 0.8, 6.0)  # Cap at 6.0 for mean reversion
-                        logger.warning(f"🔴 EXTREME MOVE ({abs_move:.0f} pts): FLIPPING to {adjusted_direction} "
-                                     f"mean reversion mode (was {bias_direction})")
+            # SCENARIO 1: GAP UP + CONTINUATION (Strong Bullish)
+            if scenario == 'GAP_UP_CONTINUATION':
+                if bias_direction == 'BULLISH':
+                    if move_zone in ['EARLY', 'MID']:
+                        adjusted_confidence *= 1.25  # Strong boost for trend continuation
+                        logger.info(f"🚀 {scenario}: Strong bullish trend continuation +25%")
                     else:
-                        # Low confidence = neutralize to avoid chasing
-                        adjusted_direction = 'NEUTRAL'
-                        adjusted_confidence = 0.0
-                        logger.warning(f"🔴 EXTREME MOVE ({abs_move:.0f} pts): NEUTRALIZING to avoid chasing {current_move_direction} move")
+                        adjusted_confidence *= 0.8  # Extended, reduce confidence
+                        logger.info(f"⚠️ {scenario}: Extended move, reducing +confidence -20%")
                 else:
-                    # Already counter-trend = strong boost for mean reversion
-                    adjusted_confidence *= 1.3  # +30% for mean reversion in extreme zone
-                    logger.info(f"✅ EXTREME MOVE ({abs_move:.0f} pts): Boosting {bias_direction} mean reversion +30%")
+                    adjusted_confidence *= 0.5  # Heavily penalize counter-trend
+                    logger.info(f"🚫 {scenario}: Counter-trend signal penalized -50%")
             
-            # Additional check: Daily range exhaustion
-            if range_exhaustion_pct > 80:
-                if bias_direction == current_move_direction:
-                    adjusted_confidence *= 0.6  # Heavy penalty for chasing when range exhausted
-                    logger.warning(f"📏 RANGE EXHAUSTED ({range_exhaustion_pct:.0f}%): Reducing {bias_direction} confidence -40%")
+            # SCENARIO 2: GAP UP + FADE (Bearish Reversal Signal)
+            elif scenario == 'GAP_UP_FADE':
+                if bias_direction == 'BEARISH':
+                    adjusted_confidence *= 1.3  # Gap fade = strong reversal signal
+                    logger.info(f"🔄 {scenario}: Gap fade favors BEARISH +30%")
+                elif bias_direction == 'BULLISH':
+                    adjusted_confidence *= 0.4  # Strong penality - don't fight the fade
+                    logger.info(f"⚠️ {scenario}: Gap fading, BULLISH penalized -60%")
+                else:
+                    adjusted_direction = 'BEARISH'
+                    adjusted_confidence = max(confidence * 0.8, 3.0)
+                    logger.info(f"🔄 {scenario}: Shifting to BEARISH bias")
             
-            # Log move analysis
-            logger.info(f"📊 MOVE ANALYSIS: {move_from_open:+.0f} pts from open | Zone: {move_zone} | "
+            # SCENARIO 3: GAP DOWN + CONTINUATION (Strong Bearish)
+            elif scenario == 'GAP_DOWN_CONTINUATION':
+                if bias_direction == 'BEARISH':
+                    if move_zone in ['EARLY', 'MID']:
+                        adjusted_confidence *= 1.25
+                        logger.info(f"📉 {scenario}: Strong bearish continuation +25%")
+                    else:
+                        adjusted_confidence *= 0.8
+                        logger.info(f"⚠️ {scenario}: Extended, reducing confidence -20%")
+                else:
+                    adjusted_confidence *= 0.5
+                    logger.info(f"🚫 {scenario}: Counter-trend signal penalized -50%")
+            
+            # SCENARIO 4: GAP DOWN + RECOVERY (Bullish Reversal Signal)
+            elif scenario == 'GAP_DOWN_RECOVERY':
+                # Key insight: Recovery from gap down is bullish ONLY if day turns positive
+                if day_change_pct > 0:
+                    # Full recovery - strong bullish
+                    if bias_direction == 'BULLISH':
+                        adjusted_confidence *= 1.3
+                        logger.info(f"🔄 {scenario}: Full gap recovery, BULLISH +30%")
+                    else:
+                        adjusted_confidence *= 0.5
+                        logger.info(f"⚠️ {scenario}: Gap recovered, BEARISH penalized -50%")
+                else:
+                    # Partial recovery - day still down, BE CAUTIOUS
+                    if bias_direction == 'BULLISH':
+                        adjusted_confidence *= 0.7  # Don't over-trust partial recovery
+                        logger.info(f"⚠️ {scenario}: Partial recovery only (day still {day_change_pct:+.2f}%), BULLISH reduced -30%")
+                    elif bias_direction == 'BEARISH':
+                        adjusted_confidence *= 0.9  # Slight reduction, trend still down
+                        logger.info(f"📊 {scenario}: Day still down, BEARISH slightly reduced -10%")
+            
+            # SCENARIO 5: FLAT OPEN + TRENDING
+            elif scenario == 'FLAT_TRENDING_UP':
+                if bias_direction == 'BULLISH':
+                    adjusted_confidence *= 1.15 if move_zone in ['EARLY', 'MID'] else 0.85
+                    logger.info(f"📈 {scenario}: Clean uptrend from flat open")
+                else:
+                    adjusted_confidence *= 0.6
+                    logger.info(f"🚫 {scenario}: Fighting clean uptrend, penalized -40%")
+            
+            elif scenario == 'FLAT_TRENDING_DOWN':
+                if bias_direction == 'BEARISH':
+                    adjusted_confidence *= 1.15 if move_zone in ['EARLY', 'MID'] else 0.85
+                    logger.info(f"📉 {scenario}: Clean downtrend from flat open")
+                else:
+                    adjusted_confidence *= 0.6
+                    logger.info(f"🚫 {scenario}: Fighting clean downtrend, penalized -40%")
+            
+            # SCENARIO 6: CHOPPY / RANGE-BOUND
+            elif scenario == 'CHOPPY':
+                adjusted_direction = 'NEUTRAL'
+                adjusted_confidence = min(confidence * 0.5, 3.0)  # Heavy reduction for choppy
+                logger.info(f"🔀 {scenario}: Choppy market, forcing NEUTRAL bias (conf: {adjusted_confidence:.1f})")
+            
+            # SCENARIO 7: MIXED SIGNALS
+            elif scenario == 'MIXED_SIGNALS':
+                adjusted_confidence *= 0.7  # Reduce confidence for unclear scenarios
+                logger.info(f"⚠️ {scenario}: Mixed signals, reducing confidence -30%")
+            
+            # ============= MOVE ZONE ADJUSTMENTS (overlayed on scenario) =============
+            if move_zone == 'EXTENDED' and adjusted_direction == intraday_direction:
+                adjusted_confidence *= 0.75  # Additional penalty for chasing extended moves
+                logger.info(f"📏 EXTENDED ZONE ({abs_move:.0f} pts): Additional -25% for trend-chasing")
+            
+            elif move_zone == 'EXTREME':
+                if adjusted_direction == intraday_direction:
+                    # DON'T chase extreme moves - force mean reversion
+                    opposite_direction = 'BEARISH' if intraday_direction == 'BULLISH' else 'BULLISH'
+                    adjusted_direction = opposite_direction
+                    adjusted_confidence = min(confidence * 0.6, 5.0)
+                    logger.warning(f"🔴 EXTREME ZONE ({abs_move:.0f} pts): Forcing {adjusted_direction} mean reversion")
+                else:
+                    adjusted_confidence *= 1.2  # Boost mean reversion in extreme zone
+                    logger.info(f"✅ EXTREME ZONE ({abs_move:.0f} pts): Mean reversion boost +20%")
+            
+            # ============= RANGE EXHAUSTION CHECK =============
+            if range_exhaustion_pct > 85:
+                if adjusted_direction == intraday_direction:
+                    adjusted_confidence *= 0.5
+                    logger.warning(f"📏 RANGE EXHAUSTED ({range_exhaustion_pct:.0f}%): Trend-chasing penalized -50%")
+                else:
+                    adjusted_confidence *= 1.1
+                    logger.info(f"📏 RANGE EXHAUSTED ({range_exhaustion_pct:.0f}%): Mean reversion favored +10%")
+            
+            # ============= FINAL CONFIDENCE BOUNDS =============
+            adjusted_confidence = max(0.0, min(10.0, adjusted_confidence))
+            
+            # Log comprehensive analysis
+            logger.info(f"📊 MOVE ANALYSIS: Gap={gap_pct:+.2f}% | Intraday={intraday_pct:+.2f}% | Day={day_change_pct:+.2f}% | "
+                       f"Zone={move_zone} | Scenario={scenario} | "
                        f"Range: {daily_range_used:.0f}/{self.typical_daily_range:.0f} pts ({range_exhaustion_pct:.0f}%) | "
-                       f"Bias: {adjusted_direction} @ {adjusted_confidence:.1f}/10")
+                       f"Final Bias: {adjusted_direction} @ {adjusted_confidence:.1f}/10")
             
             return {
                 'direction': adjusted_direction,
                 'confidence': adjusted_confidence,
-                'zone': move_zone
+                'zone': move_zone,
+                'scenario': scenario
             }
+            
+        except Exception as e:
+            logger.error(f"Error in move exhaustion check: {e}")
+            return {'direction': bias_direction, 'confidence': confidence, 'zone': 'ERROR', 'scenario': 'ERROR'}
+    
+    def _identify_market_scenario(self, gap_pct: float, intraday_pct: float, day_change_pct: float, abs_move: float) -> str:
+        """
+        Identify the current market scenario based on gap, intraday, and day movements.
+        
+        Returns one of:
+        - GAP_UP_CONTINUATION: Gap up and continuing higher
+        - GAP_UP_FADE: Gap up but fading (selling into strength)
+        - GAP_DOWN_CONTINUATION: Gap down and continuing lower
+        - GAP_DOWN_RECOVERY: Gap down but recovering
+        - FLAT_TRENDING_UP: Flat open, trending higher
+        - FLAT_TRENDING_DOWN: Flat open, trending lower
+        - CHOPPY: No clear direction, range-bound
+        - MIXED_SIGNALS: Conflicting signals
+        """
+        GAP_THRESHOLD = 0.25  # 0.25% gap is significant
+        TREND_THRESHOLD = 0.15  # 0.15% intraday move is significant
+        
+        has_gap_up = gap_pct > GAP_THRESHOLD
+        has_gap_down = gap_pct < -GAP_THRESHOLD
+        is_flat_open = abs(gap_pct) <= GAP_THRESHOLD
+        
+        is_trending_up = intraday_pct > TREND_THRESHOLD
+        is_trending_down = intraday_pct < -TREND_THRESHOLD
+        is_flat_intraday = abs(intraday_pct) <= TREND_THRESHOLD
+        
+        # GAP UP scenarios
+        if has_gap_up:
+            if is_trending_up or (is_flat_intraday and day_change_pct > GAP_THRESHOLD):
+                return 'GAP_UP_CONTINUATION'
+            elif is_trending_down:
+                return 'GAP_UP_FADE'
+            else:
+                return 'MIXED_SIGNALS'
+        
+        # GAP DOWN scenarios
+        elif has_gap_down:
+            if is_trending_down or (is_flat_intraday and day_change_pct < -GAP_THRESHOLD):
+                return 'GAP_DOWN_CONTINUATION'
+            elif is_trending_up:
+                return 'GAP_DOWN_RECOVERY'
+            else:
+                return 'MIXED_SIGNALS'
+        
+        # FLAT OPEN scenarios
+        elif is_flat_open:
+            if is_trending_up:
+                return 'FLAT_TRENDING_UP'
+            elif is_trending_down:
+                return 'FLAT_TRENDING_DOWN'
+            elif is_flat_intraday and abs_move < 30:  # Less than 30 pts move
+                return 'CHOPPY'
+            else:
+                return 'MIXED_SIGNALS'
+        
+        return 'MIXED_SIGNALS'
             
         except Exception as e:
             logger.error(f"Error checking move exhaustion: {e}")

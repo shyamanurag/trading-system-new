@@ -590,73 +590,159 @@ class MarketInternalsAnalyzer:
     def _calculate_composite_scores(self, breadth: Dict, volume: Dict, 
                                    volatility: Dict, regime: Dict, 
                                    sectors: Dict) -> Dict:
-        """Calculate composite bullish/bearish/neutral scores"""
+        """
+        Calculate composite bullish/bearish/neutral scores with comprehensive logic.
+        
+        Handles all scenarios:
+        - Strong bullish (A/D > 1.5, volume confirms, low VIX)
+        - Moderate bullish (A/D > 1.15, some confirmation)
+        - Strong bearish (A/D < 0.67, volume confirms, high VIX)
+        - Moderate bearish (A/D < 0.85, some confirmation)
+        - Neutral/Choppy (A/D near 1.0, mixed signals)
+        """
         try:
             bullish_score = 0
             bearish_score = 0
             neutral_score = 0
             
-            # Breadth contribution (30% weight)
+            # ============= BREADTH CONTRIBUTION (35% weight) =============
+            # A/D ratio is the most important indicator
             ad_ratio = breadth['ad_ratio']
-            if ad_ratio > 2:
-                bullish_score += 30
-            elif ad_ratio > 1.5:
-                bullish_score += 20
-            elif ad_ratio < 0.5:
-                bearish_score += 30
-            elif ad_ratio < 0.67:
-                bearish_score += 20
-            else:
-                neutral_score += 15
+            above_vwap = breadth.get('above_vwap', 50)  # % of stocks above VWAP
             
-            # Volume contribution (20% weight)
+            # Strong bullish breadth
+            if ad_ratio >= 2.0:
+                bullish_score += 35
+            elif ad_ratio >= 1.5:
+                bullish_score += 28
+            elif ad_ratio >= 1.25:
+                bullish_score += 20
+            elif ad_ratio >= 1.1:
+                bullish_score += 12
+            # Strong bearish breadth
+            elif ad_ratio <= 0.5:
+                bearish_score += 35
+            elif ad_ratio <= 0.67:
+                bearish_score += 28
+            elif ad_ratio <= 0.80:
+                bearish_score += 20
+            elif ad_ratio <= 0.90:
+                bearish_score += 12
+            # Neutral breadth (0.90 - 1.10)
+            else:
+                neutral_score += 18
+            
+            # VWAP confirmation (additional breadth signal)
+            if above_vwap > 60:
+                bullish_score += 5
+            elif above_vwap < 40:
+                bearish_score += 5
+            
+            # ============= VOLUME CONTRIBUTION (25% weight) =============
             up_vol_ratio = volume['up_volume_ratio']
-            if up_vol_ratio > 65:
-                bullish_score += 20
-            elif up_vol_ratio < 35:
-                bearish_score += 20
-            else:
-                neutral_score += 10
+            volume_breadth = volume.get('volume_breadth', 0)
             
-            # Volatility contribution (20% weight)
-            vix_level = volatility['vix_level']
-            if vix_level < 15:
+            # Strong volume confirmation
+            if up_vol_ratio >= 70:
+                bullish_score += 25
+            elif up_vol_ratio >= 60:
+                bullish_score += 18
+            elif up_vol_ratio >= 55:
                 bullish_score += 10
+            elif up_vol_ratio <= 30:
+                bearish_score += 25
+            elif up_vol_ratio <= 40:
+                bearish_score += 18
+            elif up_vol_ratio <= 45:
+                bearish_score += 10
+            else:
+                neutral_score += 12
+            
+            # ============= VOLATILITY CONTRIBUTION (20% weight) =============
+            vix_level = volatility['vix_level']
+            vix_change = volatility.get('vix_change', 0)
+            
+            # VIX level interpretation
+            if vix_level < 13:
+                bullish_score += 12  # Complacency - bullish
+                neutral_score += 8
+            elif vix_level < 18:
+                neutral_score += 15  # Normal range
+                bullish_score += 5
+            elif vix_level < 25:
                 neutral_score += 10
-            elif vix_level > 25:
-                bearish_score += 15
+                bearish_score += 10  # Elevated concern
+            elif vix_level < 35:
+                bearish_score += 15  # High fear
                 neutral_score += 5
             else:
-                neutral_score += 20
+                bearish_score += 20  # Extreme fear/panic
             
-            # Regime contribution (20% weight)
+            # VIX change adds context
+            if vix_change > 10:  # VIX spiking
+                bearish_score += 5
+            elif vix_change < -10:  # VIX collapsing
+                bullish_score += 5
+            
+            # ============= REGIME CONTRIBUTION (15% weight) =============
             market_regime = regime['regime']
+            choppiness = regime.get('choppiness', 50)
+            
             if market_regime == "TRENDING":
-                if ad_ratio > 1:
-                    bullish_score += 20
+                # Trending market - use A/D to determine direction
+                if ad_ratio > 1.05:
+                    bullish_score += 15
+                elif ad_ratio < 0.95:
+                    bearish_score += 15
                 else:
-                    bearish_score += 20
-            elif market_regime in ["CHOPPY", "VOLATILE_CHOPPY"]:
-                neutral_score += 20
-            else:
-                neutral_score += 10
-            
-            # Sector rotation contribution (10% weight)
-            rotation_score = sectors['rotation_score']
-            if rotation_score > 3:  # Strong rotation
-                if 'BANKING' in sectors['leaders'] or 'IT' in sectors['leaders']:
+                    neutral_score += 8
+            elif market_regime == "VOLATILE_TRENDING":
+                # Volatile but trending - reduce conviction
+                if ad_ratio > 1.1:
                     bullish_score += 10
-                else:
-                    neutral_score += 5
+                elif ad_ratio < 0.9:
+                    bearish_score += 10
+                neutral_score += 5
+            elif market_regime in ["CHOPPY", "VOLATILE_CHOPPY"]:
+                neutral_score += 15  # Choppy = stay neutral
+            elif market_regime == "QUIET":
+                neutral_score += 10
+                # In quiet markets, lean with breadth
+                if ad_ratio > 1.1:
+                    bullish_score += 5
+                elif ad_ratio < 0.9:
+                    bearish_score += 5
             else:
                 neutral_score += 10
             
-            # Normalize scores to 100
+            # ============= SECTOR ROTATION (5% weight) =============
+            rotation_score = sectors.get('rotation_score', 0)
+            leaders = sectors.get('leaders', [])
+            laggards = sectors.get('laggards', [])
+            
+            # Defensive sectors leading = bearish
+            defensive_sectors = ['PHARMA', 'FMCG', 'UTILITIES']
+            cyclical_sectors = ['BANKING', 'AUTO', 'REALTY', 'METAL']
+            
+            defensive_leading = any(s in leaders for s in defensive_sectors)
+            cyclical_leading = any(s in leaders for s in cyclical_sectors)
+            
+            if cyclical_leading and not defensive_leading:
+                bullish_score += 5
+            elif defensive_leading and not cyclical_leading:
+                bearish_score += 5
+            else:
+                neutral_score += 3
+            
+            # ============= NORMALIZE TO 100 =============
             total = bullish_score + bearish_score + neutral_score
             if total > 0:
                 bullish_score = (bullish_score / total) * 100
                 bearish_score = (bearish_score / total) * 100
                 neutral_score = (neutral_score / total) * 100
+            else:
+                # Default to neutral if no signals
+                neutral_score = 100
             
             return {
                 'bullish': round(bullish_score, 1),

@@ -2774,83 +2774,125 @@ class BaseStrategy:
                 return min_conf, "default"
             
             current_bias = self.market_bias.current_bias
+            bias_direction = current_bias.direction
             
-            # Get NIFTY data for mean reversion analysis
+            # ============= SCENARIO-BASED THRESHOLD ADJUSTMENT =============
+            # Use the new scenario information from market bias system
+            scenario = getattr(self.market_bias, '_last_scenario', None)
+            
+            if scenario:
+                # Scenario-specific threshold adjustments
+                scenario_adjustments = {
+                    # Strong trending scenarios - encourage aligned, discourage counter
+                    'GAP_UP_CONTINUATION': {'BUY': -1.5, 'SELL': +2.0},
+                    'GAP_DOWN_CONTINUATION': {'BUY': +2.0, 'SELL': -1.5},
+                    
+                    # Reversal scenarios - encourage reversal direction
+                    'GAP_UP_FADE': {'BUY': +1.5, 'SELL': -1.0},
+                    'GAP_DOWN_RECOVERY': {'BUY': -1.0, 'SELL': +1.5},
+                    
+                    # Flat open trending - moderate adjustments
+                    'FLAT_TRENDING_UP': {'BUY': -0.5, 'SELL': +1.0},
+                    'FLAT_TRENDING_DOWN': {'BUY': +1.0, 'SELL': -0.5},
+                    
+                    # Choppy - increase threshold for all
+                    'CHOPPY': {'BUY': +1.0, 'SELL': +1.0},
+                    
+                    # Mixed signals - moderate increase
+                    'MIXED_SIGNALS': {'BUY': +0.5, 'SELL': +0.5},
+                }
+                
+                if scenario in scenario_adjustments:
+                    adj = scenario_adjustments[scenario].get(action.upper(), 0)
+                    min_conf += adj
+                    reasons.append(f"SCENARIO:{scenario}({adj:+.1f})")
+            
+            # ============= FALLBACK: ZONE-BASED ADJUSTMENT =============
+            # Use zone logic if scenario not available
             nifty_data = self._get_nifty_data_from_bias()
-            if not nifty_data:
-                return min_conf, "no_nifty_data"
+            if nifty_data and not scenario:
+                ltp = float(nifty_data.get('ltp', 0))
+                open_price = float(nifty_data.get('open', 0))
+                
+                if ltp and open_price:
+                    move_from_open = ltp - open_price
+                    abs_move = abs(move_from_open)
+                    
+                    # Zone-based adjustment
+                    if abs_move < 50:
+                        zone_adjustment = -1.0
+                        reasons.append(f"EARLY:{abs_move:.0f}pts")
+                    elif abs_move < 100:
+                        zone_adjustment = 0.0
+                        reasons.append(f"MID:{abs_move:.0f}pts")
+                    elif abs_move < 150:
+                        # Check if chasing or fading
+                        is_chasing = (
+                            (action == 'BUY' and bias_direction == 'BULLISH' and move_from_open > 0) or
+                            (action == 'SELL' and bias_direction == 'BEARISH' and move_from_open < 0)
+                        )
+                        if is_chasing:
+                            zone_adjustment = +1.5
+                            reasons.append(f"EXTENDED_CHASE:{abs_move:.0f}pts⚠️")
+                        else:
+                            zone_adjustment = -0.5
+                            reasons.append(f"EXTENDED_FADE:{abs_move:.0f}pts✅")
+                    else:  # >= 150 points
+                        is_chasing = (
+                            (action == 'BUY' and bias_direction == 'BULLISH' and move_from_open > 0) or
+                            (action == 'SELL' and bias_direction == 'BEARISH' and move_from_open < 0)
+                        )
+                        if is_chasing:
+                            zone_adjustment = +2.0
+                            reasons.append(f"EXTREME_CHASE:{abs_move:.0f}pts🔴")
+                        else:
+                            zone_adjustment = -1.5
+                            reasons.append(f"EXTREME_FADE:{abs_move:.0f}pts✅✅")
+                    
+                    min_conf += zone_adjustment
             
-            # Calculate NIFTY move from open
-            ltp = float(nifty_data.get('ltp', 0))
-            open_price = float(nifty_data.get('open', 0))
-            
-            if not (ltp and open_price):
-                return min_conf, "insufficient_nifty_data"
-            
-            move_from_open = ltp - open_price
-            abs_move = abs(move_from_open)
-            
-            # Determine move zone (NIFTY-specific thresholds)
-            if abs_move < 50:
-                zone = 'EARLY'
-                zone_adjustment = -1.0  # Lower threshold (encourage trading)
-                reasons.append(f"EARLY:{abs_move:.0f}pts")
-            elif abs_move < 100:
-                zone = 'MID'
-                zone_adjustment = 0.0  # Normal threshold
-                reasons.append(f"MID:{abs_move:.0f}pts")
-            elif abs_move < 150:
-                zone = 'EXTENDED'
-                # Check if chasing or fading
-                bias_direction = current_bias.direction
-                if (action == 'BUY' and bias_direction == 'BULLISH' and move_from_open > 0) or \
-                   (action == 'SELL' and bias_direction == 'BEARISH' and move_from_open < 0):
-                    # Chasing extended move - DISCOURAGE
-                    zone_adjustment = +1.5
-                    reasons.append(f"EXTENDED_CHASE:{abs_move:.0f}pts⚠️")
-                else:
-                    # Fading extended move - ENCOURAGE
-                    zone_adjustment = -0.5
-                    reasons.append(f"EXTENDED_FADE:{abs_move:.0f}pts✅")
-            else:  # >= 150 points
-                zone = 'EXTREME'
-                bias_direction = current_bias.direction
-                if (action == 'BUY' and bias_direction == 'BULLISH' and move_from_open > 0) or \
-                   (action == 'SELL' and bias_direction == 'BEARISH' and move_from_open < 0):
-                    # Chasing EXTREME move - STRONGLY DISCOURAGE
-                    zone_adjustment = +2.0
-                    reasons.append(f"EXTREME_CHASE:{abs_move:.0f}pts🔴")
-                else:
-                    # Fading EXTREME move - STRONGLY ENCOURAGE
-                    zone_adjustment = -1.5
-                    reasons.append(f"EXTREME_FADE:{abs_move:.0f}pts✅✅")
-            
-            min_conf += zone_adjustment
-            
-            # Market regime adjustment
+            # ============= MARKET REGIME ADJUSTMENT =============
             market_regime = getattr(current_bias, 'market_regime', 'NORMAL')
-            if market_regime == 'CHOPPY':
+            if market_regime in ['CHOPPY', 'VOLATILE_CHOPPY']:
                 min_conf += 0.5
                 reasons.append("CHOPPY+0.5")
-            elif market_regime in ['STRONG_TRENDING', 'TRENDING']:
+            elif market_regime in ['STRONG_TRENDING', 'TRENDING', 'VOLATILE_TRENDING']:
                 min_conf -= 0.5
                 reasons.append("TRENDING-0.5")
+            elif market_regime == 'QUIET':
+                # Quiet market - need clearer signals
+                min_conf += 0.3
+                reasons.append("QUIET+0.3")
             
-            # Bias confidence adjustment
+            # ============= BIAS CONFIDENCE ADJUSTMENT =============
             bias_confidence = getattr(current_bias, 'confidence', 0.0)
+            
+            # Check signal alignment
+            is_aligned = (
+                (action == 'BUY' and bias_direction == 'BULLISH') or
+                (action == 'SELL' and bias_direction == 'BEARISH')
+            )
+            
             if bias_confidence >= 7.0:
-                # High bias confidence = lower threshold for aligned signals
-                if (action == 'BUY' and current_bias.direction == 'BULLISH') or \
-                   (action == 'SELL' and current_bias.direction == 'BEARISH'):
+                if is_aligned:
                     min_conf -= 0.5
-                    reasons.append("ALIGNED-0.5")
+                    reasons.append("HIGH_BIAS_ALIGNED-0.5")
+                # Counter-trend with high bias = harder
+                else:
+                    min_conf += 0.5
+                    reasons.append("HIGH_BIAS_COUNTER+0.5")
             elif bias_confidence <= 3.0:
-                # Low bias confidence = higher threshold
+                # Low bias confidence = require higher signal confidence
                 min_conf += 0.5
                 reasons.append("WEAK_BIAS+0.5")
+            elif 3.0 < bias_confidence < 5.0:
+                # Moderate-low bias = slight increase
+                min_conf += 0.3
+                reasons.append("MOD_BIAS+0.3")
             
-            # Clamp to reasonable range (5.5 to 9.5)
-            min_conf = max(5.5, min(min_conf, 9.5))
+            # ============= FINAL BOUNDS =============
+            # Clamp to reasonable range (5.0 to 9.5)
+            min_conf = max(5.0, min(min_conf, 9.5))
             
             reason_str = " | ".join(reasons) if reasons else "default"
             return min_conf, reason_str
