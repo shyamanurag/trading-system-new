@@ -2877,17 +2877,18 @@ class BaseStrategy:
                     min_conf += zone_adjustment
             
             # ============= MARKET REGIME ADJUSTMENT =============
+            # 🔥 REDUCED 2025-12-02: Was stacking too aggressively with bias adjustments
             market_regime = getattr(current_bias, 'market_regime', 'NORMAL')
             if market_regime in ['CHOPPY', 'VOLATILE_CHOPPY']:
-                min_conf += 0.5
-                reasons.append("CHOPPY+0.5")
+                min_conf += 0.3  # Reduced from 0.5
+                reasons.append("CHOPPY+0.3")
             elif market_regime in ['STRONG_TRENDING', 'TRENDING', 'VOLATILE_TRENDING']:
                 min_conf -= 0.5
                 reasons.append("TRENDING-0.5")
             elif market_regime == 'QUIET':
-                # Quiet market - need clearer signals
-                min_conf += 0.3
-                reasons.append("QUIET+0.3")
+                # Quiet market - mild adjustment (was causing signal rejection)
+                min_conf += 0.2  # Reduced from 0.3
+                reasons.append("QUIET+0.2")
             
             # ============= BIAS CONFIDENCE ADJUSTMENT =============
             bias_confidence = getattr(current_bias, 'confidence', 0.0)
@@ -2898,26 +2899,30 @@ class BaseStrategy:
                 (action == 'SELL' and bias_direction == 'BEARISH')
             )
             
+            # 🔥 REDUCED 2025-12-02: Bias adjustments were too harsh
             if bias_confidence >= 7.0:
                 if is_aligned:
                     min_conf -= 0.5
                     reasons.append("HIGH_BIAS_ALIGNED-0.5")
-                # Counter-trend with high bias = harder
+                # Counter-trend with high bias = harder (but not impossible)
                 else:
-                    min_conf += 0.5
-                    reasons.append("HIGH_BIAS_COUNTER+0.5")
+                    min_conf += 0.3  # Reduced from 0.5
+                    reasons.append("HIGH_BIAS_COUNTER+0.3")
             elif bias_confidence <= 3.0:
-                # Low bias confidence = require higher signal confidence
-                min_conf += 0.5
-                reasons.append("WEAK_BIAS+0.5")
+                # Low bias confidence = slight increase (was too aggressive at 0.5)
+                min_conf += 0.2  # Reduced from 0.5
+                reasons.append("WEAK_BIAS+0.2")
             elif 3.0 < bias_confidence < 5.0:
-                # Moderate-low bias = slight increase
-                min_conf += 0.3
-                reasons.append("MOD_BIAS+0.3")
+                # Moderate-low bias = minimal adjustment
+                min_conf += 0.1  # Reduced from 0.3
+                reasons.append("MOD_BIAS+0.1")
             
             # ============= FINAL BOUNDS =============
-            # Clamp to reasonable range (5.0 to 9.5)
-            min_conf = max(5.0, min(min_conf, 9.5))
+            # 🔥 CRITICAL FIX 2025-12-02: Cap was 9.5 but signals max at ~8.7
+            # Lowered cap from 9.5 → 8.5 so high-quality signals can pass
+            # In choppy/weak bias markets, the stacked adjustments were hitting 9.5
+            # causing ALL signals to be scrapped despite being quality signals
+            min_conf = max(5.0, min(min_conf, 8.5))
             
             reason_str = " | ".join(reasons) if reasons else "default"
             return min_conf, reason_str
