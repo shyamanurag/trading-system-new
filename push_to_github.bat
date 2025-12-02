@@ -38,8 +38,14 @@ echo === Adding all changes ===
 git add -A
 
 echo.
+echo 6. Fixed /api/v1/performance/daily-pnl-history 404 error
+echo    - Was using async await on sync session
+echo    - Now uses proper SQLAlchemy text() with get_db()
+echo ==========================================
+
+echo.
 echo === Committing ===
-git commit -m "MAJOR: Comprehensive market bias scenarios + aligned strategy thresholds"
+git commit -m "MAJOR: Market bias scenarios + strategy alignment + API fixes"
 
 echo.
 echo === Pushing to GitHub ===

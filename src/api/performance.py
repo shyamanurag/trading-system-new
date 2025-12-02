@@ -54,45 +54,52 @@ async def get_daily_pnl_history(
     try:
         logger.info(f"📊 Fetching {days} days of historical P&L data")
         
-        # Import here to avoid circular imports  
-        from src.core.database import get_session
+        # Use synchronous database access with proper context manager
+        from src.config.database import get_db
+        from sqlalchemy import text
         
-        session = get_session()
+        # Get database session
+        db = next(get_db())
         
-        query = """
-SELECT DATE(created_at) as date,
-       SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END) as profit,
-       SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END) as loss,
-       SUM(pnl) as total_pnl,
-       COUNT(*) as trades
-FROM paper_trades 
-WHERE created_at >= NOW() - INTERVAL %s DAY
-AND status = 'executed'
-GROUP BY DATE(created_at)
-ORDER BY date DESC
-"""
+        try:
+            # PostgreSQL compatible query
+            query = text("""
+                SELECT DATE(created_at) as date,
+                       SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END) as profit,
+                       SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END) as loss,
+                       SUM(pnl) as total_pnl,
+                       COUNT(*) as trades
+                FROM paper_trades 
+                WHERE created_at >= NOW() - INTERVAL :days DAY
+                AND status = 'executed'
+                GROUP BY DATE(created_at)
+                ORDER BY date DESC
+            """)
 
-        result = await session.execute(query, days)
+            result = db.execute(query, {"days": f"{days}"})
+            rows = result.fetchall()
 
-        daily_history = []
-        for row in result:
-            daily_history.append({
-                'date': row['date'].isoformat() if row['date'] else None,
-                'total_pnl': float(row['total_pnl']) if row['total_pnl'] else 0,
-                'profit': float(row['profit']) if row['profit'] else 0,
-                'loss': float(row['loss']) if row['loss'] else 0,
-                'trades': int(row['trades']) if row['trades'] else 0
-            })
-            
-        logger.info(f"✅ Retrieved {len(daily_history)} days of P&L history")
-            
-        return {
-            "success": True,
-            "daily_history": daily_history,
-            "total_days": len(daily_history),
-            "timestamp": datetime.now().isoformat(),
-            "source": "real_database"
-        }
+            daily_history = []
+            for row in rows:
+                daily_history.append({
+                    'date': row[0].isoformat() if row[0] else None,
+                    'total_pnl': float(row[3]) if row[3] else 0,
+                    'profit': float(row[1]) if row[1] else 0,
+                    'loss': float(row[2]) if row[2] else 0,
+                    'trades': int(row[4]) if row[4] else 0
+                })
+                
+            logger.info(f"✅ Retrieved {len(daily_history)} days of P&L history")
+                
+            return {
+                "success": True,
+                "daily_history": daily_history,
+                "total_days": len(daily_history),
+                "timestamp": datetime.now().isoformat(),
+                "source": "real_database"
+            }
+        finally:
+            db.close()
             
     except Exception as e:
         logger.error(f"Error getting daily P&L history: {e}")
