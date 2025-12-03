@@ -151,6 +151,48 @@ class ProfessionalMomentumModels:
             return 0.5
     
     @staticmethod
+    def hp_trend_filter(prices: np.ndarray, lambda_param: float = 1600) -> tuple:
+        """
+        Hodrick-Prescott Trend Filter - separates trend from cycle
+        Standard for financial data: lambda=1600 for quarterly, 6.25 for annual
+        
+        Returns: (trend, cycle, trend_direction)
+        """
+        try:
+            if len(prices) < 10:
+                return prices, np.zeros_like(prices), 0
+            
+            n = len(prices)
+            prices_arr = np.array(prices)
+            
+            # Build the HP filter matrix
+            # This is a simplified implementation using second differences
+            # Full implementation requires sparse matrix operations
+            
+            # Approximate HP trend using exponential smoothing
+            alpha = 2 / (1 + np.sqrt(1 + 4 * lambda_param))
+            trend = np.zeros(n)
+            trend[0] = prices_arr[0]
+            
+            for i in range(1, n):
+                trend[i] = alpha * prices_arr[i] + (1 - alpha) * trend[i-1]
+            
+            # Cycle is the difference
+            cycle = prices_arr - trend
+            
+            # Trend direction: slope of last 5 trend points
+            if len(trend) >= 5:
+                trend_direction = (trend[-1] - trend[-5]) / trend[-5] if trend[-5] != 0 else 0
+            else:
+                trend_direction = 0
+            
+            return trend, cycle, trend_direction
+            
+        except Exception as e:
+            logger.error(f"HP Trend Filter calculation failed: {e}")
+            return prices, np.zeros_like(prices), 0
+    
+    @staticmethod
     def cross_sectional_momentum(symbol_prices: Dict[str, np.ndarray], 
                                 current_symbol: str, lookback: int = 20) -> float:
         """Calculate cross-sectional momentum (relative strength)"""
@@ -985,6 +1027,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             rsi = 50.0
             mean_reversion_prob = 0.5
             trend_strength = 0.0
+            hp_trend_direction = 0.0
             macd_signal = None
             macd_crossover = None
             bollinger_squeeze = False
@@ -999,6 +1042,9 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 momentum_score = ProfessionalMomentumModels.momentum_score(prices, min(20, len(prices)))
                 mean_reversion_prob = ProfessionalMomentumModels.mean_reversion_probability(prices)
                 trend_strength = ProfessionalMomentumModels.trend_strength(prices)
+                
+                # HP Trend Filter - separates trend from noise
+                hp_trend, hp_cycle, hp_trend_direction = ProfessionalMomentumModels.hp_trend_filter(prices)
             
             # ============= PHASE 2: MACD INTEGRATION =============
             if len(prices) >= 26:
@@ -1090,18 +1136,30 @@ class EnhancedMomentumSurfer(BaseStrategy):
                     confidence_factors.append(f"MACD BEARISH CROSSOVER")
                 logger.info(f"🔄 {symbol} REVERSAL DOWN: Price up {change_percent:.1f}% but selling pressure {selling_pressure:.0%}")
             
-            # 🎯 PRIORITY 3: MACD CROSSOVER SIGNALS
+            # 🎯 PRIORITY 3: MACD CROSSOVER SIGNALS (with HP Trend confirmation)
             elif macd_crossover == 'bullish' and momentum_score > 0 and rsi < 60:
-                condition = 'trending_up'
-                confidence_factors.append(f"MACD BULLISH CROSSOVER with momentum confirmation")
-                if buying_pressure > 0.5:
-                    confidence_factors.append(f"Buying pressure: {buying_pressure:.0%}")
+                # Confirm with HP trend - smoothed trend should not be strongly negative
+                if hp_trend_direction >= -0.005:  # HP trend not strongly down
+                    condition = 'trending_up'
+                    confidence_factors.append(f"MACD BULLISH CROSSOVER with momentum confirmation")
+                    if hp_trend_direction > 0.002:
+                        confidence_factors.append(f"HP TREND CONFIRMS: {hp_trend_direction:+.2%}")
+                    if buying_pressure > 0.5:
+                        confidence_factors.append(f"Buying pressure: {buying_pressure:.0%}")
+                else:
+                    logger.info(f"⚠️ {symbol}: MACD bullish but HP trend negative ({hp_trend_direction:+.2%}) - waiting")
             
             elif macd_crossover == 'bearish' and momentum_score < 0 and rsi > 40:
-                condition = 'trending_down'
-                confidence_factors.append(f"MACD BEARISH CROSSOVER with momentum confirmation")
-                if selling_pressure > 0.5:
-                    confidence_factors.append(f"Selling pressure: {selling_pressure:.0%}")
+                # Confirm with HP trend - smoothed trend should not be strongly positive
+                if hp_trend_direction <= 0.005:  # HP trend not strongly up
+                    condition = 'trending_down'
+                    confidence_factors.append(f"MACD BEARISH CROSSOVER with momentum confirmation")
+                    if hp_trend_direction < -0.002:
+                        confidence_factors.append(f"HP TREND CONFIRMS: {hp_trend_direction:+.2%}")
+                    if selling_pressure > 0.5:
+                        confidence_factors.append(f"Selling pressure: {selling_pressure:.0%}")
+                else:
+                    logger.info(f"⚠️ {symbol}: MACD bearish but HP trend positive ({hp_trend_direction:+.2%}) - waiting")
             
             # BREAKOUT with volume confirmation
             elif abs(change_percent) >= self.breakout_threshold and volume_ratio > 1.5:
@@ -1162,10 +1220,12 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 logger.info(f"📊 {symbol} CONDITION: {condition}")
                 logger.info(f"   📈 Price: {change_percent:+.2f}% | Vol: {volume_ratio:.1f}x | Candle: {'GREEN' if is_green_candle else 'RED'}")
                 logger.info(f"   🕯️ Buy Pressure: {buying_pressure:.0%} | Sell Pressure: {selling_pressure:.0%}")
-                logger.info(f"   📉 RSI: {rsi:.1f} | Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f}")
-                logger.info(f"   📊 MACD: {macd_crossover or 'neutral'} | Bollinger: {'SQUEEZE!' if bollinger_squeeze else 'normal'}")
+                logger.info(f"   📉 RSI: {rsi:.1f} | Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f} | HP: {hp_trend_direction:+.2%}")
+                logger.info(f"   🔄 Mean Reversion: {mean_reversion_prob:.0%} | MACD: {macd_crossover or 'neutral'} | Bollinger: {'SQUEEZE!' if bollinger_squeeze else 'normal'}")
                 if rsi_divergence:
                     logger.info(f"   🎯 RSI DIVERGENCE: {rsi_divergence.upper()}")
+                if bollinger_breakout:
+                    logger.info(f"   💥 BOLLINGER BREAKOUT: {bollinger_breakout.upper()}")
                 logger.info(f"   ✅ Factors: {factors_str}")
             
             return condition
