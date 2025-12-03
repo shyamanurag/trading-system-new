@@ -120,6 +120,13 @@ class SignalDeduplicator:
                     deleted = await self.redis_client.delete(*keys)
                     total_cleared += deleted
                     logger.info(f"🧹 Cleared {deleted} executed signals for {date}")
+                
+                # Also clear quantity tracking
+                qty_pattern = f"executed_qty:{date}:*"
+                qty_keys = await self.redis_client.keys(qty_pattern)
+                if qty_keys:
+                    deleted = await self.redis_client.delete(*qty_keys)
+                    total_cleared += deleted
             
             logger.info(f"✅ Total executed signals cleared: {total_cleared}")
             return total_cleared
@@ -127,6 +134,84 @@ class SignalDeduplicator:
         except Exception as e:
             logger.error(f"❌ Error clearing executed signals: {e}")
             return 0
+    
+    async def clear_symbol_execution(self, symbol: str, action: str = None):
+        """
+        Clear executed signal cache for a specific symbol
+        Use this to allow re-trading a symbol (e.g., after position sizing fix)
+        
+        Args:
+            symbol: Stock symbol (e.g., 'SBIN')
+            action: Optional - 'BUY' or 'SELL'. If None, clears both.
+        """
+        try:
+            if not self.redis_client:
+                logger.error("❌ No Redis client available")
+                return False
+            
+            today = datetime.now().strftime('%Y-%m-%d')
+            cleared_keys = []
+            
+            actions = [action] if action else ['BUY', 'SELL']
+            
+            for act in actions:
+                # Clear execution count
+                exec_key = f"executed_signals:{today}:{symbol}:{act}"
+                qty_key = f"executed_qty:{today}:{symbol}:{act}"
+                
+                await self.redis_client.delete(exec_key)
+                await self.redis_client.delete(qty_key)
+                cleared_keys.extend([exec_key, qty_key])
+            
+            logger.info(f"🧹 CLEARED EXECUTION CACHE: {symbol} {action or 'BUY/SELL'}")
+            logger.info(f"   Deleted keys: {cleared_keys}")
+            logger.info(f"   ✅ {symbol} can now be traded again with fresh quantity")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error clearing symbol execution for {symbol}: {e}")
+            return False
+    
+    async def get_executed_positions_summary(self) -> Dict:
+        """Get summary of all executed positions today (for debugging)"""
+        try:
+            if not self.redis_client:
+                return {'error': 'No Redis client'}
+            
+            today = datetime.now().strftime('%Y-%m-%d')
+            pattern = f"executed_signals:{today}:*"
+            
+            keys = await self.redis_client.keys(pattern)
+            
+            positions = {}
+            for key in keys:
+                # Parse key: executed_signals:YYYY-MM-DD:SYMBOL:ACTION
+                parts = key.split(':')
+                if len(parts) >= 4:
+                    symbol = parts[2]
+                    action = parts[3]
+                    count = await self.redis_client.get(key)
+                    
+                    qty_key = f"executed_qty:{today}:{symbol}:{action}"
+                    qty = await self.redis_client.get(qty_key)
+                    
+                    positions[f"{symbol}:{action}"] = {
+                        'symbol': symbol,
+                        'action': action,
+                        'execution_count': int(count) if count else 0,
+                        'total_quantity': int(qty) if qty else 0
+                    }
+            
+            return {
+                'date': today,
+                'total_positions': len(positions),
+                'positions': positions
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting executed positions summary: {e}")
+            return {'error': str(e)}
 
     async def purge_signal_everywhere(self, signal_id: str, symbol: Optional[str] = None):
         """Remove a signal from all in-memory stores and Redis tracking."""
@@ -178,8 +263,10 @@ class SignalDeduplicator:
             # 🎯 BYPASS DEDUPLICATION FOR POSITION MANAGEMENT ACTIONS
             is_management_action = signal.get('management_action', False)
             is_closing_action = signal.get('closing_action', False)
+            is_size_correction = signal.get('size_correction', False)
+            is_scaling_action = signal.get('scaling_action', False)
             
-            if is_management_action or is_closing_action:
+            if is_management_action or is_closing_action or is_size_correction or is_scaling_action:
                 logger.info(f"🎯 MANAGEMENT ACTION BYPASS: {signal.get('symbol')} {signal.get('action')} - skipping duplicate check")
                 return False
             
@@ -189,21 +276,41 @@ class SignalDeduplicator:
                 
             symbol = signal.get('symbol')
             action = signal.get('action', 'BUY')
+            new_quantity = signal.get('quantity', 0)
             
             # Check if signal was executed in last 24 hours
             today = datetime.now().strftime('%Y-%m-%d')
             executed_key = f"executed_signals:{today}:{symbol}:{action}"
+            executed_qty_key = f"executed_qty:{today}:{symbol}:{action}"
             
             logger.info(f"🔍 CHECKING DUPLICATE: {executed_key}")
             executed_count = await self.redis_client.get(executed_key)
             
             if executed_count and int(executed_count) > 0:
-                logger.warning(f"🚫 DUPLICATE SIGNAL BLOCKED: {symbol} {action} already executed {executed_count} times today")
+                # 🎯 NEW: Check if this is a SCALING opportunity (larger quantity for same direction)
+                executed_qty = await self.redis_client.get(executed_qty_key)
+                executed_qty = int(executed_qty) if executed_qty else 0
+                
+                # If new signal has significantly more quantity (>20% more), allow scaling
+                if new_quantity > 0 and executed_qty > 0:
+                    qty_increase_pct = ((new_quantity - executed_qty) / executed_qty) * 100
+                    
+                    if qty_increase_pct >= 20:  # At least 20% more quantity
+                        logger.info(f"📈 POSITION SCALING ALLOWED: {symbol} {action}")
+                        logger.info(f"   Previous: {executed_qty} shares → New: {new_quantity} shares (+{qty_increase_pct:.0f}%)")
+                        logger.info(f"   🎯 This will ADD {new_quantity - executed_qty} shares to existing position")
+                        
+                        # Mark this as a scaling action in the signal
+                        signal['scaling_action'] = True
+                        signal['additional_quantity'] = new_quantity - executed_qty
+                        signal['original_executed_qty'] = executed_qty
+                        return False  # Allow execution
+                
+                logger.warning(f"🚫 DUPLICATE SIGNAL BLOCKED: {symbol} {action} already executed {executed_count} times today (qty: {executed_qty})")
                 logger.warning(f"🔑 Redis key: {executed_key}")
                 return True
             else:
                 logger.info(f"✅ SIGNAL ALLOWED: {symbol} {action} - no previous executions found")
-                # Removed: post-exit cooldown logic in favor of purging strategy caches
                 return False
                 
         except Exception as e:
@@ -220,18 +327,33 @@ class SignalDeduplicator:
                 
             symbol = signal.get('symbol')
             action = signal.get('action', 'BUY')
+            quantity = signal.get('quantity', 0)
             
             # Increment execution count for today
             today = datetime.now().strftime('%Y-%m-%d')
             executed_key = f"executed_signals:{today}:{symbol}:{action}"
+            executed_qty_key = f"executed_qty:{today}:{symbol}:{action}"
             
-            logger.info(f"📝 MARKING AS EXECUTED: {executed_key}")
+            logger.info(f"📝 MARKING AS EXECUTED: {executed_key} (qty: {quantity})")
             current_count = await self.redis_client.incr(executed_key)
             await self.redis_client.expire(executed_key, 86400)  # 24 hours
             
-            logger.info(f"✅ Marked signal as executed: {symbol} {action} (count: {current_count})")
+            # 🎯 NEW: Track total executed quantity for position scaling logic
+            if signal.get('scaling_action'):
+                # This is a scaling order - ADD to existing quantity
+                additional_qty = signal.get('additional_quantity', quantity)
+                current_qty = await self.redis_client.get(executed_qty_key)
+                current_qty = int(current_qty) if current_qty else 0
+                new_total_qty = current_qty + additional_qty
+                await self.redis_client.set(executed_qty_key, str(new_total_qty), ex=86400)
+                logger.info(f"📈 POSITION SCALED: {symbol} {action} - Total qty now: {new_total_qty} (added: {additional_qty})")
+            else:
+                # Regular order - set the executed quantity
+                await self.redis_client.set(executed_qty_key, str(quantity), ex=86400)
             
-            if current_count > 1:
+            logger.info(f"✅ Marked signal as executed: {symbol} {action} (count: {current_count}, qty: {quantity})")
+            
+            if current_count > 1 and not signal.get('scaling_action'):
                 logger.warning(f"⚠️ MULTIPLE EXECUTIONS DETECTED: {symbol} {action} now executed {current_count} times today!")
             
         except Exception as e:
