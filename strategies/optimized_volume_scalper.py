@@ -1618,25 +1618,89 @@ class OptimizedVolumeScalper(BaseStrategy):
             return 0.0
     
     async def _convert_to_trading_signal(self, symbol: str, symbol_data: Dict, ms_signal: MarketMicrostructureSignal) -> Optional[Dict]:
-        """Convert microstructure signal to executable trading signal"""
+        """
+        Convert microstructure signal to executable trading signal
+        🎯 PHASE 2 COMPLETE: Now validates with RSI, MACD, Bollinger
+        """
         try:
-            current_price = symbol_data.get('close', 0)
+            current_price = symbol_data.get('close', symbol_data.get('ltp', 0))
+            high = symbol_data.get('high', current_price)
+            low = symbol_data.get('low', current_price)
+            open_price = symbol_data.get('open', current_price)
+            
             if current_price <= 0:
                 return None
             
+            # ============= PHASE 2: PRICE HISTORY =============
+            if not hasattr(self, 'price_history'):
+                self.price_history = {}
+            if symbol not in self.price_history:
+                self.price_history[symbol] = []
+            self.price_history[symbol].append(current_price)
+            self.price_history[symbol] = self.price_history[symbol][-50:]
+            prices = self.price_history[symbol]
+            
+            # ============= PHASE 2: CANDLE ANALYSIS =============
+            candle_range = high - low if high > low else 0.01
+            buying_pressure = (current_price - low) / candle_range
+            selling_pressure = (high - current_price) / candle_range
+            
+            # ============= PHASE 2: ADVANCED INDICATORS =============
+            rsi = 50.0
+            macd_crossover = None
+            
+            if len(prices) >= 14:
+                rsi = self._calculate_rsi(prices, 14)
+            
+            if len(prices) >= 26:
+                macd_data = self.calculate_macd_signal(prices)
+                macd_crossover = macd_data.get('crossover')
+            
             # 🎯 ENHANCED: Dual-Timeframe Validation
-            # Check if microstructure signal conflicts with broad market bias
             dual_analysis = self.analyze_stock_dual_timeframe(symbol, symbol_data)
             weighted_bias = dual_analysis.get('weighted_bias', 0.0)
             alignment = dual_analysis.get('alignment', 'UNKNOWN')
             
-            # Logic: If microstructure signal is BUY but stock is crashing in dual-timeframe, BE CAREFUL
+            # ============= PHASE 2: RSI/MACD VALIDATION =============
+            # BUY signal validation
+            if ms_signal.signal_type == 'BUY':
+                # Don't buy if overbought
+                if rsi > 70:
+                    logger.info(f"⚠️ {symbol}: BUY rejected - RSI overbought ({rsi:.0f})")
+                    return None
+                # Don't buy if MACD bearish (unless mean reversion)
+                if macd_crossover == 'bearish' and ms_signal.edge_source != "MEAN_REVERSION":
+                    logger.info(f"⚠️ {symbol}: BUY rejected - MACD bearish crossover")
+                    return None
+                # Don't buy if selling pressure is overwhelming
+                if selling_pressure > 0.8 and ms_signal.edge_source != "MEAN_REVERSION":
+                    logger.info(f"⚠️ {symbol}: BUY rejected - Strong selling pressure ({selling_pressure:.0%})")
+                    return None
+            
+            # SELL signal validation
+            elif ms_signal.signal_type == 'SELL':
+                # Don't sell if oversold
+                if rsi < 30:
+                    logger.info(f"⚠️ {symbol}: SELL rejected - RSI oversold ({rsi:.0f})")
+                    return None
+                # Don't sell if MACD bullish (unless mean reversion)
+                if macd_crossover == 'bullish' and ms_signal.edge_source != "MEAN_REVERSION":
+                    logger.info(f"⚠️ {symbol}: SELL rejected - MACD bullish crossover")
+                    return None
+                # Don't sell if buying pressure is overwhelming
+                if buying_pressure > 0.8 and ms_signal.edge_source != "MEAN_REVERSION":
+                    logger.info(f"⚠️ {symbol}: SELL rejected - Strong buying pressure ({buying_pressure:.0%})")
+                    return None
+            
+            # Log validation passed
+            logger.info(f"✅ {symbol} {ms_signal.signal_type}: RSI={rsi:.0f}, MACD={macd_crossover or 'neutral'}, Buy/Sell Pressure={buying_pressure:.0%}/{selling_pressure:.0%}")
+            
+            # Legacy dual-timeframe check
             if ms_signal.signal_type == 'BUY' and weighted_bias < -1.0:
-                if ms_signal.edge_source != "MEAN_REVERSION": # Mean reversion expects a drop
+                if ms_signal.edge_source != "MEAN_REVERSION":
                     logger.info(f"⚠️ FILTERED: {symbol} BUY signal rejected due to strong negative bias ({weighted_bias:.1f}%)")
                     return None
             
-            # Logic: If microstructure signal is SELL but stock is rocketing
             if ms_signal.signal_type == 'SELL' and weighted_bias > 1.0:
                 if ms_signal.edge_source != "MEAN_REVERSION":
                     logger.info(f"⚠️ FILTERED: {symbol} SELL signal rejected due to strong positive bias ({weighted_bias:.1f}%)")

@@ -742,10 +742,16 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             return []
 
     async def _analyze_underlying_for_options(self, underlying_symbol: str, underlying_data: Dict[str, Any], market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Analyze underlying symbol and generate options signal with real Zerodha data"""
+        """
+        Analyze underlying symbol and generate options signal with real Zerodha data
+        🎯 PHASE 2 COMPLETE: Now uses ALL advanced indicators!
+        """
         try:
             ltp = underlying_data.get('ltp', 0)
             volume = underlying_data.get('volume', 0)
+            high = underlying_data.get('high', ltp)
+            low = underlying_data.get('low', ltp)
+            open_price = underlying_data.get('open', ltp)
             
             if ltp == 0 or volume == 0:
                 return None
@@ -755,9 +761,66 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             weighted_bias = dual_analysis.get('weighted_bias', 0.0)
             alignment = dual_analysis.get('alignment', 'UNKNOWN')
             
+            # ============= PHASE 2: CANDLE BODY ANALYSIS =============
+            candle_range = high - low if high > low else 0.01
+            buying_pressure = (ltp - low) / candle_range
+            selling_pressure = (high - ltp) / candle_range
+            is_green_candle = ltp > open_price
+            
+            # ============= PHASE 2: PRICE HISTORY FOR INDICATORS =============
+            if not hasattr(self, 'price_history'):
+                self.price_history = {}
+            if underlying_symbol not in self.price_history:
+                self.price_history[underlying_symbol] = []
+            self.price_history[underlying_symbol].append(ltp)
+            self.price_history[underlying_symbol] = self.price_history[underlying_symbol][-50:]
+            
+            prices = self.price_history[underlying_symbol]
+            
+            # ============= PHASE 2: ADVANCED INDICATORS =============
+            rsi = 50.0
+            macd_crossover = None
+            bollinger_squeeze = False
+            
+            if len(prices) >= 14:
+                rsi = self._calculate_rsi(prices, 14)
+            
+            if len(prices) >= 26:
+                macd_data = self.calculate_macd_signal(prices)
+                macd_crossover = macd_data.get('crossover')
+            
+            if len(prices) >= 20:
+                bollinger_data = self.detect_bollinger_squeeze(underlying_symbol, prices)
+                bollinger_squeeze = bollinger_data.get('squeezing', False)
+            
+            # ============= PHASE 2: REVERSAL DETECTION =============
+            # Don't buy CALL if selling pressure is high (reversal down)
+            # Don't buy PUT if buying pressure is high (reversal up)
+            if weighted_bias > 0.5:  # Potential CALL
+                if selling_pressure > 0.7 or rsi > 70:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - selling pressure {selling_pressure:.0%} or RSI {rsi:.0f} too high")
+                    return None
+                if macd_crossover == 'bearish':
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - MACD bearish crossover")
+                    return None
+            elif weighted_bias < -0.5:  # Potential PUT
+                if buying_pressure > 0.7 or rsi < 30:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - buying pressure {buying_pressure:.0%} or RSI {rsi:.0f} indicates reversal")
+                    return None
+                if macd_crossover == 'bullish':
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - MACD bullish crossover")
+                    return None
+            
             # Require minimum weighted movement
             if abs(weighted_bias) < 0.5:  # Not enough movement
                 return None
+            
+            # Log all indicators
+            logger.info(f"📊 {underlying_symbol} OPTIONS ANALYSIS:")
+            logger.info(f"   Bias: {weighted_bias:+.2f}% | RSI: {rsi:.0f} | MACD: {macd_crossover or 'neutral'}")
+            logger.info(f"   Buy Pressure: {buying_pressure:.0%} | Sell Pressure: {selling_pressure:.0%}")
+            if bollinger_squeeze:
+                logger.info(f"   🔥 BOLLINGER SQUEEZE DETECTED - Expecting big move!")
                 
             # Determine call or put based on weighted bias
             option_type = 'CE' if weighted_bias > 0 else 'PE'
@@ -786,11 +849,8 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 risk_reward_ratio=None  # Auto-adapt based on market regime
             )
             
-            # 🎯 ENHANCED: More conservative and realistic confidence for options
+            # 🎯 PHASE 2: ENHANCED CONFIDENCE WITH ALL INDICATORS
             # Base: 0.55 (55%) - Start lower for options due to theta decay
-            # Volume: +10% for strong volume
-            # Price: +10% for strong momentum
-            # Alignment: +5% for market alignment
             volume_strength = min(volume / 1000000, 1.0)  # Normalize volume
             price_strength = min(abs(weighted_bias) / 2.0, 1.0)  # Normalize price change
             
@@ -801,9 +861,34 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 base_confidence += 0.05
             elif "AGAINST MARKET" in alignment:
                 base_confidence -= 0.10
+            
+            # 🎯 NEW: Indicator confirmations boost confidence
+            if option_type == 'CE':  # CALL option
+                if macd_crossover == 'bullish':
+                    base_confidence += 0.05
+                    logger.info(f"   ✅ MACD bullish confirmation +5%")
+                if rsi < 50 and rsi > 30:  # Not overbought, room to run
+                    base_confidence += 0.03
+                if buying_pressure > 0.6:
+                    base_confidence += 0.03
+                    logger.info(f"   ✅ Strong buying pressure +3%")
+            else:  # PUT option
+                if macd_crossover == 'bearish':
+                    base_confidence += 0.05
+                    logger.info(f"   ✅ MACD bearish confirmation +5%")
+                if rsi > 50 and rsi < 70:  # Not oversold, room to fall
+                    base_confidence += 0.03
+                if selling_pressure > 0.6:
+                    base_confidence += 0.03
+                    logger.info(f"   ✅ Strong selling pressure +3%")
+            
+            # Bollinger squeeze = higher confidence (big move expected)
+            if bollinger_squeeze:
+                base_confidence += 0.05
+                logger.info(f"   🔥 Bollinger squeeze boost +5%")
                 
-            dynamic_confidence_raw = min(max(base_confidence, 0.55), 0.75)  # Clamp between 0.55-0.75
-            dynamic_confidence = dynamic_confidence_raw * 10.0  # Scale to 0-10 range (5.5-7.5)
+            dynamic_confidence_raw = min(max(base_confidence, 0.55), 0.80)  # Clamp between 0.55-0.80
+            dynamic_confidence = dynamic_confidence_raw * 10.0  # Scale to 0-10 range (5.5-8.0)
             
             # Generate options signal using base strategy method with DYNAMIC parameters
             signal = await self.create_standard_signal(
