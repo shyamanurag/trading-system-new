@@ -714,8 +714,16 @@ class TradingOrchestrator:
             await self._load_strategies()
             self.logger.info("✅ Strategies loaded")
             
-            # Initialize Zerodha client
-            if not self.zerodha_client:
+            # 🚨 CRITICAL FIX: Check if zerodha_client exists AND has a valid token before recreating
+            # This prevents overwriting a client that was updated with a fresh token from /auth/submit-token
+            if self.zerodha_client:
+                # Check if existing client has a token
+                has_token = hasattr(self.zerodha_client, 'access_token') and self.zerodha_client.access_token
+                token_len = len(self.zerodha_client.access_token) if has_token else 0
+                self.logger.info(f"✅ PRESERVING existing Zerodha client (token length: {token_len})")
+                self.logger.info(f"   🚨 NOT creating new client - reusing existing to preserve fresh token")
+            else:
+                # No existing client, create new one
                 try:
                     self.zerodha_client = await self._initialize_zerodha_client()
                     if self.zerodha_client:
@@ -726,13 +734,17 @@ class TradingOrchestrator:
                     self.logger.error(f"❌ Zerodha client initialization failed: {e}")
                     self.zerodha_client = None
             
-            # Initialize Zerodha client
+            # Verify Zerodha connection (but don't reinitialize if already working)
             if self.zerodha_client:
                 try:
-                    await self.zerodha_client.initialize()
-                    self.logger.info("✅ Zerodha client initialized")
+                    # Only call initialize if not already connected
+                    if not getattr(self.zerodha_client, 'is_connected', False):
+                        await self.zerodha_client.initialize()
+                        self.logger.info("✅ Zerodha client connection verified")
+                    else:
+                        self.logger.info("✅ Zerodha client already connected - skipping reinitialize")
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Zerodha client initialization failed: {e}")
+                    self.logger.warning(f"⚠️ Zerodha client connection verification failed: {e}")
             
             # CRITICAL FIX: Set Zerodha client in trade engine after initialization
             if hasattr(self, 'trade_engine') and self.trade_engine and self.zerodha_client:

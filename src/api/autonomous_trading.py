@@ -198,6 +198,13 @@ async def start_trading(
                 # Force complete system initialization
                 logger.info("🔄 Forcing complete system initialization...")
                 
+                # 🚨 CRITICAL FIX: PRESERVE existing zerodha_client with fresh token!
+                # Token was submitted BEFORE /start, don't create new client with stale credentials
+                existing_zerodha_client = getattr(local_orchestrator, 'zerodha_client', None)
+                if existing_zerodha_client:
+                    logger.info("✅ PRESERVING existing Zerodha client (has fresh token)")
+                    logger.info(f"   Token length: {len(existing_zerodha_client.access_token) if hasattr(existing_zerodha_client, 'access_token') and existing_zerodha_client.access_token else 0}")
+                
                 # Clear any existing problematic state
                 if hasattr(local_orchestrator, 'is_initialized'):
                     local_orchestrator.is_initialized = False
@@ -206,6 +213,20 @@ async def start_trading(
                 
                 # Force full initialization
                 init_success = await local_orchestrator.initialize()
+                
+                # 🚨 CRITICAL FIX: Restore the preserved zerodha_client after initialization
+                # initialize() may have created a new client with stale credentials
+                if existing_zerodha_client:
+                    local_orchestrator.zerodha_client = existing_zerodha_client
+                    logger.info("✅ RESTORED preserved Zerodha client after initialization")
+                    
+                    # Also update trade_engine and order_manager with preserved client
+                    if hasattr(local_orchestrator, 'trade_engine') and local_orchestrator.trade_engine:
+                        local_orchestrator.trade_engine.zerodha_client = existing_zerodha_client
+                        logger.info("✅ Updated trade_engine with preserved Zerodha client")
+                    if hasattr(local_orchestrator, 'order_manager') and local_orchestrator.order_manager:
+                        local_orchestrator.order_manager.zerodha_client = existing_zerodha_client
+                        logger.info("✅ Updated order_manager with preserved Zerodha client")
                 
                 if not init_success:
                     logger.error("❌ System initialization failed")
