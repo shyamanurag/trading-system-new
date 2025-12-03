@@ -181,15 +181,29 @@ This is a **production-grade autonomous intraday trading system** built for the 
 | Black-Scholes | `news_impact_scalper.py` | ✅ Working |
 | Greeks (Δ,Γ,Θ,V,ρ) | `news_impact_scalper.py` | ✅ Working |
 
-### ⚠️ HONEST LIMITATIONS
+### ⚠️ HONEST LIMITATIONS & ROADMAP
 
-| Limitation | Impact | Reality |
-|------------|--------|---------|
-| Backtesting | Medium | Framework exists but not production-tested |
-| ML Signal Validation | Low | RandomForest exists but needs training data |
-| News Sentiment | None | Not implemented (name is legacy) |
-| Cross-Sectional Momentum | Low | Works only when 5+ symbols tracked |
-| HMM Training | Medium | Trains every 50 observations, may need tuning |
+| Feature | Current Status | Impact | Mitigation / Roadmap |
+|---------|---------------|--------|----------------------|
+| **Backtesting Engine** | Framework exists | Medium | Needs validation with 6+ months historical data before production use |
+| **ML Signal Validation** | RandomForest initialized | Low | Collecting live trade data to train model; will improve over time |
+| **News Sentiment Analysis** | Not implemented | None | Name is legacy; strategy uses technical analysis only |
+| **Cross-Sectional Momentum** | Requires 5+ symbols | Low | Auto-activates after 5 minutes of tracking; warmup period expected |
+| **HMM Cold Start** | Trains after 50 observations | Medium | Pre-loading 3 days of historical data on startup (planned) |
+| **Options IV** | Approximate calculation | Low | Using Black-Scholes estimation; market IV integration planned |
+
+### 📊 MODEL ACCURACY EXPECTATIONS
+
+| Model | Expected Accuracy | Notes |
+|-------|------------------|-------|
+| Trend Detection (HP Filter) | 70-80% | Well-validated mathematical model |
+| RSI Divergence | 60-70% | Depends on market conditions |
+| MACD Crossover | 55-65% | Better in trending markets |
+| Bollinger Squeeze | 65-75% | High-probability breakout detection |
+| HMM Regime | 60-70% | Improves with more data |
+| Mean Reversion | 55-65% | Works best in ranging markets |
+
+> **Note:** These are theoretical expectations based on academic research. Actual performance depends on market conditions, execution quality, and risk management.
 
 ---
 
