@@ -65,9 +65,7 @@ class EnhancedPositionOpeningDecision:
         self.override_confidence_threshold = self.config.get('override_confidence_threshold', 9.0)
         
         # RISK MANAGEMENT PARAMETERS
-        # 🔥 FIX 2025-12-03: Increased from 2% to 5% to allow SELL signals on weak stocks
-        # Previous 2% limit was blocking valid intraday SELL signals (SBIN 3.8%, NTPC 4.6%)
-        self.max_position_risk = self.config.get('max_position_risk', 0.05)  # 5% per position
+        self.max_position_risk = self.config.get('max_position_risk', 0.02)  # 2% per position
         self.max_portfolio_risk = self.config.get('max_portfolio_risk', 0.10)  # 10% total
         self.max_sector_concentration = self.config.get('max_sector_concentration', 0.30)  # 30% per sector
         
@@ -674,9 +672,10 @@ class EnhancedPositionOpeningDecision:
                     }
                 )
             
-            # 🎯 INDIVIDUAL POSITION LIMITS: Unified 5% risk per position for both options and equity
-            # This allows intraday SELL signals on weak stocks to execute
-            max_risk_limit = self.max_position_risk  # 5% for both options and equity
+            # 🎯 INDIVIDUAL POSITION LIMITS: Different risk limits for options vs equity
+            # Options have limited downside (premium paid), allow 5% risk per position
+            # Equity can gap down, keep at 2% risk per position
+            max_risk_limit = 0.05 if is_options else self.max_position_risk  # 5% for options, 2% for equity
             
             if position_risk > max_risk_limit:
                 trade_type = "OPTIONS" if is_options else "EQUITY"
