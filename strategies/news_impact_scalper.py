@@ -243,6 +243,11 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         self.iv_surface = {}  # Strike -> IV mapping
         self.iv_history = {}  # Historical IV for each strike
         
+        # 🔥 FIX: MARKET IV CACHE - Store real IV from Zerodha option chain
+        self.market_iv_cache = {}  # symbol -> {strike -> iv}
+        self.iv_cache_timestamp = {}  # symbol -> last_update_time
+        self.iv_cache_ttl = 300  # 5 minutes cache
+        
         # PROFESSIONAL PERFORMANCE TRACKING
         self.options_performance = {
             'total_premium_collected': 0.0,
@@ -651,6 +656,118 @@ class EnhancedNewsImpactScalper(BaseStrategy):
         """Initialize the strategy"""
         self.is_active = True
         logger.info("✅ Professional Options Engine loaded successfully")
+    
+    async def get_market_iv(self, symbol: str, strike: float, option_type: str = 'CE') -> float:
+        """
+        🔥 FIX FOR LIMITATION: Options IV
+        Get real implied volatility from Zerodha option chain instead of using default 20%
+        
+        Returns: IV as decimal (e.g., 0.25 for 25% IV)
+        """
+        try:
+            import time
+            current_time = time.time()
+            
+            # Check cache first
+            cache_key = f"{symbol}_{strike}_{option_type}"
+            if cache_key in self.market_iv_cache:
+                cache_time = self.iv_cache_timestamp.get(cache_key, 0)
+                if current_time - cache_time < self.iv_cache_ttl:
+                    cached_iv = self.market_iv_cache[cache_key]
+                    logger.debug(f"📊 Using cached IV for {cache_key}: {cached_iv:.2%}")
+                    return cached_iv
+            
+            # Try to get Zerodha client
+            zerodha_client = None
+            if hasattr(self, 'orchestrator') and self.orchestrator:
+                zerodha_client = getattr(self.orchestrator, 'zerodha_client', None)
+            
+            if not zerodha_client:
+                logger.debug(f"⚠️ No Zerodha client - using estimated IV for {symbol}")
+                return self._estimate_iv_from_historical(symbol)
+            
+            # Get option chain from Zerodha
+            try:
+                # Map symbol to Zerodha format
+                base_symbol = symbol.replace('-I', '').replace('-FUT', '')
+                option_chain = await zerodha_client.get_option_chain(base_symbol)
+                
+                if not option_chain or 'options' not in option_chain:
+                    return self._estimate_iv_from_historical(symbol)
+                
+                # Find matching strike
+                for opt in option_chain.get('options', []):
+                    opt_strike = opt.get('strike', 0)
+                    opt_type = opt.get('instrument_type', '')
+                    
+                    if abs(opt_strike - strike) < 1 and opt_type.upper() == option_type.upper():
+                        # Get option price from LTP
+                        opt_symbol = opt.get('tradingsymbol', '')
+                        opt_ltp = self.get_ltp(opt_symbol)
+                        
+                        if opt_ltp > 0:
+                            # Get underlying price
+                            underlying_ltp = self.get_ltp(symbol)
+                            if underlying_ltp <= 0:
+                                underlying_ltp = option_chain.get('underlying_price', strike)
+                            
+                            # Calculate IV from market price
+                            # Assuming ~7 days to expiry for ATM options
+                            T = 7 / 365.0
+                            r = 0.065  # Risk-free rate
+                            
+                            iv = ProfessionalOptionsModels.implied_volatility(
+                                market_price=opt_ltp,
+                                S=underlying_ltp,
+                                K=strike,
+                                T=T,
+                                r=r,
+                                option_type='call' if option_type.upper() == 'CE' else 'put'
+                            )
+                            
+                            # Cache the result
+                            self.market_iv_cache[cache_key] = iv
+                            self.iv_cache_timestamp[cache_key] = current_time
+                            
+                            logger.info(f"📈 MARKET IV for {symbol} {strike}{option_type}: {iv:.2%}")
+                            return iv
+                
+            except Exception as chain_error:
+                logger.debug(f"Option chain fetch failed: {chain_error}")
+            
+            # Fallback to estimation
+            return self._estimate_iv_from_historical(symbol)
+            
+        except Exception as e:
+            logger.error(f"Error getting market IV for {symbol}: {e}")
+            return 0.20  # Default 20% IV
+    
+    def _estimate_iv_from_historical(self, symbol: str) -> float:
+        """Estimate IV from historical price volatility"""
+        try:
+            if not hasattr(self, 'price_history') or symbol not in self.price_history:
+                return 0.20  # Default 20%
+            
+            prices = self.price_history[symbol]
+            if len(prices) < 10:
+                return 0.20
+            
+            import numpy as np
+            prices_arr = np.array(prices[-20:])
+            returns = np.diff(prices_arr) / prices_arr[:-1]
+            
+            # Annualized volatility (assuming 5-min data, ~75 periods per day)
+            daily_vol = np.std(returns) * np.sqrt(75)
+            annual_vol = daily_vol * np.sqrt(252)
+            
+            # Clamp between 10% and 100%
+            iv = max(0.10, min(annual_vol, 1.0))
+            logger.debug(f"📊 Estimated IV for {symbol}: {iv:.2%} (from historical)")
+            return iv
+            
+        except Exception as e:
+            logger.debug(f"IV estimation failed: {e}")
+            return 0.20
 
     async def on_market_data(self, data: Dict):
         """Process market data and generate options signals"""

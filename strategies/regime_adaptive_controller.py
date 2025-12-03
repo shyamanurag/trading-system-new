@@ -633,13 +633,124 @@ class RegimeAdaptiveController:
         pass
     
     async def initialize(self):
-        """Initialize the strategy"""
+        """Initialize the strategy with HMM warmup"""
         logger.info(f"Initializing {self.__class__.__name__} strategy")
         self._initialize_strategy()
+        
+        # 🔥 FIX: HMM COLD START - Pre-load historical data for regime detection
+        await self._warmup_hmm_with_historical_data()
+        
         # CRITICAL FIX: Set strategy to active
         self.is_active = True
         logger.info(f"✅ {self.name} strategy activated successfully")
         return True
+    
+    async def _warmup_hmm_with_historical_data(self):
+        """
+        🔥 FIX FOR LIMITATION: HMM Cold Start
+        Pre-load 3 days of historical NIFTY data to warmup regime detection models
+        """
+        try:
+            logger.info("🔄 HMM WARMUP: Pre-loading historical data for regime detection...")
+            
+            # Try to get Zerodha client from orchestrator
+            zerodha_client = None
+            if hasattr(self, 'orchestrator') and self.orchestrator:
+                zerodha_client = getattr(self.orchestrator, 'zerodha_client', None)
+            
+            if not zerodha_client:
+                logger.warning("⚠️ HMM WARMUP: No Zerodha client available - will warmup from live data")
+                return
+            
+            # Fetch 3 days of 5-minute NIFTY data
+            from datetime import datetime, timedelta
+            to_date = datetime.now()
+            from_date = to_date - timedelta(days=3)
+            
+            try:
+                historical_data = await zerodha_client.get_historical_data(
+                    symbol='NIFTY 50',
+                    interval='5minute',
+                    from_date=from_date,
+                    to_date=to_date,
+                    exchange='NSE'
+                )
+                
+                if not historical_data or len(historical_data) < 50:
+                    logger.warning(f"⚠️ HMM WARMUP: Insufficient historical data ({len(historical_data) if historical_data else 0} candles)")
+                    return
+                
+                logger.info(f"📊 HMM WARMUP: Processing {len(historical_data)} historical candles...")
+                
+                # Extract features from historical data
+                for i, candle in enumerate(historical_data):
+                    if i < 20:  # Need some history to calculate features
+                        continue
+                    
+                    # Calculate features from historical candles
+                    recent_candles = historical_data[max(0, i-20):i+1]
+                    closes = [c['close'] for c in recent_candles]
+                    volumes = [c['volume'] for c in recent_candles]
+                    
+                    if len(closes) < 5:
+                        continue
+                    
+                    # Calculate regime features
+                    import numpy as np
+                    closes_arr = np.array(closes)
+                    volumes_arr = np.array(volumes)
+                    
+                    returns = np.diff(closes_arr) / closes_arr[:-1]
+                    volatility = float(np.std(returns)) if len(returns) > 1 else 0.02
+                    momentum = float(np.mean(returns)) if len(returns) > 0 else 0.0
+                    volume_profile = float(np.std(volumes_arr) / np.mean(volumes_arr)) if np.mean(volumes_arr) > 0 else 0.0
+                    trend_strength = float((closes_arr[-1] - closes_arr[0]) / closes_arr[0]) if closes_arr[0] > 0 else 0.0
+                    
+                    # Store feature
+                    feature_vector = np.array([
+                        volatility,
+                        momentum,
+                        volume_profile,
+                        trend_strength,
+                        0.5,  # correlation_regime placeholder
+                        0.0,  # skewness placeholder
+                        0.0   # kurtosis placeholder
+                    ])
+                    
+                    self.feature_history.append({
+                        'timestamp': candle['date'],
+                        'features': feature_vector,
+                        'raw_data': {
+                            'volatility': volatility,
+                            'momentum': momentum,
+                            'volume_profile': volume_profile,
+                            'trend_strength': trend_strength
+                        }
+                    })
+                
+                # Trim to max history
+                while len(self.feature_history) > self.max_history:
+                    self.feature_history.pop(0)
+                
+                # Train HMM with historical data if we have enough
+                if len(self.feature_history) >= 50:
+                    feature_matrix = np.array([f['features'][:3] for f in self.feature_history])
+                    self.hmm_model.baum_welch(feature_matrix, n_iterations=10)
+                    logger.info(f"✅ HMM WARMUP COMPLETE: Trained on {len(self.feature_history)} observations")
+                    
+                    # Run Viterbi to get initial regime
+                    state_path, _ = self.hmm_model.viterbi(feature_matrix)
+                    initial_regime = self.hmm_model.get_regime_from_state(state_path[-1])
+                    self.current_regime = initial_regime
+                    logger.info(f"🎯 HMM Initial Regime: {initial_regime.value}")
+                else:
+                    logger.warning(f"⚠️ HMM WARMUP: Only {len(self.feature_history)} observations (need 50+)")
+                    
+            except Exception as hist_error:
+                logger.warning(f"⚠️ HMM WARMUP: Historical data fetch failed: {hist_error}")
+                
+        except Exception as e:
+            logger.error(f"❌ HMM WARMUP failed: {e}")
 
     # BACKTESTING METHODS
     async def run_backtest(self, historical_data: Dict[str, List], start_date: str = None, end_date: str = None) -> Dict:

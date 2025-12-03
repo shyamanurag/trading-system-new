@@ -181,16 +181,22 @@ This is a **production-grade autonomous intraday trading system** built for the 
 | Black-Scholes | `news_impact_scalper.py` | ✅ Working |
 | Greeks (Δ,Γ,Θ,V,ρ) | `news_impact_scalper.py` | ✅ Working |
 
-### ⚠️ HONEST LIMITATIONS & ROADMAP
+### ✅ PREVIOUSLY LIMITATIONS - NOW FIXED!
 
-| Feature | Current Status | Impact | Mitigation / Roadmap |
+| Feature | Previous Issue | Status | Solution Implemented |
 |---------|---------------|--------|----------------------|
+| **HMM Cold Start** | Trained only after 50 live observations | ✅ **FIXED** | Pre-loads 3 days of NIFTY historical data on startup, trains HMM immediately |
+| **Options IV** | Used default 20% sigma | ✅ **FIXED** | Fetches real IV from Zerodha option chain, caches for 5 minutes |
+| **ML Signal Validation** | Model never trained | ✅ **FIXED** | Persists training data to Redis, auto-loads and trains on startup |
+| **Cross-Sectional Momentum** | Required 5+ symbols from live data | ✅ **FIXED** | Pre-loads top 5 FNO stocks historical data on startup |
+| **Indicator Warmup** | Indicators needed 14+ observations | ✅ **FIXED** | Pre-populates price/volume history from 3-day historical data |
+
+### ⚠️ REMAINING LIMITATIONS
+
+| Feature | Current Status | Impact | Notes |
+|---------|---------------|--------|-------|
 | **Backtesting Engine** | Framework exists | Medium | Needs validation with 6+ months historical data before production use |
-| **ML Signal Validation** | RandomForest initialized | Low | Collecting live trade data to train model; will improve over time |
 | **News Sentiment Analysis** | Not implemented | None | Name is legacy; strategy uses technical analysis only |
-| **Cross-Sectional Momentum** | Requires 5+ symbols | Low | Auto-activates after 5 minutes of tracking; warmup period expected |
-| **HMM Cold Start** | Trains after 50 observations | Medium | Pre-loading 3 days of historical data on startup (planned) |
-| **Options IV** | Approximate calculation | Low | Using Black-Scholes estimation; market IV integration planned |
 
 ### 📊 MODEL ACCURACY EXPECTATIONS
 
@@ -203,7 +209,15 @@ This is a **production-grade autonomous intraday trading system** built for the 
 | HMM Regime | 60-70% | Improves with more data |
 | Mean Reversion | 55-65% | Works best in ranging markets |
 
-> **Note:** These are theoretical expectations based on academic research. Actual performance depends on market conditions, execution quality, and risk management.
+### 🚀 RECENT IMPROVEMENTS (December 2025)
+
+1. **Full HMM Implementation** - Forward, Backward, Viterbi, Baum-Welch algorithms all working
+2. **Cross-Sectional Momentum** - Now used in breakout confirmation
+3. **Historical Data Warmup** - All strategies pre-load data on startup
+4. **ML Persistence** - Training data survives restarts via Redis
+5. **Market IV Integration** - Real IV from Zerodha option chain
+
+> **Note:** Model accuracy is theoretical. Actual performance depends on market conditions, execution quality, and risk management.
 
 ---
 

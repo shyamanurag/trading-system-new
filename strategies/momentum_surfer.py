@@ -789,9 +789,158 @@ class EnhancedMomentumSurfer(BaseStrategy):
             return "Risk status report generation failed"
 
     async def initialize(self):
-        """Initialize the strategy"""
+        """Initialize the strategy with ML model warmup"""
         self.is_active = True
+        
+        # 🔥 FIX: ML MODEL AUTO-TRAINING - Load persisted training data
+        await self._load_ml_training_data()
+        
+        # 🔥 FIX: Historical data warmup for indicators
+        await self._warmup_indicators_with_historical()
+        
         logger.info("✅ Smart Intraday Options loaded successfully")
+    
+    async def _load_ml_training_data(self):
+        """
+        🔥 FIX FOR LIMITATION: ML Signal Validation
+        Load persisted ML training data from Redis on startup
+        """
+        try:
+            import json
+            
+            # Try to get Redis client
+            redis_client = None
+            try:
+                from src.core.redis_fallback_manager import redis_fallback_manager
+                redis_client = redis_fallback_manager
+            except ImportError:
+                logger.debug("Redis not available for ML data persistence")
+                return
+            
+            if not redis_client:
+                return
+            
+            # Load persisted training data
+            ml_data_key = f"ml_training_data:{self.strategy_name}"
+            
+            try:
+                data_str = redis_client.get(ml_data_key)
+                if data_str:
+                    data = json.loads(data_str)
+                    self.ml_features_history = [np.array(f) for f in data.get('features', [])]
+                    self.ml_labels_history = data.get('labels', [])
+                    
+                    if len(self.ml_features_history) >= 50:
+                        logger.info(f"📊 ML DATA LOADED: {len(self.ml_features_history)} training samples from Redis")
+                        
+                        # Train model immediately
+                        await self._update_ml_model()
+                    else:
+                        logger.info(f"📊 ML DATA: {len(self.ml_features_history)} samples (need 50+ for training)")
+                else:
+                    logger.info("📊 No persisted ML training data found - starting fresh")
+                    
+            except Exception as redis_error:
+                logger.debug(f"Redis ML data load failed: {redis_error}")
+                
+        except Exception as e:
+            logger.error(f"ML training data load failed: {e}")
+    
+    async def _persist_ml_training_data(self):
+        """Persist ML training data to Redis for survival across restarts"""
+        try:
+            import json
+            
+            if len(self.ml_features_history) < 10:
+                return  # Not enough data to persist
+            
+            # Get Redis client
+            redis_client = None
+            try:
+                from src.core.redis_fallback_manager import redis_fallback_manager
+                redis_client = redis_fallback_manager
+            except ImportError:
+                return
+            
+            if not redis_client:
+                return
+            
+            # Keep last 500 training samples
+            features_to_save = [f.tolist() for f in self.ml_features_history[-500:]]
+            labels_to_save = self.ml_labels_history[-500:]
+            
+            ml_data_key = f"ml_training_data:{self.strategy_name}"
+            data = {
+                'features': features_to_save,
+                'labels': labels_to_save,
+                'updated_at': datetime.now().isoformat()
+            }
+            
+            redis_client.set(ml_data_key, json.dumps(data), ex=86400 * 30)  # 30 days TTL
+            logger.debug(f"📊 ML training data persisted: {len(features_to_save)} samples")
+            
+        except Exception as e:
+            logger.debug(f"ML data persistence failed: {e}")
+    
+    async def _warmup_indicators_with_historical(self):
+        """
+        🔥 FIX FOR LIMITATION: Cross-Sectional Momentum warmup
+        Pre-load historical data for all FNO stocks to enable cross-sectional analysis
+        """
+        try:
+            logger.info("🔄 INDICATOR WARMUP: Pre-loading historical data...")
+            
+            # Get Zerodha client
+            zerodha_client = None
+            if hasattr(self, 'orchestrator') and self.orchestrator:
+                zerodha_client = getattr(self.orchestrator, 'zerodha_client', None)
+            
+            if not zerodha_client:
+                logger.warning("⚠️ No Zerodha client - indicators will warmup from live data")
+                return
+            
+            # Get list of FNO symbols to warmup
+            fno_symbols = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 
+                          'SBIN', 'BHARTIARTL', 'ITC', 'KOTAKBANK', 'LT']
+            
+            warmup_count = 0
+            for symbol in fno_symbols[:5]:  # Warmup top 5 to avoid rate limits
+                try:
+                    from datetime import timedelta
+                    historical = await zerodha_client.get_historical_data(
+                        symbol=symbol,
+                        interval='5minute',
+                        from_date=datetime.now() - timedelta(days=3),
+                        to_date=datetime.now(),
+                        exchange='NSE'
+                    )
+                    
+                    if historical and len(historical) >= 20:
+                        # Populate price history
+                        if not hasattr(self, 'price_history'):
+                            self.price_history = {}
+                        self.price_history[symbol] = [c['close'] for c in historical[-50:]]
+                        
+                        # Populate volume history  
+                        if not hasattr(self, 'volume_history'):
+                            self.volume_history = {}
+                        self.volume_history[symbol] = [c['volume'] for c in historical[-20:]]
+                        
+                        # Populate cross-sectional data
+                        self.symbol_price_history[symbol] = np.array(self.price_history[symbol])
+                        
+                        warmup_count += 1
+                        
+                except Exception as sym_error:
+                    logger.debug(f"Warmup failed for {symbol}: {sym_error}")
+            
+            if warmup_count > 0:
+                logger.info(f"✅ INDICATOR WARMUP COMPLETE: {warmup_count} symbols pre-loaded")
+            else:
+                logger.warning("⚠️ INDICATOR WARMUP: No symbols loaded - will warmup from live data")
+                
+        except Exception as e:
+            logger.error(f"Indicator warmup failed: {e}")
 
     async def on_market_data(self, data: Dict):
         """Process market data and generate intraday signals"""
@@ -1702,5 +1851,121 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 market_bias=self.market_bias
             )
         return None
+    
+    # ============= ML MODEL TRAINING METHODS =============
+    
+    def _store_ml_training_data(self, features: np.ndarray, label: int):
+        """
+        🔥 FIX FOR LIMITATION: ML Signal Validation
+        Store data for ML model training with persistence
+        """
+        try:
+            if len(features) > 0:
+                self.ml_features_history.append(features)
+                self.ml_labels_history.append(label)
+                
+                # Keep only recent data
+                if len(self.ml_features_history) > 1000:
+                    self.ml_features_history.pop(0)
+                    self.ml_labels_history.pop(0)
+                
+                # Persist to Redis every 50 samples
+                if len(self.ml_features_history) % 50 == 0:
+                    asyncio.create_task(self._persist_ml_training_data())
+                    
+        except Exception as e:
+            logger.error(f"ML training data storage failed: {e}")
+    
+    async def _update_ml_model(self):
+        """
+        🔥 FIX FOR LIMITATION: ML Signal Validation  
+        Update ML model with new training data
+        """
+        try:
+            if len(self.ml_features_history) < 50:  # Need minimum data
+                return
+            
+            # Prepare training data
+            X = np.array(self.ml_features_history)
+            y = np.array(self.ml_labels_history)
+            
+            # Check if we have both classes
+            if len(np.unique(y)) < 2:
+                logger.debug("ML training skipped - need both positive and negative samples")
+                return
+            
+            # Scale features
+            X_scaled = self.feature_scaler.fit_transform(X)
+            
+            # Train model
+            self.ml_model.fit(X_scaled, y)
+            self.ml_trained = True
+            
+            # Calculate model performance
+            train_score = self.ml_model.score(X_scaled, y)
+            
+            logger.info(f"🤖 ML MODEL UPDATED: {len(X)} samples, accuracy={train_score:.3f}")
+            
+            # Persist training data
+            await self._persist_ml_training_data()
+            
+        except Exception as e:
+            logger.error(f"ML model update failed: {e}")
+    
+    def _get_ml_confidence_boost(self, features: np.ndarray) -> float:
+        """Get ML-based confidence boost for signal"""
+        try:
+            if not self.ml_trained or len(features) == 0:
+                return 0.0
+            
+            # Scale features
+            features_scaled = self.feature_scaler.transform(features.reshape(1, -1))
+            
+            # Get prediction probability
+            prediction_proba = self.ml_model.predict_proba(features_scaled)[0]
+            
+            # Convert to confidence boost (-0.5 to +0.5)
+            confidence_boost = (prediction_proba[1] - 0.5)  # Assuming class 1 is success
+            
+            return confidence_boost
+            
+        except Exception as e:
+            logger.debug(f"ML confidence boost failed: {e}")
+            return 0.0
+    
+    def record_trade_outcome(self, symbol: str, was_profitable: bool, features: Optional[np.ndarray] = None):
+        """
+        🔥 FIX FOR LIMITATION: ML Signal Validation
+        Record trade outcome for ML model training
+        Call this when a trade closes to build training data
+        """
+        try:
+            if features is None:
+                # Try to reconstruct features from current data
+                if symbol in self.price_history and len(self.price_history[symbol]) >= 14:
+                    prices = np.array(self.price_history[symbol])
+                    rsi = self._calculate_rsi(prices, 14)
+                    momentum_score = ProfessionalMomentumModels.momentum_score(prices, min(20, len(prices)))
+                    trend_strength = ProfessionalMomentumModels.trend_strength(prices)
+                    mean_reversion = ProfessionalMomentumModels.mean_reversion_probability(prices)
+                    
+                    # Get cross-sectional rank if available
+                    cross_rank = self.relative_strength_scores.get(symbol, 0.5)
+                    
+                    features = np.array([rsi, momentum_score, trend_strength, mean_reversion, cross_rank])
+                else:
+                    return  # Not enough data
+            
+            label = 1 if was_profitable else 0
+            self._store_ml_training_data(features, label)
+            
+            logger.debug(f"📊 ML training data recorded: {symbol} {'PROFIT' if was_profitable else 'LOSS'}")
+            
+            # Train model if we have enough new data
+            if len(self.ml_features_history) >= 50 and len(self.ml_features_history) % 20 == 0:
+                asyncio.create_task(self._update_ml_model())
+                
+        except Exception as e:
+            logger.error(f"Trade outcome recording failed: {e}")
 
 logger.info("✅ Smart Intraday Options loaded successfully")
