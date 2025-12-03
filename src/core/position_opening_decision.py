@@ -773,7 +773,7 @@ class EnhancedPositionOpeningDecision:
                 decision=PositionDecision.APPROVED,
                 confidence_score=signal.get('confidence', 0.0),
                 risk_score=position_risk * 10,
-                position_size=estimated_quantity,
+                position_size=signal_quantity,
                 reasoning="Risk assessment passed",
                 metadata={'position_risk': position_risk, 'estimated_value': estimated_value}
             )
