@@ -823,6 +823,11 @@ class EnhancedMomentumSurfer(BaseStrategy):
                     break
 
                 if stock in market_data:
+                    # 🔥 CRITICAL: Fetch historical data to enable RSI/MACD/Bollinger
+                    # This only happens once per symbol per session
+                    if not hasattr(self, '_historical_data_fetched') or stock not in self._historical_data_fetched:
+                        await self._fetch_historical_for_symbol(stock)
+                    
                     # Detect market condition for this stock
                     market_condition = self._detect_market_condition(stock, market_data)
 
@@ -838,6 +843,65 @@ class EnhancedMomentumSurfer(BaseStrategy):
         except Exception as e:
             logger.error(f"Error in Smart Intraday Options: {e}")
             return []
+
+    async def _fetch_historical_for_symbol(self, symbol: str) -> bool:
+        """
+        🔥 CRITICAL: Fetch historical candle data from Zerodha to pre-populate indicators.
+        This allows RSI/MACD/Bollinger to work immediately instead of waiting 14-26 cycles.
+        """
+        try:
+            # Track which symbols we've already fetched
+            if not hasattr(self, '_historical_data_fetched'):
+                self._historical_data_fetched = set()
+            
+            if symbol in self._historical_data_fetched:
+                return True  # Already fetched
+            
+            # Get Zerodha client
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if not orchestrator or not hasattr(orchestrator, 'zerodha_client') or not orchestrator.zerodha_client:
+                logger.debug(f"⚠️ Zerodha client not available for historical data: {symbol}")
+                return False
+            
+            zerodha_client = orchestrator.zerodha_client
+            
+            # Fetch last 30 5-minute candles (covers ~2.5 hours of trading)
+            from datetime import datetime, timedelta
+            candles = await zerodha_client.get_historical_data(
+                symbol=symbol,
+                interval='5minute',
+                from_date=datetime.now() - timedelta(days=3),  # Last 3 days to ensure enough data
+                to_date=datetime.now()
+            )
+            
+            if not candles or len(candles) < 14:
+                logger.debug(f"⚠️ Not enough historical candles for {symbol}: {len(candles) if candles else 0}")
+                return False
+            
+            # Pre-populate price_history with closing prices
+            if not hasattr(self, 'price_history'):
+                self.price_history = {}
+            
+            closes = [c['close'] for c in candles[-50:]]  # Last 50 candles
+            self.price_history[symbol] = closes
+            
+            # Pre-populate volume_history
+            if not hasattr(self, 'volume_history'):
+                self.volume_history = {}
+            
+            volumes = [c['volume'] for c in candles[-20:]]  # Last 20 candles
+            self.volume_history[symbol] = volumes
+            
+            self._historical_data_fetched.add(symbol)
+            logger.info(f"✅ HISTORICAL DATA LOADED: {symbol} - {len(closes)} prices, {len(volumes)} volumes")
+            
+            return True
+            
+        except Exception as e:
+            logger.debug(f"⚠️ Error fetching historical data for {symbol}: {e}")
+            return False
 
     def _detect_market_condition(self, symbol: str, market_data: Dict[str, Any]) -> str:
         """
@@ -870,18 +934,36 @@ class EnhancedMomentumSurfer(BaseStrategy):
             # Keep last 20 periods
             self.volume_history[symbol] = self.volume_history[symbol][-20:]
             
-            # Calculate REAL volume ratio
+            # Calculate REAL volume ratio (need at least 5 data points)
             if len(self.volume_history[symbol]) >= 5:
                 avg_volume = np.mean(self.volume_history[symbol][:-1])  # Exclude current
                 volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
             else:
                 volume_ratio = 1.0  # Not enough data yet
             
-            # ============= CANDLE BODY ANALYSIS (NEW!) =============
-            # Buying Pressure: How much of the candle was bought
+            # ============= CANDLE BODY ANALYSIS (FIXED FOR DAY OHLC) =============
+            # The high/low are DAY values, so we interpret relative position within day's range
             candle_range = high - low if high > low else 0.01
+            
+            # Buying pressure: how close to day's high (1.0 = at high, 0.0 = at low)
             buying_pressure = (ltp - low) / candle_range if candle_range > 0 else 0.5
+            # Selling pressure: how close to day's low (1.0 = at low, 0.0 = at high)
             selling_pressure = (high - ltp) / candle_range if candle_range > 0 else 0.5
+            
+            # 🔥 ENHANCED: Use intraday movement for more meaningful pressure
+            # If price has moved significantly from open, that's better than day H/L
+            if open_price > 0:
+                intraday_range = abs(high - low)
+                intraday_move = ltp - open_price
+                if intraday_range > 0:
+                    # Positive = buying pressure, negative = selling pressure
+                    move_ratio = intraday_move / intraday_range
+                    if move_ratio > 0:
+                        buying_pressure = min(0.5 + move_ratio * 0.5, 1.0)
+                        selling_pressure = max(0.5 - move_ratio * 0.5, 0.0)
+                    else:
+                        buying_pressure = max(0.5 + move_ratio * 0.5, 0.0)
+                        selling_pressure = min(0.5 - move_ratio * 0.5, 1.0)
             
             # Candle body size (absolute move from open)
             body_size = abs(ltp - open_price) / open_price * 100 if open_price > 0 else 0

@@ -741,6 +741,46 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             logger.error(f"Error in Professional Options Engine: {e}")
             return []
 
+    async def _fetch_historical_for_symbol(self, symbol: str) -> bool:
+        """
+        🔥 Fetch historical candle data from Zerodha to pre-populate indicators.
+        """
+        try:
+            if not hasattr(self, '_historical_data_fetched'):
+                self._historical_data_fetched = set()
+            
+            if symbol in self._historical_data_fetched:
+                return True
+            
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if not orchestrator or not hasattr(orchestrator, 'zerodha_client') or not orchestrator.zerodha_client:
+                return False
+            
+            from datetime import datetime, timedelta
+            candles = await orchestrator.zerodha_client.get_historical_data(
+                symbol=symbol,
+                interval='5minute',
+                from_date=datetime.now() - timedelta(days=3),
+                to_date=datetime.now()
+            )
+            
+            if not candles or len(candles) < 14:
+                return False
+            
+            if not hasattr(self, 'price_history'):
+                self.price_history = {}
+            self.price_history[symbol] = [c['close'] for c in candles[-50:]]
+            
+            self._historical_data_fetched.add(symbol)
+            logger.info(f"✅ HISTORICAL DATA: {symbol} - {len(self.price_history[symbol])} prices loaded")
+            return True
+            
+        except Exception as e:
+            logger.debug(f"⚠️ Error fetching historical data for {symbol}: {e}")
+            return False
+
     async def _analyze_underlying_for_options(self, underlying_symbol: str, underlying_data: Dict[str, Any], market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Analyze underlying symbol and generate options signal with real Zerodha data
@@ -756,15 +796,33 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             if ltp == 0 or volume == 0:
                 return None
             
+            # 🔥 CRITICAL: Fetch historical data to enable RSI/MACD/Bollinger
+            if not hasattr(self, '_historical_data_fetched') or underlying_symbol not in self._historical_data_fetched:
+                await self._fetch_historical_for_symbol(underlying_symbol)
+            
             # 🎯 ENHANCED: Use Dual-Timeframe Analysis for robust direction
             dual_analysis = self.analyze_stock_dual_timeframe(underlying_symbol, underlying_data)
             weighted_bias = dual_analysis.get('weighted_bias', 0.0)
             alignment = dual_analysis.get('alignment', 'UNKNOWN')
             
-            # ============= PHASE 2: CANDLE BODY ANALYSIS =============
+            # ============= PHASE 2: CANDLE BODY ANALYSIS (FIXED FOR DAY OHLC) =============
             candle_range = high - low if high > low else 0.01
+            # Use relative position in day's range, enhanced with intraday movement
             buying_pressure = (ltp - low) / candle_range
             selling_pressure = (high - ltp) / candle_range
+            
+            # 🔥 ENHANCED: Use intraday movement for more meaningful pressure
+            if open_price > 0:
+                intraday_move = ltp - open_price
+                if candle_range > 0:
+                    move_ratio = intraday_move / candle_range
+                    if move_ratio > 0:
+                        buying_pressure = min(0.5 + move_ratio * 0.5, 1.0)
+                        selling_pressure = max(0.5 - move_ratio * 0.5, 0.0)
+                    else:
+                        buying_pressure = max(0.5 + move_ratio * 0.5, 0.0)
+                        selling_pressure = min(0.5 - move_ratio * 0.5, 1.0)
+            
             is_green_candle = ltp > open_price
             
             # ============= PHASE 2: PRICE HISTORY FOR INDICATORS =============
