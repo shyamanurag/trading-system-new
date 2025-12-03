@@ -840,57 +840,191 @@ class EnhancedMomentumSurfer(BaseStrategy):
             return []
 
     def _detect_market_condition(self, symbol: str, market_data: Dict[str, Any]) -> str:
-        """Detect current market condition for the stock"""
+        """
+        🎯 ENHANCED: Detect market condition using ALL available indicators
+        Now actually uses the advanced models that were previously dead code!
+        """
         try:
             data = market_data.get(symbol, {})
             if not data:
                 return 'sideways'
             
+            # ============= BASIC DATA =============
             change_percent = data.get('change_percent', 0)
             volume = data.get('volume', 0)
-            ltp = data.get('ltp', 0)
+            ltp = data.get('ltp', data.get('price', 0))
+            open_price = data.get('open', ltp)
+            high = data.get('high', ltp)
+            low = data.get('low', ltp)
+            previous_close = data.get('previous_close', ltp)
             
-            # Get average volume (simulated)
-            avg_volume = volume * 0.8  # Assume current is 20% above average
-            volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
+            # ============= VOLUME ANALYSIS (REAL, NOT FAKE) =============
+            # Get real volume history from tracking
+            if not hasattr(self, 'volume_history'):
+                self.volume_history = {}
+            if symbol not in self.volume_history:
+                self.volume_history[symbol] = []
             
-            # Condition detection logic with debug logging
-            condition = 'sideways'  # Default
+            # Add current volume to history
+            self.volume_history[symbol].append(volume)
+            # Keep last 20 periods
+            self.volume_history[symbol] = self.volume_history[symbol][-20:]
             
-            if abs(change_percent) >= self.breakout_threshold and volume_ratio > 1.5:
-                condition = 'breakout_up' if change_percent > 0 else 'breakout_down'
+            # Calculate REAL volume ratio
+            if len(self.volume_history[symbol]) >= 5:
+                avg_volume = np.mean(self.volume_history[symbol][:-1])  # Exclude current
+                volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
+            else:
+                volume_ratio = 1.0  # Not enough data yet
             
+            # ============= CANDLE BODY ANALYSIS (NEW!) =============
+            # Buying Pressure: How much of the candle was bought
+            candle_range = high - low if high > low else 0.01
+            buying_pressure = (ltp - low) / candle_range if candle_range > 0 else 0.5
+            selling_pressure = (high - ltp) / candle_range if candle_range > 0 else 0.5
+            
+            # Candle body size (absolute move from open)
+            body_size = abs(ltp - open_price) / open_price * 100 if open_price > 0 else 0
+            is_green_candle = ltp > open_price
+            
+            # ============= PRICE HISTORY FOR INDICATORS =============
+            if not hasattr(self, 'price_history'):
+                self.price_history = {}
+            if symbol not in self.price_history:
+                self.price_history[symbol] = []
+            
+            self.price_history[symbol].append(ltp)
+            self.price_history[symbol] = self.price_history[symbol][-50:]  # Keep 50 periods
+            
+            prices = np.array(self.price_history[symbol])
+            
+            # ============= ADVANCED INDICATORS (NOW ACTUALLY USED!) =============
+            momentum_score = 0.0
+            rsi = 50.0
+            mean_reversion_prob = 0.5
+            trend_strength = 0.0
+            
+            if len(prices) >= 14:
+                # Calculate RSI
+                rsi = self._calculate_rsi(prices, 14)
+                
+                # Use ProfessionalMomentumModels
+                momentum_score = ProfessionalMomentumModels.momentum_score(prices, min(20, len(prices)))
+                mean_reversion_prob = ProfessionalMomentumModels.mean_reversion_probability(prices)
+                trend_strength = ProfessionalMomentumModels.trend_strength(prices)
+            
+            # ============= CONDITION DETECTION WITH MULTI-FACTOR ANALYSIS =============
+            condition = 'sideways'
+            confidence_factors = []
+            
+            # 🎯 REVERSAL DETECTION (CRITICAL FOR YOUR JSWSTEEL CASE!)
+            # If price is down BUT buying pressure is high + volume spike = REVERSAL
+            if change_percent < -1.0 and buying_pressure > 0.7 and volume_ratio > 1.5:
+                condition = 'reversal_up'
+                confidence_factors.append(f"STRONG BUY CANDLE: {buying_pressure:.0%} buying pressure")
+                confidence_factors.append(f"VOLUME SPIKE: {volume_ratio:.1f}x average")
+                if rsi < 35:
+                    confidence_factors.append(f"RSI OVERSOLD: {rsi:.1f}")
+                logger.info(f"🔄 {symbol} REVERSAL DETECTED: Price down {change_percent:.1f}% but buying pressure {buying_pressure:.0%}, Vol {volume_ratio:.1f}x")
+            
+            # If price is up BUT selling pressure is high + volume spike = REVERSAL DOWN
+            elif change_percent > 1.0 and selling_pressure > 0.7 and volume_ratio > 1.5:
+                condition = 'reversal_down'
+                confidence_factors.append(f"STRONG SELL CANDLE: {selling_pressure:.0%} selling pressure")
+                confidence_factors.append(f"VOLUME SPIKE: {volume_ratio:.1f}x average")
+                if rsi > 65:
+                    confidence_factors.append(f"RSI OVERBOUGHT: {rsi:.1f}")
+                logger.info(f"🔄 {symbol} REVERSAL DOWN: Price up {change_percent:.1f}% but selling pressure {selling_pressure:.0%}, Vol {volume_ratio:.1f}x")
+            
+            # BREAKOUT with volume confirmation
+            elif abs(change_percent) >= self.breakout_threshold and volume_ratio > 1.5:
+                if change_percent > 0 and buying_pressure > 0.6:
+                    condition = 'breakout_up'
+                    confidence_factors.append(f"BREAKOUT UP: {change_percent:.1f}% with {volume_ratio:.1f}x volume")
+                elif change_percent < 0 and selling_pressure > 0.6:
+                    condition = 'breakout_down'
+                    confidence_factors.append(f"BREAKOUT DOWN: {change_percent:.1f}% with {volume_ratio:.1f}x volume")
+            
+            # TRENDING with momentum confirmation
             elif change_percent >= self.trending_threshold:
-                condition = 'trending_up'
+                # Only confirm uptrend if momentum and trend align
+                if momentum_score > 0 or trend_strength > 0.1:
+                    condition = 'trending_up'
+                    confidence_factors.append(f"MOMENTUM: {momentum_score:.3f}, TREND: {trend_strength:.2f}")
+                else:
+                    # Price up but momentum weak - possible exhaustion
+                    if mean_reversion_prob > 0.6:
+                        condition = 'reversal_down'
+                        confidence_factors.append(f"EXHAUSTION: Mean reversion prob {mean_reversion_prob:.0%}")
+                    else:
+                        condition = 'trending_up'
             
             elif change_percent <= -self.trending_threshold:
-                condition = 'trending_down'
+                # Only confirm downtrend if momentum and trend align
+                if momentum_score < 0 or trend_strength < -0.1:
+                    # BUT check for reversal signals!
+                    if buying_pressure > 0.65 and volume_ratio > 1.3:
+                        condition = 'reversal_up'
+                        confidence_factors.append(f"🔥 OVERSOLD BOUNCE: RSI {rsi:.1f}, Buying {buying_pressure:.0%}")
+                    else:
+                        condition = 'trending_down'
+                        confidence_factors.append(f"MOMENTUM: {momentum_score:.3f}, TREND: {trend_strength:.2f}")
+                else:
+                    # Price down but momentum turning up - possible reversal
+                    if mean_reversion_prob > 0.6 or (rsi < 35 and buying_pressure > 0.5):
+                        condition = 'reversal_up'
+                        confidence_factors.append(f"REVERSAL SIGNAL: RSI {rsi:.1f}, Mean Rev {mean_reversion_prob:.0%}")
+                    else:
+                        condition = 'trending_down'
             
+            # SIDEWAYS / RANGE
             elif abs(change_percent) <= self.sideways_range:
                 condition = 'sideways'
             
+            # HIGH VOLATILITY
             elif volume_ratio > 2.0:
                 condition = 'high_volatility'
             
-            elif volume_ratio < 0.5:
-                condition = 'low_volatility'
-            
-            # Check for reversal patterns (simplified)
-            elif change_percent > 0.5 and change_percent < self.trending_threshold:
-                condition = 'reversal_up'
-            
-            elif change_percent < -0.5 and change_percent > -self.trending_threshold:
-                condition = 'reversal_down'
-            
-            # 🔥 DEBUG: Log condition detection for active symbols
+            # 🔥 LOG ALL FACTORS FOR TRANSPARENCY
             if condition != 'sideways':
-                logger.info(f"📊 {symbol} CONDITION: {condition} (Change: {change_percent:.2f}%, Vol Ratio: {volume_ratio:.2f})")
+                factors_str = " | ".join(confidence_factors) if confidence_factors else "Price action only"
+                logger.info(f"📊 {symbol} CONDITION: {condition}")
+                logger.info(f"   Change: {change_percent:+.2f}% | Vol: {volume_ratio:.1f}x | Buy Pressure: {buying_pressure:.0%}")
+                logger.info(f"   RSI: {rsi:.1f} | Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f}")
+                logger.info(f"   Factors: {factors_str}")
             
             return condition
             
         except Exception as e:
-            logger.debug(f"Error detecting market condition for {symbol}: {e}")
+            logger.error(f"Error detecting market condition for {symbol}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return 'sideways'
+    
+    def _calculate_rsi(self, prices: np.ndarray, period: int = 14) -> float:
+        """Calculate RSI indicator"""
+        try:
+            if len(prices) < period + 1:
+                return 50.0
+            
+            deltas = np.diff(prices)
+            gains = np.where(deltas > 0, deltas, 0)
+            losses = np.where(deltas < 0, -deltas, 0)
+            
+            avg_gain = np.mean(gains[-period:])
+            avg_loss = np.mean(losses[-period:])
+            
+            if avg_loss == 0:
+                return 100.0
+            
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
+            
+            return rsi
+            
+        except Exception as e:
+            logger.error(f"Error calculating RSI: {e}")
+            return 50.0
 
     async def _generate_condition_based_signal(self, symbol: str, condition: str, 
                                              market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
