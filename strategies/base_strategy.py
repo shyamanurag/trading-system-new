@@ -3668,7 +3668,13 @@ class BaseStrategy:
     
     def _create_equity_signal(self, symbol: str, action: str, entry_price: float, 
                              stop_loss: float, target: float, confidence: float, metadata: Dict) -> Optional[Dict]:
-        """Create equity signal with standard parameters"""
+        """Create equity signal with standard parameters
+        
+        🎯 POSITION SIZING RULES (User Requirements):
+        1. Max loss per trade = 2% of portfolio value
+        2. Intraday leverage = 4x (MIS margin)
+        3. Quantity = Max Loss / Risk Per Share (capped by leverage limit)
+        """
         try:
             # Hard block known delisted/suspended symbols at source
             try:
@@ -3685,7 +3691,7 @@ class BaseStrategy:
                 return None
             
             # Calculate risk metrics
-            risk_amount = abs(entry_price - stop_loss)
+            risk_amount = abs(entry_price - stop_loss)  # Risk per share (₹)
             reward_amount = abs(target - entry_price)
             risk_percent = (risk_amount / entry_price) * 100
             reward_percent = (reward_amount / entry_price) * 100
@@ -3702,25 +3708,63 @@ class BaseStrategy:
                 return None
             
             # 🔥 INTRADAY FOCUS: Determine if signal is suitable for intraday
-            # Target achievable within same day = intraday, otherwise swing
             is_intraday = reward_percent <= 3.0  # 3% target max for intraday
             trading_mode = 'INTRADAY' if is_intraday else 'SWING'
             
-            # 🔥 INTRADAY TIMEFRAME: Calculate estimated time to target
+            # 🔥 INTRADAY TIMEFRAME
             if is_intraday:
                 timeframe = "Same Day (Intraday)"
                 square_off_time = "15:15 IST"
             else:
-                # Estimate days based on target percentage
-                est_days = max(2, int(reward_percent / 1.5))  # ~1.5% per day
+                est_days = max(2, int(reward_percent / 1.5))
                 timeframe = f"{est_days}-{est_days+3} days (Swing)"
                 square_off_time = "N/A"
+            
+            # ============================================================
+            # 🎯 CRITICAL: PROPER POSITION SIZING (4x LEVERAGE + 2% MAX LOSS)
+            # ============================================================
+            available_capital = self._get_available_capital()
+            
+            # Rule 1: Max loss = 2% of portfolio
+            max_loss_per_trade = available_capital * 0.02
+            
+            # Rule 2: Intraday leverage = 4x
+            INTRADAY_LEVERAGE = 4.0
+            max_position_value = available_capital * INTRADAY_LEVERAGE
+            
+            # Calculate quantity based on risk (stop loss distance)
+            if risk_amount <= 0:
+                logger.error(f"❌ INVALID RISK: {symbol} has zero/negative risk amount ₹{risk_amount}")
+                return None
+            
+            # Quantity based on max loss rule
+            qty_by_risk = int(max_loss_per_trade / risk_amount)
+            
+            # Quantity based on leverage limit
+            qty_by_leverage = int(max_position_value / entry_price)
+            
+            # Use the smaller of the two (most restrictive)
+            final_quantity = min(qty_by_risk, qty_by_leverage)
+            
+            # Ensure minimum 1 share
+            final_quantity = max(final_quantity, 1)
+            
+            # Calculate actual values for logging
+            position_value = final_quantity * entry_price
+            actual_max_loss = final_quantity * risk_amount
+            margin_required = position_value / INTRADAY_LEVERAGE  # 25% of position
+            
+            logger.info(f"📊 POSITION SIZING: {symbol} {action}")
+            logger.info(f"   💰 Capital: ₹{available_capital:,.0f} | Max Loss (2%): ₹{max_loss_per_trade:,.0f}")
+            logger.info(f"   📉 Risk/Share: ₹{risk_amount:.2f} | Entry: ₹{entry_price:.2f} | SL: ₹{stop_loss:.2f}")
+            logger.info(f"   🎯 Qty by Risk: {qty_by_risk} | Qty by Leverage: {qty_by_leverage} | FINAL: {final_quantity}")
+            logger.info(f"   💵 Position Value: ₹{position_value:,.0f} | Margin: ₹{margin_required:,.0f} | Max Loss: ₹{actual_max_loss:,.0f}")
             
             signal = {
                 'signal_id': f"{self.name}_{symbol}_{int(time_module.time())}",
                 'symbol': symbol,
                 'action': action.upper(),
-                'quantity': self._get_capital_constrained_quantity(symbol, symbol, entry_price),
+                'quantity': final_quantity,  # 🎯 FIXED: Risk-based quantity
                 'entry_price': round(entry_price, 2),
                 'stop_loss': round(stop_loss, 2),
                 'target': round(target, 2),
@@ -3729,7 +3773,7 @@ class BaseStrategy:
                 'confidence': confidence,
                 'quality_score': confidence,
                 
-                # 🔥 NEW: Trading mode indicators
+                # 🔥 Trading mode indicators
                 'is_intraday': is_intraday,
                 'trading_mode': trading_mode,
                 'timeframe': timeframe,
@@ -3740,7 +3784,10 @@ class BaseStrategy:
                     'reward_amount': round(reward_amount, 2),
                     'risk_percent': round(risk_percent, 2),
                     'reward_percent': round(reward_percent, 2),
-                    'risk_reward_ratio': round(risk_reward_ratio, 2)
+                    'risk_reward_ratio': round(risk_reward_ratio, 2),
+                    'max_loss': round(actual_max_loss, 2),
+                    'position_value': round(position_value, 2),
+                    'margin_required': round(margin_required, 2)
                 },
                 'metadata': {
                     **metadata,
@@ -3748,14 +3795,14 @@ class BaseStrategy:
                     'trading_mode': trading_mode,
                     'is_intraday': is_intraday,
                     'timeframe': timeframe,
+                    'leverage_factor': INTRADAY_LEVERAGE,
+                    'max_loss_pct': 2.0,
                     'timestamp': datetime.now().isoformat(),
                     'strategy_instance': self.__class__.__name__,
                     'signal_source': 'strategy_engine'
                 },
                 'generated_at': datetime.now().isoformat()
             }
-            
-            # DEFERRED: Position entry is recorded only after real execution confirmation
             
             return signal
             

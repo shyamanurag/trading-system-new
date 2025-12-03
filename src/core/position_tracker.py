@@ -437,6 +437,126 @@ class ProductionPositionTracker:
         """Get position for a specific symbol"""
         return self.positions.get(symbol)
     
+    async def add_position(self, symbol: str, position_data: Dict) -> bool:
+        """
+        Add a new position to the tracker
+        
+        Args:
+            symbol: Stock/Option symbol
+            position_data: Dictionary with position details
+                - side: 'long' or 'short'
+                - quantity: Position quantity
+                - average_price: Entry price
+                - current_price: Current price
+                - stop_loss: Stop loss price
+                - target: Target price
+                - order_id: Broker order ID
+                - strategy: Strategy name
+                - entry_time: Entry timestamp
+        """
+        try:
+            now = datetime.now()
+            
+            # Check if position already exists
+            if symbol in self.positions:
+                self.logger.warning(f"⚠️ Position already exists for {symbol}, updating instead")
+                existing = self.positions[symbol]
+                existing.quantity = position_data.get('quantity', existing.quantity)
+                existing.average_price = position_data.get('average_price', existing.average_price)
+                existing.current_price = position_data.get('current_price', existing.current_price)
+                existing.side = position_data.get('side', existing.side)
+                existing.last_updated = now
+                return True
+            
+            # Create new position
+            side = position_data.get('side', 'long')
+            quantity = position_data.get('quantity', 0)
+            avg_price = position_data.get('average_price', 0)
+            current_price = position_data.get('current_price', avg_price)
+            
+            position = ProfessionalPosition(
+                symbol=symbol,
+                quantity=quantity,
+                average_price=avg_price,
+                current_price=current_price,
+                pnl=0.0,
+                unrealized_pnl=0.0,
+                side=side,
+                entry_time=position_data.get('entry_time', now),
+                last_updated=now,
+                strategy=position_data.get('strategy', 'unknown'),
+                sector='unknown',  # Can be enriched later
+                stop_loss=position_data.get('stop_loss', 0),
+                target=position_data.get('target', 0),
+                max_price=current_price,
+                min_price=current_price,
+                trailing_stop_active=False
+            )
+            
+            self.positions[symbol] = position
+            self.logger.info(f"✅ Position added: {symbol} {side} x{quantity} @ ₹{avg_price:.2f}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to add position {symbol}: {e}")
+            return False
+    
+    async def remove_position(self, symbol: str) -> bool:
+        """Remove a position from the tracker (when closed)"""
+        try:
+            if symbol in self.positions:
+                position = self.positions.pop(symbol)
+                self.logger.info(f"✅ Position removed: {symbol} (was {position.side} x{position.quantity})")
+                return True
+            else:
+                self.logger.warning(f"⚠️ Position not found for removal: {symbol}")
+                return False
+        except Exception as e:
+            self.logger.error(f"❌ Failed to remove position {symbol}: {e}")
+            return False
+    
+    async def sync_with_broker(self, broker_positions: Dict) -> Dict:
+        """
+        Sync internal tracker with broker positions
+        Removes phantom positions and adds missing ones
+        
+        Args:
+            broker_positions: Dict of positions from broker (symbol -> position_data)
+            
+        Returns:
+            Dict with sync results: {'added': [], 'removed': [], 'updated': []}
+        """
+        try:
+            results = {'added': [], 'removed': [], 'updated': []}
+            
+            # Find and remove phantom positions (in tracker but not in broker)
+            phantom_symbols = set(self.positions.keys()) - set(broker_positions.keys())
+            for symbol in phantom_symbols:
+                await self.remove_position(symbol)
+                results['removed'].append(symbol)
+                self.logger.warning(f"🗑️ PHANTOM REMOVED: {symbol} was in tracker but not in broker")
+            
+            # Add missing positions (in broker but not in tracker)
+            for symbol, broker_pos in broker_positions.items():
+                if symbol not in self.positions:
+                    await self.add_position(symbol, broker_pos)
+                    results['added'].append(symbol)
+                else:
+                    # Update existing position with broker data
+                    position = self.positions[symbol]
+                    position.quantity = broker_pos.get('quantity', position.quantity)
+                    position.current_price = broker_pos.get('current_price', position.current_price)
+                    position.last_updated = datetime.now()
+                    results['updated'].append(symbol)
+            
+            self.logger.info(f"📊 SYNC COMPLETE: Added {len(results['added'])}, Removed {len(results['removed'])}, Updated {len(results['updated'])}")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to sync with broker: {e}")
+            return {'added': [], 'removed': [], 'updated': [], 'error': str(e)}
+    
     async def get_all_positions(self) -> Dict[str, Position]:
         """Get all current positions"""
         return self.positions.copy()

@@ -1404,7 +1404,14 @@ class TradeEngine:
                 }
                 
                 self.logger.info(f"📊 DATA FLOW CHECK: Bias={market_bias}, Regime={market_regime}, Capital=₹{current_capital:,.0f}, Daily P&L=₹{daily_pnl:,.0f}")
-                await self.performance_tracker.log_trade_entry(trade_data)
+                
+                # 🚨 FIX: Handle both dict and object performance_tracker
+                if self.performance_tracker and hasattr(self.performance_tracker, 'log_trade_entry'):
+                    await self.performance_tracker.log_trade_entry(trade_data)
+                elif isinstance(self.performance_tracker, dict):
+                    # Update dict-based tracker (basic tracking)
+                    self.performance_tracker['total_trades'] = self.performance_tracker.get('total_trades', 0) + 1
+                    self.logger.debug(f"📊 Trade logged to dict tracker: {trade_data.get('symbol')}")
                 
         except Exception as e:
             self.logger.error(f"❌ Error logging trade to database: {e}")
