@@ -1009,6 +1009,18 @@ class EnhancedMomentumSurfer(BaseStrategy):
             
             prices = np.array(self.price_history[symbol])
             
+            # ============= CROSS-SECTIONAL MOMENTUM (PREVIOUSLY DEAD CODE!) =============
+            # Update symbol_price_history for cross-sectional analysis
+            self.symbol_price_history[symbol] = prices
+            
+            # Calculate cross-sectional momentum (relative strength vs all symbols)
+            cross_sectional_rank = 0.5  # Default to neutral
+            if len(self.symbol_price_history) >= 5 and len(prices) >= 20:
+                cross_sectional_rank = ProfessionalMomentumModels.cross_sectional_momentum(
+                    self.symbol_price_history, symbol, lookback=20
+                )
+                self.relative_strength_scores[symbol] = cross_sectional_rank
+            
             # ============= ADVANCED INDICATORS (ALL PHASES COMPLETE!) =============
             momentum_score = 0.0
             rsi = 50.0
@@ -1148,14 +1160,26 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 else:
                     logger.info(f"⚠️ {symbol}: MACD bearish but HP trend positive ({hp_trend_direction:+.2%}) - waiting")
             
-            # BREAKOUT with volume confirmation
+            # BREAKOUT with volume confirmation + CROSS-SECTIONAL RANK (NEWLY INTEGRATED!)
             elif abs(change_percent) >= self.breakout_threshold and volume_ratio > 1.5:
                 if change_percent > 0 and buying_pressure > 0.6:
-                    condition = 'breakout_up'
-                    confidence_factors.append(f"BREAKOUT UP: {change_percent:.1f}% with {volume_ratio:.1f}x volume")
+                    # Confirm breakout UP with cross-sectional strength
+                    if cross_sectional_rank >= 0.6:  # Top 40% performers
+                        condition = 'breakout_up'
+                        confidence_factors.append(f"BREAKOUT UP: {change_percent:.1f}% with {volume_ratio:.1f}x volume")
+                        confidence_factors.append(f"📊 CROSS-SECTIONAL: Top {(1-cross_sectional_rank)*100:.0f}% performer")
+                    else:
+                        condition = 'trending_up'  # Downgrade to trending if weak relative strength
+                        confidence_factors.append(f"BREAKOUT DOWNGRADED: Low relative strength ({cross_sectional_rank:.0%})")
                 elif change_percent < 0 and selling_pressure > 0.6:
-                    condition = 'breakout_down'
-                    confidence_factors.append(f"BREAKOUT DOWN: {change_percent:.1f}% with {volume_ratio:.1f}x volume")
+                    # Confirm breakout DOWN with cross-sectional weakness
+                    if cross_sectional_rank <= 0.4:  # Bottom 40% performers
+                        condition = 'breakout_down'
+                        confidence_factors.append(f"BREAKOUT DOWN: {change_percent:.1f}% with {volume_ratio:.1f}x volume")
+                        confidence_factors.append(f"📊 CROSS-SECTIONAL: Bottom {cross_sectional_rank*100:.0f}% performer")
+                    else:
+                        condition = 'trending_down'  # Downgrade if relative strength is OK
+                        confidence_factors.append(f"BREAKOUT DOWNGRADED: Relative strength OK ({cross_sectional_rank:.0%})")
             
             # TRENDING with momentum confirmation
             elif change_percent >= self.trending_threshold:
@@ -1211,7 +1235,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 logger.info(f"   📈 Price: {change_percent:+.2f}% | Vol: {volume_ratio:.1f}x | Candle: {'GREEN' if is_green_candle else 'RED'}")
                 logger.info(f"   🕯️ Buy Pressure: {buying_pressure:.0%} | Sell Pressure: {selling_pressure:.0%}")
                 logger.info(f"   📉 RSI: {rsi:.1f} | Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f} | HP: {hp_trend_direction:+.2%}")
-                logger.info(f"   🔄 Mean Reversion: {mean_reversion_prob:.0%} | MACD: {macd_crossover or 'neutral'} | Bollinger: {'SQUEEZE!' if bollinger_squeeze else 'normal'}")
+                logger.info(f"   🔄 Mean Rev: {mean_reversion_prob:.0%} | MACD: {macd_crossover or 'neutral'} | Bollinger: {'SQUEEZE!' if bollinger_squeeze else 'normal'}")
+                logger.info(f"   📊 Cross-Sectional Rank: {cross_sectional_rank:.0%} | Regime: {momentum_regime}")
                 if rsi_divergence:
                     logger.info(f"   🎯 RSI DIVERGENCE: {rsi_divergence.upper()}")
                 if bollinger_breakout:

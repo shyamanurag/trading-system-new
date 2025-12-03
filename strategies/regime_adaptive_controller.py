@@ -58,20 +58,271 @@ class ProfessionalRegimeMetrics:
     regime: MarketRegime
     timestamp: datetime
 
-@dataclass
 class HiddenMarkovModel:
-    """Professional Hidden Markov Model for regime detection"""
-    n_states: int = 4
-    transition_matrix: np.ndarray = field(default_factory=lambda: np.eye(4))
-    emission_means: np.ndarray = field(default_factory=lambda: np.zeros((4, 3)))
-    emission_covariances: np.ndarray = field(default_factory=lambda: np.array([np.eye(3) for _ in range(4)]))
-    initial_probabilities: np.ndarray = field(default_factory=lambda: np.ones(4) / 4)
+    """
+    FULL IMPLEMENTATION: Professional Hidden Markov Model for regime detection
     
-    def __post_init__(self):
-        """Initialize with professional defaults"""
-        if self.transition_matrix.shape != (self.n_states, self.n_states):
-            self.transition_matrix = np.eye(self.n_states) * 0.7 + np.ones((self.n_states, self.n_states)) * 0.1
-            np.fill_diagonal(self.transition_matrix, 0.7)
+    Implements all core HMM algorithms:
+    - Forward Algorithm: P(observations | model)
+    - Backward Algorithm: Smoothing for state estimation
+    - Viterbi Algorithm: Most likely state sequence
+    - Baum-Welch Algorithm: EM parameter estimation
+    """
+    
+    def __init__(self, n_states: int = 4, n_features: int = 3):
+        self.n_states = n_states
+        self.n_features = n_features
+        
+        # Initialize parameters
+        self.transition_matrix = self._init_transition_matrix()
+        self.emission_means = np.random.randn(n_states, n_features) * 0.1
+        self.emission_covariances = np.array([np.eye(n_features) for _ in range(n_states)])
+        self.initial_probabilities = np.ones(n_states) / n_states
+        
+        # For numerical stability
+        self.min_prob = 1e-10
+        
+    def _init_transition_matrix(self) -> np.ndarray:
+        """Initialize transition matrix with high self-transition probability (regime persistence)"""
+        # 70% probability to stay in same state, 10% to transition to each other state
+        A = np.ones((self.n_states, self.n_states)) * (0.3 / (self.n_states - 1))
+        np.fill_diagonal(A, 0.7)
+        return A
+    
+    def _gaussian_pdf(self, x: np.ndarray, mean: np.ndarray, cov: np.ndarray) -> float:
+        """Multivariate Gaussian probability density function"""
+        try:
+            n = len(x)
+            det = np.linalg.det(cov)
+            if det <= 0:
+                det = self.min_prob
+            inv_cov = np.linalg.inv(cov + np.eye(n) * self.min_prob)
+            diff = x - mean
+            exponent = -0.5 * diff @ inv_cov @ diff
+            return max((1 / np.sqrt((2 * np.pi) ** n * det)) * np.exp(exponent), self.min_prob)
+        except:
+            return self.min_prob
+    
+    def _emission_probability(self, observation: np.ndarray, state: int) -> float:
+        """Calculate emission probability P(observation | state)"""
+        return self._gaussian_pdf(observation, self.emission_means[state], self.emission_covariances[state])
+    
+    def forward(self, observations: np.ndarray) -> Tuple[np.ndarray, float]:
+        """
+        FORWARD ALGORITHM: Calculate P(observations | model)
+        
+        Returns:
+            alpha: Forward probabilities (T x N matrix)
+            log_likelihood: Log probability of observation sequence
+        """
+        T = len(observations)
+        N = self.n_states
+        alpha = np.zeros((T, N))
+        scaling_factors = np.zeros(T)
+        
+        # Initialization (t=0)
+        for i in range(N):
+            alpha[0, i] = self.initial_probabilities[i] * self._emission_probability(observations[0], i)
+        
+        # Scaling to prevent underflow
+        scaling_factors[0] = np.sum(alpha[0]) + self.min_prob
+        alpha[0] /= scaling_factors[0]
+        
+        # Induction (t=1 to T-1)
+        for t in range(1, T):
+            for j in range(N):
+                alpha[t, j] = sum(alpha[t-1, i] * self.transition_matrix[i, j] for i in range(N))
+                alpha[t, j] *= self._emission_probability(observations[t], j)
+            
+            scaling_factors[t] = np.sum(alpha[t]) + self.min_prob
+            alpha[t] /= scaling_factors[t]
+        
+        # Log likelihood
+        log_likelihood = np.sum(np.log(scaling_factors + self.min_prob))
+        
+        return alpha, log_likelihood
+    
+    def backward(self, observations: np.ndarray, scaling_factors: np.ndarray = None) -> np.ndarray:
+        """
+        BACKWARD ALGORITHM: Calculate backward probabilities for smoothing
+        
+        Returns:
+            beta: Backward probabilities (T x N matrix)
+        """
+        T = len(observations)
+        N = self.n_states
+        beta = np.zeros((T, N))
+        
+        # Initialization (t=T-1)
+        beta[T-1] = 1.0
+        
+        # Get scaling factors from forward pass if not provided
+        if scaling_factors is None:
+            _, _ = self.forward(observations)
+            scaling_factors = np.ones(T)
+        
+        # Induction (t=T-2 to 0)
+        for t in range(T-2, -1, -1):
+            for i in range(N):
+                beta[t, i] = sum(
+                    self.transition_matrix[i, j] * 
+                    self._emission_probability(observations[t+1], j) * 
+                    beta[t+1, j]
+                    for j in range(N)
+                )
+            beta[t] /= (scaling_factors[t+1] + self.min_prob)
+        
+        return beta
+    
+    def viterbi(self, observations: np.ndarray) -> Tuple[np.ndarray, float]:
+        """
+        VITERBI ALGORITHM: Find most likely state sequence
+        
+        Returns:
+            path: Most likely state sequence
+            log_prob: Log probability of the path
+        """
+        T = len(observations)
+        N = self.n_states
+        
+        # Viterbi probabilities and backpointers
+        delta = np.zeros((T, N))
+        psi = np.zeros((T, N), dtype=int)
+        
+        # Initialization
+        for i in range(N):
+            delta[0, i] = np.log(self.initial_probabilities[i] + self.min_prob) + \
+                          np.log(self._emission_probability(observations[0], i) + self.min_prob)
+            psi[0, i] = 0
+        
+        # Recursion
+        for t in range(1, T):
+            for j in range(N):
+                trans_probs = delta[t-1] + np.log(self.transition_matrix[:, j] + self.min_prob)
+                psi[t, j] = np.argmax(trans_probs)
+                delta[t, j] = trans_probs[psi[t, j]] + \
+                              np.log(self._emission_probability(observations[t], j) + self.min_prob)
+        
+        # Termination
+        path = np.zeros(T, dtype=int)
+        path[T-1] = np.argmax(delta[T-1])
+        log_prob = delta[T-1, path[T-1]]
+        
+        # Backtracking
+        for t in range(T-2, -1, -1):
+            path[t] = psi[t+1, path[t+1]]
+        
+        return path, log_prob
+    
+    def baum_welch(self, observations: np.ndarray, n_iterations: int = 10, 
+                   convergence_threshold: float = 1e-4) -> float:
+        """
+        BAUM-WELCH ALGORITHM: EM parameter estimation
+        
+        Returns:
+            final_log_likelihood: Log likelihood after training
+        """
+        T = len(observations)
+        N = self.n_states
+        prev_log_likelihood = float('-inf')
+        
+        for iteration in range(n_iterations):
+            # E-STEP: Calculate forward and backward probabilities
+            alpha, log_likelihood = self.forward(observations)
+            
+            # Calculate scaling factors for backward pass
+            scaling_factors = np.zeros(T)
+            for t in range(T):
+                scaling_factors[t] = np.sum(alpha[t]) + self.min_prob
+                
+            beta = self.backward(observations, scaling_factors)
+            
+            # Calculate gamma (state occupation probability)
+            gamma = np.zeros((T, N))
+            for t in range(T):
+                denom = np.sum(alpha[t] * beta[t]) + self.min_prob
+                gamma[t] = (alpha[t] * beta[t]) / denom
+            
+            # Calculate xi (transition probability)
+            xi = np.zeros((T-1, N, N))
+            for t in range(T-1):
+                denom = 0
+                for i in range(N):
+                    for j in range(N):
+                        denom += alpha[t, i] * self.transition_matrix[i, j] * \
+                                 self._emission_probability(observations[t+1], j) * beta[t+1, j]
+                denom = max(denom, self.min_prob)
+                
+                for i in range(N):
+                    for j in range(N):
+                        xi[t, i, j] = (alpha[t, i] * self.transition_matrix[i, j] * 
+                                       self._emission_probability(observations[t+1], j) * 
+                                       beta[t+1, j]) / denom
+            
+            # M-STEP: Update parameters
+            # Update initial probabilities
+            self.initial_probabilities = gamma[0] / (np.sum(gamma[0]) + self.min_prob)
+            
+            # Update transition matrix
+            for i in range(N):
+                denom = np.sum(gamma[:-1, i]) + self.min_prob
+                for j in range(N):
+                    self.transition_matrix[i, j] = np.sum(xi[:, i, j]) / denom
+            
+            # Normalize transition matrix rows
+            row_sums = self.transition_matrix.sum(axis=1, keepdims=True)
+            self.transition_matrix = self.transition_matrix / (row_sums + self.min_prob)
+            
+            # Update emission means
+            for j in range(N):
+                denom = np.sum(gamma[:, j]) + self.min_prob
+                self.emission_means[j] = np.sum(gamma[:, j:j+1] * observations, axis=0) / denom
+            
+            # Update emission covariances
+            for j in range(N):
+                denom = np.sum(gamma[:, j]) + self.min_prob
+                diff = observations - self.emission_means[j]
+                weighted_cov = np.zeros((self.n_features, self.n_features))
+                for t in range(T):
+                    weighted_cov += gamma[t, j] * np.outer(diff[t], diff[t])
+                self.emission_covariances[j] = weighted_cov / denom + np.eye(self.n_features) * 0.01
+            
+            # Check convergence
+            if abs(log_likelihood - prev_log_likelihood) < convergence_threshold:
+                logger.info(f"HMM converged after {iteration + 1} iterations")
+                break
+            prev_log_likelihood = log_likelihood
+        
+        return log_likelihood
+    
+    def predict_state(self, observation: np.ndarray) -> Tuple[int, np.ndarray]:
+        """
+        Predict current state given single observation
+        
+        Returns:
+            predicted_state: Most likely current state
+            state_probabilities: Probability distribution over states
+        """
+        probs = np.array([
+            self.initial_probabilities[i] * self._emission_probability(observation, i)
+            for i in range(self.n_states)
+        ])
+        probs = probs / (np.sum(probs) + self.min_prob)
+        return np.argmax(probs), probs
+    
+    def get_regime_from_state(self, state: int) -> MarketRegime:
+        """Map HMM state to MarketRegime enum"""
+        regime_mapping = {
+            0: MarketRegime.LOW_VOLATILITY,
+            1: MarketRegime.HIGH_VOLATILITY,
+            2: MarketRegime.BULL_TRENDING,
+            3: MarketRegime.BEAR_TRENDING,
+            4: MarketRegime.MOMENTUM_BREAKOUT,
+            5: MarketRegime.MEAN_REVERSION,
+            6: MarketRegime.CRISIS,
+            7: MarketRegime.TRANSITION
+        }
+        return regime_mapping.get(state % len(regime_mapping), MarketRegime.LOW_VOLATILITY)
 
 @dataclass
 class KalmanFilter:
@@ -916,7 +1167,7 @@ class RegimeAdaptiveController:
             logger.error(f"Kalman filter update failed: {e}")
     
     async def _detect_professional_regime(self):
-        """PROFESSIONAL REGIME DETECTION using multiple models"""
+        """PROFESSIONAL REGIME DETECTION using multiple models including HMM"""
         try:
             if len(self.feature_history) < self.min_samples:
                 return
@@ -928,15 +1179,41 @@ class RegimeAdaptiveController:
             returns = feature_matrix[:, 1]  # momentum as proxy for returns
             volatility, vol_regime = self.math_models.garch_volatility_regime(returns)
             
-            # METHOD 2: Multivariate regime detection
-            regime_id, confidence = self.math_models.multivariate_regime_detection(feature_matrix)
+            # METHOD 2: Multivariate regime detection (GMM)
+            regime_id, gmm_confidence = self.math_models.multivariate_regime_detection(feature_matrix)
             
             # METHOD 3: Rule-based regime classification
             latest_features = self.feature_history[-1]['raw_data']
             rule_based_regime = self._classify_regime_by_rules(latest_features)
             
-            # ENSEMBLE REGIME DECISION
-            final_regime = self._ensemble_regime_decision(vol_regime, regime_id, rule_based_regime, confidence)
+            # METHOD 4: HMM-based regime detection (NEWLY INTEGRATED!)
+            hmm_regime = MarketRegime.LOW_VOLATILITY
+            hmm_confidence = 0.5
+            try:
+                if len(feature_matrix) >= 20:
+                    # Train HMM if enough data (every 50 observations)
+                    if len(self.feature_history) % 50 == 0:
+                        self.hmm_model.baum_welch(feature_matrix[:, :3], n_iterations=5)
+                        logger.info("🧠 HMM model updated via Baum-Welch")
+                    
+                    # Get Viterbi path for most likely state sequence
+                    state_path, log_prob = self.hmm_model.viterbi(feature_matrix[:, :3])
+                    current_state = state_path[-1]
+                    hmm_regime = self.hmm_model.get_regime_from_state(current_state)
+                    
+                    # Calculate confidence from forward algorithm
+                    _, state_probs = self.hmm_model.predict_state(feature_matrix[-1, :3])
+                    hmm_confidence = float(np.max(state_probs))
+                    
+                    logger.debug(f"🧠 HMM: State={current_state}, Regime={hmm_regime.value}, Conf={hmm_confidence:.2f}")
+            except Exception as hmm_error:
+                logger.debug(f"HMM inference skipped: {hmm_error}")
+            
+            # ENSEMBLE REGIME DECISION (now includes HMM)
+            final_regime = self._ensemble_regime_decision(
+                vol_regime, regime_id, rule_based_regime, gmm_confidence,
+                hmm_regime=hmm_regime, hmm_confidence=hmm_confidence
+            )
             
             # Update regime history
             self.regime_history.append(final_regime)
@@ -1020,27 +1297,55 @@ class RegimeAdaptiveController:
             return MarketRegime.LOW_VOLATILITY
     
     def _ensemble_regime_decision(self, vol_regime: str, gmm_regime_id: int, 
-                                rule_regime: MarketRegime, confidence: float) -> MarketRegime:
-        """Ensemble decision combining multiple regime detection methods"""
+                                rule_regime: MarketRegime, confidence: float,
+                                hmm_regime: MarketRegime = None, 
+                                hmm_confidence: float = 0.5) -> MarketRegime:
+        """
+        Ensemble decision combining multiple regime detection methods:
+        1. GARCH Volatility Regime
+        2. GMM Multivariate Regime
+        3. Rule-based Regime
+        4. HMM Regime (newly integrated!)
+        """
         try:
-            # Weight different methods based on confidence
-            if confidence > 0.8:
-                # High confidence in GMM - use rule-based as primary
-                return rule_regime
-            elif confidence > 0.6:
-                # Medium confidence - blend with volatility regime
-                if "HIGH" in vol_regime and rule_regime in [MarketRegime.HIGH_VOLATILITY, MarketRegime.CRISIS]:
-                    return rule_regime
-                elif "LOW" in vol_regime and rule_regime == MarketRegime.LOW_VOLATILITY:
-                    return rule_regime
-                else:
-                    return MarketRegime.TRANSITION
+            # Collect all regime votes with weights
+            votes = {}
+            
+            # Rule-based vote (weight: 0.3)
+            votes[rule_regime] = votes.get(rule_regime, 0) + 0.3
+            
+            # Volatility regime vote (weight: 0.2)
+            if "HIGH" in vol_regime:
+                vol_r = MarketRegime.HIGH_VOLATILITY
+            elif "LOW" in vol_regime:
+                vol_r = MarketRegime.LOW_VOLATILITY
             else:
-                # Low confidence - conservative approach
-                if "HIGH" in vol_regime:
-                    return MarketRegime.HIGH_VOLATILITY
-                else:
-                    return MarketRegime.LOW_VOLATILITY
+                vol_r = MarketRegime.TRANSITION
+            votes[vol_r] = votes.get(vol_r, 0) + 0.2
+            
+            # GMM vote weighted by confidence (weight: 0.25)
+            gmm_regime_map = {
+                0: MarketRegime.LOW_VOLATILITY,
+                1: MarketRegime.HIGH_VOLATILITY,
+                2: MarketRegime.BULL_TRENDING,
+                3: MarketRegime.BEAR_TRENDING
+            }
+            gmm_regime = gmm_regime_map.get(gmm_regime_id % 4, MarketRegime.LOW_VOLATILITY)
+            votes[gmm_regime] = votes.get(gmm_regime, 0) + (0.25 * confidence)
+            
+            # HMM vote weighted by confidence (weight: 0.25) - NEWLY INTEGRATED!
+            if hmm_regime is not None:
+                votes[hmm_regime] = votes.get(hmm_regime, 0) + (0.25 * hmm_confidence)
+                logger.debug(f"🧠 HMM VOTE: {hmm_regime.value} (confidence={hmm_confidence:.2f})")
+            
+            # Find winner
+            final_regime = max(votes.items(), key=lambda x: x[1])[0]
+            
+            # Log ensemble decision
+            logger.debug(f"📊 ENSEMBLE VOTES: {[(r.value, f'{v:.2f}') for r, v in votes.items()]}")
+            logger.debug(f"📊 FINAL REGIME: {final_regime.value}")
+            
+            return final_regime
                     
         except Exception as e:
             logger.error(f"Ensemble regime decision failed: {e}")
