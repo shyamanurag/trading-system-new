@@ -898,11 +898,16 @@ class EnhancedMomentumSurfer(BaseStrategy):
             
             prices = np.array(self.price_history[symbol])
             
-            # ============= ADVANCED INDICATORS (NOW ACTUALLY USED!) =============
+            # ============= ADVANCED INDICATORS (ALL PHASES COMPLETE!) =============
             momentum_score = 0.0
             rsi = 50.0
             mean_reversion_prob = 0.5
             trend_strength = 0.0
+            macd_signal = None
+            macd_crossover = None
+            bollinger_squeeze = False
+            bollinger_breakout = None
+            rsi_divergence = None
             
             if len(prices) >= 14:
                 # Calculate RSI
@@ -913,28 +918,108 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 mean_reversion_prob = ProfessionalMomentumModels.mean_reversion_probability(prices)
                 trend_strength = ProfessionalMomentumModels.trend_strength(prices)
             
-            # ============= CONDITION DETECTION WITH MULTI-FACTOR ANALYSIS =============
+            # ============= PHASE 2: MACD INTEGRATION =============
+            if len(prices) >= 26:
+                macd_data = self.calculate_macd_signal(list(prices))
+                macd_signal = macd_data.get('histogram', 0)
+                macd_crossover = macd_data.get('crossover')  # 'bullish', 'bearish', or None
+                macd_divergence = macd_data.get('divergence')  # 'bullish', 'bearish', or None
+                
+                if macd_crossover:
+                    logger.debug(f"📊 {symbol} MACD CROSSOVER: {macd_crossover}")
+            
+            # ============= PHASE 2: BOLLINGER BANDS INTEGRATION =============
+            if len(prices) >= 20:
+                bollinger_data = self.detect_bollinger_squeeze(symbol, list(prices))
+                bollinger_squeeze = bollinger_data.get('squeezing', False)
+                bollinger_breakout = bollinger_data.get('breakout_direction')  # 'up', 'down', or None
+                squeeze_intensity = bollinger_data.get('squeeze_intensity', 0)
+                
+                if bollinger_squeeze:
+                    logger.info(f"🔥 {symbol} BOLLINGER SQUEEZE DETECTED! Intensity: {squeeze_intensity:.2f} - Big move coming!")
+                if bollinger_breakout:
+                    logger.info(f"💥 {symbol} BOLLINGER BREAKOUT: {bollinger_breakout.upper()}")
+            
+            # ============= PHASE 2: RSI DIVERGENCE DETECTION =============
+            if len(prices) >= 14:
+                # Build RSI history for divergence detection
+                rsi_history = []
+                for i in range(14, len(prices)):
+                    rsi_val = self._calculate_rsi(prices[:i+1], 14)
+                    rsi_history.append(rsi_val)
+                
+                if len(rsi_history) >= 14:
+                    rsi_divergence = self.calculate_rsi_divergence(symbol, list(prices[-14:]), rsi_history[-14:])
+                    if rsi_divergence:
+                        logger.info(f"📈 {symbol} RSI DIVERGENCE: {rsi_divergence.upper()} - High probability reversal!")
+            
+            # ============= CONDITION DETECTION WITH ALL INDICATORS (ALL PHASES COMPLETE!) =============
             condition = 'sideways'
             confidence_factors = []
             
-            # 🎯 REVERSAL DETECTION (CRITICAL FOR YOUR JSWSTEEL CASE!)
-            # If price is down BUT buying pressure is high + volume spike = REVERSAL
-            if change_percent < -1.0 and buying_pressure > 0.7 and volume_ratio > 1.5:
+            # 🔥 PRIORITY 0: RSI DIVERGENCE (Highest probability reversal signal!)
+            if rsi_divergence == 'bullish' and change_percent < 0:
+                condition = 'reversal_up'
+                confidence_factors.append(f"📈 RSI BULLISH DIVERGENCE - High probability reversal!")
+                if buying_pressure > 0.5:
+                    confidence_factors.append(f"CONFIRMED: Buying pressure {buying_pressure:.0%}")
+                logger.info(f"🎯 {symbol} RSI DIVERGENCE REVERSAL: Price down but RSI making higher lows!")
+            
+            elif rsi_divergence == 'bearish' and change_percent > 0:
+                condition = 'reversal_down'
+                confidence_factors.append(f"📉 RSI BEARISH DIVERGENCE - High probability reversal!")
+                if selling_pressure > 0.5:
+                    confidence_factors.append(f"CONFIRMED: Selling pressure {selling_pressure:.0%}")
+                logger.info(f"🎯 {symbol} RSI DIVERGENCE REVERSAL: Price up but RSI making lower highs!")
+            
+            # 🔥 PRIORITY 1: BOLLINGER SQUEEZE BREAKOUT (Explosive moves!)
+            elif bollinger_breakout == 'up' and bollinger_squeeze:
+                condition = 'breakout_up'
+                confidence_factors.append(f"💥 BOLLINGER SQUEEZE BREAKOUT UP!")
+                if macd_crossover == 'bullish':
+                    confidence_factors.append(f"MACD CONFIRMS: Bullish crossover")
+                logger.info(f"🚀 {symbol} BOLLINGER BREAKOUT UP after squeeze!")
+            
+            elif bollinger_breakout == 'down' and bollinger_squeeze:
+                condition = 'breakout_down'
+                confidence_factors.append(f"💥 BOLLINGER SQUEEZE BREAKOUT DOWN!")
+                if macd_crossover == 'bearish':
+                    confidence_factors.append(f"MACD CONFIRMS: Bearish crossover")
+                logger.info(f"📉 {symbol} BOLLINGER BREAKOUT DOWN after squeeze!")
+            
+            # 🎯 PRIORITY 2: REVERSAL DETECTION (Candle body + volume)
+            elif change_percent < -1.0 and buying_pressure > 0.7 and volume_ratio > 1.5:
                 condition = 'reversal_up'
                 confidence_factors.append(f"STRONG BUY CANDLE: {buying_pressure:.0%} buying pressure")
                 confidence_factors.append(f"VOLUME SPIKE: {volume_ratio:.1f}x average")
                 if rsi < 35:
                     confidence_factors.append(f"RSI OVERSOLD: {rsi:.1f}")
-                logger.info(f"🔄 {symbol} REVERSAL DETECTED: Price down {change_percent:.1f}% but buying pressure {buying_pressure:.0%}, Vol {volume_ratio:.1f}x")
+                if macd_crossover == 'bullish':
+                    confidence_factors.append(f"MACD BULLISH CROSSOVER")
+                logger.info(f"🔄 {symbol} REVERSAL UP: Price down {change_percent:.1f}% but buying pressure {buying_pressure:.0%}")
             
-            # If price is up BUT selling pressure is high + volume spike = REVERSAL DOWN
             elif change_percent > 1.0 and selling_pressure > 0.7 and volume_ratio > 1.5:
                 condition = 'reversal_down'
                 confidence_factors.append(f"STRONG SELL CANDLE: {selling_pressure:.0%} selling pressure")
                 confidence_factors.append(f"VOLUME SPIKE: {volume_ratio:.1f}x average")
                 if rsi > 65:
                     confidence_factors.append(f"RSI OVERBOUGHT: {rsi:.1f}")
-                logger.info(f"🔄 {symbol} REVERSAL DOWN: Price up {change_percent:.1f}% but selling pressure {selling_pressure:.0%}, Vol {volume_ratio:.1f}x")
+                if macd_crossover == 'bearish':
+                    confidence_factors.append(f"MACD BEARISH CROSSOVER")
+                logger.info(f"🔄 {symbol} REVERSAL DOWN: Price up {change_percent:.1f}% but selling pressure {selling_pressure:.0%}")
+            
+            # 🎯 PRIORITY 3: MACD CROSSOVER SIGNALS
+            elif macd_crossover == 'bullish' and momentum_score > 0 and rsi < 60:
+                condition = 'trending_up'
+                confidence_factors.append(f"MACD BULLISH CROSSOVER with momentum confirmation")
+                if buying_pressure > 0.5:
+                    confidence_factors.append(f"Buying pressure: {buying_pressure:.0%}")
+            
+            elif macd_crossover == 'bearish' and momentum_score < 0 and rsi > 40:
+                condition = 'trending_down'
+                confidence_factors.append(f"MACD BEARISH CROSSOVER with momentum confirmation")
+                if selling_pressure > 0.5:
+                    confidence_factors.append(f"Selling pressure: {selling_pressure:.0%}")
             
             # BREAKOUT with volume confirmation
             elif abs(change_percent) >= self.breakout_threshold and volume_ratio > 1.5:
@@ -949,10 +1034,14 @@ class EnhancedMomentumSurfer(BaseStrategy):
             elif change_percent >= self.trending_threshold:
                 # Only confirm uptrend if momentum and trend align
                 if momentum_score > 0 or trend_strength > 0.1:
-                    condition = 'trending_up'
-                    confidence_factors.append(f"MOMENTUM: {momentum_score:.3f}, TREND: {trend_strength:.2f}")
+                    # Check for exhaustion signals
+                    if rsi > 70 or macd_crossover == 'bearish':
+                        condition = 'reversal_down'
+                        confidence_factors.append(f"EXHAUSTION: RSI {rsi:.1f}, MACD turning")
+                    else:
+                        condition = 'trending_up'
+                        confidence_factors.append(f"MOMENTUM: {momentum_score:.3f}, TREND: {trend_strength:.2f}")
                 else:
-                    # Price up but momentum weak - possible exhaustion
                     if mean_reversion_prob > 0.6:
                         condition = 'reversal_down'
                         confidence_factors.append(f"EXHAUSTION: Mean reversion prob {mean_reversion_prob:.0%}")
@@ -960,17 +1049,17 @@ class EnhancedMomentumSurfer(BaseStrategy):
                         condition = 'trending_up'
             
             elif change_percent <= -self.trending_threshold:
-                # Only confirm downtrend if momentum and trend align
-                if momentum_score < 0 or trend_strength < -0.1:
-                    # BUT check for reversal signals!
-                    if buying_pressure > 0.65 and volume_ratio > 1.3:
-                        condition = 'reversal_up'
-                        confidence_factors.append(f"🔥 OVERSOLD BOUNCE: RSI {rsi:.1f}, Buying {buying_pressure:.0%}")
-                    else:
-                        condition = 'trending_down'
-                        confidence_factors.append(f"MOMENTUM: {momentum_score:.3f}, TREND: {trend_strength:.2f}")
+                # Check for reversal signals first!
+                if rsi_divergence == 'bullish' or macd_crossover == 'bullish':
+                    condition = 'reversal_up'
+                    confidence_factors.append(f"🔥 REVERSAL SIGNAL: Divergence/MACD bullish")
+                elif buying_pressure > 0.65 and volume_ratio > 1.3:
+                    condition = 'reversal_up'
+                    confidence_factors.append(f"🔥 OVERSOLD BOUNCE: RSI {rsi:.1f}, Buying {buying_pressure:.0%}")
+                elif momentum_score < 0 or trend_strength < -0.1:
+                    condition = 'trending_down'
+                    confidence_factors.append(f"MOMENTUM: {momentum_score:.3f}, TREND: {trend_strength:.2f}")
                 else:
-                    # Price down but momentum turning up - possible reversal
                     if mean_reversion_prob > 0.6 or (rsi < 35 and buying_pressure > 0.5):
                         condition = 'reversal_up'
                         confidence_factors.append(f"REVERSAL SIGNAL: RSI {rsi:.1f}, Mean Rev {mean_reversion_prob:.0%}")
@@ -985,13 +1074,17 @@ class EnhancedMomentumSurfer(BaseStrategy):
             elif volume_ratio > 2.0:
                 condition = 'high_volatility'
             
-            # 🔥 LOG ALL FACTORS FOR TRANSPARENCY
+            # 🔥 LOG ALL FACTORS FOR TRANSPARENCY (ALL PHASES!)
             if condition != 'sideways':
                 factors_str = " | ".join(confidence_factors) if confidence_factors else "Price action only"
                 logger.info(f"📊 {symbol} CONDITION: {condition}")
-                logger.info(f"   Change: {change_percent:+.2f}% | Vol: {volume_ratio:.1f}x | Buy Pressure: {buying_pressure:.0%}")
-                logger.info(f"   RSI: {rsi:.1f} | Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f}")
-                logger.info(f"   Factors: {factors_str}")
+                logger.info(f"   📈 Price: {change_percent:+.2f}% | Vol: {volume_ratio:.1f}x | Candle: {'GREEN' if is_green_candle else 'RED'}")
+                logger.info(f"   🕯️ Buy Pressure: {buying_pressure:.0%} | Sell Pressure: {selling_pressure:.0%}")
+                logger.info(f"   📉 RSI: {rsi:.1f} | Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f}")
+                logger.info(f"   📊 MACD: {macd_crossover or 'neutral'} | Bollinger: {'SQUEEZE!' if bollinger_squeeze else 'normal'}")
+                if rsi_divergence:
+                    logger.info(f"   🎯 RSI DIVERGENCE: {rsi_divergence.upper()}")
+                logger.info(f"   ✅ Factors: {factors_str}")
             
             return condition
             
