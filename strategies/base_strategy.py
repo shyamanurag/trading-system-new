@@ -2918,11 +2918,10 @@ class BaseStrategy:
                 reasons.append("MOD_BIAS+0.1")
             
             # ============= FINAL BOUNDS =============
-            # 🔥 CRITICAL FIX 2025-12-02: Cap was 9.5 but signals max at ~8.7
-            # Lowered cap from 9.5 → 8.5 so high-quality signals can pass
-            # In choppy/weak bias markets, the stacked adjustments were hitting 9.5
-            # causing ALL signals to be scrapped despite being quality signals
-            min_conf = max(5.0, min(min_conf, 8.5))
+            # 🔥 CRITICAL FIX 2025-12-03: Cap lowered to 7.5 to allow shorting weak stocks
+            # In choppy/weak bias markets, signals with 7.7+ confidence were being blocked
+            # User requested lower threshold to allow legitimate SHORT signals on weak stocks
+            min_conf = max(5.0, min(min_conf, 7.5))
             
             reason_str = " | ".join(reasons) if reasons else "default"
             return min_conf, reason_str
