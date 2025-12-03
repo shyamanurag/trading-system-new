@@ -839,9 +839,22 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             rsi = 50.0
             macd_crossover = None
             bollinger_squeeze = False
+            bollinger_breakout = None
+            mean_reversion_prob = 0.5
+            momentum_score = 0.0
+            trend_strength = 0.0
+            hp_trend_direction = 0.0
+            
+            # Import ProfessionalMomentumModels for advanced calculations
+            from strategies.momentum_surfer import ProfessionalMomentumModels
             
             if len(prices) >= 14:
                 rsi = self._calculate_rsi(prices, 14)
+                prices_arr = np.array(prices)
+                momentum_score = ProfessionalMomentumModels.momentum_score(prices_arr, min(20, len(prices)))
+                mean_reversion_prob = ProfessionalMomentumModels.mean_reversion_probability(prices_arr)
+                trend_strength = ProfessionalMomentumModels.trend_strength(prices_arr)
+                hp_trend, hp_cycle, hp_trend_direction = ProfessionalMomentumModels.hp_trend_filter(prices_arr)
             
             if len(prices) >= 26:
                 macd_data = self.calculate_macd_signal(prices)
@@ -850,8 +863,9 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             if len(prices) >= 20:
                 bollinger_data = self.detect_bollinger_squeeze(underlying_symbol, prices)
                 bollinger_squeeze = bollinger_data.get('squeezing', False)
+                bollinger_breakout = bollinger_data.get('breakout_direction')
             
-            # ============= PHASE 2: REVERSAL DETECTION =============
+            # ============= PHASE 2: REVERSAL DETECTION + HP TREND =============
             # Don't buy CALL if selling pressure is high (reversal down)
             # Don't buy PUT if buying pressure is high (reversal up)
             if weighted_bias > 0.5:  # Potential CALL
@@ -861,12 +875,28 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 if macd_crossover == 'bearish':
                     logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - MACD bearish crossover")
                     return None
+                # HP trend filter - don't buy CALL if HP trend strongly negative
+                if hp_trend_direction < -0.01:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - HP trend strongly negative ({hp_trend_direction:+.2%})")
+                    return None
+                # Mean reversion filter - don't buy CALL if mean reversion probability very high
+                if mean_reversion_prob > 0.8 and rsi > 60:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - High mean reversion prob ({mean_reversion_prob:.0%})")
+                    return None
             elif weighted_bias < -0.5:  # Potential PUT
                 if buying_pressure > 0.7 or rsi < 30:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - buying pressure {buying_pressure:.0%} or RSI {rsi:.0f} indicates reversal")
                     return None
                 if macd_crossover == 'bullish':
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - MACD bullish crossover")
+                    return None
+                # HP trend filter - don't buy PUT if HP trend strongly positive
+                if hp_trend_direction > 0.01:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - HP trend strongly positive ({hp_trend_direction:+.2%})")
+                    return None
+                # Mean reversion filter - don't buy PUT if mean reversion probability very high
+                if mean_reversion_prob > 0.8 and rsi < 40:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - High mean reversion prob ({mean_reversion_prob:.0%})")
                     return None
             
             # Require minimum weighted movement
@@ -876,9 +906,12 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             # Log all indicators
             logger.info(f"📊 {underlying_symbol} OPTIONS ANALYSIS:")
             logger.info(f"   Bias: {weighted_bias:+.2f}% | RSI: {rsi:.0f} | MACD: {macd_crossover or 'neutral'}")
-            logger.info(f"   Buy Pressure: {buying_pressure:.0%} | Sell Pressure: {selling_pressure:.0%}")
+            logger.info(f"   📉 Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f} | HP: {hp_trend_direction:+.2%}")
+            logger.info(f"   🔄 Mean Reversion: {mean_reversion_prob:.0%} | Buy Pressure: {buying_pressure:.0%} | Sell Pressure: {selling_pressure:.0%}")
             if bollinger_squeeze:
                 logger.info(f"   🔥 BOLLINGER SQUEEZE DETECTED - Expecting big move!")
+            if bollinger_breakout:
+                logger.info(f"   💥 BOLLINGER BREAKOUT: {bollinger_breakout.upper()}")
                 
             # Determine call or put based on weighted bias
             option_type = 'CE' if weighted_bias > 0 else 'PE'

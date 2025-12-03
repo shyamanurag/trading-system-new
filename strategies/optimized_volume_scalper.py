@@ -1703,20 +1703,39 @@ class OptimizedVolumeScalper(BaseStrategy):
             # ============= PHASE 2: ADVANCED INDICATORS =============
             rsi = 50.0
             macd_crossover = None
+            bollinger_squeeze = False
+            bollinger_breakout = None
+            mean_reversion_prob = 0.5
+            momentum_score = 0.0
+            trend_strength = 0.0
+            hp_trend_direction = 0.0
+            
+            # Import ProfessionalMomentumModels for advanced calculations
+            from strategies.momentum_surfer import ProfessionalMomentumModels
             
             if len(prices) >= 14:
                 rsi = self._calculate_rsi(prices, 14)
+                prices_arr = np.array(prices)
+                momentum_score = ProfessionalMomentumModels.momentum_score(prices_arr, min(20, len(prices)))
+                mean_reversion_prob = ProfessionalMomentumModels.mean_reversion_probability(prices_arr)
+                trend_strength = ProfessionalMomentumModels.trend_strength(prices_arr)
+                hp_trend, hp_cycle, hp_trend_direction = ProfessionalMomentumModels.hp_trend_filter(prices_arr)
             
             if len(prices) >= 26:
                 macd_data = self.calculate_macd_signal(prices)
                 macd_crossover = macd_data.get('crossover')
+            
+            if len(prices) >= 20:
+                bollinger_data = self.detect_bollinger_squeeze(symbol, prices)
+                bollinger_squeeze = bollinger_data.get('squeezing', False)
+                bollinger_breakout = bollinger_data.get('breakout_direction')
             
             # 🎯 ENHANCED: Dual-Timeframe Validation
             dual_analysis = self.analyze_stock_dual_timeframe(symbol, symbol_data)
             weighted_bias = dual_analysis.get('weighted_bias', 0.0)
             alignment = dual_analysis.get('alignment', 'UNKNOWN')
             
-            # ============= PHASE 2: RSI/MACD VALIDATION =============
+            # ============= PHASE 2: RSI/MACD/HP TREND VALIDATION =============
             # BUY signal validation
             if ms_signal.signal_type == 'BUY':
                 # Don't buy if overbought
@@ -1730,6 +1749,10 @@ class OptimizedVolumeScalper(BaseStrategy):
                 # Don't buy if selling pressure is overwhelming
                 if selling_pressure > 0.8 and ms_signal.edge_source != "MEAN_REVERSION":
                     logger.info(f"⚠️ {symbol}: BUY rejected - Strong selling pressure ({selling_pressure:.0%})")
+                    return None
+                # Don't buy if HP trend strongly negative (unless mean reversion)
+                if hp_trend_direction < -0.01 and ms_signal.edge_source != "MEAN_REVERSION":
+                    logger.info(f"⚠️ {symbol}: BUY rejected - HP trend strongly negative ({hp_trend_direction:+.2%})")
                     return None
             
             # SELL signal validation
@@ -1746,9 +1769,17 @@ class OptimizedVolumeScalper(BaseStrategy):
                 if buying_pressure > 0.8 and ms_signal.edge_source != "MEAN_REVERSION":
                     logger.info(f"⚠️ {symbol}: SELL rejected - Strong buying pressure ({buying_pressure:.0%})")
                     return None
+                # Don't sell if HP trend strongly positive (unless mean reversion)
+                if hp_trend_direction > 0.01 and ms_signal.edge_source != "MEAN_REVERSION":
+                    logger.info(f"⚠️ {symbol}: SELL rejected - HP trend strongly positive ({hp_trend_direction:+.2%})")
+                    return None
             
-            # Log validation passed
-            logger.info(f"✅ {symbol} {ms_signal.signal_type}: RSI={rsi:.0f}, MACD={macd_crossover or 'neutral'}, Buy/Sell Pressure={buying_pressure:.0%}/{selling_pressure:.0%}")
+            # Log validation passed with ALL indicators
+            logger.info(f"✅ {symbol} {ms_signal.signal_type}: RSI={rsi:.0f}, MACD={macd_crossover or 'neutral'}, Buy/Sell={buying_pressure:.0%}/{selling_pressure:.0%}")
+            logger.info(f"   📉 Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f} | HP: {hp_trend_direction:+.2%}")
+            logger.info(f"   🔄 Mean Rev: {mean_reversion_prob:.0%} | Bollinger: {'SQUEEZE!' if bollinger_squeeze else 'normal'}")
+            if bollinger_breakout:
+                logger.info(f"   💥 BOLLINGER BREAKOUT: {bollinger_breakout.upper()}")
             
             # Legacy dual-timeframe check
             if ms_signal.signal_type == 'BUY' and weighted_bias < -1.0:
