@@ -656,51 +656,62 @@ class EnhancedPositionOpeningDecision:
             
             # Calculate new total exposure if this position is opened
             is_options = symbol.endswith('CE') or symbol.endswith('PE')
-            new_total_exposure = total_current_exposure + estimated_value
-            new_options_exposure = options_exposure + (estimated_value if is_options else 0)
             
-            # Express as percentage of capital
-            total_exposure_pct = new_total_exposure / available_capital if available_capital > 0 else 1.0
-            options_exposure_pct = new_options_exposure / available_capital if available_capital > 0 else 1.0
+            # 🔥 INTRADAY MARGIN-BASED EXPOSURE (not position value!)
+            # With 4x leverage, margin = position_value / 4
+            INTRADAY_LEVERAGE = 4.0
+            estimated_margin = estimated_value / INTRADAY_LEVERAGE
+            
+            # Calculate current margin used (not position value)
+            current_margin_used = total_current_exposure / INTRADAY_LEVERAGE
+            new_total_margin = current_margin_used + estimated_margin
+            
+            # Options margin (premium-based, not leveraged)
+            options_margin = options_exposure  # Options = full premium
+            new_options_margin = options_margin + (estimated_value if is_options else 0)
+            
+            # Express MARGIN as percentage of capital (not position value!)
+            margin_used_pct = new_total_margin / available_capital if available_capital > 0 else 1.0
+            options_margin_pct = new_options_margin / available_capital if available_capital > 0 else 1.0
             
             logger.info(f"📊 PORTFOLIO EXPOSURE CHECK: {symbol}")
             logger.info(f"   Position Value: ₹{estimated_value:,.0f} ({signal_quantity} × ₹{entry_price:.2f})")
+            logger.info(f"   💳 Margin Required: ₹{estimated_margin:,.0f} ({margin_used_pct*100:.1f}% of capital)")
             logger.info(f"   🎯 Actual Risk: ₹{actual_loss_risk:,.0f} ({position_risk*100:.1f}% of capital)")
             logger.info(f"   Max Allowed Loss: ₹{max_allowed_loss:,.0f} (2% of ₹{available_capital:,.0f})")
-            logger.info(f"   Leverage Used: {estimated_value/available_capital:.1f}x (max 4x)")
             
-            # 🚨 HARD LIMIT: Max 50% of capital in OPTIONS at any time
-            # This prevents what happened today: 80%+ capital in 3 options positions
-            MAX_OPTIONS_EXPOSURE = 0.50  # 50%
-            if options_exposure_pct > MAX_OPTIONS_EXPOSURE:
+            # 🚨 HARD LIMIT: Max 50% of capital in OPTIONS MARGIN at any time
+            MAX_OPTIONS_MARGIN = 0.50  # 50%
+            if options_margin_pct > MAX_OPTIONS_MARGIN:
                 return PositionDecisionResult(
                     decision=PositionDecision.REJECTED_RISK,
                     confidence_score=signal.get('confidence', 0.0),
                     risk_score=10.0,
                     position_size=0,
-                    reasoning=f"🚨 OPTIONS EXPOSURE LIMIT: {options_exposure_pct:.1%} exceeds {MAX_OPTIONS_EXPOSURE:.1%} (Current: ₹{options_exposure:,.0f}, New: +₹{estimated_value:,.0f})",
+                    reasoning=f"🚨 OPTIONS MARGIN LIMIT: {options_margin_pct:.1%} exceeds {MAX_OPTIONS_MARGIN:.1%}",
                     metadata={
-                        'options_exposure_pct': options_exposure_pct,
-                        'max_options_exposure': MAX_OPTIONS_EXPOSURE,
-                        'current_options_exposure': options_exposure,
-                        'new_position_value': estimated_value
+                        'options_margin_pct': options_margin_pct,
+                        'max_options_margin': MAX_OPTIONS_MARGIN,
+                        'current_options_margin': options_margin,
+                        'new_options_margin': estimated_value if is_options else 0
                     }
                 )
             
-            # 🚨 HARD LIMIT: Max 70% total portfolio exposure (options + equity)
-            MAX_TOTAL_EXPOSURE = 0.70  # 70%
-            if total_exposure_pct > MAX_TOTAL_EXPOSURE:
+            # 🚨 HARD LIMIT: Max 80% of capital in MARGIN at any time
+            # With 4x leverage, 80% margin = 320% position exposure (allows good utilization)
+            MAX_MARGIN_USAGE = 0.80  # 80% of capital as margin
+            if margin_used_pct > MAX_MARGIN_USAGE:
                 return PositionDecisionResult(
                     decision=PositionDecision.REJECTED_CAPITAL,
                     confidence_score=signal.get('confidence', 0.0),
                     risk_score=10.0,
                     position_size=0,
-                    reasoning=f"🚨 TOTAL EXPOSURE LIMIT: {total_exposure_pct:.1%} exceeds {MAX_TOTAL_EXPOSURE:.1%} (Current: ₹{total_current_exposure:,.0f}, New: +₹{estimated_value:,.0f})",
+                    reasoning=f"🚨 MARGIN LIMIT: {margin_used_pct:.1%} exceeds {MAX_MARGIN_USAGE:.1%} (Current: ₹{current_margin_used:,.0f}, New: +₹{estimated_margin:,.0f})",
                     metadata={
-                        'total_exposure_pct': total_exposure_pct,
-                        'max_total_exposure': MAX_TOTAL_EXPOSURE,
-                        'current_exposure': total_current_exposure,
-                        'new_position_value': estimated_value
+                        'margin_used_pct': margin_used_pct,
+                        'max_margin_usage': MAX_MARGIN_USAGE,
+                        'current_margin': current_margin_used,
+                        'new_margin': estimated_margin
                     }
                 )
             
