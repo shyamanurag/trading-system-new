@@ -154,6 +154,8 @@ class ProfessionalMomentumModels:
     def hp_trend_filter(prices: np.ndarray, lambda_param: float = 1600) -> tuple:
         """
         Hodrick-Prescott Trend Filter - separates trend from cycle
+        NOW USES THE FULL MATHEMATICAL HP FILTER (no longer dead code!)
+        
         Standard for financial data: lambda=1600 for quarterly, 6.25 for annual
         
         Returns: (trend, cycle, trend_direction)
@@ -162,23 +164,8 @@ class ProfessionalMomentumModels:
             if len(prices) < 10:
                 return prices, np.zeros_like(prices), 0
             
-            n = len(prices)
-            prices_arr = np.array(prices)
-            
-            # Build the HP filter matrix
-            # This is a simplified implementation using second differences
-            # Full implementation requires sparse matrix operations
-            
-            # Approximate HP trend using exponential smoothing
-            alpha = 2 / (1 + np.sqrt(1 + 4 * lambda_param))
-            trend = np.zeros(n)
-            trend[0] = prices_arr[0]
-            
-            for i in range(1, n):
-                trend[i] = alpha * prices_arr[i] + (1 - alpha) * trend[i-1]
-            
-            # Cycle is the difference
-            cycle = prices_arr - trend
+            # Use the full mathematical HP filter (previously dead code!)
+            trend, cycle = ProfessionalMomentumModels.hodrick_prescott_trend(prices, lambda_param)
             
             # Trend direction: slope of last 5 trend points
             if len(trend) >= 5:
@@ -1214,10 +1201,13 @@ class EnhancedMomentumSurfer(BaseStrategy):
             elif volume_ratio > 2.0:
                 condition = 'high_volatility'
             
+            # 🔥 USE PROFESSIONAL MOMENTUM REGIME DETECTION (previously dead code!)
+            momentum_regime = ProfessionalMomentumModels.momentum_regime_detection(prices)
+            
             # 🔥 LOG ALL FACTORS FOR TRANSPARENCY (ALL PHASES!)
             if condition != 'sideways':
                 factors_str = " | ".join(confidence_factors) if confidence_factors else "Price action only"
-                logger.info(f"📊 {symbol} CONDITION: {condition}")
+                logger.info(f"📊 {symbol} CONDITION: {condition} | REGIME: {momentum_regime}")
                 logger.info(f"   📈 Price: {change_percent:+.2f}% | Vol: {volume_ratio:.1f}x | Candle: {'GREEN' if is_green_candle else 'RED'}")
                 logger.info(f"   🕯️ Buy Pressure: {buying_pressure:.0%} | Sell Pressure: {selling_pressure:.0%}")
                 logger.info(f"   📉 RSI: {rsi:.1f} | Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f} | HP: {hp_trend_direction:+.2%}")
