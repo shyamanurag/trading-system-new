@@ -581,29 +581,61 @@ class EnhancedPositionOpeningDecision:
             )
     
     async def _assess_position_risk(self, signal: Dict, current_positions: Dict, available_capital: float, risk_manager) -> PositionDecisionResult:
-        """Assess position risk and capital requirements"""
+        """Assess position risk and capital requirements
+        
+        🔥 INTRADAY POSITION SIZING LOGIC (2025-12-03):
+        - Intraday leverage = 4x (MIS product)
+        - Max loss per trade = 2% of portfolio
+        - Position size = Max Loss / Stop Loss Distance
+        - Example: ₹50k capital, 4x leverage = ₹2L tradeable
+        - Max loss = 2% of ₹50k = ₹1000
+        - SBIN @ 950, SL @ 931 (2%) → Risk/share = ₹19
+        - Max shares = ₹1000 / ₹19 = 52 shares
+        """
         try:
             symbol = signal.get('symbol', '')
             action = signal.get('action', 'BUY')  # Extract action from signal
             entry_price = float(signal.get('entry_price', 0.0))
+            stop_loss = float(signal.get('stop_loss', 0.0))
             
-            # Calculate estimated position value
-            estimated_quantity = self._estimate_position_quantity(signal, available_capital)
-            estimated_value = entry_price * estimated_quantity
+            # 🔥 USE SIGNAL QUANTITY - Already calculated by base_strategy with proper sizing
+            signal_quantity = int(signal.get('quantity', 0))
+            if signal_quantity <= 0:
+                # Fallback: calculate based on 2% risk rule
+                signal_quantity = self._estimate_position_quantity(signal, available_capital)
             
-            # Check available capital
-            if estimated_value > available_capital:
+            estimated_value = entry_price * signal_quantity
+            
+            # 🔥 INTRADAY LEVERAGE: 4x margin available for MIS
+            INTRADAY_LEVERAGE = 4.0
+            max_tradeable_value = available_capital * INTRADAY_LEVERAGE  # ₹50k → ₹2L
+            
+            # Check if position fits within leveraged capital
+            if estimated_value > max_tradeable_value:
                 return PositionDecisionResult(
                     decision=PositionDecision.REJECTED_CAPITAL,
                     confidence_score=signal.get('confidence', 0.0),
                     risk_score=10.0,
                     position_size=0,
-                    reasoning=f"Insufficient capital - Required: ₹{estimated_value:,.2f}, Available: ₹{available_capital:,.2f}",
-                    metadata={'required_capital': estimated_value, 'available_capital': available_capital}
+                    reasoning=f"Position ₹{estimated_value:,.0f} exceeds 4x leverage limit ₹{max_tradeable_value:,.0f}",
+                    metadata={'required_capital': estimated_value, 'max_tradeable': max_tradeable_value}
                 )
             
-            # Calculate position risk as percentage of capital
-            position_risk = estimated_value / available_capital if available_capital > 0 else 1.0
+            # 🔥 CALCULATE ACTUAL RISK (not position value!)
+            # Risk = (Entry - StopLoss) × Quantity
+            if stop_loss > 0 and entry_price > 0:
+                risk_per_share = abs(entry_price - stop_loss)
+                actual_loss_risk = risk_per_share * signal_quantity
+            else:
+                # Fallback: assume 2% stop loss
+                actual_loss_risk = estimated_value * 0.02
+            
+            # 🔥 MAX LOSS PER TRADE = 2% of portfolio (not position value!)
+            MAX_LOSS_PER_TRADE_PCT = 0.02  # 2%
+            max_allowed_loss = available_capital * MAX_LOSS_PER_TRADE_PCT
+            
+            # Calculate risk as percentage of capital (based on actual loss, not position value)
+            position_risk = actual_loss_risk / available_capital if available_capital > 0 else 1.0
             
             # 🚨 CRITICAL FIX: Calculate TOTAL portfolio exposure INCLUDING current positions
             total_current_exposure = 0.0
@@ -632,10 +664,10 @@ class EnhancedPositionOpeningDecision:
             options_exposure_pct = new_options_exposure / available_capital if available_capital > 0 else 1.0
             
             logger.info(f"📊 PORTFOLIO EXPOSURE CHECK: {symbol}")
-            logger.info(f"   Current exposure: ₹{total_current_exposure:,.0f} ({total_current_exposure/available_capital*100 if available_capital > 0 else 0:.1f}%)")
-            logger.info(f"   New position: ₹{estimated_value:,.0f} ({position_risk*100:.1f}%)")
-            logger.info(f"   Total after: ₹{new_total_exposure:,.0f} ({total_exposure_pct*100:.1f}%)")
-            logger.info(f"   Options exposure after: ₹{new_options_exposure:,.0f} ({options_exposure_pct*100:.1f}%)")
+            logger.info(f"   Position Value: ₹{estimated_value:,.0f} ({signal_quantity} × ₹{entry_price:.2f})")
+            logger.info(f"   🎯 Actual Risk: ₹{actual_loss_risk:,.0f} ({position_risk*100:.1f}% of capital)")
+            logger.info(f"   Max Allowed Loss: ₹{max_allowed_loss:,.0f} (2% of ₹{available_capital:,.0f})")
+            logger.info(f"   Leverage Used: {estimated_value/available_capital:.1f}x (max 4x)")
             
             # 🚨 HARD LIMIT: Max 50% of capital in OPTIONS at any time
             # This prevents what happened today: 80%+ capital in 3 options positions
@@ -672,20 +704,22 @@ class EnhancedPositionOpeningDecision:
                     }
                 )
             
-            # 🎯 INDIVIDUAL POSITION LIMITS: Different risk limits for options vs equity
-            # Options have limited downside (premium paid), allow 5% risk per position
-            # Equity can gap down, keep at 2% risk per position
-            max_risk_limit = 0.05 if is_options else self.max_position_risk  # 5% for options, 2% for equity
-            
-            if position_risk > max_risk_limit:
+            # 🎯 RISK CHECK: Actual loss must be within 2% of capital
+            # This allows large positions (using 4x leverage) as long as stop loss limits loss to 2%
+            if actual_loss_risk > max_allowed_loss:
                 trade_type = "OPTIONS" if is_options else "EQUITY"
                 return PositionDecisionResult(
                     decision=PositionDecision.REJECTED_RISK,
                     confidence_score=signal.get('confidence', 0.0),
                     risk_score=position_risk * 10,
                     position_size=0,
-                    reasoning=f"{trade_type} position risk {position_risk:.1%} exceeds limit {max_risk_limit:.1%}",
-                    metadata={'position_risk': position_risk, 'max_risk': max_risk_limit, 'trade_type': trade_type}
+                    reasoning=f"Potential loss ₹{actual_loss_risk:,.0f} exceeds 2% limit ₹{max_allowed_loss:,.0f}",
+                    metadata={
+                        'actual_loss_risk': actual_loss_risk,
+                        'max_allowed_loss': max_allowed_loss,
+                        'position_value': estimated_value,
+                        'trade_type': trade_type
+                    }
                 )
             
             # Use risk manager if available

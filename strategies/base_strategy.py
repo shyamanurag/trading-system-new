@@ -5902,69 +5902,60 @@ class BaseStrategy:
                 )
                 return 0
             else:
-                # 🎯 EQUITY: Use share-based calculation with minimum trade value
-                # CRITICAL FIX: Reduce minimum trade value to work with available capital
-                min_trade_value = 20000.0  # Reduced from ₹25,000 to ₹20,000 for capital efficiency
-                
-                # Check if we can afford minimum trade value
-                if available_capital < min_trade_value:
-                    logger.warning(
-                        f"❌ EQUITY REJECTED: {underlying_symbol} insufficient capital for min trade value "
-                        f"(need ₹{min_trade_value:,.0f}, available ₹{available_capital:,.0f})"
-                    )
-                    return 0
+                # 🔥 INTRADAY EQUITY POSITION SIZING (2025-12-03)
+                # ================================================
+                # Key Rules:
+                # 1. Intraday leverage = 4x (MIS product)
+                # 2. Max loss per trade = 2% of portfolio
+                # 3. Position Size = Max Loss / (Entry - StopLoss)
+                # 
+                # Example: ₹50k capital
+                # - Tradeable value = ₹50k × 4 = ₹2L
+                # - Max loss = 2% of ₹50k = ₹1,000
+                # - SBIN @ ₹950, SL @ ₹931 (2% SL)
+                # - Risk per share = ₹950 - ₹931 = ₹19
+                # - Max shares = ₹1,000 / ₹19 = 52 shares
+                # - Position value = 52 × ₹950 = ₹49,400 (using ~1x of 4x available)
                 
                 # 🚨 CRITICAL SAFETY: Check for zero/invalid entry price
                 if entry_price <= 0:
                     logger.error(f"❌ INVALID ENTRY PRICE: {entry_price} for {underlying_symbol}")
-                    logger.error(f"   Cannot calculate quantity with zero/negative entry price")
-                    logger.error(f"   This indicates a price data issue - signal should be rejected")
                     return 0
                 
-                # 🎯 CRITICAL: Calculate shares needed for MINIMUM ₹25,000 trade value
-                min_shares_required = int(min_trade_value / entry_price)
-                cost_for_min_shares = min_shares_required * entry_price
+                # 🎯 INTRADAY LEVERAGE: 4x margin for MIS product
+                INTRADAY_LEVERAGE = 4.0
+                max_tradeable_value = available_capital * INTRADAY_LEVERAGE
                 
-                # 🚨 MARGIN-BASED POSITION SIZING: Use 25% of available margin
-                estimated_margin_factor = 0.25  # Conservative estimate for MIS margin requirement
-                max_margin_per_trade_pct = 0.25  # 25% of available margin per trade
-                max_margin_allowed = available_capital * max_margin_per_trade_pct
+                # 🎯 MAX LOSS PER TRADE: 2% of portfolio
+                MAX_LOSS_PCT = 0.02
+                max_loss_amount = available_capital * MAX_LOSS_PCT
                 
-                # Calculate maximum trade value we can afford with 25% margin allocation
-                max_affordable_trade_value = max_margin_allowed / estimated_margin_factor
-                max_affordable_shares = int(max_affordable_trade_value / entry_price)
-                max_affordable_cost = max_affordable_shares * entry_price
+                # 🎯 CALCULATE STOP LOSS DISTANCE (assume 2% if not provided in context)
+                # This will be validated later with actual signal stop_loss
+                assumed_stop_loss_pct = 0.02  # 2% stop loss
+                risk_per_share = entry_price * assumed_stop_loss_pct
                 
-                # Use the higher of: minimum trade value OR maximum affordable within margin limits
-                if max_affordable_cost >= min_trade_value:
-                    # We can afford more than minimum - use maximum affordable
-                    final_quantity = max_affordable_shares
-                    cost = max_affordable_cost
-                    estimated_margin = cost * estimated_margin_factor
-                    
-                    logger.info(f"✅ MARGIN-OPTIMIZED: {underlying_symbol} = {final_quantity} shares")
-                    logger.info(f"   💰 Trade Value: ₹{cost:,.0f}")
-                    logger.info(f"   💳 Est. Margin: ₹{estimated_margin:,.0f} ({estimated_margin/available_capital:.1%} of capital)")
-                    logger.info(f"   📊 Leverage: ~{cost/estimated_margin:.1f}x")
-                else:
-                    # Can only afford minimum - check if it fits in margin allocation
-                    min_estimated_margin = cost_for_min_shares * estimated_margin_factor
-                    
-                    if min_estimated_margin <= max_margin_allowed:
-                        final_quantity = min_shares_required
-                        cost = cost_for_min_shares
-                        logger.info(f"✅ MINIMUM VIABLE: {underlying_symbol} = {final_quantity} shares")
-                        logger.info(f"   💰 Trade Value: ₹{cost:,.0f}")
-                        logger.info(f"   💳 Est. Margin: ₹{cost * estimated_margin_factor:,.0f}")
-                    else:
-                        logger.warning(
-                            f"❌ EQUITY REJECTED: {underlying_symbol} min trade ₹{min_trade_value:,.0f} "
-                            f"needs ₹{min_estimated_margin:,.0f} margin, exceeds 25% limit ₹{max_margin_allowed:,.0f}"
-                        )
-                        return 0
-
-                logger.info(f"✅ EQUITY ORDER: {underlying_symbol} = {final_quantity} shares")
-                logger.info(f"   💰 Cost: ₹{cost:,.0f} / Available: ₹{available_capital:,.0f} ({cost/available_capital:.1%})")
+                # 🎯 POSITION SIZE = Max Loss / Risk Per Share
+                max_shares_by_risk = int(max_loss_amount / risk_per_share) if risk_per_share > 0 else 0
+                
+                # 🎯 Also check we don't exceed tradeable value
+                max_shares_by_capital = int(max_tradeable_value / entry_price) if entry_price > 0 else 0
+                
+                # Use the smaller of the two (risk-based or capital-based limit)
+                final_quantity = min(max_shares_by_risk, max_shares_by_capital)
+                
+                # Ensure minimum viable quantity (at least 1 share)
+                if final_quantity < 1:
+                    logger.warning(f"❌ EQUITY REJECTED: {underlying_symbol} - calculated quantity too small")
+                    return 0
+                
+                cost = final_quantity * entry_price
+                estimated_margin = cost / INTRADAY_LEVERAGE  # MIS margin = Position / 4
+                
+                logger.info(f"✅ INTRADAY EQUITY: {underlying_symbol} = {final_quantity} shares")
+                logger.info(f"   💰 Position Value: ₹{cost:,.0f} (using {cost/max_tradeable_value*100:.0f}% of 4x leverage)")
+                logger.info(f"   💳 Margin Required: ₹{estimated_margin:,.0f} ({estimated_margin/available_capital*100:.1f}% of capital)")
+                logger.info(f"   🎯 Max Loss @ 2% SL: ₹{final_quantity * risk_per_share:,.0f} ({MAX_LOSS_PCT*100:.0f}% of capital)")
                 
                 # CRITICAL DEBUG: Log final quantity calculation
                 if final_quantity == 0:
