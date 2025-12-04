@@ -10,6 +10,7 @@ Enhancements:
 3. Market microstructure confirmation
 4. Adaptive confidence based on recent performance
 5. Statistical significance testing
+6. Historical data warmup for accurate scoring from startup
 """
 
 import logging
@@ -40,7 +41,101 @@ class SignalEnhancer:
         self.min_volume_ratio = 1.2  # Minimum 20% above average volume
         self.min_microstructure_score = 0.50  # Minimum microstructure quality
         
+        # Track warmup status
+        self.warmed_up_symbols = set()
+        self.zerodha_client = None
+        self._warmup_complete = False
+        
         logger.info("✅ Signal Enhancement Layer initialized")
+    
+    def set_zerodha_client(self, client):
+        """Set Zerodha client for historical data fetching"""
+        self.zerodha_client = client
+        logger.info("📊 SignalEnhancer: Zerodha client connected for historical data")
+    
+    async def warmup_with_historical_data(self, symbols: List[str], days: int = 3) -> int:
+        """
+        Pre-populate price and volume history with historical data from Zerodha.
+        This ensures accurate enhancement scores from startup.
+        
+        Args:
+            symbols: List of symbols to warm up
+            days: Number of days of history to fetch (default 3)
+            
+        Returns:
+            Number of symbols successfully warmed up
+        """
+        if not self.zerodha_client:
+            logger.warning("⚠️ No Zerodha client available for warmup")
+            return 0
+        
+        warmed_up = 0
+        logger.info(f"🔥 WARMUP: Loading {days} days of history for {len(symbols)} symbols...")
+        
+        # Limit to top 50 symbols to avoid rate limits
+        symbols_to_warm = symbols[:50]
+        
+        for symbol in symbols_to_warm:
+            if symbol in self.warmed_up_symbols:
+                continue
+                
+            try:
+                # Fetch 5-minute candles for the last few days
+                candles = await self._fetch_symbol_history(symbol, days)
+                
+                if candles and len(candles) >= 20:
+                    # Extract close prices and volumes
+                    for candle in candles[-50:]:  # Last 50 candles
+                        close = candle.get('close', 0)
+                        volume = candle.get('volume', 0)
+                        
+                        if close > 0:
+                            self.price_history[symbol].append(close)
+                        if volume > 0:
+                            self.volume_history[symbol].append(volume)
+                    
+                    self.warmed_up_symbols.add(symbol)
+                    warmed_up += 1
+                    
+                    if warmed_up % 10 == 0:
+                        logger.info(f"📊 WARMUP progress: {warmed_up}/{len(symbols_to_warm)} symbols loaded")
+                        
+            except Exception as e:
+                logger.debug(f"Could not warm up {symbol}: {e}")
+                continue
+        
+        self._warmup_complete = True
+        logger.info(f"✅ WARMUP COMPLETE: {warmed_up} symbols with {len(self.price_history.get(symbols_to_warm[0] if symbols_to_warm else '', []))} price points each")
+        return warmed_up
+    
+    async def _fetch_symbol_history(self, symbol: str, days: int) -> List[Dict]:
+        """Fetch historical candle data for a symbol"""
+        try:
+            if not self.zerodha_client:
+                return []
+            
+            # Check if zerodha_client has get_historical_data method
+            if hasattr(self.zerodha_client, 'get_historical_data'):
+                candles = await self.zerodha_client.get_historical_data(
+                    symbol=symbol,
+                    interval='5minute',
+                    days=days
+                )
+                return candles if candles else []
+            
+            return []
+            
+        except Exception as e:
+            logger.debug(f"Error fetching history for {symbol}: {e}")
+            return []
+    
+    def is_symbol_warmed_up(self, symbol: str) -> bool:
+        """Check if a symbol has sufficient historical data"""
+        return (
+            symbol in self.warmed_up_symbols or
+            (len(self.price_history.get(symbol, [])) >= 20 and 
+             len(self.volume_history.get(symbol, [])) >= 10)
+        )
     
     async def enhance_signals(self, signals: List[Dict], market_data: Dict) -> List[Dict]:
         """

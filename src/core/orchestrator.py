@@ -797,12 +797,57 @@ class TradingOrchestrator:
             # CRITICAL FIX: Start market data to position tracker bridge
             await self._start_market_data_to_position_tracker_bridge()
             
+            # 🔥 SIGNAL ENHANCER WARMUP: Pre-load historical data for accurate scoring
+            await self._warmup_signal_enhancer()
+            
             self.logger.info("🎉 TradingOrchestrator fully initialized and ready")
             return True
             
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize TradingOrchestrator: {e}")
             return False
+    
+    async def _warmup_signal_enhancer(self):
+        """Pre-load historical data into signal enhancer for accurate scoring from startup"""
+        try:
+            # Set Zerodha client for historical data fetching
+            if self.zerodha_client:
+                signal_enhancer.set_zerodha_client(self.zerodha_client)
+                
+                # Get strategy symbols
+                symbols = self._get_all_strategy_symbols()
+                
+                if symbols:
+                    # Warm up with 3 days of historical data
+                    warmed_up = await signal_enhancer.warmup_with_historical_data(
+                        symbols=symbols[:50],  # Limit to top 50 symbols
+                        days=3
+                    )
+                    self.logger.info(f"✅ Signal Enhancer warmed up with {warmed_up} symbols")
+                else:
+                    self.logger.warning("⚠️ No symbols available for signal enhancer warmup")
+            else:
+                self.logger.warning("⚠️ Zerodha client not available for signal enhancer warmup")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Signal enhancer warmup failed: {e}")
+            # Non-critical - system can continue without warmup (will use fallback scores)
+    
+    def _get_all_strategy_symbols(self) -> List[str]:
+        """Get all symbols used by strategies"""
+        try:
+            from config.truedata_symbols import get_expanded_symbols
+            symbols = get_expanded_symbols()
+            return symbols
+        except Exception:
+            # Fallback to hardcoded NIFTY 50 stocks
+            return [
+                'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY', 'HDFC', 'SBIN',
+                'BHARTIARTL', 'KOTAKBANK', 'ITC', 'AXISBANK', 'LT', 'BAJFINANCE',
+                'ASIANPAINT', 'HCLTECH', 'MARUTI', 'WIPRO', 'ULTRACEMCO', 'TITAN',
+                'TECHM', 'SUNPHARMA', 'NESTLEIND', 'TATAMOTORS', 'BAJAJFINSV',
+                'ONGC', 'NTPC', 'POWERGRID', 'TATASTEEL', 'COALINDIA', 'JSWSTEEL'
+            ]
     
     def _initialize_order_manager_with_fallback(self):
         """Initialize Clean OrderManager - NO FALLBACKS"""
