@@ -2564,12 +2564,28 @@ class BaseStrategy:
                 elif recent_hist[-1] < recent_hist[-5] and recent_hist[-1] > 0:
                     divergence = 'bearish'
             
+            # Detect crossover (MACD just crossed signal line)
+            crossover = None
+            if macd_line[-1] > signal_line[-1] and macd_line[-2] < signal_line[-2]:
+                crossover = 'bullish'
+            elif macd_line[-1] < signal_line[-1] and macd_line[-2] > signal_line[-2]:
+                crossover = 'bearish'
+            
+            # 🔥 FIX: Also show current MACD STATE (not just crossover)
+            # This gives trend direction even without exact crossover
+            macd_state = 'neutral'
+            if macd_line[-1] > signal_line[-1]:
+                macd_state = 'bullish'  # MACD above signal = bullish momentum
+            elif macd_line[-1] < signal_line[-1]:
+                macd_state = 'bearish'  # MACD below signal = bearish momentum
+            
             return {
                 'macd': macd_line[-1],
                 'signal': signal_line[-1],
                 'histogram': histogram[-1],
                 'divergence': divergence,
-                'crossover': 'bullish' if macd_line[-1] > signal_line[-1] and macd_line[-2] < signal_line[-2] else 'bearish' if macd_line[-1] < signal_line[-1] and macd_line[-2] > signal_line[-2] else None
+                'crossover': crossover,  # Exact crossover event (rare)
+                'state': macd_state      # Current MACD state (always available)
             }
             
         except Exception as e:

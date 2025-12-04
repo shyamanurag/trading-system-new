@@ -1288,33 +1288,53 @@ class EnhancedMomentumSurfer(BaseStrategy):
             else:
                 volume_ratio = 1.0  # Not enough data yet
             
-            # ============= CANDLE BODY ANALYSIS (FIXED FOR DAY OHLC) =============
-            # The high/low are DAY values, so we interpret relative position within day's range
-            candle_range = high - low if high > low else 0.01
+            # ============= CANDLE BODY ANALYSIS =============
+            # 🔥 FIX: Check if REAL OHLC data is available (not synthetic)
+            ohlc_available = data.get('ohlc_available', False)
             
-            # Buying pressure: how close to day's high (1.0 = at high, 0.0 = at low)
-            buying_pressure = (ltp - low) / candle_range if candle_range > 0 else 0.5
-            # Selling pressure: how close to day's low (1.0 = at low, 0.0 = at high)
-            selling_pressure = (high - ltp) / candle_range if candle_range > 0 else 0.5
+            # If OHLC not available from TrueData, use historical MTF data
+            if not ohlc_available or high <= 0 or low <= 0 or open_price <= 0:
+                # Try to get OHLC from MTF data (fetched from Zerodha)
+                if hasattr(self, 'mtf_data') and symbol in self.mtf_data:
+                    mtf_5m = self.mtf_data[symbol].get('5min', [])
+                    if mtf_5m and len(mtf_5m) > 0:
+                        # Get today's OHLC from 5-min candles
+                        today_candles = mtf_5m[-20:]  # Last 20 5-min candles
+                        if today_candles:
+                            open_price = today_candles[0]['open']
+                            high = max(c['high'] for c in today_candles)
+                            low = min(c['low'] for c in today_candles)
+                            ohlc_available = True
+                            logger.debug(f"📊 {symbol}: Using MTF OHLC - O:{open_price:.2f} H:{high:.2f} L:{low:.2f}")
             
-            # 🔥 ENHANCED: Use intraday movement for more meaningful pressure
-            # If price has moved significantly from open, that's better than day H/L
-            if open_price > 0:
-                intraday_range = abs(high - low)
+            # Calculate candle range and pressures (only if real OHLC available)
+            if ohlc_available and high > low > 0 and open_price > 0:
+                candle_range = high - low
+                
+                # Buying pressure: how close to day's high (1.0 = at high, 0.0 = at low)
+                buying_pressure = (ltp - low) / candle_range
+                # Selling pressure: how close to day's low (1.0 = at low, 0.0 = at high)
+                selling_pressure = (high - ltp) / candle_range
+                
+                # Enhanced: Use intraday movement for more meaningful pressure
                 intraday_move = ltp - open_price
-                if intraday_range > 0:
-                    # Positive = buying pressure, negative = selling pressure
-                    move_ratio = intraday_move / intraday_range
-                    if move_ratio > 0:
-                        buying_pressure = min(0.5 + move_ratio * 0.5, 1.0)
-                        selling_pressure = max(0.5 - move_ratio * 0.5, 0.0)
-                    else:
-                        buying_pressure = max(0.5 + move_ratio * 0.5, 0.0)
-                        selling_pressure = min(0.5 - move_ratio * 0.5, 1.0)
+                move_ratio = intraday_move / candle_range
+                if move_ratio > 0:
+                    buying_pressure = min(0.5 + move_ratio * 0.5, 1.0)
+                    selling_pressure = max(0.5 - move_ratio * 0.5, 0.0)
+                else:
+                    buying_pressure = max(0.5 + move_ratio * 0.5, 0.0)
+                    selling_pressure = min(0.5 - move_ratio * 0.5, 1.0)
+            else:
+                # 🔥 NO FAKE VALUES - Use neutral pressure when OHLC unavailable
+                buying_pressure = 0.5
+                selling_pressure = 0.5
+                candle_range = 0.01
+                logger.debug(f"⚠️ {symbol}: OHLC unavailable - using neutral pressure")
             
             # Candle body size (absolute move from open)
             body_size = abs(ltp - open_price) / open_price * 100 if open_price > 0 else 0
-            is_green_candle = ltp > open_price
+            is_green_candle = ltp > open_price if open_price > 0 else (change_percent > 0)
             
             # ============= PRICE HISTORY FOR INDICATORS =============
             if not hasattr(self, 'price_history'):

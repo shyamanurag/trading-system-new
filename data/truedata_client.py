@@ -994,18 +994,25 @@ class TrueDataClient:
                 except ImportError:
                     logger.debug(f"📊 MARKET DATA: {symbol} = ₹{ltp} (no validation)")
                 
-                # Extract OHLC data - FIXED: Better fallback logic
-                high = getattr(tick_data, 'high', None)
-                low = getattr(tick_data, 'low', None)
-                open_price = getattr(tick_data, 'open', None)
+                # Extract OHLC data - 🔥 FIX: Do NOT synthesize fake OHLC!
+                # Use real TrueData values or 0 (let strategies handle missing data)
+                high = getattr(tick_data, 'high', None) or getattr(tick_data, 'day_high', None) or 0
+                low = getattr(tick_data, 'low', None) or getattr(tick_data, 'day_low', None) or 0
+                open_price = getattr(tick_data, 'open', None) or getattr(tick_data, 'day_open', None) or 0
                 
-                # If OHLC not available, create realistic estimates (better than all ltp)
-                if high is None or high <= 0:
-                    high = ltp * 1.002  # Assume 0.2% higher than ltp
-                if low is None or low <= 0:
-                    low = ltp * 0.998   # Assume 0.2% lower than ltp
-                if open_price is None or open_price <= 0:
-                    open_price = ltp * 0.999  # Assume slight difference from ltp
+                # 🔥 CRITICAL: Mark if OHLC is real or missing (don't fake it!)
+                ohlc_available = (
+                    high > 0 and low > 0 and open_price > 0 and
+                    high != low  # Sanity check: range must exist
+                )
+                
+                # If OHLC truly not available from TrueData, use 0 (strategies will handle)
+                if not ohlc_available:
+                    # Set to 0 so strategies know data is missing - DON'T FAKE IT!
+                    high = 0
+                    low = 0
+                    open_price = 0
+                    logger.debug(f"⚠️ {symbol}: No real OHLC from TrueData - marked as unavailable")
                 
                 # Extract volume data with multiple field attempts
                 volume = (
@@ -1093,9 +1100,10 @@ class TrueDataClient:
                     'timestamp': datetime.now().isoformat(),
                     'source': 'TrueData_Live',
                     'deployment_id': self._deployment_id,
+                    'ohlc_available': ohlc_available,  # 🔥 NEW: Flag for strategies to check
                     # Additional fields for debugging
                     'data_quality': {
-                        'has_ohlc': all([high != ltp, low != ltp, open_price != ltp]),
+                        'has_ohlc': ohlc_available,  # 🔥 Use real flag, not fake check
                         'has_volume': volume > 0,
                         'has_change_percent': change_percent != 0,
                         'has_previous_close': previous_close > 0 and previous_close != ltp,
