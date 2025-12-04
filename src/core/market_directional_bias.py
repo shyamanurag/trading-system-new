@@ -105,18 +105,35 @@ class MarketDirectionalBias:
         self.consecutive_bearish_days = 0  # Count consecutive negative days
         self.cumulative_move_3d = 0.0  # 3-day cumulative % change
         
-        # 🔥 INTRADAY MOVE EXHAUSTION TRACKING (User insight: 150+ points = stretched)
+        # 🔥 INTRADAY MOVE EXHAUSTION TRACKING - PERCENTAGE + ATR BASED (More Rational)
         self.todays_open = None  # Track today's opening price
         self.todays_high = None  # Track today's high
         self.todays_low = None  # Track today's low
-        self.typical_daily_range = 200  # NIFTY typical daily range in points
         
-        # Mean reversion zones based on points moved from open
-        self.move_zones = {
-            'EARLY': (0, 50),        # 0-50 points: Fresh move, trend-following
-            'MID': (50, 100),        # 50-100 points: Established, cautious trend
-            'EXTENDED': (100, 150),  # 100-150 points: Stretched, watch for reversal
-            'EXTREME': (150, 250)    # 150+ points: Mean reversion mode
+        # ATR tracking for volatility-adaptive zones
+        self.recent_daily_ranges = deque(maxlen=10)  # Track last 10 days' ranges
+        self.current_atr_percent = 0.75  # Default ATR as % of price (approx 200pts on 26000)
+        
+        # 🔥 PERCENTAGE-BASED ZONES (Adapts to any NIFTY level)
+        # Example at NIFTY 26,000:
+        #   EARLY: 0-0.2% = 0-52 pts
+        #   MID: 0.2-0.4% = 52-104 pts  
+        #   EXTENDED: 0.4-0.6% = 104-156 pts
+        #   EXTREME: >0.6% = >156 pts
+        self.move_zones_pct = {
+            'EARLY': (0.0, 0.20),      # 0-0.2%: Fresh move, trend-following
+            'MID': (0.20, 0.40),       # 0.2-0.4%: Established, cautious trend
+            'EXTENDED': (0.40, 0.60),  # 0.4-0.6%: Stretched, watch for reversal
+            'EXTREME': (0.60, 1.50)    # >0.6%: Mean reversion mode
+        }
+        
+        # ATR-NORMALIZED ZONES (Adjusts based on recent volatility)
+        # If ATR is high (volatile), zones expand. If ATR is low (quiet), zones contract.
+        self.atr_zone_multipliers = {
+            'EARLY': (0.0, 0.30),      # 0-30% of daily ATR
+            'MID': (0.30, 0.60),       # 30-60% of daily ATR  
+            'EXTENDED': (0.60, 0.85),  # 60-85% of daily ATR
+            'EXTREME': (0.85, 1.50)    # >85% of daily ATR (exhausted)
         }
         
         # TIME-OF-DAY BIAS MODIFIERS
@@ -317,27 +334,36 @@ class MarketDirectionalBias:
             gap_pct = ((open_price - previous_close) / previous_close * 100) if previous_close > 0 else 0
             gap_pts = open_price - previous_close if previous_close > 0 else 0
             
-            # 2. Intraday move from open
+            # 2. Intraday move from open (PERCENTAGE-BASED - adapts to any NIFTY level)
             move_from_open = ltp - open_price
-            abs_move = abs(move_from_open)
+            abs_move_pct = abs((move_from_open / open_price) * 100) if open_price > 0 else 0
             intraday_pct = (move_from_open / open_price * 100) if open_price > 0 else 0
             
             # 3. Day change from previous close
             day_change_pct = ((ltp - previous_close) / previous_close * 100) if previous_close > 0 else 0
             
-            # 4. Daily range used
-            daily_range_used = (self.todays_high - self.todays_low)
-            range_exhaustion_pct = (daily_range_used / self.typical_daily_range) * 100
+            # 4. Daily range used (ATR-NORMALIZED)
+            daily_range = (self.todays_high - self.todays_low)
+            daily_range_pct = (daily_range / open_price * 100) if open_price > 0 else 0
+            
+            # Update ATR estimate based on current day's range
+            if daily_range_pct > 0:
+                self.current_atr_percent = daily_range_pct  # Use current day as proxy
+            
+            # ATR-normalized exhaustion (how much of typical daily range used)
+            range_exhaustion_pct = (abs_move_pct / self.current_atr_percent * 100) if self.current_atr_percent > 0 else 0
             
             # ============= DETERMINE MARKET SCENARIO =============
-            scenario = self._identify_market_scenario(gap_pct, intraday_pct, day_change_pct, abs_move)
+            scenario = self._identify_market_scenario(gap_pct, intraday_pct, day_change_pct, abs_move_pct)
             
-            # Determine move zone
+            # 🔥 DETERMINE MOVE ZONE (PERCENTAGE-BASED - More Rational)
             move_zone = 'EARLY'
-            for zone_name, (min_pts, max_pts) in self.move_zones.items():
-                if min_pts <= abs_move < max_pts:
+            for zone_name, (min_pct, max_pct) in self.move_zones_pct.items():
+                if min_pct <= abs_move_pct < max_pct:
                     move_zone = zone_name
                     break
+            if abs_move_pct >= 0.60:  # Catch extreme moves
+                move_zone = 'EXTREME'
             
             # Determine directions
             intraday_direction = 'BULLISH' if move_from_open > 5 else ('BEARISH' if move_from_open < -5 else 'NEUTRAL')
@@ -437,7 +463,7 @@ class MarketDirectionalBias:
             # ============= MOVE ZONE ADJUSTMENTS (overlayed on scenario) =============
             if move_zone == 'EXTENDED' and adjusted_direction == intraday_direction:
                 adjusted_confidence *= 0.75  # Additional penalty for chasing extended moves
-                logger.info(f"📏 EXTENDED ZONE ({abs_move:.0f} pts): Additional -25% for trend-chasing")
+                logger.info(f"📏 EXTENDED ZONE ({abs_move_pct:.2f}%): Additional -25% for trend-chasing")
             
             elif move_zone == 'EXTREME':
                 if adjusted_direction == intraday_direction:
@@ -445,10 +471,10 @@ class MarketDirectionalBias:
                     opposite_direction = 'BEARISH' if intraday_direction == 'BULLISH' else 'BULLISH'
                     adjusted_direction = opposite_direction
                     adjusted_confidence = min(confidence * 0.6, 5.0)
-                    logger.warning(f"🔴 EXTREME ZONE ({abs_move:.0f} pts): Forcing {adjusted_direction} mean reversion")
+                    logger.warning(f"🔴 EXTREME ZONE ({abs_move_pct:.2f}%): Forcing {adjusted_direction} mean reversion")
                 else:
                     adjusted_confidence *= 1.2  # Boost mean reversion in extreme zone
-                    logger.info(f"✅ EXTREME ZONE ({abs_move:.0f} pts): Mean reversion boost +20%")
+                    logger.info(f"✅ EXTREME ZONE ({abs_move_pct:.2f}%): Mean reversion boost +20%")
             
             # ============= RANGE EXHAUSTION CHECK =============
             if range_exhaustion_pct > 85:
@@ -462,10 +488,10 @@ class MarketDirectionalBias:
             # ============= FINAL CONFIDENCE BOUNDS =============
             adjusted_confidence = max(0.0, min(10.0, adjusted_confidence))
             
-            # Log comprehensive analysis
+            # Log comprehensive analysis (PERCENTAGE-BASED)
             logger.info(f"📊 MOVE ANALYSIS: Gap={gap_pct:+.2f}% | Intraday={intraday_pct:+.2f}% | Day={day_change_pct:+.2f}% | "
                        f"Zone={move_zone} | Scenario={scenario} | "
-                       f"Range: {daily_range_used:.0f}/{self.typical_daily_range:.0f} pts ({range_exhaustion_pct:.0f}%) | "
+                       f"Move: {abs_move_pct:.2f}% (ATR used: {range_exhaustion_pct:.0f}%) | "
                        f"Final Bias: {adjusted_direction} @ {adjusted_confidence:.1f}/10")
             
             return {
@@ -479,28 +505,31 @@ class MarketDirectionalBias:
             logger.error(f"Error in move exhaustion check: {e}")
             return {'direction': bias_direction, 'confidence': confidence, 'zone': 'ERROR', 'scenario': 'ERROR'}
     
-    def _identify_market_scenario(self, gap_pct: float, intraday_pct: float, day_change_pct: float, abs_move: float) -> str:
+    def _identify_market_scenario(self, gap_pct: float, intraday_pct: float, day_change_pct: float, abs_move_pct: float) -> str:
         """
         Identify the current market scenario based on gap, intraday, and day movements.
+        
+        🔥 PERCENTAGE-BASED (Adapts to any NIFTY level)
         
         Returns one of:
         - GAP_UP_CONTINUATION: Gap up and continuing higher
         - GAP_UP_FADE: Gap up but fading (selling into strength)
         - GAP_DOWN_CONTINUATION: Gap down and continuing lower
         - GAP_DOWN_RECOVERY: Gap down but recovering (RUBBER BAND!)
-        - RUBBER_BAND_RECOVERY: Strong snap-back from extended move (150+ pts reversal)
+        - RUBBER_BAND_RECOVERY: Strong snap-back from extended move
         - FLAT_TRENDING_UP: Flat open, trending higher
         - FLAT_TRENDING_DOWN: Flat open, trending lower
         - CHOPPY: No clear direction, range-bound
         - MIXED_SIGNALS: Conflicting signals
         
         🔥 RUBBER BAND DETECTION:
-        - Extended move: abs_move > 150 pts from open
+        - Extended move: >0.4% from open (approx 100 pts at NIFTY 26000)
         - Reversal sign: intraday_pct direction opposite to gap_pct
         """
         GAP_THRESHOLD = 0.25  # 0.25% gap is significant
-        TREND_THRESHOLD = 0.10  # 🔥 LOWERED from 0.15% to catch recovery earlier
-        RUBBER_BAND_POINTS = 100  # 100+ pts move from open is extended
+        TREND_THRESHOLD = 0.10  # 0.10% intraday move is trending
+        RUBBER_BAND_PCT = 0.40  # 0.4% move from open is extended (≈100 pts at 26000)
+        CHOPPY_THRESHOLD = 0.12  # <0.12% move is choppy (≈30 pts at 26000)
         
         has_gap_up = gap_pct > GAP_THRESHOLD
         has_gap_down = gap_pct < -GAP_THRESHOLD
@@ -510,14 +539,13 @@ class MarketDirectionalBias:
         is_trending_down = intraday_pct < -TREND_THRESHOLD
         is_flat_intraday = abs(intraday_pct) <= TREND_THRESHOLD
         
-        # 🔥 RUBBER BAND DETECTION - Extended move reversing
-        # If market moved significantly from open and is now reversing
-        is_extended_move = abs_move > RUBBER_BAND_POINTS
+        # 🔥 RUBBER BAND DETECTION - Extended move reversing (PERCENTAGE-BASED)
+        is_extended_move = abs_move_pct > RUBBER_BAND_PCT
         
         # Check for rubber band snap-back
         if is_extended_move:
             # Gap down + intraday up = rubber band recovery
-            if has_gap_down and intraday_pct > 0.05:  # Even small positive is significant after big drop
+            if has_gap_down and intraday_pct > 0.05:
                 logger.info(f"🎯 RUBBER BAND DETECTED: Gap {gap_pct:.2f}% + Intraday {intraday_pct:+.2f}% = SNAP-BACK RECOVERY")
                 return 'RUBBER_BAND_RECOVERY'
             # Gap up + intraday down = rubber band fade
@@ -540,8 +568,8 @@ class MarketDirectionalBias:
                 return 'GAP_DOWN_CONTINUATION'
             elif is_trending_up:
                 return 'GAP_DOWN_RECOVERY'
-            # 🔥 NEW: Even slight positive is early recovery sign after gap down
-            elif intraday_pct > 0.05 and abs(gap_pct) > 0.4:  # Gap > 0.4% and any positive intraday
+            # Even slight positive is early recovery sign after gap down
+            elif intraday_pct > 0.05 and abs(gap_pct) > 0.4:
                 logger.info(f"📈 EARLY RECOVERY: Gap {gap_pct:.2f}% but intraday {intraday_pct:+.2f}% positive")
                 return 'GAP_DOWN_EARLY_RECOVERY'
             else:
@@ -553,7 +581,7 @@ class MarketDirectionalBias:
                 return 'FLAT_TRENDING_UP'
             elif is_trending_down:
                 return 'FLAT_TRENDING_DOWN'
-            elif is_flat_intraday and abs_move < 30:  # Less than 30 pts move
+            elif is_flat_intraday and abs_move_pct < CHOPPY_THRESHOLD:
                 return 'CHOPPY'
             else:
                 return 'MIXED_SIGNALS'
