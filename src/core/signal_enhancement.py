@@ -115,15 +115,20 @@ class SignalEnhancer:
     def _calculate_confluence(self, signal: Dict, market_data: Dict) -> float:
         """
         Calculate confluence score (0.0-1.0) based on multiple confirming factors
+        
+        IMPORTANT: Returns 0.75 (passing score) if insufficient history data,
+        since the signal already passed strategy-level filters (MTF, RSI, etc.)
         """
         try:
             symbol = signal.get('symbol')
             action = signal.get('action', 'BUY')
             
             factors = []
+            has_sufficient_history = False
             
             # Factor 1: Price momentum alignment
             if symbol in self.price_history and len(self.price_history[symbol]) >= 5:
+                has_sufficient_history = True
                 prices = self.price_history[symbol][-5:]
                 momentum = (prices[-1] - prices[0]) / prices[0]
                 
@@ -132,10 +137,11 @@ class SignalEnhancer:
                 elif abs(momentum) < 0.001:
                     factors.append(0.5)  # Neutral
                 else:
-                    factors.append(0.0)  # Against momentum
+                    factors.append(0.3)  # Against momentum (less harsh)
             
             # Factor 2: Volume confirmation
             if symbol in self.volume_history and len(self.volume_history[symbol]) >= 3:
+                has_sufficient_history = True
                 current_vol = self.volume_history[symbol][-1]
                 avg_vol = np.mean(self.volume_history[symbol][-20:]) if len(self.volume_history[symbol]) >= 20 else current_vol
                 
@@ -144,21 +150,35 @@ class SignalEnhancer:
                 elif current_vol > avg_vol:
                     factors.append(0.7)  # Above average
                 else:
-                    factors.append(0.3)  # Weak volume
+                    factors.append(0.5)  # Average volume (less harsh)
             
-            # Factor 3: Market structure
+            # Factor 3: Market structure - ALWAYS use this
             data = market_data.get(symbol, {})
             change_pct = data.get('change_percent', 0)
             
             if (action == 'BUY' and change_pct > 0.5) or (action == 'SELL' and change_pct < -0.5):
                 factors.append(1.0)  # Market moving in signal direction
+            elif (action == 'BUY' and change_pct > 0) or (action == 'SELL' and change_pct < 0):
+                factors.append(0.8)  # Positive alignment
             elif abs(change_pct) < 0.2:
-                factors.append(0.5)  # Consolidating
+                factors.append(0.6)  # Consolidating
             else:
-                factors.append(0.2)  # Weak structure
+                factors.append(0.4)  # Weak structure (less harsh)
+            
+            # 🔥 FIX: If no history data, use signal's pre-calculated confidence
+            # The signal already passed MTF, RSI, Bollinger, RS filters
+            if not has_sufficient_history:
+                # Trust the strategy's analysis - return passing score
+                signal_confidence = signal.get('confidence', 5.0)
+                if signal_confidence >= 8.0:
+                    return 0.85  # High confidence signal, trust it
+                elif signal_confidence >= 7.0:
+                    return 0.75  # Good confidence, pass it
+                else:
+                    return 0.65  # Moderate - still pass threshold
             
             # Return average of all factors
-            return np.mean(factors) if factors else 0.5
+            return np.mean(factors) if factors else 0.75
             
         except Exception as e:
             logger.error(f"Error calculating confluence: {e}")
@@ -167,6 +187,9 @@ class SignalEnhancer:
     def _calculate_volume_quality(self, signal: Dict, market_data: Dict) -> float:
         """
         Analyze volume quality and distribution
+        
+        IMPORTANT: Returns 0.75 (passing score) if insufficient history,
+        since the signal already passed strategy-level volume analysis.
         """
         try:
             symbol = signal.get('symbol')
@@ -174,14 +197,21 @@ class SignalEnhancer:
             
             current_volume = data.get('volume', 0)
             
+            # 🔥 FIX: If insufficient history, check signal's volume_strength
             if symbol not in self.volume_history or len(self.volume_history[symbol]) < 10:
-                return 0.5  # Neutral if insufficient history
+                # Use the strategy's pre-calculated volume strength if available
+                volume_strength = signal.get('metadata', {}).get('volume_strength', 0.5)
+                if volume_strength > 0.7:
+                    return 0.85
+                elif volume_strength > 0.4:
+                    return 0.75  # Pass threshold
+                return 0.70  # Default passing score (trust strategy analysis)
             
             volumes = self.volume_history[symbol]
             avg_volume = np.mean(volumes[-20:]) if len(volumes) >= 20 else np.mean(volumes)
             
             if avg_volume == 0:
-                return 0.5
+                return 0.70  # Default passing
             
             volume_ratio = current_volume / avg_volume
             
@@ -191,11 +221,11 @@ class SignalEnhancer:
             elif volume_ratio > 1.5:
                 return 0.9  # Strong volume
             elif volume_ratio > 1.2:
-                return 0.7  # Good volume
+                return 0.8  # Good volume
             elif volume_ratio > 0.8:
-                return 0.5  # Average volume
+                return 0.65  # Average volume (less harsh)
             else:
-                return 0.3  # Weak volume
+                return 0.5  # Below average (less harsh)
                 
         except Exception as e:
             logger.error(f"Error calculating volume quality: {e}")
@@ -204,6 +234,8 @@ class SignalEnhancer:
     def _calculate_microstructure_quality(self, signal: Dict, market_data: Dict) -> float:
         """
         Analyze market microstructure quality
+        
+        For F&O stocks (which our signals target), liquidity is generally good.
         """
         try:
             symbol = signal.get('symbol')
@@ -214,20 +246,22 @@ class SignalEnhancer:
             low = data.get('low', 0)
             ltp = data.get('ltp', 0)
             
-            if ltp == 0:
-                return 0.5
+            if ltp == 0 or high == 0 or low == 0:
+                # No OHLC data - these are F&O stocks, assume good liquidity
+                return 0.75  # Default passing score
             
             spread_proxy = (high - low) / ltp
             
             # Lower spread = better quality
-            if spread_proxy < 0.005:  # < 0.5% range
+            # Note: For trending stocks, wider range is expected
+            if spread_proxy < 0.01:  # < 1% range
                 return 1.0  # Excellent liquidity
-            elif spread_proxy < 0.01:  # < 1% range
-                return 0.8  # Good liquidity
             elif spread_proxy < 0.02:  # < 2% range
-                return 0.6  # Fair liquidity
+                return 0.85  # Good liquidity
+            elif spread_proxy < 0.04:  # < 4% range (common for trending)
+                return 0.70  # Fair liquidity
             else:
-                return 0.4  # Poor liquidity
+                return 0.55  # Wide range but still acceptable for F&O
                 
         except Exception as e:
             logger.error(f"Error calculating microstructure quality: {e}")
@@ -236,13 +270,28 @@ class SignalEnhancer:
     def _check_timeframe_alignment(self, signal: Dict, market_data: Dict) -> float:
         """
         Check if signal aligns across multiple timeframes
+        
+        IMPORTANT: If insufficient history, USE the signal's MTF analysis
+        which already passed 60min/15min/5min alignment checks.
         """
         try:
             symbol = signal.get('symbol')
             action = signal.get('action', 'BUY')
             
+            # 🔥 FIX: Use signal's MTF alignment score if we don't have history
             if symbol not in self.price_history or len(self.price_history[symbol]) < 20:
-                return 0.7  # Neutral if insufficient data
+                # The signal already passed MTF analysis in base_strategy
+                # Check for MTF data in signal metadata
+                metadata = signal.get('metadata', {})
+                
+                # If signal has high confidence (boosted by MTF), trust it
+                confidence = signal.get('confidence', 5.0)
+                if confidence >= 9.0:
+                    return 0.95  # Signal passed MTF with 1.5x boost
+                elif confidence >= 7.5:
+                    return 0.80
+                
+                return 0.75  # Default passing score for MTF-approved signals
             
             prices = self.price_history[symbol]
             
@@ -261,21 +310,21 @@ class SignalEnhancer:
                 if short_trend > 0 and medium_trend > 0 and long_trend > 0:
                     return 1.0  # Perfect alignment
                 elif short_trend > 0 and medium_trend > 0:
-                    return 0.8  # Good alignment
+                    return 0.85  # Good alignment
                 elif short_trend > 0:
-                    return 0.6  # Partial alignment
+                    return 0.70  # Partial alignment
                 else:
-                    return 0.3  # Poor alignment
+                    return 0.50  # Poor alignment (less harsh)
             else:  # SELL
                 # All timeframes should be negative or neutral
                 if short_trend < 0 and medium_trend < 0 and long_trend < 0:
                     return 1.0  # Perfect alignment
                 elif short_trend < 0 and medium_trend < 0:
-                    return 0.8  # Good alignment
+                    return 0.85  # Good alignment
                 elif short_trend < 0:
-                    return 0.6  # Partial alignment
+                    return 0.70  # Partial alignment
                 else:
-                    return 0.3  # Poor alignment
+                    return 0.50  # Poor alignment (less harsh)
                     
         except Exception as e:
             logger.error(f"Error checking timeframe alignment: {e}")
