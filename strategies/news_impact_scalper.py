@@ -860,7 +860,8 @@ class EnhancedNewsImpactScalper(BaseStrategy):
 
     async def _fetch_historical_for_symbol(self, symbol: str) -> bool:
         """
-        🔥 Fetch historical candle data from Zerodha to pre-populate indicators.
+        🔥 Fetch MULTI-TIMEFRAME historical data from Zerodha.
+        Fetches 5-min, 15-min, and 60-min candles for higher accuracy signals.
         """
         try:
             if not hasattr(self, '_historical_data_fetched'):
@@ -875,27 +876,63 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             if not orchestrator or not hasattr(orchestrator, 'zerodha_client') or not orchestrator.zerodha_client:
                 return False
             
+            zerodha_client = orchestrator.zerodha_client
             from datetime import datetime, timedelta
-            candles = await orchestrator.zerodha_client.get_historical_data(
+            
+            # Initialize MTF storage
+            if not hasattr(self, 'mtf_data'):
+                self.mtf_data = {}
+            if symbol not in self.mtf_data:
+                self.mtf_data[symbol] = {'5min': [], '15min': [], '60min': []}
+            
+            # Fetch 5-minute candles
+            candles_5m = await zerodha_client.get_historical_data(
                 symbol=symbol,
                 interval='5minute',
                 from_date=datetime.now() - timedelta(days=3),
                 to_date=datetime.now()
             )
             
-            if not candles or len(candles) < 14:
-                return False
+            if candles_5m and len(candles_5m) >= 14:
+                self.mtf_data[symbol]['5min'] = candles_5m[-50:]
+                if not hasattr(self, 'price_history'):
+                    self.price_history = {}
+                self.price_history[symbol] = [c['close'] for c in candles_5m[-50:]]
             
-            if not hasattr(self, 'price_history'):
-                self.price_history = {}
-            self.price_history[symbol] = [c['close'] for c in candles[-50:]]
+            # Fetch 15-minute candles
+            candles_15m = await zerodha_client.get_historical_data(
+                symbol=symbol,
+                interval='15minute',
+                from_date=datetime.now() - timedelta(days=5),
+                to_date=datetime.now()
+            )
+            if candles_15m and len(candles_15m) >= 14:
+                self.mtf_data[symbol]['15min'] = candles_15m[-30:]
+            
+            # Fetch 60-minute candles
+            candles_60m = await zerodha_client.get_historical_data(
+                symbol=symbol,
+                interval='60minute',
+                from_date=datetime.now() - timedelta(days=10),
+                to_date=datetime.now()
+            )
+            if candles_60m and len(candles_60m) >= 14:
+                self.mtf_data[symbol]['60min'] = candles_60m[-20:]
             
             self._historical_data_fetched.add(symbol)
-            logger.info(f"✅ HISTORICAL DATA: {symbol} - {len(self.price_history[symbol])} prices loaded")
+            
+            tf_5m = len(self.mtf_data[symbol]['5min'])
+            tf_15m = len(self.mtf_data[symbol]['15min'])
+            tf_60m = len(self.mtf_data[symbol]['60min'])
+            logger.info(f"✅ MTF DATA: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m}")
+            
+            # Also fetch MTF data using base strategy method for unified analysis
+            await self.fetch_multi_timeframe_data(symbol)
+            
             return True
             
         except Exception as e:
-            logger.debug(f"⚠️ Error fetching historical data for {symbol}: {e}")
+            logger.debug(f"⚠️ Error fetching MTF data for {symbol}: {e}")
             return False
 
     async def _analyze_underlying_for_options(self, underlying_symbol: str, underlying_data: Dict[str, Any], market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:

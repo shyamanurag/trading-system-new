@@ -304,6 +304,223 @@ class BaseStrategy:
         self.trailing_stop_percentage = 0.5  # 0.5% trailing stop
         self.profit_lock_percentage = 1.0  # Lock profit at 1%
     
+    # ============================================================================
+    # 🎯 MULTI-TIMEFRAME ANALYSIS - FEWER TRADES, HIGHER ACCURACY
+    # ============================================================================
+    
+    async def fetch_multi_timeframe_data(self, symbol: str) -> bool:
+        """
+        Fetch MULTI-TIMEFRAME historical data from Zerodha.
+        Fetches 5-min, 15-min, and 60-min candles for proper trend confirmation.
+        
+        This enables the strategy to only take trades when ALL timeframes align,
+        resulting in FEWER but HIGHER ACCURACY trades.
+        """
+        try:
+            # Initialize MTF storage
+            if not hasattr(self, 'mtf_data'):
+                self.mtf_data = {}
+            if not hasattr(self, '_mtf_fetched'):
+                self._mtf_fetched = set()
+            
+            if symbol in self._mtf_fetched:
+                return True  # Already fetched
+            
+            if symbol not in self.mtf_data:
+                self.mtf_data[symbol] = {'5min': [], '15min': [], '60min': []}
+            
+            # Get Zerodha client
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if not orchestrator or not hasattr(orchestrator, 'zerodha_client') or not orchestrator.zerodha_client:
+                return False
+            
+            zerodha_client = orchestrator.zerodha_client
+            from datetime import datetime, timedelta
+            
+            # ============= FETCH 5-MINUTE CANDLES =============
+            candles_5m = await zerodha_client.get_historical_data(
+                symbol=symbol,
+                interval='5minute',
+                from_date=datetime.now() - timedelta(days=3),
+                to_date=datetime.now()
+            )
+            if candles_5m and len(candles_5m) >= 14:
+                self.mtf_data[symbol]['5min'] = candles_5m[-50:]
+            
+            # ============= FETCH 15-MINUTE CANDLES =============
+            candles_15m = await zerodha_client.get_historical_data(
+                symbol=symbol,
+                interval='15minute',
+                from_date=datetime.now() - timedelta(days=5),
+                to_date=datetime.now()
+            )
+            if candles_15m and len(candles_15m) >= 14:
+                self.mtf_data[symbol]['15min'] = candles_15m[-30:]
+            
+            # ============= FETCH 60-MINUTE (HOURLY) CANDLES =============
+            candles_60m = await zerodha_client.get_historical_data(
+                symbol=symbol,
+                interval='60minute',
+                from_date=datetime.now() - timedelta(days=10),
+                to_date=datetime.now()
+            )
+            if candles_60m and len(candles_60m) >= 14:
+                self.mtf_data[symbol]['60min'] = candles_60m[-20:]
+            
+            self._mtf_fetched.add(symbol)
+            
+            tf_5m = len(self.mtf_data[symbol]['5min'])
+            tf_15m = len(self.mtf_data[symbol]['15min'])
+            tf_60m = len(self.mtf_data[symbol]['60min'])
+            logger.info(f"📊 MTF DATA: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m}")
+            
+            return True
+            
+        except Exception as e:
+            logger.debug(f"⚠️ MTF fetch error for {symbol}: {e}")
+            return False
+    
+    def analyze_multi_timeframe(self, symbol: str, action: str = None) -> Dict:
+        """
+        🎯 MULTI-TIMEFRAME ANALYSIS for Higher Accuracy Signals
+        
+        Strategy: Only take trades when ALL timeframes align
+        - 60-min (Hourly): Major trend direction
+        - 15-min: Medium-term trend confirmation  
+        - 5-min: Entry timing
+        
+        Returns:
+            Dict with 'mtf_aligned', 'direction', 'confidence_multiplier', etc.
+        """
+        try:
+            result = {
+                'mtf_aligned': False,
+                'direction': 'NEUTRAL',
+                'confidence_multiplier': 1.0,
+                'timeframes': {'5min': 'NEUTRAL', '15min': 'NEUTRAL', '60min': 'NEUTRAL'},
+                'alignment_score': 0,
+                'reasoning': ''
+            }
+            
+            if not hasattr(self, 'mtf_data') or symbol not in self.mtf_data:
+                result['reasoning'] = 'No MTF data - using single timeframe'
+                return result
+            
+            mtf = self.mtf_data[symbol]
+            
+            # ============= 60-MINUTE (HOURLY) TREND =============
+            trend_60m = 'NEUTRAL'
+            if mtf['60min'] and len(mtf['60min']) >= 5:
+                closes = [c['close'] for c in mtf['60min'][-10:]]
+                sma_5 = np.mean(closes[-5:])
+                current = closes[-1]
+                momentum = (closes[-1] / closes[-4] - 1) * 100 if len(closes) >= 4 else 0
+                
+                if current > sma_5 * 1.002 and momentum > 0.3:
+                    trend_60m = 'BULLISH'
+                elif current < sma_5 * 0.998 and momentum < -0.3:
+                    trend_60m = 'BEARISH'
+            result['timeframes']['60min'] = trend_60m
+            
+            # ============= 15-MINUTE TREND =============
+            trend_15m = 'NEUTRAL'
+            if mtf['15min'] and len(mtf['15min']) >= 5:
+                closes = [c['close'] for c in mtf['15min'][-15:]]
+                sma_5 = np.mean(closes[-5:])
+                current = closes[-1]
+                momentum = (closes[-1] / closes[-4] - 1) * 100 if len(closes) >= 4 else 0
+                
+                if current > sma_5 * 1.001 and momentum > 0.2:
+                    trend_15m = 'BULLISH'
+                elif current < sma_5 * 0.999 and momentum < -0.2:
+                    trend_15m = 'BEARISH'
+            result['timeframes']['15min'] = trend_15m
+            
+            # ============= 5-MINUTE TREND (Entry Timing) =============
+            trend_5m = 'NEUTRAL'
+            if mtf['5min'] and len(mtf['5min']) >= 5:
+                closes = [c['close'] for c in mtf['5min'][-20:]]
+                sma_5 = np.mean(closes[-5:])
+                sma_10 = np.mean(closes[-10:]) if len(closes) >= 10 else sma_5
+                current = closes[-1]
+                momentum = (closes[-1] / closes[-3] - 1) * 100 if len(closes) >= 3 else 0
+                
+                if current > sma_5 and sma_5 > sma_10 and momentum > 0.1:
+                    trend_5m = 'BULLISH'
+                elif current < sma_5 and sma_5 < sma_10 and momentum < -0.1:
+                    trend_5m = 'BEARISH'
+            result['timeframes']['5min'] = trend_5m
+            
+            # ============= ALIGNMENT CHECK =============
+            bullish_count = sum(1 for tf in result['timeframes'].values() if tf == 'BULLISH')
+            bearish_count = sum(1 for tf in result['timeframes'].values() if tf == 'BEARISH')
+            
+            # Check alignment with requested action
+            action_aligned = True
+            if action:
+                if action.upper() == 'BUY' and bearish_count > bullish_count:
+                    action_aligned = False
+                elif action.upper() == 'SELL' and bullish_count > bearish_count:
+                    action_aligned = False
+            
+            # PERFECT ALIGNMENT (All 3 timeframes agree)
+            if bullish_count == 3:
+                result['mtf_aligned'] = True
+                result['direction'] = 'BULLISH'
+                result['confidence_multiplier'] = 1.5  # +50% confidence boost
+                result['alignment_score'] = 3
+                result['reasoning'] = '🎯 PERFECT MTF: All timeframes BULLISH'
+                
+            elif bearish_count == 3:
+                result['mtf_aligned'] = True
+                result['direction'] = 'BEARISH'
+                result['confidence_multiplier'] = 1.5
+                result['alignment_score'] = 3
+                result['reasoning'] = '🎯 PERFECT MTF: All timeframes BEARISH'
+                
+            # STRONG ALIGNMENT (2/3 agree, including hourly)
+            elif bullish_count == 2 and trend_60m == 'BULLISH':
+                result['mtf_aligned'] = True
+                result['direction'] = 'BULLISH'
+                result['confidence_multiplier'] = 1.25  # +25% boost
+                result['alignment_score'] = 2
+                result['reasoning'] = '📈 STRONG MTF: Hourly + 1 other BULLISH'
+                
+            elif bearish_count == 2 and trend_60m == 'BEARISH':
+                result['mtf_aligned'] = True
+                result['direction'] = 'BEARISH'
+                result['confidence_multiplier'] = 1.25
+                result['alignment_score'] = 2
+                result['reasoning'] = '📉 STRONG MTF: Hourly + 1 other BEARISH'
+                
+            # WEAK/NO ALIGNMENT - BLOCK TRADE
+            else:
+                result['mtf_aligned'] = False
+                result['direction'] = 'NEUTRAL'
+                result['confidence_multiplier'] = 0.5  # Penalize by 50%
+                result['alignment_score'] = max(bullish_count, bearish_count)
+                result['reasoning'] = f'⚠️ MTF CONFLICT: 60m={trend_60m}, 15m={trend_15m}, 5m={trend_5m}'
+            
+            # Additional penalty if action conflicts with MTF direction
+            if not action_aligned:
+                result['confidence_multiplier'] *= 0.5
+                result['reasoning'] += f' | Action {action} conflicts with MTF'
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"MTF analysis error for {symbol}: {e}")
+            return {
+                'mtf_aligned': False,
+                'direction': 'NEUTRAL', 
+                'confidence_multiplier': 1.0,
+                'timeframes': {'5min': 'ERROR', '15min': 'ERROR', '60min': 'ERROR'},
+                'alignment_score': 0,
+                'reasoning': f'MTF error: {str(e)}'
+            }
+    
     def check_relative_strength(self, symbol: str, action: str, stock_change_percent: float, 
                                nifty_change_percent: float, min_outperformance: float = 0.3) -> Tuple[bool, str]:
         """
@@ -3674,6 +3891,12 @@ class BaseStrategy:
         1. Max loss per trade = 2% of portfolio value
         2. Intraday leverage = 4x (MIS margin)
         3. Quantity = Max Loss / Risk Per Share (capped by leverage limit)
+        
+        🎯 MULTI-TIMEFRAME FILTER (High Accuracy):
+        - Only generates signals when 60min + 15min + 5min trends align
+        - Perfect alignment = 1.5x confidence boost
+        - Strong alignment = 1.25x confidence boost  
+        - No alignment = Signal BLOCKED
         """
         try:
             # Hard block known delisted/suspended symbols at source
@@ -3684,6 +3907,31 @@ class BaseStrategy:
                     return None
             except Exception:
                 pass
+            
+            # ============================================================
+            # 🎯 MULTI-TIMEFRAME FILTER - FEWER TRADES, HIGHER ACCURACY
+            # ============================================================
+            mtf_result = self.analyze_multi_timeframe(symbol, action)
+            
+            # Log MTF analysis
+            logger.info(f"📊 MTF ANALYSIS: {symbol} {action}")
+            logger.info(f"   60min: {mtf_result['timeframes']['60min']} | 15min: {mtf_result['timeframes']['15min']} | 5min: {mtf_result['timeframes']['5min']}")
+            logger.info(f"   Aligned: {mtf_result['mtf_aligned']} | Score: {mtf_result['alignment_score']}/3 | {mtf_result['reasoning']}")
+            
+            # BLOCK SIGNAL if MTF not aligned (strict mode for accuracy)
+            if not mtf_result['mtf_aligned'] and mtf_result['alignment_score'] < 2:
+                logger.warning(f"🚫 MTF BLOCK: {symbol} {action} - Timeframes not aligned ({mtf_result['reasoning']})")
+                return None
+            
+            # Apply confidence multiplier from MTF
+            original_confidence = confidence
+            confidence = confidence * mtf_result['confidence_multiplier']
+            
+            # Cap at 10.0
+            confidence = min(confidence, 10.0)
+            
+            if mtf_result['confidence_multiplier'] != 1.0:
+                logger.info(f"   🎯 Confidence: {original_confidence:.1f} → {confidence:.1f} (MTF: {mtf_result['confidence_multiplier']:.2f}x)")
 
             # Validate signal levels
             if not self.validate_signal_levels(entry_price, stop_loss, target, action):

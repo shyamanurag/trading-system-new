@@ -301,6 +301,34 @@ class ProductionPositionTracker:
                 
                 # Calculate new average price
                 total_quantity = position.quantity + quantity
+                
+                # 🔥 CRITICAL FIX: If position is fully closed (qty = 0), remove it!
+                if total_quantity == 0:
+                    # Position closed - calculate realized P&L
+                    if position.side == 'long':
+                        realized_pnl = (price - position.average_price) * position.quantity
+                    else:
+                        realized_pnl = (position.average_price - price) * abs(position.quantity)
+                    
+                    # Update performance metrics
+                    self.total_pnl += realized_pnl
+                    self.daily_pnl += realized_pnl
+                    self.total_trades += 1
+                    if realized_pnl > 0:
+                        self.winning_trades += 1
+                    
+                    # Remove the closed position
+                    del self.positions[symbol]
+                    self.logger.info(f"🔒 POSITION CLOSED: {symbol} | P&L: ₹{realized_pnl:.2f}")
+                    
+                    # Publish position closed event
+                    if self.event_bus:
+                        await self.event_bus.publish('position_closed', {
+                            'symbol': symbol,
+                            'realized_pnl': realized_pnl
+                        })
+                    return True
+                
                 if total_quantity != 0:
                     new_avg_price = ((position.average_price * position.quantity) + 
                                    (price * quantity)) / total_quantity

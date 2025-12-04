@@ -3939,8 +3939,13 @@ class TradingOrchestrator:
                             'source': 'VERIFIED_ZERODHA'
                         }
                     else:
-                        # Position in tracker but not in Zerodha - potential phantom
-                        self.logger.warning(f"⚠️ PHANTOM POSITION DETECTED: {symbol} in tracker but not in Zerodha")
+                        # Position in tracker but not in Zerodha - phantom position
+                        # 🔥 CRITICAL FIX: Remove phantom positions automatically
+                        self.logger.warning(f"⚠️ PHANTOM POSITION DETECTED: {symbol} in tracker but not in Zerodha - REMOVING")
+                        if self.position_tracker and hasattr(self.position_tracker, 'positions'):
+                            if symbol in self.position_tracker.positions:
+                                del self.position_tracker.positions[symbol]
+                                self.logger.info(f"🗑️ PHANTOM REMOVED: {symbol} cleared from tracker")
             
             # Check for positions in Zerodha but not in tracker - orphaned positions
             for symbol, zerodha_pos in zerodha_positions.items():

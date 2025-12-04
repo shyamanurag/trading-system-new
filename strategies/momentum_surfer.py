@@ -1024,8 +1024,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
 
     async def _fetch_historical_for_symbol(self, symbol: str) -> bool:
         """
-        🔥 CRITICAL: Fetch historical candle data from Zerodha to pre-populate indicators.
-        This allows RSI/MACD/Bollinger to work immediately instead of waiting 14-26 cycles.
+        🔥 CRITICAL: Fetch MULTI-TIMEFRAME historical data from Zerodha.
+        Fetches 5-min, 15-min, and 60-min candles for proper trend confirmation.
         """
         try:
             # Track which symbols we've already fetched
@@ -1044,42 +1044,211 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 return False
             
             zerodha_client = orchestrator.zerodha_client
-            
-            # Fetch last 30 5-minute candles (covers ~2.5 hours of trading)
             from datetime import datetime, timedelta
-            candles = await zerodha_client.get_historical_data(
+            
+            # Initialize multi-timeframe storage
+            if not hasattr(self, 'mtf_data'):
+                self.mtf_data = {}
+            if symbol not in self.mtf_data:
+                self.mtf_data[symbol] = {'5min': [], '15min': [], '60min': []}
+            
+            # ============= FETCH 5-MINUTE CANDLES =============
+            candles_5m = await zerodha_client.get_historical_data(
                 symbol=symbol,
                 interval='5minute',
-                from_date=datetime.now() - timedelta(days=3),  # Last 3 days to ensure enough data
+                from_date=datetime.now() - timedelta(days=3),
                 to_date=datetime.now()
             )
             
-            if not candles or len(candles) < 14:
-                logger.debug(f"⚠️ Not enough historical candles for {symbol}: {len(candles) if candles else 0}")
-                return False
+            if candles_5m and len(candles_5m) >= 14:
+                self.mtf_data[symbol]['5min'] = candles_5m[-50:]
+                
+                # Pre-populate price_history with closing prices (5-min)
+                if not hasattr(self, 'price_history'):
+                    self.price_history = {}
+                closes = [c['close'] for c in candles_5m[-50:]]
+                self.price_history[symbol] = closes
+                
+                # Pre-populate volume_history
+                if not hasattr(self, 'volume_history'):
+                    self.volume_history = {}
+                volumes = [c['volume'] for c in candles_5m[-20:]]
+                self.volume_history[symbol] = volumes
             
-            # Pre-populate price_history with closing prices
-            if not hasattr(self, 'price_history'):
-                self.price_history = {}
+            # ============= FETCH 15-MINUTE CANDLES =============
+            candles_15m = await zerodha_client.get_historical_data(
+                symbol=symbol,
+                interval='15minute',
+                from_date=datetime.now() - timedelta(days=5),
+                to_date=datetime.now()
+            )
             
-            closes = [c['close'] for c in candles[-50:]]  # Last 50 candles
-            self.price_history[symbol] = closes
+            if candles_15m and len(candles_15m) >= 14:
+                self.mtf_data[symbol]['15min'] = candles_15m[-30:]
             
-            # Pre-populate volume_history
-            if not hasattr(self, 'volume_history'):
-                self.volume_history = {}
+            # ============= FETCH 60-MINUTE (HOURLY) CANDLES =============
+            candles_60m = await zerodha_client.get_historical_data(
+                symbol=symbol,
+                interval='60minute',
+                from_date=datetime.now() - timedelta(days=10),
+                to_date=datetime.now()
+            )
             
-            volumes = [c['volume'] for c in candles[-20:]]  # Last 20 candles
-            self.volume_history[symbol] = volumes
+            if candles_60m and len(candles_60m) >= 14:
+                self.mtf_data[symbol]['60min'] = candles_60m[-20:]
             
             self._historical_data_fetched.add(symbol)
-            logger.info(f"✅ HISTORICAL DATA LOADED: {symbol} - {len(closes)} prices, {len(volumes)} volumes")
+            
+            # Log multi-timeframe data status
+            tf_5m = len(self.mtf_data[symbol]['5min'])
+            tf_15m = len(self.mtf_data[symbol]['15min'])
+            tf_60m = len(self.mtf_data[symbol]['60min'])
+            logger.info(f"✅ MTF DATA LOADED: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m} candles")
             
             return True
             
         except Exception as e:
             logger.debug(f"⚠️ Error fetching historical data for {symbol}: {e}")
             return False
+    
+    def _analyze_multi_timeframe(self, symbol: str, current_data: Dict) -> Dict:
+        """
+        🎯 MULTI-TIMEFRAME ANALYSIS for Higher Accuracy Signals
+        
+        Strategy: Only take trades when ALL timeframes align
+        - 60-min: Major trend direction (BULLISH/BEARISH/NEUTRAL)
+        - 15-min: Medium-term trend confirmation
+        - 5-min: Entry timing
+        
+        Returns confidence boost only when all timeframes agree.
+        """
+        try:
+            result = {
+                'mtf_aligned': False,
+                'direction': 'NEUTRAL',
+                'confidence_boost': 0.0,
+                'timeframes': {
+                    '5min': 'NEUTRAL',
+                    '15min': 'NEUTRAL',
+                    '60min': 'NEUTRAL'
+                },
+                'alignment_score': 0,
+                'reasoning': ''
+            }
+            
+            if not hasattr(self, 'mtf_data') or symbol not in self.mtf_data:
+                result['reasoning'] = 'No MTF data available'
+                return result
+            
+            mtf = self.mtf_data[symbol]
+            
+            # ============= 60-MINUTE (HOURLY) TREND =============
+            trend_60m = 'NEUTRAL'
+            if mtf['60min'] and len(mtf['60min']) >= 5:
+                closes_60m = [c['close'] for c in mtf['60min'][-10:]]
+                
+                # Simple trend: Compare current vs 5-period SMA
+                sma_5 = np.mean(closes_60m[-5:])
+                current_60m = closes_60m[-1]
+                
+                # Also check momentum (3-period change)
+                momentum_60m = (closes_60m[-1] / closes_60m[-4] - 1) * 100 if len(closes_60m) >= 4 else 0
+                
+                if current_60m > sma_5 * 1.002 and momentum_60m > 0.3:  # Above SMA + positive momentum
+                    trend_60m = 'BULLISH'
+                elif current_60m < sma_5 * 0.998 and momentum_60m < -0.3:  # Below SMA + negative momentum
+                    trend_60m = 'BEARISH'
+            
+            result['timeframes']['60min'] = trend_60m
+            
+            # ============= 15-MINUTE TREND =============
+            trend_15m = 'NEUTRAL'
+            if mtf['15min'] and len(mtf['15min']) >= 5:
+                closes_15m = [c['close'] for c in mtf['15min'][-15:]]
+                
+                sma_5 = np.mean(closes_15m[-5:])
+                current_15m = closes_15m[-1]
+                momentum_15m = (closes_15m[-1] / closes_15m[-4] - 1) * 100 if len(closes_15m) >= 4 else 0
+                
+                if current_15m > sma_5 * 1.001 and momentum_15m > 0.2:
+                    trend_15m = 'BULLISH'
+                elif current_15m < sma_5 * 0.999 and momentum_15m < -0.2:
+                    trend_15m = 'BEARISH'
+            
+            result['timeframes']['15min'] = trend_15m
+            
+            # ============= 5-MINUTE TREND (Entry Timing) =============
+            trend_5m = 'NEUTRAL'
+            if mtf['5min'] and len(mtf['5min']) >= 5:
+                closes_5m = [c['close'] for c in mtf['5min'][-20:]]
+                
+                sma_5 = np.mean(closes_5m[-5:])
+                sma_10 = np.mean(closes_5m[-10:])
+                current_5m = closes_5m[-1]
+                momentum_5m = (closes_5m[-1] / closes_5m[-3] - 1) * 100 if len(closes_5m) >= 3 else 0
+                
+                # More sensitive for entry timing
+                if current_5m > sma_5 and sma_5 > sma_10 and momentum_5m > 0.1:
+                    trend_5m = 'BULLISH'
+                elif current_5m < sma_5 and sma_5 < sma_10 and momentum_5m < -0.1:
+                    trend_5m = 'BEARISH'
+            
+            result['timeframes']['5min'] = trend_5m
+            
+            # ============= ALIGNMENT CHECK =============
+            bullish_count = sum(1 for tf in result['timeframes'].values() if tf == 'BULLISH')
+            bearish_count = sum(1 for tf in result['timeframes'].values() if tf == 'BEARISH')
+            
+            # PERFECT ALIGNMENT (All 3 timeframes agree)
+            if bullish_count == 3:
+                result['mtf_aligned'] = True
+                result['direction'] = 'BULLISH'
+                result['confidence_boost'] = 1.5  # +50% confidence
+                result['alignment_score'] = 3
+                result['reasoning'] = '🎯 PERFECT MTF ALIGNMENT: All timeframes BULLISH'
+                
+            elif bearish_count == 3:
+                result['mtf_aligned'] = True
+                result['direction'] = 'BEARISH'
+                result['confidence_boost'] = 1.5  # +50% confidence
+                result['alignment_score'] = 3
+                result['reasoning'] = '🎯 PERFECT MTF ALIGNMENT: All timeframes BEARISH'
+                
+            # STRONG ALIGNMENT (2 out of 3 timeframes agree, including hourly)
+            elif bullish_count == 2 and trend_60m == 'BULLISH':
+                result['mtf_aligned'] = True
+                result['direction'] = 'BULLISH'
+                result['confidence_boost'] = 1.2  # +20% confidence
+                result['alignment_score'] = 2
+                result['reasoning'] = '📈 STRONG MTF: Hourly + 1 other BULLISH'
+                
+            elif bearish_count == 2 and trend_60m == 'BEARISH':
+                result['mtf_aligned'] = True
+                result['direction'] = 'BEARISH'
+                result['confidence_boost'] = 1.2  # +20% confidence
+                result['alignment_score'] = 2
+                result['reasoning'] = '📉 STRONG MTF: Hourly + 1 other BEARISH'
+                
+            else:
+                # NO ALIGNMENT - Block trade
+                result['mtf_aligned'] = False
+                result['direction'] = 'NEUTRAL'
+                result['confidence_boost'] = 0.5  # Reduce confidence by 50%
+                result['alignment_score'] = max(bullish_count, bearish_count)
+                result['reasoning'] = f'⚠️ MTF CONFLICT: 60m={trend_60m}, 15m={trend_15m}, 5m={trend_5m}'
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in multi-timeframe analysis for {symbol}: {e}")
+            return {
+                'mtf_aligned': False,
+                'direction': 'NEUTRAL',
+                'confidence_boost': 0.5,
+                'timeframes': {'5min': 'ERROR', '15min': 'ERROR', '60min': 'ERROR'},
+                'alignment_score': 0,
+                'reasoning': f'MTF analysis error: {str(e)}'
+            }
 
     def _detect_market_condition(self, symbol: str, market_data: Dict[str, Any]) -> str:
         """

@@ -541,8 +541,10 @@ class RiskManager:
             max_concentration = total_capital * self.risk_limits['max_concentration_percent']
             
             # Get current exposure to this symbol
+            # FIXED: ProfessionalPosition doesn't have .value, use current_price * quantity
             current_exposure = sum(
-                pos.value for pos in self.position_tracker.positions.values()
+                abs(pos.current_price * pos.quantity) 
+                for pos in self.position_tracker.positions.values()
                 if pos.symbol == symbol
             )
             
