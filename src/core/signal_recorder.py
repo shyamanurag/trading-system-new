@@ -167,7 +167,9 @@ class SignalRecorder:
         # Configuration
         self.max_records = self.config.get('max_records', 1000)
         self.cleanup_interval_hours = self.config.get('cleanup_interval_hours', 24)
-        self.signal_validity_hours = self.config.get('signal_validity_hours', 4)
+        # 🎯 CRITICAL: Signals expire after 5 minutes (0.0833 hours) for intraday trading
+        # This ensures old signals from morning don't show up in afternoon
+        self.signal_validity_hours = self.config.get('signal_validity_hours', 5/60)  # 5 minutes
         
         # Database connection (if available)
         self.db_enabled = False
@@ -212,6 +214,17 @@ class SignalRecorder:
                 entry_price, stop_loss, target, action
             )
             
+            # 🎯 CRITICAL: Different validity periods for intraday vs swing signals
+            is_intraday = signal.get('is_intraday', True)  # Default to intraday
+            trading_mode = signal.get('trading_mode', 'INTRADAY')
+            
+            if is_intraday or trading_mode == 'INTRADAY':
+                # Intraday signals expire after 5 minutes (fast-moving market)
+                validity_hours = 5/60  # 5 minutes
+            else:
+                # Swing signals expire after 4 hours (can hold overnight)
+                validity_hours = 4.0
+            
             # Create signal record
             signal_record = SignalRecord(
                 signal_id=signal_id,
@@ -229,7 +242,7 @@ class SignalRecorder:
                 risk_percent=risk_percent,
                 reward_percent=reward_percent,
                 metadata=signal.get('metadata', {}),
-                valid_until=datetime.now() + timedelta(hours=self.signal_validity_hours)
+                valid_until=datetime.now() + timedelta(hours=validity_hours)
             )
             
             # Store signal record
@@ -309,11 +322,28 @@ class SignalRecorder:
             # Clean up expired recommendations
             await self._cleanup_expired_signals()
             
-            # Get active recommendations
-            active_recommendations = [
-                rec for rec in self.elite_recommendations 
-                if rec.get('status') in ['ACTIVE', 'GENERATED', 'PENDING_EXECUTION']
-            ]
+            # Get active recommendations (only those not expired)
+            current_time = datetime.now()
+            active_recommendations = []
+            for rec in self.elite_recommendations:
+                # Check status
+                if rec.get('status') not in ['ACTIVE', 'GENERATED', 'PENDING_EXECUTION']:
+                    continue
+                
+                # 🎯 CRITICAL: Check valid_until time - don't show expired signals
+                valid_until_str = rec.get('valid_until')
+                if valid_until_str:
+                    try:
+                        valid_until = datetime.fromisoformat(valid_until_str)
+                        if current_time > valid_until:
+                            # Signal expired - mark it
+                            rec['status'] = 'EXPIRED'
+                            logger.debug(f"🗑️ Filtering expired signal: {rec.get('symbol')} (expired at {valid_until_str})")
+                            continue
+                    except:
+                        pass  # If parsing fails, include the signal
+                
+                active_recommendations.append(rec)
             
             # 🎯 UPDATE CURRENT PRICES for all active recommendations
             updated_recommendations = []
@@ -521,6 +551,9 @@ class SignalRecorder:
             for signal_id, record in self.signal_records.items():
                 if record.valid_until and current_time > record.valid_until:
                     if record.status in [SignalStatus.GENERATED, SignalStatus.PENDING_EXECUTION]:
+                        # Calculate how long ago it expired
+                        time_since_expiry = current_time - record.valid_until
+                        logger.debug(f"🗑️ Expiring signal: {record.symbol} {record.action} (expired {int(time_since_expiry.total_seconds()/60)}min ago)")
                         record.status = SignalStatus.EXPIRED
                         expired_signal_ids.append(signal_id)
             
@@ -538,6 +571,7 @@ class SignalRecorder:
                 )
                 
                 # Keep only max_records
+                removed_count = len(self.signal_records) - self.max_records
                 self.signal_records = dict(sorted_records[:self.max_records])
                 
                 # Update elite recommendations to match
@@ -546,9 +580,11 @@ class SignalRecorder:
                     rec for rec in self.elite_recommendations
                     if rec.get('recommendation_id') in active_signal_ids
                 ]
+                
+                logger.info(f"🗑️ Removed {removed_count} old signals (exceeded max limit {self.max_records})")
             
             if expired_signal_ids:
-                logger.info(f"🧹 Cleaned up {len(expired_signal_ids)} expired signals")
+                logger.info(f"🧹 Cleaned up {len(expired_signal_ids)} expired signals (5min for intraday, 4hr for swing)")
                 
         except Exception as e:
             logger.error(f"Error cleaning up expired signals: {e}")
