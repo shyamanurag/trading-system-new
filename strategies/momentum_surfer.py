@@ -1367,6 +1367,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             hp_trend_direction = 0.0
             macd_signal = None
             macd_crossover = None
+            macd_state = 'neutral'  # Current MACD state (not just crossover)
             bollinger_squeeze = False
             bollinger_breakout = None
             rsi_divergence = None
@@ -1387,11 +1388,12 @@ class EnhancedMomentumSurfer(BaseStrategy):
             if len(prices) >= 26:
                 macd_data = self.calculate_macd_signal(list(prices))
                 macd_signal = macd_data.get('histogram', 0)
-                macd_crossover = macd_data.get('crossover')  # 'bullish', 'bearish', or None
+                macd_crossover = macd_data.get('crossover')  # 'bullish', 'bearish', or None (only at crossover moment)
+                macd_state = macd_data.get('state', 'neutral')  # Current state: 'bullish', 'bearish', 'neutral'
                 macd_divergence = macd_data.get('divergence')  # 'bullish', 'bearish', or None
                 
                 if macd_crossover:
-                    logger.debug(f"📊 {symbol} MACD CROSSOVER: {macd_crossover}")
+                    logger.info(f"📊 {symbol} MACD CROSSOVER: {macd_crossover} (state={macd_state})")
             
             # ============= PHASE 2: BOLLINGER BANDS INTEGRATION =============
             if len(prices) >= 20:
@@ -1573,7 +1575,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 logger.info(f"   📈 Price: {change_percent:+.2f}% | Vol: {volume_ratio:.1f}x | Candle: {'GREEN' if is_green_candle else 'RED'}")
                 logger.info(f"   🕯️ Buy Pressure: {buying_pressure:.0%} | Sell Pressure: {selling_pressure:.0%}")
                 logger.info(f"   📉 RSI: {rsi:.1f} | Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f} | HP: {hp_trend_direction:+.2%}")
-                logger.info(f"   🔄 Mean Rev: {mean_reversion_prob:.0%} | MACD: {macd_crossover or 'neutral'} | Bollinger: {'SQUEEZE!' if bollinger_squeeze else 'normal'}")
+                logger.info(f"   🔄 Mean Rev: {mean_reversion_prob:.0%} | MACD: {macd_state} | Bollinger: {'SQUEEZE!' if bollinger_squeeze else 'normal'}")
                 logger.info(f"   📊 Cross-Sectional Rank: {cross_sectional_rank:.0%} | Regime: {momentum_regime}")
                 if rsi_divergence:
                     logger.info(f"   🎯 RSI DIVERGENCE: {rsi_divergence.upper()}")

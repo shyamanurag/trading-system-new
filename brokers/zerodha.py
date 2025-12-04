@@ -2476,13 +2476,14 @@ class ZerodhaIntegration:
             logger.info(f"🔍 Fetching option chain for {underlying_symbol} expiry={expiry}")
             
             # Step 1: Map internal symbol to Zerodha trading symbol
+            # 🔥 FIX: Zerodha index names for spot price quotes
             symbol_map = {
                 'NIFTY-I': 'NIFTY 50',
                 'NIFTY': 'NIFTY 50',
                 'BANKNIFTY-I': 'NIFTY BANK',
                 'BANKNIFTY': 'NIFTY BANK',
-                'FINNIFTY-I': 'FINNIFTY',
-                'FINNIFTY': 'FINNIFTY',
+                'FINNIFTY-I': 'NIFTY FIN SERVICE',  # 🔥 Fixed: Zerodha uses full name
+                'FINNIFTY': 'NIFTY FIN SERVICE',    # 🔥 Fixed: Zerodha uses full name
                 'MIDCPNIFTY-I': 'NIFTY MID SELECT',
                 'MIDCPNIFTY': 'NIFTY MID SELECT'
             }

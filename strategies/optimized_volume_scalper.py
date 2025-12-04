@@ -1740,6 +1740,7 @@ class OptimizedVolumeScalper(BaseStrategy):
             # ============= PHASE 2: ADVANCED INDICATORS =============
             rsi = 50.0
             macd_crossover = None
+            macd_state = 'neutral'
             bollinger_squeeze = False
             bollinger_breakout = None
             mean_reversion_prob = 0.5
@@ -1761,6 +1762,7 @@ class OptimizedVolumeScalper(BaseStrategy):
             if len(prices) >= 26:
                 macd_data = self.calculate_macd_signal(prices)
                 macd_crossover = macd_data.get('crossover')
+                macd_state = macd_data.get('state', 'neutral')
             
             if len(prices) >= 20:
                 bollinger_data = self.detect_bollinger_squeeze(symbol, prices)
@@ -1812,7 +1814,7 @@ class OptimizedVolumeScalper(BaseStrategy):
                     return None
             
             # Log validation passed with ALL indicators
-            logger.info(f"✅ {symbol} {ms_signal.signal_type}: RSI={rsi:.0f}, MACD={macd_crossover or 'neutral'}, Buy/Sell={buying_pressure:.0%}/{selling_pressure:.0%}")
+            logger.info(f"✅ {symbol} {ms_signal.signal_type}: RSI={rsi:.0f}, MACD={macd_state}, Buy/Sell={buying_pressure:.0%}/{selling_pressure:.0%}")
             logger.info(f"   📉 Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f} | HP: {hp_trend_direction:+.2%}")
             logger.info(f"   🔄 Mean Rev: {mean_reversion_prob:.0%} | Bollinger: {'SQUEEZE!' if bollinger_squeeze else 'normal'}")
             if bollinger_breakout:

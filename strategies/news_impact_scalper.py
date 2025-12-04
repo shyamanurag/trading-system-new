@@ -992,6 +992,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             # ============= PHASE 2: ADVANCED INDICATORS =============
             rsi = 50.0
             macd_crossover = None
+            macd_state = 'neutral'
             bollinger_squeeze = False
             bollinger_breakout = None
             mean_reversion_prob = 0.5
@@ -1013,6 +1014,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             if len(prices) >= 26:
                 macd_data = self.calculate_macd_signal(prices)
                 macd_crossover = macd_data.get('crossover')
+                macd_state = macd_data.get('state', 'neutral')
             
             if len(prices) >= 20:
                 bollinger_data = self.detect_bollinger_squeeze(underlying_symbol, prices)
@@ -1059,7 +1061,7 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             
             # Log all indicators
             logger.info(f"📊 {underlying_symbol} OPTIONS ANALYSIS:")
-            logger.info(f"   Bias: {weighted_bias:+.2f}% | RSI: {rsi:.0f} | MACD: {macd_crossover or 'neutral'}")
+            logger.info(f"   Bias: {weighted_bias:+.2f}% | RSI: {rsi:.0f} | MACD: {macd_state}")
             logger.info(f"   📉 Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f} | HP: {hp_trend_direction:+.2%}")
             logger.info(f"   🔄 Mean Reversion: {mean_reversion_prob:.0%} | Buy Pressure: {buying_pressure:.0%} | Sell Pressure: {selling_pressure:.0%}")
             if bollinger_squeeze:

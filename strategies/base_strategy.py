@@ -411,45 +411,48 @@ class BaseStrategy:
             mtf = self.mtf_data[symbol]
             
             # ============= 60-MINUTE (HOURLY) TREND =============
+            # 🔥 FIX: Use OR logic and lower thresholds for better signal detection
             trend_60m = 'NEUTRAL'
-            if mtf['60min'] and len(mtf['60min']) >= 5:
+            if mtf['60min'] and len(mtf['60min']) >= 3:
                 closes = [c['close'] for c in mtf['60min'][-10:]]
-                sma_5 = np.mean(closes[-5:])
+                sma_5 = np.mean(closes[-5:]) if len(closes) >= 5 else closes[-1]
                 current = closes[-1]
-                momentum = (closes[-1] / closes[-4] - 1) * 100 if len(closes) >= 4 else 0
+                momentum = (closes[-1] / closes[-3] - 1) * 100 if len(closes) >= 3 else 0
                 
-                if current > sma_5 * 1.002 and momentum > 0.3:
+                # Use OR logic: above SMA OR positive momentum
+                if current > sma_5 * 1.001 or momentum > 0.2:
                     trend_60m = 'BULLISH'
-                elif current < sma_5 * 0.998 and momentum < -0.3:
+                elif current < sma_5 * 0.999 or momentum < -0.2:
                     trend_60m = 'BEARISH'
             result['timeframes']['60min'] = trend_60m
             
             # ============= 15-MINUTE TREND =============
             trend_15m = 'NEUTRAL'
-            if mtf['15min'] and len(mtf['15min']) >= 5:
+            if mtf['15min'] and len(mtf['15min']) >= 3:
                 closes = [c['close'] for c in mtf['15min'][-15:]]
-                sma_5 = np.mean(closes[-5:])
+                sma_5 = np.mean(closes[-5:]) if len(closes) >= 5 else closes[-1]
                 current = closes[-1]
-                momentum = (closes[-1] / closes[-4] - 1) * 100 if len(closes) >= 4 else 0
+                momentum = (closes[-1] / closes[-3] - 1) * 100 if len(closes) >= 3 else 0
                 
-                if current > sma_5 * 1.001 and momentum > 0.2:
+                if current > sma_5 * 1.0005 or momentum > 0.15:
                     trend_15m = 'BULLISH'
-                elif current < sma_5 * 0.999 and momentum < -0.2:
+                elif current < sma_5 * 0.9995 or momentum < -0.15:
                     trend_15m = 'BEARISH'
             result['timeframes']['15min'] = trend_15m
             
             # ============= 5-MINUTE TREND (Entry Timing) =============
             trend_5m = 'NEUTRAL'
-            if mtf['5min'] and len(mtf['5min']) >= 5:
+            if mtf['5min'] and len(mtf['5min']) >= 3:
                 closes = [c['close'] for c in mtf['5min'][-20:]]
-                sma_5 = np.mean(closes[-5:])
+                sma_5 = np.mean(closes[-5:]) if len(closes) >= 5 else closes[-1]
                 sma_10 = np.mean(closes[-10:]) if len(closes) >= 10 else sma_5
                 current = closes[-1]
-                momentum = (closes[-1] / closes[-3] - 1) * 100 if len(closes) >= 3 else 0
+                momentum = (closes[-1] / closes[-2] - 1) * 100 if len(closes) >= 2 else 0
                 
-                if current > sma_5 and sma_5 > sma_10 and momentum > 0.1:
+                # Simpler logic for 5-min: just above/below recent average
+                if current > sma_5 or momentum > 0.1:
                     trend_5m = 'BULLISH'
-                elif current < sma_5 and sma_5 < sma_10 and momentum < -0.1:
+                elif current < sma_5 or momentum < -0.1:
                     trend_5m = 'BEARISH'
             result['timeframes']['5min'] = trend_5m
             
@@ -2350,13 +2353,6 @@ class BaseStrategy:
         except Exception as e:
             logger.error(f"Professional position sizing failed for {symbol}: {e}")
             return capital * 0.02  # 2% fallback
-            
-            return max(min_atr, min(atr, max_atr))
-            
-        except Exception as e:
-            logger.error(f"Error calculating ATR for {symbol}: {e}")
-            # Fallback to simple range calculation
-            return current_high - current_low if current_high > current_low else current_close * 0.01
     
     def calculate_dynamic_stop_loss(self, entry_price: float, atr: float, action: str, 
                                    multiplier: float = 2.0, min_percent: float = 0.5, 
