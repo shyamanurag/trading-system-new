@@ -301,10 +301,12 @@ class SignalDeduplicator:
                         logger.info(f"✅ {symbol} position closed (qty=0) - allowing new signal")
                         return False  # Allow - position was closed
                 else:
-                    logger.info(f"✅ SIGNAL ALLOWED: {symbol} {action} - no active position")
+                    # 🎯 CRITICAL: No position in tracker = position was closed or never opened
+                    # DO NOT check Redis in this case - manually squared-off positions should allow re-entry
+                    logger.info(f"✅ SIGNAL ALLOWED: {symbol} {action} - no active position in tracker")
                     return False  # Allow - no position
             
-            # Fallback to Redis check if position tracker not available
+            # Only use Redis fallback if position tracker is NOT available at all
             if not self.redis_client:
                 logger.warning(f"🚨 NO POSITION TRACKER OR REDIS: Cannot check for duplicate signal {signal.get('symbol')} - allowing execution")
                 return False
