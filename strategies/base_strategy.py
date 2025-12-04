@@ -2478,49 +2478,64 @@ class BaseStrategy:
             if len(prices) < period:
                 return {'squeezing': False, 'breakout_direction': None, 'squeeze_intensity': 0.0}
             
-            recent_prices = prices[-period:]
+            recent_prices = np.array(prices[-period:])
             
             # Calculate Bollinger Bands
             sma = np.mean(recent_prices)
             std = np.std(recent_prices)
+            
+            # 🔥 FIX: Handle near-zero std (flat prices)
+            if std < 0.0001 or sma <= 0:
+                return {'squeezing': False, 'breakout_direction': None, 'squeeze_intensity': 0.0}
+            
             upper_band = sma + (2 * std)
             lower_band = sma - (2 * std)
-            bandwidth = (upper_band - lower_band) / sma
+            bandwidth = (upper_band - lower_band) / sma  # Bandwidth as % of price
             
-            # Historical bandwidth for comparison
+            # 🔥 FIX: Use percentage bandwidth threshold instead of historical comparison
+            # Typical bandwidth is 2-8% of price. Squeeze < 2% is tight.
+            SQUEEZE_THRESHOLD = 0.02  # 2% bandwidth = squeeze
+            NORMAL_BANDWIDTH = 0.04   # 4% = normal volatility
+            
+            is_squeezing = bandwidth < SQUEEZE_THRESHOLD
+            squeeze_intensity = max(0, (NORMAL_BANDWIDTH - bandwidth) / NORMAL_BANDWIDTH)
+            
+            # Also check historical bandwidth if we have enough data
             if len(prices) >= period * 2:
-                historical_prices = prices[-period*2:-period]
-                hist_sma = np.mean(historical_prices)
+                historical_prices = np.array(prices[-period*2:-period])
                 hist_std = np.std(historical_prices)
-                hist_bandwidth = (2 * hist_std * 2) / hist_sma
+                hist_sma = np.mean(historical_prices)
                 
-                # Squeeze detected when current bandwidth < 75% of historical
-                is_squeezing = bandwidth < (hist_bandwidth * 0.75)
-                squeeze_intensity = 1 - (bandwidth / hist_bandwidth) if hist_bandwidth > 0 else 0
-                
-                # Detect breakout direction
-                current_price = prices[-1]
-                breakout_direction = None
-                
-                if is_squeezing:
-                    # Check momentum
-                    recent_momentum = (prices[-1] - prices[-5]) / prices[-5] if len(prices) >= 5 else 0
+                if hist_std > 0.0001 and hist_sma > 0:
+                    hist_bandwidth = (2 * hist_std * 2) / hist_sma
                     
-                    if current_price > sma and recent_momentum > 0.002:  # Breaking up
-                        breakout_direction = 'UP'
-                        logger.info(f"🎯 SQUEEZE BREAKOUT UP detected for {symbol}: Intensity {squeeze_intensity:.2%}")
-                    elif current_price < sma and recent_momentum < -0.002:  # Breaking down
-                        breakout_direction = 'DOWN'
-                        logger.info(f"🎯 SQUEEZE BREAKOUT DOWN detected for {symbol}: Intensity {squeeze_intensity:.2%}")
-                
-                return {
-                    'squeezing': is_squeezing,
-                    'breakout_direction': breakout_direction,
-                    'squeeze_intensity': squeeze_intensity,
-                    'bandwidth': bandwidth
-                }
+                    # 🔥 FIX: More sensitive squeeze detection (50% of historical)
+                    is_squeezing = is_squeezing or (bandwidth < hist_bandwidth * 0.50)
+                    squeeze_intensity = max(squeeze_intensity, 1 - (bandwidth / hist_bandwidth) if hist_bandwidth > 0 else 0)
             
-            return {'squeezing': False, 'breakout_direction': None, 'squeeze_intensity': 0.0}
+            # Detect breakout direction
+            current_price = prices[-1]
+            breakout_direction = None
+            
+            if is_squeezing or squeeze_intensity > 0.3:
+                # Check momentum for breakout direction
+                recent_momentum = (prices[-1] - prices[-5]) / prices[-5] if len(prices) >= 5 else 0
+                
+                if current_price > sma and recent_momentum > 0.001:  # 🔥 FIX: More sensitive threshold
+                    breakout_direction = 'up'
+                    logger.info(f"🎯 SQUEEZE BREAKOUT UP: {symbol} | Intensity: {squeeze_intensity:.0%} | BW: {bandwidth:.2%}")
+                elif current_price < sma and recent_momentum < -0.001:
+                    breakout_direction = 'down'
+                    logger.info(f"🎯 SQUEEZE BREAKOUT DOWN: {symbol} | Intensity: {squeeze_intensity:.0%} | BW: {bandwidth:.2%}")
+                elif is_squeezing:
+                    logger.debug(f"🔥 SQUEEZE DETECTED: {symbol} | BW: {bandwidth:.2%} | Intensity: {squeeze_intensity:.0%} | Awaiting breakout direction")
+            
+            return {
+                'squeezing': is_squeezing,
+                'breakout_direction': breakout_direction,
+                'squeeze_intensity': squeeze_intensity,
+                'bandwidth': bandwidth
+            }
             
         except Exception as e:
             logger.error(f"Error detecting Bollinger squeeze: {e}")
@@ -3962,6 +3977,13 @@ class BaseStrategy:
             
             if mtf_result['confidence_multiplier'] != 1.0:
                 logger.info(f"   🎯 Confidence: {original_confidence:.1f} → {confidence:.1f} (MTF: {mtf_result['confidence_multiplier']:.2f}x)")
+            
+            # 🔥 CRITICAL FIX: Second confidence check AFTER MTF adjustment
+            # Minimum confidence threshold to ensure high-accuracy trades only
+            MIN_FINAL_CONFIDENCE = 7.0  # Absolute minimum after all adjustments
+            if confidence < MIN_FINAL_CONFIDENCE:
+                logger.warning(f"🗑️ MTF CONFIDENCE TOO LOW: {symbol} {action} - Final confidence {confidence:.1f}/10 < {MIN_FINAL_CONFIDENCE} minimum")
+                return None
 
             # Validate signal levels
             if not self.validate_signal_levels(entry_price, stop_loss, target, action):
