@@ -769,6 +769,21 @@ class RiskManager:
                 }
             }
     
+    def _is_options_symbol(self, symbol: str) -> bool:
+        """Check if symbol is an options contract"""
+        if not symbol:
+            return False
+        # Options symbols typically end with CE (Call) or PE (Put)
+        symbol_upper = symbol.upper()
+        if symbol_upper.endswith('CE') or symbol_upper.endswith('PE'):
+            return True
+        # Also check for options format patterns like NIFTY24DEC26000CE
+        import re
+        options_pattern = r'(NIFTY|BANKNIFTY|FINNIFTY|[A-Z]+)\d{2}[A-Z]{3}\d+[CP]E'
+        if re.match(options_pattern, symbol_upper):
+            return True
+        return False
+
     def _calculate_signal_risk_score(self, signal: Signal) -> float:
         """Calculate risk score for signal (0-100, lower is better)"""
         try:

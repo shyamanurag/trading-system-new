@@ -2952,18 +2952,40 @@ class ZerodhaIntegration:
     async def _get_instrument_token(self, symbol: str, exchange: str = "NSE") -> Optional[int]:
         """Get instrument token for a symbol"""
         try:
+            # Map internal index symbols to Zerodha trading symbols for historical data
+            index_symbol_map = {
+                'NIFTY-I': 'NIFTY 50',
+                'NIFTY': 'NIFTY 50',
+                'BANKNIFTY-I': 'NIFTY BANK',
+                'BANKNIFTY': 'NIFTY BANK',
+                'FINNIFTY-I': 'NIFTY FIN SERVICE',
+                'FINNIFTY': 'NIFTY FIN SERVICE',
+                'MIDCPNIFTY-I': 'NIFTY MID SELECT',
+                'MIDCPNIFTY': 'NIFTY MID SELECT'
+            }
+            
+            # Apply mapping for index symbols
+            lookup_symbol = index_symbol_map.get(symbol, symbol)
+            
             # Check cache first
-            cache_key = f"{exchange}:{symbol}"
+            cache_key = f"{exchange}:{lookup_symbol}"
             if cache_key in self._symbol_to_token:
                 return self._symbol_to_token[cache_key]
+            
+            # Also check original symbol in cache
+            original_cache_key = f"{exchange}:{symbol}"
+            if original_cache_key in self._symbol_to_token:
+                return self._symbol_to_token[original_cache_key]
             
             # Fetch instruments if not cached
             instruments = await self.get_instruments(exchange)
             
             for inst in instruments:
-                if inst.get('tradingsymbol') == symbol:
+                if inst.get('tradingsymbol') == lookup_symbol:
                     token = inst.get('instrument_token')
+                    # Cache both original and mapped symbols
                     self._symbol_to_token[cache_key] = token
+                    self._symbol_to_token[original_cache_key] = token
                     return token
             
             return None
