@@ -3923,6 +3923,20 @@ class BaseStrategy:
                 logger.warning(f"🚫 MTF BLOCK: {symbol} {action} - Timeframes not aligned ({mtf_result['reasoning']})")
                 return None
             
+            # 🔥 CRITICAL: BLOCK if action CONFLICTS with strong MTF alignment
+            # If 3/3 or 2/3 timeframes are BEARISH but action is BUY → BLOCK
+            # If 3/3 or 2/3 timeframes are BULLISH but action is SELL → BLOCK
+            mtf_direction = mtf_result.get('direction', 'NEUTRAL')
+            if mtf_result['alignment_score'] >= 2 and mtf_direction != 'NEUTRAL':
+                action_conflicts = (
+                    (mtf_direction == 'BEARISH' and action == 'BUY') or
+                    (mtf_direction == 'BULLISH' and action == 'SELL')
+                )
+                if action_conflicts:
+                    logger.warning(f"🚫 MTF CONFLICT BLOCK: {symbol} {action} - MTF shows {mtf_direction} "
+                                  f"({mtf_result['alignment_score']}/3 timeframes) but action is {action}")
+                    return None
+            
             # Apply confidence multiplier from MTF
             original_confidence = confidence
             confidence = confidence * mtf_result['confidence_multiplier']
