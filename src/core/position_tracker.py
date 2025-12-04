@@ -484,13 +484,11 @@ class ProductionPositionTracker:
                 side=side,
                 entry_time=position_data.get('entry_time', now),
                 last_updated=now,
-                strategy=position_data.get('strategy', 'unknown'),
+                strategy_source=position_data.get('strategy', 'unknown'),  # Fixed: was 'strategy'
                 sector='unknown',  # Can be enriched later
-                stop_loss=position_data.get('stop_loss', 0),
-                target=position_data.get('target', 0),
-                max_price=current_price,
-                min_price=current_price,
-                trailing_stop_active=False
+                stop_loss=position_data.get('stop_loss'),
+                target=position_data.get('target'),
+                trailing_stop=None  # Fixed: removed invalid fields
             )
             
             self.positions[symbol] = position
