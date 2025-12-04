@@ -628,6 +628,169 @@ class RegimeAdaptiveController:
 
         self._regime_lock = asyncio.Lock()
         
+        # 🔥 MULTI-TIMEFRAME DATA STORAGE
+        self.mtf_data = {}  # symbol -> {'5min': [], '15min': [], '60min': []}
+        self._mtf_fetched = set()  # Track which symbols have MTF data
+        
+    async def fetch_multi_timeframe_data(self, symbol: str = 'NIFTY 50') -> bool:
+        """
+        🔥 MULTI-TIMEFRAME ANALYSIS for Regime Detection
+        Fetches 5-min, 15-min, and 60-min candles for higher accuracy regime identification.
+        """
+        try:
+            if symbol in self._mtf_fetched:
+                return True  # Already fetched
+            
+            if symbol not in self.mtf_data:
+                self.mtf_data[symbol] = {'5min': [], '15min': [], '60min': []}
+            
+            # Get Zerodha client
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if not orchestrator or not hasattr(orchestrator, 'zerodha_client') or not orchestrator.zerodha_client:
+                return False
+            
+            zerodha_client = orchestrator.zerodha_client
+            from datetime import datetime, timedelta
+            
+            # ============= FETCH 5-MINUTE CANDLES =============
+            candles_5m = await zerodha_client.get_historical_data(
+                symbol=symbol,
+                interval='5minute',
+                from_date=datetime.now() - timedelta(days=3),
+                to_date=datetime.now()
+            )
+            if candles_5m and len(candles_5m) >= 14:
+                self.mtf_data[symbol]['5min'] = candles_5m[-100:]
+            
+            # ============= FETCH 15-MINUTE CANDLES =============
+            candles_15m = await zerodha_client.get_historical_data(
+                symbol=symbol,
+                interval='15minute',
+                from_date=datetime.now() - timedelta(days=5),
+                to_date=datetime.now()
+            )
+            if candles_15m and len(candles_15m) >= 14:
+                self.mtf_data[symbol]['15min'] = candles_15m[-50:]
+            
+            # ============= FETCH 60-MINUTE (HOURLY) CANDLES =============
+            candles_60m = await zerodha_client.get_historical_data(
+                symbol=symbol,
+                interval='60minute',
+                from_date=datetime.now() - timedelta(days=10),
+                to_date=datetime.now()
+            )
+            if candles_60m and len(candles_60m) >= 14:
+                self.mtf_data[symbol]['60min'] = candles_60m[-30:]
+            
+            self._mtf_fetched.add(symbol)
+            
+            tf_5m = len(self.mtf_data[symbol]['5min'])
+            tf_15m = len(self.mtf_data[symbol]['15min'])
+            tf_60m = len(self.mtf_data[symbol]['60min'])
+            logger.info(f"📊 REGIME MTF DATA: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m}")
+            
+            return True
+            
+        except Exception as e:
+            logger.debug(f"⚠️ Regime MTF fetch error for {symbol}: {e}")
+            return False
+    
+    def analyze_mtf_regime(self) -> Dict:
+        """
+        🔥 MULTI-TIMEFRAME REGIME ANALYSIS
+        Analyzes regime across multiple timeframes for higher accuracy detection.
+        """
+        try:
+            result = {
+                'aligned': False,
+                'hourly_regime': 'NEUTRAL',
+                '15min_regime': 'NEUTRAL',
+                '5min_regime': 'NEUTRAL',
+                'confidence_boost': 0.0,
+                'reasoning': ''
+            }
+            
+            symbol = 'NIFTY 50'
+            if symbol not in self.mtf_data:
+                result['reasoning'] = 'No MTF data - using single timeframe'
+                return result
+            
+            mtf = self.mtf_data[symbol]
+            
+            # ============= 60-MINUTE (HOURLY) REGIME =============
+            hourly_regime = 'NEUTRAL'
+            if mtf['60min'] and len(mtf['60min']) >= 5:
+                closes = [c['close'] for c in mtf['60min'][-10:]]
+                sma_5 = np.mean(closes[-5:])
+                current = closes[-1]
+                momentum = (closes[-1] / closes[-4] - 1) * 100 if len(closes) >= 4 else 0
+                
+                if current > sma_5 * 1.002 and momentum > 0.3:
+                    hourly_regime = 'BULLISH'
+                elif current < sma_5 * 0.998 and momentum < -0.3:
+                    hourly_regime = 'BEARISH'
+                else:
+                    hourly_regime = 'NEUTRAL'
+            result['hourly_regime'] = hourly_regime
+            
+            # ============= 15-MINUTE REGIME =============
+            regime_15m = 'NEUTRAL'
+            if mtf['15min'] and len(mtf['15min']) >= 5:
+                closes = [c['close'] for c in mtf['15min'][-10:]]
+                sma_5 = np.mean(closes[-5:])
+                current = closes[-1]
+                momentum = (closes[-1] / closes[-3] - 1) * 100 if len(closes) >= 3 else 0
+                
+                if current > sma_5 * 1.001 and momentum > 0.2:
+                    regime_15m = 'BULLISH'
+                elif current < sma_5 * 0.999 and momentum < -0.2:
+                    regime_15m = 'BEARISH'
+                else:
+                    regime_15m = 'NEUTRAL'
+            result['15min_regime'] = regime_15m
+            
+            # ============= 5-MINUTE REGIME =============
+            regime_5m = 'NEUTRAL'
+            if mtf['5min'] and len(mtf['5min']) >= 5:
+                closes = [c['close'] for c in mtf['5min'][-20:]]
+                sma_10 = np.mean(closes[-10:])
+                current = closes[-1]
+                momentum = (closes[-1] / closes[-3] - 1) * 100 if len(closes) >= 3 else 0
+                
+                if current > sma_10 * 1.001 and momentum > 0.15:
+                    regime_5m = 'BULLISH'
+                elif current < sma_10 * 0.999 and momentum < -0.15:
+                    regime_5m = 'BEARISH'
+                else:
+                    regime_5m = 'NEUTRAL'
+            result['5min_regime'] = regime_5m
+            
+            # ============= ALIGNMENT CHECK =============
+            regimes = [hourly_regime, regime_15m, regime_5m]
+            bullish_count = regimes.count('BULLISH')
+            bearish_count = regimes.count('BEARISH')
+            
+            if bullish_count >= 2:
+                result['aligned'] = True
+                result['confidence_boost'] = 0.15 if bullish_count == 3 else 0.10
+                result['reasoning'] = f'MTF ALIGNED BULLISH ({bullish_count}/3 timeframes)'
+            elif bearish_count >= 2:
+                result['aligned'] = True
+                result['confidence_boost'] = 0.15 if bearish_count == 3 else 0.10
+                result['reasoning'] = f'MTF ALIGNED BEARISH ({bearish_count}/3 timeframes)'
+            else:
+                result['aligned'] = False
+                result['confidence_boost'] = -0.10  # Penalize conflicting timeframes
+                result['reasoning'] = f'MTF CONFLICT: 60m={hourly_regime}, 15m={regime_15m}, 5m={regime_5m}'
+            
+            return result
+            
+        except Exception as e:
+            logger.debug(f"MTF regime analysis error: {e}")
+            return {'aligned': False, 'confidence_boost': 0.0, 'reasoning': str(e)}
+        
     def _initialize_strategy(self):
         """Initialize strategy-specific components"""
         pass
@@ -1065,18 +1228,22 @@ class RegimeAdaptiveController:
             return "Regime risk status report generation failed"
 
     async def on_market_data(self, data: Dict):
-        """PROFESSIONAL REGIME ANALYSIS with advanced mathematical models"""
+        """PROFESSIONAL REGIME ANALYSIS with advanced mathematical models and MTF"""
         if not self.is_active:
             return
             
         try:
+            # STEP 0: Fetch Multi-Timeframe data for NIFTY (once per session)
+            if 'NIFTY 50' not in self._mtf_fetched:
+                await self.fetch_multi_timeframe_data('NIFTY 50')
+            
             # STEP 1: Process market data with professional feature extraction
             await self._extract_professional_features(data)
             
             # STEP 2: Update Kalman Filter state estimation
             await self._update_kalman_state()
             
-            # STEP 3: Professional regime detection with HMM and GMM
+            # STEP 3: Professional regime detection with HMM, GMM and MTF
             await self._detect_professional_regime()
             
             # STEP 4: Calculate regime confidence and transition probabilities
@@ -1320,10 +1487,22 @@ class RegimeAdaptiveController:
             except Exception as hmm_error:
                 logger.debug(f"HMM inference skipped: {hmm_error}")
             
-            # ENSEMBLE REGIME DECISION (now includes HMM)
+            # METHOD 5: MULTI-TIMEFRAME REGIME ANALYSIS (NEW!)
+            mtf_analysis = self.analyze_mtf_regime()
+            mtf_aligned = mtf_analysis.get('aligned', False)
+            mtf_boost = mtf_analysis.get('confidence_boost', 0.0)
+            
+            if mtf_aligned:
+                logger.info(f"📊 MTF REGIME: {mtf_analysis['reasoning']} | "
+                           f"60m={mtf_analysis['hourly_regime']}, "
+                           f"15m={mtf_analysis['15min_regime']}, "
+                           f"5m={mtf_analysis['5min_regime']}")
+            
+            # ENSEMBLE REGIME DECISION (now includes HMM + MTF)
             final_regime = self._ensemble_regime_decision(
                 vol_regime, regime_id, rule_based_regime, gmm_confidence,
-                hmm_regime=hmm_regime, hmm_confidence=hmm_confidence
+                hmm_regime=hmm_regime, hmm_confidence=hmm_confidence,
+                mtf_analysis=mtf_analysis
             )
             
             # Update regime history
@@ -1410,31 +1589,33 @@ class RegimeAdaptiveController:
     def _ensemble_regime_decision(self, vol_regime: str, gmm_regime_id: int, 
                                 rule_regime: MarketRegime, confidence: float,
                                 hmm_regime: MarketRegime = None, 
-                                hmm_confidence: float = 0.5) -> MarketRegime:
+                                hmm_confidence: float = 0.5,
+                                mtf_analysis: Dict = None) -> MarketRegime:
         """
         Ensemble decision combining multiple regime detection methods:
         1. GARCH Volatility Regime
         2. GMM Multivariate Regime
         3. Rule-based Regime
-        4. HMM Regime (newly integrated!)
+        4. HMM Regime
+        5. MTF Regime (NEW - Multi-Timeframe Analysis)
         """
         try:
             # Collect all regime votes with weights
             votes = {}
             
-            # Rule-based vote (weight: 0.3)
-            votes[rule_regime] = votes.get(rule_regime, 0) + 0.3
+            # Rule-based vote (weight: 0.25)
+            votes[rule_regime] = votes.get(rule_regime, 0) + 0.25
             
-            # Volatility regime vote (weight: 0.2)
+            # Volatility regime vote (weight: 0.15)
             if "HIGH" in vol_regime:
                 vol_r = MarketRegime.HIGH_VOLATILITY
             elif "LOW" in vol_regime:
                 vol_r = MarketRegime.LOW_VOLATILITY
             else:
                 vol_r = MarketRegime.TRANSITION
-            votes[vol_r] = votes.get(vol_r, 0) + 0.2
+            votes[vol_r] = votes.get(vol_r, 0) + 0.15
             
-            # GMM vote weighted by confidence (weight: 0.25)
+            # GMM vote weighted by confidence (weight: 0.20)
             gmm_regime_map = {
                 0: MarketRegime.LOW_VOLATILITY,
                 1: MarketRegime.HIGH_VOLATILITY,
@@ -1442,12 +1623,30 @@ class RegimeAdaptiveController:
                 3: MarketRegime.BEAR_TRENDING
             }
             gmm_regime = gmm_regime_map.get(gmm_regime_id % 4, MarketRegime.LOW_VOLATILITY)
-            votes[gmm_regime] = votes.get(gmm_regime, 0) + (0.25 * confidence)
+            votes[gmm_regime] = votes.get(gmm_regime, 0) + (0.20 * confidence)
             
-            # HMM vote weighted by confidence (weight: 0.25) - NEWLY INTEGRATED!
+            # HMM vote weighted by confidence (weight: 0.20)
             if hmm_regime is not None:
-                votes[hmm_regime] = votes.get(hmm_regime, 0) + (0.25 * hmm_confidence)
+                votes[hmm_regime] = votes.get(hmm_regime, 0) + (0.20 * hmm_confidence)
                 logger.debug(f"🧠 HMM VOTE: {hmm_regime.value} (confidence={hmm_confidence:.2f})")
+            
+            # MTF vote (weight: 0.20) - NEW INTEGRATION!
+            if mtf_analysis:
+                mtf_aligned = mtf_analysis.get('aligned', False)
+                hourly = mtf_analysis.get('hourly_regime', 'NEUTRAL')
+                
+                if mtf_aligned:
+                    # Strong MTF alignment - add significant weight
+                    if hourly == 'BULLISH':
+                        votes[MarketRegime.BULL_TRENDING] = votes.get(MarketRegime.BULL_TRENDING, 0) + 0.20
+                        logger.debug(f"📊 MTF VOTE: BULL_TRENDING (aligned)")
+                    elif hourly == 'BEARISH':
+                        votes[MarketRegime.BEAR_TRENDING] = votes.get(MarketRegime.BEAR_TRENDING, 0) + 0.20
+                        logger.debug(f"📊 MTF VOTE: BEAR_TRENDING (aligned)")
+                else:
+                    # Conflicting timeframes - vote for transition/neutral
+                    votes[MarketRegime.TRANSITION] = votes.get(MarketRegime.TRANSITION, 0) + 0.15
+                    logger.debug(f"📊 MTF VOTE: TRANSITION (conflicting timeframes)")
             
             # Find winner
             final_regime = max(votes.items(), key=lambda x: x[1])[0]
