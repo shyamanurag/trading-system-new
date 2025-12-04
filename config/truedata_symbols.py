@@ -8,6 +8,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# 🚨 FIX: Track if symbol list has been logged to avoid duplicate messages
+_symbols_logged = False
+
 # 🎯 DYNAMIC ZERODHA SYMBOL MAPPING - Auto-detects TrueData vs Zerodha differences
 ZERODHA_SYMBOL_MAPPING = {
     # 🎯 CRITICAL MAPPINGS ONLY - Rest will be auto-detected
@@ -128,7 +131,11 @@ def get_complete_fo_symbols() -> List[str]:
         'VTL', 'TCI', 'MAHLOG', 'GATI', 'SNOWMAN'
     ]
     
-    logger.info(f"📊 EXPANDED SYMBOL LIST: {len(indices + stocks)} total symbols")
+    # 🚨 FIX: Only log symbol count once to avoid duplicate log messages
+    global _symbols_logged
+    if not _symbols_logged:
+        logger.info(f"📊 EXPANDED SYMBOL LIST: {len(indices + stocks)} total symbols")
+        _symbols_logged = True
     return indices + stocks
 
 def get_autonomous_symbol_status():
@@ -470,7 +477,11 @@ def get_complete_fo_symbols() -> List[str]:
         'VTL', 'TCI', 'MAHLOG', 'GATI', 'SNOWMAN'
     ]
     
-    logger.info(f"📊 EXPANDED SYMBOL LIST: {len(indices + stocks)} total symbols")
+    # 🚨 FIX: Only log symbol count once to avoid duplicate log messages
+    global _symbols_logged
+    if not _symbols_logged:
+        logger.info(f"📊 EXPANDED SYMBOL LIST: {len(indices + stocks)} total symbols")
+        _symbols_logged = True
     return indices + stocks
 
 def get_autonomous_symbol_status():

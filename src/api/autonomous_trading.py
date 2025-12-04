@@ -205,13 +205,12 @@ async def start_trading(
                     logger.info("✅ PRESERVING existing Zerodha client (has fresh token)")
                     logger.info(f"   Token length: {len(existing_zerodha_client.access_token) if hasattr(existing_zerodha_client, 'access_token') and existing_zerodha_client.access_token else 0}")
                 
-                # Clear any existing problematic state
-                if hasattr(local_orchestrator, 'is_initialized'):
-                    local_orchestrator.is_initialized = False
+                # Clear running state but NOT initialization state
+                # 🚨 CRITICAL FIX: Don't clear is_initialized - let the guard in orchestrator handle it
                 if hasattr(local_orchestrator, 'is_running'):
                     local_orchestrator.is_running = False
                 
-                # Force full initialization
+                # Initialize if not already done (orchestrator has built-in guard)
                 init_success = await local_orchestrator.initialize()
                 
                 # 🚨 CRITICAL FIX: Restore the preserved zerodha_client after initialization

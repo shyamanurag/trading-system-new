@@ -355,6 +355,15 @@ class ProductionPositionTracker:
                 
             else:
                 # Create new position
+                # 🚨 CRITICAL FIX: Prevent creating new positions with negative quantity
+                # For equity (cash market), negative quantity means SELL without existing position
+                # This can happen when processing historical trades out of order
+                is_options = 'CE' in symbol or 'PE' in symbol
+                if quantity < 0 and not is_options:
+                    self.logger.warning(f"⚠️ IGNORED: Cannot create NEW position with negative qty for {symbol} (qty={quantity})")
+                    self.logger.warning(f"   This usually means a SELL trade was processed without a matching BUY")
+                    return True  # Return success to avoid cascading errors
+                
                 position = Position(
                     symbol=symbol,
                     quantity=quantity,

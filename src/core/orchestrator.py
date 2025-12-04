@@ -623,6 +623,11 @@ class TradingOrchestrator:
     async def initialize(self) -> bool:
         """Initialize the orchestrator asynchronously"""
         try:
+            # 🚨 CRITICAL FIX: Prevent double initialization
+            if hasattr(self, '_is_fully_initialized') and self._is_fully_initialized:
+                self.logger.info("⏭️ Orchestrator already initialized - skipping re-initialization")
+                return True
+            
             self.logger.info("🚀 Initializing TradingOrchestrator async components...")
             
             # CRITICAL FIX: Test Redis connection with retry logic (moved from __init__)
@@ -714,12 +719,8 @@ class TradingOrchestrator:
                 await self.trade_engine.initialize()
                 self.logger.info("✅ Trade engine initialized")
             
-            # Load strategies
-            await self._load_strategies()
-            self.logger.info("✅ Strategies loaded")
-            
-            # 🚨 CRITICAL FIX: Check if zerodha_client exists AND has a valid token before recreating
-            # This prevents overwriting a client that was updated with a fresh token from /auth/submit-token
+            # 🚨 CRITICAL FIX: Initialize Zerodha client BEFORE loading strategies
+            # Strategies need Zerodha client for warmup (historical data fetching)
             if self.zerodha_client:
                 # Check if existing client has a token
                 has_token = hasattr(self.zerodha_client, 'access_token') and self.zerodha_client.access_token
@@ -733,10 +734,14 @@ class TradingOrchestrator:
                     if self.zerodha_client:
                         self.logger.info("✅ Zerodha client initialized successfully")
                     else:
-                        self.logger.error("❌ Zerodha client initialization returned None")
+                        self.logger.warning("⚠️ Zerodha client initialization returned None - strategies will warmup from live data")
                 except Exception as e:
                     self.logger.error(f"❌ Zerodha client initialization failed: {e}")
                     self.zerodha_client = None
+            
+            # Load strategies (NOW with Zerodha client available for warmup)
+            await self._load_strategies()
+            self.logger.info("✅ Strategies loaded")
             
             # Verify Zerodha connection (but don't reinitialize if already working)
             if self.zerodha_client:
@@ -803,6 +808,9 @@ class TradingOrchestrator:
             
             # 🔥 SIGNAL ENHANCER WARMUP: Pre-load historical data for accurate scoring
             await self._warmup_signal_enhancer()
+            
+            # 🚨 CRITICAL FIX: Mark as fully initialized to prevent double init
+            self._is_fully_initialized = True
             
             self.logger.info("🎉 TradingOrchestrator fully initialized and ready")
             return True
@@ -2993,7 +3001,15 @@ class TradingOrchestrator:
                         self.logger.info(f"⏸️ ELIMINATED: {strategy_key} (Duplicate capabilities removed)")
                         continue
                     
-                    # Initialize strategy
+                    # 🚨 CRITICAL FIX: Pass orchestrator reference to strategy BEFORE initialization
+                    # This allows strategies to access Zerodha client for warmup
+                    if hasattr(strategy_instance, 'set_orchestrator'):
+                        strategy_instance.set_orchestrator(self)
+                    else:
+                        # Direct assignment if no setter method
+                        strategy_instance.orchestrator = self
+                    
+                    # Initialize strategy (now with access to Zerodha client via orchestrator)
                     await strategy_instance.initialize()
                     
                     # CRITICAL: Validate strategy with backtesting before allowing live trading

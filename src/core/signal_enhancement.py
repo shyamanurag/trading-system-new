@@ -116,10 +116,17 @@ class SignalEnhancer:
             
             # Check if zerodha_client has get_historical_data method
             if hasattr(self.zerodha_client, 'get_historical_data'):
+                # 🚨 CRITICAL FIX: Use from_date/to_date parameters (not days)
+                from datetime import datetime, timedelta
+                to_date = datetime.now()
+                from_date = to_date - timedelta(days=days)
+                
                 candles = await self.zerodha_client.get_historical_data(
                     symbol=symbol,
                     interval='5minute',
-                    days=days
+                    from_date=from_date,
+                    to_date=to_date,
+                    exchange='NSE'
                 )
                 return candles if candles else []
             

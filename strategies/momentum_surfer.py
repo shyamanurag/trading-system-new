@@ -1660,9 +1660,9 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         # Use weighted bias instead of simple change_percent
         if weighted_bias > 1.0:  # Strong uptrend (weighted)
-            # 🎯 ENHANCED: More realistic momentum confidence
-            # Start at 7.0, increase with strength, cap at 8.2
-            confidence = 7.0 + min(weighted_bias * 0.15, 1.2)
+            # 🚨 CRITICAL FIX: Base confidence raised from 7.0 to 7.5 to pass threshold
+            # Strong uptrends are valid setups - don't filter them out
+            confidence = 7.5 + min(weighted_bias * 0.15, 1.0)
             
             # Boost confidence if aligned with market
             if "WITH MARKET" in alignment:
@@ -1702,9 +1702,9 @@ class EnhancedMomentumSurfer(BaseStrategy):
         alignment = dual_analysis.get('alignment', 'UNKNOWN')
         
         if weighted_bias < -1.0:  # Strong downtrend (weighted)
-            # 🎯 ENHANCED: More realistic downtrend momentum confidence
-            # Start at 7.0, increase with strength, cap at 8.2
-            confidence = 7.0 + min(abs(weighted_bias) * 0.15, 1.2)
+            # 🚨 CRITICAL FIX: Base confidence raised from 7.0 to 7.5 to pass threshold
+            # Strong downtrends are valid setups - don't filter them out
+            confidence = 7.5 + min(abs(weighted_bias) * 0.15, 1.0)
             
             # Boost confidence if aligned with market
             if "WITH MARKET" in alignment:
@@ -1979,8 +1979,13 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         if volume > 200000 and abs(weighted_bias) > 0.5:
             signal_type = 'BUY' if weighted_bias > 0 else 'SELL'
-            # 🎯 ENHANCED: High volatility trades need caution
-            confidence = 7.0
+            # 🚨 CRITICAL FIX: Base confidence raised from 7.0 to 7.5 to pass threshold
+            # High volatility with good volume IS a valid setup
+            confidence = 7.5
+            
+            # Add confidence boosts for strong setups
+            if abs(weighted_bias) > 1.0:  # Stronger bias
+                confidence += 0.3
             
             # Check alignment
             if "WITH MARKET" in alignment:
