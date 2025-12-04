@@ -365,12 +365,31 @@ class MarketDirectionalBias:
             if abs_move_pct >= 0.60:  # Catch extreme moves
                 move_zone = 'EXTREME'
             
-            # Determine directions
-            intraday_direction = 'BULLISH' if move_from_open > 5 else ('BEARISH' if move_from_open < -5 else 'NEUTRAL')
-            day_direction = 'BULLISH' if day_change_pct > 0.15 else ('BEARISH' if day_change_pct < -0.15 else 'NEUTRAL')
+            # Determine directions (with magnitude awareness)
+            intraday_direction = 'BULLISH' if intraday_pct > 0.05 else ('BEARISH' if intraday_pct < -0.05 else 'NEUTRAL')
+            day_direction = 'BULLISH' if day_change_pct > 0.05 else ('BEARISH' if day_change_pct < -0.05 else 'NEUTRAL')
+            
+            # ============= 🔥 MAGNITUDE-WEIGHTED CONFIDENCE =============
+            # Small moves = low conviction, larger moves = higher conviction (non-linear)
+            # 0.1% move → 0.3 weight, 0.4% move → 0.8 weight, 0.8%+ → 1.0 weight
+            magnitude_weight = self._calculate_magnitude_weight(abs_move_pct, abs(day_change_pct))
+            
+            # ============= 🔥 GAP + INTRADAY INTERACTION WEIGHT =============
+            # Gap up + intraday up = CONFIRMING (high weight)
+            # Gap up + intraday down = FADING (moderate weight for reversal)
+            # Flat + intraday move = FRESH TREND (moderate weight)
+            gap_interaction_weight, interaction_type = self._calculate_gap_interaction_weight(gap_pct, intraday_pct)
+            
+            # ============= COMBINED WEIGHTED BIAS SCORE =============
+            # Score from -10 to +10 (negative = bearish, positive = bullish)
+            raw_bias_score = day_change_pct * 10  # Scale to -10/+10 range
+            weighted_bias_score = raw_bias_score * magnitude_weight * gap_interaction_weight
+            
+            # Log weighted analysis
+            logger.debug(f"📊 WEIGHT ANALYSIS: Magnitude={magnitude_weight:.2f}, Gap Interaction={gap_interaction_weight:.2f} ({interaction_type})")
             
             # ============= SCENARIO-BASED BIAS ADJUSTMENT =============
-            adjusted_confidence = confidence
+            adjusted_confidence = confidence * magnitude_weight  # Start with magnitude-weighted confidence
             adjusted_direction = bias_direction
             
             # SCENARIO 1: GAP UP + CONTINUATION (Strong Bullish)
@@ -504,6 +523,97 @@ class MarketDirectionalBias:
         except Exception as e:
             logger.error(f"Error in move exhaustion check: {e}")
             return {'direction': bias_direction, 'confidence': confidence, 'zone': 'ERROR', 'scenario': 'ERROR'}
+    
+    def _calculate_magnitude_weight(self, abs_move_pct: float, abs_day_change_pct: float) -> float:
+        """
+        🔥 MAGNITUDE-WEIGHTED CONFIDENCE
+        
+        Small moves should have LOW conviction, larger moves should have HIGHER conviction.
+        Uses non-linear scaling to prevent both:
+        - Taking weak signals (0.1% move shouldn't trigger high-confidence trades)
+        - Over-weighting extreme moves (diminishing returns after 0.6%)
+        
+        Returns: 0.0 to 1.0 weight
+        
+        Scale:
+          0.0% - 0.10%: 0.2 weight (very weak, barely directional)
+          0.10% - 0.20%: 0.4 weight (weak but directional)
+          0.20% - 0.35%: 0.6 weight (moderate, tradeable)
+          0.35% - 0.50%: 0.8 weight (strong signal)
+          0.50%+: 1.0 weight (very strong, but watch for exhaustion)
+        """
+        # Use the larger of intraday move or day change
+        max_move = max(abs_move_pct, abs_day_change_pct)
+        
+        if max_move < 0.10:
+            weight = 0.2  # Very weak - nearly flat
+        elif max_move < 0.20:
+            weight = 0.4  # Weak but directional  
+        elif max_move < 0.35:
+            weight = 0.6  # Moderate - tradeable
+        elif max_move < 0.50:
+            weight = 0.8  # Strong signal
+        else:
+            weight = 1.0  # Very strong
+        
+        return weight
+    
+    def _calculate_gap_interaction_weight(self, gap_pct: float, intraday_pct: float) -> tuple:
+        """
+        🔥 GAP + INTRADAY INTERACTION ANALYSIS
+        
+        The relationship between gap direction and subsequent intraday movement
+        is crucial for understanding bias strength.
+        
+        Returns: (weight: float, interaction_type: str)
+        
+        Scenarios:
+        1. CONFIRMING (high weight): Gap and intraday same direction
+           - Gap up + Intraday up = Strong bullish (1.2x weight)
+           - Gap down + Intraday down = Strong bearish (1.2x weight)
+        
+        2. FADING (moderate weight for reversal): Gap filled
+           - Gap up + Intraday down = Bearish reversal (1.0x weight for shorts)
+           - Gap down + Intraday up = Bullish reversal (1.0x weight for longs)
+        
+        3. FLAT START (neutral weight): No gap, fresh trend
+           - Flat + Intraday move = Fresh signal (0.9x weight)
+        
+        4. CHOPPY (low weight): Mixed signals
+           - Gap one way, intraday flat = Low conviction (0.6x weight)
+        """
+        GAP_THRESHOLD = 0.15  # 0.15% gap is meaningful
+        INTRADAY_THRESHOLD = 0.08  # 0.08% intraday move is meaningful
+        
+        has_gap_up = gap_pct > GAP_THRESHOLD
+        has_gap_down = gap_pct < -GAP_THRESHOLD
+        is_flat_gap = abs(gap_pct) <= GAP_THRESHOLD
+        
+        is_intraday_up = intraday_pct > INTRADAY_THRESHOLD
+        is_intraday_down = intraday_pct < -INTRADAY_THRESHOLD
+        is_intraday_flat = abs(intraday_pct) <= INTRADAY_THRESHOLD
+        
+        # CONFIRMING: Gap and intraday same direction
+        if (has_gap_up and is_intraday_up) or (has_gap_down and is_intraday_down):
+            return 1.2, "CONFIRMING"
+        
+        # FADING: Gap being filled (reversal signal)
+        if (has_gap_up and is_intraday_down) or (has_gap_down and is_intraday_up):
+            return 1.0, "FADING"
+        
+        # FLAT START: No gap, fresh trend developing
+        if is_flat_gap and (is_intraday_up or is_intraday_down):
+            return 0.9, "FRESH_TREND"
+        
+        # CHOPPY: Gap but no follow-through
+        if (has_gap_up or has_gap_down) and is_intraday_flat:
+            return 0.6, "STALLED"
+        
+        # DEAD FLAT: No movement at all
+        if is_flat_gap and is_intraday_flat:
+            return 0.3, "FLAT"
+        
+        return 0.7, "MIXED"
     
     def _identify_market_scenario(self, gap_pct: float, intraday_pct: float, day_change_pct: float, abs_move_pct: float) -> str:
         """
