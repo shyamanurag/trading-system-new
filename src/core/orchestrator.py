@@ -704,6 +704,10 @@ class TradingOrchestrator:
             if hasattr(self, 'position_tracker'):
                 await self.position_tracker.initialize()
                 self.logger.info("✅ Position tracker initialized")
+                
+                # Connect position tracker to signal deduplicator for active position checking
+                signal_deduplicator.set_position_tracker(self.position_tracker)
+                self.logger.info("✅ Position tracker connected to signal deduplicator")
             
             # Initialize trade engine
             if hasattr(self, 'trade_engine'):

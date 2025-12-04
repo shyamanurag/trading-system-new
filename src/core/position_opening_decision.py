@@ -648,14 +648,16 @@ class EnhancedPositionOpeningDecision:
                         total_current_exposure += pos_value
                         
                         # Track options exposure separately
+                        # Options have format: SYMBOL + EXPIRY + STRIKE + CE/PE (e.g., RELIANCE24DEC2700CE)
+                        # MUST have digits before CE/PE to be an option (the strike price)
                         pos_symbol = getattr(pos, 'symbol', '')
-                        if pos_symbol.endswith('CE') or pos_symbol.endswith('PE'):
+                        if self._is_options_symbol(pos_symbol):
                             options_exposure += pos_value
                     except Exception as e:
                         logger.debug(f"Error calculating exposure for position {pos}: {e}")
             
             # Calculate new total exposure if this position is opened
-            is_options = symbol.endswith('CE') or symbol.endswith('PE')
+            is_options = self._is_options_symbol(symbol)
             
             # 🔥 INTRADAY MARGIN-BASED EXPOSURE (not position value!)
             # With 4x leverage, margin = position_value / 4
@@ -863,6 +865,31 @@ class EnhancedPositionOpeningDecision:
         except Exception as e:
             logger.error(f"Error calculating optimal position size: {e}")
             return 1
+    
+    def _is_options_symbol(self, symbol: str) -> bool:
+        """
+        Check if a symbol is an options contract.
+        
+        Options format: SYMBOL + EXPIRY + STRIKE + CE/PE
+        Examples: RELIANCE24DEC2700CE, NIFTY24DEC24000PE, BANKNIFTY24D0552000CE
+        
+        Key distinguisher: Options have DIGITS immediately before CE/PE (the strike price)
+        Stocks like BAJFINANCE, PETRONET are NOT options even though they end with CE/PE
+        """
+        import re
+        
+        if not symbol:
+            return False
+        
+        # Options must end with CE or PE
+        if not (symbol.endswith('CE') or symbol.endswith('PE')):
+            return False
+        
+        # Options must have digits before CE/PE (the strike price)
+        # Pattern: digits + CE/PE at the end
+        # This distinguishes RELIANCE24DEC2700CE (option) from BAJFINANCE (stock)
+        options_pattern = r'\d+(CE|PE)$'
+        return bool(re.search(options_pattern, symbol))
     
     def _estimate_position_quantity(self, signal: Dict, available_capital: float) -> int:
         """Estimate position quantity based on available capital"""

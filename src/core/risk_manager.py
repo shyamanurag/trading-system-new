@@ -650,7 +650,8 @@ class RiskManager:
             
             # CRITICAL FIX: For intraday equity trades, use margin requirement instead of full contract value
             # This aligns risk assessment with actual capital at risk
-            is_equity_trade = symbol and not (symbol.endswith('CE') or symbol.endswith('PE'))
+            is_options_trade = self._is_options_symbol(symbol)
+            is_equity_trade = symbol and not is_options_trade
             if is_equity_trade:
                 # Intraday equity margin is typically 20-25% of contract value
                 estimated_margin_factor = 0.25  # Conservative 25% margin requirement

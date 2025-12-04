@@ -257,8 +257,20 @@ class SignalDeduplicator:
             logger.error(f"❌ Failed to init Redis for signal deduplication: {e}")
             logger.error("🚨 CRITICAL: Redis connection failed - duplicate execution protection disabled!")
         
+    def set_position_tracker(self, position_tracker):
+        """Set position tracker reference for active position checking"""
+        self.position_tracker = position_tracker
+        logger.info("✅ Position tracker connected to signal deduplicator")
+    
     async def _check_signal_already_executed(self, signal: Dict) -> bool:
-        """Check if this signal was already executed today (across deploys)"""
+        """
+        Check if this signal should be blocked based on ACTIVE POSITIONS only.
+        
+        CRITICAL LOGIC:
+        - Blocks only if there's an ACTIVE/OPEN position for the same symbol + action
+        - Does NOT block based on previous signals that were just recorded
+        - Manually squared-off positions should NOT block new signals
+        """
         try:
             # 🎯 BYPASS DEDUPLICATION FOR POSITION MANAGEMENT ACTIONS
             is_management_action = signal.get('management_action', False)
@@ -270,12 +282,33 @@ class SignalDeduplicator:
                 logger.info(f"🎯 MANAGEMENT ACTION BYPASS: {signal.get('symbol')} {signal.get('action')} - skipping duplicate check")
                 return False
             
-            if not self.redis_client:
-                logger.warning(f"🚨 NO REDIS CLIENT: Cannot check for duplicate signal {signal.get('symbol')} - allowing execution")
-                return False
-                
             symbol = signal.get('symbol')
             action = signal.get('action', 'BUY')
+            
+            # 🎯 CRITICAL FIX: Check position tracker for ACTIVE positions, not Redis execution history
+            if hasattr(self, 'position_tracker') and self.position_tracker:
+                positions = getattr(self.position_tracker, 'positions', {})
+                
+                if symbol in positions:
+                    position = positions[symbol]
+                    position_qty = getattr(position, 'quantity', 0)
+                    
+                    if position_qty != 0:
+                        logger.warning(f"🚫 DUPLICATE BLOCKED: {symbol} has ACTIVE position (qty: {position_qty})")
+                        logger.warning(f"   💡 Close the position first to allow new signals")
+                        return True  # Block - active position exists
+                    else:
+                        logger.info(f"✅ {symbol} position closed (qty=0) - allowing new signal")
+                        return False  # Allow - position was closed
+                else:
+                    logger.info(f"✅ SIGNAL ALLOWED: {symbol} {action} - no active position")
+                    return False  # Allow - no position
+            
+            # Fallback to Redis check if position tracker not available
+            if not self.redis_client:
+                logger.warning(f"🚨 NO POSITION TRACKER OR REDIS: Cannot check for duplicate signal {signal.get('symbol')} - allowing execution")
+                return False
+                
             new_quantity = signal.get('quantity', 0)
             
             # Check if signal was executed in last 24 hours
@@ -283,7 +316,7 @@ class SignalDeduplicator:
             executed_key = f"executed_signals:{today}:{symbol}:{action}"
             executed_qty_key = f"executed_qty:{today}:{symbol}:{action}"
             
-            logger.info(f"🔍 CHECKING DUPLICATE: {executed_key}")
+            logger.info(f"🔍 CHECKING DUPLICATE (Redis fallback): {executed_key}")
             executed_count = await self.redis_client.get(executed_key)
             
             if executed_count and int(executed_count) > 0:
@@ -306,16 +339,16 @@ class SignalDeduplicator:
                         signal['original_executed_qty'] = executed_qty
                         return False  # Allow execution
                 
-                logger.warning(f"🚫 DUPLICATE SIGNAL BLOCKED: {symbol} {action} already executed {executed_count} times today (qty: {executed_qty})")
+                logger.warning(f"🚫 DUPLICATE SIGNAL BLOCKED (Redis): {symbol} {action} already executed {executed_count} times today (qty: {executed_qty})")
                 logger.warning(f"🔑 Redis key: {executed_key}")
                 return True
             else:
-                logger.info(f"✅ SIGNAL ALLOWED: {symbol} {action} - no previous executions found")
+                logger.info(f"✅ SIGNAL ALLOWED (Redis): {symbol} {action} - no previous executions found")
                 return False
                 
         except Exception as e:
-            logger.error(f"❌ Error checking executed signals in Redis: {e}")
-            logger.error(f"🚨 REDIS CHECK FAILED for {signal.get('symbol')} - ALLOWING execution (risky)")
+            logger.error(f"❌ Error checking executed signals: {e}")
+            logger.error(f"🚨 CHECK FAILED for {signal.get('symbol')} - ALLOWING execution (risky)")
             return False
     
     async def mark_signal_executed(self, signal: Dict):
