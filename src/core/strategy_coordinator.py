@@ -139,11 +139,27 @@ class StrategyCoordinator:
         priorities = self.regime_priority[regime]
         filtered = {}
         
+        # High confidence threshold for regime override
+        HIGH_CONFIDENCE_OVERRIDE = 8.5  # Signals >= 8.5 can bypass regime restrictions
+        
         for strategy, signals in signals_by_strategy.items():
             priority = priorities.get(strategy, 0)
             
             if priority == 0:
-                logger.info(f"❌ BLOCKED: {strategy} disabled in {regime} regime ({len(signals)} signals dropped)")
+                # Check for high-confidence signals that should bypass regime restriction
+                high_conf_signals = [
+                    s for s in signals 
+                    if s.get('confidence', 0) >= HIGH_CONFIDENCE_OVERRIDE
+                ]
+                
+                if high_conf_signals:
+                    logger.info(f"🎯 HIGH CONFIDENCE OVERRIDE: {len(high_conf_signals)} {strategy} signals "
+                               f"(>={HIGH_CONFIDENCE_OVERRIDE}) bypassing {regime} regime block")
+                    filtered[strategy] = high_conf_signals
+                    for s in high_conf_signals:
+                        logger.info(f"   ✅ {s.get('symbol')} {s.get('action')} @ {s.get('confidence'):.1f}/10")
+                else:
+                    logger.info(f"❌ BLOCKED: {strategy} disabled in {regime} regime ({len(signals)} signals dropped)")
                 continue
             
             # Filter signals within strategy based on regime
@@ -152,7 +168,12 @@ class StrategyCoordinator:
                 if self._is_signal_regime_appropriate(signal, regime):
                     regime_appropriate_signals.append(signal)
                 else:
-                    logger.debug(f"⏭️ FILTERED: {signal.get('symbol')} from {strategy} - not regime-appropriate")
+                    # Allow high-confidence signals to bypass regime appropriateness check
+                    if signal.get('confidence', 0) >= HIGH_CONFIDENCE_OVERRIDE:
+                        regime_appropriate_signals.append(signal)
+                        logger.info(f"🎯 HIGH CONF OVERRIDE: {signal.get('symbol')} bypassing regime filter")
+                    else:
+                        logger.debug(f"⏭️ FILTERED: {signal.get('symbol')} from {strategy} - not regime-appropriate")
             
             if regime_appropriate_signals:
                 filtered[strategy] = regime_appropriate_signals
