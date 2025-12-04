@@ -830,38 +830,35 @@ class EnhancedPositionOpeningDecision:
         try:
             symbol = signal.get('symbol', '')
             
-            # CRITICAL FIX: For OPTIONS (CE/PE), use the quantity from signal (already calculated with lot sizes)
-            # Options must trade in specific lot sizes (e.g., BHARTIARTL = 475, TITAN = 175)
-            # Strategies already calculate correct lot-based quantities
+            # CRITICAL FIX: USE THE SIGNAL'S PRE-CALCULATED QUANTITY
+            # The quantity is already calculated in base_strategy.py using:
+            # - 4x intraday leverage
+            # - 2% max portfolio loss per trade
+            # - Proper risk/reward calculation
+            # DO NOT recalculate here - it was producing much smaller quantities
+            
+            signal_quantity = signal.get('quantity', 0)
+            
+            if signal_quantity > 0:
+                # Use the strategy-calculated quantity directly
+                logger.info(f"📊 POSITION SIZE: Using strategy-calculated qty: {symbol} = {signal_quantity}")
+                return signal_quantity
+            
+            # Fallback: Calculate if signal has no quantity (shouldn't happen)
+            logger.warning(f"⚠️ Signal {symbol} has no quantity - falling back to estimate")
+            
+            # For OPTIONS (CE/PE), minimum 1 lot
             if symbol.endswith('CE') or symbol.endswith('PE'):
-                signal_quantity = signal.get('quantity', 0)
-                if signal_quantity > 0:
-                    logger.info(f"📊 OPTIONS: Using strategy-calculated lot size: {symbol} qty={signal_quantity}")
-                    return signal_quantity
-                else:
-                    logger.warning(f"⚠️ OPTIONS signal has no quantity: {symbol} - using 1")
-                    return 1
+                logger.warning(f"⚠️ OPTIONS signal has no quantity: {symbol} - using 1")
+                return 1
             
-            # For EQUITY, calculate position size based on 2% capital rule
-            base_size = self._estimate_position_quantity(signal, available_capital)
-            
-            # Apply Kelly criterion if we have historical data
-            # For now, use confidence-based sizing
-            confidence = float(signal.get('confidence', 5.0))
-            
-            # CRITICAL FIX: Normalize confidence from 0-1 scale to 0-10 scale BEFORE using as multiplier
-            # Strategies send confidence in 0-1 scale (0.9 = 90%)
-            # We need 0-10 scale for proper position sizing (9.0 = 90% confidence → 0.9 multiplier)
-            if confidence <= 1.0:
-                confidence = confidence * 10.0
-                logger.debug(f"Position sizing: normalized confidence {confidence:.1f}/10")
-            
-            confidence_multiplier = min(confidence / 10.0, 1.0)  # Now: 9.0/10 = 0.9 ✓
-            
-            optimal_size = int(base_size * confidence_multiplier)
+            # For EQUITY fallback, use simple allocation
+            entry_price = float(signal.get('entry_price', 100.0))
+            allocation_amount = available_capital * 0.10  # 10% fallback allocation
+            base_size = int(allocation_amount / entry_price)
             
             # Ensure minimum viable position
-            return max(optimal_size, 1)
+            return max(base_size, 1)
             
         except Exception as e:
             logger.error(f"Error calculating optimal position size: {e}")
