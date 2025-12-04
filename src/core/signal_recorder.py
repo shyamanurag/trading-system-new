@@ -546,6 +546,7 @@ class SignalRecorder:
         try:
             current_time = datetime.now()
             expired_signal_ids = []
+            expired_symbols = []  # Track symbols to clear from Redis
             
             # Find expired signals
             for signal_id, record in self.signal_records.items():
@@ -556,10 +557,15 @@ class SignalRecorder:
                         logger.debug(f"🗑️ Expiring signal: {record.symbol} {record.action} (expired {int(time_since_expiry.total_seconds()/60)}min ago)")
                         record.status = SignalStatus.EXPIRED
                         expired_signal_ids.append(signal_id)
+                        expired_symbols.append((record.symbol, record.action))
             
             # Update expired signals
             for signal_id in expired_signal_ids:
                 await self.update_signal_status(signal_id, SignalStatus.EXPIRED)
+            
+            # 🎯 CRITICAL: Clear expired signals from Redis execution cache
+            if expired_symbols:
+                await self._clear_expired_from_redis(expired_symbols)
             
             # Remove old records if we exceed max limit
             if len(self.signal_records) > self.max_records:
@@ -588,6 +594,42 @@ class SignalRecorder:
                 
         except Exception as e:
             logger.error(f"Error cleaning up expired signals: {e}")
+    
+    async def _clear_expired_from_redis(self, expired_symbols: List[tuple]):
+        """
+        Clear expired signals from Redis execution cache.
+        This allows re-entry for symbols after signals expire.
+        """
+        try:
+            # Import signal_deduplicator to access Redis client
+            from src.core.signal_deduplicator import signal_deduplicator
+            
+            if not hasattr(signal_deduplicator, 'redis_client') or not signal_deduplicator.redis_client:
+                logger.debug("⚠️ No Redis client available for expired signal cleanup")
+                return
+            
+            today = datetime.now().strftime('%Y-%m-%d')
+            cleared_count = 0
+            
+            for symbol, action in expired_symbols:
+                try:
+                    # Clear execution count and quantity from Redis
+                    exec_key = f"executed_signals:{today}:{symbol}:{action}"
+                    qty_key = f"executed_qty:{today}:{symbol}:{action}"
+                    
+                    deleted = await signal_deduplicator.redis_client.delete(exec_key, qty_key)
+                    if deleted > 0:
+                        cleared_count += deleted
+                        logger.debug(f"🧹 Cleared Redis cache for expired signal: {symbol} {action}")
+                        
+                except Exception as e:
+                    logger.error(f"❌ Error clearing Redis for {symbol} {action}: {e}")
+            
+            if cleared_count > 0:
+                logger.info(f"✅ Cleared {cleared_count} expired signal entries from Redis cache")
+                
+        except Exception as e:
+            logger.error(f"❌ Error in _clear_expired_from_redis: {e}")
     
     async def _persist_signal_to_db(self, signal_record: SignalRecord):
         """Persist signal record to database (if available)"""
