@@ -2243,6 +2243,7 @@ class TradingOrchestrator:
                 filtered_signals = await signal_deduplicator.process_signals(all_signals)
 
                 # Generic executed-today suppression at orchestrator level (no hardcoded symbols)
+                # 🚨 CRITICAL FIX: Must use AWAIT for async Redis client!
                 try:
                     import datetime as _dt
                     today = _dt.datetime.now().strftime('%Y-%m-%d')
@@ -2250,7 +2251,10 @@ class TradingOrchestrator:
                         kept = []
                         for s in filtered_signals:
                             key = f"executed_signals:{today}:{s.get('symbol')}:{s.get('action','BUY')}"
-                            already = signal_deduplicator.redis_client.get(key)
+                            # 🚨 FIX: Redis client is ASYNC - must await the call!
+                            # Without await, .get() returns coroutine object (always truthy)
+                            # causing ALL signals to be blocked as "DEDUPLICATED_TODAY"
+                            already = await signal_deduplicator.redis_client.get(key)
                             if already:
                                 self._track_signal_failed(s, 'DEDUPLICATED_TODAY')
                             else:
@@ -2314,7 +2318,8 @@ class TradingOrchestrator:
                             from src.core.signal_deduplicator import signal_deduplicator as _ded
                             is_dup = False
                             if getattr(_ded, 'redis_client', None):
-                                is_dup = bool(_ded.redis_client.get(dedup_key))
+                                # 🚨 FIX: Redis client is ASYNC - must await!
+                                is_dup = bool(await _ded.redis_client.get(dedup_key))
                             if is_dup:
                                 self._track_signal_failed(signal, "DEDUPLICATED_TODAY")
                             else:
