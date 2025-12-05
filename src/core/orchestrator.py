@@ -4004,18 +4004,19 @@ class TradingOrchestrator:
                         existing_stop = float(position.stop_loss) if position.stop_loss else 0.0
                         existing_target = float(position.target) if position.target else 0.0
                         
-                        # 🚨 CRITICAL FIX: If position has no SL/target, set emergency values
+                        # 🚨 CRITICAL FIX: If position has no SL/target, set INTRADAY emergency values
+                        # INTRADAY TRADING: Use realistic 2% SL and 3% target (not swing trading 5%/10%)
                         if existing_stop == 0.0 or existing_target == 0.0:
                             if qty > 0:  # LONG position
-                                emergency_stop = entry_price * 0.95  # 5% below entry
-                                emergency_target = entry_price * 1.10  # 10% above entry
+                                emergency_stop = entry_price * 0.98    # 2% below entry (INTRADAY)
+                                emergency_target = entry_price * 1.03  # 3% above entry (INTRADAY)
                             else:  # SHORT position
-                                emergency_stop = entry_price * 1.05  # 5% above entry
-                                emergency_target = entry_price * 0.90  # 10% below entry
+                                emergency_stop = entry_price * 1.02    # 2% above entry (INTRADAY)
+                                emergency_target = entry_price * 0.97  # 3% below entry (INTRADAY)
                             
                             existing_stop = emergency_stop if existing_stop == 0.0 else existing_stop
                             existing_target = emergency_target if existing_target == 0.0 else existing_target
-                            self.logger.warning(f"🚨 EMERGENCY PROTECTION: {symbol} - Set SL: ₹{existing_stop:.2f}, Target: ₹{existing_target:.2f}")
+                            self.logger.warning(f"🚨 INTRADAY PROTECTION: {symbol} - Set SL: ₹{existing_stop:.2f} (2%), Target: ₹{existing_target:.2f} (3%)")
                         
                         verified_positions[symbol] = {
                             'symbol': symbol,
@@ -4068,14 +4069,14 @@ class TradingOrchestrator:
                             orphan_qty = int(orphan['quantity'])
                             entry_price = float(orphan['average_price'])
                             
-                            # CRITICAL FIX: Set emergency stop loss/target for orphaned positions
-                            # Use 5% stop loss and 10% target as safe defaults
+                            # CRITICAL FIX: Set INTRADAY emergency stop loss/target for orphaned positions
+                            # Use 2% stop loss and 3% target (realistic intraday levels)
                             if orphan_qty > 0:  # LONG position
-                                emergency_stop = entry_price * 0.95  # 5% below entry
-                                emergency_target = entry_price * 1.10  # 10% above entry
+                                emergency_stop = entry_price * 0.98    # 2% below entry (INTRADAY)
+                                emergency_target = entry_price * 1.03  # 3% above entry (INTRADAY)
                             else:  # SHORT position
-                                emergency_stop = entry_price * 1.05  # 5% above entry
-                                emergency_target = entry_price * 0.90  # 10% below entry
+                                emergency_stop = entry_price * 1.02    # 2% above entry (INTRADAY)
+                                emergency_target = entry_price * 0.97  # 3% below entry (INTRADAY)
                             
                             verified_positions[orphan['symbol']] = {
                                 'symbol': orphan['symbol'],
@@ -4083,14 +4084,14 @@ class TradingOrchestrator:
                                 'action': 'BUY' if orphan_qty > 0 else 'SELL',  # CRITICAL FIX: Determine action from quantity sign
                                 'entry_price': entry_price,
                                 'current_price': float(orphan['current_price']),
-                                'stop_loss': emergency_stop,  # CRITICAL FIX: Emergency 5% stop loss
-                                'target': emergency_target,    # CRITICAL FIX: Emergency 10% target
+                                'stop_loss': emergency_stop,  # INTRADAY: 2% stop loss
+                                'target': emergency_target,    # INTRADAY: 3% target
                                 'pnl': float(orphan['pnl']),
                                 'timestamp': None,
                                 'source': 'RECOVERED_ORPHAN'
                             }
                             
-                            self.logger.warning(f"🚨 ORPHAN RECOVERY: {orphan['symbol']} - Set emergency SL: ₹{emergency_stop:.2f}, Target: ₹{emergency_target:.2f}")
+                            self.logger.warning(f"🚨 ORPHAN RECOVERY: {orphan['symbol']} - Set INTRADAY SL: ₹{emergency_stop:.2f} (2%), Target: ₹{emergency_target:.2f} (3%)")
                             
                             self.logger.info(f"✅ ORPHAN RECOVERED: {orphan['symbol']}")
                     except Exception as recovery_error:
