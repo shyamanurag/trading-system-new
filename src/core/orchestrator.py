@@ -714,6 +714,15 @@ class TradingOrchestrator:
                 signal_deduplicator.set_position_tracker(self.position_tracker)
                 self.logger.info("✅ Position tracker connected to signal deduplicator")
             
+            # 🚨 CRITICAL FIX: Clear stale signal execution cache on deployment startup
+            # This was NEVER being called, causing signals to be blocked as "DEDUPLICATED_TODAY"
+            # even though no trades had actually executed
+            try:
+                await signal_deduplicator.ensure_startup_cleanup()
+                self.logger.info("✅ Signal execution cache cleared for fresh deployment")
+            except Exception as cleanup_err:
+                self.logger.warning(f"⚠️ Could not clear signal cache on startup: {cleanup_err}")
+            
             # Initialize trade engine
             if hasattr(self, 'trade_engine'):
                 await self.trade_engine.initialize()
