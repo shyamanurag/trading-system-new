@@ -381,15 +381,32 @@ class PositionMonitor:
                 exit_conditions.append(time_exit)
                 continue  # Time exits override other conditions
             
+            # 🚨 SANITY CHECK: Verify position.side matches SL/Target setup
+            # If SL < entry < target → should be LONG
+            # If SL > entry > target → should be SHORT
+            entry = position.average_price
+            sl = getattr(position, 'stop_loss', None)
+            tgt = getattr(position, 'target', None)
+            if sl and tgt and entry:
+                expected_side = 'long' if sl < entry < tgt else 'short' if sl > entry > tgt else position.side
+                if expected_side != position.side:
+                    logger.error(f"🚨 DATA INTEGRITY: {symbol} has side='{position.side}' but SL/Target suggests '{expected_side}'")
+                    logger.error(f"   Entry: ₹{entry:.2f}, SL: ₹{sl:.2f}, Target: ₹{tgt:.2f}")
+                    # FIX the side to match the SL/Target setup
+                    position.side = expected_side
+                    logger.info(f"   ✅ Auto-corrected side to '{expected_side}'")
+            
             # 2. Stop loss conditions
             stop_loss_exit = self._check_stop_loss_exit(symbol, position)
             if stop_loss_exit:
                 exit_conditions.append(stop_loss_exit)
+                continue  # 🚨 FIX: Don't also check target if SL is triggered
             
             # 3. Target conditions
             target_exit = await self._check_target_exit(symbol, position)
             if target_exit:
                 exit_conditions.append(target_exit)
+                continue  # 🚨 FIX: Don't also check trailing if target is hit
             
             # 4. Trailing stop conditions
             trailing_exit = self._check_trailing_stop_exit(symbol, position)
@@ -554,8 +571,24 @@ class PositionMonitor:
                 logger.info(f"   Total Profit: ₹{current_pnl:.2f} ({current_pnl_percent:.1f}%)")
                 
                 # Calculate partial exit quantity (50%)
+                # 🚨 FIX: Handle small positions (qty=1 should do FULL exit, not 0 qty partial)
+                if position.quantity <= 1:
+                    logger.info(f"   ℹ️ Small position (qty={position.quantity}) - Doing FULL EXIT instead of partial")
+                    return ExitCondition(
+                        condition_type='target',
+                        symbol=symbol,
+                        trigger_price=current_price,
+                        reason=f'Target achieved: Full exit for small position (Profit: ₹{current_pnl:.2f})',
+                        priority=3
+                    )
+                
                 partial_exit_qty = position.quantity // 2
                 remaining_qty = position.quantity - partial_exit_qty
+                
+                # Extra safety check - don't place 0 qty orders
+                if partial_exit_qty <= 0:
+                    logger.warning(f"   ⚠️ Calculated partial qty is 0 - Skipping partial, will do full exit later")
+                    return None
                 
                 logger.info(f"   Action: Book 50% ({partial_exit_qty} qty), Keep 50% ({remaining_qty} qty) running")
                 
@@ -605,8 +638,24 @@ class PositionMonitor:
                 logger.info(f"   Total Profit: ₹{current_pnl:.2f} ({current_pnl_percent:.1f}%)")
                 
                 # Calculate partial exit quantity (50%)
+                # 🚨 FIX: Handle small positions (qty=1 should do FULL exit, not 0 qty partial)
+                if position.quantity <= 1:
+                    logger.info(f"   ℹ️ Small position (qty={position.quantity}) - Doing FULL EXIT instead of partial")
+                    return ExitCondition(
+                        condition_type='target',
+                        symbol=symbol,
+                        trigger_price=current_price,
+                        reason=f'Target achieved: Full exit for small position (Profit: ₹{current_pnl:.2f})',
+                        priority=3
+                    )
+                
                 partial_exit_qty = position.quantity // 2
                 remaining_qty = position.quantity - partial_exit_qty
+                
+                # Extra safety check - don't place 0 qty orders
+                if partial_exit_qty <= 0:
+                    logger.warning(f"   ⚠️ Calculated partial qty is 0 - Skipping partial, will do full exit later")
+                    return None
                 
                 logger.info(f"   Action: Book 50% ({partial_exit_qty} qty), Keep 50% ({remaining_qty} qty) running")
                 
