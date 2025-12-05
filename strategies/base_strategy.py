@@ -3084,6 +3084,143 @@ class BaseStrategy:
             else:  # SELL trade
                 return entry_price * (1 - target_percent)
     
+    def calculate_chart_based_stop_loss(self, symbol: str, action: str, entry_price: float, 
+                                        symbol_data: Dict = None) -> float:
+        """
+        🎯 CHART-BASED STOP LOSS - Uses ATR and swing levels instead of fixed percentages
+        
+        For BUY: Stop below recent swing low OR entry - 1.5×ATR (whichever is tighter but safe)
+        For SELL: Stop above recent swing high OR entry + 1.5×ATR
+        
+        PROFESSIONAL APPROACH:
+        1. Find recent swing high/low from price history
+        2. Calculate ATR-based stop (volatility-adjusted)
+        3. Use the more protective level (tighter stop within reason)
+        4. Ensure minimum 0.5% and maximum 3% for intraday
+        """
+        try:
+            # Get ATR for this symbol
+            high = symbol_data.get('high', entry_price) if symbol_data else entry_price
+            low = symbol_data.get('low', entry_price) if symbol_data else entry_price
+            close = symbol_data.get('close', entry_price) if symbol_data else entry_price
+            
+            atr = self.calculate_atr(symbol, high, low, close)
+            
+            # Find swing levels from price history
+            swing_low, swing_high = self._find_swing_levels(symbol)
+            
+            if action.upper() == 'BUY':
+                # ATR-based stop: 1.5x ATR below entry
+                atr_stop = entry_price - (atr * 1.5)
+                
+                # Swing-based stop: Just below recent swing low
+                swing_stop = swing_low * 0.998 if swing_low > 0 else atr_stop
+                
+                # Use the TIGHTER stop (higher value) but respect limits
+                # Don't let stop be too close (min 0.5%) or too far (max 3%)
+                min_stop = entry_price * 0.97   # Max 3% loss
+                max_stop = entry_price * 0.995  # Min 0.5% stop distance
+                
+                stop_loss = max(min_stop, min(max_stop, max(atr_stop, swing_stop)))
+                
+                logger.info(f"📉 CHART-BASED SL (BUY): {symbol} ATR_SL=₹{atr_stop:.2f}, "
+                           f"Swing_SL=₹{swing_stop:.2f}, Final=₹{stop_loss:.2f} "
+                           f"({((entry_price - stop_loss) / entry_price * 100):.1f}%)")
+                
+            else:  # SELL
+                # ATR-based stop: 1.5x ATR above entry
+                atr_stop = entry_price + (atr * 1.5)
+                
+                # Swing-based stop: Just above recent swing high
+                swing_stop = swing_high * 1.002 if swing_high > 0 else atr_stop
+                
+                # Use the TIGHTER stop (lower value) but respect limits
+                min_stop = entry_price * 1.005  # Min 0.5% stop distance
+                max_stop = entry_price * 1.03   # Max 3% loss
+                
+                stop_loss = min(max_stop, max(min_stop, min(atr_stop, swing_stop)))
+                
+                logger.info(f"📉 CHART-BASED SL (SELL): {symbol} ATR_SL=₹{atr_stop:.2f}, "
+                           f"Swing_SL=₹{swing_stop:.2f}, Final=₹{stop_loss:.2f} "
+                           f"({((stop_loss - entry_price) / entry_price * 100):.1f}%)")
+            
+            return round(stop_loss, 2)
+            
+        except Exception as e:
+            logger.error(f"Chart-based SL calculation failed for {symbol}: {e}")
+            # Fallback to 1.5% fixed stop
+            if action.upper() == 'BUY':
+                return entry_price * 0.985
+            else:
+                return entry_price * 1.015
+    
+    def _find_swing_levels(self, symbol: str, lookback: int = 20) -> Tuple[float, float]:
+        """
+        Find recent swing high and swing low from price history
+        
+        Returns: (swing_low, swing_high) - 0 if not enough data
+        """
+        try:
+            if symbol not in self.historical_data or len(self.historical_data[symbol]) < 5:
+                return 0, 0
+            
+            history = self.historical_data[symbol][-lookback:]
+            
+            # Extract lows and highs
+            lows = [h.get('low', h.get('close', 0)) for h in history]
+            highs = [h.get('high', h.get('close', 0)) for h in history]
+            
+            # Find swing low: point where low < neighbors on both sides
+            swing_low = min(lows) if lows else 0
+            
+            # Find swing high: point where high > neighbors on both sides  
+            swing_high = max(highs) if highs else 0
+            
+            # More sophisticated swing detection
+            for i in range(2, len(lows) - 2):
+                # Swing low: lower than 2 candles on each side
+                if lows[i] < min(lows[i-2:i]) and lows[i] < min(lows[i+1:i+3]):
+                    if lows[i] > swing_low * 0.98:  # More recent and relevant
+                        swing_low = lows[i]
+                        
+            for i in range(2, len(highs) - 2):
+                # Swing high: higher than 2 candles on each side
+                if highs[i] > max(highs[i-2:i]) and highs[i] > max(highs[i+1:i+3]):
+                    if highs[i] < swing_high * 1.02:  # More recent and relevant
+                        swing_high = highs[i]
+            
+            return swing_low, swing_high
+            
+        except Exception as e:
+            logger.error(f"Swing level detection failed for {symbol}: {e}")
+            return 0, 0
+    
+    def calculate_chart_based_levels(self, symbol: str, action: str, entry_price: float,
+                                     symbol_data: Dict = None) -> Tuple[float, float]:
+        """
+        🎯 CALCULATE BOTH STOP LOSS AND TARGET USING CHART-BASED METHODS
+        
+        Returns: (stop_loss, target)
+        
+        This is the main method strategies should call for professional SL/Target calculation.
+        """
+        try:
+            # Calculate chart-based stop loss
+            stop_loss = self.calculate_chart_based_stop_loss(symbol, action, entry_price, symbol_data)
+            
+            # Calculate dynamic target based on the stop loss (maintains proper R:R)
+            target = self.calculate_dynamic_target(entry_price, stop_loss)
+            
+            return stop_loss, target
+            
+        except Exception as e:
+            logger.error(f"Chart-based levels calculation failed for {symbol}: {e}")
+            # Fallback to reasonable intraday levels
+            if action.upper() == 'BUY':
+                return entry_price * 0.985, entry_price * 1.02
+            else:
+                return entry_price * 1.015, entry_price * 0.98
+    
     def _calculate_adaptive_confidence_threshold(self, symbol: str, action: str, confidence: float, 
                                                     relative_strength: float = None) -> Tuple[float, str]:
         """
