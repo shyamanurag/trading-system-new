@@ -462,11 +462,24 @@ class TradeEngine:
                 return None
             
             # Place order via Zerodha (real execution)
-            # 🚨 CRITICAL FIX: Use LIMIT orders for stock options to avoid Zerodha blocking
-            order_type = 'MARKET'  # Default to MARKET
-            if symbol:  # Add null check for symbol
-                if (symbol.endswith('CE') or symbol.endswith('PE')) and not any(index in symbol for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']):
-                    order_type = 'LIMIT'
+            # 🚨 CRITICAL FIX: Always use LIMIT orders when algo calculated entry_price
+            # This ensures we execute at the analyzed price, not current market price
+            entry_price = signal.get('entry_price', 0)
+            
+            # RULE 1: If algo calculated an entry_price, use LIMIT order
+            # RULE 2: Stock options MUST use LIMIT (Zerodha requirement)
+            # RULE 3: Only use MARKET if no entry_price was calculated
+            is_stock_option = symbol and (symbol.endswith('CE') or symbol.endswith('PE')) and not any(index in symbol for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY'])
+            
+            if entry_price > 0:
+                order_type = 'LIMIT'
+                self.logger.info(f"🎯 Using LIMIT order at algo price: {symbol} @ ₹{entry_price:.2f}")
+            elif is_stock_option:
+                order_type = 'LIMIT'
+                self.logger.warning(f"⚠️ Stock option {symbol} has no entry_price - will try to get LTP")
+            else:
+                order_type = 'MARKET'
+                self.logger.warning(f"⚠️ No entry_price provided - using MARKET order for {symbol}")
             
             order_params = {
                 'symbol': symbol,
@@ -476,16 +489,14 @@ class TradeEngine:
                 'strategy': strategy
             }
             
-            # Add price for LIMIT orders (stock options)
-            if order_type == 'LIMIT' and symbol:
-                # Use entry price from signal or calculate a reasonable limit price
-                limit_price = signal.get('entry_price', 0)
-                if limit_price > 0:
-                    order_params['price'] = limit_price
-                    self.logger.info(f"🔧 Using LIMIT order for stock option: {symbol} @ ₹{limit_price}")
+            # Add price for LIMIT orders
+            if order_type == 'LIMIT':
+                if entry_price > 0:
+                    order_params['price'] = entry_price
+                    order_params['entry_price'] = entry_price  # Also pass as entry_price for zerodha.py
                 else:
-                    self.logger.warning(f"⚠️ No entry price for LIMIT order: {symbol} - using MARKET as fallback")
-                    order_params['order_type'] = 'MARKET'
+                    self.logger.warning(f"⚠️ LIMIT order without entry_price - Zerodha broker will fetch LTP")
+                    # Zerodha broker will need to fetch LTP if price not provided
             
             self.logger.info(f"🔄 Placing order via Zerodha: {order_params}")
             result = await self.zerodha_client.place_order(order_params)

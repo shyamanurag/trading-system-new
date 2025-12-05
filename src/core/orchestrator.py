@@ -323,22 +323,34 @@ class SimpleTradeEngine:
             # Quantity strictly from strategy sizing (dynamic capital %) – no hard-coded order value caps
             quantity = int(signal.get('quantity', 50) or 0)
             
+            # 🚨 CRITICAL FIX: Always use LIMIT orders when algo calculated entry_price
+            # This ensures we execute at the analyzed price, not current market price
+            entry_price = signal.get('entry_price', 0)
+            
+            # RULE: If algo calculated an entry_price, ALWAYS use LIMIT order
+            # This prevents slippage and ensures execution at calculated levels
+            if entry_price > 0:
+                order_type = 'LIMIT'
+            else:
+                order_type = signal.get('order_type', 'MARKET')
+            
             # Create order parameters with DYNAMIC product type
             order_data = {
                 'symbol': symbol,
                 'quantity': quantity,
                 'action': action,
                 'transaction_type': action,
-                'order_type': 'MARKET',
+                'order_type': order_type,
                 'product': self._get_product_type_for_symbol(symbol),  # FIXED: Dynamic product type
                 'validity': 'DAY',
                 'tag': 'ALGO_TRADE'
             }
             
-            # Add price for limit orders
-            if signal.get('order_type') == 'LIMIT':
-                order_data['order_type'] = 'LIMIT'
-                order_data['price'] = signal.get('entry_price')
+            # Add price for LIMIT orders
+            if order_type == 'LIMIT' and entry_price > 0:
+                order_data['price'] = entry_price
+                order_data['entry_price'] = entry_price  # Also pass as entry_price for zerodha.py
+                self.logger.info(f"🎯 LIMIT ORDER: {symbol} {action} @ ₹{entry_price:.2f}")
             
             return order_data
             
