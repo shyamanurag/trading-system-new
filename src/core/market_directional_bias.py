@@ -1116,54 +1116,34 @@ class MarketDirectionalBias:
                            f"Favoring {signal_direction} {symbol} with {effective_direction} bias")
             
             if bias_aligned:
-                # 🎯 RELATIVE STRENGTH CHECK - RELAXED VERSION
-                # 🚨 FIX: Previous +0.30% outperformance was too strict
-                #    TCS +0.58% in NIFTY +0.68% market was rejected (-0.10% RS)
-                # 
-                # NEW LOGIC: Stock just needs to be moving WITH market, not significantly against
-                # For LONGS: Stock must not be significantly underperforming (allow -0.5% RS)
-                # For SHORTS: Stock must not be significantly outperforming (allow +0.5% RS)
+                # 🎯 RELATIVE STRENGTH CHECK (User insight: Stock must OUTPERFORM market)
+                # For LONGS: Stock must be stronger than NIFTY
+                # For SHORTS: Stock must be weaker than NIFTY
                 if stock_change_percent is not None and not is_index_trade:
                     relative_strength = stock_change_percent - nifty_change
-                    max_underperformance = -0.5  # Allow up to 0.5% underperformance
+                    min_outperformance = 0.3  # Stock must outperform by at least 0.3%
                     
                     if signal_direction == "BUY":
-                        # LONG: Stock must be bullish AND not significantly lagging
-                        if stock_change_percent < 0:
-                            # Stock is negative - reject BUY in bullish market
-                            logger.info(f"❌ BEARISH STOCK: {symbol} {signal_direction} rejected - "
-                                      f"Stock {stock_change_percent:+.2f}% is NEGATIVE in bullish market")
-                            return False
-                        elif relative_strength < max_underperformance:
-                            # Stock too weak relative to market
-                            logger.info(f"❌ RELATIVE WEAKNESS: {symbol} {signal_direction} rejected - "
+                        # LONG: Stock must outperform market
+                        if relative_strength < min_outperformance:
+                            logger.info(f"❌ RELATIVE STRENGTH FAIL: {symbol} {signal_direction} rejected - "
                                       f"Stock {stock_change_percent:+.2f}% vs NIFTY {nifty_change:+.2f}% "
-                                      f"(RS: {relative_strength:+.2f}% < {max_underperformance:+.2f}% allowed)")
+                                      f"(RS: {relative_strength:+.2f}% < {min_outperformance:+.2f}% required)")
                             return False
                         else:
-                            # Stock is bullish and not significantly lagging
-                            rs_status = "OUTPERFORMING" if relative_strength > 0 else "IN-LINE"
-                            logger.info(f"✅ RELATIVE STRENGTH: {symbol} {rs_status} - "
+                            logger.info(f"✅ RELATIVE STRENGTH: {symbol} OUTPERFORMING - "
                                       f"Stock {stock_change_percent:+.2f}% vs NIFTY {nifty_change:+.2f}% "
                                       f"(RS: {relative_strength:+.2f}%)")
                     
                     elif signal_direction == "SELL":
-                        # SHORT: Stock must be bearish AND not significantly outperforming
-                        if stock_change_percent > 0:
-                            # Stock is positive - reject SELL in bearish market
-                            logger.info(f"❌ BULLISH STOCK: {symbol} {signal_direction} rejected - "
-                                      f"Stock {stock_change_percent:+.2f}% is POSITIVE in bearish market")
-                            return False
-                        elif relative_strength > -max_underperformance:
-                            # Stock too strong relative to market
-                            logger.info(f"❌ RELATIVE STRENGTH: {symbol} {signal_direction} rejected - "
+                        # SHORT: Stock must underperform market
+                        if relative_strength > -min_outperformance:
+                            logger.info(f"❌ RELATIVE WEAKNESS FAIL: {symbol} {signal_direction} rejected - "
                                       f"Stock {stock_change_percent:+.2f}% vs NIFTY {nifty_change:+.2f}% "
-                                      f"(RS: {relative_strength:+.2f}% > {-max_underperformance:+.2f}% allowed)")
+                                      f"(RS: {relative_strength:+.2f}% > {-min_outperformance:+.2f}% max)")
                             return False
                         else:
-                            # Stock is bearish and not significantly outperforming
-                            rs_status = "UNDERPERFORMING" if relative_strength < 0 else "IN-LINE"
-                            logger.info(f"✅ RELATIVE WEAKNESS: {symbol} {rs_status} - "
+                            logger.info(f"✅ RELATIVE WEAKNESS: {symbol} UNDERPERFORMING - "
                                       f"Stock {stock_change_percent:+.2f}% vs NIFTY {nifty_change:+.2f}% "
                                       f"(RS: {relative_strength:+.2f}%)")
                 
