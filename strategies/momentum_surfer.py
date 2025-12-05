@@ -1143,54 +1143,63 @@ class EnhancedMomentumSurfer(BaseStrategy):
             mtf = self.mtf_data[symbol]
             
             # ============= 60-MINUTE (HOURLY) TREND =============
+            # 🚨 CRITICAL FIX: Added SMA slope detection to avoid false signals
+            # when price is above SMA but SMA is falling (reversal in progress)
             trend_60m = 'NEUTRAL'
-            if mtf['60min'] and len(mtf['60min']) >= 5:
+            if mtf['60min'] and len(mtf['60min']) >= 6:
                 closes_60m = [c['close'] for c in mtf['60min'][-10:]]
                 
-                # Simple trend: Compare current vs 5-period SMA
                 sma_5 = np.mean(closes_60m[-5:])
+                sma_5_prev = np.mean(closes_60m[-6:-1]) if len(closes_60m) >= 6 else sma_5
                 current_60m = closes_60m[-1]
                 
-                # Also check momentum (3-period change)
+                # Momentum: 3-period price change
                 momentum_60m = (closes_60m[-1] / closes_60m[-4] - 1) * 100 if len(closes_60m) >= 4 else 0
+                # SMA slope: is the average itself trending?
+                sma_slope = (sma_5 - sma_5_prev) / sma_5_prev * 100 if sma_5_prev > 0 else 0
                 
-                if current_60m > sma_5 * 1.002 and momentum_60m > 0.3:  # Above SMA + positive momentum
+                # 🎯 AND logic: Price position + SMA direction + momentum all must agree
+                if current_60m > sma_5 * 1.002 and sma_slope > 0.05 and momentum_60m > 0.3:
                     trend_60m = 'BULLISH'
-                elif current_60m < sma_5 * 0.998 and momentum_60m < -0.3:  # Below SMA + negative momentum
+                elif current_60m < sma_5 * 0.998 and sma_slope < -0.05 and momentum_60m < -0.3:
                     trend_60m = 'BEARISH'
             
             result['timeframes']['60min'] = trend_60m
             
             # ============= 15-MINUTE TREND =============
             trend_15m = 'NEUTRAL'
-            if mtf['15min'] and len(mtf['15min']) >= 5:
+            if mtf['15min'] and len(mtf['15min']) >= 6:
                 closes_15m = [c['close'] for c in mtf['15min'][-15:]]
                 
                 sma_5 = np.mean(closes_15m[-5:])
+                sma_5_prev = np.mean(closes_15m[-6:-1]) if len(closes_15m) >= 6 else sma_5
                 current_15m = closes_15m[-1]
                 momentum_15m = (closes_15m[-1] / closes_15m[-4] - 1) * 100 if len(closes_15m) >= 4 else 0
+                sma_slope = (sma_5 - sma_5_prev) / sma_5_prev * 100 if sma_5_prev > 0 else 0
                 
-                if current_15m > sma_5 * 1.001 and momentum_15m > 0.2:
+                if current_15m > sma_5 * 1.001 and sma_slope > 0.03 and momentum_15m > 0.2:
                     trend_15m = 'BULLISH'
-                elif current_15m < sma_5 * 0.999 and momentum_15m < -0.2:
+                elif current_15m < sma_5 * 0.999 and sma_slope < -0.03 and momentum_15m < -0.2:
                     trend_15m = 'BEARISH'
             
             result['timeframes']['15min'] = trend_15m
             
             # ============= 5-MINUTE TREND (Entry Timing) =============
             trend_5m = 'NEUTRAL'
-            if mtf['5min'] and len(mtf['5min']) >= 5:
+            if mtf['5min'] and len(mtf['5min']) >= 6:
                 closes_5m = [c['close'] for c in mtf['5min'][-20:]]
                 
                 sma_5 = np.mean(closes_5m[-5:])
+                sma_5_prev = np.mean(closes_5m[-6:-1]) if len(closes_5m) >= 6 else sma_5
                 sma_10 = np.mean(closes_5m[-10:])
                 current_5m = closes_5m[-1]
                 momentum_5m = (closes_5m[-1] / closes_5m[-3] - 1) * 100 if len(closes_5m) >= 3 else 0
+                sma_slope = (sma_5 - sma_5_prev) / sma_5_prev * 100 if sma_5_prev > 0 else 0
                 
-                # More sensitive for entry timing
-                if current_5m > sma_5 and sma_5 > sma_10 and momentum_5m > 0.1:
+                # More sensitive for entry timing but still require slope agreement
+                if current_5m > sma_5 and sma_5 > sma_10 and sma_slope > 0.01 and momentum_5m > 0.1:
                     trend_5m = 'BULLISH'
-                elif current_5m < sma_5 and sma_5 < sma_10 and momentum_5m < -0.1:
+                elif current_5m < sma_5 and sma_5 < sma_10 and sma_slope < -0.01 and momentum_5m < -0.1:
                     trend_5m = 'BEARISH'
             
             result['timeframes']['5min'] = trend_5m
