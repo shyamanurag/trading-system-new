@@ -72,11 +72,19 @@ class EnhancedOpenPositionDecision:
     def __init__(self, config: Dict = None):
         self.config = config or {}
         
-        # PROFIT/LOSS THRESHOLDS
-        self.profit_booking_threshold_1 = self.config.get('profit_booking_threshold_1', 15.0)  # 15% profit
-        self.profit_booking_threshold_2 = self.config.get('profit_booking_threshold_2', 25.0)  # 25% profit
-        self.stop_loss_threshold = self.config.get('stop_loss_threshold', -8.0)  # -8% loss
-        self.trailing_stop_activation = self.config.get('trailing_stop_activation', 10.0)  # 10% profit
+        # 🚨 INTRADAY PROFIT/LOSS THRESHOLDS (TUNED for realistic intraday targets)
+        # Previous: 15%/25% (swing trading levels - never hit intraday)
+        # New: 2%/4% (realistic intraday profit booking)
+        self.profit_booking_threshold_1 = self.config.get('profit_booking_threshold_1', 2.0)  # 2% profit (was 15%)
+        self.profit_booking_threshold_2 = self.config.get('profit_booking_threshold_2', 4.0)  # 4% profit (was 25%)
+        self.stop_loss_threshold = self.config.get('stop_loss_threshold', -2.0)  # -2% loss (was -8%)
+        self.trailing_stop_activation = self.config.get('trailing_stop_activation', 1.5)  # 1.5% profit (was 10%)
+        
+        # 🎯 RSI-BASED EXIT THRESHOLDS (NEW - KEY IMPROVEMENT)
+        self.rsi_overbought_threshold = 85  # Partial exit when RSI > 85 AND profitable
+        self.rsi_extreme_threshold = 90     # Tighten stop when RSI > 90
+        self.rsi_oversold_threshold = 15    # Partial exit shorts when RSI < 15 AND profitable
+        self.rsi_extreme_oversold = 10      # Tighten stop for shorts when RSI < 10
         
         # TIME-BASED PARAMETERS
         self.max_position_age_minutes = self.config.get('max_position_age_minutes', 240)  # 4 hours max
@@ -157,6 +165,15 @@ class EnhancedOpenPositionDecision:
             )
             if profit_result.action == OpenPositionAction.EXIT_PARTIAL:
                 return profit_result
+            
+            # 🎯 STEP 5B: RSI-BASED EXIT CHECK (NEW - KEY IMPROVEMENT)
+            # Exit when RSI is extreme even if profit targets not hit
+            rsi_result = await self._check_rsi_based_exits(
+                position, current_price, position_metrics, market_data
+            )
+            if rsi_result.action in [OpenPositionAction.EXIT_PARTIAL, OpenPositionAction.EXIT_FULL, 
+                                      OpenPositionAction.TRAIL_STOP]:
+                return rsi_result
             
             # STEP 6: Evaluate Position Scaling Opportunities
             scaling_result = await self._evaluate_position_scaling(
@@ -496,27 +513,35 @@ class EnhancedOpenPositionDecision:
     
     async def _analyze_profit_booking(self, position: Dict, current_price: float, 
                                     metrics: Dict, market_data: Dict) -> OpenPositionDecisionResult:
-        """Analyze profit booking opportunities"""
+        """
+        Analyze profit booking opportunities
+        
+        🚨 INTRADAY OPTIMIZED THRESHOLDS:
+        - Threshold 1: 2% profit → Book 50% (if held >10 min)
+        - Threshold 2: 4% profit → Book 75% immediately
+        """
         try:
             pnl_percent = metrics['pnl_percent']
             age_minutes = metrics['age_minutes']
             
-            # Profit booking at 25% profit
+            # 🎯 MAJOR PROFIT: Book 75% at 4%+ profit (don't wait, intraday profits vanish quickly)
             if pnl_percent >= self.profit_booking_threshold_2:
+                logger.info(f"💰 MAJOR PROFIT BOOKING: {pnl_percent:.1f}% >= {self.profit_booking_threshold_2}%")
                 return OpenPositionDecisionResult(
                     action=OpenPositionAction.EXIT_PARTIAL,
                     exit_reason=ExitReason.PROFIT_BOOKING,
                     confidence=8.5,
-                    urgency="MEDIUM",
+                    urgency="HIGH",
                     quantity_percentage=75.0,  # Book 75% profits
                     new_stop_loss=None,
                     new_target=None,
-                    reasoning=f"Major profit booking: {pnl_percent:.1f}% profit >= {self.profit_booking_threshold_2}% threshold",
+                    reasoning=f"MAJOR PROFIT: {pnl_percent:.1f}% >= {self.profit_booking_threshold_2}% → Booking 75%",
                     metadata={'pnl_percent': pnl_percent, 'threshold': self.profit_booking_threshold_2}
                 )
             
-            # Profit booking at 15% profit (if held >30 minutes)
-            elif pnl_percent >= self.profit_booking_threshold_1 and age_minutes > 30:
+            # 🎯 MODERATE PROFIT: Book 50% at 2%+ profit (if held >10 minutes)
+            elif pnl_percent >= self.profit_booking_threshold_1 and age_minutes > 10:
+                logger.info(f"📈 MODERATE PROFIT BOOKING: {pnl_percent:.1f}% >= {self.profit_booking_threshold_1}% after {age_minutes:.1f}min")
                 return OpenPositionDecisionResult(
                     action=OpenPositionAction.EXIT_PARTIAL,
                     exit_reason=ExitReason.PROFIT_BOOKING,
@@ -525,7 +550,7 @@ class EnhancedOpenPositionDecision:
                     quantity_percentage=50.0,  # Book 50% profits
                     new_stop_loss=None,
                     new_target=None,
-                    reasoning=f"Moderate profit booking: {pnl_percent:.1f}% profit after {age_minutes:.1f} minutes",
+                    reasoning=f"MODERATE PROFIT: {pnl_percent:.1f}% >= {self.profit_booking_threshold_1}% after {age_minutes:.0f}min → Booking 50%",
                     metadata={'pnl_percent': pnl_percent, 'age_minutes': age_minutes}
                 )
             
@@ -553,6 +578,211 @@ class EnhancedOpenPositionDecision:
                 new_stop_loss=None,
                 new_target=None,
                 reasoning=f"Profit booking analysis error: {str(e)}",
+                metadata={'error': str(e)}
+            )
+    
+    async def _check_rsi_based_exits(self, position: Dict, current_price: float,
+                                    metrics: Dict, market_data: Dict) -> OpenPositionDecisionResult:
+        """
+        🎯 RSI-BASED EXIT SYSTEM (NEW - KEY WIN IMPROVEMENT)
+        
+        Problem: Positions with RSI 90+ were being held indefinitely.
+        Solution: Use RSI extremes to trigger profit booking and stop tightening.
+        
+        Logic:
+        - LONG positions: Exit when RSI > 85 (overbought)
+        - SHORT positions: Exit when RSI < 15 (oversold)
+        - Extreme RSI (>90 or <10): Tighten stop to lock profits
+        """
+        try:
+            symbol = position.get('symbol', '')
+            action = metrics['action']
+            pnl_percent = metrics['pnl_percent']
+            entry_price = metrics['entry_price']
+            
+            # Extract RSI from market data (try multiple sources)
+            rsi = None
+            if isinstance(market_data, dict):
+                rsi = market_data.get('rsi') or market_data.get('RSI')
+                # Also check nested data structures
+                if rsi is None and 'indicators' in market_data:
+                    rsi = market_data['indicators'].get('rsi')
+            
+            # If RSI not in market_data, try to calculate from TrueData live data
+            if rsi is None:
+                try:
+                    from data.truedata_client import live_market_data
+                    if symbol in live_market_data:
+                        symbol_data = live_market_data[symbol]
+                        # Calculate RSI from OHLC if price history available
+                        prices = symbol_data.get('price_history', [])
+                        if not prices and 'ltp' in symbol_data:
+                            # Use current day's range to estimate RSI
+                            ltp = float(symbol_data.get('ltp', 0))
+                            open_price = float(symbol_data.get('open', ltp))
+                            high = float(symbol_data.get('high', ltp))
+                            low = float(symbol_data.get('low', ltp))
+                            
+                            if open_price > 0 and ltp > 0:
+                                # Estimate RSI based on position in day's range
+                                day_range = high - low
+                                if day_range > 0:
+                                    position_in_range = (ltp - low) / day_range
+                                    # Map position to approximate RSI (0-100)
+                                    # At low = RSI ~30, at high = RSI ~70, linear interpolation
+                                    rsi = 30 + (position_in_range * 40)
+                                    
+                                    # Adjust for intraday momentum
+                                    change_pct = ((ltp - open_price) / open_price) * 100
+                                    if change_pct > 2:  # Strong up day
+                                        rsi = min(95, rsi + 20)
+                                    elif change_pct > 1:
+                                        rsi = min(90, rsi + 10)
+                                    elif change_pct < -2:  # Strong down day
+                                        rsi = max(5, rsi - 20)
+                                    elif change_pct < -1:
+                                        rsi = max(10, rsi - 10)
+                                    
+                                    logger.debug(f"📊 RSI ESTIMATE: {symbol} RSI={rsi:.1f} (change={change_pct:+.2f}%)")
+                except Exception as e:
+                    logger.debug(f"Could not estimate RSI for {symbol}: {e}")
+            
+            if rsi is None:
+                # Cannot determine RSI - skip RSI-based logic
+                return OpenPositionDecisionResult(
+                    action=OpenPositionAction.HOLD,
+                    exit_reason=None,
+                    confidence=0.0,
+                    urgency="LOW",
+                    quantity_percentage=0.0,
+                    new_stop_loss=None,
+                    new_target=None,
+                    reasoning="RSI not available - skipping RSI-based exit check",
+                    metadata={'rsi': None}
+                )
+            
+            rsi = float(rsi)
+            
+            # ============= LONG POSITION RSI CHECKS =============
+            if action == 'BUY':
+                # EXTREME OVERBOUGHT (RSI > 90): Partial exit + tighten stop
+                if rsi >= self.rsi_extreme_threshold:
+                    if pnl_percent > 0:
+                        # Profitable - book 50% profits
+                        logger.info(f"🔴 RSI EXTREME EXIT: {symbol} RSI={rsi:.1f} > 90 with +{pnl_percent:.1f}% profit")
+                        return OpenPositionDecisionResult(
+                            action=OpenPositionAction.EXIT_PARTIAL,
+                            exit_reason=ExitReason.PROFIT_BOOKING,
+                            confidence=8.5,
+                            urgency="HIGH",
+                            quantity_percentage=50.0,
+                            new_stop_loss=current_price * 0.995,  # Tighten stop to 0.5% below
+                            new_target=None,
+                            reasoning=f"RSI EXTREME ({rsi:.1f}): Booking 50% profit at +{pnl_percent:.1f}% | Stop tightened",
+                            metadata={'rsi': rsi, 'pnl_percent': pnl_percent, 'trigger': 'RSI_EXTREME_OVERBOUGHT'}
+                        )
+                    else:
+                        # Not profitable but RSI extreme - tighten stop to minimize loss
+                        logger.info(f"⚠️ RSI EXTREME: {symbol} RSI={rsi:.1f} > 90 but P&L={pnl_percent:.1f}% - Tightening stop")
+                        return OpenPositionDecisionResult(
+                            action=OpenPositionAction.TRAIL_STOP,
+                            exit_reason=None,
+                            confidence=7.0,
+                            urgency="MEDIUM",
+                            quantity_percentage=0.0,
+                            new_stop_loss=current_price * 0.99,  # 1% stop loss
+                            new_target=None,
+                            reasoning=f"RSI EXTREME ({rsi:.1f}): Tightening stop to minimize potential loss",
+                            metadata={'rsi': rsi, 'pnl_percent': pnl_percent, 'trigger': 'RSI_EXTREME_PROTECT'}
+                        )
+                
+                # OVERBOUGHT (RSI > 85): Partial exit if profitable
+                elif rsi >= self.rsi_overbought_threshold:
+                    if pnl_percent >= 0.5:  # At least 0.5% profit
+                        logger.info(f"📈 RSI OVERBOUGHT EXIT: {symbol} RSI={rsi:.1f} > 85 with +{pnl_percent:.1f}% profit")
+                        return OpenPositionDecisionResult(
+                            action=OpenPositionAction.EXIT_PARTIAL,
+                            exit_reason=ExitReason.PROFIT_BOOKING,
+                            confidence=7.5,
+                            urgency="MEDIUM",
+                            quantity_percentage=30.0,  # Book 30% at RSI > 85
+                            new_stop_loss=entry_price * 1.002,  # Move stop to +0.2% (breakeven+)
+                            new_target=None,
+                            reasoning=f"RSI OVERBOUGHT ({rsi:.1f}): Booking 30% profit at +{pnl_percent:.1f}% | Stop to breakeven",
+                            metadata={'rsi': rsi, 'pnl_percent': pnl_percent, 'trigger': 'RSI_OVERBOUGHT'}
+                        )
+            
+            # ============= SHORT POSITION RSI CHECKS =============
+            elif action == 'SELL':
+                # EXTREME OVERSOLD (RSI < 10): Partial exit + tighten stop
+                if rsi <= self.rsi_extreme_oversold:
+                    if pnl_percent > 0:
+                        logger.info(f"🔴 RSI EXTREME EXIT: {symbol} RSI={rsi:.1f} < 10 with +{pnl_percent:.1f}% profit")
+                        return OpenPositionDecisionResult(
+                            action=OpenPositionAction.EXIT_PARTIAL,
+                            exit_reason=ExitReason.PROFIT_BOOKING,
+                            confidence=8.5,
+                            urgency="HIGH",
+                            quantity_percentage=50.0,
+                            new_stop_loss=current_price * 1.005,  # Tighten stop to 0.5% above
+                            new_target=None,
+                            reasoning=f"RSI EXTREME OVERSOLD ({rsi:.1f}): Booking 50% profit at +{pnl_percent:.1f}%",
+                            metadata={'rsi': rsi, 'pnl_percent': pnl_percent, 'trigger': 'RSI_EXTREME_OVERSOLD'}
+                        )
+                    else:
+                        logger.info(f"⚠️ RSI EXTREME: {symbol} RSI={rsi:.1f} < 10 but P&L={pnl_percent:.1f}% - Tightening stop")
+                        return OpenPositionDecisionResult(
+                            action=OpenPositionAction.TRAIL_STOP,
+                            exit_reason=None,
+                            confidence=7.0,
+                            urgency="MEDIUM",
+                            quantity_percentage=0.0,
+                            new_stop_loss=current_price * 1.01,  # 1% stop loss above
+                            new_target=None,
+                            reasoning=f"RSI EXTREME OVERSOLD ({rsi:.1f}): Tightening stop to minimize loss",
+                            metadata={'rsi': rsi, 'pnl_percent': pnl_percent, 'trigger': 'RSI_EXTREME_PROTECT'}
+                        )
+                
+                # OVERSOLD (RSI < 15): Partial exit if profitable
+                elif rsi <= self.rsi_oversold_threshold:
+                    if pnl_percent >= 0.5:
+                        logger.info(f"📉 RSI OVERSOLD EXIT: {symbol} RSI={rsi:.1f} < 15 with +{pnl_percent:.1f}% profit")
+                        return OpenPositionDecisionResult(
+                            action=OpenPositionAction.EXIT_PARTIAL,
+                            exit_reason=ExitReason.PROFIT_BOOKING,
+                            confidence=7.5,
+                            urgency="MEDIUM",
+                            quantity_percentage=30.0,
+                            new_stop_loss=entry_price * 0.998,  # Move stop to breakeven-
+                            new_target=None,
+                            reasoning=f"RSI OVERSOLD ({rsi:.1f}): Booking 30% profit at +{pnl_percent:.1f}%",
+                            metadata={'rsi': rsi, 'pnl_percent': pnl_percent, 'trigger': 'RSI_OVERSOLD'}
+                        )
+            
+            # No RSI-based exit needed
+            return OpenPositionDecisionResult(
+                action=OpenPositionAction.HOLD,
+                exit_reason=None,
+                confidence=0.0,
+                urgency="LOW",
+                quantity_percentage=0.0,
+                new_stop_loss=None,
+                new_target=None,
+                reasoning=f"RSI ({rsi:.1f}) within normal range - Continue holding",
+                metadata={'rsi': rsi, 'pnl_percent': pnl_percent}
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in RSI-based exit check: {e}")
+            return OpenPositionDecisionResult(
+                action=OpenPositionAction.HOLD,
+                exit_reason=None,
+                confidence=0.0,
+                urgency="LOW",
+                quantity_percentage=0.0,
+                new_stop_loss=None,
+                new_target=None,
+                reasoning=f"RSI check error: {str(e)}",
                 metadata={'error': str(e)}
             )
     
