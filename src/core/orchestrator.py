@@ -2147,8 +2147,33 @@ class TradingOrchestrator:
                                         )
                                         
                                         if decision_result.decision.value != "APPROVED":
-                                            self.logger.info(f"🚫 POSITION REJECTED: {validated_signal.get('symbol')} - {decision_result.reasoning}")
-                                            continue  # Skip this signal
+                                            # 🚨 CRITICAL: Check if this is a REVERSAL signal that should trigger exit
+                                            trigger_exit = getattr(decision_result, 'metadata', {}).get('trigger_exit', False)
+                                            
+                                            if trigger_exit:
+                                                # 🔄 REVERSAL DETECTED - Close existing position!
+                                                existing_position = decision_result.metadata.get('existing_position', {})
+                                                exit_reason = decision_result.metadata.get('exit_reason', 'REVERSAL_SIGNAL')
+                                                
+                                                self.logger.warning(f"🔄 REVERSAL EXIT TRIGGERED: {validated_signal.get('symbol')}")
+                                                self.logger.warning(f"   Existing: {existing_position.get('action')} @ ₹{existing_position.get('entry_price', 0):.2f}")
+                                                self.logger.warning(f"   Reversal signal: {validated_signal.get('action')} with confidence {validated_signal.get('confidence', 0):.1f}")
+                                                
+                                                # Execute the exit
+                                                try:
+                                                    await self._execute_reversal_exit(
+                                                        symbol=validated_signal.get('symbol'),
+                                                        existing_position=existing_position,
+                                                        reversal_signal=validated_signal,
+                                                        strategy_instance=strategy_instance,
+                                                        reason=exit_reason
+                                                    )
+                                                except Exception as exit_error:
+                                                    self.logger.error(f"❌ Failed to execute reversal exit: {exit_error}")
+                                            else:
+                                                self.logger.info(f"🚫 POSITION REJECTED: {validated_signal.get('symbol')} - {decision_result.reasoning}")
+                                            
+                                            continue  # Skip opening new position (but exit was triggered if reversal)
                                         else:
                                             # Update signal with optimized position size
                                             validated_signal['quantity'] = decision_result.position_size
@@ -4325,6 +4350,86 @@ class TradingOrchestrator:
                 reasoning=f"Evaluation error: {str(e)}",
                 metadata={'error': str(e)}
             )
+    
+    async def _execute_reversal_exit(self, symbol: str, existing_position: Dict, 
+                                     reversal_signal: Dict, strategy_instance, reason: str):
+        """
+        🔄 EXECUTE REVERSAL EXIT
+        
+        When algorithm detects opposite signal (e.g., SELL for existing BUY position),
+        close the existing position to prevent further losses.
+        
+        This is CRITICAL for algo trading - the system MUST act on reversal signals.
+        Example: INFY had BUY position losing money, system detected SELL signal but
+        previously did nothing. Now it will close the losing BUY position.
+        """
+        try:
+            self.logger.warning(f"🔄 EXECUTING REVERSAL EXIT: {symbol}")
+            
+            # Get position details
+            existing_action = existing_position.get('action', 'BUY')
+            existing_qty = existing_position.get('quantity', 0)
+            entry_price = existing_position.get('entry_price', 0)
+            
+            if existing_qty <= 0:
+                self.logger.warning(f"⚠️ No quantity to exit for {symbol}")
+                return
+            
+            # Determine exit action (opposite of existing position)
+            exit_action = 'SELL' if existing_action == 'BUY' else 'BUY'
+            
+            self.logger.warning(f"   📊 Position: {existing_action} {existing_qty} @ ₹{entry_price:.2f}")
+            self.logger.warning(f"   🎯 Exit action: {exit_action} {existing_qty} shares")
+            self.logger.warning(f"   📝 Reason: {reason}")
+            self.logger.warning(f"   📈 Reversal signal confidence: {reversal_signal.get('confidence', 0):.1f}")
+            
+            # Place exit order via Zerodha
+            if hasattr(self, 'zerodha_client') and self.zerodha_client:
+                try:
+                    order_params = {
+                        'symbol': symbol,
+                        'action': exit_action,
+                        'quantity': existing_qty,
+                        'order_type': 'MARKET',  # Exit immediately at market
+                        'product': 'MIS',  # Intraday
+                    }
+                    
+                    self.logger.info(f"📤 Placing reversal exit order: {order_params}")
+                    
+                    order_result = await self.zerodha_client.place_order(**order_params)
+                    
+                    if order_result and order_result.get('order_id'):
+                        self.logger.info(f"✅ REVERSAL EXIT ORDER PLACED: {symbol}")
+                        self.logger.info(f"   Order ID: {order_result.get('order_id')}")
+                        
+                        # Update strategy's position tracking
+                        if hasattr(strategy_instance, 'active_positions'):
+                            if symbol in strategy_instance.active_positions:
+                                del strategy_instance.active_positions[symbol]
+                                self.logger.info(f"   ✅ Removed {symbol} from strategy positions")
+                        
+                        # Update position tracker
+                        if hasattr(self, 'position_tracker') and self.position_tracker:
+                            try:
+                                await self.position_tracker.close_position(symbol, reason)
+                                self.logger.info(f"   ✅ Position tracker updated")
+                            except Exception as tracker_error:
+                                self.logger.error(f"   ⚠️ Position tracker update failed: {tracker_error}")
+                    else:
+                        self.logger.error(f"❌ REVERSAL EXIT ORDER FAILED: {symbol}")
+                        self.logger.error(f"   Result: {order_result}")
+                        
+                except Exception as order_error:
+                    self.logger.error(f"❌ Failed to place reversal exit order: {order_error}")
+                    import traceback
+                    self.logger.error(traceback.format_exc())
+            else:
+                self.logger.error(f"❌ No Zerodha client available for reversal exit")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error executing reversal exit for {symbol}: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
     
     async def _validate_and_fix_signal_ltp(self, signal: Dict) -> Optional[Dict]:
         """Validate signal and fetch real LTP for options if entry_price is 0.0"""

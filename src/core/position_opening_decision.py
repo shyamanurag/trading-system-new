@@ -145,9 +145,12 @@ class EnhancedPositionOpeningDecision:
             if timing_result.decision != PositionDecision.APPROVED:
                 return timing_result
             
-            # STEP 3: Duplicate Position Check
-            duplicate_result = await self._check_duplicate_position(symbol, current_positions)
+            # STEP 3: Duplicate Position Check (with REVERSAL detection)
+            duplicate_result = await self._check_duplicate_position(symbol, action, current_positions)
             if duplicate_result.decision != PositionDecision.APPROVED:
+                # 🚨 Check if this is a REVERSAL signal that should trigger exit
+                if duplicate_result.metadata.get('trigger_exit', False):
+                    logger.warning(f"🔄 REVERSAL DETECTED: {symbol} - Will trigger exit of existing position")
                 return duplicate_result
             
             # STEP 4: Market Bias Alignment (with Relative Strength)
@@ -460,19 +463,57 @@ class EnhancedPositionOpeningDecision:
                 metadata={'error': str(e)}
             )
     
-    async def _check_duplicate_position(self, symbol: str, current_positions: Dict) -> PositionDecisionResult:
-        """Check for duplicate positions"""
+    async def _check_duplicate_position(self, symbol: str, action: str, current_positions: Dict) -> PositionDecisionResult:
+        """
+        Check for duplicate positions
+        
+        🚨 CRITICAL FIX: If opposite signal (SELL for BUY position), this should 
+        TRIGGER EXIT, not reject as duplicate!
+        
+        Logic:
+        - BUY signal + existing BUY position → REJECT (duplicate)
+        - SELL signal + existing BUY position → TRIGGER EXIT (return special flag)
+        - SELL signal + existing SELL position → REJECT (duplicate)
+        - BUY signal + existing SELL position → TRIGGER EXIT (cover short)
+        """
         try:
             if symbol in current_positions:
                 existing_position = current_positions[symbol]
-                return PositionDecisionResult(
-                    decision=PositionDecision.REJECTED_DUPLICATE,
-                    confidence_score=0.0,
-                    risk_score=0.0,
-                    position_size=0,
-                    reasoning=f"Existing position found for {symbol}",
-                    metadata={'existing_position': existing_position}
+                existing_action = existing_position.get('action', 'BUY')
+                
+                # 🎯 CHECK: Is this an OPPOSITE signal?
+                is_opposite_signal = (
+                    (action == 'SELL' and existing_action == 'BUY') or
+                    (action == 'BUY' and existing_action == 'SELL')
                 )
+                
+                if is_opposite_signal:
+                    # This is a REVERSAL signal - should trigger exit of existing position!
+                    logger.info(f"🔄 REVERSAL SIGNAL: {symbol} has {existing_action} position, received {action} signal")
+                    logger.info(f"   → This should trigger EXIT of existing {existing_action} position")
+                    
+                    return PositionDecisionResult(
+                        decision=PositionDecision.REJECTED_DUPLICATE,  # Still reject new position
+                        confidence_score=0.0,
+                        risk_score=0.0,
+                        position_size=0,
+                        reasoning=f"REVERSAL SIGNAL: {action} for existing {existing_action} position - EXIT TRIGGERED",
+                        metadata={
+                            'existing_position': existing_position,
+                            'trigger_exit': True,  # 🚨 Flag to trigger exit
+                            'exit_reason': f'REVERSAL_SIGNAL_{action}'
+                        }
+                    )
+                else:
+                    # Same direction - true duplicate
+                    return PositionDecisionResult(
+                        decision=PositionDecision.REJECTED_DUPLICATE,
+                        confidence_score=0.0,
+                        risk_score=0.0,
+                        position_size=0,
+                        reasoning=f"Duplicate {action} position found for {symbol}",
+                        metadata={'existing_position': existing_position, 'trigger_exit': False}
+                    )
             
             return PositionDecisionResult(
                 decision=PositionDecision.APPROVED,

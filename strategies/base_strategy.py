@@ -1266,7 +1266,14 @@ class BaseStrategy:
     
     async def _evaluate_open_position_decision(self, symbol: str, current_price: float, 
                                              position: Dict, market_data: Dict):
-        """Evaluate open position using enhanced decision system"""
+        """
+        Evaluate open position using enhanced decision system
+        
+        🚨 CRITICAL FIX: Enrich market_data with technical indicators (RSI, MACD, etc.)
+        so the position decision system can make intelligent exit decisions based on CHARTS.
+        
+        Without this, positions just get generic "HOLD" decisions and lose money.
+        """
         try:
             # Import the enhanced open position decision system
             from src.core.open_position_decision import evaluate_open_position
@@ -1274,11 +1281,21 @@ class BaseStrategy:
             # Get market bias if available
             market_bias = getattr(self, 'market_bias', None)
             
-            # Evaluate position decision
+            # 🚨 CRITICAL: ENRICH market_data with technical indicators for CHART-BASED decisions
+            enriched_market_data = await self._enrich_position_data_with_indicators(symbol, market_data)
+            
+            # Log what indicators are available for decision making
+            rsi_available = 'rsi' in enriched_market_data
+            macd_available = 'macd_crossover' in enriched_market_data
+            logger.debug(f"📊 Position Analysis Data: {symbol} - RSI={enriched_market_data.get('rsi', 'N/A')}, "
+                        f"MACD={enriched_market_data.get('macd_crossover', 'N/A')}, "
+                        f"Change={enriched_market_data.get('change_percent', 0):.2f}%")
+            
+            # Evaluate position decision with ENRICHED data
             decision_result = await evaluate_open_position(
                 position=position,
                 current_price=current_price,
-                market_data=market_data,
+                market_data=enriched_market_data,
                 market_bias=market_bias,
                 portfolio_context={'strategy_name': self.name}
             )
@@ -1304,6 +1321,119 @@ class BaseStrategy:
                 reasoning=f"Decision evaluation error: {str(e)} - Defaulting to HOLD",
                 metadata={'error': str(e)}
             )
+    
+    async def _enrich_position_data_with_indicators(self, symbol: str, market_data: Dict) -> Dict:
+        """
+        🚨 CRITICAL: Enrich market data with technical indicators for position analysis
+        
+        Without RSI, MACD, and other indicators, the position decision system cannot
+        make intelligent exit decisions based on chart patterns. Positions end up
+        being held indefinitely with generic "HOLD" reasoning.
+        
+        This method calculates:
+        - RSI (Relative Strength Index) - for overbought/oversold detection
+        - MACD crossover - for momentum reversal detection
+        - Buying/Selling pressure - for candle body analysis
+        - Price momentum - for trend strength
+        """
+        try:
+            # Start with existing market data
+            enriched_data = dict(market_data) if market_data else {}
+            
+            # Get price data from TrueData live feed
+            from data.truedata_client import live_market_data
+            
+            if symbol in live_market_data:
+                symbol_data = live_market_data[symbol]
+                
+                # Add basic price data
+                enriched_data['ltp'] = symbol_data.get('ltp', enriched_data.get('ltp', 0))
+                enriched_data['open'] = symbol_data.get('open', enriched_data.get('open', 0))
+                enriched_data['high'] = symbol_data.get('high', enriched_data.get('high', 0))
+                enriched_data['low'] = symbol_data.get('low', enriched_data.get('low', 0))
+                enriched_data['volume'] = symbol_data.get('volume', enriched_data.get('volume', 0))
+                enriched_data['change_percent'] = symbol_data.get('change_percent', 0)
+                
+                ltp = float(enriched_data.get('ltp', 0))
+                open_price = float(enriched_data.get('open', ltp))
+                high = float(enriched_data.get('high', ltp))
+                low = float(enriched_data.get('low', ltp))
+                
+                if ltp > 0 and open_price > 0:
+                    # ============= CALCULATE RSI (Estimated from intraday data) =============
+                    day_range = high - low
+                    if day_range > 0:
+                        # Position in day's range (0=low, 1=high)
+                        range_position = (ltp - low) / day_range
+                        
+                        # Base RSI estimate from range position
+                        base_rsi = 30 + (range_position * 40)  # Maps 0-1 to 30-70
+                        
+                        # Adjust based on intraday momentum
+                        change_pct = ((ltp - open_price) / open_price) * 100
+                        
+                        if change_pct > 2.0:
+                            rsi = min(95, base_rsi + 25)  # Strong up day
+                        elif change_pct > 1.0:
+                            rsi = min(85, base_rsi + 15)
+                        elif change_pct > 0.5:
+                            rsi = min(75, base_rsi + 8)
+                        elif change_pct < -2.0:
+                            rsi = max(5, base_rsi - 25)   # Strong down day
+                        elif change_pct < -1.0:
+                            rsi = max(15, base_rsi - 15)
+                        elif change_pct < -0.5:
+                            rsi = max(25, base_rsi - 8)
+                        else:
+                            rsi = base_rsi
+                        
+                        enriched_data['rsi'] = rsi
+                        
+                        # Log RSI for debugging
+                        logger.debug(f"📊 {symbol} RSI CALCULATED: {rsi:.1f} (change={change_pct:+.2f}%, range_pos={range_position:.2f})")
+                    
+                    # ============= CALCULATE BUYING/SELLING PRESSURE =============
+                    candle_body = ltp - open_price
+                    
+                    if day_range > 0:
+                        if candle_body > 0:  # Green candle
+                            buying_pressure = min(1.0, candle_body / day_range + 0.5)
+                            selling_pressure = 1 - buying_pressure
+                        else:  # Red candle
+                            selling_pressure = min(1.0, abs(candle_body) / day_range + 0.5)
+                            buying_pressure = 1 - selling_pressure
+                    else:
+                        buying_pressure = 0.5
+                        selling_pressure = 0.5
+                    
+                    enriched_data['buying_pressure'] = buying_pressure
+                    enriched_data['selling_pressure'] = selling_pressure
+                    
+                    # ============= ESTIMATE MACD CROSSOVER =============
+                    # Use change momentum to estimate MACD direction
+                    if change_pct > 0.3 and buying_pressure > 0.6:
+                        macd_crossover = 'bullish'
+                    elif change_pct < -0.3 and selling_pressure > 0.6:
+                        macd_crossover = 'bearish'
+                    else:
+                        macd_crossover = 'neutral'
+                    
+                    enriched_data['macd_crossover'] = macd_crossover
+                    
+                    # ============= MOMENTUM AND TREND =============
+                    enriched_data['momentum'] = change_pct / 2.0  # Normalized momentum
+                    enriched_data['intraday_change_pct'] = change_pct
+                    
+                    # Log enriched data summary
+                    logger.info(f"📊 {symbol} POSITION ANALYSIS: RSI={enriched_data.get('rsi', 'N/A'):.1f}, "
+                               f"MACD={macd_crossover}, Change={change_pct:+.2f}%, "
+                               f"Buy/Sell={buying_pressure:.0%}/{selling_pressure:.0%}")
+            
+            return enriched_data
+            
+        except Exception as e:
+            logger.error(f"Error enriching position data for {symbol}: {e}")
+            return market_data if market_data else {}
     
     async def _execute_position_decision(self, symbol: str, current_price: float, 
                                        position: Dict, decision_result):

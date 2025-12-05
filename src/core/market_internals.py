@@ -354,7 +354,7 @@ class MarketInternalsAnalyzer:
     def _detect_market_regime(self, market_data: Dict, breadth: Dict, volatility: Dict) -> Dict:
         """Detect current market regime"""
         try:
-            # Calculate Choppiness Index
+            # Calculate Choppiness Index (for reference, but not sole determinant)
             choppiness = self._calculate_choppiness_index(market_data)
             
             # Determine trend strength
@@ -362,7 +362,28 @@ class MarketInternalsAnalyzer:
             nifty_change = abs(nifty_data.get('change_percent', 0))
             ad_ratio = breadth['ad_ratio']
             
-            # Trend strength calculation
+            # 🚨 FIX: Calculate INTRADAY TREND QUALITY (more reliable than choppiness index)
+            # Choppiness Index was returning 100.0 for clear bullish days
+            ltp = float(nifty_data.get('ltp', 0))
+            open_price = float(nifty_data.get('open', ltp))
+            high = float(nifty_data.get('high', ltp))
+            low = float(nifty_data.get('low', ltp))
+            
+            # Intraday directional quality: how close is price to high/low vs middle?
+            day_range = high - low
+            if day_range > 0 and ltp > 0:
+                # 0 = at low, 1 = at high
+                range_position = (ltp - low) / day_range
+                # Calculate directional strength: closer to 0 or 1 = more directional
+                directional_strength = abs(range_position - 0.5) * 2  # 0 = middle (choppy), 1 = at extremes (trending)
+                
+                # Intraday trend direction
+                intraday_move_pct = ((ltp - open_price) / open_price * 100) if open_price > 0 else 0
+            else:
+                directional_strength = 0.5
+                intraday_move_pct = 0
+            
+            # Trend strength calculation (enhanced with directional quality)
             if ad_ratio > 2 or ad_ratio < 0.5:  # Strong breadth
                 trend_strength = min(100, nifty_change * 20 + 40)
             elif ad_ratio > 1.5 or ad_ratio < 0.67:  # Moderate breadth
@@ -370,11 +391,26 @@ class MarketInternalsAnalyzer:
             else:  # Weak breadth
                 trend_strength = min(100, nifty_change * 10)
             
-            # Determine regime
+            # 🎯 ENHANCED: Boost trend strength if price is directional
+            if directional_strength > 0.7:  # Price near high or low
+                trend_strength = min(100, trend_strength + 20)
+            
+            # Determine regime - 🚨 FIX: Prioritize actual movement over choppiness index
             vix_level = volatility['vix_level']
             intraday_vol = volatility['intraday_vol']
             
-            if choppiness > self.choppiness_threshold:
+            # 🎯 CRITICAL FIX: If NIFTY has strong directional move, it's TRENDING not CHOPPY
+            # Previous bug: NIFTY +0.73% with A/D 1.28 was marked CHOPPY
+            is_strong_intraday_move = abs(intraday_move_pct) >= 0.5  # 0.5%+ intraday = trending
+            is_strong_breadth = ad_ratio > 1.2 or ad_ratio < 0.8  # Strong breadth imbalance
+            
+            if is_strong_intraday_move and is_strong_breadth:
+                # Clear trending market - override choppiness
+                if vix_level > 25:
+                    regime = "VOLATILE_TRENDING"
+                else:
+                    regime = "TRENDING"
+            elif choppiness > self.choppiness_threshold and not is_strong_intraday_move:
                 if vix_level > 20:
                     regime = "VOLATILE_CHOPPY"
                 else:

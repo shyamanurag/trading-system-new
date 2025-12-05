@@ -1515,17 +1515,20 @@ class RegimeAdaptiveController:
                 old_regime = self.current_regime
                 self.current_regime = final_regime
                 
+                # 🚨 FIX: Use gmm_confidence or hmm_confidence (was: undefined 'confidence')
+                regime_confidence = max(gmm_confidence, hmm_confidence)
+                
                 # Log regime transition
                 self.regime_transition_log.append({
                     'timestamp': datetime.now(),
                     'from_regime': old_regime,
                     'to_regime': final_regime,
-                    'confidence': confidence,
+                    'confidence': regime_confidence,
                     'volatility': volatility
                 })
                 
                 logger.info(f"🎯 REGIME CHANGE: {old_regime.value} → {final_regime.value} "
-                           f"(confidence={confidence:.2f})")
+                           f"(confidence={regime_confidence:.2f})")
             
         except Exception as e:
             logger.error(f"Professional regime detection failed: {e}")
