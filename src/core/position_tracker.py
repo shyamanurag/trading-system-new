@@ -290,8 +290,9 @@ class ProductionPositionTracker:
             return False
     
     async def update_position(self, symbol: str, quantity: int, price: float, 
-                            side: str = 'long') -> bool:
-        """Update position for a symbol"""
+                            side: str = 'long', stop_loss: float = None,
+                            target: float = None) -> bool:
+        """Update position for a symbol with optional stop_loss and target"""
         try:
             now = datetime.now()
             
@@ -342,6 +343,12 @@ class ProductionPositionTracker:
                 position.last_updated = now
                 position.side = side
                 
+                # 🚨 FIX: Update SL/Target ONLY if provided (don't overwrite existing with None)
+                if stop_loss is not None:
+                    position.stop_loss = stop_loss
+                if target is not None:
+                    position.target = target
+                
                 # CRITICAL FIX: Calculate PnL correctly for options vs stocks
                 # For OPTIONS, price is PREMIUM. For STOCKS, price is share price.
                 if side == 'long':
@@ -374,11 +381,15 @@ class ProductionPositionTracker:
                     side=side,
                     entry_time=now,
                     last_updated=now,
-                    stop_loss=None,  # Will be set by trade engine
-                    target=None,     # Will be set by trade engine
-                    trailing_stop=None  # Will be set by trade engine
+                    stop_loss=stop_loss,  # 🚨 FIX: Pass from signal directly
+                    target=target,        # 🚨 FIX: Pass from signal directly
+                    trailing_stop=None
                 )
                 self.positions[symbol] = position
+                
+                # Log if SL/Target were provided
+                if stop_loss and target:
+                    self.logger.info(f"📊 POSITION CREATED with SL/TGT: {symbol} {side.upper()} @ ₹{price:.2f} | SL: ₹{stop_loss:.2f} | TGT: ₹{target:.2f}")
             
             # Publish position update event
             if self.event_bus:

@@ -3896,8 +3896,10 @@ class TradingOrchestrator:
             else:
                 target = entry_price - reward_distance
             
-            self.logger.info(f"📉 CHART LEVELS: {symbol} ATR=₹{atr:.2f}, "
-                           f"SL={stop_distance/entry_price*100:.1f}%, R:R=1:{risk_reward}")
+            direction = "LONG" if is_long else "SHORT"
+            self.logger.info(f"📉 CHART LEVELS: {symbol} {direction} @ ₹{entry_price:.2f} | ATR=₹{atr:.2f} | "
+                           f"SL=₹{stop_loss:.2f} ({stop_distance/entry_price*100:.1f}%) | "
+                           f"TGT=₹{target:.2f} (R:R=1:{risk_reward})")
             
             return round(stop_loss, 2), round(target, 2)
             
@@ -4129,11 +4131,14 @@ class TradingOrchestrator:
                         existing_stop = float(position.stop_loss) if position.stop_loss else 0.0
                         existing_target = float(position.target) if position.target else 0.0
                         
+                        # 🚨 CRITICAL FIX: Use position.side to determine direction, not qty sign
+                        is_long = position.side == 'long'
+                        
                         # 🚨 CHART-BASED SL/TARGET: Use ATR + swing levels instead of fixed percentages
                         if existing_stop == 0.0 or existing_target == 0.0:
-                            # Calculate chart-based levels using ATR
+                            # Calculate chart-based levels using ATR with CORRECT direction
                             chart_stop, chart_target = await self._calculate_chart_based_levels(
-                                symbol, entry_price, qty > 0, position.current_price
+                                symbol, entry_price, is_long, position.current_price
                             )
                             
                             existing_stop = chart_stop if existing_stop == 0.0 else existing_stop
@@ -4147,12 +4152,12 @@ class TradingOrchestrator:
                             sl_pct = abs(entry_price - existing_stop) / entry_price * 100
                             tgt_pct = abs(existing_target - entry_price) / entry_price * 100
                             
-                            self.logger.info(f"📉 CHART-BASED LEVELS: {symbol} - SL: ₹{existing_stop:.2f} ({sl_pct:.1f}%), Target: ₹{existing_target:.2f} ({tgt_pct:.1f}%)")
+                            self.logger.info(f"📉 CHART-BASED LEVELS: {symbol} {position.side.upper()} - SL: ₹{existing_stop:.2f} ({sl_pct:.1f}%), Target: ₹{existing_target:.2f} ({tgt_pct:.1f}%)")
                         
                         verified_positions[symbol] = {
                             'symbol': symbol,
-                            'quantity': abs(qty),  # CRITICAL FIX: Always positive quantity
-                            'action': 'BUY' if qty > 0 else 'SELL',  # CRITICAL FIX: Determine action from quantity sign
+                            'quantity': abs(qty),
+                            'action': 'BUY' if is_long else 'SELL',
                             'entry_price': entry_price,
                             'current_price': float(position.current_price) if position.current_price else 0.0,
                             'stop_loss': existing_stop,
@@ -4173,15 +4178,35 @@ class TradingOrchestrator:
             # Check for positions in Zerodha but not in tracker - orphaned positions
             for symbol, zerodha_pos in zerodha_positions.items():
                 if symbol not in position_tracker_positions:
+                    # 🚨 CRITICAL FIX: Correctly detect position direction
+                    # Zerodha returns:
+                    # - For NET: quantity is positive for long, negative for short
+                    # - For DAY: check day_buy_quantity vs day_sell_quantity
+                    raw_qty = zerodha_pos.get('quantity', 0)
+                    day_buy = zerodha_pos.get('day_buy_quantity', 0)
+                    day_sell = zerodha_pos.get('day_sell_quantity', 0)
+                    
+                    # Determine if position is LONG or SHORT
+                    if raw_qty != 0:
+                        is_long = raw_qty > 0
+                    elif day_buy != day_sell:
+                        is_long = day_buy > day_sell
+                    else:
+                        # Fallback: check if sell_value > buy_value
+                        buy_val = zerodha_pos.get('buy_value', 0)
+                        sell_val = zerodha_pos.get('sell_value', 0)
+                        is_long = buy_val >= sell_val
+                    
                     orphaned_positions.append({
                         'symbol': symbol,
-                        'quantity': zerodha_pos.get('quantity', 0),
+                        'quantity': abs(raw_qty) if raw_qty != 0 else abs(day_buy - day_sell),
                         'average_price': zerodha_pos.get('average_price', 0),
                         'current_price': zerodha_pos.get('last_price', 0),
                         'pnl': zerodha_pos.get('pnl', 0),
-                        'source': 'ORPHANED_ZERODHA'
+                        'source': 'ORPHANED_ZERODHA',
+                        'is_long': is_long  # 🚨 Store direction explicitly
                     })
-                    self.logger.error(f"🚨 ORPHANED POSITION DETECTED: {symbol} in Zerodha but not tracked")
+                    self.logger.error(f"🚨 ORPHANED POSITION DETECTED: {symbol} {'LONG' if is_long else 'SHORT'} in Zerodha but not tracked")
             
             # 🚨 STEP 3: Recover orphaned positions
             if orphaned_positions:
@@ -4189,26 +4214,30 @@ class TradingOrchestrator:
                 for orphan in orphaned_positions:
                     try:
                         if self.position_tracker:
-                            await self.position_tracker.update_position(
-                                symbol=orphan['symbol'],
-                                quantity=orphan['quantity'],
-                                price=orphan['average_price'],
-                                side='long' if orphan['quantity'] > 0 else 'short'
-                            )
-                            
-                            # Add to verified positions with CHART-BASED stop loss/target
+                            # 🚨 CRITICAL FIX: Use detected direction, not quantity sign
+                            is_long = orphan.get('is_long', True)  # Use stored direction
                             orphan_qty = int(orphan['quantity'])
                             entry_price = float(orphan['average_price'])
-                            is_long = orphan_qty > 0
+                            side = 'long' if is_long else 'short'
                             
-                            # 🎯 CHART-BASED: Use ATR instead of fixed percentages
+                            # 🎯 CHART-BASED: Use ATR to calculate SL/Target FIRST
                             chart_stop, chart_target = await self._calculate_chart_based_levels(
                                 orphan['symbol'], entry_price, is_long, float(orphan['current_price'])
                             )
                             
+                            # 🚨 CRITICAL FIX: Pass SL/Target to position tracker
+                            await self.position_tracker.update_position(
+                                symbol=orphan['symbol'],
+                                quantity=orphan_qty,
+                                price=entry_price,
+                                side=side,
+                                stop_loss=chart_stop,
+                                target=chart_target
+                            )
+                            
                             verified_positions[orphan['symbol']] = {
                                 'symbol': orphan['symbol'],
-                                'quantity': abs(orphan_qty),
+                                'quantity': orphan_qty,
                                 'action': 'BUY' if is_long else 'SELL',
                                 'entry_price': entry_price,
                                 'current_price': float(orphan['current_price']),
@@ -4222,9 +4251,9 @@ class TradingOrchestrator:
                             sl_pct = abs(entry_price - chart_stop) / entry_price * 100
                             tgt_pct = abs(chart_target - entry_price) / entry_price * 100
                             
-                            self.logger.info(f"📉 ORPHAN RECOVERY: {orphan['symbol']} - Chart-based SL: ₹{chart_stop:.2f} ({sl_pct:.1f}%), Target: ₹{chart_target:.2f} ({tgt_pct:.1f}%)")
+                            self.logger.info(f"📉 ORPHAN RECOVERY: {orphan['symbol']} {side.upper()} - Chart-based SL: ₹{chart_stop:.2f} ({sl_pct:.1f}%), Target: ₹{chart_target:.2f} ({tgt_pct:.1f}%)")
                             
-                            self.logger.info(f"✅ ORPHAN RECOVERED: {orphan['symbol']}")
+                            self.logger.info(f"✅ ORPHAN RECOVERED: {orphan['symbol']} as {side.upper()}")
                     except Exception as recovery_error:
                         self.logger.error(f"❌ Failed to recover orphaned position {orphan['symbol']}: {recovery_error}")
             

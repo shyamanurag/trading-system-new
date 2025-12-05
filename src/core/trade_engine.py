@@ -588,11 +588,14 @@ class TradeEngine:
                         self.logger.error(f"❌ Strategy didn't provide stop_loss/target for {symbol} - NO RISK LEVELS SET")
                         self.logger.error(f"   stop_loss: {stop_loss_price}, target: {target_price}")
                     
+                    # 🚨 CRITICAL FIX: Pass stop_loss and target directly to position tracker
                     await self.position_tracker.update_position(
                         symbol=trade_record['symbol'],
                         quantity=trade_record['quantity'],
                         price=execution_price,
-                        side=trade_record['side'].lower()
+                        side=trade_record['side'].lower(),
+                        stop_loss=stop_loss_price if stop_loss_price else None,
+                        target=target_price if target_price else None
                     )
                 
                 # CRITICAL FIX: Calculate real P&L and store to database
