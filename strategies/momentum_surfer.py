@@ -1207,6 +1207,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             # ============= ALIGNMENT CHECK =============
             bullish_count = sum(1 for tf in result['timeframes'].values() if tf == 'BULLISH')
             bearish_count = sum(1 for tf in result['timeframes'].values() if tf == 'BEARISH')
+            neutral_count = sum(1 for tf in result['timeframes'].values() if tf == 'NEUTRAL')
             
             # PERFECT ALIGNMENT (All 3 timeframes agree)
             if bullish_count == 3:
@@ -1237,9 +1238,67 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 result['confidence_boost'] = 1.2  # +20% confidence
                 result['alignment_score'] = 2
                 result['reasoning'] = '📉 STRONG MTF: Hourly + 1 other BEARISH'
+            
+            # 🚨 NEW: NEUTRAL-DOMINANT scenarios - NO CONFLICT
+            # All 3 NEUTRAL = No MTF opinion, let signal through
+            elif neutral_count == 3:
+                result['mtf_aligned'] = True
+                result['direction'] = 'NEUTRAL'
+                result['confidence_boost'] = 0.9  # Small 10% penalty
+                result['alignment_score'] = 0
+                result['reasoning'] = '⏸️ MTF NEUTRAL: No strong trend - signal allowed'
+            
+            # 2 NEUTRAL + 1 directional
+            elif neutral_count == 2:
+                if bullish_count == 1:
+                    result['mtf_aligned'] = True
+                    result['direction'] = 'BULLISH'
+                    result['confidence_boost'] = 1.0
+                    result['alignment_score'] = 1
+                    result['reasoning'] = '📊 MTF WEAK SUPPORT: 1 BULLISH + 2 NEUTRAL'
+                elif bearish_count == 1:
+                    result['mtf_aligned'] = True
+                    result['direction'] = 'BEARISH'
+                    result['confidence_boost'] = 1.0
+                    result['alignment_score'] = 1
+                    result['reasoning'] = '📊 MTF WEAK SUPPORT: 1 BEARISH + 2 NEUTRAL'
+                else:
+                    result['mtf_aligned'] = True
+                    result['direction'] = 'NEUTRAL'
+                    result['confidence_boost'] = 0.9
+                    result['alignment_score'] = 0
+                    result['reasoning'] = '⏸️ MTF NEUTRAL: Signal allowed'
+            
+            # 1 NEUTRAL + 2 directional
+            elif neutral_count == 1:
+                if bullish_count == 2:
+                    result['mtf_aligned'] = True
+                    result['direction'] = 'BULLISH'
+                    result['confidence_boost'] = 1.15
+                    result['alignment_score'] = 2
+                    result['reasoning'] = '📈 MTF SUPPORT: 2 BULLISH + 1 NEUTRAL'
+                elif bearish_count == 2:
+                    result['mtf_aligned'] = True
+                    result['direction'] = 'BEARISH'
+                    result['confidence_boost'] = 1.15
+                    result['alignment_score'] = 2
+                    result['reasoning'] = '📉 MTF SUPPORT: 2 BEARISH + 1 NEUTRAL'
+                # 1 BULLISH + 1 BEARISH + 1 NEUTRAL = true conflict
+                elif bullish_count == 1 and bearish_count == 1:
+                    result['mtf_aligned'] = False
+                    result['direction'] = 'NEUTRAL'
+                    result['confidence_boost'] = 0.5
+                    result['alignment_score'] = 0
+                    result['reasoning'] = f'⚠️ MTF CONFLICT: Mixed signals'
+                else:
+                    result['mtf_aligned'] = False
+                    result['direction'] = 'NEUTRAL'
+                    result['confidence_boost'] = 0.6
+                    result['alignment_score'] = max(bullish_count, bearish_count)
+                    result['reasoning'] = f'⚠️ MTF WEAK: 60m={trend_60m}, 15m={trend_15m}, 5m={trend_5m}'
                 
             else:
-                # NO ALIGNMENT - Block trade
+                # ACTUAL CONFLICT - opposing signals
                 result['mtf_aligned'] = False
                 result['direction'] = 'NEUTRAL'
                 result['confidence_boost'] = 0.5  # Reduce confidence by 50%

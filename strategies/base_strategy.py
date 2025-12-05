@@ -487,6 +487,9 @@ class BaseStrategy:
                 elif action.upper() == 'SELL' and bullish_count > bearish_count:
                     action_aligned = False
             
+            # Count NEUTRAL timeframes
+            neutral_count = sum(1 for tf in result['timeframes'].values() if tf == 'NEUTRAL')
+            
             # PERFECT ALIGNMENT (All 3 timeframes agree)
             if bullish_count == 3:
                 result['mtf_aligned'] = True
@@ -516,8 +519,68 @@ class BaseStrategy:
                 result['confidence_multiplier'] = 1.25
                 result['alignment_score'] = 2
                 result['reasoning'] = '📉 STRONG MTF: Hourly + 1 other BEARISH'
+            
+            # 🚨 NEW: NEUTRAL-DOMINANT scenarios - NO CONFLICT, just no strong trend
+            # All 3 NEUTRAL = No MTF opinion, let signal through with small penalty
+            elif neutral_count == 3:
+                result['mtf_aligned'] = True  # Allow through
+                result['direction'] = 'NEUTRAL'
+                result['confidence_multiplier'] = 0.9  # Small 10% penalty for lack of confirmation
+                result['alignment_score'] = 0
+                result['reasoning'] = '⏸️ MTF NEUTRAL: No strong trend detected - signal allowed'
+            
+            # 2 NEUTRAL + 1 directional that MATCHES action = Weak support
+            elif neutral_count == 2:
+                if action and action.upper() == 'BUY' and bullish_count == 1:
+                    result['mtf_aligned'] = True
+                    result['direction'] = 'BULLISH'
+                    result['confidence_multiplier'] = 1.0  # No boost, no penalty
+                    result['alignment_score'] = 1
+                    result['reasoning'] = '📊 MTF WEAK SUPPORT: 1 BULLISH + 2 NEUTRAL'
+                elif action and action.upper() == 'SELL' and bearish_count == 1:
+                    result['mtf_aligned'] = True
+                    result['direction'] = 'BEARISH'
+                    result['confidence_multiplier'] = 1.0
+                    result['alignment_score'] = 1
+                    result['reasoning'] = '📊 MTF WEAK SUPPORT: 1 BEARISH + 2 NEUTRAL'
+                else:
+                    # 1 directional that CONFLICTS with action
+                    result['mtf_aligned'] = False
+                    result['direction'] = 'NEUTRAL'
+                    result['confidence_multiplier'] = 0.5  # Penalty for conflict
+                    result['alignment_score'] = 0
+                    result['reasoning'] = f'⚠️ MTF CONFLICT: 60m={trend_60m}, 15m={trend_15m}, 5m={trend_5m}'
+            
+            # 1 NEUTRAL + mixed signals - check for conflict vs support
+            elif neutral_count == 1:
+                # 2 in same direction that matches action = good
+                if action and action.upper() == 'BUY' and bullish_count == 2:
+                    result['mtf_aligned'] = True
+                    result['direction'] = 'BULLISH'
+                    result['confidence_multiplier'] = 1.15
+                    result['alignment_score'] = 2
+                    result['reasoning'] = '📈 MTF SUPPORT: 2 BULLISH + 1 NEUTRAL'
+                elif action and action.upper() == 'SELL' and bearish_count == 2:
+                    result['mtf_aligned'] = True
+                    result['direction'] = 'BEARISH'
+                    result['confidence_multiplier'] = 1.15
+                    result['alignment_score'] = 2
+                    result['reasoning'] = '📉 MTF SUPPORT: 2 BEARISH + 1 NEUTRAL'
+                # 1 BULLISH + 1 BEARISH + 1 NEUTRAL = true conflict
+                elif bullish_count == 1 and bearish_count == 1:
+                    result['mtf_aligned'] = False
+                    result['direction'] = 'NEUTRAL'
+                    result['confidence_multiplier'] = 0.5
+                    result['alignment_score'] = 0
+                    result['reasoning'] = f'⚠️ MTF CONFLICT: Mixed signals 60m={trend_60m}, 15m={trend_15m}, 5m={trend_5m}'
+                else:
+                    result['mtf_aligned'] = False
+                    result['direction'] = 'NEUTRAL'
+                    result['confidence_multiplier'] = 0.6
+                    result['alignment_score'] = max(bullish_count, bearish_count)
+                    result['reasoning'] = f'⚠️ MTF WEAK: 60m={trend_60m}, 15m={trend_15m}, 5m={trend_5m}'
                 
-            # WEAK/NO ALIGNMENT - BLOCK TRADE
+            # ACTUAL CONFLICT - opposing signals without neutral buffer
             else:
                 result['mtf_aligned'] = False
                 result['direction'] = 'NEUTRAL'
@@ -525,8 +588,8 @@ class BaseStrategy:
                 result['alignment_score'] = max(bullish_count, bearish_count)
                 result['reasoning'] = f'⚠️ MTF CONFLICT: 60m={trend_60m}, 15m={trend_15m}, 5m={trend_5m}'
             
-            # Additional penalty if action conflicts with MTF direction
-            if not action_aligned:
+            # Additional penalty if action conflicts with STRONG MTF direction (2+ in opposite)
+            if not action_aligned and (bullish_count >= 2 or bearish_count >= 2):
                 result['confidence_multiplier'] *= 0.5
                 result['reasoning'] += f' | Action {action} conflicts with MTF'
             
