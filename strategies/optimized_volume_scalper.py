@@ -1928,25 +1928,46 @@ class OptimizedVolumeScalper(BaseStrategy):
             return None
     
     def _filter_for_quality(self, signals: List[Dict]) -> List[Dict]:
-        """Filter for only highest quality microstructure signals"""
+        """Filter for only highest quality microstructure signals
+        
+        🚨 CRITICAL FIX: Include ALL valid edge sources, not just a subset.
+        Previously PROFESSIONAL_ORDER_FLOW, STATISTICAL_ARBITRAGE signals were silently dropped!
+        """
         quality_signals = []
         
         for signal in signals:
             confidence = signal.get('confidence', 0)
             metadata = signal.get('metadata', {})
+            edge_source = metadata.get('edge_source', '')
             
-            # Only accept high-confidence signals
-            if confidence >= 7.5:  # 7.5/10 minimum
-                # Additional quality checks
-                edge_source = metadata.get('edge_source', '')
+            # Base minimum confidence
+            if confidence < 7.5:
+                continue
+            
+            # Define confidence thresholds per edge source
+            # Higher thresholds for noisier signals, lower for cleaner signals
+            edge_thresholds = {
+                # Tier 1: Cleaner signals - lower threshold
+                'MEAN_REVERSION': 7.5,
+                'LIQUIDITY_GAP': 7.5,
+                'STATISTICAL_ARBITRAGE': 7.5,
                 
-                # Prioritize stronger edge sources
-                if edge_source in ['ORDER_FLOW_IMBALANCE', 'VOLATILITY_CLUSTERING']:
-                    if confidence >= 8.0:  # Higher bar for these
-                        quality_signals.append(signal)
-                elif edge_source in ['MEAN_REVERSION', 'LIQUIDITY_GAP']:
-                    if confidence >= 7.5:  # Standard bar
-                        quality_signals.append(signal)
+                # Tier 2: Standard signals - medium threshold  
+                'ORDER_FLOW_IMBALANCE': 7.8,
+                'PROFESSIONAL_ORDER_FLOW': 7.8,  # 🚨 FIX: This was MISSING!
+                
+                # Tier 3: Noisier signals - higher threshold
+                'VOLATILITY_CLUSTERING': 8.0,
+            }
+            
+            # Get threshold for this edge source (default 7.5 for unknown sources)
+            required_confidence = edge_thresholds.get(edge_source, 7.5)
+            
+            if confidence >= required_confidence:
+                quality_signals.append(signal)
+                logger.debug(f"✅ QUALITY PASS: {signal.get('symbol')} {edge_source} conf={confidence:.1f} (req={required_confidence})")
+            else:
+                logger.debug(f"⚠️ QUALITY REJECT: {signal.get('symbol')} {edge_source} conf={confidence:.1f} < req={required_confidence}")
         
         # Limit to top 3 signals per cycle
         quality_signals.sort(key=lambda x: x['confidence'], reverse=True)
