@@ -3782,7 +3782,107 @@ class TradingOrchestrator:
         if hasattr(self, '_trading_task') and self._trading_task is not None:
             self._trading_task.cancel()
 
-
+    async def _calculate_chart_based_levels(self, symbol: str, entry_price: float, 
+                                            is_long: bool, current_price: float = None) -> tuple:
+        """
+        🎯 CHART-BASED SL/TARGET using ATR instead of fixed percentages
+        
+        Uses:
+        1. ATR (Average True Range) for volatility-based stop
+        2. Dynamic R:R ratio based on market conditions
+        3. Min/Max bounds for intraday safety (0.5% - 3%)
+        
+        Returns: (stop_loss, target)
+        """
+        try:
+            import numpy as np
+            
+            # Get historical data for ATR calculation
+            atr = 0.0
+            if self.zerodha_client:
+                try:
+                    # Fetch recent candles for ATR
+                    from datetime import datetime, timedelta
+                    candles = await self.zerodha_client.get_historical_data(
+                        symbol=symbol,
+                        interval='15minute',
+                        from_date=datetime.now() - timedelta(days=2),
+                        to_date=datetime.now()
+                    )
+                    
+                    if candles and len(candles) >= 14:
+                        # Calculate True Ranges
+                        true_ranges = []
+                        for i in range(1, min(15, len(candles))):
+                            high = candles[i].get('high', 0)
+                            low = candles[i].get('low', 0)
+                            prev_close = candles[i-1].get('close', 0)
+                            
+                            if high > 0 and low > 0 and prev_close > 0:
+                                tr = max(
+                                    high - low,
+                                    abs(high - prev_close),
+                                    abs(low - prev_close)
+                                )
+                                true_ranges.append(tr)
+                        
+                        if true_ranges:
+                            atr = np.mean(true_ranges)
+                            self.logger.debug(f"📊 ATR for {symbol}: ₹{atr:.2f}")
+                except Exception as atr_err:
+                    self.logger.debug(f"⚠️ ATR calculation failed for {symbol}: {atr_err}")
+            
+            # Fallback: estimate ATR as 1.5% of price if calculation failed
+            if atr <= 0:
+                atr = entry_price * 0.015
+                self.logger.debug(f"📊 Using estimated ATR for {symbol}: ₹{atr:.2f} (1.5% of price)")
+            
+            # Calculate ATR-based stop (1.5x ATR from entry)
+            atr_distance = atr * 1.5
+            
+            # Apply intraday bounds: min 0.5%, max 3%
+            min_distance = entry_price * 0.005  # 0.5% minimum
+            max_distance = entry_price * 0.03   # 3% maximum
+            stop_distance = max(min_distance, min(max_distance, atr_distance))
+            
+            # Calculate stop loss
+            if is_long:
+                stop_loss = entry_price - stop_distance
+            else:
+                stop_loss = entry_price + stop_distance
+            
+            # Calculate target using dynamic R:R (1.5x to 2.5x based on trend)
+            # Get market bias for R:R adjustment
+            risk_reward = 1.8  # Default
+            try:
+                if hasattr(self, 'market_bias') and self.market_bias:
+                    momentum = getattr(self.market_bias.current_bias, 'nifty_momentum', 0)
+                    if abs(momentum) > 0.5:
+                        risk_reward = 2.5  # Trending market - ride winners
+                    elif abs(momentum) < 0.2:
+                        risk_reward = 1.5  # Choppy market - quick profits
+            except:
+                pass
+            
+            reward_distance = stop_distance * risk_reward
+            
+            if is_long:
+                target = entry_price + reward_distance
+            else:
+                target = entry_price - reward_distance
+            
+            self.logger.info(f"📉 CHART LEVELS: {symbol} ATR=₹{atr:.2f}, "
+                           f"SL={stop_distance/entry_price*100:.1f}%, R:R=1:{risk_reward}")
+            
+            return round(stop_loss, 2), round(target, 2)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Chart-based calculation failed for {symbol}: {e}")
+            # Fallback to 2%/3% fixed
+            if is_long:
+                return entry_price * 0.98, entry_price * 1.03
+            else:
+                return entry_price * 1.02, entry_price * 0.97
 
     async def _start_market_data_to_position_tracker_bridge(self):
         """Connect market data updates to position tracker for real-time P&L"""
@@ -4004,19 +4104,25 @@ class TradingOrchestrator:
                         existing_stop = float(position.stop_loss) if position.stop_loss else 0.0
                         existing_target = float(position.target) if position.target else 0.0
                         
-                        # 🚨 CRITICAL FIX: If position has no SL/target, set INTRADAY emergency values
-                        # INTRADAY TRADING: Use realistic 2% SL and 3% target (not swing trading 5%/10%)
+                        # 🚨 CHART-BASED SL/TARGET: Use ATR + swing levels instead of fixed percentages
                         if existing_stop == 0.0 or existing_target == 0.0:
-                            if qty > 0:  # LONG position
-                                emergency_stop = entry_price * 0.98    # 2% below entry (INTRADAY)
-                                emergency_target = entry_price * 1.03  # 3% above entry (INTRADAY)
-                            else:  # SHORT position
-                                emergency_stop = entry_price * 1.02    # 2% above entry (INTRADAY)
-                                emergency_target = entry_price * 0.97  # 3% below entry (INTRADAY)
+                            # Calculate chart-based levels using ATR
+                            chart_stop, chart_target = await self._calculate_chart_based_levels(
+                                symbol, entry_price, qty > 0, position.current_price
+                            )
                             
-                            existing_stop = emergency_stop if existing_stop == 0.0 else existing_stop
-                            existing_target = emergency_target if existing_target == 0.0 else existing_target
-                            self.logger.warning(f"🚨 INTRADAY PROTECTION: {symbol} - Set SL: ₹{existing_stop:.2f} (2%), Target: ₹{existing_target:.2f} (3%)")
+                            existing_stop = chart_stop if existing_stop == 0.0 else existing_stop
+                            existing_target = chart_target if existing_target == 0.0 else existing_target
+                            
+                            # 🚨 CRITICAL FIX: Actually SAVE the values to the position object!
+                            position.stop_loss = existing_stop
+                            position.target = existing_target
+                            
+                            # Calculate percentages for logging
+                            sl_pct = abs(entry_price - existing_stop) / entry_price * 100
+                            tgt_pct = abs(existing_target - entry_price) / entry_price * 100
+                            
+                            self.logger.info(f"📉 CHART-BASED LEVELS: {symbol} - SL: ₹{existing_stop:.2f} ({sl_pct:.1f}%), Target: ₹{existing_target:.2f} ({tgt_pct:.1f}%)")
                         
                         verified_positions[symbol] = {
                             'symbol': symbol,
@@ -4065,33 +4171,33 @@ class TradingOrchestrator:
                                 side='long' if orphan['quantity'] > 0 else 'short'
                             )
                             
-                            # Add to verified positions with emergency stop loss/target
+                            # Add to verified positions with CHART-BASED stop loss/target
                             orphan_qty = int(orphan['quantity'])
                             entry_price = float(orphan['average_price'])
+                            is_long = orphan_qty > 0
                             
-                            # CRITICAL FIX: Set INTRADAY emergency stop loss/target for orphaned positions
-                            # Use 2% stop loss and 3% target (realistic intraday levels)
-                            if orphan_qty > 0:  # LONG position
-                                emergency_stop = entry_price * 0.98    # 2% below entry (INTRADAY)
-                                emergency_target = entry_price * 1.03  # 3% above entry (INTRADAY)
-                            else:  # SHORT position
-                                emergency_stop = entry_price * 1.02    # 2% above entry (INTRADAY)
-                                emergency_target = entry_price * 0.97  # 3% below entry (INTRADAY)
+                            # 🎯 CHART-BASED: Use ATR instead of fixed percentages
+                            chart_stop, chart_target = await self._calculate_chart_based_levels(
+                                orphan['symbol'], entry_price, is_long, float(orphan['current_price'])
+                            )
                             
                             verified_positions[orphan['symbol']] = {
                                 'symbol': orphan['symbol'],
-                                'quantity': abs(orphan_qty),  # CRITICAL FIX: Always positive quantity
-                                'action': 'BUY' if orphan_qty > 0 else 'SELL',  # CRITICAL FIX: Determine action from quantity sign
+                                'quantity': abs(orphan_qty),
+                                'action': 'BUY' if is_long else 'SELL',
                                 'entry_price': entry_price,
                                 'current_price': float(orphan['current_price']),
-                                'stop_loss': emergency_stop,  # INTRADAY: 2% stop loss
-                                'target': emergency_target,    # INTRADAY: 3% target
+                                'stop_loss': chart_stop,
+                                'target': chart_target,
                                 'pnl': float(orphan['pnl']),
                                 'timestamp': None,
                                 'source': 'RECOVERED_ORPHAN'
                             }
                             
-                            self.logger.warning(f"🚨 ORPHAN RECOVERY: {orphan['symbol']} - Set INTRADAY SL: ₹{emergency_stop:.2f} (2%), Target: ₹{emergency_target:.2f} (3%)")
+                            sl_pct = abs(entry_price - chart_stop) / entry_price * 100
+                            tgt_pct = abs(chart_target - entry_price) / entry_price * 100
+                            
+                            self.logger.info(f"📉 ORPHAN RECOVERY: {orphan['symbol']} - Chart-based SL: ₹{chart_stop:.2f} ({sl_pct:.1f}%), Target: ₹{chart_target:.2f} ({tgt_pct:.1f}%)")
                             
                             self.logger.info(f"✅ ORPHAN RECOVERED: {orphan['symbol']}")
                     except Exception as recovery_error:
