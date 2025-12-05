@@ -115,25 +115,27 @@ class MarketDirectionalBias:
         self.current_atr_percent = 0.75  # Default ATR as % of price (approx 200pts on 26000)
         
         # 🔥 PERCENTAGE-BASED ZONES (Adapts to any NIFTY level)
+        # 🚨 FIX: Previous thresholds were too aggressive
         # Example at NIFTY 26,000:
-        #   EARLY: 0-0.2% = 0-52 pts
-        #   MID: 0.2-0.4% = 52-104 pts  
-        #   EXTENDED: 0.4-0.6% = 104-156 pts
-        #   EXTREME: >0.6% = >156 pts
+        #   EARLY: 0-0.3% = 0-78 pts (fresh move)
+        #   MID: 0.3-0.7% = 78-182 pts (established trend - NORMAL RANGE)
+        #   EXTENDED: 0.7-1.2% = 182-312 pts (stretched but tradeable)
+        #   EXTREME: >1.2% = >312 pts (actual extreme - mean reversion)
         self.move_zones_pct = {
-            'EARLY': (0.0, 0.20),      # 0-0.2%: Fresh move, trend-following
-            'MID': (0.20, 0.40),       # 0.2-0.4%: Established, cautious trend
-            'EXTENDED': (0.40, 0.60),  # 0.4-0.6%: Stretched, watch for reversal
-            'EXTREME': (0.60, 1.50)    # >0.6%: Mean reversion mode
+            'EARLY': (0.0, 0.30),      # 0-0.3%: Fresh move, trend-following OK
+            'MID': (0.30, 0.70),       # 0.3-0.7%: NORMAL trending - follow trend
+            'EXTENDED': (0.70, 1.20),  # 0.7-1.2%: Stretched but still tradeable
+            'EXTREME': (1.20, 2.50)    # >1.2%: ACTUAL extreme - mean reversion
         }
         
         # ATR-NORMALIZED ZONES (Adjusts based on recent volatility)
+        # 🚨 FIX: Previous thresholds triggered "exhaustion" too early
         # If ATR is high (volatile), zones expand. If ATR is low (quiet), zones contract.
         self.atr_zone_multipliers = {
-            'EARLY': (0.0, 0.30),      # 0-30% of daily ATR
-            'MID': (0.30, 0.60),       # 30-60% of daily ATR  
-            'EXTENDED': (0.60, 0.85),  # 60-85% of daily ATR
-            'EXTREME': (0.85, 1.50)    # >85% of daily ATR (exhausted)
+            'EARLY': (0.0, 0.40),      # 0-40% of daily ATR (fresh)
+            'MID': (0.40, 0.75),       # 40-75% of daily ATR (normal trending)
+            'EXTENDED': (0.75, 1.00),  # 75-100% of daily ATR (stretched)
+            'EXTREME': (1.00, 1.50)    # >100% of daily ATR (beyond normal range)
         }
         
         # TIME-OF-DAY BIAS MODIFIERS
@@ -362,7 +364,7 @@ class MarketDirectionalBias:
                 if min_pct <= abs_move_pct < max_pct:
                     move_zone = zone_name
                     break
-            if abs_move_pct >= 0.60:  # Catch extreme moves
+            if abs_move_pct >= 1.20:  # Catch extreme moves (>1.2% is actual extreme)
                 move_zone = 'EXTREME'
             
             # Determine directions (with magnitude awareness)
@@ -496,13 +498,17 @@ class MarketDirectionalBias:
                     logger.info(f"✅ EXTREME ZONE ({abs_move_pct:.2f}%): Mean reversion boost +20%")
             
             # ============= RANGE EXHAUSTION CHECK =============
-            if range_exhaustion_pct > 85:
+            # 🚨 FIX: 85% was too aggressive - 100% ATR is NORMAL on trending days
+            if range_exhaustion_pct > 100:  # Beyond typical daily ATR
                 if adjusted_direction == intraday_direction:
-                    adjusted_confidence *= 0.5
-                    logger.warning(f"📏 RANGE EXHAUSTED ({range_exhaustion_pct:.0f}%): Trend-chasing penalized -50%")
+                    adjusted_confidence *= 0.75  # Moderate penalty (was 0.5)
+                    logger.warning(f"📏 RANGE EXCEEDED ({range_exhaustion_pct:.0f}%): Trend-chasing penalized -25%")
                 else:
-                    adjusted_confidence *= 1.1
-                    logger.info(f"📏 RANGE EXHAUSTED ({range_exhaustion_pct:.0f}%): Mean reversion favored +10%")
+                    adjusted_confidence *= 1.15
+                    logger.info(f"📏 RANGE EXCEEDED ({range_exhaustion_pct:.0f}%): Mean reversion favored +15%")
+            elif range_exhaustion_pct > 90:
+                # High usage but normal for trending day - just log, no penalty
+                logger.info(f"📏 HIGH RANGE ({range_exhaustion_pct:.0f}%): Normal for trending day")
             
             # ============= FINAL CONFIDENCE BOUNDS =============
             adjusted_confidence = max(0.0, min(10.0, adjusted_confidence))
@@ -974,7 +980,9 @@ class MarketDirectionalBias:
             confidence = max(confidence, 0.0)
             
             # BIAS THRESHOLD CHECK
-            if confidence < 3.0:  # Minimum confidence for bias
+            # 🚨 FIX: 3.0 was too high - 0.6% clear uptrend (confidence ~2.0) was being neutralized
+            # A 0.3% move should at minimum establish directional bias
+            if confidence < 1.5:  # Lowered from 3.0 - only truly uncertain moves become NEUTRAL
                 bias_direction = "NEUTRAL"
                 confidence = 0.0
             
