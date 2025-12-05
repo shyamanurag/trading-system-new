@@ -64,20 +64,22 @@ class ProfessionalMathFoundation:
             # Calculate returns
             returns = np.diff(prices) / prices[:-1]
             
-            # Simple GARCH(1,1) approximation
-            alpha = 0.1  # ARCH parameter
-            beta = 0.85  # GARCH parameter  
-            omega = 0.0001  # Constant
+            # GARCH(1,1) parameters (calibrated for Indian equity market)
+            alpha = 0.1   # ARCH parameter - weight of recent shock
+            beta = 0.85   # GARCH parameter - weight of previous variance
+            omega = 0.01  # 🚨 FIX: Long-run variance baseline (was 0.0001, too small)
             
-            # Initialize variance
+            # Initialize variance with sample variance
             variance = np.var(returns)
             
-            # GARCH volatility estimation
+            # GARCH(1,1) recursion: σ²(t) = ω + α·r²(t-1) + β·σ²(t-1)
             for i in range(1, len(returns)):
                 variance = omega + alpha * (returns[i-1] ** 2) + beta * variance
             
-            # Convert to ATR-like measure
-            garch_atr = np.sqrt(variance) * np.mean(prices[-period:])
+            # 🚨 FIX: Convert variance to ATR using CURRENT price (not mean)
+            # GARCH gives volatility in return-space, multiply by current price for price-space ATR
+            current_price = prices[-1]
+            garch_atr = np.sqrt(variance) * current_price
             
             return float(garch_atr)
             

@@ -54,35 +54,44 @@ class ProfessionalMathModels:
     @staticmethod
     def garch_volatility(returns: np.ndarray, alpha: float = 0.1, beta: float = 0.85) -> Tuple[float, np.ndarray]:
         """
-        GARCH(1,1) volatility model with maximum likelihood estimation
+        GARCH(1,1) volatility model - Correct mathematical implementation
+        
+        Formula: σ²(t) = ω + α·r²(t-1) + β·σ²(t-1)
         
         Args:
-            returns: Array of returns
-            alpha: ARCH parameter
-            beta: GARCH parameter
+            returns: Array of returns (percentage changes)
+            alpha: ARCH parameter - weight of recent shock (default 0.1)
+            beta: GARCH parameter - weight of previous variance (default 0.85)
             
         Returns:
-            Current volatility estimate and volatility series
+            (current_volatility, volatility_series) - annualized values
         """
         try:
             if len(returns) < 10:
-                return np.std(returns) * np.sqrt(252), np.full(len(returns), np.std(returns))
+                simple_vol = np.std(returns) * np.sqrt(252)
+                return simple_vol, np.full(len(returns), simple_vol)
             
-            # Initialize
-            omega = 0.01  # Long-run variance
+            # GARCH(1,1) parameters
+            omega = 0.01  # Long-run variance baseline (calibrated for Indian equities)
             n = len(returns)
-            volatility = np.zeros(n)
-            volatility[0] = np.std(returns[:10])
             
-            # GARCH recursion
+            # 🚨 FIX: Work with VARIANCE, not volatility directly
+            variance = np.zeros(n)
+            variance[0] = np.var(returns[:10])  # Initialize with sample variance
+            
+            # GARCH(1,1) recursion: σ²(t) = ω + α·r²(t-1) + β·σ²(t-1)
             for t in range(1, n):
-                volatility[t] = np.sqrt(omega + alpha * returns[t-1]**2 + beta * volatility[t-1]**2)
+                variance[t] = omega + alpha * (returns[t-1] ** 2) + beta * variance[t-1]
+            
+            # Convert variance to volatility (annualized)
+            volatility = np.sqrt(variance) * np.sqrt(252)
             
             return volatility[-1], volatility
             
         except Exception as e:
             logger.error(f"GARCH volatility calculation failed: {e}")
-            return np.std(returns) * np.sqrt(252), np.full(len(returns), np.std(returns))
+            simple_vol = np.std(returns) * np.sqrt(252) if len(returns) > 0 else 0.2
+            return simple_vol, np.full(len(returns), simple_vol)
     
     @staticmethod
     def cointegration_test(series1: np.ndarray, series2: np.ndarray) -> Tuple[bool, float, float]:
@@ -909,8 +918,12 @@ class OptimizedVolumeScalper(BaseStrategy):
             
             if len(self.volatility_history[symbol]) > 100:
                 self.volatility_history[symbol].pop(0)
-                
-            logger.debug(f"📊 GARCH VOL UPDATE: {symbol} = {current_vol:.4f} ({regime})")
+            
+            # 🚨 FIX: Log at INFO level for production visibility (every 10th update to avoid spam)
+            if len(self.volatility_history[symbol]) % 10 == 1:
+                logger.info(f"📊 GARCH ACTIVE: {symbol} Vol={current_vol:.4f} Regime={regime} Clustering={clustering_strength:.2f}")
+            else:
+                logger.debug(f"📊 GARCH VOL UPDATE: {symbol} = {current_vol:.4f} ({regime})")
             
         except Exception as e:
             logger.error(f"Professional volatility update failed for {symbol}: {e}")

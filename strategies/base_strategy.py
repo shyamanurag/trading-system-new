@@ -2217,6 +2217,13 @@ class BaseStrategy:
                 elif atr_percentage > 0.08:  # Too aggressive
                     ensemble_atr = current_close * 0.04
                 
+                # 🚨 FIX: Add INFO logging for GARCH visibility (every 20th calculation per symbol)
+                if not hasattr(self, '_garch_log_counter'):
+                    self._garch_log_counter = {}
+                self._garch_log_counter[symbol] = self._garch_log_counter.get(symbol, 0) + 1
+                if self._garch_log_counter[symbol] % 20 == 1:
+                    logger.info(f"📊 GARCH ATR: {symbol} GARCH={garch_atr:.2f} Trad={traditional_atr:.2f} Ensemble={ensemble_atr:.2f} ({atr_percentage*100:.2f}%)")
+                
                 # Update performance attribution
                 self._update_performance_attribution(symbol, ensemble_atr, garch_atr, traditional_atr)
                 
