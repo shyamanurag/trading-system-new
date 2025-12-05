@@ -1242,6 +1242,17 @@ class TradeEngine:
             # 🎯 MANAGEMENT ACTIONS: Bypass rate limiting for position management
             is_management_action = signal.get('management_action', False)
             
+            # 🚨 ATOMIC CLAIM: Prevent race condition for fast duplicate signals
+            # This MUST be checked BEFORE processing (except for management actions)
+            if not is_management_action:
+                try:
+                    from src.core.signal_deduplicator import signal_deduplicator
+                    if not await signal_deduplicator.try_claim_signal(signal):
+                        self.logger.warning(f"🚫 DUPLICATE BLOCKED (atomic): {signal.get('symbol')} {signal.get('action')} - Another process already executing")
+                        return None  # Skip - another process has claimed it
+                except Exception as claim_err:
+                    self.logger.debug(f"Atomic claim fallback: {claim_err}")
+            
             if not is_management_action:
                 # Check rate limiting for regular signals only
                 current_time = time.time()

@@ -173,6 +173,13 @@ class SimpleTradeEngine:
                     
                     self.logger.info(f"📋 EXECUTING SIGNAL {i+1}/{len(signals)}: {symbol} {action} qty={quantity}")
                     
+                    # 🚨 ATOMIC CLAIM: Prevent race condition where multiple signals arrive simultaneously
+                    # This MUST be checked BEFORE attempting to execute
+                    from src.core.signal_deduplicator import signal_deduplicator
+                    if not await signal_deduplicator.try_claim_signal(signal):
+                        self.logger.warning(f"🚫 DUPLICATE BLOCKED (atomic): {symbol} {action} - Another process already executing")
+                        continue  # Skip this signal - another process has claimed it
+                    
                     # Try order manager first
                     result = None
                     if self.order_manager:

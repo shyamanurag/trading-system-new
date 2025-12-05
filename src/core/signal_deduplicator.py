@@ -353,6 +353,43 @@ class SignalDeduplicator:
             logger.error(f"🚨 CHECK FAILED for {signal.get('symbol')} - ALLOWING execution (risky)")
             return False
     
+    async def try_claim_signal(self, signal: Dict) -> bool:
+        """
+        🚨 ATOMIC CLAIM: Try to claim exclusive rights to execute a signal.
+        Uses Redis SETNX to atomically check and claim in ONE operation.
+        
+        Returns:
+            True if claimed successfully (this caller should execute)
+            False if already claimed by another caller (should NOT execute)
+        """
+        try:
+            if not self.redis_client:
+                logger.warning(f"⚠️ No Redis client - cannot do atomic claim for {signal.get('symbol')}")
+                return True  # Allow execution but risky
+            
+            symbol = signal.get('symbol')
+            action = signal.get('action', 'BUY')
+            
+            # Use a short-lived claim key (30 seconds TTL)
+            # This prevents race conditions when multiple signals arrive simultaneously
+            today = datetime.now().strftime('%Y-%m-%d')
+            claim_key = f"signal_claim:{today}:{symbol}:{action}"
+            
+            # ATOMIC SETNX: Only one caller can succeed
+            # NX = set only if Not eXists, EX = expire after 30 seconds
+            claimed = await self.redis_client.set(claim_key, "1", nx=True, ex=30)
+            
+            if claimed:
+                logger.info(f"🔒 SIGNAL CLAIMED: {symbol} {action} - This caller has exclusive rights to execute")
+                return True
+            else:
+                logger.warning(f"🚫 SIGNAL ALREADY CLAIMED: {symbol} {action} - Another process is executing, rejecting duplicate")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error in atomic claim: {e}")
+            return True  # Allow on error (risky but prevents complete blockage)
+    
     async def mark_signal_executed(self, signal: Dict):
         """Mark signal as executed to prevent future duplicates"""
         try:
@@ -373,7 +410,7 @@ class SignalDeduplicator:
             current_count = await self.redis_client.incr(executed_key)
             await self.redis_client.expire(executed_key, 86400)  # 24 hours
             
-            # 🎯 NEW: Track total executed quantity for position scaling logic
+            # 🎯 Track total executed quantity for position scaling logic
             if signal.get('scaling_action'):
                 # This is a scaling order - ADD to existing quantity
                 additional_qty = signal.get('additional_quantity', quantity)
