@@ -926,11 +926,11 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             tf_60m = len(self.mtf_data[symbol]['60min'])
             logger.info(f"✅ MTF DATA: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m}")
             
-            # 🚨 FIX: Removed duplicate call to fetch_multi_timeframe_data()
-            # Data is already fetched above - calling again doubles API requests
-            # Mark as fetched in base strategy's tracker too to prevent re-fetch
-            if hasattr(self, '_mtf_fetched'):
-                self._mtf_fetched.add(symbol)
+            # 🚨 FIX: Mark as fetched in base strategy's tracker to prevent re-fetch
+            # Initialize _mtf_fetched if it doesn't exist (base strategy creates it lazily)
+            if not hasattr(self, '_mtf_fetched'):
+                self._mtf_fetched = set()
+            self._mtf_fetched.add(symbol)
             
             return True
             
