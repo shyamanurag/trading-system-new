@@ -519,7 +519,7 @@ class BaseStrategy:
                 result['confidence_multiplier'] = 1.25
                 result['alignment_score'] = 2
                 result['reasoning'] = '📉 STRONG MTF: Hourly + 1 other BEARISH'
-            
+                
             # 🚨 NEW: NEUTRAL-DOMINANT scenarios - NO CONFLICT, just no strong trend
             # All 3 NEUTRAL = No MTF opinion, let signal through
             # 🔥 FIX: If signal aligns with market bias, DON'T penalize - the market bias IS the confirmation
@@ -6155,13 +6155,27 @@ class BaseStrategy:
                 from src.core.orchestrator import get_orchestrator_instance
                 orchestrator = get_orchestrator_instance()
                 
-            # Also check for zerodha_client directly on self
-            zerodha_client = getattr(self, 'zerodha_client', None)
+            # 🔥 CRITICAL FIX: ALWAYS prefer orchestrator's zerodha_client (it gets updated on token refresh)
+            # Old bug: Strategy cached zerodha_client at init, then token refresh created NEW instance
+            # Strategy still used OLD instance where kite=None
+            zerodha_client = None
             
-            # Use zerodha_client from wherever we can find it
-            if zerodha_client or (orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client):
-                if not zerodha_client:
+            # Priority 1: Get FRESH client from orchestrator (handles token refresh properly)
+            if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
                     zerodha_client = orchestrator.zerodha_client
+                # Verify kite is initialized
+                if hasattr(zerodha_client, 'kite') and zerodha_client.kite:
+                    logger.debug("✅ Using orchestrator's Zerodha client (kite initialized)")
+                else:
+                    logger.warning("⚠️ Orchestrator's Zerodha client has kite=None")
+            
+            # Priority 2: Fallback to self.zerodha_client only if orchestrator doesn't have one
+            if not zerodha_client:
+                zerodha_client = getattr(self, 'zerodha_client', None)
+                if zerodha_client:
+                    logger.debug("⚠️ Using strategy's cached Zerodha client (orchestrator unavailable)")
+            
+            if zerodha_client:
                 try:
                     # Try to get margins (available cash) from Zerodha
                     if hasattr(zerodha_client, 'get_margins'):
