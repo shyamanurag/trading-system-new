@@ -521,13 +521,36 @@ class BaseStrategy:
                 result['reasoning'] = '📉 STRONG MTF: Hourly + 1 other BEARISH'
             
             # 🚨 NEW: NEUTRAL-DOMINANT scenarios - NO CONFLICT, just no strong trend
-            # All 3 NEUTRAL = No MTF opinion, let signal through with small penalty
+            # All 3 NEUTRAL = No MTF opinion, let signal through
+            # 🔥 FIX: If signal aligns with market bias, DON'T penalize - the market bias IS the confirmation
             elif neutral_count == 3:
                 result['mtf_aligned'] = True  # Allow through
                 result['direction'] = 'NEUTRAL'
-                result['confidence_multiplier'] = 0.9  # Small 10% penalty for lack of confirmation
+                
+                # Check if signal aligns with market bias
+                market_bias_direction = None
+                if hasattr(self, 'market_bias') and self.market_bias:
+                    try:
+                        bias_info = self.market_bias.get_bias()
+                        market_bias_direction = bias_info.get('bias', 'NEUTRAL')
+                    except:
+                        pass
+                
+                # If action aligns with market bias, no penalty (bias IS the confirmation)
+                # SELL in BEARISH market or BUY in BULLISH market = aligned
+                action_aligns_with_bias = (
+                    (action and action.upper() == 'SELL' and market_bias_direction == 'BEARISH') or
+                    (action and action.upper() == 'BUY' and market_bias_direction == 'BULLISH')
+                )
+                
+                if action_aligns_with_bias:
+                    result['confidence_multiplier'] = 1.0  # No penalty - market bias is confirmation
+                    result['reasoning'] = f'⏸️ MTF NEUTRAL but signal aligns with {market_bias_direction} market bias - no penalty'
+                else:
+                    result['confidence_multiplier'] = 0.95  # Reduced penalty (was 0.90)
+                    result['reasoning'] = '⏸️ MTF NEUTRAL: No strong trend detected - signal allowed'
+                
                 result['alignment_score'] = 0
-                result['reasoning'] = '⏸️ MTF NEUTRAL: No strong trend detected - signal allowed'
             
             # 2 NEUTRAL + 1 directional that MATCHES action = Weak support
             elif neutral_count == 2:

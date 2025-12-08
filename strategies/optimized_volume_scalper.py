@@ -2112,14 +2112,28 @@ class OptimizedVolumeScalper(BaseStrategy):
             if not self.ml_trained or len(features) == 0:
                 return 0.0
             
+            # 🔥 FIX: Check if ML model has sufficient training data
+            # If model has < 50 samples, it's unreliable - return 0.0
+            if len(self.ml_labels_history) < 50:
+                logger.debug(f"ML model has insufficient training data ({len(self.ml_labels_history)} samples) - skipping penalty")
+                return 0.0
+            
             # Scale features
             features_scaled = self.feature_scaler.transform(features.reshape(1, -1))
             
             # Get prediction probability
             prediction_proba = self.ml_model.predict_proba(features_scaled)[0]
             
-            # Convert to confidence boost (-0.5 to +0.5)
-            confidence_boost = (prediction_proba[1] - 0.5)  # Assuming class 1 is success
+            # 🔥 FIX: If model always predicts same class (not learning), don't apply penalty
+            # A well-trained model should have varied predictions, not always 0.0 or 1.0
+            if prediction_proba[1] < 0.05 or prediction_proba[1] > 0.95:
+                # Model is too confident in one direction = likely undertrained
+                logger.debug(f"ML model prediction too extreme ({prediction_proba[1]:.3f}) - likely undertrained, skipping")
+                return 0.0
+            
+            # Convert to confidence boost (-0.3 to +0.3) - reduced from -0.5 to +0.5
+            # ML should provide hints, not dominate the decision
+            confidence_boost = (prediction_proba[1] - 0.5) * 0.6  # Scale down the impact
             
             return confidence_boost
             
