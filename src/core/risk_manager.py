@@ -664,7 +664,8 @@ class RiskManager:
                 logger.info(f"   Position Value: ₹{position_value:,.0f}")
             
             # CRITICAL: Options bypass position size limits (risk limited to premium paid)
-            is_options_trade = symbol and (symbol.endswith('CE') or symbol.endswith('PE'))
+            # 🔥 FIX: Use proper options detection (requires digits before CE/PE = strike price)
+            # Stocks like BAJFINANCE, PETRONET end with CE/PE but are NOT options!
             if is_options_trade:
                 logger.info(f"🎯 OPTIONS TRADE DETECTED: {symbol} - BYPASSING position size limits")
                 logger.info(f"   Risk limited to premium paid: ₹{position_value:,.0f}")

@@ -516,13 +516,19 @@ class ZerodhaIntegration:
         symbol = order_params.get('symbol', '')
         
         # 🔍 CRITICAL VALIDATION: Check if options symbol exists before placing order
-        # FIXED: Only validate symbols that actually end with CE or PE (not just contain them)
-        if symbol.endswith('CE') or symbol.endswith('PE'):
+        # 🔥 FIX: Proper options detection - must have DIGITS before CE/PE (strike price)
+        # Stocks like BAJFINANCE, PETRONET end with CE/PE but are NOT options!
+        import re
+        is_options_contract = bool(re.search(r'\d+[CP]E$', symbol))  # Digits followed by CE/PE at end
+        if is_options_contract:
             logger.info(f"🔍 VALIDATING OPTIONS SYMBOL: {symbol}")
             symbol_exists = await self.validate_options_symbol(symbol)
             if not symbol_exists:
                 logger.error(f"❌ SYMBOL VALIDATION FAILED: {symbol} does not exist in Zerodha NFO")
                 return None
+        elif symbol.endswith('CE') or symbol.endswith('PE'):
+            # Log that we detected a stock ending with CE/PE but it's NOT an options contract
+            logger.debug(f"ℹ️ {symbol} ends with CE/PE but is EQUITY (no strike price digits)")
         
         for attempt in range(self.max_retries):
             try:
