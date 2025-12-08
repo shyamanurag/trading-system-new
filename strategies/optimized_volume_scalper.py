@@ -1093,12 +1093,22 @@ class OptimizedVolumeScalper(BaseStrategy):
             return None
         
         # INSTITUTIONAL FLOW DETECTION
-        institutional_flows = [f for f in recent_flows if f['volume'] > self.institutional_size_threshold]
-        retail_flows = [f for f in recent_flows if f['volume'] <= self.institutional_size_threshold]
+        # 🔥 FIX: Index futures (NIFTY-I, BANKNIFTY-I) report tick volume differently
+        # Index futures ARE inherently institutional - retail doesn't trade futures
+        # So for indices, assume all flow is institutional
+        is_index_future = symbol.endswith('-I') or any(idx in symbol.upper() for idx in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'SENSEX'])
+        
+        if is_index_future:
+            # Index futures = 100% institutional by nature
+            institutional_ratio = 1.0
+            logger.debug(f"📊 {symbol}: Index future detected - treating as 100% institutional flow")
+        else:
+            # Equity: Check tick volume against threshold
+            institutional_flows = [f for f in recent_flows if f['volume'] > self.institutional_size_threshold]
+            institutional_ratio = len(institutional_flows) / len(recent_flows) if recent_flows else 0
         
         # PROFESSIONAL IMBALANCE METRICS
         imbalance_ratio = max(buy_flow, sell_flow) / total_flow
-        institutional_ratio = len(institutional_flows) / len(recent_flows) if recent_flows else 0
         
         # VOLUME-WEIGHTED PRICE IMPACT ANALYSIS
         vwap_deviation = self._calculate_vwap_deviation(recent_flows, symbol_data)
