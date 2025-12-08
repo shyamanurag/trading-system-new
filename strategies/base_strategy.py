@@ -6162,7 +6162,7 @@ class BaseStrategy:
             
             # Priority 1: Get FRESH client from orchestrator (handles token refresh properly)
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
-                    zerodha_client = orchestrator.zerodha_client
+                zerodha_client = orchestrator.zerodha_client
                 # Verify kite is initialized
                 if hasattr(zerodha_client, 'kite') and zerodha_client.kite:
                     logger.debug("✅ Using orchestrator's Zerodha client (kite initialized)")
