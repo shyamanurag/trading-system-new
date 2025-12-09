@@ -554,6 +554,65 @@ class RiskManager:
         except Exception as e:
             logger.error(f"Error checking concentration limit: {e}")
             return True  # Conservative: assume limit exceeded on error
+    
+    def _get_max_quantity_for_concentration(self, symbol: str, price_per_share: float, 
+                                            original_quantity: int, total_capital: float,
+                                            is_equity: bool = True) -> int:
+        """
+        🔥 Calculate maximum allowed quantity within concentration limits
+        
+        Instead of rejecting trades that exceed concentration, calculate how many
+        shares we CAN buy within the limit.
+        
+        Args:
+            symbol: Stock symbol
+            price_per_share: Entry price per share
+            original_quantity: Originally requested quantity
+            total_capital: Available capital
+            is_equity: True for equity (25% margin), False for options (100% premium)
+        
+        Returns:
+            Maximum allowed quantity (0 if none allowed)
+        """
+        try:
+            max_concentration = total_capital * self.risk_limits['max_concentration_percent']
+            
+            # Get current exposure to this symbol
+            current_exposure = sum(
+                abs(pos.current_price * pos.quantity) * (0.25 if is_equity else 1.0)
+                for pos in self.position_tracker.positions.values()
+                if pos.symbol == symbol
+            )
+            
+            # Available room for this symbol
+            available_room = max_concentration - current_exposure
+            
+            if available_room <= 0:
+                logger.warning(f"⚠️ {symbol}: No room left in concentration limit (current: ₹{current_exposure:,.0f})")
+                return 0
+            
+            # Calculate margin per share
+            if is_equity:
+                margin_per_share = price_per_share * 0.25  # 25% margin for intraday equity
+            else:
+                margin_per_share = price_per_share  # Full premium for options
+            
+            # Max quantity that fits in available room
+            max_quantity = int(available_room / margin_per_share)
+            
+            # Don't exceed original quantity
+            final_quantity = min(max_quantity, original_quantity)
+            
+            logger.info(f"📊 CONCENTRATION CALC: {symbol}")
+            logger.info(f"   Max Concentration: ₹{max_concentration:,.0f} | Current: ₹{current_exposure:,.0f}")
+            logger.info(f"   Available Room: ₹{available_room:,.0f} | Margin/Share: ₹{margin_per_share:,.0f}")
+            logger.info(f"   Max Qty: {max_quantity} | Original: {original_quantity} | Final: {final_quantity}")
+            
+            return final_quantity
+            
+        except Exception as e:
+            logger.error(f"Error calculating max quantity for concentration: {e}")
+            return 0
             
     def would_exceed_correlation_limit(self, symbol: str, position_value: float) -> bool:
         """Check if position would exceed correlation limits"""
@@ -705,6 +764,29 @@ class RiskManager:
                 logger.info(f"🎯 OPTIONS BYPASS: {symbol} approved regardless of premium cost")
             else:
                 risk_approved, risk_reason = self.validate_trade_risk(position_value, strategy_name, symbol, total_capital_override)
+            
+            # 🔥 CRITICAL FIX: If concentration limit exceeded, REDUCE QUANTITY instead of rejecting
+            if not risk_approved and "Concentration limit" in risk_reason:
+                # Calculate max allowed quantity within concentration limits
+                max_allowed_qty = self._get_max_quantity_for_concentration(
+                    symbol=symbol,
+                    price_per_share=entry_price,
+                    original_quantity=quantity,
+                    total_capital=total_capital_override or self.position_tracker.capital,
+                    is_equity=is_equity_trade
+                )
+                
+                if max_allowed_qty >= 1:
+                    logger.warning(f"⚠️ CONCENTRATION ADJUSTMENT: {symbol} qty reduced {quantity} → {max_allowed_qty}")
+                    quantity = max_allowed_qty
+                    # Recalculate position value with reduced quantity
+                    contract_value = float(entry_price) * float(quantity)
+                    position_value = contract_value * 0.25 if is_equity_trade else contract_value
+                    risk_approved = True
+                    risk_reason = f"Quantity reduced from original to fit concentration limits"
+                    logger.info(f"✅ CONCENTRATION FIX: {symbol} approved with {quantity} shares (₹{position_value:,.0f} margin)")
+                else:
+                    logger.error(f"❌ CONCENTRATION BLOCK: {symbol} - even 1 share exceeds limits")
             
             if not risk_approved:
                 return {
