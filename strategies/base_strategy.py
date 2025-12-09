@@ -4437,8 +4437,8 @@ class BaseStrategy:
             trading_mode = f'INTRADAY_{hybrid_mode}'
             
             # 🔥 INTRADAY TIMEFRAME
-                timeframe = "Same Day (Intraday)"
-                square_off_time = "15:15 IST"
+            timeframe = "Same Day (Intraday)"
+            square_off_time = "15:15 IST"
             
             # ============================================================
             # 🎯 CRITICAL: PROPER POSITION SIZING (4x LEVERAGE + 2% MAX LOSS)
