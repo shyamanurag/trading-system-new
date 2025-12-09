@@ -487,7 +487,34 @@ class ZerodhaIntegration:
             return False
 
     async def place_order(self, order_params: Dict) -> Optional[str]:
-        """Place order with built-in rate limiting and retry logic"""
+        """Place order with built-in rate limiting, cooldown, and retry logic"""
+        
+        # 🔥 ANTI-CHURN: Per-symbol cooldown and minimum quantity check
+        symbol = order_params.get('symbol', '')
+        quantity = order_params.get('quantity', 0)
+        action = order_params.get('action', order_params.get('side', 'BUY'))
+        
+        # Initialize cooldown tracking if not exists
+        if not hasattr(self, '_symbol_cooldown'):
+            self._symbol_cooldown = {}
+            self._cooldown_seconds = 300  # 5 minutes between trades on same symbol
+            self._min_quantity = 5  # Minimum 5 shares per order
+        
+        # 🚫 Block tiny orders (< 5 shares)
+        if quantity < self._min_quantity:
+            logger.warning(f"🚫 TINY ORDER BLOCKED: {symbol} {action} qty={quantity} < min {self._min_quantity}")
+            return None
+        
+        # 🧊 Per-symbol cooldown check
+        from datetime import datetime
+        now = datetime.now()
+        if symbol in self._symbol_cooldown:
+            elapsed = (now - self._symbol_cooldown[symbol]).total_seconds()
+            if elapsed < self._cooldown_seconds:
+                remaining = self._cooldown_seconds - elapsed
+                logger.warning(f"🧊 COOLDOWN BLOCKED: {symbol} {action} - {remaining:.0f}s remaining (last trade {elapsed:.0f}s ago)")
+                return None
+        
         async with self.order_semaphore:
             # Rate limiting
             current_time = time.time()
@@ -502,6 +529,9 @@ class ZerodhaIntegration:
                     result = await self._place_order_impl(order_params)
                     if result:
                         self.last_order_time = time.time()
+                        # 🔥 Set cooldown after successful order
+                        self._symbol_cooldown[symbol] = now
+                        logger.info(f"🧊 COOLDOWN SET: {symbol} - {self._cooldown_seconds}s cooldown started")
                         return result
                 except Exception as e:
                     logger.error(f"❌ Order attempt {attempt + 1} failed: {e}")
