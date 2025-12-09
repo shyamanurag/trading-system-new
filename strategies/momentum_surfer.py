@@ -1660,7 +1660,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
             return 'sideways'
     
     def _calculate_rsi(self, prices: np.ndarray, period: int = 14) -> float:
-        """Calculate RSI indicator"""
+        """Calculate RSI indicator - FIXED: Never returns exactly 0"""
         try:
             if len(prices) < period + 1:
                 return 50.0
@@ -1672,11 +1672,22 @@ class EnhancedMomentumSurfer(BaseStrategy):
             avg_gain = np.mean(gains[-period:])
             avg_loss = np.mean(losses[-period:])
             
-            if avg_loss == 0:
-                return 100.0
+            # 🔥 FIX: Handle edge cases properly
+            if avg_loss == 0 and avg_gain == 0:
+                # No price movement - return neutral
+                return 50.0
+            elif avg_loss == 0:
+                # Only gains - extremely overbought
+                return 95.0
+            elif avg_gain == 0:
+                # Only losses - extremely oversold (but NOT 0)
+                return 5.0
             
             rs = avg_gain / avg_loss
             rsi = 100 - (100 / (1 + rs))
+            
+            # 🔥 FIX: Clamp RSI to valid range [5, 95] to avoid edge cases
+            rsi = max(5.0, min(95.0, rsi))
             
             return rsi
             

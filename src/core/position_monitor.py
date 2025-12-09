@@ -637,8 +637,11 @@ class PositionMonitor:
                 
                 # Calculate partial exit quantity (50%)
                 # 🚨 FIX: Handle small positions (qty=1 should do FULL exit, not 0 qty partial)
-                if position.quantity <= 1:
-                    logger.info(f"   ℹ️ Small position (qty={position.quantity}) - Doing FULL EXIT instead of partial")
+                # 🔥 FIX: Minimum quantity for partial exits to avoid tiny trades
+                MIN_PARTIAL_EXIT_QTY = 10  # Minimum 10 shares for partial exit
+                
+                if position.quantity <= MIN_PARTIAL_EXIT_QTY:
+                    logger.info(f"   ℹ️ Small position (qty={position.quantity} <= {MIN_PARTIAL_EXIT_QTY}) - Doing FULL EXIT instead of partial")
                     return ExitCondition(
                         condition_type='target',
                         symbol=symbol,
@@ -650,7 +653,17 @@ class PositionMonitor:
                 partial_exit_qty = position.quantity // 2
                 remaining_qty = position.quantity - partial_exit_qty
                 
-                # Extra safety check - don't place 0 qty orders
+                # Extra safety check - don't place tiny orders
+                if partial_exit_qty < MIN_PARTIAL_EXIT_QTY:
+                    logger.warning(f"   ⚠️ Partial qty {partial_exit_qty} < min {MIN_PARTIAL_EXIT_QTY} - Full exit instead")
+                    return ExitCondition(
+                        condition_type='target',
+                        symbol=symbol,
+                        trigger_price=current_price,
+                        reason=f'Target achieved: Full exit (partial qty too small)',
+                        priority=3
+                    )
+                
                 if partial_exit_qty <= 0:
                     logger.warning(f"   ⚠️ Calculated partial qty is 0 - Skipping partial, will do full exit later")
                     return None
@@ -702,10 +715,11 @@ class PositionMonitor:
                 logger.info(f"   Target: ₹{target_price:.2f}")
                 logger.info(f"   Total Profit: ₹{current_pnl:.2f} ({current_pnl_percent:.1f}%)")
                 
-                # Calculate partial exit quantity (50%)
-                # 🚨 FIX: Handle small positions (qty=1 should do FULL exit, not 0 qty partial)
-                if position.quantity <= 1:
-                    logger.info(f"   ℹ️ Small position (qty={position.quantity}) - Doing FULL EXIT instead of partial")
+                # 🔥 FIX: Minimum quantity for partial exits to avoid tiny trades
+                MIN_PARTIAL_EXIT_QTY = 10  # Minimum 10 shares for partial exit
+                
+                if position.quantity <= MIN_PARTIAL_EXIT_QTY:
+                    logger.info(f"   ℹ️ Small position (qty={position.quantity} <= {MIN_PARTIAL_EXIT_QTY}) - Doing FULL EXIT instead of partial")
                     return ExitCondition(
                         condition_type='target',
                         symbol=symbol,
@@ -717,7 +731,17 @@ class PositionMonitor:
                 partial_exit_qty = position.quantity // 2
                 remaining_qty = position.quantity - partial_exit_qty
                 
-                # Extra safety check - don't place 0 qty orders
+                # Extra safety check - don't place tiny orders
+                if partial_exit_qty < MIN_PARTIAL_EXIT_QTY:
+                    logger.warning(f"   ⚠️ Partial qty {partial_exit_qty} < min {MIN_PARTIAL_EXIT_QTY} - Full exit instead")
+                    return ExitCondition(
+                        condition_type='target',
+                        symbol=symbol,
+                        trigger_price=current_price,
+                        reason=f'Target achieved: Full exit (partial qty too small)',
+                        priority=3
+                    )
+                
                 if partial_exit_qty <= 0:
                     logger.warning(f"   ⚠️ Calculated partial qty is 0 - Skipping partial, will do full exit later")
                     return None

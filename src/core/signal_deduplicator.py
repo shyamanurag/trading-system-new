@@ -40,6 +40,10 @@ class SignalDeduplicator:
 
         # Post-exit cooldown seconds (prevent immediate re-entry churn)
         self.post_exit_cooldown_seconds = 600
+        
+        # 🔥 NEW: Trade cooldown to prevent rapid back-and-forth trading
+        self.trade_cooldown_minutes = 5  # 5 minutes cooldown after any trade
+        self._last_trade_time: Dict[str, datetime] = {}  # symbol -> last trade time
 
         # Per-signal attempt tracking and TTL control
         self.max_attempts_per_signal = 10
@@ -262,6 +266,56 @@ class SignalDeduplicator:
         self.position_tracker = position_tracker
         logger.info("✅ Position tracker connected to signal deduplicator")
     
+    async def check_trade_cooldown(self, symbol: str) -> tuple[bool, str]:
+        """
+        🔥 Check if symbol is in trade cooldown period.
+        Prevents rapid back-and-forth trading (churning).
+        
+        Returns:
+            (is_blocked, reason): True if blocked, with reason
+        """
+        try:
+            if not self.redis_client:
+                # Fallback to local memory
+                if symbol in self._last_trade_time:
+                    elapsed = (datetime.now() - self._last_trade_time[symbol]).total_seconds() / 60
+                    if elapsed < self.trade_cooldown_minutes:
+                        return True, f"Trade cooldown: {self.trade_cooldown_minutes - elapsed:.1f} min remaining"
+                return False, ""
+            
+            # Check Redis for last trade time
+            today = datetime.now().strftime('%Y-%m-%d')
+            cooldown_key = f"trade_cooldown:{today}:{symbol}"
+            
+            last_trade = await self.redis_client.get(cooldown_key)
+            if last_trade:
+                last_trade_time = datetime.fromisoformat(last_trade)
+                elapsed = (datetime.now() - last_trade_time).total_seconds() / 60
+                
+                if elapsed < self.trade_cooldown_minutes:
+                    remaining = self.trade_cooldown_minutes - elapsed
+                    return True, f"Trade cooldown: {remaining:.1f} min remaining (last trade {elapsed:.1f} min ago)"
+            
+            return False, ""
+            
+        except Exception as e:
+            logger.error(f"❌ Error checking trade cooldown: {e}")
+            return False, ""
+    
+    async def set_trade_cooldown(self, symbol: str):
+        """Set trade cooldown after executing a trade"""
+        try:
+            now = datetime.now()
+            self._last_trade_time[symbol] = now
+            
+            if self.redis_client:
+                today = now.strftime('%Y-%m-%d')
+                cooldown_key = f"trade_cooldown:{today}:{symbol}"
+                await self.redis_client.set(cooldown_key, now.isoformat(), ex=self.trade_cooldown_minutes * 60)
+                logger.info(f"🧊 TRADE COOLDOWN SET: {symbol} - {self.trade_cooldown_minutes} min cooldown started")
+        except Exception as e:
+            logger.error(f"❌ Error setting trade cooldown: {e}")
+
     async def _check_signal_already_executed(self, signal: Dict) -> bool:
         """
         Check if this signal should be blocked based on ACTIVE POSITIONS only.
@@ -284,6 +338,12 @@ class SignalDeduplicator:
             
             symbol = signal.get('symbol')
             action = signal.get('action', 'BUY')
+            
+            # 🔥 NEW: Check trade cooldown to prevent churning
+            is_blocked, cooldown_reason = await self.check_trade_cooldown(symbol)
+            if is_blocked:
+                logger.warning(f"🧊 COOLDOWN BLOCKED: {symbol} {action} - {cooldown_reason}")
+                return True
             
             # 🎯 CRITICAL FIX: Check position tracker for ACTIVE positions, not Redis execution history
             if hasattr(self, 'position_tracker') and self.position_tracker:
@@ -424,6 +484,9 @@ class SignalDeduplicator:
                 await self.redis_client.set(executed_qty_key, str(quantity), ex=86400)
             
             logger.info(f"✅ Marked signal as executed: {symbol} {action} (count: {current_count}, qty: {quantity})")
+            
+            # 🔥 Set trade cooldown to prevent immediate re-entry/reversal
+            await self.set_trade_cooldown(symbol)
             
             if current_count > 1 and not signal.get('scaling_action'):
                 logger.warning(f"⚠️ MULTIPLE EXECUTIONS DETECTED: {symbol} {action} now executed {current_count} times today!")
