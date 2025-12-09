@@ -6116,14 +6116,43 @@ class BaseStrategy:
             min_shares_required = int(min_trade_value / entry_price)
             cost_for_min_shares = min_shares_required * entry_price
             
-                                        # 🚨 MARGIN-BASED POSITION SIZING: Use 25% of available margin
-            # For MIS equity: margin ≈ 25-30% of trade value (leverage ~4x)
-            estimated_margin_factor = 0.25  # Conservative estimate for MIS margin requirement
+            # 🚨 MARGIN-BASED POSITION SIZING: Use ACTUAL Zerodha margin (not hardcoded 25%)
+            # Different stocks have different margin requirements (25%-75%)
+            # Default to 60% (conservative) if API unavailable
+            estimated_margin_factor = 0.60  # Conservative default
+            
+            # 🔥 CRITICAL FIX: Try to get actual margin from Zerodha API
+            zerodha_client = None
+            try:
+                orchestrator = getattr(self, 'orchestrator', None)
+                if not orchestrator:
+                    from src.core.orchestrator import get_orchestrator_instance
+                    orchestrator = get_orchestrator_instance()
+                if orchestrator and hasattr(orchestrator, 'zerodha_client'):
+                    zerodha_client = orchestrator.zerodha_client
+            except Exception:
+                pass
+            
+            # Calculate max margin we can allocate to this trade
             max_margin_allowed = available_capital * max_margin_per_trade_pct
             
-            # Calculate maximum trade value we can afford with 25% margin allocation
-            max_affordable_trade_value = max_margin_allowed / estimated_margin_factor
-            max_affordable_shares = int(max_affordable_trade_value / entry_price)
+            # Try to get actual margin per share from Zerodha
+            actual_margin_per_share = entry_price * estimated_margin_factor  # Default
+            if zerodha_client and hasattr(zerodha_client, 'get_required_margin_for_order'):
+                try:
+                    # Get margin for 1 share to calculate per-share margin
+                    test_margin = zerodha_client.get_required_margin_for_order(
+                        symbol=underlying_symbol, quantity=100, order_type='BUY', product='MIS'
+                    )
+                    if test_margin > 0:
+                        actual_margin_per_share = test_margin / 100
+                        estimated_margin_factor = actual_margin_per_share / entry_price
+                        logger.debug(f"💰 ZERODHA MARGIN: {underlying_symbol} = ₹{actual_margin_per_share:.2f}/share ({estimated_margin_factor:.1%})")
+                except Exception as margin_err:
+                    logger.debug(f"Could not get Zerodha margin for {underlying_symbol}: {margin_err}")
+            
+            # Calculate maximum affordable shares based on actual margin
+            max_affordable_shares = int(max_margin_allowed / actual_margin_per_share) if actual_margin_per_share > 0 else 0
             max_affordable_cost = max_affordable_shares * entry_price
             
             # Use the higher of: minimum trade value OR maximum affordable within margin limits
@@ -6131,7 +6160,7 @@ class BaseStrategy:
                 # We can afford more than minimum - use maximum affordable
                 final_quantity = max_affordable_shares
                 cost = max_affordable_cost
-                estimated_margin = cost * estimated_margin_factor
+                estimated_margin = final_quantity * actual_margin_per_share
                 
                 logger.debug(f"✅ MARGIN-OPTIMIZED: {underlying_symbol} = {final_quantity} shares")
                 logger.debug(f"   💰 Trade Value: ₹{cost:,.0f}")
@@ -6140,7 +6169,7 @@ class BaseStrategy:
                 return final_quantity
             else:
                 # Can only afford minimum - check if it fits in margin allocation
-                min_estimated_margin = cost_for_min_shares * estimated_margin_factor
+                min_estimated_margin = min_shares_required * actual_margin_per_share
                 
                 if min_estimated_margin <= max_margin_allowed:
                     logger.debug(f"✅ MINIMUM VIABLE: {underlying_symbol} = {min_shares_required} shares")
@@ -6150,7 +6179,7 @@ class BaseStrategy:
                 else:
                     logger.warning(
                         f"❌ EQUITY REJECTED: {underlying_symbol} min trade ₹{min_trade_value:,.0f} "
-                        f"needs ₹{min_estimated_margin:,.0f} margin, exceeds 25% limit ₹{max_margin_allowed:,.0f}"
+                        f"needs ₹{min_estimated_margin:,.0f} margin, exceeds limit ₹{max_margin_allowed:,.0f}"
                     )
                     return 0
     

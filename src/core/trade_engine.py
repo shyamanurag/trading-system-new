@@ -135,6 +135,45 @@ class TradeEngine:
                 if i > 0:  # Skip delay for first signal
                     self.logger.info(f"⏱️ BATCH RATE LIMIT: Waiting {batch_delay}s before processing signal {i+1}/{len(signals)}")
                     await asyncio.sleep(batch_delay)
+                    
+                    # 🚨 CRITICAL FIX: Refresh available margin from Zerodha after each order
+                    # Previous order consumed margin, need fresh values
+                    try:
+                        if self.zerodha_client and hasattr(self.zerodha_client, 'kite') and self.zerodha_client.kite:
+                            # Clear margin cache to force fresh API call
+                            if hasattr(self.zerodha_client, '_unified_cache'):
+                                self.zerodha_client._unified_cache.pop('margins', None)
+                            fresh_margin = self.zerodha_client.get_margins_sync()
+                            self.logger.info(f"💰 MARGIN REFRESHED: ₹{fresh_margin:,.2f} available for signal {i+1}")
+                            
+                            # 🚨 CRITICAL: Adjust quantity if margin insufficient
+                            symbol = signal.get('symbol', '')
+                            quantity = signal.get('quantity', 0)
+                            price = signal.get('entry_price', 0)
+                            action = signal.get('action', 'BUY')
+                            
+                            if quantity > 0 and price > 0:
+                                # Get actual margin required from Zerodha
+                                required_margin = self.zerodha_client.get_required_margin_for_order(
+                                    symbol=symbol, quantity=quantity, order_type=action, product='MIS'
+                                )
+                                
+                                if required_margin > fresh_margin:
+                                    # Calculate reduced quantity that fits in available margin
+                                    margin_per_share = required_margin / quantity if quantity > 0 else price * 0.6
+                                    max_affordable_qty = int(fresh_margin * 0.95 / margin_per_share)  # 95% safety
+                                    
+                                    if max_affordable_qty > 0:
+                                        old_qty = quantity
+                                        signal['quantity'] = max_affordable_qty
+                                        self.logger.warning(f"⚠️ MARGIN ADJUSTED: {symbol} qty reduced {old_qty} → {max_affordable_qty} to fit ₹{fresh_margin:,.0f}")
+                                    else:
+                                        self.logger.error(f"❌ INSUFFICIENT MARGIN: {symbol} needs ₹{required_margin:,.0f} but only ₹{fresh_margin:,.0f} available - SKIPPING")
+                                        execution_results.append(None)
+                                        self._track_signal_execution_failed(signal, f"Insufficient margin: need ₹{required_margin:,.0f}, have ₹{fresh_margin:,.0f}")
+                                        continue
+                    except Exception as margin_refresh_err:
+                        self.logger.warning(f"⚠️ Could not refresh margin: {margin_refresh_err}")
                 
                 logger.info(f"Processing signal {signal.get('signal_id')}: {signal.get('symbol')} {signal.get('action')}")
                 result = await self._process_live_signal(signal)

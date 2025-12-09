@@ -158,6 +158,11 @@ class EnhancedPositionOpeningDecision:
             if bias_result.decision != PositionDecision.APPROVED:
                 return bias_result
             
+            # STEP 4.5: 🚨 GLOBAL RSI EXTREME CHECK - Prevents trading at extremes
+            rsi_extreme_result = await self._check_rsi_extreme_filter(symbol, action, market_data)
+            if rsi_extreme_result.decision != PositionDecision.APPROVED:
+                return rsi_extreme_result
+            
             # STEP 5: Risk Assessment
             risk_result = await self._assess_position_risk(
                 signal, current_positions, available_capital, risk_manager
@@ -701,12 +706,32 @@ class EnhancedPositionOpeningDecision:
             is_options = self._is_options_symbol(symbol)
             
             # 🔥 INTRADAY MARGIN-BASED EXPOSURE (not position value!)
-            # With 4x leverage, margin = position_value / 4
-            INTRADAY_LEVERAGE = 4.0
-            estimated_margin = estimated_value / INTRADAY_LEVERAGE
+            # 🚨 CRITICAL FIX: Use ACTUAL Zerodha margin, not hardcoded 25%
+            # Different stocks have different margin requirements (25%-75%)
+            estimated_margin = estimated_value * 0.60  # Default to 60% (conservative)
             
-            # Calculate current margin used (not position value)
-            current_margin_used = total_current_exposure / INTRADAY_LEVERAGE
+            # Try to get actual margin from Zerodha API
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                    zerodha_client = orchestrator.zerodha_client
+                    if hasattr(zerodha_client, 'get_required_margin_for_order'):
+                        action = signal.get('action', 'BUY')
+                        actual_margin = zerodha_client.get_required_margin_for_order(
+                            symbol=symbol,
+                            quantity=signal_quantity,
+                            order_type=action,
+                            product='MIS'
+                        )
+                        if actual_margin > 0:
+                            estimated_margin = actual_margin
+                            logger.info(f"💰 ZERODHA MARGIN API: {symbol} x{signal_quantity} = ₹{actual_margin:,.0f}")
+            except Exception as margin_err:
+                logger.debug(f"Could not get Zerodha margin, using conservative 60%: {margin_err}")
+            
+            # Calculate current margin used (conservative estimate for existing positions)
+            current_margin_used = total_current_exposure * 0.60  # Conservative 60%
             new_total_margin = current_margin_used + estimated_margin
             
             # Options margin (premium-based, not leveraged)
@@ -830,6 +855,113 @@ class EnhancedPositionOpeningDecision:
                 reasoning=f"Risk assessment error: {str(e)}",
                 metadata={'error': str(e)}
             )
+    
+    async def _check_rsi_extreme_filter(self, symbol: str, action: str, market_data: Dict) -> PositionDecisionResult:
+        """
+        🚨 GLOBAL RSI EXTREME FILTER - Prevents ALL strategies from trading at extremes
+        
+        Logic:
+        - RSI < 20: Stock extremely oversold → Don't SHORT (bounce likely)
+        - RSI > 80: Stock extremely overbought → Don't BUY (drop likely)
+        
+        This is a SAFETY filter that overrides individual strategy decisions.
+        """
+        try:
+            # Get RSI from market_data or signal metadata
+            symbol_data = market_data.get(symbol, {})
+            rsi = symbol_data.get('rsi', 50.0)  # Default to neutral
+            
+            # If RSI not in market_data, try to calculate from price history
+            if rsi == 50.0 or rsi == 0:
+                # Try to get RSI from orchestrator's indicator calculation
+                try:
+                    from src.core.orchestrator import get_orchestrator_instance
+                    orchestrator = get_orchestrator_instance()
+                    if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                        # Get recent price data
+                        from datetime import datetime, timedelta
+                        candles = await orchestrator.zerodha_client.get_historical_data(
+                            symbol=symbol,
+                            interval='15minute',
+                            from_date=datetime.now() - timedelta(days=2),
+                            to_date=datetime.now()
+                        )
+                        if candles and len(candles) >= 15:
+                            closes = [c.get('close', c.get('ltp', 0)) for c in candles[-15:]]
+                            if len(closes) >= 14:
+                                rsi = self._calculate_rsi(closes)
+                                logger.debug(f"📊 RSI CALCULATED for {symbol}: {rsi:.1f}")
+                except Exception as rsi_calc_err:
+                    logger.debug(f"Could not calculate RSI for {symbol}: {rsi_calc_err}")
+            
+            # 🚨 EXTREME RSI FILTER
+            RSI_EXTREME_OVERSOLD = 20.0
+            RSI_EXTREME_OVERBOUGHT = 80.0
+            
+            # Don't SHORT when extremely oversold (bounce likely)
+            if action.upper() in ['SELL', 'SHORT'] and rsi < RSI_EXTREME_OVERSOLD and rsi > 0:
+                logger.warning(f"🚫 RSI EXTREME FILTER: {symbol} RSI={rsi:.1f} < {RSI_EXTREME_OVERSOLD} - BLOCKING {action} (bounce likely)")
+                return PositionDecisionResult(
+                    decision=PositionDecision.REJECTED_MARKET_CONDITIONS,
+                    confidence_score=0.0,
+                    risk_score=8.0,
+                    position_size=0,
+                    reasoning=f"🚫 RSI EXTREME: {symbol} RSI={rsi:.1f} is extremely oversold - {action} blocked (reversal/bounce likely)",
+                    metadata={'rsi': rsi, 'threshold': RSI_EXTREME_OVERSOLD, 'action_blocked': action}
+                )
+            
+            # Don't BUY when extremely overbought (drop likely)
+            if action.upper() in ['BUY', 'LONG'] and rsi > RSI_EXTREME_OVERBOUGHT:
+                logger.warning(f"🚫 RSI EXTREME FILTER: {symbol} RSI={rsi:.1f} > {RSI_EXTREME_OVERBOUGHT} - BLOCKING {action} (drop likely)")
+                return PositionDecisionResult(
+                    decision=PositionDecision.REJECTED_MARKET_CONDITIONS,
+                    confidence_score=0.0,
+                    risk_score=8.0,
+                    position_size=0,
+                    reasoning=f"🚫 RSI EXTREME: {symbol} RSI={rsi:.1f} is extremely overbought - {action} blocked (reversal/drop likely)",
+                    metadata={'rsi': rsi, 'threshold': RSI_EXTREME_OVERBOUGHT, 'action_blocked': action}
+                )
+            
+            # RSI is in acceptable range
+            return PositionDecisionResult(
+                decision=PositionDecision.APPROVED,
+                confidence_score=0.0,
+                risk_score=0.0,
+                position_size=0,
+                reasoning=f"RSI {rsi:.1f} in acceptable range for {action}",
+                metadata={'rsi': rsi}
+            )
+            
+        except Exception as e:
+            logger.debug(f"RSI extreme check error (allowing trade): {e}")
+            # On error, allow the trade (don't block due to calculation issues)
+            return PositionDecisionResult(
+                decision=PositionDecision.APPROVED,
+                confidence_score=0.0,
+                risk_score=0.0,
+                position_size=0,
+                reasoning="RSI check skipped (calculation error)",
+                metadata={'error': str(e)}
+            )
+    
+    def _calculate_rsi(self, prices: list, period: int = 14) -> float:
+        """Calculate RSI from price list"""
+        if len(prices) < period + 1:
+            return 50.0  # Default neutral
+        
+        deltas = [prices[i] - prices[i-1] for i in range(1, len(prices))]
+        gains = [d if d > 0 else 0 for d in deltas]
+        losses = [-d if d < 0 else 0 for d in deltas]
+        
+        avg_gain = sum(gains[-period:]) / period
+        avg_loss = sum(losses[-period:]) / period
+        
+        if avg_loss == 0:
+            return 100.0
+        
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
     
     async def _check_market_conditions(self, market_data: Dict) -> PositionDecisionResult:
         """Check overall market conditions"""
