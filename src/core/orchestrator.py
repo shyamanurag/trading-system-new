@@ -4456,7 +4456,8 @@ class TradingOrchestrator:
                     
                     self.logger.info(f"📤 Placing reversal exit order: {order_params}")
                     
-                    order_result = await self.zerodha_client.place_order(**order_params)
+                    # FIXED: place_order expects dict, not kwargs
+                    order_result = await self.zerodha_client.place_order(order_params)
                     
                     if order_result and order_result.get('order_id'):
                         self.logger.info(f"✅ REVERSAL EXIT ORDER PLACED: {symbol}")
