@@ -4392,18 +4392,53 @@ class BaseStrategy:
                 logger.warning(f"Equity signal below {min_risk_reward_ratio}:1 ratio: {symbol} ({risk_reward_ratio:.2f})")
                 return None
             
-            # 🔥 INTRADAY FOCUS: Determine if signal is suitable for intraday
-            is_intraday = reward_percent <= 3.0  # 3% target max for intraday
-            trading_mode = 'INTRADAY' if is_intraday else 'SWING'
+            # ============================================================
+            # 🎯 HYBRID APPROACH: SCALP vs SWING based on MTF alignment
+            # ============================================================
+            # MTF 0-1/3: Choppy market → SCALP mode (quick in/out, small targets)
+            # MTF 2-3/3: Trending market → SWING mode (larger targets, longer hold)
+            mtf_score = mtf_result.get('alignment_score', 0)
+            
+            if mtf_score <= 1:
+                # SCALP MODE: Choppy market, quick in/out
+                hybrid_mode = 'SCALP'
+                scalp_target_pct = 0.004  # 0.4% target
+                scalp_sl_pct = 0.002      # 0.2% stop loss
+                max_hold_minutes = 10     # Exit after 10 minutes max
+                
+                # Recalculate stop_loss and target for scalping
+                if action == 'BUY':
+                    stop_loss = entry_price * (1 - scalp_sl_pct)
+                    target = entry_price * (1 + scalp_target_pct)
+                else:  # SELL
+                    stop_loss = entry_price * (1 + scalp_sl_pct)
+                    target = entry_price * (1 - scalp_target_pct)
+                
+                # Recalculate risk metrics for scalp
+                risk_amount = abs(entry_price - stop_loss)
+                reward_amount = abs(target - entry_price)
+                risk_percent = (risk_amount / entry_price) * 100
+                reward_percent = (reward_amount / entry_price) * 100
+                risk_reward_ratio = reward_amount / risk_amount if risk_amount > 0 else 2.0
+                
+                logger.info(f"⚡ SCALP MODE: {symbol} {action} (MTF {mtf_score}/3 = Choppy)")
+                logger.info(f"   Target: {scalp_target_pct*100:.1f}% | SL: {scalp_sl_pct*100:.1f}% | Max Hold: {max_hold_minutes}min")
+            else:
+                # SWING MODE: Trending market, larger moves
+                hybrid_mode = 'SWING'
+                max_hold_minutes = 0  # No time limit for swing
+                
+                # Keep original stop_loss and target (already calculated)
+                logger.info(f"📈 SWING MODE: {symbol} {action} (MTF {mtf_score}/3 = Trending)")
+                logger.info(f"   Target: {reward_percent:.1f}% | SL: {risk_percent:.1f}% | Hold: Until target/SL")
+            
+            # 🔥 INTRADAY FOCUS: All hybrid trades are intraday
+            is_intraday = True  # Always intraday for hybrid approach
+            trading_mode = f'INTRADAY_{hybrid_mode}'
             
             # 🔥 INTRADAY TIMEFRAME
-            if is_intraday:
                 timeframe = "Same Day (Intraday)"
                 square_off_time = "15:15 IST"
-            else:
-                est_days = max(2, int(reward_percent / 1.5))
-                timeframe = f"{est_days}-{est_days+3} days (Swing)"
-                square_off_time = "N/A"
             
             # ============================================================
             # 🎯 CRITICAL: PROPER POSITION SIZING (4x LEVERAGE + 2% MAX LOSS)
@@ -4478,6 +4513,9 @@ class BaseStrategy:
                     **metadata,
                     'signal_type': 'EQUITY',
                     'trading_mode': trading_mode,
+                    'hybrid_mode': hybrid_mode,  # SCALP or SWING
+                    'max_hold_minutes': max_hold_minutes,  # 10 for SCALP, 0 for SWING
+                    'mtf_score': mtf_score,  # 0-3 MTF alignment score
                     'is_intraday': is_intraday,
                     'timeframe': timeframe,
                     'leverage_factor': INTRADAY_LEVERAGE,
@@ -6201,7 +6239,7 @@ class BaseStrategy:
             
             # Priority 1: Get FRESH client from orchestrator (handles token refresh properly)
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
-                zerodha_client = orchestrator.zerodha_client
+                    zerodha_client = orchestrator.zerodha_client
                 # Verify kite is initialized
                 if hasattr(zerodha_client, 'kite') and zerodha_client.kite:
                     logger.debug("✅ Using orchestrator's Zerodha client (kite initialized)")

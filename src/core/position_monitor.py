@@ -396,13 +396,19 @@ class PositionMonitor:
                     position.side = expected_side
                     logger.info(f"   ✅ Auto-corrected side to '{expected_side}'")
             
-            # 2. Stop loss conditions
+            # 2. 🎯 SCALP TIME-BASED EXIT - Quick in/out for choppy markets
+            scalp_exit = self._check_scalp_time_exit(symbol, position)
+            if scalp_exit:
+                exit_conditions.append(scalp_exit)
+                continue  # Scalp timeout takes priority
+            
+            # 3. Stop loss conditions
             stop_loss_exit = self._check_stop_loss_exit(symbol, position)
             if stop_loss_exit:
                 exit_conditions.append(stop_loss_exit)
                 continue  # 🚨 FIX: Don't also check target if SL is triggered
             
-            # 3. Target conditions
+            # 4. Target conditions
             target_exit = await self._check_target_exit(symbol, position)
             if target_exit:
                 exit_conditions.append(target_exit)
@@ -448,6 +454,65 @@ class PositionMonitor:
             )
         
         return None
+    
+    def _check_scalp_time_exit(self, symbol: str, position) -> Optional[ExitCondition]:
+        """
+        🎯 SCALP TIME-BASED EXIT - Quick in/out for choppy markets (Hybrid Approach)
+        
+        For SCALP mode trades (MTF 0-1/3), exit after max_hold_minutes regardless of P&L.
+        This prevents being stuck in choppy markets.
+        """
+        try:
+            # Check if this is a SCALP trade
+            metadata = getattr(position, 'metadata', {}) or {}
+            hybrid_mode = metadata.get('hybrid_mode', 'SWING')
+            max_hold_minutes = metadata.get('max_hold_minutes', 0)
+            
+            # Only apply to SCALP trades with time limit
+            if hybrid_mode != 'SCALP' or max_hold_minutes <= 0:
+                return None
+            
+            # Calculate time in position
+            entry_time = getattr(position, 'entry_time', None) or getattr(position, 'created_at', None)
+            if not entry_time:
+                return None
+            
+            # Handle different datetime formats
+            if isinstance(entry_time, str):
+                try:
+                    entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+                except:
+                    return None
+            
+            now = datetime.now(self.ist_timezone)
+            if entry_time.tzinfo is None:
+                entry_time = self.ist_timezone.localize(entry_time)
+            
+            time_in_position = (now - entry_time).total_seconds() / 60  # minutes
+            
+            # Check if exceeded max hold time
+            if time_in_position >= max_hold_minutes:
+                current_price = position.current_price
+                entry_price = position.average_price
+                pnl_pct = ((current_price - entry_price) / entry_price) * 100 if position.side == 'long' else \
+                          ((entry_price - current_price) / entry_price) * 100
+                
+                logger.info(f"⚡ SCALP TIMEOUT: {symbol} held {time_in_position:.1f}min (max: {max_hold_minutes}min)")
+                logger.info(f"   P&L: {pnl_pct:+.2f}% | Entry: ₹{entry_price:.2f} | Current: ₹{current_price:.2f}")
+                
+                return ExitCondition(
+                    condition_type='scalp_timeout',
+                    symbol=symbol,
+                    trigger_time=now,
+                    reason=f'SCALP timeout after {time_in_position:.1f}min (max: {max_hold_minutes}min) | P&L: {pnl_pct:+.2f}%',
+                    priority=2  # High priority - quick exit
+                )
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Scalp time check error for {symbol}: {e}")
+            return None
     
     def _check_stop_loss_exit(self, symbol: str, position) -> Optional[ExitCondition]:
         """Check stop loss conditions with TRAILING STOP-LOSS and enhanced logging"""
