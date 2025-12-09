@@ -291,8 +291,12 @@ class ProductionPositionTracker:
     
     async def update_position(self, symbol: str, quantity: int, price: float, 
                             side: str = 'long', stop_loss: float = None,
-                            target: float = None) -> bool:
-        """Update position for a symbol with optional stop_loss and target"""
+                            target: float = None, is_broker_sync: bool = False) -> bool:
+        """Update position for a symbol with optional stop_loss and target
+        
+        Args:
+            is_broker_sync: If True, allows negative quantities (SHORT positions from Zerodha)
+        """
         try:
             now = datetime.now()
             
@@ -365,11 +369,18 @@ class ProductionPositionTracker:
                 # 🚨 CRITICAL FIX: Prevent creating new positions with negative quantity
                 # For equity (cash market), negative quantity means SELL without existing position
                 # This can happen when processing historical trades out of order
+                # 🔥 FIX: Allow negative qty when syncing from Zerodha (is_broker_sync=True)
+                # AXISBANK bug: SHORT positions from Zerodha were being rejected, causing orphaned positions
                 is_options = 'CE' in symbol or 'PE' in symbol
-                if quantity < 0 and not is_options:
+                if quantity < 0 and not is_options and not is_broker_sync:
                     self.logger.warning(f"⚠️ IGNORED: Cannot create NEW position with negative qty for {symbol} (qty={quantity})")
                     self.logger.warning(f"   This usually means a SELL trade was processed without a matching BUY")
+                    self.logger.warning(f"   To sync broker positions, use is_broker_sync=True")
                     return True  # Return success to avoid cascading errors
+                
+                # For broker sync with negative quantity, it's a SHORT position - that's legitimate
+                if quantity < 0 and is_broker_sync:
+                    self.logger.info(f"✅ BROKER SYNC: Creating SHORT position for {symbol} (qty={quantity})")
                 
                 position = Position(
                     symbol=symbol,

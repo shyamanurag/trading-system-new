@@ -1958,6 +1958,15 @@ class EnhancedMomentumSurfer(BaseStrategy):
         """Strategy for upward reversals"""
         data = market_data.get(symbol, {})
         
+        # 🔥 CRITICAL FIX: Don't generate BUY signal if SHORT position already exists!
+        # AXISBANK bug: RSI divergence triggered BUY which squared off profitable SHORT
+        if hasattr(self, 'open_positions') and symbol in self.open_positions:
+            pos = self.open_positions[symbol]
+            pos_side = getattr(pos, 'side', None) or ('LONG' if getattr(pos, 'quantity', 0) > 0 else 'SHORT')
+            if pos_side == 'SHORT' or getattr(pos, 'quantity', 0) < 0:
+                logger.info(f"🚫 REVERSAL BLOCKED: {symbol} has existing SHORT position - not generating BUY")
+                return None
+        
         # 🎯 ENHANCED: Use Dual-Timeframe Analysis
         dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
         weighted_bias = dual_analysis.get('weighted_bias', 0.0)
@@ -1976,8 +1985,11 @@ class EnhancedMomentumSurfer(BaseStrategy):
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
-            stop_loss = ltp * 0.99
-            target = ltp * 1.02
+            
+            # 🔥 FIX: Tighter stop loss for intraday (1.5% instead of 1%)
+            stop_loss = ltp * 0.985  # 1.5% stop loss
+            target = ltp * 1.03  # 3% target (2:1 risk-reward)
+            
             return await self.create_standard_signal(
                 symbol=symbol,
                 action='BUY',
@@ -1987,8 +1999,11 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 confidence=confidence,
                 metadata={
                     'strategy': self.strategy_name,
-                    'signal_type': 'OPTIONS',
-                    'reason': f"Upward reversal pattern - Bias: {weighted_bias:.1f}% ({alignment})"
+                    'signal_type': 'EQUITY',  # Changed from OPTIONS
+                    'reason': f"Upward reversal pattern - Bias: {weighted_bias:.1f}% ({alignment})",
+                    'trailing_stop_enabled': True,
+                    'trailing_stop_trigger': 0.015,  # Activate trailing at 1.5% profit
+                    'trailing_stop_distance': 0.01   # Trail by 1%
                 },
                 market_bias=self.market_bias
             )
@@ -1997,6 +2012,14 @@ class EnhancedMomentumSurfer(BaseStrategy):
     async def _reversal_down_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Strategy for downward reversals"""
         data = market_data.get(symbol, {})
+        
+        # 🔥 CRITICAL FIX: Don't generate SELL signal if LONG position already exists!
+        if hasattr(self, 'open_positions') and symbol in self.open_positions:
+            pos = self.open_positions[symbol]
+            pos_side = getattr(pos, 'side', None) or ('LONG' if getattr(pos, 'quantity', 0) > 0 else 'SHORT')
+            if pos_side == 'LONG' or getattr(pos, 'quantity', 0) > 0:
+                logger.info(f"🚫 REVERSAL BLOCKED: {symbol} has existing LONG position - not generating SELL")
+                return None
         
         # 🎯 ENHANCED: Use Dual-Timeframe Analysis
         dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
@@ -2016,8 +2039,11 @@ class EnhancedMomentumSurfer(BaseStrategy):
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
-            stop_loss = ltp * 1.01
-            target = ltp * 0.98
+            
+            # 🔥 FIX: Tighter stop loss for intraday (1.5% instead of 1%)
+            stop_loss = ltp * 1.015  # 1.5% stop loss
+            target = ltp * 0.97  # 3% target (2:1 risk-reward)
+            
             return await self.create_standard_signal(
                 symbol=symbol,
                 action='SELL',
@@ -2027,8 +2053,11 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 confidence=confidence,
                 metadata={
                     'strategy': self.strategy_name,
-                    'signal_type': 'OPTIONS',
-                    'reason': f"Downward reversal pattern - Bias: {weighted_bias:.1f}% ({alignment})"
+                    'signal_type': 'EQUITY',  # Changed from OPTIONS
+                    'reason': f"Downward reversal pattern - Bias: {weighted_bias:.1f}% ({alignment})",
+                    'trailing_stop_enabled': True,
+                    'trailing_stop_trigger': 0.015,  # Activate trailing at 1.5% profit
+                    'trailing_stop_distance': 0.01   # Trail by 1%
                 },
                 market_bias=self.market_bias
             )

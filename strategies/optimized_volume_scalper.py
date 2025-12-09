@@ -280,6 +280,7 @@ class OptimizedVolumeScalper(BaseStrategy):
         except ImportError:
             self.truedata_client = None
             
+        # Cache zerodha_client from orchestrator (will be updated on token refresh)
         try:
             from src.core.orchestrator import get_orchestrator_instance
             orchestrator = get_orchestrator_instance()

@@ -4096,6 +4096,28 @@ class TradingOrchestrator:
                     self.trade_engine.zerodha_client = self.zerodha_client
                     self.logger.info("✅ FINAL FIX: Ensured trade engine has Zerodha client access")
             
+            # 6. 🚨 CRITICAL FIX: Update ALL loaded strategy instances with fresh zerodha_client
+            # Strategies cache zerodha_client at init time for performance
+            # Without this, strategies use stale client after token refresh
+            if hasattr(self, 'strategies') and self.strategies and self.zerodha_client:
+                strategies_updated = 0
+                for strategy_name, strategy_instance in self.strategies.items():
+                    try:
+                        if hasattr(strategy_instance, 'zerodha_client'):
+                            strategy_instance.zerodha_client = self.zerodha_client
+                            strategies_updated += 1
+                    except Exception as strat_err:
+                        self.logger.warning(f"⚠️ Could not update zerodha_client for {strategy_name}: {strat_err}")
+                
+                if strategies_updated > 0:
+                    self.logger.info(f"✅ Updated zerodha_client in {strategies_updated} loaded strategies")
+            
+            # 7. Update order_manager if it has zerodha_client
+            if hasattr(self, 'order_manager') and self.order_manager:
+                if hasattr(self.order_manager, 'zerodha_client'):
+                    self.order_manager.zerodha_client = self.zerodha_client
+                    self.logger.info("✅ Updated order_manager zerodha_client")
+            
             self.logger.info("🎯 ALL Zerodha client tokens updated successfully")
             return True
             
@@ -4233,13 +4255,15 @@ class TradingOrchestrator:
                             )
                             
                             # 🚨 CRITICAL FIX: Pass SL/Target to position tracker
+                            # 🔥 FIX: Pass is_broker_sync=True to allow SHORT positions
                             await self.position_tracker.update_position(
                                 symbol=orphan['symbol'],
                                 quantity=orphan_qty,
                                 price=entry_price,
                                 side=side,
                                 stop_loss=chart_stop,
-                                target=chart_target
+                                target=chart_target,
+                                is_broker_sync=True  # Allow SHORT positions from Zerodha
                             )
                             
                             verified_positions[orphan['symbol']] = {

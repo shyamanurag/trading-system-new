@@ -1099,11 +1099,14 @@ class TradeEngine:
         """Update position tracker with ACTUAL Zerodha position data"""
         try:
             for symbol, pos_data in actual_positions.items():
+                # 🔥 FIX: Pass is_broker_sync=True to allow SHORT positions (negative qty)
+                # AXISBANK bug: SHORT positions were being rejected, causing orphaned positions
                 await self.position_tracker.update_position(
                     symbol=symbol,
                     quantity=pos_data['quantity'],
                     price=pos_data['average_price'],
-                    side='long' if pos_data['quantity'] > 0 else 'short'
+                    side='long' if pos_data['quantity'] > 0 else 'short',
+                    is_broker_sync=True  # Allow SHORT positions from Zerodha
                 )
                 
                 # Update with real-time LTP for P&L calculation

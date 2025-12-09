@@ -2680,9 +2680,15 @@ class BaseStrategy:
             rsi_at_low_2 = recent_rsi[price_low_2_idx]
             
             # Bullish divergence detected
-            if price_low_2 < price_low_1 and rsi_at_low_2 > rsi_at_low_1:
-                logger.info(f"📈 BULLISH DIVERGENCE detected for {symbol}: Price {price_low_1:.2f}→{price_low_2:.2f}, RSI {rsi_at_low_1:.1f}→{rsi_at_low_2:.1f}")
+            # 🔥 FIX: Require MINIMUM 2.0 RSI points difference to avoid false signals
+            # AXISBANK bug: 0.1 RSI diff (32.5→32.6) triggered false reversal
+            MIN_RSI_DIVERGENCE = 2.0
+            rsi_diff = rsi_at_low_2 - rsi_at_low_1
+            if price_low_2 < price_low_1 and rsi_diff >= MIN_RSI_DIVERGENCE:
+                logger.info(f"📈 BULLISH DIVERGENCE detected for {symbol}: Price {price_low_1:.2f}→{price_low_2:.2f}, RSI {rsi_at_low_1:.1f}→{rsi_at_low_2:.1f} (diff: {rsi_diff:.1f})")
                 return 'bullish'
+            elif price_low_2 < price_low_1 and rsi_at_low_2 > rsi_at_low_1:
+                logger.debug(f"⚠️ Weak bullish divergence ignored for {symbol}: RSI diff {rsi_diff:.1f} < {MIN_RSI_DIVERGENCE}")
             
             # Bearish divergence: Price makes higher high, RSI makes lower high
             price_high_1 = max(recent_prices[:7])
@@ -2695,9 +2701,13 @@ class BaseStrategy:
             rsi_at_high_2 = recent_rsi[price_high_2_idx]
             
             # Bearish divergence detected
-            if price_high_2 > price_high_1 and rsi_at_high_2 < rsi_at_high_1:
-                logger.info(f"📉 BEARISH DIVERGENCE detected for {symbol}: Price {price_high_1:.2f}→{price_high_2:.2f}, RSI {rsi_at_high_1:.1f}→{rsi_at_high_2:.1f}")
+            # 🔥 FIX: Require MINIMUM 2.0 RSI points difference to avoid false signals
+            rsi_diff_bear = rsi_at_high_1 - rsi_at_high_2
+            if price_high_2 > price_high_1 and rsi_diff_bear >= MIN_RSI_DIVERGENCE:
+                logger.info(f"📉 BEARISH DIVERGENCE detected for {symbol}: Price {price_high_1:.2f}→{price_high_2:.2f}, RSI {rsi_at_high_1:.1f}→{rsi_at_high_2:.1f} (diff: {rsi_diff_bear:.1f})")
                 return 'bearish'
+            elif price_high_2 > price_high_1 and rsi_at_high_2 < rsi_at_high_1:
+                logger.debug(f"⚠️ Weak bearish divergence ignored for {symbol}: RSI diff {rsi_diff_bear:.1f} < {MIN_RSI_DIVERGENCE}")
             
             return None
             
