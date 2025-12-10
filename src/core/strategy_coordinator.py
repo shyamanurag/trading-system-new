@@ -42,7 +42,7 @@ class StrategyCoordinator:
             'CHOPPY': {
                 'optimized_volume_scalper': 10,  # Microstructure edges
                 'news_impact_scalper': 5,
-                'momentum_surfer': 0,            # DISABLED in choppy markets
+                'momentum_surfer': 2,            # Reduced slots in choppy (was 0 - too restrictive)
                 'regime_adaptive_controller': 1
             },
             'VOLATILE': {
@@ -140,7 +140,9 @@ class StrategyCoordinator:
         filtered = {}
         
         # High confidence threshold for regime override
-        HIGH_CONFIDENCE_OVERRIDE = 8.5  # Signals >= 8.5 can bypass regime restrictions
+        # 🎯 LOWERED: 8.5 → 8.0 to allow more quality signals through choppy regimes
+        # HDFCBANK 8.17 was blocked - that was a valid signal
+        HIGH_CONFIDENCE_OVERRIDE = 8.0  # Signals >= 8.0 can bypass regime restrictions
         
         for strategy, signals in signals_by_strategy.items():
             priority = priorities.get(strategy, 0)
