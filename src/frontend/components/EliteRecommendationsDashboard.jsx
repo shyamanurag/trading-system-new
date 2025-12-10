@@ -354,7 +354,7 @@ const EliteRecommendationsDashboard = ({ tradingData }) => {
                                             Risk/Reward: 1:{safeNumber(rec.risk_reward_ratio, 2).toFixed(1)}
                                         </Typography>
                                         <Chip
-                                            label={getRiskRewardColor(safeNumber(rec.risk_reward_ratio, 2))}
+                                            label={safeNumber(rec.risk_reward_ratio, 2) >= 3 ? 'Excellent' : safeNumber(rec.risk_reward_ratio, 2) >= 2 ? 'Good' : 'Fair'}
                                             color={getRiskRewardColor(safeNumber(rec.risk_reward_ratio, 2))}
                                             size="small"
                                         />

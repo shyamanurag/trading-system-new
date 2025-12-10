@@ -4,6 +4,15 @@ import './EliteTradeCard.css';
 const EliteTradeCard = ({ trade }) => {
     const [expanded, setExpanded] = useState(false);
 
+    // 🔧 FIX: Safe number formatting to prevent crashes on undefined
+    const safeNumber = (value, defaultVal = 0) => {
+        const num = parseFloat(value);
+        return isNaN(num) ? defaultVal : num;
+    };
+    const formatPrice = (value) => `₹${safeNumber(value, 0).toFixed(2)}`;
+    const formatScore = (value) => `${safeNumber(value, 0).toFixed(1)}/10`;
+    const formatRatio = (value) => `1:${safeNumber(value, 1).toFixed(1)}`;
+
     return (
         <div className={`elite-trade-card ${trade.direction.toLowerCase()}`}>
             <div className="card-header">
@@ -24,24 +33,24 @@ const EliteTradeCard = ({ trade }) => {
             <div className="trade-levels">
                 <div className="level-group">
                     <label>Entry</label>
-                    <span className="price entry">₹{trade.entry_price.toFixed(2)}</span>
+                    <span className="price entry">{formatPrice(trade.entry_price)}</span>
                 </div>
                 <div className="level-group">
                     <label>Stop Loss</label>
-                    <span className="price stop-loss">₹{trade.stop_loss.toFixed(2)}</span>
+                    <span className="price stop-loss">{formatPrice(trade.stop_loss)}</span>
                 </div>
                 <div className="level-group">
                     <label>Targets</label>
                     <div className="targets">
-                        <span className="price target">T1: ₹{trade.primary_target.toFixed(2)}</span>
-                        <span className="price target">T2: ₹{trade.secondary_target.toFixed(2)}</span>
-                        <span className="price target">T3: ₹{trade.tertiary_target.toFixed(2)}</span>
+                        <span className="price target">T1: {formatPrice(trade.primary_target)}</span>
+                        <span className="price target">T2: {formatPrice(trade.secondary_target)}</span>
+                        <span className="price target">T3: {formatPrice(trade.tertiary_target)}</span>
                     </div>
                 </div>
                 <div className="level-group">
                     <label>Risk/Reward</label>
                     <span className="risk-reward">
-                        1:{trade.risk_metrics.risk_reward_ratio.toFixed(1)}
+                        {formatRatio(trade.risk_metrics?.risk_reward_ratio)}
                     </span>
                 </div>
             </div>
@@ -101,27 +110,27 @@ const EliteTradeCard = ({ trade }) => {
                         <div className="score-grid">
                             <div className="score-item">
                                 <label>Technical</label>
-                                <span className="score">{trade.technical_score.toFixed(1)}/10</span>
+                                <span className="score">{formatScore(trade.technical_score)}</span>
                             </div>
                             <div className="score-item">
                                 <label>Volume</label>
-                                <span className="score">{trade.volume_score.toFixed(1)}/10</span>
+                                <span className="score">{formatScore(trade.volume_score)}</span>
                             </div>
                             <div className="score-item">
                                 <label>Pattern</label>
-                                <span className="score">{trade.pattern_score.toFixed(1)}/10</span>
+                                <span className="score">{formatScore(trade.pattern_score)}</span>
                             </div>
                             <div className="score-item">
                                 <label>Regime</label>
-                                <span className="score">{trade.regime_score.toFixed(1)}/10</span>
+                                <span className="score">{formatScore(trade.regime_score)}</span>
                             </div>
                             <div className="score-item">
                                 <label>Momentum</label>
-                                <span className="score">{trade.momentum_score.toFixed(1)}/10</span>
+                                <span className="score">{formatScore(trade.momentum_score)}</span>
                             </div>
                             <div className="score-item">
                                 <label>Smart Money</label>
-                                <span className="score">{trade.smart_money_score.toFixed(1)}/10</span>
+                                <span className="score">{formatScore(trade.smart_money_score)}</span>
                             </div>
                         </div>
                     </div>
@@ -132,23 +141,23 @@ const EliteTradeCard = ({ trade }) => {
                             <tbody>
                                 <tr>
                                     <td>Support</td>
-                                    <td>₹{trade.key_levels.support.toFixed(2)}</td>
+                                    <td>{formatPrice(trade.key_levels?.support)}</td>
                                 </tr>
                                 <tr>
                                     <td>Resistance</td>
-                                    <td>₹{trade.key_levels.resistance.toFixed(2)}</td>
+                                    <td>{formatPrice(trade.key_levels?.resistance)}</td>
                                 </tr>
                                 <tr>
                                     <td>Pivot</td>
-                                    <td>₹{trade.key_levels.pivot.toFixed(2)}</td>
+                                    <td>{formatPrice(trade.key_levels?.pivot)}</td>
                                 </tr>
                                 <tr>
                                     <td>VWAP</td>
-                                    <td>₹{trade.key_levels.vwap.toFixed(2)}</td>
+                                    <td>{formatPrice(trade.key_levels?.vwap)}</td>
                                 </tr>
                                 <tr>
                                     <td>POC</td>
-                                    <td>₹{trade.key_levels.poc.toFixed(2)}</td>
+                                    <td>{formatPrice(trade.key_levels?.poc)}</td>
                                 </tr>
                             </tbody>
                         </table>

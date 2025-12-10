@@ -70,15 +70,19 @@ const LiveTradesDashboardPolling = () => {
         fetchData();
     }, []);
 
+    // 🔧 FIX: Add null safety to prevent crashes
     const formatCurrency = (value) => {
-        return new Intl.NumberFormat('en-US', {
+        const safeValue = parseFloat(value) || 0;
+        return new Intl.NumberFormat('en-IN', {
             style: 'currency',
-            currency: 'INR'
-        }).format(value);
+            currency: 'INR',
+            maximumFractionDigits: 2
+        }).format(safeValue);
     };
 
     const formatPercentage = (value) => {
-        return `${value.toFixed(2)}%`;
+        const safeValue = parseFloat(value) || 0;
+        return `${safeValue.toFixed(2)}%`;
     };
 
     return (
