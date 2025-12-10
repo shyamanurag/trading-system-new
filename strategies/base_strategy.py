@@ -2925,6 +2925,141 @@ class BaseStrategy:
             logger.error(f"Error detecting market regime: {e}")
             return {'regime': 'UNKNOWN', 'strength': 0.0, 'volatility': 'NORMAL'}
     
+    def analyze_market_depth(self, symbol: str, market_data: Dict) -> Dict[str, Any]:
+        """
+        🎯 MARKET DEPTH ANALYSIS from Zerodha Level-2 Data
+        Analyzes bid/ask spread, order book imbalance, and liquidity
+        
+        Returns:
+            - bid_ask_spread: Percentage spread between best bid and ask
+            - order_imbalance: Ratio of buy vs sell pressure (-1 to +1)
+            - liquidity_score: 0-10 score based on depth liquidity
+            - buy_wall: True if significant buy support detected
+            - sell_wall: True if significant sell resistance detected
+            - recommendation: 'FAVORABLE_BUY', 'FAVORABLE_SELL', 'NEUTRAL', 'POOR_LIQUIDITY'
+        """
+        try:
+            data = market_data.get(symbol, {})
+            depth = data.get('depth', {})
+            
+            if not depth:
+                logger.debug(f"📊 {symbol}: No market depth data available")
+                return {
+                    'bid_ask_spread': 0,
+                    'order_imbalance': 0,
+                    'liquidity_score': 5,
+                    'buy_wall': False,
+                    'sell_wall': False,
+                    'recommendation': 'NO_DEPTH_DATA'
+                }
+            
+            buy_depth = depth.get('buy', [])
+            sell_depth = depth.get('sell', [])
+            
+            if not buy_depth or not sell_depth:
+                return {
+                    'bid_ask_spread': 0,
+                    'order_imbalance': 0,
+                    'liquidity_score': 5,
+                    'buy_wall': False,
+                    'sell_wall': False,
+                    'recommendation': 'INCOMPLETE_DEPTH'
+                }
+            
+            # 1. Bid-Ask Spread Analysis
+            best_bid = buy_depth[0].get('price', 0) if buy_depth else 0
+            best_ask = sell_depth[0].get('price', 0) if sell_depth else 0
+            mid_price = (best_bid + best_ask) / 2 if (best_bid > 0 and best_ask > 0) else 0
+            
+            bid_ask_spread = 0
+            if mid_price > 0:
+                bid_ask_spread = ((best_ask - best_bid) / mid_price) * 100
+            
+            # 2. Order Book Imbalance (buy vs sell pressure)
+            total_bid_qty = sum(level.get('quantity', 0) for level in buy_depth[:5])
+            total_ask_qty = sum(level.get('quantity', 0) for level in sell_depth[:5])
+            total_qty = total_bid_qty + total_ask_qty
+            
+            order_imbalance = 0
+            if total_qty > 0:
+                order_imbalance = (total_bid_qty - total_ask_qty) / total_qty  # -1 to +1
+            
+            # 3. Liquidity Score (based on depth and spread)
+            liquidity_score = 5  # Default neutral
+            
+            # Better liquidity = tighter spread and more depth
+            if bid_ask_spread < 0.05 and total_qty > 10000:
+                liquidity_score = 9
+            elif bid_ask_spread < 0.10 and total_qty > 5000:
+                liquidity_score = 8
+            elif bid_ask_spread < 0.15 and total_qty > 2000:
+                liquidity_score = 7
+            elif bid_ask_spread < 0.20:
+                liquidity_score = 6
+            elif bid_ask_spread > 0.50:
+                liquidity_score = 3  # Poor liquidity
+            elif bid_ask_spread > 1.0:
+                liquidity_score = 1  # Very poor liquidity
+            
+            # 4. Buy/Sell Wall Detection (large orders at specific levels)
+            buy_wall = False
+            sell_wall = False
+            
+            if len(buy_depth) >= 3:
+                avg_bid_qty = total_bid_qty / min(5, len(buy_depth))
+                if buy_depth[0].get('quantity', 0) > avg_bid_qty * 3:
+                    buy_wall = True
+                    logger.info(f"🛡️ {symbol}: BUY WALL detected at ₹{best_bid}")
+            
+            if len(sell_depth) >= 3:
+                avg_ask_qty = total_ask_qty / min(5, len(sell_depth))
+                if sell_depth[0].get('quantity', 0) > avg_ask_qty * 3:
+                    sell_wall = True
+                    logger.info(f"🧱 {symbol}: SELL WALL detected at ₹{best_ask}")
+            
+            # 5. Trading Recommendation based on depth
+            recommendation = 'NEUTRAL'
+            
+            if liquidity_score <= 3:
+                recommendation = 'POOR_LIQUIDITY'
+            elif order_imbalance > 0.3 and not sell_wall:
+                recommendation = 'FAVORABLE_BUY'
+            elif order_imbalance < -0.3 and not buy_wall:
+                recommendation = 'FAVORABLE_SELL'
+            elif sell_wall:
+                recommendation = 'RESISTANCE_AHEAD'
+            elif buy_wall:
+                recommendation = 'SUPPORT_BELOW'
+            
+            result = {
+                'bid_ask_spread': round(bid_ask_spread, 4),
+                'order_imbalance': round(order_imbalance, 3),
+                'liquidity_score': liquidity_score,
+                'buy_wall': buy_wall,
+                'sell_wall': sell_wall,
+                'recommendation': recommendation,
+                'best_bid': best_bid,
+                'best_ask': best_ask,
+                'total_bid_qty': total_bid_qty,
+                'total_ask_qty': total_ask_qty
+            }
+            
+            if liquidity_score <= 4 or buy_wall or sell_wall:
+                logger.info(f"📊 {symbol} DEPTH: Spread={bid_ask_spread:.2f}%, Imbalance={order_imbalance:+.2f}, Liquidity={liquidity_score}/10, Rec={recommendation}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error analyzing market depth for {symbol}: {e}")
+            return {
+                'bid_ask_spread': 0,
+                'order_imbalance': 0,
+                'liquidity_score': 5,
+                'buy_wall': False,
+                'sell_wall': False,
+                'recommendation': 'ERROR'
+            }
+    
     def calculate_smart_entry_score(self, symbol: str, signal_type: str, market_data: Dict) -> float:
         """
         🎯 CODE ENHANCEMENT: Multi-factor entry quality score

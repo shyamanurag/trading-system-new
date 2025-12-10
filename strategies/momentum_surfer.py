@@ -1012,8 +1012,31 @@ class EnhancedMomentumSurfer(BaseStrategy):
                     # Generate signal based on condition
                     signal = await self._generate_condition_based_signal(stock, market_condition, market_data)
                     if signal:
+                        # 🎯 MARKET DEPTH VALIDATION: Check liquidity and order book
+                        depth_analysis = self.analyze_market_depth(stock, market_data)
+                        
+                        # Block signals with poor liquidity
+                        if depth_analysis.get('liquidity_score', 5) <= 3:
+                            logger.warning(f"🚫 {stock}: Signal blocked - POOR LIQUIDITY (score: {depth_analysis.get('liquidity_score')})")
+                            continue
+                        
+                        # Check if depth conflicts with signal direction
+                        signal_direction = signal.get('action', 'BUY')
+                        depth_rec = depth_analysis.get('recommendation', 'NEUTRAL')
+                        
+                        if signal_direction == 'BUY' and depth_rec == 'RESISTANCE_AHEAD':
+                            logger.warning(f"⚠️ {stock}: BUY signal with SELL WALL - reducing confidence")
+                            signal['confidence'] = signal.get('confidence', 8.0) * 0.9
+                        elif signal_direction == 'SELL' and depth_rec == 'SUPPORT_BELOW':
+                            logger.warning(f"⚠️ {stock}: SELL signal with BUY WALL - reducing confidence")
+                            signal['confidence'] = signal.get('confidence', 8.0) * 0.9
+                        
+                        # Add depth metadata to signal
+                        signal['metadata'] = signal.get('metadata', {})
+                        signal['metadata']['market_depth'] = depth_analysis
+                        
                         signals.append(signal)
-                        logger.info(f"✅ Signal generated for {stock}: {len(signals)}/{max_signals_per_cycle}")
+                        logger.info(f"✅ Signal generated for {stock}: {len(signals)}/{max_signals_per_cycle} (Depth: {depth_rec})")
 
             logger.info(f"📊 Smart Intraday Options generated {len(signals)} signals (limit: {max_signals_per_cycle})")
             return signals
