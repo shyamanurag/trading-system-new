@@ -78,7 +78,21 @@ async def get_current_positions(db: Session = Depends(get_db)):
                 
                 average_price = position.get('average_price', 0)
                 last_price = position.get('last_price', average_price)
-                unrealized_pnl = position.get('unrealised_pnl', 0)
+                
+                # 🚨 CRITICAL FIX: Zerodha uses different field names for P&L
+                # Try multiple field names: 'pnl', 'm2m', 'unrealised', 'unrealised_pnl'
+                unrealized_pnl = (
+                    position.get('pnl', 0) or 
+                    position.get('m2m', 0) or 
+                    position.get('unrealised', 0) or 
+                    position.get('unrealised_pnl', 0) or
+                    0
+                )
+                
+                # If Zerodha P&L is still 0, calculate manually
+                if unrealized_pnl == 0 and average_price > 0 and last_price > 0:
+                    unrealized_pnl = (last_price - average_price) * quantity
+                    logger.info(f"📊 {symbol}: Calculated P&L manually = ₹{unrealized_pnl:.2f}")
                 
                 # CRITICAL FIX: For options, use premium-based P&L calculation
                 # Check if this is an options symbol (contains CE or PE)

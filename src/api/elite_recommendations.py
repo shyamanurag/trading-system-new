@@ -14,15 +14,28 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 class AutonomousEliteScanner:
-    """Scanner that uses the ACTUAL 6 trading strategies - NO CUSTOM CODE"""
+    """
+    Scanner for ELITE POSITIONAL TRADES (1-2 week timeframe)
+    
+    🎯 PURPOSE: Show high-quality positional trades, NOT intraday scalps
+    - Minimum confidence: 8.5/10 (0.85 normalized)
+    - Timeframe: 1-2 weeks (positional/swing)
+    - Quality over quantity
+    """
     
     def __init__(self):
         self.last_scan_time = None
         self.scan_interval_minutes = 0.5  # Scan every 30 seconds
-        self.min_confidence = 0.75  # Minimum confidence for elite recommendations
+        # 🎯 ELITE = 8.5+ confidence (not 7.5)
+        self.min_confidence = 0.85  # Minimum confidence for elite recommendations (8.5/10)
         self.cached_recommendations = []
         self.cache_duration_seconds = 30
         self.strategies = {}
+        
+        # 🎯 POSITIONAL TIMEFRAME: 1-2 weeks, NOT intraday
+        self.min_timeframe_days = 5  # Minimum 5 days (1 week)
+        self.max_timeframe_days = 14  # Maximum 14 days (2 weeks)
+        self.exclude_intraday = True  # Filter out intraday signals
         
         # CRITICAL: Failed Order Management
         self.failed_orders_cache = []  # Store failed orders with ≥9 confidence
@@ -261,23 +274,55 @@ class AutonomousEliteScanner:
             return None
 
     def convert_signal_to_recommendation(self, signal):
-        """Convert real strategy signal to Elite recommendation format"""
+        """
+        Convert real strategy signal to Elite recommendation format
+        
+        🎯 ELITE CRITERIA:
+        - Confidence >= 8.5/10 (0.85 normalized)
+        - Positional timeframe (1-2 weeks)
+        - NOT intraday trades
+        """
         try:
             entry_price = signal.get('entry_price', 0)
+            symbol = signal.get('symbol', 'UNKNOWN')
+            
+            # 🎯 ELITE FILTER 1: Check confidence threshold (8.5+)
+            confidence = signal.get('confidence', 0)
+            # Normalize confidence to 0-1 scale if it's in 0-10 scale
+            if confidence > 1:
+                confidence_normalized = confidence / 10.0
+            else:
+                confidence_normalized = confidence
+                
+            if confidence_normalized < self.min_confidence:
+                logger.debug(f"🚫 ELITE FILTER: {symbol} rejected - confidence {confidence_normalized:.2f} < {self.min_confidence}")
+                return None
+            
+            # 🎯 ELITE FILTER 2: Exclude intraday trades
+            is_intraday = signal.get('is_intraday', signal.get('metadata', {}).get('is_intraday', False))
+            trading_mode = signal.get('trading_mode', signal.get('metadata', {}).get('trading_mode', 'SWING'))
+            
+            if self.exclude_intraday and is_intraday:
+                logger.debug(f"🚫 ELITE FILTER: {symbol} rejected - intraday trade not suitable for positional")
+                return None
+            
+            if 'SCALP' in str(trading_mode).upper() or 'INTRADAY' in str(trading_mode).upper():
+                logger.debug(f"🚫 ELITE FILTER: {symbol} rejected - {trading_mode} mode not suitable for positional")
+                return None
             
             # CRITICAL FIX: Get LIVE current price from TrueData feed
-            current_price = self._get_live_price(signal.get('symbol', ''))
+            current_price = self._get_live_price(symbol)
             if current_price is None or current_price <= 0:
                 # Fallback to entry price if live price unavailable
                 current_price = entry_price
-                logger.warning(f"⚠️ No live price for {signal.get('symbol')}, using entry price")
+                logger.warning(f"⚠️ No live price for {symbol}, using entry price")
             
             stop_loss = signal.get('stop_loss')
             target = signal.get('target')
             
             # Only use real strategy signals with proper risk management
             if not stop_loss or not target:
-                logger.warning(f"Signal rejected: Missing stop_loss or target for {signal.get('symbol', 'UNKNOWN')}")
+                logger.warning(f"Signal rejected: Missing stop_loss or target for {symbol}")
                 return None
             
             # Calculate risk/reward using strategy's calculations with entry price
@@ -285,37 +330,29 @@ class AutonomousEliteScanner:
             reward_percent = abs((target - entry_price) / entry_price) * 100
             risk_reward_ratio = reward_percent / risk_percent if risk_percent > 0 else 3.0
             
-            # 🔥 CRITICAL FIX 2025-12-02: Use signal's trading mode instead of guessing
-            # Signals now carry is_intraday and trading_mode metadata
-            is_intraday = signal.get('is_intraday', signal.get('metadata', {}).get('is_intraday', False))
-            trading_mode = signal.get('trading_mode', signal.get('metadata', {}).get('trading_mode', 'SWING'))
+            # 🎯 ELITE FILTER 3: Minimum target for positional (3%+)
+            if reward_percent < 3.0:
+                logger.debug(f"🚫 ELITE FILTER: {symbol} rejected - target {reward_percent:.1f}% < 3% for positional")
+                return None
+            
             signal_timeframe = signal.get('timeframe', signal.get('metadata', {}).get('timeframe', None))
+            is_options = 'CE' in symbol or 'PE' in symbol
             
-            # Determine timeframe based on signal metadata (not guessed)
-            is_options = 'CE' in signal.get('symbol', '') or 'PE' in signal.get('symbol', '')
-            
-            if signal_timeframe:
-                # Use signal's own timeframe assessment
+            # 🎯 POSITIONAL TIMEFRAME: 1-2 weeks
+            if signal_timeframe and 'week' in signal_timeframe.lower():
                 timeframe = signal_timeframe
-                valid_days = 1 if is_intraday else 3
-            elif is_intraday:
-                # Intraday signal - same day square off
-                timeframe = "Same Day (Intraday)"
-                valid_days = 1
-            elif is_options:
-                # Options but not intraday - medium term
-                timeframe = "2-5 days (Options)"
-                valid_days = 4
-            elif reward_percent <= 3.0:
-                # Small target = intraday suitable
-                timeframe = "Same Day (Intraday)"
-                valid_days = 1
-            elif risk_reward_ratio >= 2.5:
+                valid_days = 10
+            elif risk_reward_ratio >= 3.0:
+                timeframe = "1-2 weeks (Positional Swing)"
+                valid_days = 10
+            elif risk_reward_ratio >= 2.0:
                 timeframe = "5-10 days (Swing)"
                 valid_days = 7
             else:
-                timeframe = "2-5 days (Short-term)"
-                valid_days = 4
+                timeframe = "5-7 days (Short Swing)"
+                valid_days = 5
+            
+            logger.info(f"✅ ELITE APPROVED: {symbol} - Confidence: {confidence_normalized:.2f}, Target: {reward_percent:.1f}%, Timeframe: {timeframe}")
             
             # Calculate dynamic position size based on confidence and risk
             # Higher confidence + lower risk = larger position size
