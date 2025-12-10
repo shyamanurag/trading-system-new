@@ -1492,20 +1492,56 @@ class EnhancedMomentumSurfer(BaseStrategy):
             condition = 'sideways'
             confidence_factors = []
             
-            # 🔥 PRIORITY 0: RSI DIVERGENCE (Highest probability reversal signal!)
+            # 🔥 PRIORITY 0: RSI DIVERGENCE (ONLY with confirmation!)
+            # 🚨 FIX: RSI divergence alone is NOT enough - need confirmation signals
+            # ICICIBANK bug: RSI divergence triggered BUY despite 0% buy pressure and Bollinger breaking DOWN
+            
             if rsi_divergence == 'bullish' and change_percent < 0:
-                condition = 'reversal_up'
-                confidence_factors.append(f"📈 RSI BULLISH DIVERGENCE - High probability reversal!")
-                if buying_pressure > 0.5:
-                    confidence_factors.append(f"CONFIRMED: Buying pressure {buying_pressure:.0%}")
-                logger.info(f"🎯 {symbol} RSI DIVERGENCE REVERSAL: Price down but RSI making higher lows!")
+                # 🎯 CONFIRMATION FILTERS for bullish divergence:
+                # 1. Need SOME buying pressure (>= 20%, not 0%)
+                # 2. Bollinger should NOT be breaking DOWN (conflicting signal)
+                # 3. Cross-sectional rank should not be extremely negative
+                has_buy_pressure = buying_pressure >= 0.20  # At least 20% buying
+                bollinger_not_conflicting = bollinger_breakout != 'down'  # Not breaking opposite
+                not_extreme_weakness = cross_sectional_rank >= -0.50  # Not in bottom 50%
+                
+                if has_buy_pressure and bollinger_not_conflicting and not_extreme_weakness:
+                    condition = 'reversal_up'
+                    confidence_factors.append(f"📈 RSI BULLISH DIVERGENCE - CONFIRMED reversal!")
+                    confidence_factors.append(f"Buy Pressure: {buying_pressure:.0%}")
+                    logger.info(f"✅ {symbol} RSI DIVERGENCE REVERSAL CONFIRMED: Buy pressure {buying_pressure:.0%}, Rank {cross_sectional_rank:.0%}")
+                else:
+                    # Log why divergence was rejected
+                    rejection_reasons = []
+                    if not has_buy_pressure:
+                        rejection_reasons.append(f"buy_pressure={buying_pressure:.0%}<20%")
+                    if not bollinger_not_conflicting:
+                        rejection_reasons.append("Bollinger breaking DOWN")
+                    if not not_extreme_weakness:
+                        rejection_reasons.append(f"rank={cross_sectional_rank:.0%}<-50%")
+                    logger.warning(f"🚫 {symbol} RSI DIVERGENCE REJECTED - unconfirmed: {', '.join(rejection_reasons)}")
+                    # Don't set reversal_up - let other conditions handle it
             
             elif rsi_divergence == 'bearish' and change_percent > 0:
-                condition = 'reversal_down'
-                confidence_factors.append(f"📉 RSI BEARISH DIVERGENCE - High probability reversal!")
-                if selling_pressure > 0.5:
-                    confidence_factors.append(f"CONFIRMED: Selling pressure {selling_pressure:.0%}")
-                logger.info(f"🎯 {symbol} RSI DIVERGENCE REVERSAL: Price up but RSI making lower highs!")
+                # 🎯 CONFIRMATION FILTERS for bearish divergence:
+                has_sell_pressure = selling_pressure >= 0.20  # At least 20% selling
+                bollinger_not_conflicting = bollinger_breakout != 'up'  # Not breaking opposite
+                not_extreme_strength = cross_sectional_rank <= 0.50  # Not in top 50%
+                
+                if has_sell_pressure and bollinger_not_conflicting and not_extreme_strength:
+                    condition = 'reversal_down'
+                    confidence_factors.append(f"📉 RSI BEARISH DIVERGENCE - CONFIRMED reversal!")
+                    confidence_factors.append(f"Sell Pressure: {selling_pressure:.0%}")
+                    logger.info(f"✅ {symbol} RSI DIVERGENCE REVERSAL CONFIRMED: Sell pressure {selling_pressure:.0%}, Rank {cross_sectional_rank:.0%}")
+                else:
+                    rejection_reasons = []
+                    if not has_sell_pressure:
+                        rejection_reasons.append(f"sell_pressure={selling_pressure:.0%}<20%")
+                    if not bollinger_not_conflicting:
+                        rejection_reasons.append("Bollinger breaking UP")
+                    if not not_extreme_strength:
+                        rejection_reasons.append(f"rank={cross_sectional_rank:.0%}>50%")
+                    logger.warning(f"🚫 {symbol} RSI DIVERGENCE REJECTED - unconfirmed: {', '.join(rejection_reasons)}")
             
             # 🔥 PRIORITY 1: BOLLINGER SQUEEZE BREAKOUT (Explosive moves!)
             elif bollinger_breakout == 'up' and bollinger_squeeze:
@@ -1608,20 +1644,32 @@ class EnhancedMomentumSurfer(BaseStrategy):
                         condition = 'trending_up'
             
             elif change_percent <= -self.trending_threshold:
-                # Check for reversal signals first!
-                if rsi_divergence == 'bullish' or macd_crossover == 'bullish':
+                # 🚨 FIX: Require CONFIRMATION for reversal signals - not just divergence
+                # MACD bullish alone is confirmation; RSI divergence needs buy pressure
+                
+                # MACD bullish crossover WITH buy pressure = strong reversal
+                if macd_crossover == 'bullish' and buying_pressure >= 0.30:
                     condition = 'reversal_up'
-                    confidence_factors.append(f"🔥 REVERSAL SIGNAL: Divergence/MACD bullish")
+                    confidence_factors.append(f"🔥 MACD BULLISH + Buy pressure {buying_pressure:.0%}")
+                # High buy pressure + volume = confirmed reversal
                 elif buying_pressure > 0.65 and volume_ratio > 1.3:
                     condition = 'reversal_up'
                     confidence_factors.append(f"🔥 OVERSOLD BOUNCE: RSI {rsi:.1f}, Buying {buying_pressure:.0%}")
+                # RSI divergence only with confirmation
+                elif rsi_divergence == 'bullish' and buying_pressure >= 0.20 and cross_sectional_rank >= -0.50:
+                    condition = 'reversal_up'
+                    confidence_factors.append(f"🔥 RSI DIVERGENCE CONFIRMED: Buy {buying_pressure:.0%}")
                 elif momentum_score < 0 or trend_strength < -0.1:
                     condition = 'trending_down'
                     confidence_factors.append(f"MOMENTUM: {momentum_score:.3f}, TREND: {trend_strength:.2f}")
                 else:
-                    if mean_reversion_prob > 0.6 or (rsi < 35 and buying_pressure > 0.5):
+                    # Mean reversion only with buy pressure
+                    if mean_reversion_prob > 0.6 and buying_pressure >= 0.40:
                         condition = 'reversal_up'
-                        confidence_factors.append(f"REVERSAL SIGNAL: RSI {rsi:.1f}, Mean Rev {mean_reversion_prob:.0%}")
+                        confidence_factors.append(f"REVERSAL SIGNAL: RSI {rsi:.1f}, Mean Rev {mean_reversion_prob:.0%}, Buy {buying_pressure:.0%}")
+                    elif rsi < 30 and buying_pressure > 0.50:  # Deeply oversold with buying
+                        condition = 'reversal_up'
+                        confidence_factors.append(f"DEEPLY OVERSOLD: RSI {rsi:.1f}, Buy {buying_pressure:.0%}")
                     else:
                         condition = 'trending_down'
             
