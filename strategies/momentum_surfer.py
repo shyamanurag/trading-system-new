@@ -1753,8 +1753,11 @@ class EnhancedMomentumSurfer(BaseStrategy):
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
-            stop_loss = ltp * 0.99
-            target = ltp * 1.02
+            
+            # 🎯 DYNAMIC LEVELS: Use chart-based ATR/swing analysis instead of hardcoded %
+            stop_loss, target = self.calculate_chart_based_levels(symbol, 'BUY', ltp, data)
+            logger.info(f"📊 {symbol} BUY: Dynamic levels - Entry={ltp:.2f}, SL={stop_loss:.2f}, Target={target:.2f}")
+            
             return await self.create_standard_signal(
                 symbol=symbol,
                 action='BUY',
@@ -1795,8 +1798,11 @@ class EnhancedMomentumSurfer(BaseStrategy):
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
-            stop_loss = ltp * 1.01
-            target = ltp * 0.98
+            
+            # 🎯 DYNAMIC LEVELS: Use chart-based ATR/swing analysis instead of hardcoded %
+            stop_loss, target = self.calculate_chart_based_levels(symbol, 'SELL', ltp, data)
+            logger.info(f"📊 {symbol} SELL: Dynamic levels - Entry={ltp:.2f}, SL={stop_loss:.2f}, Target={target:.2f}")
+            
             return await self.create_standard_signal(
                 symbol=symbol,
                 action='SELL',
@@ -1836,8 +1842,10 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 
             if ltp <= 0:
                 return None
-            stop_loss = ltp * 0.99
-            target = ltp * 1.02
+            
+            # 🎯 DYNAMIC LEVELS: Use chart-based ATR/swing analysis
+            stop_loss, target = self.calculate_chart_based_levels(symbol, 'BUY', ltp, data)
+            
             return await self.create_standard_signal(
                 symbol=symbol,
                 action='BUY',
@@ -1861,8 +1869,10 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 
             if ltp <= 0:
                 return None
-            stop_loss = ltp * 1.01
-            target = ltp * 0.98
+            
+            # 🎯 DYNAMIC LEVELS: Use chart-based ATR/swing analysis
+            stop_loss, target = self.calculate_chart_based_levels(symbol, 'SELL', ltp, data)
+            
             return await self.create_standard_signal(
                 symbol=symbol,
                 action='SELL',
@@ -1904,8 +1914,10 @@ class EnhancedMomentumSurfer(BaseStrategy):
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
-            stop_loss = ltp * 0.99
-            target = ltp * 1.02
+            
+            # 🎯 DYNAMIC LEVELS: Use chart-based ATR/swing analysis
+            stop_loss, target = self.calculate_chart_based_levels(symbol, 'BUY', ltp, data)
+            
             return await self.create_standard_signal(
                 symbol=symbol,
                 action='BUY',
@@ -1947,8 +1959,10 @@ class EnhancedMomentumSurfer(BaseStrategy):
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
-            stop_loss = ltp * 1.01
-            target = ltp * 0.98
+            
+            # 🎯 DYNAMIC LEVELS: Use chart-based ATR/swing analysis
+            stop_loss, target = self.calculate_chart_based_levels(symbol, 'SELL', ltp, data)
+            
             return await self.create_standard_signal(
                 symbol=symbol,
                 action='SELL',
