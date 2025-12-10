@@ -154,8 +154,13 @@ const EliteRecommendationsDashboard = ({ tradingData }) => {
         return 'error';
     };
 
-    const formatCurrency = (value) => `₹${value.toFixed(2)}`;
-    const formatPercent = (value) => `${value.toFixed(1)}%`;
+    // 🔧 FIX: Add null safety to prevent crashes on undefined values
+    const formatCurrency = (value) => `₹${(value || 0).toFixed(2)}`;
+    const formatPercent = (value) => `${(value || 0).toFixed(1)}%`;
+    const safeNumber = (value, defaultVal = 0) => {
+        const num = parseFloat(value);
+        return isNaN(num) ? defaultVal : num;
+    };
 
     if (loading) {
         return (
@@ -346,20 +351,20 @@ const EliteRecommendationsDashboard = ({ tradingData }) => {
                                 <Box sx={{ mb: 2 }}>
                                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                                         <Typography variant="body2">
-                                            Risk/Reward: 1:{rec.risk_reward_ratio.toFixed(1)}
+                                            Risk/Reward: 1:{safeNumber(rec.risk_reward_ratio, 2).toFixed(1)}
                                         </Typography>
                                         <Chip
-                                            label={getRiskRewardColor(rec.risk_reward_ratio)}
-                                            color={getRiskRewardColor(rec.risk_reward_ratio)}
+                                            label={getRiskRewardColor(safeNumber(rec.risk_reward_ratio, 2))}
+                                            color={getRiskRewardColor(safeNumber(rec.risk_reward_ratio, 2))}
                                             size="small"
                                         />
                                     </Box>
                                     <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                         <Typography variant="body2">
-                                            Risk: {formatPercent(rec.risk_metrics.risk_percent)}
+                                            Risk: {formatPercent(rec.risk_metrics?.risk_percent)}
                                         </Typography>
                                         <Typography variant="body2">
-                                            Reward: {formatPercent(rec.risk_metrics.reward_percent)}
+                                            Reward: {formatPercent(rec.risk_metrics?.reward_percent)}
                                         </Typography>
                                     </Box>
                                 </Box>
@@ -486,15 +491,15 @@ const EliteRecommendationsDashboard = ({ tradingData }) => {
                                             <TableBody>
                                                 <TableRow>
                                                     <TableCell>Risk/Reward Ratio</TableCell>
-                                                    <TableCell>1:{selectedTrade.risk_reward_ratio.toFixed(2)}</TableCell>
+                                                    <TableCell>1:{safeNumber(selectedTrade.risk_reward_ratio, 2).toFixed(2)}</TableCell>
                                                     <TableCell>Position Size</TableCell>
-                                                    <TableCell>{selectedTrade.risk_metrics.position_size.toFixed(1)}% of capital</TableCell>
+                                                    <TableCell>{safeNumber(selectedTrade.risk_metrics?.position_size, 5).toFixed(1)}% of capital</TableCell>
                                                 </TableRow>
                                                 <TableRow>
                                                     <TableCell>Risk Percentage</TableCell>
-                                                    <TableCell color="error.main">{formatPercent(selectedTrade.risk_metrics.risk_percent)}</TableCell>
+                                                    <TableCell color="error.main">{formatPercent(selectedTrade.risk_metrics?.risk_percent)}</TableCell>
                                                     <TableCell>Reward Percentage</TableCell>
-                                                    <TableCell color="success.main">{formatPercent(selectedTrade.risk_metrics.reward_percent)}</TableCell>
+                                                    <TableCell color="success.main">{formatPercent(selectedTrade.risk_metrics?.reward_percent)}</TableCell>
                                                 </TableRow>
                                                 <TableRow>
                                                     <TableCell>Valid Until</TableCell>
