@@ -596,7 +596,13 @@ class TrueDataClient:
         logger.info("🛑 Force disconnect completed")
 
     def _start_health_monitor(self):
-        """Start a lightweight background thread to auto-recover from ping/pong timeouts"""
+        """
+        🎯 IMPROVED Health Monitor for TrueData
+        - Better detection of ping/pong timeout issues
+        - Exponential backoff for reconnection attempts
+        - Separate handling for different failure types
+        - Reduced logging noise
+        """
         try:
             if self._health_thread and self._health_thread.is_alive():
                 return
@@ -605,51 +611,101 @@ class TrueDataClient:
             def _monitor():
                 last_ok = time.time()
                 last_reconnect_attempt = 0
-                reconnect_cooldown = 60  # Only attempt reconnect once per minute
+                reconnect_cooldown = 90  # 90 seconds base cooldown
+                consecutive_silent_checks = 0
+                max_silent_before_reconnect = 5  # 5 checks = ~15 seconds silence
+
+                logger.info("🏥 TrueData Health Monitor started")
 
                 while not self._stop_health.is_set():
                     try:
-                        # Consider data healthy if ticks updated in last 10 seconds
-                        recent = any(
-                            True for v in live_market_data.values()
-                            if isinstance(v, dict) and (
-                                time.time() - (
-                                    datetime.fromisoformat(v.get('timestamp')).timestamp()
-                                    if isinstance(v.get('timestamp'), str) else last_ok
-                                )
-                            ) < 10
-                        )
-                        if recent:
-                            last_ok = time.time()
-
-                        # If no recent ticks for 15s during market hours, attempt gentle reconnect
+                        current_time = time.time()
                         current_hour = datetime.now().hour
                         in_market = 9 <= current_hour <= 15
-                        current_time = time.time()
-
-                        if (in_market and
-                            (current_time - last_ok) > 15 and
+                        
+                        # Consider data healthy if ticks updated in last 10 seconds
+                        recent_tick = False
+                        try:
+                            for symbol, data in live_market_data.items():
+                                if isinstance(data, dict):
+                                    ts = data.get('timestamp', '')
+                                    if ts:
+                                        try:
+                                            tick_time = datetime.fromisoformat(ts).timestamp()
+                                            if (current_time - tick_time) < 10:
+                                                recent_tick = True
+                                                break
+                                        except:
+                                            pass
+                        except Exception:
+                            pass
+                        
+                        if recent_tick:
+                            last_ok = current_time
+                            consecutive_silent_checks = 0
+                        else:
+                            if in_market:
+                                consecutive_silent_checks += 1
+                        
+                        # Log health status every 5 minutes during market hours
+                        if in_market and int(current_time) % 300 == 0:
+                            symbols_count = len(live_market_data)
+                            silence_secs = int(current_time - last_ok)
+                            logger.info(f"🏥 TrueData Health: {symbols_count} symbols, last tick {silence_secs}s ago")
+                        
+                        # Handle tick silence during market hours
+                        if (in_market and 
+                            consecutive_silent_checks >= max_silent_before_reconnect and
                             (current_time - last_reconnect_attempt) > reconnect_cooldown):
 
-                            logger.warning("⚠️ TrueData tick silence detected, attempting gentle reconnect")
+                            silence_duration = int(current_time - last_ok)
+                            logger.warning(f"⚠️ TrueData TICK SILENCE: {silence_duration}s - attempting recovery")
+                            
                             try:
-                                # 🚨 CRITICAL FIX: Prevent infinite reconnection loops
                                 last_reconnect_attempt = current_time
-
-                                # Check if already connected before attempting reconnect
-                                if self.connected:
-                                    logger.info("✅ TrueData appears connected, skipping reconnect")
-                                else:
-                                    # Only attempt reconnect if not connected
+                                
+                                # Step 1: Try to refresh subscription first (less disruptive)
+                                if self.td_obj and hasattr(self.td_obj, 'get_symbol_list'):
+                                    logger.info("🔄 Attempting subscription refresh...")
+                                    try:
+                                        symbols = self._get_symbols_to_subscribe()
+                                        if symbols and hasattr(self.td_obj, 'set_symbolslist'):
+                                            self.td_obj.set_symbolslist(symbols)
+                                            logger.info(f"✅ Subscription refreshed with {len(symbols)} symbols")
+                                            time.sleep(5)
+                                            consecutive_silent_checks = 0
+                                            continue
+                                    except Exception as refresh_err:
+                                        logger.warning(f"⚠️ Subscription refresh failed: {refresh_err}")
+                                
+                                # Step 2: Full reconnection only if refresh failed
+                                if not self.connected or silence_duration > 60:
+                                    logger.info("🔌 Full reconnection required...")
                                     self._activate_circuit_breaker()
-                                    time.sleep(2)
+                                    time.sleep(3)
                                     self._reset_circuit_breaker()
-                                    self._direct_connect()
-                                    last_ok = time.time()
+                                    success = self._direct_connect()
+                                    if success:
+                                        last_ok = time.time()
+                                        consecutive_silent_checks = 0
+                                        # Increase cooldown after successful reconnect
+                                        reconnect_cooldown = min(reconnect_cooldown * 1.5, 300)
+                                        logger.info(f"✅ Reconnected! Next attempt cooldown: {int(reconnect_cooldown)}s")
+                                    else:
+                                        # Increase cooldown after failed attempt
+                                        reconnect_cooldown = min(reconnect_cooldown * 2, 600)
+                                        logger.warning(f"❌ Reconnect failed! Next attempt in {int(reconnect_cooldown)}s")
+                                else:
+                                    logger.info("✅ TrueData still connected, waiting for ticks...")
 
                             except Exception as re_err:
-                                logger.error(f"❌ Health monitor reconnect error: {re_err}")
-                                time.sleep(5)
+                                logger.error(f"❌ Health monitor recovery error: {re_err}")
+                                reconnect_cooldown = min(reconnect_cooldown * 2, 600)
+                                time.sleep(10)
+                        
+                        # Reset cooldown gradually if data is flowing
+                        if recent_tick and reconnect_cooldown > 90:
+                            reconnect_cooldown = max(90, reconnect_cooldown * 0.95)
 
                         time.sleep(3)
 
@@ -659,6 +715,7 @@ class TrueDataClient:
 
             self._health_thread = threading.Thread(target=_monitor, name="TDHealth", daemon=True)
             self._health_thread.start()
+            logger.info("🏥 TrueData Health Monitor thread started")
 
         except Exception as e:
             logger.warning(f"⚠️ Could not start TrueData health monitor: {e}")
