@@ -3997,13 +3997,37 @@ class BaseStrategy:
                 logger.error(f"   This will cause quantity = 0 and signal rejection")
                 return None
             # ========================================
-            # CRITICAL: POSITION DEDUPLICATION CHECK
+            # 🚫 MAX CONCURRENT POSITIONS CHECK
             # ========================================
-            # Skip duplicate check for management/closing actions
+            MAX_CONCURRENT_POSITIONS = 3  # Limit to 3 positions at a time
+            
             is_management = metadata.get('management_action', False)
             is_closing = metadata.get('closing_action', False)
             bypass_checks = metadata.get('bypass_all_checks', False)
             
+            if not (is_management or is_closing or bypass_checks):
+                # Count current open positions
+                current_position_count = len(self.active_positions)
+                
+                # Also check Zerodha positions
+                try:
+                    from src.core.orchestrator import get_orchestrator_instance
+                    orchestrator = get_orchestrator_instance()
+                    if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                        zerodha_positions = await orchestrator.zerodha_client.get_positions()
+                        if zerodha_positions:
+                            real_positions = [p for p in zerodha_positions if p.get('quantity', 0) != 0]
+                            current_position_count = max(current_position_count, len(real_positions))
+                except:
+                    pass
+                
+                if current_position_count >= MAX_CONCURRENT_POSITIONS:
+                    logger.warning(f"🚫 MAX POSITIONS REACHED: {current_position_count}/{MAX_CONCURRENT_POSITIONS} - Blocking {symbol} {action}")
+                    return None
+            
+            # ========================================
+            # CRITICAL: POSITION DEDUPLICATION CHECK
+            # ========================================
             if not (is_management or is_closing or bypass_checks):
                 if self.has_existing_position(symbol):
                     logger.info(f"🚫 {self.name}: DUPLICATE SIGNAL PREVENTED for {symbol} - Position already exists")
@@ -4335,6 +4359,12 @@ class BaseStrategy:
             except Exception:
                 pass
             
+            # 🚫 PENNY STOCK FILTER: Block stocks under ₹50 (high slippage, destroys profits)
+            MIN_STOCK_PRICE = 50.0
+            if entry_price and entry_price < MIN_STOCK_PRICE:
+                logger.warning(f"🚫 PENNY STOCK BLOCKED: {symbol} @ ₹{entry_price:.2f} < ₹{MIN_STOCK_PRICE} minimum")
+                return None
+            
             # ============================================================
             # 🎯 MULTI-TIMEFRAME FILTER - FEWER TRADES, HIGHER ACCURACY
             # ============================================================
@@ -4410,38 +4440,16 @@ class BaseStrategy:
             # MTF 2-3/3: Trending market → SWING mode (larger targets, longer hold)
             mtf_score = mtf_result.get('alignment_score', 0)
             
-            if mtf_score <= 1:
-                # SCALP MODE: Choppy market, quick in/out
-                hybrid_mode = 'SCALP'
-                scalp_target_pct = 0.004  # 0.4% target
-                scalp_sl_pct = 0.002      # 0.2% stop loss
-                max_hold_minutes = 10     # Exit after 10 minutes max
-                
-                # Recalculate stop_loss and target for scalping
-                if action == 'BUY':
-                    stop_loss = entry_price * (1 - scalp_sl_pct)
-                    target = entry_price * (1 + scalp_target_pct)
-                else:  # SELL
-                    stop_loss = entry_price * (1 + scalp_sl_pct)
-                    target = entry_price * (1 - scalp_target_pct)
-                
-                # Recalculate risk metrics for scalp
-                risk_amount = abs(entry_price - stop_loss)
-                reward_amount = abs(target - entry_price)
-                risk_percent = (risk_amount / entry_price) * 100
-                reward_percent = (reward_amount / entry_price) * 100
-                risk_reward_ratio = reward_amount / risk_amount if risk_amount > 0 else 2.0
-                
-                logger.info(f"⚡ SCALP MODE: {symbol} {action} (MTF {mtf_score}/3 = Choppy)")
-                logger.info(f"   Target: {scalp_target_pct*100:.1f}% | SL: {scalp_sl_pct*100:.1f}% | Max Hold: {max_hold_minutes}min")
-            else:
-                # SWING MODE: Trending market, larger moves
-                hybrid_mode = 'SWING'
-                max_hold_minutes = 0  # No time limit for swing
-                
-                # Keep original stop_loss and target (already calculated)
-                logger.info(f"📈 SWING MODE: {symbol} {action} (MTF {mtf_score}/3 = Trending)")
-                logger.info(f"   Target: {reward_percent:.1f}% | SL: {risk_percent:.1f}% | Hold: Until target/SL")
+            # 🚫 SCALP MODE DISABLED - Was causing losses due to slippage and forced exits
+            # All trades now use INTRADAY mode with normal targets
+            # The MTF score is logged but doesn't change trading behavior
+            
+            hybrid_mode = 'INTRADAY'  # No more SCALP/SWING distinction
+            max_hold_minutes = 0  # No forced time-based exit
+            
+            # Keep original stop_loss and target (already calculated by ATR)
+            logger.info(f"📈 INTRADAY MODE: {symbol} {action} (MTF {mtf_score}/3)")
+            logger.info(f"   Target: {reward_percent:.1f}% | SL: {risk_percent:.1f}% | Hold: Until target/SL/3:15PM")
             
             # 🔥 INTRADAY FOCUS: All hybrid trades are intraday
             is_intraday = True  # Always intraday for hybrid approach
@@ -4452,12 +4460,13 @@ class BaseStrategy:
             square_off_time = "15:15 IST"
             
             # ============================================================
-            # 🎯 CRITICAL: PROPER POSITION SIZING (4x LEVERAGE + 2% MAX LOSS)
+            # 🎯 CRITICAL: PROPER POSITION SIZING (4x LEVERAGE + 1% MAX LOSS)
             # ============================================================
+            # REDUCED from 2% to 1% to limit daily losses
             available_capital = self._get_available_capital()
             
-            # Rule 1: Max loss = 2% of portfolio
-            max_loss_per_trade = available_capital * 0.02
+            # Rule 1: Max loss = 1% of portfolio (was 2%)
+            max_loss_per_trade = available_capital * 0.01
             
             # Rule 2: Intraday leverage = 4x
             INTRADAY_LEVERAGE = 4.0
@@ -4486,7 +4495,7 @@ class BaseStrategy:
             margin_required = position_value / INTRADAY_LEVERAGE  # 25% of position
             
             logger.info(f"📊 POSITION SIZING: {symbol} {action}")
-            logger.info(f"   💰 Capital: ₹{available_capital:,.0f} | Max Loss (2%): ₹{max_loss_per_trade:,.0f}")
+            logger.info(f"   💰 Capital: ₹{available_capital:,.0f} | Max Loss (1%): ₹{max_loss_per_trade:,.0f}")
             logger.info(f"   📉 Risk/Share: ₹{risk_amount:.2f} | Entry: ₹{entry_price:.2f} | SL: ₹{stop_loss:.2f}")
             logger.info(f"   🎯 Qty by Risk: {qty_by_risk} | Qty by Leverage: {qty_by_leverage} | FINAL: {final_quantity}")
             logger.info(f"   💵 Position Value: ₹{position_value:,.0f} | Margin: ₹{margin_required:,.0f} | Max Loss: ₹{actual_max_loss:,.0f}")

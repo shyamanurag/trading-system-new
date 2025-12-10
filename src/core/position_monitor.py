@@ -497,16 +497,34 @@ class PositionMonitor:
                 pnl_pct = ((current_price - entry_price) / entry_price) * 100 if position.side == 'long' else \
                           ((entry_price - current_price) / entry_price) * 100
                 
-                logger.info(f"⚡ SCALP TIMEOUT: {symbol} held {time_in_position:.1f}min (max: {max_hold_minutes}min)")
-                logger.info(f"   P&L: {pnl_pct:+.2f}% | Entry: ₹{entry_price:.2f} | Current: ₹{current_price:.2f}")
+                # 🔥 FIX: Only exit on timeout if in PROFIT or after EXTENDED timeout (2x)
+                # This prevents locking in losses due to slippage
+                MIN_PROFIT_FOR_TIMEOUT_EXIT = 0.1  # Need at least 0.1% profit to exit on timeout
+                EXTENDED_TIMEOUT_MULTIPLIER = 2.0  # Wait 2x longer if in loss
                 
-                return ExitCondition(
-                    condition_type='scalp_timeout',
-                    symbol=symbol,
-                    trigger_time=now,
-                    reason=f'SCALP timeout after {time_in_position:.1f}min (max: {max_hold_minutes}min) | P&L: {pnl_pct:+.2f}%',
-                    priority=2  # High priority - quick exit
-                )
+                if pnl_pct >= MIN_PROFIT_FOR_TIMEOUT_EXIT:
+                    # In profit - exit now
+                    logger.info(f"⚡ SCALP TIMEOUT (PROFIT): {symbol} held {time_in_position:.1f}min | P&L: {pnl_pct:+.2f}%")
+                    return ExitCondition(
+                        condition_type='scalp_timeout',
+                        symbol=symbol,
+                        trigger_time=now,
+                        reason=f'SCALP timeout with profit after {time_in_position:.1f}min | P&L: {pnl_pct:+.2f}%',
+                        priority=2
+                    )
+                elif time_in_position >= max_hold_minutes * EXTENDED_TIMEOUT_MULTIPLIER:
+                    # Extended timeout - exit even at loss (to limit exposure)
+                    logger.warning(f"⚡ SCALP EXTENDED TIMEOUT: {symbol} held {time_in_position:.1f}min (2x max) | P&L: {pnl_pct:+.2f}%")
+                    return ExitCondition(
+                        condition_type='scalp_timeout',
+                        symbol=symbol,
+                        trigger_time=now,
+                        reason=f'SCALP extended timeout after {time_in_position:.1f}min | P&L: {pnl_pct:+.2f}%',
+                        priority=2
+                    )
+                else:
+                    # In loss but not extended timeout - wait longer
+                    logger.info(f"⏳ SCALP HOLD: {symbol} in loss ({pnl_pct:+.2f}%) - waiting for recovery or extended timeout")
             
             return None
             
