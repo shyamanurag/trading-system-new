@@ -1081,6 +1081,20 @@ class TrueDataClient:
                 bid = getattr(tick_data, 'bid', 0) or getattr(tick_data, 'best_bid', 0)
                 ask = getattr(tick_data, 'ask', 0) or getattr(tick_data, 'best_ask', 0)
                 
+                # 🎯 ENHANCED: Extract Open Interest (OI) for F&O analysis
+                oi = (
+                    getattr(tick_data, 'oi', 0) or
+                    getattr(tick_data, 'open_interest', 0) or
+                    getattr(tick_data, 'OI', 0) or
+                    0
+                )
+                oi_change = (
+                    getattr(tick_data, 'oi_change', 0) or
+                    getattr(tick_data, 'oichange', 0) or
+                    getattr(tick_data, 'oi_day_change', 0) or
+                    0
+                )
+                
                 # 🎯 ENHANCED (2025-12-01): Data structure with PREVIOUS_CLOSE for dual-timeframe analysis
                 market_data = {
                     'symbol': symbol,  # Zerodha format for strategy compatibility
@@ -1097,6 +1111,8 @@ class TrueDataClient:
                     'change_percent': change_percent,  # Duplicate for compatibility
                     'bid': bid,
                     'ask': ask,
+                    'oi': oi,  # 🎯 Open Interest for F&O analysis
+                    'oi_change': oi_change,  # 🎯 OI change for institutional tracking
                     'timestamp': datetime.now().isoformat(),
                     'source': 'TrueData_Live',
                     'deployment_id': self._deployment_id,
@@ -1107,7 +1123,8 @@ class TrueDataClient:
                         'has_volume': volume > 0,
                         'has_change_percent': change_percent != 0,
                         'has_previous_close': previous_close > 0 and previous_close != ltp,
-                        'calculated_change_percent': change_percent != getattr(tick_data, 'changeper', None)
+                        'calculated_change_percent': change_percent != getattr(tick_data, 'changeper', None),
+                        'has_oi': oi > 0  # 🎯 NEW: Flag for OI availability
                     }
                 }
                 

@@ -3060,6 +3060,95 @@ class BaseStrategy:
                 'recommendation': 'ERROR'
             }
     
+    def analyze_open_interest(self, symbol: str, market_data: Dict) -> Dict[str, Any]:
+        """
+        🎯 OPEN INTEREST ANALYSIS from TrueData
+        Tracks institutional positioning through OI changes
+        
+        Returns:
+            - oi: Current Open Interest
+            - oi_change: Change in OI from previous session
+            - oi_signal: 'LONG_BUILDUP', 'SHORT_BUILDUP', 'LONG_UNWINDING', 'SHORT_COVERING', 'NEUTRAL'
+            - institutional_bias: 'BULLISH', 'BEARISH', 'NEUTRAL'
+            - confidence: Confidence in the OI signal (0-1)
+        """
+        try:
+            data = market_data.get(symbol, {})
+            
+            oi = data.get('oi', 0)
+            oi_change = data.get('oi_change', 0)
+            change_percent = data.get('change_percent', 0)
+            
+            if oi <= 0:
+                return {
+                    'oi': 0,
+                    'oi_change': 0,
+                    'oi_signal': 'NO_OI_DATA',
+                    'institutional_bias': 'NEUTRAL',
+                    'confidence': 0
+                }
+            
+            # Calculate OI change percentage
+            oi_change_pct = (oi_change / (oi - oi_change) * 100) if (oi - oi_change) > 0 else 0
+            
+            # Determine OI signal based on price and OI movement
+            # Long Buildup: Price Up + OI Up (bullish)
+            # Short Buildup: Price Down + OI Up (bearish)
+            # Long Unwinding: Price Down + OI Down (bearish to neutral)
+            # Short Covering: Price Up + OI Down (bullish but weak)
+            
+            oi_signal = 'NEUTRAL'
+            institutional_bias = 'NEUTRAL'
+            confidence = 0.5
+            
+            price_up = change_percent > 0.3
+            price_down = change_percent < -0.3
+            oi_up = oi_change_pct > 1.0
+            oi_down = oi_change_pct < -1.0
+            
+            if price_up and oi_up:
+                oi_signal = 'LONG_BUILDUP'
+                institutional_bias = 'BULLISH'
+                confidence = min(0.5 + abs(oi_change_pct) / 10, 0.95)
+                logger.info(f"📈 {symbol} OI ANALYSIS: LONG BUILDUP - Price +{change_percent:.1f}%, OI +{oi_change_pct:.1f}%")
+            
+            elif price_down and oi_up:
+                oi_signal = 'SHORT_BUILDUP'
+                institutional_bias = 'BEARISH'
+                confidence = min(0.5 + abs(oi_change_pct) / 10, 0.95)
+                logger.info(f"📉 {symbol} OI ANALYSIS: SHORT BUILDUP - Price {change_percent:.1f}%, OI +{oi_change_pct:.1f}%")
+            
+            elif price_down and oi_down:
+                oi_signal = 'LONG_UNWINDING'
+                institutional_bias = 'BEARISH'  # Longs exiting = bearish
+                confidence = min(0.4 + abs(oi_change_pct) / 15, 0.8)
+                logger.info(f"📉 {symbol} OI ANALYSIS: LONG UNWINDING - Price {change_percent:.1f}%, OI {oi_change_pct:.1f}%")
+            
+            elif price_up and oi_down:
+                oi_signal = 'SHORT_COVERING'
+                institutional_bias = 'BULLISH'  # Shorts exiting = bullish but weak
+                confidence = min(0.4 + abs(oi_change_pct) / 15, 0.75)
+                logger.info(f"📈 {symbol} OI ANALYSIS: SHORT COVERING - Price +{change_percent:.1f}%, OI {oi_change_pct:.1f}%")
+            
+            return {
+                'oi': oi,
+                'oi_change': oi_change,
+                'oi_change_pct': round(oi_change_pct, 2),
+                'oi_signal': oi_signal,
+                'institutional_bias': institutional_bias,
+                'confidence': round(confidence, 2)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error analyzing OI for {symbol}: {e}")
+            return {
+                'oi': 0,
+                'oi_change': 0,
+                'oi_signal': 'ERROR',
+                'institutional_bias': 'NEUTRAL',
+                'confidence': 0
+            }
+    
     def calculate_smart_entry_score(self, symbol: str, signal_type: str, market_data: Dict) -> float:
         """
         🎯 CODE ENHANCEMENT: Multi-factor entry quality score

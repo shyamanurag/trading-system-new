@@ -1031,12 +1031,32 @@ class EnhancedMomentumSurfer(BaseStrategy):
                             logger.warning(f"⚠️ {stock}: SELL signal with BUY WALL - reducing confidence")
                             signal['confidence'] = signal.get('confidence', 8.0) * 0.9
                         
-                        # Add depth metadata to signal
+                        # 🎯 OI ANALYSIS: Check institutional positioning
+                        oi_analysis = self.analyze_open_interest(stock, market_data)
+                        oi_bias = oi_analysis.get('institutional_bias', 'NEUTRAL')
+                        oi_signal_type = oi_analysis.get('oi_signal', 'NEUTRAL')
+                        
+                        # Check if OI conflicts with signal direction
+                        if signal_direction == 'BUY' and oi_bias == 'BEARISH':
+                            if oi_signal_type == 'SHORT_BUILDUP':
+                                logger.warning(f"⚠️ {stock}: BUY vs SHORT BUILDUP - reducing confidence by 15%")
+                                signal['confidence'] = signal.get('confidence', 8.0) * 0.85
+                            else:
+                                signal['confidence'] = signal.get('confidence', 8.0) * 0.95
+                        elif signal_direction == 'SELL' and oi_bias == 'BULLISH':
+                            if oi_signal_type == 'LONG_BUILDUP':
+                                logger.warning(f"⚠️ {stock}: SELL vs LONG BUILDUP - reducing confidence by 15%")
+                                signal['confidence'] = signal.get('confidence', 8.0) * 0.85
+                            else:
+                                signal['confidence'] = signal.get('confidence', 8.0) * 0.95
+                        
+                        # Add depth and OI metadata to signal
                         signal['metadata'] = signal.get('metadata', {})
                         signal['metadata']['market_depth'] = depth_analysis
+                        signal['metadata']['oi_analysis'] = oi_analysis
                         
                         signals.append(signal)
-                        logger.info(f"✅ Signal generated for {stock}: {len(signals)}/{max_signals_per_cycle} (Depth: {depth_rec})")
+                        logger.info(f"✅ Signal generated for {stock}: {len(signals)}/{max_signals_per_cycle} (Depth: {depth_rec}, OI: {oi_bias})")
 
             logger.info(f"📊 Smart Intraday Options generated {len(signals)} signals (limit: {max_signals_per_cycle})")
             return signals
