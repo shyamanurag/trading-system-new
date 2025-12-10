@@ -497,22 +497,29 @@ class ZerodhaIntegration:
         # Initialize cooldown tracking if not exists
         if not hasattr(self, '_symbol_cooldown'):
             self._symbol_cooldown = {}
-            self._cooldown_seconds = 300  # 5 minutes between trades on same symbol
-            self._min_quantity = 5  # Minimum 5 shares per order
+            self._cooldown_seconds = 900  # 15 MINUTES between trades on same symbol (was 5 min - too short!)
+            self._min_quantity = 10  # Minimum 10 shares per order (increased from 5)
+            self._min_stock_price = 50.0  # Minimum stock price ₹50 (penny stock block)
         
-        # 🚫 Block tiny orders (< 5 shares)
+        # 🚫 Block tiny orders (< 10 shares)
         if quantity < self._min_quantity:
             logger.warning(f"🚫 TINY ORDER BLOCKED: {symbol} {action} qty={quantity} < min {self._min_quantity}")
             return None
         
-        # 🧊 Per-symbol cooldown check
+        # 🚫 PENNY STOCK BLOCK at broker level - last line of defense
+        price = order_params.get('price', 0) or order_params.get('trigger_price', 0) or order_params.get('limit_price', 0)
+        if price and price < self._min_stock_price:
+            logger.warning(f"🚫 PENNY STOCK BLOCKED: {symbol} @ ₹{price:.2f} < ₹{self._min_stock_price} minimum - NO TRADE")
+            return None
+        
+        # 🧊 Per-symbol cooldown check (15 MINUTES - prevents churning)
         from datetime import datetime
         now = datetime.now()
         if symbol in self._symbol_cooldown:
             elapsed = (now - self._symbol_cooldown[symbol]).total_seconds()
             if elapsed < self._cooldown_seconds:
                 remaining = self._cooldown_seconds - elapsed
-                logger.warning(f"🧊 COOLDOWN BLOCKED: {symbol} {action} - {remaining:.0f}s remaining (last trade {elapsed:.0f}s ago)")
+                logger.warning(f"🧊 COOLDOWN BLOCKED: {symbol} {action} - {remaining:.0f}s/{self._cooldown_seconds}s remaining")
                 return None
         
         async with self.order_semaphore:
