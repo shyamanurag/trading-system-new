@@ -3890,12 +3890,25 @@ class BaseStrategy:
                         logger.info(f"🌟 EXCEPTIONAL WEAKNESS DETECTED: {symbol} {relative_strength:.2f}% vs NIFTY - "
                                    f"May bypass bias filter for weak stock short!")
                     
+                    # 🔥 HARD BLOCK: Don't buy RED stocks in GREEN market (and vice versa)
+                    # This was causing JSWENERGY loss - bought a down stock in up market
+                    if action.upper() == 'BUY' and stock_change < 0 and nifty_change > 0.2:
+                        logger.warning(f"🚫 HARD BLOCK: {symbol} BUY rejected - Stock DOWN ({stock_change:+.2f}%) in UP market (NIFTY {nifty_change:+.2f}%)")
+                        return None
+                    elif action.upper() == 'SELL' and stock_change > 0 and nifty_change < -0.2:
+                        logger.warning(f"🚫 HARD BLOCK: {symbol} SELL rejected - Stock UP ({stock_change:+.2f}%) in DOWN market (NIFTY {nifty_change:+.2f}%)")
+                        return None
+                    
+                    # 🔥 STRICT RELATIVE STRENGTH: Don't buy weak stocks in bull market!
+                    # Increased from 0.3% to 0.5% minimum outperformance
+                    MIN_OUTPERFORMANCE = 0.5  # Stock must beat NIFTY by at least 0.5%
+                    
                     rs_allowed, rs_reason = self.check_relative_strength(
                         symbol=symbol,
                         action=action,
                         stock_change_percent=stock_change,
                         nifty_change_percent=nifty_change,
-                        min_outperformance=0.3  # 0.3% minimum outperformance
+                        min_outperformance=MIN_OUTPERFORMANCE
                     )
                     
                     if not rs_allowed:
