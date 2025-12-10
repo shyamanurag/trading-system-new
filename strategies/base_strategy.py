@@ -3996,9 +3996,11 @@ class BaseStrategy:
                 logger.error(f"   This will cause quantity = 0 and signal rejection")
                 return None
             # ========================================
-            # 🚫 MAX CONCURRENT POSITIONS CHECK
+            # 🚫 MAX CONCURRENT POSITIONS CHECK - DISABLED
             # ========================================
-            MAX_CONCURRENT_POSITIONS = 3  # Limit to 3 positions at a time
+            # User preference: Quality over quantity, not arbitrary caps
+            # Let risk management and capital constraints handle this naturally
+            MAX_CONCURRENT_POSITIONS = 50  # Effectively no limit - quality filters should do the job
             
             is_management = metadata.get('management_action', False)
             is_closing = metadata.get('closing_action', False)
