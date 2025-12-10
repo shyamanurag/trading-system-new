@@ -300,7 +300,7 @@ class ProductionPositionTracker:
         try:
             now = datetime.now()
             
-            if symbol in self.position                # Update existing position
+            if symbol in self.positions:  # Update existing position
                 position = self.positions[symbol]
                 
                 # Calculate new average price
