@@ -1050,13 +1050,34 @@ class EnhancedMomentumSurfer(BaseStrategy):
                             else:
                                 signal['confidence'] = signal.get('confidence', 8.0) * 0.95
                         
-                        # Add depth and OI metadata to signal
+                        # 🎯 DAILY/WEEKLY LEVELS: Check proximity to S/R
+                        level_analysis = self.calculate_daily_weekly_levels(stock, market_data)
+                        nearest_level = level_analysis.get('nearest_level', {})
+                        level_recommendation = level_analysis.get('recommendation', 'NEUTRAL')
+                        
+                        # Warn if signal conflicts with nearby level
+                        if nearest_level:
+                            level_type = nearest_level.get('type', '')
+                            level_distance = nearest_level.get('distance_percent', 100)
+                            
+                            # BUY near resistance = risky
+                            if signal_direction == 'BUY' and level_type == 'RESISTANCE' and level_distance < 0.5:
+                                logger.warning(f"⚠️ {stock}: BUY signal near RESISTANCE ({nearest_level.get('name')}) at ₹{nearest_level.get('price')}")
+                                signal['confidence'] = signal.get('confidence', 8.0) * 0.92
+                            
+                            # SELL near support = risky  
+                            elif signal_direction == 'SELL' and level_type == 'SUPPORT' and level_distance < 0.5:
+                                logger.warning(f"⚠️ {stock}: SELL signal near SUPPORT ({nearest_level.get('name')}) at ₹{nearest_level.get('price')}")
+                                signal['confidence'] = signal.get('confidence', 8.0) * 0.92
+                        
+                        # Add all analysis metadata to signal
                         signal['metadata'] = signal.get('metadata', {})
                         signal['metadata']['market_depth'] = depth_analysis
                         signal['metadata']['oi_analysis'] = oi_analysis
+                        signal['metadata']['daily_weekly_levels'] = level_analysis
                         
                         signals.append(signal)
-                        logger.info(f"✅ Signal generated for {stock}: {len(signals)}/{max_signals_per_cycle} (Depth: {depth_rec}, OI: {oi_bias})")
+                        logger.info(f"✅ Signal generated for {stock}: {len(signals)}/{max_signals_per_cycle} (Depth: {depth_rec}, OI: {oi_bias}, Level: {level_recommendation})")
 
             logger.info(f"📊 Smart Intraday Options generated {len(signals)} signals (limit: {max_signals_per_cycle})")
             return signals

@@ -3149,6 +3149,143 @@ class BaseStrategy:
                 'confidence': 0
             }
     
+    def calculate_daily_weekly_levels(self, symbol: str, market_data: Dict) -> Dict[str, Any]:
+        """
+        🎯 DAILY/WEEKLY PIVOT POINTS AND MAJOR S/R LEVELS
+        
+        Calculates:
+        - Daily Pivot Points (Classic): PP, R1, R2, R3, S1, S2, S3
+        - Weekly Levels from price history (if available)
+        - Key psychological levels (round numbers)
+        - Identifies if price is near major level
+        
+        Returns comprehensive level analysis for entry/exit decisions
+        """
+        try:
+            data = market_data.get(symbol, {})
+            ltp = data.get('ltp', 0)
+            high = data.get('high', 0)
+            low = data.get('low', 0)
+            close = data.get('close', 0) or data.get('previous_close', 0)
+            open_price = data.get('open', 0)
+            
+            if ltp <= 0:
+                return {'levels': {}, 'near_level': None, 'distance_to_level': 0}
+            
+            # Use yesterday's high/low/close for pivot calculation
+            # If not available, use today's open and estimates
+            prev_high = high if high > 0 else ltp * 1.01
+            prev_low = low if low > 0 else ltp * 0.99
+            prev_close = close if close > 0 else ltp
+            
+            # ============= CLASSIC PIVOT POINTS =============
+            # PP = (H + L + C) / 3
+            pivot_point = (prev_high + prev_low + prev_close) / 3
+            
+            # Support and Resistance levels
+            r1 = 2 * pivot_point - prev_low
+            r2 = pivot_point + (prev_high - prev_low)
+            r3 = prev_high + 2 * (pivot_point - prev_low)
+            
+            s1 = 2 * pivot_point - prev_high
+            s2 = pivot_point - (prev_high - prev_low)
+            s3 = prev_low - 2 * (prev_high - pivot_point)
+            
+            # ============= FIBONACCI PIVOT LEVELS =============
+            fib_r1 = pivot_point + 0.382 * (prev_high - prev_low)
+            fib_r2 = pivot_point + 0.618 * (prev_high - prev_low)
+            fib_s1 = pivot_point - 0.382 * (prev_high - prev_low)
+            fib_s2 = pivot_point - 0.618 * (prev_high - prev_low)
+            
+            # ============= PSYCHOLOGICAL LEVELS (Round Numbers) =============
+            round_factor = 50 if ltp > 500 else (10 if ltp > 100 else 5)
+            psychological_above = ((ltp // round_factor) + 1) * round_factor
+            psychological_below = (ltp // round_factor) * round_factor
+            
+            # ============= COLLECT ALL LEVELS =============
+            levels = {
+                'pivot': round(pivot_point, 2),
+                'r1': round(r1, 2),
+                'r2': round(r2, 2),
+                'r3': round(r3, 2),
+                's1': round(s1, 2),
+                's2': round(s2, 2),
+                's3': round(s3, 2),
+                'fib_r1': round(fib_r1, 2),
+                'fib_r2': round(fib_r2, 2),
+                'fib_s1': round(fib_s1, 2),
+                'fib_s2': round(fib_s2, 2),
+                'psychological_above': psychological_above,
+                'psychological_below': psychological_below,
+                'day_high': round(prev_high, 2),
+                'day_low': round(prev_low, 2),
+                'vwap_estimate': round((prev_high + prev_low + prev_close) / 3, 2)  # Approximation
+            }
+            
+            # ============= FIND NEAREST LEVEL =============
+            all_levels = [
+                ('pivot', pivot_point),
+                ('r1', r1), ('r2', r2), ('r3', r3),
+                ('s1', s1), ('s2', s2), ('s3', s3),
+                ('day_high', prev_high), ('day_low', prev_low),
+                ('psych_above', psychological_above), ('psych_below', psychological_below)
+            ]
+            
+            nearest_level = None
+            min_distance = float('inf')
+            
+            for name, level in all_levels:
+                distance = abs(ltp - level)
+                distance_pct = (distance / ltp) * 100 if ltp > 0 else 0
+                
+                if distance_pct < min_distance:
+                    min_distance = distance_pct
+                    nearest_level = {
+                        'name': name,
+                        'price': round(level, 2),
+                        'distance_percent': round(distance_pct, 2),
+                        'type': 'RESISTANCE' if level > ltp else 'SUPPORT'
+                    }
+            
+            # ============= TRADING RECOMMENDATION =============
+            recommendation = 'NEUTRAL'
+            
+            # Check if near significant level (within 0.3%)
+            if min_distance < 0.3:
+                if nearest_level['type'] == 'SUPPORT':
+                    recommendation = 'NEAR_SUPPORT'
+                else:
+                    recommendation = 'NEAR_RESISTANCE'
+            
+            # Check position relative to pivot
+            if ltp > pivot_point:
+                position_vs_pivot = 'ABOVE_PIVOT'
+            else:
+                position_vs_pivot = 'BELOW_PIVOT'
+            
+            result = {
+                'levels': levels,
+                'nearest_level': nearest_level,
+                'position_vs_pivot': position_vs_pivot,
+                'recommendation': recommendation,
+                'current_price': ltp
+            }
+            
+            # Log if near important level
+            if min_distance < 0.5:
+                logger.info(f"📊 {symbol} NEAR LEVEL: {nearest_level['name']} at ₹{nearest_level['price']} ({min_distance:.2f}% away)")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error calculating daily/weekly levels for {symbol}: {e}")
+            return {
+                'levels': {},
+                'nearest_level': None,
+                'position_vs_pivot': 'UNKNOWN',
+                'recommendation': 'ERROR'
+            }
+    
     def calculate_smart_entry_score(self, symbol: str, signal_type: str, market_data: Dict) -> float:
         """
         🎯 CODE ENHANCEMENT: Multi-factor entry quality score
