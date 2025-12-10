@@ -686,7 +686,7 @@ class BaseStrategy:
             
         except Exception as e:
             logger.warning(f"Error checking relative strength for {symbol}: {e}")
-            return True, f"RS check error: {e}"  # Allow on error to not block trading
+            return False, f"RS check error - BLOCKED: {e}"  # Block on error - quality over quantity
         
         # 🎯 ACTIVE POSITION MANAGEMENT CONFIGURATION
         self.enable_active_management = self.config.get('enable_active_management', True)
@@ -3411,8 +3411,9 @@ class BaseStrategy:
             (min_confidence_threshold, reason_string)
         """
         try:
-            # Default threshold (TUNED: lowered from 8.5 to 7.5)
-            min_conf = 7.5
+            # Default threshold - RESTORED to original high threshold
+            # User priority: FEWER trades with HIGHER quality, not more trades
+            min_conf = 8.5
             reasons = []
             
             # 🔥 EXCEPTIONAL RS THRESHOLD REDUCTION
@@ -3562,10 +3563,9 @@ class BaseStrategy:
                 reasons.append("MOD_BIAS+0.1")
             
             # ============= FINAL BOUNDS =============
-            # 🔥 CRITICAL FIX 2025-12-03: Cap lowered to 7.5 to allow shorting weak stocks
-            # In choppy/weak bias markets, signals with 7.7+ confidence were being blocked
-            # User requested lower threshold to allow legitimate SHORT signals on weak stocks
-            min_conf = max(5.0, min(min_conf, 7.5))
+            # RESTORED: Allow threshold to go up to 9.0 for quality control
+            # Priority: Fewer trades but profitable ones
+            min_conf = max(6.5, min(min_conf, 9.0))
             
             reason_str = " | ".join(reasons) if reasons else "default"
             return min_conf, reason_str
@@ -3932,31 +3932,17 @@ class BaseStrategy:
                 if hasattr(market_bias, 'should_allow_signal'):
                     should_allow = market_bias.should_allow_signal(action.upper(), normalized_confidence)
                 else:
-                    # Fallback: if no bias method available, allow signal
-                    should_allow = True
-                    logger.warning(f"⚠️ Market bias object missing should_allow_signal method")
+                    # Fallback: if no bias method available, BLOCK signal (quality over quantity)
+                    should_allow = False
+                    logger.warning(f"🚫 BLOCKED: Market bias object missing should_allow_signal method - rejecting {symbol} {action}")
                 
-                # 🔥 EXCEPTIONAL RS OVERRIDE - Allow exceptional RS trades even against bias
+                # 🚫 EXCEPTIONAL RS OVERRIDE DISABLED - Quality over quantity
+                # Previously allowed trades against bias, causing losses
+                # Now: If bias says NO, we respect it. Period.
                 if not should_allow and exceptional_rs:
-                    # Get current scenario
-                    scenario = getattr(self.market_bias, '_last_scenario', 'UNKNOWN') if self.market_bias else 'UNKNOWN'
-                    
-                    # Allow exceptional RS stocks during recovery/fade scenarios
-                    recovery_scenarios = ['GAP_DOWN_RECOVERY', 'GAP_DOWN_EARLY_RECOVERY', 'RUBBER_BAND_RECOVERY', 'MIXED_SIGNALS']
-                    fade_scenarios = ['GAP_UP_FADE', 'RUBBER_BAND_FADE']
-                    
-                    if action.upper() == 'BUY' and scenario in recovery_scenarios:
-                        should_allow = True
-                        logger.info(f"✅ EXCEPTIONAL RS OVERRIDE: {symbol} BUY allowed despite bearish bias - "
-                                   f"RS: +{exceptional_rs_value:.2f}% in {scenario}")
-                        metadata['exceptional_rs_override'] = True
-                        metadata['relative_strength'] = exceptional_rs_value
-                    elif action.upper() == 'SELL' and scenario in fade_scenarios:
-                        should_allow = True
-                        logger.info(f"✅ EXCEPTIONAL WEAKNESS OVERRIDE: {symbol} SELL allowed despite bullish bias - "
-                                   f"RS: {exceptional_rs_value:.2f}% in {scenario}")
-                        metadata['exceptional_rs_override'] = True
-                        metadata['relative_strength'] = exceptional_rs_value
+                    logger.info(f"🚫 RS OVERRIDE BLOCKED: {symbol} {action} has exceptional RS but bias says NO - Respecting bias filter")
+                    metadata['exceptional_rs_blocked'] = True
+                    metadata['relative_strength'] = exceptional_rs_value
                 
                 if not should_allow:
                     logger.info(f"🚫 BIAS FILTER: {symbol} {action} rejected by market bias "
@@ -4439,8 +4425,9 @@ class BaseStrategy:
             # Check minimum risk-reward ratio (DYNAMIC based on volatility)
             min_risk_reward_ratio = self._get_dynamic_min_risk_reward_ratio(symbol, entry_price)
             
-            # TEMPORARY FIX: Override minimum ratio to allow equity fallback signals
-            min_risk_reward_ratio = 1.15  # Temporarily lower to allow 1.20+ signals through
+            # RESTORED: Enforce proper risk-reward - quality over quantity
+            # Minimum 1.5:1 risk-reward for any trade
+            min_risk_reward_ratio = max(min_risk_reward_ratio, 1.5)
             
             if risk_reward_ratio < min_risk_reward_ratio:
                 logger.warning(f"Equity signal below {min_risk_reward_ratio}:1 ratio: {symbol} ({risk_reward_ratio:.2f})")

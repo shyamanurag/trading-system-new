@@ -448,7 +448,7 @@ class SignalDeduplicator:
                 
         except Exception as e:
             logger.error(f"❌ Error in atomic claim: {e}")
-            return True  # Allow on error (risky but prevents complete blockage)
+            return False  # BLOCK on error - quality over quantity
     
     async def mark_signal_executed(self, signal: Dict):
         """Mark signal as executed to prevent future duplicates"""
@@ -793,7 +793,7 @@ class SignalDeduplicator:
             return { 'allowed': True, 'reason': 'OK', 'attempts': attempts }
         except Exception as e:
             logger.error(f"❌ register_signal_attempt error for {signal_id}: {e}")
-            return { 'allowed': True, 'reason': 'ERROR_FALLBACK' }
+            return { 'allowed': False, 'reason': 'ERROR_BLOCKED' }  # Block on error
     
     def get_signal_stats(self) -> Dict:
         """Get statistics about signal processing"""

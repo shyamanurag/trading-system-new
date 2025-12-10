@@ -81,7 +81,7 @@ class SignalExpiryManager:
             
         except Exception as e:
             logger.error(f"Error checking execution throttle: {e}")
-            return True  # Allow execution on error
+            return False  # BLOCK execution on error - quality over quantity
     
     def record_signal_creation(self, signal_id: str):
         """Record when a signal was created"""

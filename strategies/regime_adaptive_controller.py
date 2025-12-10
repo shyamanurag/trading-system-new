@@ -1973,7 +1973,7 @@ class RegimeAdaptiveController:
             
         except Exception as e:
             logger.error(f"Strategy signal validation failed: {e}")
-            return True  # Default to allowing signals if validation fails
+            return False  # BLOCK signals on validation error - quality over quantity
     
     async def shutdown(self):
         """Shutdown the professional regime controller"""

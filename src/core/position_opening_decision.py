@@ -340,14 +340,14 @@ class EnhancedPositionOpeningDecision:
             import traceback
             logger.error(traceback.format_exc())
             
-            # FAIL SAFE: If error checking limit, allow trade (don't block on error)
+            # BLOCK on error - quality over quantity
             return PositionDecisionResult(
-                decision=PositionDecision.APPROVED,
-                confidence_score=1.0,
-                risk_score=0.3,  # Moderate risk
+                decision=PositionDecision.REJECTED_RISK,
+                confidence_score=0.0,
+                risk_score=10.0,  # Maximum risk
                 position_size=0,
-                reasoning="Daily loss limit check failed (allowed by default)",
-                metadata={'risk_level': 'MODERATE'}
+                reasoning=f"Daily loss limit check failed - BLOCKED for safety: {str(e)}",
+                metadata={'risk_level': 'BLOCKED'}
             )
     
     async def _validate_basic_signal(self, signal: Dict) -> PositionDecisionResult:

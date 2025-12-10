@@ -1035,9 +1035,9 @@ class RiskManager:
             
         except Exception as e:
             logger.error(f"Error validating trading hours: {e}")
-            # Safe fallback - allow trading if error in time check
-            logger.warning(f"⚠️ TIME VALIDATION ERROR: Allowing {symbol} {action} due to time check failure")
-            return True
+            # BLOCK trades on time check error - quality over quantity
+            logger.warning(f"🚫 TIME VALIDATION ERROR: Blocking {symbol} {action} due to time check failure")
+            return False
 
     def get_risk_report(self) -> Dict[str, Any]:
         """Get comprehensive risk report"""
