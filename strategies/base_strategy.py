@@ -2672,8 +2672,8 @@ class BaseStrategy:
         symbols_to_fetch = []
         for symbol in symbols:
             if symbol in self._garch_cache:
-                cache_age = (datetime.now() - self._garch_cache[symbol]['updated_at']).total_seconds() / 60  # Minutes
-                if cache_age < self._garch_cache_expiry_minutes:
+                cache_age_minutes = (datetime.now() - self._garch_cache[symbol]['updated_at']).total_seconds() / 60
+                if cache_age_minutes < self._garch_cache_expiry_minutes:
                     continue  # Already cached and fresh
             symbols_to_fetch.append(symbol)
         
