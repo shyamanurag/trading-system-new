@@ -3772,9 +3772,9 @@ class BaseStrategy:
             (min_confidence_threshold, reason_string)
         """
         try:
-            # Default threshold - RESTORED to original high threshold
-            # User priority: FEWER trades with HIGHER quality, not more trades
-            min_conf = 8.5
+            # Default threshold - LOWERED to 8.0 to capture 8.2 confidence signals
+            # Market swung +90 points and we missed it with 9.0 threshold
+            min_conf = 8.0
             reasons = []
             
             # 🔥 EXCEPTIONAL RS THRESHOLD REDUCTION
@@ -3924,9 +3924,9 @@ class BaseStrategy:
                 reasons.append("MOD_BIAS+0.1")
             
             # ============= FINAL BOUNDS =============
-            # RESTORED: Allow threshold to go up to 9.0 for quality control
-            # Priority: Fewer trades but profitable ones
-            min_conf = max(6.5, min(min_conf, 9.0))
+            # LOWERED: Cap at 8.5 to allow 8.2 signals through
+            # Market moved +90 points (from -32 to +60), missed opportunities with 9.0
+            min_conf = max(6.5, min(min_conf, 8.5))
             
             reason_str = " | ".join(reasons) if reasons else "default"
             return min_conf, reason_str
