@@ -101,6 +101,12 @@ class BaseStrategy:
         self.historical_data = {}  # symbol -> list of price data
         self.max_history = 50  # Keep last 50 data points per symbol
         
+        # 🔥 ZERODHA DAILY DATA CACHE for proper GARCH calculations
+        # GARCH needs DAILY returns, not tick-by-tick data
+        self._daily_candle_cache = {}  # symbol -> {'candles': [], 'fetched_at': datetime}
+        self._daily_cache_expiry_hours = 4  # Refresh cache every 4 hours
+        self._garch_cache = {}  # symbol -> {'garch_vol': float, 'atr': float, 'updated_at': datetime}
+        
         # Symbol filtering and selection
         self.watchlist = set()  # Symbols this strategy is interested in
         self.active_symbols = set()  # Symbols currently being analyzed
@@ -2431,14 +2437,18 @@ class BaseStrategy:
             
             # PROFESSIONAL GARCH-ENHANCED ATR
             if len(history) >= 10:  # Need sufficient data for GARCH
-                # Extract price series
-                prices = np.array([h['close'] for h in history])
-                
-                # GARCH-enhanced ATR (our competitive advantage)
-                garch_atr = ProfessionalMathFoundation.garch_atr(prices, period)
-                
-                # Traditional ATR for ensemble
-                traditional_atr = self._calculate_traditional_atr_internal(history, period)
+                # 🔥 PRIORITY: Use Zerodha daily GARCH if available (cached)
+                if symbol in self._garch_cache:
+                    cached = self._garch_cache[symbol]['data']
+                    garch_atr = cached['garch_atr']
+                    traditional_atr = cached['traditional_atr']
+                    data_source = cached['data_source']
+                else:
+                    # Fallback to tick-based GARCH (less accurate but available)
+                    prices = np.array([h['close'] for h in history])
+                    garch_atr = ProfessionalMathFoundation.garch_atr(prices, period)
+                    traditional_atr = self._calculate_traditional_atr_internal(history, period)
+                    data_source = 'tick_based'
                 
                 # ENSEMBLE ATR (70% GARCH, 30% traditional)
                 ensemble_atr = (garch_atr * 0.7) + (traditional_atr * 0.3)
@@ -2457,7 +2467,8 @@ class BaseStrategy:
                     self._garch_log_counter = {}
                 self._garch_log_counter[symbol] = self._garch_log_counter.get(symbol, 0) + 1
                 if self._garch_log_counter[symbol] % 20 == 1:
-                    logger.info(f"📊 GARCH ATR: {symbol} GARCH={garch_atr:.2f} Trad={traditional_atr:.2f} Ensemble={ensemble_atr:.2f} ({atr_percentage*100:.2f}%)")
+                    source_icon = "📈" if data_source == 'zerodha_daily' else "⚡"
+                    logger.info(f"📊 GARCH ATR: {symbol} GARCH=₹{garch_atr:.2f} Trad=₹{traditional_atr:.2f} Ensemble=₹{ensemble_atr:.2f} ({atr_percentage*100:.2f}%) {source_icon} {data_source}")
                 
                 # Update performance attribution
                 self._update_performance_attribution(symbol, ensemble_atr, garch_atr, traditional_atr)
@@ -2502,6 +2513,192 @@ class BaseStrategy:
         except Exception as e:
             logger.error(f"Traditional ATR calculation failed: {e}")
             return 0.02
+    
+    async def calculate_garch_from_zerodha(self, symbol: str, period: int = 30) -> Dict:
+        """
+        🔥 PROPER GARCH CALCULATION using Zerodha DAILY historical data
+        
+        GARCH is designed for DAILY returns, not tick-by-tick data.
+        This fetches real daily candles from Zerodha for accurate volatility.
+        
+        Returns: {
+            'garch_volatility': float,  # Annualized volatility
+            'garch_atr': float,         # GARCH-enhanced ATR
+            'traditional_atr': float,   # For comparison
+            'current_regime': str,      # 'HIGH', 'NORMAL', 'LOW'
+            'data_source': str          # 'zerodha_daily' or 'fallback'
+        }
+        """
+        try:
+            from datetime import datetime, timedelta
+            
+            # Check cache first
+            if symbol in self._garch_cache:
+                cache_entry = self._garch_cache[symbol]
+                cache_age = (datetime.now() - cache_entry['updated_at']).total_seconds() / 3600
+                if cache_age < self._daily_cache_expiry_hours:
+                    return cache_entry['data']
+            
+            # Fetch daily candles from Zerodha
+            zerodha_client = None
+            if hasattr(self, 'broker_client') and self.broker_client:
+                zerodha_client = self.broker_client
+            else:
+                try:
+                    from brokers.zerodha import zerodha_client as zc
+                    zerodha_client = zc
+                except:
+                    pass
+            
+            if not zerodha_client:
+                logger.debug(f"No Zerodha client available for {symbol} GARCH")
+                return self._fallback_garch(symbol)
+            
+            # Get 60 days of daily candles (enough for GARCH)
+            candles = await zerodha_client.get_historical_data(
+                symbol=symbol,
+                interval='day',
+                from_date=datetime.now() - timedelta(days=60)
+            )
+            
+            if not candles or len(candles) < 20:
+                logger.debug(f"Insufficient daily data for {symbol}: {len(candles) if candles else 0} candles")
+                return self._fallback_garch(symbol)
+            
+            # Extract closing prices
+            prices = np.array([c['close'] for c in candles])
+            highs = np.array([c['high'] for c in candles])
+            lows = np.array([c['low'] for c in candles])
+            
+            # Calculate DAILY returns (what GARCH is designed for)
+            returns = np.diff(prices) / prices[:-1]
+            
+            # GARCH(1,1) with proper parameters for DAILY data
+            alpha = 0.10  # ARCH parameter
+            beta = 0.85   # GARCH parameter  
+            omega = np.var(returns) * (1 - alpha - beta)  # Calibrated long-run variance
+            
+            # GARCH recursion
+            n = len(returns)
+            variance = np.zeros(n)
+            variance[0] = np.var(returns[:min(10, n)])
+            
+            for t in range(1, n):
+                variance[t] = omega + alpha * (returns[t-1] ** 2) + beta * variance[t-1]
+            
+            # Annualized volatility
+            garch_volatility = np.sqrt(variance[-1]) * np.sqrt(252)
+            
+            # GARCH-enhanced ATR
+            current_price = prices[-1]
+            garch_atr = garch_volatility * current_price / np.sqrt(252)  # Daily ATR
+            
+            # Traditional ATR for comparison
+            true_ranges = []
+            for i in range(1, len(candles)):
+                tr = max(
+                    highs[i] - lows[i],
+                    abs(highs[i] - prices[i-1]),
+                    abs(lows[i] - prices[i-1])
+                )
+                true_ranges.append(tr)
+            traditional_atr = np.mean(true_ranges[-period:]) if true_ranges else garch_atr
+            
+            # Volatility regime detection
+            avg_vol = np.mean(np.sqrt(variance) * np.sqrt(252))
+            if garch_volatility > avg_vol * 1.5:
+                regime = 'HIGH'
+            elif garch_volatility < avg_vol * 0.7:
+                regime = 'LOW'
+            else:
+                regime = 'NORMAL'
+            
+            result = {
+                'garch_volatility': float(garch_volatility),
+                'garch_atr': float(garch_atr),
+                'traditional_atr': float(traditional_atr),
+                'current_regime': regime,
+                'data_source': 'zerodha_daily',
+                'candle_count': len(candles)
+            }
+            
+            # Cache the result
+            self._garch_cache[symbol] = {
+                'data': result,
+                'updated_at': datetime.now()
+            }
+            
+            # Log occasionally (not every call)
+            if not hasattr(self, '_garch_log_count'):
+                self._garch_log_count = {}
+            self._garch_log_count[symbol] = self._garch_log_count.get(symbol, 0) + 1
+            if self._garch_log_count[symbol] % 50 == 1:
+                logger.info(f"📊 ZERODHA GARCH: {symbol} Vol={garch_volatility:.1%} ATR=₹{garch_atr:.2f} "
+                           f"Trad=₹{traditional_atr:.2f} Regime={regime} (60 daily candles)")
+            
+            return result
+            
+        except Exception as e:
+            logger.debug(f"Zerodha GARCH failed for {symbol}: {e}")
+            return self._fallback_garch(symbol)
+    
+    async def prefetch_garch_for_symbols(self, symbols: List[str], max_concurrent: int = 5):
+        """
+        🔥 PREFETCH GARCH data for multiple symbols efficiently
+        
+        Call this at the start of generate_signals to warm the cache.
+        Only fetches symbols that aren't already cached.
+        """
+        import asyncio
+        from datetime import datetime
+        
+        # Filter symbols that need fetching
+        symbols_to_fetch = []
+        for symbol in symbols:
+            if symbol in self._garch_cache:
+                cache_age = (datetime.now() - self._garch_cache[symbol]['updated_at']).total_seconds() / 3600
+                if cache_age < self._daily_cache_expiry_hours:
+                    continue  # Already cached and fresh
+            symbols_to_fetch.append(symbol)
+        
+        if not symbols_to_fetch:
+            return  # All cached
+        
+        # Fetch in batches to avoid overwhelming Zerodha API
+        logger.debug(f"📊 GARCH PREFETCH: {len(symbols_to_fetch)} symbols need daily data")
+        
+        for i in range(0, len(symbols_to_fetch), max_concurrent):
+            batch = symbols_to_fetch[i:i+max_concurrent]
+            tasks = [self.calculate_garch_from_zerodha(sym) for sym in batch]
+            await asyncio.gather(*tasks, return_exceptions=True)
+        
+        logger.debug(f"📊 GARCH PREFETCH COMPLETE: {len(symbols_to_fetch)} symbols cached")
+    
+    def _fallback_garch(self, symbol: str) -> Dict:
+        """Fallback GARCH when Zerodha data unavailable"""
+        # Use tick history if available
+        if symbol in self.historical_data and len(self.historical_data[symbol]) >= 10:
+            prices = np.array([h['close'] for h in self.historical_data[symbol]])
+            # Rough estimate - scale up since ticks have less variance than daily
+            simple_vol = np.std(np.diff(prices) / prices[:-1]) * np.sqrt(252) * 5  # Scale factor
+            simple_atr = np.std(np.diff(prices)) * 2
+            return {
+                'garch_volatility': float(simple_vol),
+                'garch_atr': float(simple_atr),
+                'traditional_atr': float(simple_atr),
+                'current_regime': 'NORMAL',
+                'data_source': 'tick_fallback',
+                'candle_count': 0
+            }
+        
+        return {
+            'garch_volatility': 0.25,  # 25% default
+            'garch_atr': 0.02,
+            'traditional_atr': 0.02,
+            'current_regime': 'NORMAL',
+            'data_source': 'default',
+            'candle_count': 0
+        }
     
     def _update_performance_attribution(self, symbol: str, ensemble_atr: float, 
                                       garch_atr: float, traditional_atr: float):

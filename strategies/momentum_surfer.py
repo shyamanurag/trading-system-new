@@ -993,6 +993,16 @@ class EnhancedMomentumSurfer(BaseStrategy):
             # Update active symbols based on market conditions
             self.update_active_symbols(market_data)
             
+            # 🔥 PREFETCH GARCH DATA: Get Zerodha daily data for accurate volatility
+            # This populates the cache so calculate_atr uses proper GARCH
+            if hasattr(self, 'prefetch_garch_for_symbols') and self.active_symbols:
+                try:
+                    # Only prefetch top 20 most active symbols to avoid API spam
+                    symbols_to_prefetch = list(self.active_symbols)[:20]
+                    await self.prefetch_garch_for_symbols(symbols_to_prefetch, max_concurrent=5)
+                except Exception as garch_err:
+                    logger.debug(f"GARCH prefetch skipped: {garch_err}")
+            
             # Analyze each active symbol
             for stock in self.active_symbols:
                 # 🚨 BREAK EARLY: Stop if we've reached the signal limit
