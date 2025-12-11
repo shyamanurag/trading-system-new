@@ -1545,8 +1545,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
             if len(prices) >= 20:
                 # 🎯 TTM SQUEEZE: Extract OHLCV data for Keltner Channel calculation
                 highs, lows, volumes = None, None, None
-                if hasattr(self, '_mtf_data') and symbol in self._mtf_data:
-                    candles = self._mtf_data[symbol].get('5min', [])
+                if hasattr(self, 'mtf_data') and symbol in self.mtf_data:
+                    candles = self.mtf_data[symbol].get('5min', [])
                     if candles and len(candles) >= 20:
                         highs = [c.get('high', c.get('close', 0)) for c in candles[-50:]]
                         lows = [c.get('low', c.get('close', 0)) for c in candles[-50:]]
