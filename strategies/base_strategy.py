@@ -101,10 +101,10 @@ class BaseStrategy:
         self.historical_data = {}  # symbol -> list of price data
         self.max_history = 50  # Keep last 50 data points per symbol
         
-        # 🔥 ZERODHA DAILY DATA CACHE for proper GARCH calculations
-        # GARCH needs DAILY returns, not tick-by-tick data
-        self._daily_candle_cache = {}  # symbol -> {'candles': [], 'fetched_at': datetime}
-        self._daily_cache_expiry_hours = 4  # Refresh cache every 4 hours
+        # 🔥 ZERODHA INTRADAY DATA CACHE for proper GARCH calculations
+        # For intraday trading: use 5-minute candles, not daily
+        self._intraday_candle_cache = {}  # symbol -> {'candles': [], 'fetched_at': datetime}
+        self._garch_cache_expiry_minutes = 30  # Refresh cache every 30 minutes for intraday
         self._garch_cache = {}  # symbol -> {'garch_vol': float, 'atr': float, 'updated_at': datetime}
         
         # Symbol filtering and selection
@@ -2516,30 +2516,30 @@ class BaseStrategy:
     
     async def calculate_garch_from_zerodha(self, symbol: str, period: int = 30) -> Dict:
         """
-        🔥 PROPER GARCH CALCULATION using Zerodha DAILY historical data
+        🔥 INTRADAY GARCH CALCULATION using Zerodha 5-minute candles
         
-        GARCH is designed for DAILY returns, not tick-by-tick data.
-        This fetches real daily candles from Zerodha for accurate volatility.
+        For INTRADAY trading, we use 5-minute candles (last 2-3 days)
+        instead of daily candles. This gives us intraday volatility patterns.
         
         Returns: {
-            'garch_volatility': float,  # Annualized volatility
-            'garch_atr': float,         # GARCH-enhanced ATR
+            'garch_volatility': float,  # Intraday volatility (scaled)
+            'garch_atr': float,         # GARCH-enhanced intraday ATR
             'traditional_atr': float,   # For comparison
             'current_regime': str,      # 'HIGH', 'NORMAL', 'LOW'
-            'data_source': str          # 'zerodha_daily' or 'fallback'
+            'data_source': str          # 'zerodha_5min' or 'fallback'
         }
         """
         try:
             from datetime import datetime, timedelta
             
-            # Check cache first
+            # Check cache first (shorter expiry for intraday: 30 minutes)
             if symbol in self._garch_cache:
                 cache_entry = self._garch_cache[symbol]
-                cache_age = (datetime.now() - cache_entry['updated_at']).total_seconds() / 3600
-                if cache_age < self._daily_cache_expiry_hours:
+                cache_age = (datetime.now() - cache_entry['updated_at']).total_seconds() / 60  # Minutes
+                if cache_age < 30:  # 30 minute cache for intraday
                     return cache_entry['data']
             
-            # Fetch daily candles from Zerodha
+            # Fetch intraday candles from Zerodha
             zerodha_client = None
             if hasattr(self, 'broker_client') and self.broker_client:
                 zerodha_client = self.broker_client
@@ -2554,46 +2554,58 @@ class BaseStrategy:
                 logger.debug(f"No Zerodha client available for {symbol} GARCH")
                 return self._fallback_garch(symbol)
             
-            # Get 60 days of daily candles (enough for GARCH)
+            # 🔥 INTRADAY: Get 5-minute candles for last 3 days
+            # This gives us ~225 candles (75 per day x 3 days)
             candles = await zerodha_client.get_historical_data(
                 symbol=symbol,
-                interval='day',
-                from_date=datetime.now() - timedelta(days=60)
+                interval='5minute',
+                from_date=datetime.now() - timedelta(days=3)
             )
             
-            if not candles or len(candles) < 20:
-                logger.debug(f"Insufficient daily data for {symbol}: {len(candles) if candles else 0} candles")
+            if not candles or len(candles) < 50:
+                # Fallback to 15-minute candles
+                candles = await zerodha_client.get_historical_data(
+                    symbol=symbol,
+                    interval='15minute',
+                    from_date=datetime.now() - timedelta(days=5)
+                )
+            
+            if not candles or len(candles) < 30:
+                logger.debug(f"Insufficient intraday data for {symbol}: {len(candles) if candles else 0} candles")
                 return self._fallback_garch(symbol)
             
-            # Extract closing prices
+            # Extract OHLC
             prices = np.array([c['close'] for c in candles])
             highs = np.array([c['high'] for c in candles])
             lows = np.array([c['low'] for c in candles])
             
-            # Calculate DAILY returns (what GARCH is designed for)
+            # Calculate intraday returns
             returns = np.diff(prices) / prices[:-1]
             
-            # GARCH(1,1) with proper parameters for DAILY data
-            alpha = 0.10  # ARCH parameter
-            beta = 0.85   # GARCH parameter  
-            omega = np.var(returns) * (1 - alpha - beta)  # Calibrated long-run variance
+            # GARCH(1,1) with parameters tuned for INTRADAY data
+            # Higher alpha for faster reaction, lower beta for less persistence
+            alpha = 0.15  # Higher for intraday reactivity
+            beta = 0.80   # Lower for intraday (less persistent)
+            omega = np.var(returns) * (1 - alpha - beta)
             
             # GARCH recursion
             n = len(returns)
             variance = np.zeros(n)
-            variance[0] = np.var(returns[:min(10, n)])
+            variance[0] = np.var(returns[:min(20, n)])
             
             for t in range(1, n):
                 variance[t] = omega + alpha * (returns[t-1] ** 2) + beta * variance[t-1]
             
-            # Annualized volatility
-            garch_volatility = np.sqrt(variance[-1]) * np.sqrt(252)
+            # Intraday volatility (scale to daily equivalent for comparison)
+            # 5-min candles: ~75 per day, so multiply by sqrt(75)
+            candles_per_day = 75  # Approx 5-min candles in trading day
+            garch_volatility = np.sqrt(variance[-1]) * np.sqrt(candles_per_day)
             
-            # GARCH-enhanced ATR
+            # GARCH-enhanced intraday ATR
             current_price = prices[-1]
-            garch_atr = garch_volatility * current_price / np.sqrt(252)  # Daily ATR
+            garch_atr = np.sqrt(variance[-1]) * current_price * 2  # Intraday ATR
             
-            # Traditional ATR for comparison
+            # Traditional ATR from candles
             true_ranges = []
             for i in range(1, len(candles)):
                 tr = max(
@@ -2602,13 +2614,17 @@ class BaseStrategy:
                     abs(lows[i] - prices[i-1])
                 )
                 true_ranges.append(tr)
-            traditional_atr = np.mean(true_ranges[-period:]) if true_ranges else garch_atr
+            # Use last 14 candles for traditional ATR (like 14-period ATR)
+            traditional_atr = np.mean(true_ranges[-14:]) if len(true_ranges) >= 14 else np.mean(true_ranges)
             
-            # Volatility regime detection
-            avg_vol = np.mean(np.sqrt(variance) * np.sqrt(252))
-            if garch_volatility > avg_vol * 1.5:
+            # Volatility regime detection (relative to recent history)
+            recent_var = variance[-20:] if len(variance) >= 20 else variance
+            avg_vol = np.mean(np.sqrt(recent_var))
+            current_vol = np.sqrt(variance[-1])
+            
+            if current_vol > avg_vol * 1.5:
                 regime = 'HIGH'
-            elif garch_volatility < avg_vol * 0.7:
+            elif current_vol < avg_vol * 0.6:
                 regime = 'LOW'
             else:
                 regime = 'NORMAL'
@@ -2618,11 +2634,11 @@ class BaseStrategy:
                 'garch_atr': float(garch_atr),
                 'traditional_atr': float(traditional_atr),
                 'current_regime': regime,
-                'data_source': 'zerodha_daily',
+                'data_source': 'zerodha_5min',
                 'candle_count': len(candles)
             }
             
-            # Cache the result
+            # Cache the result (30 min expiry for intraday)
             self._garch_cache[symbol] = {
                 'data': result,
                 'updated_at': datetime.now()
@@ -2633,8 +2649,8 @@ class BaseStrategy:
                 self._garch_log_count = {}
             self._garch_log_count[symbol] = self._garch_log_count.get(symbol, 0) + 1
             if self._garch_log_count[symbol] % 50 == 1:
-                logger.info(f"📊 ZERODHA GARCH: {symbol} Vol={garch_volatility:.1%} ATR=₹{garch_atr:.2f} "
-                           f"Trad=₹{traditional_atr:.2f} Regime={regime} (60 daily candles)")
+                logger.info(f"📊 INTRADAY GARCH: {symbol} Vol={garch_volatility:.1%} ATR=₹{garch_atr:.2f} "
+                           f"Trad=₹{traditional_atr:.2f} Regime={regime} ({len(candles)} 5min candles)")
             
             return result
             
