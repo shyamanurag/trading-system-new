@@ -4914,7 +4914,15 @@ class BaseStrategy:
             return None
     
     def _determine_optimal_signal_type(self, symbol: str, entry_price: float, confidence: float, metadata: Dict) -> str:
-        """Determine the best signal type based on market conditions and F&O availability"""
+        """
+        Determine the best signal type based on market conditions and F&O availability.
+        
+        INSTRUMENT SELECTION PRIORITY (for F&O enabled symbols):
+        1. INDEX trades → OPTIONS (NIFTY, BANKNIFTY, etc.)
+        2. FUTURES → 85%+ confidence (leveraged equity exposure)
+        3. OPTIONS → 90%+ confidence (higher risk, higher reward)
+        4. EQUITY → Below 85% confidence (safest)
+        """
         try:
             # 🚨 CRITICAL FIX: Normalize confidence to 0-1 scale
             # Strategies send 0-10 scale, we need 0-1 for thresholds
@@ -4952,42 +4960,55 @@ class BaseStrategy:
                 logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY (no options trading)")
                 return 'EQUITY'
             
-            # Factors for signal type selection (F&O enabled symbols)
-            is_index = symbol.endswith('-I') or symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
-            # 🚨 MATHEMATICAL FIX: Raise confidence threshold to 85% (was 80%)
-            # 🚨 DAVID VS GOLIATH: EXTREME selectivity for options
-            # 4 days of losses = we only take THE BEST setups
-            is_high_confidence = normalized_confidence >= 0.92  # Was 0.85, now 0.92 (TOP 8% signals only)
-            is_very_high_confidence = normalized_confidence >= 0.95  # Was 0.90, now 0.95 (TOP 5% signals)
+            # ========== F&O ENABLED SYMBOLS - INSTRUMENT SELECTION ==========
+            
+            # Factors for signal type selection
+            is_index = symbol.endswith('-I') or symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY']
             is_scalping = metadata.get('risk_type', '').startswith('SCALPING')
             volatility_score = metadata.get('volume_score', 0)
+            signal_type = metadata.get('signal_type', '')
             
-            # 🚨 DAVID VS GOLIATH: ULTRA-STRICT decision logic
-            # After 4 days of losses, we're being EXTREMELY selective
-            # Only the absolute best setups get options leverage
+            # 🎯 CONFIDENCE THRESHOLDS (RELAXED for more F&O trades)
+            # Futures: 85%+ (leveraged equity, simpler than options)
+            # Options: 90%+ (complex Greeks, time decay)
+            FUTURES_THRESHOLD = 0.85  # 85% confidence for futures
+            OPTIONS_THRESHOLD = 0.90  # 90% confidence for options
+            HIGH_VOL_OPTIONS_THRESHOLD = 0.85  # Lower for high volatility setups
             
-            # 1. Index symbols: STILL allow options (but tight stops)
+            # 1. INDEX SYMBOLS → Always OPTIONS (most liquid)
             if is_index:
-                logger.info(f"🎯 INDEX SIGNAL: {symbol} → OPTIONS (F&O enabled)")
+                logger.info(f"🎯 INDEX SIGNAL: {symbol} → OPTIONS (index always uses options)")
                 return 'OPTIONS'
             
-            # 2. STOCK OPTIONS: Need 95% confidence (was 90%)
-            # We're fighting against market makers with deep pockets
-            # Only take setups where we have MASSIVE edge
-            elif is_very_high_confidence:  # 95%+ confidence
-                logger.info(f"🎯 ELITE CONFIDENCE: {symbol} → OPTIONS (conf={normalized_confidence:.2f} ≥ 0.95)")
+            # 2. ELITE CONFIDENCE (90%+) → OPTIONS
+            # High edge = options leverage makes sense
+            if normalized_confidence >= OPTIONS_THRESHOLD:
+                logger.info(f"🎯 ELITE CONFIDENCE: {symbol} → OPTIONS (conf={normalized_confidence:.2f} ≥ {OPTIONS_THRESHOLD})")
                 return 'OPTIONS'
             
-            # 3. High volatility + 92%+ confidence (was 85%)
-            elif volatility_score >= 0.85 and normalized_confidence >= 0.92:
+            # 3. HIGH VOLATILITY + 85%+ → OPTIONS
+            # Volatility = premium expansion opportunity
+            if volatility_score >= 0.80 and normalized_confidence >= HIGH_VOL_OPTIONS_THRESHOLD:
                 logger.info(f"🎯 HIGH VOL + STRONG CONF: {symbol} → OPTIONS (vol={volatility_score:.2f}, conf={normalized_confidence:.2f})")
                 return 'OPTIONS'
             
-            # 4. ALL OTHER CASES: Default to EQUITY (safer)
-            # Better to make small gains in equity than big losses in options
+            # 4. GOOD CONFIDENCE (85%+) → FUTURES
+            # Futures = leveraged equity exposure without Greeks complexity
+            # Better than equity for intraday with decent confidence
+            if normalized_confidence >= FUTURES_THRESHOLD:
+                logger.info(f"🎯 FUTURES TRADE: {symbol} → FUTURES (conf={normalized_confidence:.2f} ≥ {FUTURES_THRESHOLD})")
+                return 'FUTURES'
+            
+            # 5. MODERATE CONFIDENCE (80-85%) → EQUITY with leverage (MIS)
+            # Can still use intraday leverage but in cash segment
+            if normalized_confidence >= 0.80:
+                logger.info(f"🎯 LEVERAGED EQUITY: {symbol} → EQUITY (MIS) (conf={normalized_confidence:.2f} ≥ 0.80)")
+                return 'EQUITY'
+            
+            # 6. LOWER CONFIDENCE (<80%) → EQUITY (safer)
+            # Don't use leverage for weaker signals
             else:
-                logger.info(f"🎯 CONSERVATIVE CHOICE: {symbol} → EQUITY (conf={normalized_confidence:.2f} < 0.95)")
-                logger.info(f"   Reason: David vs Goliath - only taking elite options setups")
+                logger.info(f"🎯 CONSERVATIVE: {symbol} → EQUITY (conf={normalized_confidence:.2f} < 0.80)")
                 return 'EQUITY'
                 
         except Exception as e:
@@ -5368,16 +5389,123 @@ class BaseStrategy:
     
     def _create_futures_signal(self, symbol: str, action: str, entry_price: float, 
                               stop_loss: float, target: float, confidence: float, metadata: Dict) -> Optional[Dict]:
-        """Create futures signal (placeholder for now)"""
+        """
+        Create FUTURES signal for leveraged intraday trading.
+        
+        FUTURES ADVANTAGES over OPTIONS:
+        1. No theta decay (time value loss)
+        2. Simpler Greeks (delta ≈ 1 for near-term)
+        3. Lower margin than buying shares outright
+        4. Direct price movement correlation
+        
+        FUTURES FORMAT:
+        - Stock futures: SYMBOL + YYMMMFUT (e.g., RELIANCE25DECFUT)
+        - Index futures: NIFTY25DECFUT, BANKNIFTY25DECFUT
+        """
         try:
-            # For now, fallback to equity signal
-            # TODO: Implement proper futures signal creation with correct expiry, etc.
-            logger.info(f"📊 FUTURES signal requested for {symbol} - using equity for now")
-            return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            from datetime import datetime
+            
+            # Get current month expiry suffix (e.g., 25DEC for December 2025)
+            now = datetime.now()
+            expiry_suffix = now.strftime('%y%b').upper() + 'FUT'  # e.g., 25DECFUT
+            
+            # Construct futures symbol
+            futures_symbol = f"{symbol}{expiry_suffix}"
+            
+            # Calculate position sizing for futures
+            # Futures lot sizes vary by symbol - use standard sizing
+            lot_size = self._get_futures_lot_size(symbol)
+            
+            # Calculate risk-based quantity (respecting 1% max loss rule)
+            risk_per_share = abs(entry_price - stop_loss)
+            if risk_per_share <= 0:
+                risk_per_share = entry_price * 0.02  # Default 2% SL
+            
+            available_capital = getattr(self, 'available_capital', 100000)
+            max_loss_amount = available_capital * 0.01  # 1% max loss
+            
+            # Calculate quantity based on risk (in lots)
+            qty_by_risk = int(max_loss_amount / (risk_per_share * lot_size)) * lot_size
+            qty_by_risk = max(lot_size, qty_by_risk)  # At least 1 lot
+            
+            # Margin requirement check (futures typically need ~10-15% margin)
+            margin_required = entry_price * qty_by_risk * 0.15  # 15% margin estimate
+            if margin_required > available_capital * 0.5:  # Don't use more than 50% capital on one position
+                qty_by_risk = int((available_capital * 0.5) / (entry_price * 0.15))
+                qty_by_risk = (qty_by_risk // lot_size) * lot_size  # Round to lot size
+                qty_by_risk = max(lot_size, qty_by_risk)
+            
+            logger.info(f"📊 FUTURES SIGNAL: {futures_symbol}")
+            logger.info(f"   Underlying: {symbol} @ ₹{entry_price:.2f}")
+            logger.info(f"   Lot Size: {lot_size} | Qty: {qty_by_risk}")
+            logger.info(f"   SL: ₹{stop_loss:.2f} | Target: ₹{target:.2f}")
+            logger.info(f"   Margin Est: ₹{margin_required:,.0f}")
+            
+            # Create signal with futures-specific fields
+            signal = {
+                'symbol': futures_symbol,
+                'underlying': symbol,
+                'action': action,
+                'entry_price': round(entry_price, 2),
+                'stop_loss': round(stop_loss, 2),
+                'target': round(target, 2),
+                'quantity': qty_by_risk,
+                'lot_size': lot_size,
+                'confidence': confidence,
+                'signal_type': 'FUTURES',
+                'instrument_type': 'FUT',
+                'exchange': 'NFO',
+                'product': 'MIS',  # Intraday
+                'order_type': 'LIMIT',
+                'validity': 'DAY',
+                'margin_required': round(margin_required, 2),
+                'risk_per_lot': round(risk_per_share * lot_size, 2),
+                'strategy': self.strategy_name,
+                'metadata': {
+                    **metadata,
+                    'underlying_symbol': symbol,
+                    'futures_symbol': futures_symbol,
+                    'expiry': expiry_suffix,
+                    'lot_size': lot_size,
+                    'is_futures': True
+                },
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            return signal
             
         except Exception as e:
             logger.error(f"Error creating futures signal: {e}")
-            return None
+            # Fallback to equity if futures creation fails
+            logger.warning(f"⚠️ FUTURES FALLBACK: Creating equity signal for {symbol}")
+            return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+    
+    def _get_futures_lot_size(self, symbol: str) -> int:
+        """Get the lot size for futures contract of a symbol"""
+        # Standard lot sizes for major F&O stocks (as of 2024)
+        # These should be updated periodically
+        LOT_SIZES = {
+            # Indices
+            'NIFTY': 25, 'BANKNIFTY': 15, 'FINNIFTY': 25, 'MIDCPNIFTY': 50,
+            # Large caps
+            'RELIANCE': 250, 'TCS': 150, 'HDFCBANK': 550, 'ICICIBANK': 700,
+            'INFY': 300, 'HINDUNILVR': 300, 'ITC': 1600, 'SBIN': 750,
+            'BHARTIARTL': 475, 'KOTAKBANK': 400, 'LT': 150, 'AXISBANK': 600,
+            'ASIANPAINT': 300, 'MARUTI': 100, 'TITAN': 375, 'BAJFINANCE': 125,
+            'HCLTECH': 350, 'WIPRO': 1500, 'SUNPHARMA': 700, 'ULTRACEMCO': 100,
+            'TECHM': 300, 'TATAMOTORS': 1425, 'TATASTEEL': 1700, 'POWERGRID': 2700,
+            'NTPC': 1500, 'ONGC': 1925, 'COALINDIA': 2100, 'BPCL': 1800,
+            'IOC': 3250, 'GAIL': 2625, 'JSWSTEEL': 600, 'HINDALCO': 1075,
+            'ADANIENT': 250, 'ADANIPORTS': 500, 'DRREDDY': 125, 'CIPLA': 650,
+            'APOLLOHOSP': 250, 'EICHERMOT': 350, 'M&M': 350, 'BAJAJ-AUTO': 250,
+            'HEROMOTOCO': 300, 'TATACONSUM': 450, 'BRITANNIA': 200, 'NESTLEIND': 50,
+            'DIVISLAB': 100, 'GRASIM': 250, 'INDUSINDBK': 500, 'VEDL': 1550,
+            'TATAPOWER': 2025, 'DLF': 825, 'SIEMENS': 75, 'TORNTPOWER': 275,
+            # Add more as needed
+        }
+        
+        # Return lot size or default to a reasonable value
+        return LOT_SIZES.get(symbol.upper(), 500)  # Default 500 for unknown symbols
     
     def _get_real_market_price(self, symbol: str) -> Optional[float]:
         """Get real market price from TrueData cache to ensure accurate strike calculation"""

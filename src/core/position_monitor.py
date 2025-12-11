@@ -239,12 +239,31 @@ class PositionMonitor:
             bool: True if order placed successfully
         """
         try:
+            # 🚨 CRITICAL: Validate exit quantity against actual position
+            # This prevents selling more than we hold (which creates unintended shorts)
+            actual_position_qty = await self._get_actual_position_quantity(symbol)
+            
+            if actual_position_qty is None:
+                logger.error(f"❌ PARTIAL EXIT BLOCKED: {symbol} - Cannot verify actual position")
+                return False
+            
+            if quantity > actual_position_qty:
+                logger.warning(f"🚫 PARTIAL EXIT QUANTITY CAPPED: {symbol}")
+                logger.warning(f"   Requested: {quantity} | Actual Position: {actual_position_qty}")
+                logger.warning(f"   Capping exit to actual position size to prevent short creation")
+                quantity = actual_position_qty
+                
+                if quantity <= 0:
+                    logger.error(f"❌ PARTIAL EXIT BLOCKED: {symbol} - No position to exit")
+                    return False
+            
             # Determine exit action (opposite of position side)
             exit_action = 'SELL' if side == 'long' else 'BUY'
             
             logger.info(f"📤 EXECUTING PARTIAL EXIT: {symbol} {exit_action} x{quantity}")
             logger.info(f"   Reason: {reason}")
             logger.info(f"   Price: ₹{current_price:.2f}")
+            logger.info(f"   Verified Position: {actual_position_qty} → Exiting: {quantity}")
             
             # Create exit order parameters
             exit_order = {
@@ -281,6 +300,44 @@ class PositionMonitor:
             import traceback
             logger.error(traceback.format_exc())
             return False
+    
+    async def _get_actual_position_quantity(self, symbol: str) -> Optional[int]:
+        """
+        Get actual position quantity from Zerodha to prevent over-selling.
+        
+        Returns:
+            int: Actual position quantity (positive for long, negative for short)
+            None: If unable to verify position
+        """
+        try:
+            if not hasattr(self.orchestrator, 'zerodha_client') or not self.orchestrator.zerodha_client:
+                logger.warning(f"⚠️ Cannot verify position for {symbol} - Zerodha client not available")
+                return None
+            
+            # Fetch positions from Zerodha
+            positions_data = await self.orchestrator.zerodha_client.get_positions()
+            
+            if not positions_data:
+                logger.warning(f"⚠️ No positions data from Zerodha for {symbol}")
+                return None
+            
+            # Check both net and day positions
+            for pos_type in ['net', 'day']:
+                positions = positions_data.get(pos_type, [])
+                for pos in positions:
+                    pos_symbol = pos.get('tradingsymbol', '')
+                    if pos_symbol == symbol:
+                        quantity = pos.get('quantity', 0)
+                        logger.info(f"📊 VERIFIED POSITION: {symbol} qty={quantity} (from Zerodha {pos_type})")
+                        return abs(quantity)  # Return absolute value
+            
+            # Symbol not found in positions
+            logger.warning(f"⚠️ Position not found in Zerodha for {symbol}")
+            return 0
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting actual position for {symbol}: {e}")
+            return None
     
     def _is_monitoring_hours(self, current_time: time) -> bool:
         """Check if we should monitor positions (market hours + buffer)"""

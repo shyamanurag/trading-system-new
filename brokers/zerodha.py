@@ -494,32 +494,46 @@ class ZerodhaIntegration:
         quantity = order_params.get('quantity', 0)
         action = order_params.get('action', order_params.get('side', 'BUY'))
         
+        # Detect if this is an EXIT order (closing a position)
+        is_exit_order = order_params.get('tag', '') in ['PARTIAL_EXIT', 'FULL_EXIT', 'STOP_LOSS', 'TARGET_HIT', 'SQUARE_OFF']
+        is_exit_order = is_exit_order or order_params.get('metadata', {}).get('partial_exit', False)
+        is_exit_order = is_exit_order or order_params.get('metadata', {}).get('is_exit', False)
+        
         # Initialize cooldown tracking if not exists
         if not hasattr(self, '_symbol_cooldown'):
             self._symbol_cooldown = {}
-            self._cooldown_seconds = 900  # 15 MINUTES between trades on same symbol (was 5 min - too short!)
+            self._symbol_last_action = {}  # Track last action type
+            self._cooldown_seconds = 900  # 15 MINUTES between NEW ENTRY trades
             self._min_quantity = 10  # Minimum 10 shares per order (increased from 5)
             self._min_stock_price = 50.0  # Minimum stock price ₹50 (penny stock block)
         
-        # 🚫 Block tiny orders (< 10 shares)
-        if quantity < self._min_quantity:
+        # 🚫 Block tiny orders (< 10 shares) - EXCEPT for exits (may need to exit small positions)
+        if quantity < self._min_quantity and not is_exit_order:
             logger.warning(f"🚫 TINY ORDER BLOCKED: {symbol} {action} qty={quantity} < min {self._min_quantity}")
             return None
         
         # 🚫 PENNY STOCK BLOCK at broker level - last line of defense
         price = order_params.get('price', 0) or order_params.get('trigger_price', 0) or order_params.get('limit_price', 0)
-        if price and price < self._min_stock_price:
+        if price and price < self._min_stock_price and not is_exit_order:
             logger.warning(f"🚫 PENNY STOCK BLOCKED: {symbol} @ ₹{price:.2f} < ₹{self._min_stock_price} minimum - NO TRADE")
             return None
         
-        # 🧊 Per-symbol cooldown check (15 MINUTES - prevents churning)
+        # 🧊 ANTI-CHURN COOLDOWN (15 MINUTES between NEW ENTRIES)
+        # EXIT orders are ALWAYS allowed (need to close positions)
+        # NEW ENTRY orders must respect cooldown
         from datetime import datetime
         now = datetime.now()
-        if symbol in self._symbol_cooldown:
+        
+        if is_exit_order:
+            logger.info(f"✅ EXIT ORDER ALLOWED: {symbol} {action} x{quantity} - Exits bypass cooldown")
+        elif symbol in self._symbol_cooldown:
             elapsed = (now - self._symbol_cooldown[symbol]).total_seconds()
             if elapsed < self._cooldown_seconds:
                 remaining = self._cooldown_seconds - elapsed
-                logger.warning(f"🧊 COOLDOWN BLOCKED: {symbol} {action} - {remaining:.0f}s/{self._cooldown_seconds}s remaining")
+                last_action = self._symbol_last_action.get(symbol, 'UNKNOWN')
+                logger.warning(f"🧊 COOLDOWN BLOCKED: {symbol} {action} (new entry)")
+                logger.warning(f"   Last trade: {last_action} at {self._symbol_cooldown[symbol].strftime('%H:%M:%S')}")
+                logger.warning(f"   Remaining: {remaining:.0f}s/{self._cooldown_seconds}s ({remaining/60:.1f} min)")
                 return None
         
         async with self.order_semaphore:
@@ -536,9 +550,16 @@ class ZerodhaIntegration:
                     result = await self._place_order_impl(order_params)
                     if result:
                         self.last_order_time = time.time()
-                        # 🔥 Set cooldown after successful order
-                        self._symbol_cooldown[symbol] = now
-                        logger.info(f"🧊 COOLDOWN SET: {symbol} - {self._cooldown_seconds}s cooldown started")
+                        
+                        # 🔥 Set cooldown after successful ENTRY order only
+                        # EXIT orders don't trigger cooldown (we need to be able to exit)
+                        if not is_exit_order:
+                            self._symbol_cooldown[symbol] = now
+                            self._symbol_last_action[symbol] = action
+                            logger.info(f"🧊 COOLDOWN SET: {symbol} {action} - {self._cooldown_seconds/60:.0f} min cooldown started")
+                        else:
+                            logger.info(f"✅ EXIT ORDER COMPLETED: {symbol} {action} x{quantity} - No cooldown for exits")
+                        
                         return result
                 except Exception as e:
                     logger.error(f"❌ Order attempt {attempt + 1} failed: {e}")

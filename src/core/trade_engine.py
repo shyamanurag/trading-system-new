@@ -1195,21 +1195,31 @@ class TradeEngine:
                 await asyncio.sleep(60)
     
     async def _get_current_market_price(self, symbol: str) -> Optional[float]:
-        """Get current market price from TrueData cache"""
+        """Get current market price from multiple sources (Zerodha primary)"""
         try:
-            # Try to get from TrueData cache
-            from data.truedata_client import live_market_data
-            if symbol in live_market_data:
-                market_data = live_market_data[symbol]
-                # Use LTP (Last Traded Price) or Close price
-                return float(market_data.get('ltp', market_data.get('close', 0)))
+            # 1. Try Zerodha API via orchestrator (primary source)
+            if hasattr(self, 'orchestrator') and self.orchestrator:
+                zerodha = getattr(self.orchestrator, 'zerodha_client', None)
+                if zerodha:
+                    try:
+                        quote = await zerodha.get_quote(symbol)
+                        if quote:
+                            ltp = quote.get('last_price', quote.get('ltp', 0))
+                            if ltp > 0:
+                                return float(ltp)
+                    except Exception as e:
+                        self.logger.debug(f"Zerodha quote failed for {symbol}: {e}")
             
-            # Try Redis cache if available
-            # Note: redis_client not available in this context
-            # if hasattr(self, 'redis_client') and self.redis_client:
-            #     cached_price = await self.redis_client.get(f"price:{symbol}")
-            #     if cached_price:
-            #         return float(cached_price)
+            # 2. Try TrueData cache (legacy/backup)
+            try:
+                from data.truedata_client import live_market_data
+                if live_market_data and symbol in live_market_data:
+                    market_data = live_market_data[symbol]
+                    ltp = float(market_data.get('ltp', market_data.get('close', 0)))
+                    if ltp > 0:
+                        return ltp
+            except Exception:
+                pass
             
             return None
             
