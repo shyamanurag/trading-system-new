@@ -106,13 +106,30 @@ class ProfessionalMathModels:
             (is_cointegrated, test_statistic, p_value)
         """
         try:
+            import warnings
             from statsmodels.tsa.stattools import coint
             
             if len(series1) < 20 or len(series2) < 20:
                 return False, 0.0, 1.0
             
-            # Perform cointegration test
-            test_stat, p_value, critical_values = coint(series1, series2)
+            # Check for sufficient variance (avoid collinearity warning)
+            var1 = np.var(series1)
+            var2 = np.var(series2)
+            if var1 < 1e-10 or var2 < 1e-10:
+                # Series is essentially flat - not useful for cointegration
+                return False, 0.0, 1.0
+            
+            # Check correlation - if too high, series are collinear
+            corr = np.corrcoef(series1, series2)[0, 1]
+            if abs(corr) > 0.9999:
+                # Almost perfectly correlated - cointegration test unreliable
+                return False, 0.0, 1.0
+            
+            # Perform cointegration test with warning suppression
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', message='.*colinear.*', category=UserWarning)
+                warnings.filterwarnings('ignore', category=RuntimeWarning)
+                test_stat, p_value, critical_values = coint(series1, series2)
             
             # Check if cointegrated at 5% level
             is_cointegrated = p_value < 0.05
@@ -120,7 +137,7 @@ class ProfessionalMathModels:
             return is_cointegrated, test_stat, p_value
             
         except Exception as e:
-            logger.error(f"Cointegration test failed: {e}")
+            logger.debug(f"Cointegration test skipped: {e}")
             return False, 0.0, 1.0
     
     @staticmethod
