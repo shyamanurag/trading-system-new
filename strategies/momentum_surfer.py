@@ -1527,17 +1527,35 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 if macd_crossover:
                     logger.info(f"📊 {symbol} MACD CROSSOVER: {macd_crossover} (state={macd_state})")
             
-            # ============= PHASE 2: BOLLINGER BANDS INTEGRATION =============
+            # ============= PHASE 2: BOLLINGER BANDS + TTM SQUEEZE =============
+            squeeze_quality = 'LOW'
+            keltner_squeeze = False
+            volume_confirms = False
+            
             if len(prices) >= 20:
-                bollinger_data = self.detect_bollinger_squeeze(symbol, list(prices))
+                # 🎯 TTM SQUEEZE: Extract OHLCV data for Keltner Channel calculation
+                highs, lows, volumes = None, None, None
+                if hasattr(self, '_mtf_data') and symbol in self._mtf_data:
+                    candles = self._mtf_data[symbol].get('5min', [])
+                    if candles and len(candles) >= 20:
+                        highs = [c.get('high', c.get('close', 0)) for c in candles[-50:]]
+                        lows = [c.get('low', c.get('close', 0)) for c in candles[-50:]]
+                        volumes = [c.get('volume', 0) for c in candles[-50:]]
+                
+                bollinger_data = self.detect_bollinger_squeeze(symbol, list(prices), highs=highs, lows=lows, volumes=volumes)
                 bollinger_squeeze = bollinger_data.get('squeezing', False)
                 bollinger_breakout = bollinger_data.get('breakout_direction')  # 'up', 'down', or None
                 squeeze_intensity = bollinger_data.get('squeeze_intensity', 0)
+                squeeze_quality = bollinger_data.get('squeeze_quality', 'LOW')
+                keltner_squeeze = bollinger_data.get('keltner_squeeze', False)
+                volume_confirms = bollinger_data.get('volume_confirms', False)
                 
-                if bollinger_squeeze:
-                    logger.info(f"🔥 {symbol} BOLLINGER SQUEEZE DETECTED! Intensity: {squeeze_intensity:.2f} - Big move coming!")
-                if bollinger_breakout:
-                    logger.info(f"💥 {symbol} BOLLINGER BREAKOUT: {bollinger_breakout.upper()}")
+                # Only log HIGH/MEDIUM quality squeezes
+                if bollinger_squeeze and squeeze_quality in ['HIGH', 'MEDIUM']:
+                    logger.info(f"🔥 {symbol} TTM SQUEEZE! Quality: {squeeze_quality} | Intensity: {squeeze_intensity:.2f} | "
+                               f"Keltner: {'✓' if keltner_squeeze else '✗'} | Vol: {'✓' if volume_confirms else '✗'}")
+                if bollinger_breakout and squeeze_quality in ['HIGH', 'MEDIUM']:
+                    logger.info(f"💥 {symbol} TTM BREAKOUT {bollinger_breakout.upper()}: Quality={squeeze_quality}")
             
             # ============= PHASE 2: RSI DIVERGENCE DETECTION =============
             if len(prices) >= 14:
@@ -1607,20 +1625,28 @@ class EnhancedMomentumSurfer(BaseStrategy):
                         rejection_reasons.append(f"rank={cross_sectional_rank:.0%}>50%")
                     logger.warning(f"🚫 {symbol} RSI DIVERGENCE REJECTED - unconfirmed: {', '.join(rejection_reasons)}")
             
-            # 🔥 PRIORITY 1: BOLLINGER SQUEEZE BREAKOUT (Explosive moves!)
-            elif bollinger_breakout == 'up' and bollinger_squeeze:
+            # 🔥 PRIORITY 1: TTM SQUEEZE BREAKOUT (Only HIGH/MEDIUM quality!)
+            elif bollinger_breakout == 'up' and bollinger_squeeze and squeeze_quality in ['HIGH', 'MEDIUM']:
                 condition = 'breakout_up'
-                confidence_factors.append(f"💥 BOLLINGER SQUEEZE BREAKOUT UP!")
+                confidence_factors.append(f"💥 TTM SQUEEZE BREAKOUT UP! Quality: {squeeze_quality}")
+                if keltner_squeeze:
+                    confidence_factors.append(f"TRUE KELTNER SQUEEZE ✓")
+                if volume_confirms:
+                    confidence_factors.append(f"VOLUME CONFIRMS ✓")
                 if macd_crossover == 'bullish':
                     confidence_factors.append(f"MACD CONFIRMS: Bullish crossover")
-                logger.info(f"🚀 {symbol} BOLLINGER BREAKOUT UP after squeeze!")
+                logger.info(f"🚀 {symbol} TTM BREAKOUT UP: Quality={squeeze_quality}, Keltner={keltner_squeeze}, Vol={volume_confirms}")
             
-            elif bollinger_breakout == 'down' and bollinger_squeeze:
+            elif bollinger_breakout == 'down' and bollinger_squeeze and squeeze_quality in ['HIGH', 'MEDIUM']:
                 condition = 'breakout_down'
-                confidence_factors.append(f"💥 BOLLINGER SQUEEZE BREAKOUT DOWN!")
+                confidence_factors.append(f"💥 TTM SQUEEZE BREAKOUT DOWN! Quality: {squeeze_quality}")
+                if keltner_squeeze:
+                    confidence_factors.append(f"TRUE KELTNER SQUEEZE ✓")
+                if volume_confirms:
+                    confidence_factors.append(f"VOLUME CONFIRMS ✓")
                 if macd_crossover == 'bearish':
                     confidence_factors.append(f"MACD CONFIRMS: Bearish crossover")
-                logger.info(f"📉 {symbol} BOLLINGER BREAKOUT DOWN after squeeze!")
+                logger.info(f"📉 {symbol} TTM BREAKOUT DOWN: Quality={squeeze_quality}, Keltner={keltner_squeeze}, Vol={volume_confirms}")
             
             # 🎯 PRIORITY 2: REVERSAL DETECTION (Candle body + volume)
             elif change_percent < -1.0 and buying_pressure > 0.7 and volume_ratio > 1.5:

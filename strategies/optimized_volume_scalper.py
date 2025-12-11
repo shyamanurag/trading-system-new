@@ -1809,9 +1809,19 @@ class OptimizedVolumeScalper(BaseStrategy):
                 macd_state = macd_data.get('state', 'neutral')
             
             if len(prices) >= 20:
-                bollinger_data = self.detect_bollinger_squeeze(symbol, prices)
+                # 🎯 TTM SQUEEZE: Extract OHLCV data for Keltner Channel calculation
+                highs, lows, volumes = None, None, None
+                if hasattr(self, 'mtf_data') and symbol in self.mtf_data:
+                    candles = self.mtf_data[symbol].get('5min', [])
+                    if candles and len(candles) >= 20:
+                        highs = [c.get('high', c.get('close', 0)) for c in candles[-50:]]
+                        lows = [c.get('low', c.get('close', 0)) for c in candles[-50:]]
+                        volumes = [c.get('volume', 0) for c in candles[-50:]]
+                
+                bollinger_data = self.detect_bollinger_squeeze(symbol, prices, highs=highs, lows=lows, volumes=volumes)
                 bollinger_squeeze = bollinger_data.get('squeezing', False)
                 bollinger_breakout = bollinger_data.get('breakout_direction')
+                squeeze_quality = bollinger_data.get('squeeze_quality', 'LOW')
             
             # 🎯 ENHANCED: Dual-Timeframe Validation
             dual_analysis = self.analyze_stock_dual_timeframe(symbol, symbol_data)

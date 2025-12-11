@@ -2715,79 +2715,241 @@ class BaseStrategy:
             logger.error(f"Error calculating RSI divergence: {e}")
             return None
     
-    def detect_bollinger_squeeze(self, symbol: str, prices: List[float], period: int = 20) -> Dict:
+    def detect_bollinger_squeeze(self, symbol: str, prices: List[float], period: int = 20, 
+                                   highs: List[float] = None, lows: List[float] = None,
+                                   volumes: List[float] = None) -> Dict:
         """
-        🎯 CODE ENHANCEMENT: Detect Bollinger Band squeeze (precedes big moves)
-        When bands squeeze tight, a large move is imminent
+        🎯 TTM SQUEEZE INDICATOR - Professional Implementation
         
-        Returns: {'squeezing': bool, 'breakout_direction': str, 'squeeze_intensity': float}
+        The TTM Squeeze detects when Bollinger Bands contract INSIDE Keltner Channels,
+        indicating a period of low volatility that typically precedes a large move.
+        
+        Components:
+        1. Bollinger Bands (20-period, 2 std dev)
+        2. Keltner Channels (20-period, 1.5 ATR)
+        3. Momentum Oscillator (for breakout direction)
+        4. Volume confirmation
+        5. Historical squeeze duration tracking
+        
+        Returns: {
+            'squeezing': bool,           # True = BB inside KC (squeeze ON)
+            'breakout_direction': str,   # 'up', 'down', or None
+            'squeeze_intensity': float,  # 0-1, how tight the squeeze
+            'bandwidth': float,          # BB bandwidth as % of price
+            'momentum': float,           # Momentum oscillator value
+            'squeeze_bars': int,         # How many bars in squeeze
+            'keltner_squeeze': bool,     # True TTM squeeze (BB inside KC)
+            'volume_confirms': bool,     # Volume expanding on breakout
+            'squeeze_quality': str       # 'HIGH', 'MEDIUM', 'LOW'
+        }
         """
         try:
-            if len(prices) < period:
-                return {'squeezing': False, 'breakout_direction': None, 'squeeze_intensity': 0.0}
+            min_period = max(period, 20)
+            if len(prices) < min_period:
+                return self._empty_squeeze_result()
             
-            recent_prices = np.array(prices[-period:])
+            prices_arr = np.array(prices[-min_period*2:] if len(prices) >= min_period*2 else prices)
+            current_price = prices[-1]
             
-            # Calculate Bollinger Bands
+            # ============= CALCULATE ATR (True Range) =============
+            if highs and lows and len(highs) >= min_period and len(lows) >= min_period:
+                highs_arr = np.array(highs[-min_period:])
+                lows_arr = np.array(lows[-min_period:])
+                closes = prices_arr[-min_period:]
+                
+                # True Range = max(H-L, |H-Prev_C|, |L-Prev_C|)
+                tr = np.zeros(min_period - 1)
+                for i in range(1, min_period):
+                    hl = highs_arr[i] - lows_arr[i]
+                    hc = abs(highs_arr[i] - closes[i-1])
+                    lc = abs(lows_arr[i] - closes[i-1])
+                    tr[i-1] = max(hl, hc, lc)
+                atr = np.mean(tr) if len(tr) > 0 else 0
+            else:
+                # Fallback: Estimate ATR from price changes
+                price_changes = np.abs(np.diff(prices_arr[-min_period:]))
+                atr = np.mean(price_changes) * 1.5 if len(price_changes) > 0 else 0
+            
+            # ============= BOLLINGER BANDS =============
+            recent_prices = prices_arr[-period:]
             sma = np.mean(recent_prices)
             std = np.std(recent_prices)
             
-            # 🔥 FIX: Handle near-zero std (flat prices)
-            if std < 0.0001 or sma <= 0:
-                return {'squeezing': False, 'breakout_direction': None, 'squeeze_intensity': 0.0}
+            if std < 0.0001 or sma <= 0 or atr < 0.0001:
+                return self._empty_squeeze_result()
             
-            upper_band = sma + (2 * std)
-            lower_band = sma - (2 * std)
-            bandwidth = (upper_band - lower_band) / sma  # Bandwidth as % of price
+            bb_mult = 2.0  # Standard 2 std dev
+            bb_upper = sma + (bb_mult * std)
+            bb_lower = sma - (bb_mult * std)
+            bandwidth = (bb_upper - bb_lower) / sma
             
-            # 🔥 FIX: Use percentage bandwidth threshold instead of historical comparison
-            # Typical bandwidth is 2-8% of price. Squeeze < 2% is tight.
-            SQUEEZE_THRESHOLD = 0.02  # 2% bandwidth = squeeze
-            NORMAL_BANDWIDTH = 0.04   # 4% = normal volatility
+            # ============= KELTNER CHANNELS =============
+            kc_mult = 1.5  # Standard 1.5 ATR
+            kc_upper = sma + (kc_mult * atr)
+            kc_lower = sma - (kc_mult * atr)
+            kc_width = (kc_upper - kc_lower) / sma if sma > 0 else 0
             
-            is_squeezing = bandwidth < SQUEEZE_THRESHOLD
-            squeeze_intensity = max(0, (NORMAL_BANDWIDTH - bandwidth) / NORMAL_BANDWIDTH)
+            # ============= TTM SQUEEZE DETECTION =============
+            # TRUE SQUEEZE: Bollinger Bands are INSIDE Keltner Channels
+            keltner_squeeze = (bb_lower > kc_lower) and (bb_upper < kc_upper)
             
-            # Also check historical bandwidth if we have enough data
-            if len(prices) >= period * 2:
-                historical_prices = np.array(prices[-period*2:-period])
-                hist_std = np.std(historical_prices)
-                hist_sma = np.mean(historical_prices)
+            # Also check if BB is significantly narrower than KC
+            bb_kc_ratio = bandwidth / kc_width if kc_width > 0 else 1.0
+            squeeze_intensity = max(0, 1 - bb_kc_ratio)  # Higher = tighter squeeze
+            
+            # Fallback bandwidth-based squeeze (for intraday with limited data)
+            # Adaptive thresholds based on price level
+            if current_price > 1000:
+                squeeze_threshold = 0.015  # 1.5% for high-priced stocks
+            elif current_price > 100:
+                squeeze_threshold = 0.02   # 2% for mid-priced stocks
+            else:
+                squeeze_threshold = 0.025  # 2.5% for low-priced stocks
+            
+            bandwidth_squeeze = bandwidth < squeeze_threshold
+            
+            # Combined squeeze detection
+            is_squeezing = keltner_squeeze or (bandwidth_squeeze and squeeze_intensity > 0.4)
+            
+            # ============= HISTORICAL SQUEEZE TRACKING =============
+            # Check how long we've been in a squeeze (more bars = bigger move coming)
+            squeeze_bars = 0
+            if len(prices) >= period * 3:
+                for i in range(1, min(period, len(prices) - period)):
+                    hist_prices = prices[-(period+i):-i]
+                    hist_sma = np.mean(hist_prices)
+                    hist_std = np.std(hist_prices)
+                    if hist_std < 0.0001 or hist_sma <= 0:
+                        break
+                    hist_bw = (4 * hist_std) / hist_sma
+                    if hist_bw < squeeze_threshold * 1.2:  # Was also squeezing
+                        squeeze_bars += 1
+                    else:
+                        break
+            
+            # ============= MOMENTUM OSCILLATOR (Squeeze Histogram) =============
+            # This determines breakout direction - uses linear regression
+            momentum = 0.0
+            momentum_increasing = False
+            
+            if len(prices) >= period:
+                # Calculate momentum using price deviation from midline
+                midline = (max(recent_prices) + min(recent_prices)) / 2
+                price_dev = current_price - midline
                 
-                if hist_std > 0.0001 and hist_sma > 0:
-                    hist_bandwidth = (2 * hist_std * 2) / hist_sma
-                    
-                    # 🔥 FIX: More sensitive squeeze detection (50% of historical)
-                    is_squeezing = is_squeezing or (bandwidth < hist_bandwidth * 0.50)
-                    squeeze_intensity = max(squeeze_intensity, 1 - (bandwidth / hist_bandwidth) if hist_bandwidth > 0 else 0)
+                # Normalize by ATR for comparability
+                momentum = price_dev / atr if atr > 0 else 0
+                
+                # Check if momentum is increasing (key for breakout)
+                if len(prices) >= period + 5:
+                    prev_prices = prices[-(period+5):-5]
+                    prev_midline = (max(prev_prices) + min(prev_prices)) / 2
+                    prev_momentum = (prices[-5] - prev_midline) / atr if atr > 0 else 0
+                    momentum_increasing = abs(momentum) > abs(prev_momentum)
             
-            # Detect breakout direction
-            current_price = prices[-1]
+            # ============= VOLUME CONFIRMATION =============
+            volume_confirms = False
+            volume_ratio = 1.0
+            if volumes and len(volumes) >= period:
+                recent_vol = volumes[-1]
+                avg_vol = np.mean(volumes[-period:-1]) if len(volumes) > period else np.mean(volumes[-period:])
+                volume_ratio = recent_vol / avg_vol if avg_vol > 0 else 1.0
+                # Volume should expand on breakout (>1.2x average)
+                volume_confirms = volume_ratio > 1.2
+            
+            # ============= BREAKOUT DIRECTION =============
             breakout_direction = None
             
+            # Only signal breakout if:
+            # 1. We are/were in a squeeze
+            # 2. Momentum is clear
+            # 3. Price is breaking out of range
             if is_squeezing or squeeze_intensity > 0.3:
-                # Check momentum for breakout direction
+                # Recent price momentum (5-bar)
                 recent_momentum = (prices[-1] - prices[-5]) / prices[-5] if len(prices) >= 5 else 0
                 
-                if current_price > sma and recent_momentum > 0.001:  # 🔥 FIX: More sensitive threshold
+                # Position relative to bands
+                position_in_bands = (current_price - bb_lower) / (bb_upper - bb_lower) if (bb_upper - bb_lower) > 0 else 0.5
+                
+                # Breakout UP conditions:
+                # - Momentum oscillator positive and increasing
+                # - Price above middle band
+                # - Recent momentum positive
+                if momentum > 0.3 and current_price > sma and recent_momentum > 0.002:
                     breakout_direction = 'up'
-                    logger.info(f"🎯 SQUEEZE BREAKOUT UP: {symbol} | Intensity: {squeeze_intensity:.0%} | BW: {bandwidth:.2%}")
-                elif current_price < sma and recent_momentum < -0.001:
+                # Breakout DOWN conditions:
+                elif momentum < -0.3 and current_price < sma and recent_momentum < -0.002:
                     breakout_direction = 'down'
-                    logger.info(f"🎯 SQUEEZE BREAKOUT DOWN: {symbol} | Intensity: {squeeze_intensity:.0%} | BW: {bandwidth:.2%}")
-                elif is_squeezing:
-                    logger.debug(f"🔥 SQUEEZE DETECTED: {symbol} | BW: {bandwidth:.2%} | Intensity: {squeeze_intensity:.0%} | Awaiting breakout direction")
+            
+            # ============= SQUEEZE QUALITY ASSESSMENT =============
+            quality_score = 0
+            if keltner_squeeze:
+                quality_score += 3  # True TTM squeeze
+            if squeeze_bars >= 5:
+                quality_score += 2  # Extended squeeze
+            if volume_confirms:
+                quality_score += 2  # Volume confirms
+            if momentum_increasing:
+                quality_score += 1  # Momentum building
+            if squeeze_intensity > 0.6:
+                quality_score += 1  # Very tight
+            
+            if quality_score >= 7:
+                squeeze_quality = 'HIGH'
+            elif quality_score >= 4:
+                squeeze_quality = 'MEDIUM'
+            else:
+                squeeze_quality = 'LOW'
+            
+            # ============= LOGGING =============
+            if breakout_direction and squeeze_quality in ['HIGH', 'MEDIUM']:
+                logger.info(f"🎯 TTM SQUEEZE BREAKOUT {breakout_direction.upper()}: {symbol} | "
+                           f"Quality: {squeeze_quality} | Intensity: {squeeze_intensity:.0%} | "
+                           f"BW: {bandwidth:.2%} | Bars: {squeeze_bars} | Vol: {volume_ratio:.1f}x | "
+                           f"Keltner: {'✓' if keltner_squeeze else '✗'}")
+            elif is_squeezing and squeeze_quality == 'HIGH':
+                logger.debug(f"🔥 TTM SQUEEZE BUILDING: {symbol} | Quality: {squeeze_quality} | "
+                            f"Bars: {squeeze_bars} | Momentum: {momentum:+.2f}")
             
             return {
                 'squeezing': is_squeezing,
                 'breakout_direction': breakout_direction,
                 'squeeze_intensity': squeeze_intensity,
-                'bandwidth': bandwidth
+                'bandwidth': bandwidth,
+                'momentum': momentum,
+                'squeeze_bars': squeeze_bars,
+                'keltner_squeeze': keltner_squeeze,
+                'volume_confirms': volume_confirms,
+                'squeeze_quality': squeeze_quality,
+                'volume_ratio': volume_ratio,
+                'bb_upper': bb_upper,
+                'bb_lower': bb_lower,
+                'kc_upper': kc_upper,
+                'kc_lower': kc_lower
             }
             
         except Exception as e:
-            logger.error(f"Error detecting Bollinger squeeze: {e}")
-            return {'squeezing': False, 'breakout_direction': None, 'squeeze_intensity': 0.0}
+            logger.error(f"Error detecting TTM squeeze for {symbol}: {e}")
+            return self._empty_squeeze_result()
+    
+    def _empty_squeeze_result(self) -> Dict:
+        """Return empty squeeze result for error cases"""
+        return {
+            'squeezing': False,
+            'breakout_direction': None,
+            'squeeze_intensity': 0.0,
+            'bandwidth': 0.0,
+            'momentum': 0.0,
+            'squeeze_bars': 0,
+            'keltner_squeeze': False,
+            'volume_confirms': False,
+            'squeeze_quality': 'LOW',
+            'volume_ratio': 1.0,
+            'bb_upper': 0,
+            'bb_lower': 0,
+            'kc_upper': 0,
+            'kc_lower': 0
+        }
     
     def calculate_macd_signal(self, prices: List[float], fast: int = 12, slow: int = 26, signal: int = 9) -> Dict:
         """
