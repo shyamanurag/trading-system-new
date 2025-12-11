@@ -714,8 +714,56 @@ class EnhancedOpenPositionDecision:
             
             # ============= SHORT POSITION RSI CHECKS =============
             elif action == 'SELL':
-                # EXTREME OVERSOLD (RSI < 10): Partial exit + tighten stop
-                if rsi <= self.rsi_extreme_oversold:
+                # 🔥 FIX: OVERBOUGHT AGAINST SHORT (RSI > 90): Stock rallying against short!
+                # This was missing - shorts were held even when stock was screaming higher
+                if rsi >= self.rsi_extreme_threshold:
+                    # Stock is RALLYING against our short position - DANGER!
+                    logger.warning(f"🚨 RSI AGAINST SHORT: {symbol} RSI={rsi:.1f} > 90 - Stock rallying against SHORT! P&L={pnl_percent:.1f}%")
+                    if pnl_percent < -1.0:
+                        # Already losing on the short - EXIT immediately
+                        return OpenPositionDecisionResult(
+                            action=OpenPositionAction.EXIT_FULL,
+                            exit_reason=ExitReason.RISK_MANAGEMENT,
+                            confidence=9.5,
+                            urgency="EMERGENCY",
+                            quantity_percentage=100.0,
+                            new_stop_loss=None,
+                            new_target=None,
+                            reasoning=f"EMERGENCY SHORT EXIT: RSI={rsi:.1f} (stock rallying) + P&L={pnl_percent:.1f}% (losing)",
+                            metadata={'rsi': rsi, 'pnl_percent': pnl_percent, 'trigger': 'RSI_AGAINST_SHORT_LOSING'}
+                        )
+                    else:
+                        # Not losing yet but RSI extreme against short - tighten stop to 0.5%
+                        return OpenPositionDecisionResult(
+                            action=OpenPositionAction.TRAIL_STOP,
+                            exit_reason=None,
+                            confidence=8.0,
+                            urgency="HIGH",
+                            quantity_percentage=0.0,
+                            new_stop_loss=current_price * 1.005,  # Very tight 0.5% stop above
+                            new_target=None,
+                            reasoning=f"SHORT WARNING: RSI={rsi:.1f} (stock rallying) - Tight stop @ ₹{current_price * 1.005:.2f}",
+                            metadata={'rsi': rsi, 'pnl_percent': pnl_percent, 'trigger': 'RSI_AGAINST_SHORT_PROTECT'}
+                        )
+                
+                # OVERBOUGHT (RSI > 85) against short - also dangerous
+                elif rsi >= self.rsi_overbought_threshold:
+                    if pnl_percent < 0:
+                        logger.warning(f"⚠️ RSI WARNING SHORT: {symbol} RSI={rsi:.1f} > 85 - Stock rising against SHORT, P&L={pnl_percent:.1f}%")
+                        return OpenPositionDecisionResult(
+                            action=OpenPositionAction.TRAIL_STOP,
+                            exit_reason=None,
+                            confidence=7.5,
+                            urgency="MEDIUM",
+                            quantity_percentage=0.0,
+                            new_stop_loss=current_price * 1.01,  # 1% stop above
+                            new_target=None,
+                            reasoning=f"SHORT ALERT: RSI={rsi:.1f} rising against position - Tightening stop",
+                            metadata={'rsi': rsi, 'pnl_percent': pnl_percent, 'trigger': 'RSI_AGAINST_SHORT_WARN'}
+                        )
+                
+                # EXTREME OVERSOLD (RSI < 10): Stock dropping = GOOD for shorts, book profits
+                elif rsi <= self.rsi_extreme_oversold:
                     if pnl_percent > 0:
                         logger.info(f"🔴 RSI EXTREME EXIT: {symbol} RSI={rsi:.1f} < 10 with +{pnl_percent:.1f}% profit")
                         return OpenPositionDecisionResult(
@@ -743,7 +791,7 @@ class EnhancedOpenPositionDecision:
                             metadata={'rsi': rsi, 'pnl_percent': pnl_percent, 'trigger': 'RSI_EXTREME_PROTECT'}
                         )
                 
-                # OVERSOLD (RSI < 15): Partial exit if profitable
+                # OVERSOLD (RSI < 15): Stock dropping = GOOD for shorts, book partial
                 elif rsi <= self.rsi_oversold_threshold:
                     if pnl_percent >= 0.5:
                         logger.info(f"📉 RSI OVERSOLD EXIT: {symbol} RSI={rsi:.1f} < 15 with +{pnl_percent:.1f}% profit")

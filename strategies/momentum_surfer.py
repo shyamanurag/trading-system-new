@@ -102,7 +102,13 @@ class ProfessionalMomentumModels:
     
     @staticmethod
     def trend_strength(prices: np.ndarray, window: int = 20) -> float:
-        """Calculate trend strength using linear regression"""
+        """
+        Calculate trend strength using linear regression
+        
+        🔥 FIX: Relaxed p-value check for live tick data which is inherently noisy.
+        The old p<0.05 requirement was causing trend_strength=0.0 even when stocks
+        were clearly trending (e.g., KOTAKBANK +3.31% showed trend_strength=0.00)
+        """
         try:
             if len(prices) < window:
                 return 0.0
@@ -113,8 +119,19 @@ class ProfessionalMomentumModels:
             # Linear regression
             slope, intercept, r_value, p_value, std_err = stats.linregress(x, recent_prices)
             
-            # Trend strength is R-squared adjusted for significance
-            trend_strength = r_value**2 if p_value < 0.05 else 0.0
+            # 🔥 FIX: Use R-squared directly for intraday data, relax p-value to 0.15
+            # Live tick data is noisy - strict p<0.05 was causing 0.0 too often
+            if p_value < 0.15:
+                trend_strength = r_value**2
+            else:
+                # Fallback: use slope-based estimation when regression not significant
+                # Calculate normalized slope (% change per period)
+                if np.mean(recent_prices) > 0:
+                    normalized_slope = (slope * window) / np.mean(recent_prices)
+                    # Convert to trend strength scale (0 to 1)
+                    trend_strength = min(abs(normalized_slope) * 10, 1.0)
+                else:
+                    trend_strength = 0.0
             
             # Adjust for direction
             if slope < 0:

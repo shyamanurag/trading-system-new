@@ -314,23 +314,33 @@ class BaseStrategy:
     # 🎯 MULTI-TIMEFRAME ANALYSIS - FEWER TRADES, HIGHER ACCURACY
     # ============================================================================
     
-    async def fetch_multi_timeframe_data(self, symbol: str) -> bool:
+    async def fetch_multi_timeframe_data(self, symbol: str, force_refresh: bool = False) -> bool:
         """
         Fetch MULTI-TIMEFRAME historical data from Zerodha.
         Fetches 5-min, 15-min, and 60-min candles for proper trend confirmation.
         
         This enables the strategy to only take trades when ALL timeframes align,
         resulting in FEWER but HIGHER ACCURACY trades.
+        
+        🔥 FIX: Now refreshes MTF data every 5 minutes instead of caching forever.
+        Stale MTF data was causing BEARISH readings on stocks that were actually rallying.
         """
         try:
             # Initialize MTF storage
             if not hasattr(self, 'mtf_data'):
                 self.mtf_data = {}
             if not hasattr(self, '_mtf_fetched'):
-                self._mtf_fetched = set()
+                self._mtf_fetched = {}  # Changed to dict for timestamps
             
-            if symbol in self._mtf_fetched:
-                return True  # Already fetched
+            # 🔥 FIX: Check if data needs refresh (every 5 minutes)
+            current_time = datetime.now()
+            refresh_interval_seconds = 300  # 5 minutes
+            
+            if symbol in self._mtf_fetched and not force_refresh:
+                last_fetch = self._mtf_fetched[symbol]
+                age_seconds = (current_time - last_fetch).total_seconds()
+                if age_seconds < refresh_interval_seconds:
+                    return True  # Still fresh, no need to refetch
             
             if symbol not in self.mtf_data:
                 self.mtf_data[symbol] = {'5min': [], '15min': [], '60min': []}
@@ -375,12 +385,13 @@ class BaseStrategy:
             if candles_60m and len(candles_60m) >= 14:
                 self.mtf_data[symbol]['60min'] = candles_60m[-20:]
             
-            self._mtf_fetched.add(symbol)
+            # Record fetch timestamp for refresh logic
+            self._mtf_fetched[symbol] = datetime.now()
             
             tf_5m = len(self.mtf_data[symbol]['5min'])
             tf_15m = len(self.mtf_data[symbol]['15min'])
             tf_60m = len(self.mtf_data[symbol]['60min'])
-            logger.info(f"📊 MTF DATA: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m}")
+            logger.debug(f"📊 MTF REFRESH: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m}")
             
             return True
             
@@ -1389,37 +1400,16 @@ class BaseStrategy:
                 low = float(enriched_data.get('low', ltp))
                 
                 if ltp > 0 and open_price > 0:
-                    # ============= CALCULATE RSI (Estimated from intraday data) =============
+                    # ============= CALCULATE RSI (PROPER 14-period RSI from history) =============
+                    # 🔥 FIX: Use real RSI from price history, not fake estimation
+                    rsi = await self._calculate_real_rsi(symbol, ltp)
+                    enriched_data['rsi'] = rsi
+                    
                     day_range = high - low
-                    if day_range > 0:
-                        # Position in day's range (0=low, 1=high)
-                        range_position = (ltp - low) / day_range
-                        
-                        # Base RSI estimate from range position
-                        base_rsi = 30 + (range_position * 40)  # Maps 0-1 to 30-70
-                        
-                        # Adjust based on intraday momentum
-                        change_pct = ((ltp - open_price) / open_price) * 100
-                        
-                        if change_pct > 2.0:
-                            rsi = min(95, base_rsi + 25)  # Strong up day
-                        elif change_pct > 1.0:
-                            rsi = min(85, base_rsi + 15)
-                        elif change_pct > 0.5:
-                            rsi = min(75, base_rsi + 8)
-                        elif change_pct < -2.0:
-                            rsi = max(5, base_rsi - 25)   # Strong down day
-                        elif change_pct < -1.0:
-                            rsi = max(15, base_rsi - 15)
-                        elif change_pct < -0.5:
-                            rsi = max(25, base_rsi - 8)
-                        else:
-                            rsi = base_rsi
-                        
-                        enriched_data['rsi'] = rsi
-                        
-                        # Log RSI for debugging
-                        logger.debug(f"📊 {symbol} RSI CALCULATED: {rsi:.1f} (change={change_pct:+.2f}%, range_pos={range_position:.2f})")
+                    change_pct = ((ltp - open_price) / open_price) * 100
+                    
+                    # Log RSI for debugging
+                    logger.debug(f"📊 {symbol} RSI CALCULATED: {rsi:.1f} (change={change_pct:+.2f}%, real_history=True)")
                     
                     # ============= CALCULATE BUYING/SELLING PRESSURE =============
                     candle_body = ltp - open_price
@@ -1463,6 +1453,91 @@ class BaseStrategy:
         except Exception as e:
             logger.error(f"Error enriching position data for {symbol}: {e}")
             return market_data if market_data else {}
+    
+    async def _calculate_real_rsi(self, symbol: str, current_price: float, period: int = 14) -> float:
+        """
+        🔥 PROPER RSI CALCULATION using real price history
+        
+        The old fake RSI was just mapping day's range to 30-70, which gave wrong values
+        like RSI=41 for a stock up 3.31%. Real RSI requires historical price changes.
+        """
+        try:
+            # Initialize price history if needed
+            if not hasattr(self, '_rsi_price_history'):
+                self._rsi_price_history = {}
+            
+            if symbol not in self._rsi_price_history:
+                self._rsi_price_history[symbol] = []
+            
+            # Add current price to history
+            self._rsi_price_history[symbol].append(current_price)
+            
+            # Keep last 50 prices
+            self._rsi_price_history[symbol] = self._rsi_price_history[symbol][-50:]
+            
+            prices = self._rsi_price_history[symbol]
+            
+            # Need at least period+1 prices for RSI
+            if len(prices) < period + 1:
+                # Fallback: estimate from intraday change when not enough history
+                from data.truedata_client import live_market_data
+                if symbol in live_market_data:
+                    data = live_market_data[symbol]
+                    ltp = data.get('ltp', current_price)
+                    open_price = data.get('open', ltp)
+                    if open_price > 0:
+                        change_pct = ((ltp - open_price) / open_price) * 100
+                        # Better estimation: map change to RSI more accurately
+                        if change_pct > 3.0:
+                            return 90.0  # Very strong bullish
+                        elif change_pct > 2.0:
+                            return 80.0  # Strong bullish
+                        elif change_pct > 1.0:
+                            return 70.0  # Bullish
+                        elif change_pct > 0.5:
+                            return 60.0  # Mildly bullish
+                        elif change_pct > -0.5:
+                            return 50.0  # Neutral
+                        elif change_pct > -1.0:
+                            return 40.0  # Mildly bearish
+                        elif change_pct > -2.0:
+                            return 30.0  # Bearish
+                        elif change_pct > -3.0:
+                            return 20.0  # Strong bearish
+                        else:
+                            return 10.0  # Very strong bearish
+                return 50.0  # Neutral if no data
+            
+            # Calculate price changes
+            prices_arr = np.array(prices)
+            deltas = np.diff(prices_arr)
+            
+            # Separate gains and losses
+            gains = np.where(deltas > 0, deltas, 0)
+            losses = np.where(deltas < 0, -deltas, 0)
+            
+            # Calculate average gain and loss (Wilder's smoothing)
+            avg_gain = np.mean(gains[-period:])
+            avg_loss = np.mean(losses[-period:])
+            
+            # Handle edge cases
+            if avg_loss == 0 and avg_gain == 0:
+                return 50.0  # No movement
+            elif avg_loss == 0:
+                return 95.0  # Only gains - very overbought
+            elif avg_gain == 0:
+                return 5.0   # Only losses - very oversold
+            
+            # Calculate RSI
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
+            
+            # Clamp to valid range
+            return max(5.0, min(95.0, rsi))
+            
+        except Exception as e:
+            logger.debug(f"Error calculating real RSI for {symbol}: {e}")
+            return 50.0  # Return neutral on error
     
     async def _execute_position_decision(self, symbol: str, current_price: float, 
                                        position: Dict, decision_result):

@@ -453,43 +453,93 @@ class MarketInternalsAnalyzer:
             }
     
     def _calculate_choppiness_index(self, market_data: Dict) -> float:
-        """Calculate Choppiness Index for market"""
+        """
+        Calculate Choppiness Index for market
+        
+        🔥 FIX: Use actual 5-minute candle data instead of storing same day OHLC repeatedly.
+        The bug was storing day's HIGH/LOW (which don't change) leading to 100% choppiness.
+        Now we fetch real intraday candles from Zerodha for proper calculation.
+        """
         try:
-            nifty_data = market_data.get('NIFTY-I', {})
+            # Initialize candle cache if needed
+            if not hasattr(self, '_choppiness_candles'):
+                self._choppiness_candles = {'candles': [], 'last_fetch': None}
             
-            # Store price data
-            if 'NIFTY-I' not in self.price_history:
-                self.price_history['NIFTY-I'] = deque(maxlen=self.choppiness_window + 1)
+            # Fetch 5-minute candles from Zerodha (refresh every 5 minutes)
+            current_time = datetime.now()
+            should_fetch = (
+                self._choppiness_candles['last_fetch'] is None or 
+                (current_time - self._choppiness_candles['last_fetch']).total_seconds() > 300
+            )
             
-            high = nifty_data.get('high', 0)
-            low = nifty_data.get('low', 0)
-            close = nifty_data.get('ltp', 0)
+            if should_fetch:
+                try:
+                    from src.core.orchestrator import get_orchestrator_instance
+                    orchestrator = get_orchestrator_instance()
+                    
+                    if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                        import asyncio
+                        # Fetch last 3 hours of 5-min candles (36 candles)
+                        candles = asyncio.get_event_loop().run_until_complete(
+                            orchestrator.zerodha_client.get_historical_data(
+                                symbol='NIFTY 50',
+                                interval='5minute',
+                                from_date=current_time - timedelta(hours=3),
+                                to_date=current_time
+                            )
+                        )
+                        if candles and len(candles) >= self.choppiness_window:
+                            self._choppiness_candles['candles'] = candles[-self.choppiness_window - 1:]
+                            self._choppiness_candles['last_fetch'] = current_time
+                            logger.debug(f"📊 Choppiness: Fetched {len(candles)} candles for NIFTY")
+                except Exception as e:
+                    logger.debug(f"Could not fetch candles for choppiness: {e}")
             
-            if high > 0 and low > 0 and close > 0:
-                self.price_history['NIFTY-I'].append({
-                    'high': high,
-                    'low': low,
-                    'close': close
-                })
+            # Use cached candles if available
+            candles = self._choppiness_candles.get('candles', [])
             
-            # Need enough data
-            if len(self.price_history['NIFTY-I']) < self.choppiness_window:
-                return 50  # Neutral choppiness
+            if len(candles) < self.choppiness_window:
+                # Fallback: Use live tick data to estimate choppiness from price movements
+                nifty_data = market_data.get('NIFTY-I', {})
+                ltp = nifty_data.get('ltp', 0)
+                open_price = nifty_data.get('open', ltp)
+                
+                if ltp > 0 and open_price > 0:
+                    # Simple volatility-based choppiness estimate
+                    intraday_change = abs((ltp - open_price) / open_price) * 100
+                    
+                    # Lower change = more choppy (range-bound)
+                    # Higher change = more trending
+                    if intraday_change < 0.2:
+                        return 75.0  # Very choppy/tight range
+                    elif intraday_change < 0.4:
+                        return 60.0  # Moderately choppy
+                    elif intraday_change < 0.6:
+                        return 50.0  # Neutral
+                    elif intraday_change < 1.0:
+                        return 40.0  # Moderately trending
+                    else:
+                        return 30.0  # Strong trend
+                
+                return 50.0  # Neutral default
             
-            # Calculate ATR sum
+            # Calculate ATR sum from real candles
             atr_sum = 0
-            prices = list(self.price_history['NIFTY-I'])
-            
-            for i in range(1, len(prices)):
-                high_low = prices[i]['high'] - prices[i]['low']
-                high_close = abs(prices[i]['high'] - prices[i-1]['close'])
-                low_close = abs(prices[i]['low'] - prices[i-1]['close'])
-                true_range = max(high_low, high_close, low_close)
-                atr_sum += true_range
+            for i in range(1, len(candles)):
+                high = candles[i].get('high', 0)
+                low = candles[i].get('low', 0)
+                prev_close = candles[i-1].get('close', 0)
+                
+                if high > 0 and low > 0 and prev_close > 0:
+                    high_low = high - low
+                    high_close = abs(high - prev_close)
+                    low_close = abs(low - prev_close)
+                    true_range = max(high_low, high_close, low_close)
+                    atr_sum += true_range
             
             # Calculate highest high and lowest low
-            highest = max(p['high'] for p in prices)
-            lowest = min(p['low'] for p in prices)
+            highest = max(c.get('high', 0) for c in candles)
+            lowest = min(c.get('low', float('inf')) for c in candles)
             
             # Choppiness Index formula
             if highest > lowest and atr_sum > 0:
@@ -498,11 +548,11 @@ class MarketInternalsAnalyzer:
                 choppiness = 100 * log_ratio / log_period
                 return min(100, max(0, choppiness))
             
-            return 50
+            return 50.0  # Neutral default
             
         except Exception as e:
             logger.error(f"Error calculating choppiness index: {e}")
-            return 50
+            return 50.0
     
     def _analyze_sector_rotation(self, market_data: Dict) -> Dict:
         """Analyze sector rotation patterns"""
