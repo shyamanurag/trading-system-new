@@ -2672,8 +2672,8 @@ class BaseStrategy:
         symbols_to_fetch = []
         for symbol in symbols:
             if symbol in self._garch_cache:
-                cache_age = (datetime.now() - self._garch_cache[symbol]['updated_at']).total_seconds() / 3600
-                if cache_age < self._daily_cache_expiry_hours:
+                cache_age = (datetime.now() - self._garch_cache[symbol]['updated_at']).total_seconds() / 60  # Minutes
+                if cache_age < self._garch_cache_expiry_minutes:
                     continue  # Already cached and fresh
             symbols_to_fetch.append(symbol)
         
@@ -3065,14 +3065,7 @@ class BaseStrategy:
             volume_ratio = 1.0
             if volumes and len(volumes) >= period:
                 recent_vol = volumes[-1]
-                # 🔥 FIX: Always exclude current volume from baseline average
-                # Need at least 2 volumes to calculate ratio (current + 1 for baseline)
-                if len(volumes) >= 2:
-                    # Exclude current volume [-1] from average calculation
-                    baseline_volumes = volumes[-period-1:-1] if len(volumes) > period else volumes[:-1]
-                    avg_vol = np.mean(baseline_volumes) if len(baseline_volumes) > 0 else recent_vol
-                else:
-                    avg_vol = recent_vol
+                avg_vol = np.mean(volumes[-period:-1]) if len(volumes) > period else np.mean(volumes[-period:])
                 volume_ratio = recent_vol / avg_vol if avg_vol > 0 else 1.0
                 # Volume should expand on breakout (>1.2x average)
                 volume_confirms = volume_ratio > 1.2
