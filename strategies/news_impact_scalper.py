@@ -919,23 +919,27 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             if candles_60m and len(candles_60m) >= 14:
                 self.mtf_data[symbol]['60min'] = candles_60m[-20:]
             
-            self._historical_data_fetched.add(symbol)
-            
             tf_5m = len(self.mtf_data[symbol]['5min'])
             tf_15m = len(self.mtf_data[symbol]['15min'])
             tf_60m = len(self.mtf_data[symbol]['60min'])
-            logger.info(f"✅ MTF DATA: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m}")
             
-            # 🚨 FIX: Mark as fetched in base strategy's tracker to prevent re-fetch
-            # Initialize _mtf_fetched if it doesn't exist (base strategy creates it lazily)
-            if not hasattr(self, '_mtf_fetched'):
-                self._mtf_fetched = set()
-            self._mtf_fetched.add(symbol)
+            # 🔥 FIX: Only mark as fetched if we actually got enough data for RSI calculation
+            # Otherwise retry on next cycle
+            if tf_5m >= 14:
+                self._historical_data_fetched.add(symbol)
+                logger.info(f"✅ MTF DATA: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m}")
+                
+                # Also mark in base strategy's tracker
+                if not hasattr(self, '_mtf_fetched'):
+                    self._mtf_fetched = set()
+                self._mtf_fetched.add(symbol)
+            else:
+                logger.warning(f"⚠️ MTF DATA INSUFFICIENT: {symbol} - 5min:{tf_5m} < 14 required. Will retry.")
             
-            return True
+            return tf_5m >= 14
             
         except Exception as e:
-            logger.debug(f"⚠️ Error fetching MTF data for {symbol}: {e}")
+            logger.warning(f"⚠️ Error fetching MTF data for {symbol}: {e}")
             return False
 
     async def _analyze_underlying_for_options(self, underlying_symbol: str, underlying_data: Dict[str, Any], market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:

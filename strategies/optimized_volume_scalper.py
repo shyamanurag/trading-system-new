@@ -1739,12 +1739,17 @@ class OptimizedVolumeScalper(BaseStrategy):
             if candles_60m and len(candles_60m) >= 14:
                 self.mtf_data[symbol]['60min'] = candles_60m[-20:]
             
-            self._historical_data_fetched.add(symbol)
-            
             tf_5m = len(self.mtf_data[symbol]['5min'])
             tf_15m = len(self.mtf_data[symbol]['15min'])
             tf_60m = len(self.mtf_data[symbol]['60min'])
-            logger.info(f"✅ MTF DATA: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m}")
+            
+            # 🔥 FIX: Only mark as fetched if we actually got enough data for RSI calculation
+            # Otherwise retry on next cycle
+            if tf_5m >= 14:
+                self._historical_data_fetched.add(symbol)
+                logger.info(f"✅ MTF DATA: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m}")
+            else:
+                logger.warning(f"⚠️ MTF DATA INSUFFICIENT: {symbol} - 5min:{tf_5m} < 14 required. Will retry.")
             
             # 🚨 FIX: Mark as fetched in base strategy's tracker to prevent re-fetch
             # Initialize _mtf_fetched if it doesn't exist (base strategy creates it lazily)
@@ -1755,7 +1760,7 @@ class OptimizedVolumeScalper(BaseStrategy):
             return True
             
         except Exception as e:
-            logger.debug(f"⚠️ Error fetching MTF data for {symbol}: {e}")
+            logger.warning(f"⚠️ Error fetching MTF data for {symbol}: {e}")
             return False
 
     async def _convert_to_trading_signal(self, symbol: str, symbol_data: Dict, ms_signal: MarketMicrostructureSignal) -> Optional[Dict]:

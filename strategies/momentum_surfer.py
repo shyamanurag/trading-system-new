@@ -1195,18 +1195,23 @@ class EnhancedMomentumSurfer(BaseStrategy):
             if candles_60m and len(candles_60m) >= 14:
                 self.mtf_data[symbol]['60min'] = candles_60m[-20:]
             
-            self._historical_data_fetched.add(symbol)
-            
             # Log multi-timeframe data status
             tf_5m = len(self.mtf_data[symbol]['5min'])
             tf_15m = len(self.mtf_data[symbol]['15min'])
             tf_60m = len(self.mtf_data[symbol]['60min'])
-            logger.info(f"✅ MTF DATA LOADED: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m} candles")
             
-            return True
+            # 🔥 FIX: Only mark as fetched if we actually got enough data for RSI calculation
+            # Otherwise retry on next cycle
+            if tf_5m >= 14:
+                self._historical_data_fetched.add(symbol)
+                logger.info(f"✅ MTF DATA LOADED: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m} candles")
+            else:
+                logger.warning(f"⚠️ MTF DATA INSUFFICIENT: {symbol} - 5min:{tf_5m} < 14 required. Will retry.")
+            
+            return tf_5m >= 14
             
         except Exception as e:
-            logger.debug(f"⚠️ Error fetching historical data for {symbol}: {e}")
+            logger.warning(f"⚠️ Error fetching historical data for {symbol}: {e}")
             return False
     
     def _analyze_multi_timeframe(self, symbol: str, current_data: Dict) -> Dict:
