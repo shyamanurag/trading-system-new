@@ -1050,21 +1050,6 @@ class BaseStrategy:
     async def manage_existing_positions(self, market_data: Dict) -> List[Dict]:
         """🎯 COMPREHENSIVE POSITION MANAGEMENT - Active monitoring and management"""
         try:
-            # 🔥 FIX: Prevent double execution within same cycle
-            # Both orchestrator and some strategies (optimized_volume_scalper) call this method
-            # This cooldown prevents duplicate exit orders
-            current_time = datetime.now()
-            if not hasattr(self, '_last_position_management_time'):
-                self._last_position_management_time = None
-            
-            if self._last_position_management_time:
-                elapsed = (current_time - self._last_position_management_time).total_seconds()
-                if elapsed < 5.0:  # 5 second cooldown between executions
-                    logger.debug(f"⏳ {self.name}: Position management skipped - {elapsed:.1f}s since last run")
-                    return []
-            
-            self._last_position_management_time = current_time
-            
             # 🚨 CRITICAL FIX: Sync local positions with REAL Zerodha positions
             # Remove positions that no longer exist in broker
             from src.core.orchestrator import get_orchestrator_instance

@@ -790,10 +790,11 @@ class OptimizedVolumeScalper(BaseStrategy):
             # STEP 1: Update internal market state
             self._update_market_state(data)
             
-            # STEP 2: Manage existing positions first (critical for P&L)
-            await self.manage_existing_positions(data)
+            # NOTE: Position management is handled by orchestrator for ALL strategies
+            # Do NOT call manage_existing_positions() here - it causes duplicate processing
+            # The orchestrator calls it at line 2105 before passing data to each strategy
             
-            # STEP 3: Check market conditions for new signals
+            # STEP 2: Check market conditions for new signals
             if not self._are_market_conditions_favorable():
                 return
                 
