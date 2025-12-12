@@ -499,6 +499,38 @@ class ZerodhaIntegration:
         is_exit_order = is_exit_order or order_params.get('metadata', {}).get('partial_exit', False)
         is_exit_order = is_exit_order or order_params.get('metadata', {}).get('is_exit', False)
         
+        # 🚨 CRITICAL FIX: Prevent unintended SHORTS from over-selling
+        # Validate SELL quantity against actual position to prevent qty mismatch
+        if action.upper() == 'SELL' and is_exit_order:
+            try:
+                positions = self.get_positions_sync()
+                net_positions = positions.get('net', [])
+                
+                # Find actual position for this symbol
+                actual_qty = 0
+                for pos in net_positions:
+                    pos_symbol = pos.get('tradingsymbol', '')
+                    if pos_symbol == symbol:
+                        actual_qty = pos.get('quantity', 0)
+                        break
+                
+                # If we have a LONG position (qty > 0), cap sell to actual qty
+                if actual_qty > 0:
+                    if quantity > actual_qty:
+                        logger.warning(f"🚨 OVER-SELL BLOCKED: {symbol} trying to SELL {quantity} but only have {actual_qty}")
+                        logger.warning(f"   Capping sell quantity to {actual_qty} to prevent unintended SHORT")
+                        order_params['quantity'] = actual_qty
+                        quantity = actual_qty
+                elif actual_qty == 0:
+                    # No position exists - this would create a new SHORT
+                    logger.error(f"🚨 SHORT CREATION BLOCKED: {symbol} SELL {quantity} with NO existing position")
+                    logger.error(f"   System tried to sell shares we don't own - blocking order")
+                    return None
+                # actual_qty < 0 means already SHORT - allow further shorting if intentional
+                
+            except Exception as e:
+                logger.error(f"⚠️ Position validation error for {symbol}: {e} - Proceeding with caution")
+        
         # Initialize cooldown tracking if not exists
         if not hasattr(self, '_symbol_cooldown'):
             self._symbol_cooldown = {}

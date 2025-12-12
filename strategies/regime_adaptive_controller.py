@@ -1340,12 +1340,15 @@ class RegimeAdaptiveController:
                 if isinstance(symbol_data, dict):
                     ltp = symbol_data.get('ltp', 0) or symbol_data.get('close', 0)
                     volume = symbol_data.get('volume', 0)
-                    price_change = symbol_data.get('price_change', 0)
+                    # 🔥 FIX: price_change comes as PERCENTAGE (e.g. 3.12 for +3.12%)
+                    # Convert to DECIMAL (e.g. 0.0312) for proper volatility calculation
+                    price_change_pct = symbol_data.get('price_change', 0) or symbol_data.get('change_percent', 0)
+                    price_change_decimal = price_change_pct / 100.0  # Convert % to decimal
                     
                     if ltp > 0:
                         prices.append(ltp)
                         volumes.append(volume)
-                        price_changes.append(price_change)
+                        price_changes.append(price_change_decimal)
             
             if len(prices) < 5:  # Need minimum data
                 return None
@@ -1353,19 +1356,22 @@ class RegimeAdaptiveController:
             # PROFESSIONAL FEATURE CALCULATIONS
             prices_array = np.array(prices)
             volumes_array = np.array(volumes)
-            changes_array = np.array(price_changes)
+            changes_array = np.array(price_changes)  # Now in decimal form (0.03 = 3%)
             
             # 1. VOLATILITY FEATURES
-            # Volatility should be on 0-1 scale of returns, not percentages.
-            # Use robust estimator and cap extremes to avoid 1000% artifacts from bad ticks.
+            # Volatility is now on proper decimal scale (0.01 = 1% std dev)
+            # Normal intraday volatility: 0.01-0.03 (1-3%)
+            # High volatility: > 0.05 (5%)
+            # Crisis volatility: > 0.10 (10%)
             if len(changes_array) > 1:
                 vol_raw = np.std(changes_array)
-                vol_clipped = float(np.clip(vol_raw, 0.0, 1.0))
+                # Clip to reasonable range: 0-0.5 (50% max - even in crashes)
+                vol_clipped = float(np.clip(vol_raw, 0.0, 0.5))
                 volatility = vol_clipped
             else:
-                volatility = 0.02
+                volatility = 0.02  # 2% default
             
-            # 2. MOMENTUM FEATURES
+            # 2. MOMENTUM FEATURES (also now in decimal)
             momentum = np.mean(changes_array) if len(changes_array) > 0 else 0.0
             
             # 3. VOLUME PROFILE
@@ -1818,9 +1824,10 @@ class RegimeAdaptiveController:
                 logger.warning(f"⚠️ LOW REGIME CONFIDENCE: {self.regime_metrics.regime_confidence:.2f}")
             
             # VOLATILITY ALERTS
-            if self.regime_metrics.volatility > 0.2:  # 20% volatility
-                # Clamp logging to 100% to prevent unrealistic 1000%+ numbers
-                log_vol = min(self.regime_metrics.volatility, 1.0)
+            # Now volatility is in decimal (0.05 = 5%)
+            # High volatility threshold: 0.05 (5% std dev of returns)
+            if self.regime_metrics.volatility > 0.05:  # 5% volatility = high
+                log_vol = self.regime_metrics.volatility
                 logger.warning(f"⚠️ HIGH VOLATILITY: {log_vol:.1%}")
             
             # PERFORMANCE TRACKING
