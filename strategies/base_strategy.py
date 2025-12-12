@@ -1184,11 +1184,40 @@ class BaseStrategy:
             positions_to_modify = []
             
             for symbol, position in self.active_positions.items():
-                if symbol not in market_data:
+                # 🔥 FIX: Get market data from multiple sources for synced positions
+                # Previously positions not in market_data were silently skipped - no RSI exit!
+                symbol_data = market_data.get(symbol)
+                
+                if not symbol_data:
+                    # Fallback 1: TrueData live cache
+                    try:
+                        from data.truedata_client import live_market_data
+                        if symbol in live_market_data:
+                            symbol_data = live_market_data[symbol]
+                    except Exception:
+                        pass
+                
+                if not symbol_data:
+                    # Fallback 2: Zerodha positions API (has last_price)
+                    try:
+                        from src.core.orchestrator import get_orchestrator_instance
+                        orch = get_orchestrator_instance()
+                        if orch and hasattr(orch, 'zerodha_client'):
+                            pos_data = await orch.zerodha_client.get_positions()
+                            for pos in pos_data.get('net', []):
+                                if pos.get('tradingsymbol') == symbol:
+                                    symbol_data = {'ltp': pos.get('last_price', 0), 'open': pos.get('average_price', 0)}
+                                    break
+                    except Exception:
+                        pass
+                
+                if not symbol_data:
+                    logger.warning(f"⚠️ POSITION {symbol}: Skipping - no market data available")
                     continue
                     
-                current_price = market_data[symbol].get('ltp', 0)
+                current_price = symbol_data.get('ltp', 0)
                 if current_price == 0:
+                    logger.warning(f"⚠️ POSITION {symbol}: Skipping - LTP is 0")
                     continue
                 
                 # ⏰ PRIORITY: HANDLE TIME-BASED CLOSURE URGENCY
@@ -1260,15 +1289,16 @@ class BaseStrategy:
                 # 2. ENHANCED OPEN POSITION DECISION ANALYSIS
                 if close_urgency == "NORMAL":
                     # Use enhanced decision system for comprehensive position analysis
+                    # 🔥 FIX: Use symbol_data (fetched from multiple sources) instead of market_data[symbol]
                     decision_result = await self._evaluate_open_position_decision(
-                        symbol, current_price, position, market_data[symbol]
+                        symbol, current_price, position, symbol_data
                     )
                     
                     # Execute decision based on enhanced analysis
                     await self._execute_position_decision(symbol, current_price, position, decision_result)
                     
                     # FALLBACK: Legacy position management for compatibility
-                    management_actions = await self.analyze_position_management(symbol, current_price, position, market_data[symbol])
+                    management_actions = await self.analyze_position_management(symbol, current_price, position, symbol_data)
                     
                     # 3. UPDATE TRAILING STOPS (if not handled by enhanced system)
                     if decision_result.action.value not in ['TRAIL_STOP', 'ADJUST_STOP']:
@@ -1290,7 +1320,7 @@ class BaseStrategy:
                     await self.apply_time_based_management(symbol, current_price, position)
                     
                     # 8. VOLATILITY-BASED ADJUSTMENTS
-                    await self.apply_volatility_based_management(symbol, current_price, position, market_data[symbol])
+                    await self.apply_volatility_based_management(symbol, current_price, position, symbol_data)
                     
             # Execute position exits
             for exit_data in positions_to_exit:
