@@ -483,8 +483,7 @@ class MarketInternalsAnalyzer:
                     orchestrator = get_orchestrator_instance()
                     
                     if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
-                        # 🔥 FIX: Use await instead of run_until_complete
-                        # Fetch last 3 hours of 5-min candles (36 candles)
+                        # 🔥 FIX: Use await instead of run_until_complete (works in async context)
                         candles = await orchestrator.zerodha_client.get_historical_data(
                             symbol='NIFTY 50',
                             interval='5minute',
@@ -494,7 +493,7 @@ class MarketInternalsAnalyzer:
                         if candles and len(candles) >= self.choppiness_window:
                             self._choppiness_candles['candles'] = candles[-self.choppiness_window - 1:]
                             self._choppiness_candles['last_fetch'] = current_time
-                            logger.info(f"📊 Choppiness: Fetched {len(candles)} NIFTY 5min candles successfully")
+                            logger.info(f"📊 Choppiness: Fetched {len(candles)} NIFTY 5min candles")
                 except Exception as e:
                     logger.debug(f"Could not fetch candles for choppiness: {e}")
             
