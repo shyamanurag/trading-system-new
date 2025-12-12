@@ -1748,16 +1748,15 @@ class OptimizedVolumeScalper(BaseStrategy):
             if tf_5m >= 14:
                 self._historical_data_fetched.add(symbol)
                 logger.info(f"✅ MTF DATA: {symbol} - 5min:{tf_5m}, 15min:{tf_15m}, 60min:{tf_60m}")
+                
+                # Also mark in base strategy's tracker
+                if not hasattr(self, '_mtf_fetched'):
+                    self._mtf_fetched = set()
+                self._mtf_fetched.add(symbol)
             else:
                 logger.warning(f"⚠️ MTF DATA INSUFFICIENT: {symbol} - 5min:{tf_5m} < 14 required. Will retry.")
             
-            # 🚨 FIX: Mark as fetched in base strategy's tracker to prevent re-fetch
-            # Initialize _mtf_fetched if it doesn't exist (base strategy creates it lazily)
-            if not hasattr(self, '_mtf_fetched'):
-                self._mtf_fetched = set()
-            self._mtf_fetched.add(symbol)
-            
-            return True
+            return tf_5m >= 14
             
         except Exception as e:
             logger.warning(f"⚠️ Error fetching MTF data for {symbol}: {e}")
