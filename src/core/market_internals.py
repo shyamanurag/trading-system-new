@@ -142,7 +142,8 @@ class MarketInternalsAnalyzer:
             internals.realized_volatility = volatility_metrics['realized_vol']
             
             # 4. Detect Market Regime
-            regime_analysis = self._detect_market_regime(market_data, breadth_metrics, volatility_metrics)
+            # 🔥 FIX: Use await since _detect_market_regime is now async
+            regime_analysis = await self._detect_market_regime(market_data, breadth_metrics, volatility_metrics)
             internals.market_regime = regime_analysis['regime']
             internals.trend_strength = regime_analysis['trend_strength']
             internals.choppiness_index = regime_analysis['choppiness']
@@ -351,11 +352,12 @@ class MarketInternalsAnalyzer:
                 'realized_vol': 1.0
             }
     
-    def _detect_market_regime(self, market_data: Dict, breadth: Dict, volatility: Dict) -> Dict:
+    async def _detect_market_regime(self, market_data: Dict, breadth: Dict, volatility: Dict) -> Dict:
         """Detect current market regime"""
         try:
             # Calculate Choppiness Index (for reference, but not sole determinant)
-            choppiness = self._calculate_choppiness_index(market_data)
+            # 🔥 FIX: Use await since _calculate_choppiness_index is now async
+            choppiness = await self._calculate_choppiness_index(market_data)
             
             # Determine trend strength
             nifty_data = market_data.get('NIFTY-I', {})
@@ -452,13 +454,16 @@ class MarketInternalsAnalyzer:
                 'regime_confidence': 50
             }
     
-    def _calculate_choppiness_index(self, market_data: Dict) -> float:
+    async def _calculate_choppiness_index(self, market_data: Dict) -> float:
         """
         Calculate Choppiness Index for market
         
         🔥 FIX: Use actual 5-minute candle data instead of storing same day OHLC repeatedly.
         The bug was storing day's HIGH/LOW (which don't change) leading to 100% choppiness.
         Now we fetch real intraday candles from Zerodha for proper calculation.
+        
+        🔥 FIX 2: Made async to avoid RuntimeError when called from async context.
+        Previously used run_until_complete() which fails in async context.
         """
         try:
             # Initialize candle cache if needed
@@ -478,20 +483,18 @@ class MarketInternalsAnalyzer:
                     orchestrator = get_orchestrator_instance()
                     
                     if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
-                        import asyncio
+                        # 🔥 FIX: Use await instead of run_until_complete
                         # Fetch last 3 hours of 5-min candles (36 candles)
-                        candles = asyncio.get_event_loop().run_until_complete(
-                            orchestrator.zerodha_client.get_historical_data(
-                                symbol='NIFTY 50',
-                                interval='5minute',
-                                from_date=current_time - timedelta(hours=3),
-                                to_date=current_time
-                            )
+                        candles = await orchestrator.zerodha_client.get_historical_data(
+                            symbol='NIFTY 50',
+                            interval='5minute',
+                            from_date=current_time - timedelta(hours=3),
+                            to_date=current_time
                         )
                         if candles and len(candles) >= self.choppiness_window:
                             self._choppiness_candles['candles'] = candles[-self.choppiness_window - 1:]
                             self._choppiness_candles['last_fetch'] = current_time
-                            logger.debug(f"📊 Choppiness: Fetched {len(candles)} candles for NIFTY")
+                            logger.info(f"📊 Choppiness: Fetched {len(candles)} NIFTY 5min candles successfully")
                 except Exception as e:
                     logger.debug(f"Could not fetch candles for choppiness: {e}")
             
