@@ -2098,9 +2098,12 @@ class TradingOrchestrator:
                         enriched_data = await self._enrich_market_data_with_options(transformed_data)
                         
                         # 🎯 STEP 3: ACTIVE POSITION MANAGEMENT (with enriched data including options)
-                        if hasattr(strategy_instance, 'manage_existing_positions') and len(strategy_instance.active_positions) > 0:
+                        # 🔥 FIX: Always call manage_existing_positions - it syncs with Zerodha!
+                        # Previously, if local active_positions was empty, real Zerodha positions were NEVER managed.
+                        # This caused positions with RSI > 90 to never trigger exit logic.
+                        if hasattr(strategy_instance, 'manage_existing_positions'):
                             await strategy_instance.manage_existing_positions(enriched_data)
-                            self.logger.debug(f"🎯 {strategy_key}: Active position management completed for {len(strategy_instance.active_positions)} positions")
+                            self.logger.debug(f"🎯 {strategy_key}: Position management completed (local: {len(strategy_instance.active_positions)})")
                         
                         # 🔄 PROCESS PENDING MANAGEMENT ACTIONS: Handle any queued management actions from previous cycles
                         if hasattr(strategy_instance, 'process_pending_management_actions'):
