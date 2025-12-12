@@ -507,11 +507,17 @@ class ZerodhaIntegration:
                 net_positions = positions.get('net', [])
                 
                 # Find actual position for this symbol
+                # 🔥 FIX: Index symbols like "NIFTY-I" are stored as "NIFTY" in positions
+                # Must compare both the original symbol AND the exchange-mapped version
                 actual_qty = 0
+                exchange_symbol = self._map_symbol_to_exchange(symbol)  # NIFTY-I -> NIFTY
+                
                 for pos in net_positions:
                     pos_symbol = pos.get('tradingsymbol', '')
-                    if pos_symbol == symbol:
+                    # Match against: original symbol OR exchange-mapped symbol OR reverse (pos + "-I")
+                    if pos_symbol == symbol or pos_symbol == exchange_symbol or f"{pos_symbol}-I" == symbol:
                         actual_qty = pos.get('quantity', 0)
+                        logger.debug(f"✅ Position found: {pos_symbol} qty={actual_qty} (searched: {symbol}, mapped: {exchange_symbol})")
                         break
                 
                 # If we have a LONG position (qty > 0), cap sell to actual qty
