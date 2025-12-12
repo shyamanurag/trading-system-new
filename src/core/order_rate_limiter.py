@@ -41,10 +41,11 @@ class OrderRateLimiter:
         
         logger.info("🛡️ OrderRateLimiter: Preventing order loops, churning, and tiny orders")
     
-    async def can_place_order(self, symbol: str, action: str, quantity: int, price: float = 0, signal_id: str = None) -> Dict:
+    async def can_place_order(self, symbol: str, action: str, quantity: int, price: float = 0, signal_id: str = None, is_exit_order: bool = False) -> Dict:
         
         # 🔥 NEW: Block tiny orders (< 5 shares) - wastes brokerage
-        if quantity < self.min_order_quantity:
+        # BUT allow exits of any size to close positions
+        if quantity < self.min_order_quantity and not is_exit_order:
             logger.warning(f"🚫 TINY ORDER BLOCKED: {symbol} {action} qty={quantity} < min {self.min_order_quantity}")
             return {
                 'allowed': False,
@@ -52,12 +53,15 @@ class OrderRateLimiter:
                 'message': f'Order quantity {quantity} below minimum {self.min_order_quantity} shares'
             }
         
-        # 🔥 NEW: Per-symbol cooldown to prevent churning
-        if symbol in self._last_trade_time:
+        # 🔥 FIX: Exit orders bypass cooldown - MUST be able to close positions
+        if is_exit_order:
+            logger.info(f"✅ EXIT ORDER BYPASS: {symbol} {action} - Cooldown skipped for position exit")
+        # Only apply cooldown to NEW entry orders
+        elif symbol in self._last_trade_time:
             elapsed = (datetime.now() - self._last_trade_time[symbol]).total_seconds()
             if elapsed < self.trade_cooldown_seconds:
                 remaining = self.trade_cooldown_seconds - elapsed
-                logger.warning(f"🧊 COOLDOWN BLOCKED: {symbol} - {remaining:.0f}s remaining (last trade {elapsed:.0f}s ago)")
+                logger.warning(f"🧊 COOLDOWN BLOCKED: {symbol} {action} (new entry) - {remaining:.0f}s remaining")
                 return {
                     'allowed': False,
                     'reason': 'SYMBOL_COOLDOWN',

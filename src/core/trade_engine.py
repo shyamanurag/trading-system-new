@@ -488,12 +488,22 @@ class TradeEngine:
                 return None
             
             # 🛡️ CRITICAL: Check order rate limits to prevent retry loops (30s per-signal window, max attempts enforced elsewhere)
+            # 🔥 FIX: Exit orders should bypass cooldown - MUST be able to close positions
+            is_exit_order = (
+                signal.get('signal_type') == 'POSITION_EXIT' or
+                signal.get('metadata', {}).get('position_exit', False) or
+                signal.get('metadata', {}).get('closing_action', False) or
+                signal.get('metadata', {}).get('management_action', False) or
+                signal.get('exit_reason') is not None
+            )
+            
             rate_check = await self.rate_limiter.can_place_order(
                 symbol,
                 action,
                 quantity,
                 signal.get('entry_price', 0),
-                signal_id=signal.get('signal_id')
+                signal_id=signal.get('signal_id'),
+                is_exit_order=is_exit_order
             )
             if not rate_check['allowed']:
                 self.logger.error(f"🚫 ORDER RATE LIMITED: {rate_check['message']}")

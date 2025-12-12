@@ -308,6 +308,13 @@ class EnhancedMomentumSurfer(BaseStrategy):
         self.max_position_age_hours = 24  # Auto-close positions after 24 hours
         self.trailing_stop_percentage = 0.5  # 0.5% trailing stop
         self.profit_lock_percentage = 1.0  # Lock profit at 1%
+        
+        # 🔥 FIX: Ensure management tracking attributes are initialized
+        # (may not be set if BaseStrategy.__init__ was modified or failed partially)
+        if not hasattr(self, 'management_actions_taken'):
+            self.management_actions_taken = {}
+        if not hasattr(self, 'last_management_time'):
+            self.last_management_time = {}
 
         # PROFESSIONAL MOMENTUM MODELS
         self.momentum_models = ProfessionalMomentumModels()

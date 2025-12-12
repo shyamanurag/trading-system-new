@@ -80,12 +80,21 @@ class OrderManager:
                 order_data.get('metadata', {}).get('management_action', False)
             )
             
+            # 🔥 FIX: Detect exit orders so they can bypass cooldown in rate limiter
+            is_exit_order = (
+                is_emergency or
+                order_data.get('signal_type') == 'POSITION_EXIT' or
+                order_data.get('metadata', {}).get('position_exit', False) or
+                order_data.get('exit_reason') is not None
+            )
+            
             if not is_emergency:
                 rate_check = await self.rate_limiter.can_place_order(
                     order_data['symbol'], 
                     order_data['side'], 
                     order_data['quantity'], 
-                    order_data.get('price', 0)
+                    order_data.get('price', 0),
+                    is_exit_order=is_exit_order
                 )
                 if not rate_check['allowed']:
                     raise Exception(f"Order rate limited: {rate_check['message']}")
