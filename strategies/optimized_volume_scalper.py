@@ -58,8 +58,11 @@ class ProfessionalMathModels:
         
         Formula: σ²(t) = ω + α·r²(t-1) + β·σ²(t-1)
         
+        Where ω = (1 - α - β) × long_run_variance
+        This ensures variance converges to the sample variance, not a fixed value.
+        
         Args:
-            returns: Array of returns (percentage changes)
+            returns: Array of returns (percentage changes as decimals, e.g., 0.01 = 1%)
             alpha: ARCH parameter - weight of recent shock (default 0.1)
             beta: GARCH parameter - weight of previous variance (default 0.85)
             
@@ -71,17 +74,33 @@ class ProfessionalMathModels:
                 simple_vol = np.std(returns) * np.sqrt(252)
                 return simple_vol, np.full(len(returns), simple_vol)
             
-            # GARCH(1,1) parameters
-            omega = 0.01  # Long-run variance baseline (calibrated for Indian equities)
             n = len(returns)
             
-            # 🚨 FIX: Work with VARIANCE, not volatility directly
+            # Calculate sample variance from the data (long-run target)
+            sample_variance = np.var(returns)
+            
+            # 🔥 FIX: Calculate omega from sample variance so it scales correctly
+            # omega = (1 - alpha - beta) * long_run_variance
+            # This ensures the GARCH variance converges to actual sample variance
+            persistence = alpha + beta  # Should be < 1 for stationarity
+            if persistence >= 1.0:
+                # Non-stationary - use simpler approach
+                persistence = 0.95
+            omega = (1 - persistence) * sample_variance
+            
+            # 🛡️ BOUNDS: Ensure omega is reasonable (not too small, not too large)
+            omega = max(omega, 1e-10)  # Minimum to prevent divide-by-zero
+            omega = min(omega, sample_variance * 0.5)  # Cap at 50% of sample variance
+            
+            # Initialize variance array
             variance = np.zeros(n)
-            variance[0] = np.var(returns[:10])  # Initialize with sample variance
+            variance[0] = sample_variance  # Initialize with sample variance
             
             # GARCH(1,1) recursion: σ²(t) = ω + α·r²(t-1) + β·σ²(t-1)
             for t in range(1, n):
                 variance[t] = omega + alpha * (returns[t-1] ** 2) + beta * variance[t-1]
+                # 🛡️ Prevent variance explosion
+                variance[t] = min(variance[t], sample_variance * 10)  # Cap at 10x sample
             
             # Convert variance to volatility (annualized)
             volatility = np.sqrt(variance) * np.sqrt(252)

@@ -369,19 +369,29 @@ class ProfessionalMathModels:
             if len(returns) < window:
                 return 0.02, "LOW_VOLATILITY"
             
-            # Simple GARCH(1,1) approximation
+            # Use sample variance to calculate proper omega
+            sample_variance = np.var(returns[-window:])
+            
+            # GARCH(1,1) parameters
             alpha = 0.1  # ARCH parameter
             beta = 0.85  # GARCH parameter
-            omega = 0.0001  # Constant
+            # 🔥 FIX: omega should scale with data variance
+            persistence = alpha + beta
+            omega = (1 - persistence) * sample_variance
+            omega = max(omega, 1e-10)  # Prevent zero
             
-            variance = np.var(returns[-window:])
+            variance = sample_variance  # Initialize with sample variance
             
+            # Apply GARCH updates
             for i in range(1, min(len(returns), window)):
                 variance = omega + alpha * (returns[-i] ** 2) + beta * variance
+                variance = min(variance, sample_variance * 10)  # Cap to prevent explosion
             
             volatility = np.sqrt(variance * 252)  # Annualized
             
-            # Regime classification
+            # Regime classification - adjusted thresholds for proper decimal scale
+            # Normal intraday volatility: 0.15-0.30 (15-30% annualized)
+            # High volatility: > 0.40 (40% annualized)
             if volatility > 0.4:
                 regime = "HIGH_VOLATILITY"
             elif volatility > 0.25:
