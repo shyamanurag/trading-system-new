@@ -3178,26 +3178,39 @@ class BaseStrategy:
             # ============= BREAKOUT DIRECTION =============
             breakout_direction = None
             
+            # 🔥 FIX: Stricter breakout confirmation to avoid premature entries
             # Only signal breakout if:
-            # 1. We are/were in a squeeze
-            # 2. Momentum is clear
-            # 3. Price is breaking out of range
+            # 1. We are/were in a squeeze (but now breaking out)
+            # 2. Momentum is STRONG and clear
+            # 3. Price has BROKEN OUTSIDE the Bollinger Bands (not just above SMA)
+            # 4. Volume confirms the move
             if is_squeezing or squeeze_intensity > 0.3:
-                # Recent price momentum (5-bar)
+                # Recent price momentum (5-bar) - require stronger move
                 recent_momentum = (prices[-1] - prices[-5]) / prices[-5] if len(prices) >= 5 else 0
                 
                 # Position relative to bands
                 position_in_bands = (current_price - bb_lower) / (bb_upper - bb_lower) if (bb_upper - bb_lower) > 0 else 0.5
                 
+                # 🔥 FIX: Much stricter breakout conditions
                 # Breakout UP conditions:
-                # - Momentum oscillator positive and increasing
-                # - Price above middle band
-                # - Recent momentum positive
-                if momentum > 0.3 and current_price > sma and recent_momentum > 0.002:
+                # - Momentum oscillator STRONG positive (was 0.3, now 0.6)
+                # - Price ABOVE upper Bollinger Band (was just > SMA)
+                # - Recent momentum at least 0.5% (was 0.2%)
+                # - Volume confirms OR Keltner squeeze
+                strong_volume = volume_ratio > 1.3
+                has_confirmation = strong_volume or keltner_squeeze
+                
+                if momentum > 0.6 and current_price > bb_upper and recent_momentum > 0.005 and has_confirmation:
                     breakout_direction = 'up'
                 # Breakout DOWN conditions:
-                elif momentum < -0.3 and current_price < sma and recent_momentum < -0.002:
+                elif momentum < -0.6 and current_price < bb_lower and recent_momentum < -0.005 and has_confirmation:
                     breakout_direction = 'down'
+                
+                # 🔥 FIX: Log near-breakouts for debugging
+                elif abs(momentum) > 0.4 and (current_price > sma * 1.005 or current_price < sma * 0.995):
+                    logger.debug(f"⏳ {symbol} SQUEEZE BUILDING - Not yet breakout: "
+                                f"momentum={momentum:.2f} (need ±0.6), price vs band={position_in_bands:.0%}, "
+                                f"recent_mom={recent_momentum:.3%} (need ±0.5%), vol={volume_ratio:.1f}x")
             
             # ============= SQUEEZE QUALITY ASSESSMENT =============
             quality_score = 0

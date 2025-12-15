@@ -133,9 +133,9 @@ class EnhancedOpenPositionDecision:
             
             logger.info(f"🔍 EVALUATING OPEN POSITION: {symbol} {action} {quantity}@₹{entry_price} | Current: ₹{current_price}")
             
-            # STEP 1: Calculate Position Metrics
+            # STEP 1: Calculate Position Metrics (🔥 FIX: Pass market_data for RSI/MACD)
             position_metrics = await self._calculate_position_metrics(
-                position, current_price, entry_time
+                position, current_price, entry_time, market_data
             )
             
             # STEP 2: Check Emergency Exit Conditions
@@ -227,11 +227,13 @@ class EnhancedOpenPositionDecision:
                 metadata={'error': str(e)}
             )
     
-    async def _calculate_position_metrics(self, position: Dict, current_price: float, entry_time) -> Dict:
-        """Calculate key position metrics"""
+    async def _calculate_position_metrics(self, position: Dict, current_price: float, 
+                                          entry_time, market_data: Dict = None) -> Dict:
+        """Calculate key position metrics including technical indicators"""
         try:
             entry_price = float(position.get('entry_price', 0.0))
             action = position.get('action', 'BUY')
+            market_data = market_data or {}
             
             # Calculate P&L percentage
             if action == 'BUY':
@@ -271,6 +273,17 @@ class EnhancedOpenPositionDecision:
                 else:
                     reward_percent = ((entry_price - target) / entry_price) * 100
             
+            # 🔥 FIX: Extract technical indicators from market_data (enriched by base_strategy)
+            # Priority: market_data > position metadata > defaults
+            metadata = position.get('metadata', {})
+            rsi = market_data.get('rsi', position.get('rsi', metadata.get('rsi', 50.0)))
+            macd_state = market_data.get('macd_crossover', market_data.get('macd_state', 
+                         position.get('macd_state', metadata.get('macd_state', 'neutral'))))
+            buy_pressure = market_data.get('buying_pressure', market_data.get('buy_pressure',
+                           position.get('buy_pressure', metadata.get('buy_pressure', 0.5))))
+            sell_pressure = market_data.get('selling_pressure', market_data.get('sell_pressure',
+                            position.get('sell_pressure', metadata.get('sell_pressure', 0.5))))
+            
             return {
                 'pnl_percent': pnl_percent,
                 'age_minutes': age_minutes,
@@ -278,7 +291,12 @@ class EnhancedOpenPositionDecision:
                 'reward_percent': abs(reward_percent),
                 'risk_reward_ratio': abs(reward_percent / risk_percent) if risk_percent > 0 else 0,
                 'entry_price': entry_price,
-                'action': action
+                'action': action,
+                # 🔥 NEW: Technical indicators for trailing stop decisions
+                'rsi': rsi,
+                'macd_state': macd_state,
+                'buy_pressure': buy_pressure,
+                'sell_pressure': sell_pressure
             }
             
         except Exception as e:
@@ -290,7 +308,11 @@ class EnhancedOpenPositionDecision:
                 'reward_percent': 0.0,
                 'risk_reward_ratio': 0.0,
                 'entry_price': 0.0,
-                'action': 'BUY'
+                'action': 'BUY',
+                'rsi': 50.0,
+                'macd_state': 'neutral',
+                'buy_pressure': 0.5,
+                'sell_pressure': 0.5
             }
     
     async def _check_emergency_exit_conditions(self, position: Dict, current_price: float, 
@@ -916,12 +938,92 @@ class EnhancedOpenPositionDecision:
     
     async def _check_trailing_stop_adjustments(self, position: Dict, current_price: float, 
                                              metrics: Dict) -> OpenPositionDecisionResult:
-        """Check for trailing stop adjustments"""
+        """Check for trailing stop adjustments - BOTH profitable AND losing positions"""
         try:
             pnl_percent = metrics['pnl_percent']
             entry_price = metrics['entry_price']
             action = metrics['action']
+            symbol = position.get('symbol', 'UNKNOWN')
             
+            # 🔥 FIX: Get MACD and momentum data to detect reversals
+            macd_state = metrics.get('macd_state', 'neutral')
+            buy_pressure = metrics.get('buy_pressure', 0.5)
+            sell_pressure = metrics.get('sell_pressure', 0.5)
+            rsi = metrics.get('rsi', 50)
+            
+            # ============= MOMENTUM REVERSAL DETECTION =============
+            # 🔥 NEW: Tighten stops when momentum turns AGAINST the position
+            # This catches situations where buy candles appear against a SHORT
+            
+            if action == 'SELL':  # SHORT position
+                # SHORT is in danger when:
+                # 1. MACD turns bullish (buy candles appearing)
+                # 2. Buy pressure > 60%
+                # 3. RSI rising above 55 (momentum shifting up)
+                momentum_against = (
+                    macd_state == 'bullish' or 
+                    buy_pressure > 0.60 or
+                    (rsi > 55 and pnl_percent < 0)  # RSI rising while losing
+                )
+                
+                if momentum_against and pnl_percent < 0:
+                    # Losing SHORT with momentum against - TIGHT stop
+                    tight_stop = current_price * 1.005  # 0.5% stop
+                    logger.warning(f"🔄 MOMENTUM REVERSAL SHORT: {symbol} MACD={macd_state}, "
+                                  f"BuyPressure={buy_pressure:.0%}, RSI={rsi:.0f}, P&L={pnl_percent:.1f}%")
+                    return OpenPositionDecisionResult(
+                        action=OpenPositionAction.TRAIL_STOP,
+                        exit_reason=None,
+                        confidence=8.5,
+                        urgency="HIGH",
+                        quantity_percentage=0.0,
+                        new_stop_loss=tight_stop,
+                        new_target=None,
+                        reasoning=f"MOMENTUM REVERSAL: {symbol} SHORT losing {pnl_percent:.1f}% with bullish signals - Tight stop @ ₹{tight_stop:.2f}",
+                        metadata={
+                            'pnl_percent': pnl_percent,
+                            'new_stop_loss': tight_stop,
+                            'macd_state': macd_state,
+                            'buy_pressure': buy_pressure,
+                            'trigger': 'MOMENTUM_REVERSAL_SHORT'
+                        }
+                    )
+            
+            elif action == 'BUY':  # LONG position
+                # LONG is in danger when:
+                # 1. MACD turns bearish
+                # 2. Sell pressure > 60%
+                # 3. RSI falling below 45 (momentum shifting down)
+                momentum_against = (
+                    macd_state == 'bearish' or 
+                    sell_pressure > 0.60 or
+                    (rsi < 45 and pnl_percent < 0)  # RSI falling while losing
+                )
+                
+                if momentum_against and pnl_percent < 0:
+                    # Losing LONG with momentum against - TIGHT stop
+                    tight_stop = current_price * 0.995  # 0.5% stop
+                    logger.warning(f"🔄 MOMENTUM REVERSAL LONG: {symbol} MACD={macd_state}, "
+                                  f"SellPressure={sell_pressure:.0%}, RSI={rsi:.0f}, P&L={pnl_percent:.1f}%")
+                    return OpenPositionDecisionResult(
+                        action=OpenPositionAction.TRAIL_STOP,
+                        exit_reason=None,
+                        confidence=8.5,
+                        urgency="HIGH",
+                        quantity_percentage=0.0,
+                        new_stop_loss=tight_stop,
+                        new_target=None,
+                        reasoning=f"MOMENTUM REVERSAL: {symbol} LONG losing {pnl_percent:.1f}% with bearish signals - Tight stop @ ₹{tight_stop:.2f}",
+                        metadata={
+                            'pnl_percent': pnl_percent,
+                            'new_stop_loss': tight_stop,
+                            'macd_state': macd_state,
+                            'sell_pressure': sell_pressure,
+                            'trigger': 'MOMENTUM_REVERSAL_LONG'
+                        }
+                    )
+            
+            # ============= STANDARD TRAILING STOP FOR PROFITABLE POSITIONS =============
             # Only trail if position is profitable enough
             if pnl_percent < self.trailing_stop_activation:
                 return OpenPositionDecisionResult(
@@ -936,8 +1038,8 @@ class EnhancedOpenPositionDecision:
                     metadata={}
                 )
             
-            # Calculate trailing stop price
-            trail_percentage = 3.0  # 3% trailing stop
+            # Calculate trailing stop price for profitable positions
+            trail_percentage = 2.0  # 🔥 FIX: Tighter 2% trailing stop (was 3%)
             if action == 'BUY':
                 new_stop = current_price * (1 - trail_percentage / 100)
             else:
