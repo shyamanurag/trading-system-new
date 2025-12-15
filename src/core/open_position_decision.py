@@ -539,12 +539,58 @@ class EnhancedOpenPositionDecision:
         Analyze profit booking opportunities
         
         🚨 INTRADAY OPTIMIZED THRESHOLDS:
+        EQUITY:
         - Threshold 1: 2% profit → Book 50% (if held >10 min)
         - Threshold 2: 4% profit → Book 75% immediately
+        
+        OPTIONS (move 5-20% regularly):
+        - Threshold 1: 8% profit → Book 50% immediately
+        - Threshold 2: 15% profit → Book 75% immediately
         """
         try:
             pnl_percent = metrics['pnl_percent']
             age_minutes = metrics['age_minutes']
+            symbol = position.get('symbol', '')
+            
+            # 🔥 DETECT OPTIONS POSITIONS (more aggressive profit booking)
+            import re
+            is_options = bool(re.search(r'\d+[CP]E$', symbol.upper())) if symbol else False
+            
+            if is_options:
+                # 🔥 OPTIONS-SPECIFIC PROFIT BOOKING
+                # Options move fast - higher thresholds but immediate action
+                options_threshold_1 = 8.0   # 8% = book 50%
+                options_threshold_2 = 15.0  # 15% = book 75%
+                
+                if pnl_percent >= options_threshold_2:
+                    logger.warning(f"🔥 OPTIONS MAJOR PROFIT: {symbol} +{pnl_percent:.1f}% → Booking 75%!")
+                    return OpenPositionDecisionResult(
+                        action=OpenPositionAction.EXIT_PARTIAL,
+                        exit_reason=ExitReason.PROFIT_BOOKING,
+                        confidence=9.0,
+                        urgency="HIGH",
+                        quantity_percentage=75.0,
+                        new_stop_loss=None,
+                        new_target=None,
+                        reasoning=f"OPTIONS MAJOR PROFIT: {pnl_percent:.1f}% → Booking 75%",
+                        metadata={'pnl_percent': pnl_percent, 'threshold': options_threshold_2, 'is_options': True}
+                    )
+                
+                elif pnl_percent >= options_threshold_1:
+                    logger.warning(f"🔥 OPTIONS PROFIT: {symbol} +{pnl_percent:.1f}% → Booking 50%!")
+                    return OpenPositionDecisionResult(
+                        action=OpenPositionAction.EXIT_PARTIAL,
+                        exit_reason=ExitReason.PROFIT_BOOKING,
+                        confidence=8.5,
+                        urgency="HIGH",
+                        quantity_percentage=50.0,
+                        new_stop_loss=None,
+                        new_target=None,
+                        reasoning=f"OPTIONS PROFIT: {pnl_percent:.1f}% → Booking 50%",
+                        metadata={'pnl_percent': pnl_percent, 'threshold': options_threshold_1, 'is_options': True}
+                    )
+            
+            # ============= EQUITY PROFIT BOOKING (Original Logic) =============
             
             # 🎯 MAJOR PROFIT: Book 75% at 4%+ profit (don't wait, intraday profits vanish quickly)
             if pnl_percent >= self.profit_booking_threshold_2:
@@ -1023,7 +1069,114 @@ class EnhancedOpenPositionDecision:
                         }
                     )
             
-            # ============= STANDARD TRAILING STOP FOR PROFITABLE POSITIONS =============
+            # ============= DETECT IF THIS IS AN OPTIONS POSITION =============
+            import re
+            is_options = bool(re.search(r'\d+[CP]E$', symbol.upper())) if symbol else False
+            
+            # 🔥 OPTIONS-SPECIFIC TRAILING: Much more aggressive!
+            # Options move 5-20% in minutes - can't use equity trailing logic
+            # 🚨 CRITICAL: Options trade in LOTS - NO partial exits possible!
+            # So we must trail aggressively and do FULL EXIT when stop hit
+            if is_options:
+                
+                # 🔥 OPTIONS 10%+: VERY TIGHT 1% trail - lock in profits!
+                # At 10% profit, use 1% trail = guaranteed 9%+ profit if reversed
+                if pnl_percent >= 10.0:
+                    tight_trail = 1.0  # Very tight 1% for big winners
+                    if action == 'BUY':
+                        new_stop = current_price * (1 - tight_trail / 100)
+                    else:
+                        new_stop = current_price * (1 + tight_trail / 100)
+                    
+                    logger.warning(f"🔥 OPTIONS BIG WINNER: {symbol} +{pnl_percent:.1f}% → TIGHT 1% trail @ ₹{new_stop:.2f}")
+                    
+                    return OpenPositionDecisionResult(
+                        action=OpenPositionAction.TRAIL_STOP,
+                        exit_reason=None,
+                        confidence=9.5,
+                        urgency="HIGH",
+                        quantity_percentage=100.0,  # FULL position (options = lot size)
+                        new_stop_loss=new_stop,
+                        new_target=None,
+                        reasoning=f"OPTIONS WINNER: {pnl_percent:.1f}% → 1% trail @ ₹{new_stop:.2f}",
+                        metadata={
+                            'pnl_percent': pnl_percent,
+                            'new_stop_loss': new_stop,
+                            'trail_percentage': tight_trail,
+                            'is_options': True,
+                            'is_big_winner': True
+                        }
+                    )
+                
+                # 🔥 OPTIONS 5-10%: Use 1.5% trail
+                # At 5% profit, use 1.5% trail = guaranteed 3.5%+ if reversed
+                if pnl_percent >= 5.0:
+                    options_trail = 1.5
+                    if action == 'BUY':
+                        new_stop = current_price * (1 - options_trail / 100)
+                    else:
+                        new_stop = current_price * (1 + options_trail / 100)
+                    
+                    logger.warning(f"🔥 OPTIONS TRAILING: {symbol} +{pnl_percent:.1f}% → 1.5% trail @ ₹{new_stop:.2f}")
+                    
+                    return OpenPositionDecisionResult(
+                        action=OpenPositionAction.TRAIL_STOP,
+                        exit_reason=None,
+                        confidence=9.0,
+                        urgency="HIGH",
+                        quantity_percentage=100.0,  # FULL position (options = lot size)
+                        new_stop_loss=new_stop,
+                        new_target=None,
+                        reasoning=f"OPTIONS TRAILING: {pnl_percent:.1f}% → 1.5% trail @ ₹{new_stop:.2f}",
+                        metadata={
+                            'pnl_percent': pnl_percent,
+                            'new_stop_loss': new_stop,
+                            'trail_percentage': options_trail,
+                            'is_options': True
+                        }
+                    )
+                
+                # 🔥 OPTIONS 3-5%: Activate 2% trail (earlier than equity)
+                if pnl_percent >= 3.0:
+                    options_trail = 2.0
+                    if action == 'BUY':
+                        new_stop = current_price * (1 - options_trail / 100)
+                    else:
+                        new_stop = current_price * (1 + options_trail / 100)
+                    
+                    logger.info(f"📊 OPTIONS EARLY TRAIL: {symbol} +{pnl_percent:.1f}% → 2% trail @ ₹{new_stop:.2f}")
+                    
+                    return OpenPositionDecisionResult(
+                        action=OpenPositionAction.TRAIL_STOP,
+                        exit_reason=None,
+                        confidence=8.0,
+                        urgency="MEDIUM",
+                        quantity_percentage=100.0,
+                        new_stop_loss=new_stop,
+                        new_target=None,
+                        reasoning=f"OPTIONS EARLY TRAIL: {pnl_percent:.1f}% → 2% trail @ ₹{new_stop:.2f}",
+                        metadata={
+                            'pnl_percent': pnl_percent,
+                            'new_stop_loss': new_stop,
+                            'trail_percentage': options_trail,
+                            'is_options': True
+                        }
+                    )
+                
+                # Options < 3% profit - no trailing yet, but skip equity logic
+                return OpenPositionDecisionResult(
+                    action=OpenPositionAction.HOLD,
+                    exit_reason=None,
+                    confidence=0.0,
+                    urgency="LOW",
+                    quantity_percentage=0.0,
+                    new_stop_loss=None,
+                    new_target=None,
+                    reasoning=f"OPTIONS: {pnl_percent:.1f}% profit < 3% activation - waiting",
+                    metadata={'is_options': True, 'pnl_percent': pnl_percent}
+                )
+            
+            # ============= STANDARD TRAILING STOP FOR EQUITY POSITIONS =============
             # Only trail if position is profitable enough
             if pnl_percent < self.trailing_stop_activation:
                 return OpenPositionDecisionResult(
@@ -1038,8 +1191,8 @@ class EnhancedOpenPositionDecision:
                     metadata={}
                 )
             
-            # Calculate trailing stop price for profitable positions
-            trail_percentage = 2.0  # 🔥 FIX: Tighter 2% trailing stop (was 3%)
+            # Calculate trailing stop price for profitable EQUITY positions
+            trail_percentage = 2.0  # 2% trailing stop for equity
             if action == 'BUY':
                 new_stop = current_price * (1 - trail_percentage / 100)
             else:
