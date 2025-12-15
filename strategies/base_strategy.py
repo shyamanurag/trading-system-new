@@ -5358,6 +5358,13 @@ class BaseStrategy:
             actual_max_loss = final_quantity * risk_amount
             margin_required = position_value / INTRADAY_LEVERAGE  # 25% of position
             
+            # 🔥 FIX: Minimum order value to prevent brokerage losses on tiny trades
+            # Brokerage + taxes ~0.1% round-trip, need min ₹15,000 to make trades worthwhile
+            MIN_ORDER_VALUE = 15000.0
+            if position_value < MIN_ORDER_VALUE:
+                logger.warning(f"🚫 SMALL ORDER BLOCKED: {symbol} position ₹{position_value:,.0f} < min ₹{MIN_ORDER_VALUE:,.0f}")
+                return None
+            
             logger.info(f"📊 POSITION SIZING: {symbol} {action}")
             logger.info(f"   💰 Capital: ₹{available_capital:,.0f} | Max Loss (1%): ₹{max_loss_per_trade:,.0f}")
             logger.info(f"   📉 Risk/Share: ₹{risk_amount:.2f} | Entry: ₹{entry_price:.2f} | SL: ₹{stop_loss:.2f}")

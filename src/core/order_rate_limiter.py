@@ -29,6 +29,7 @@ class OrderRateLimiter:
         self._last_trade_time: Dict[str, datetime] = {}
         self.trade_cooldown_seconds = 300  # 5 minutes between trades on same symbol
         self.min_order_quantity = 5  # Minimum 5 shares per order
+        self.min_order_value = 15000.0  # Minimum ₹15,000 order value to avoid brokerage losses
         
         # Conservative limits to stay well below Zerodha's thresholds
         self.limits = {
@@ -52,6 +53,18 @@ class OrderRateLimiter:
                 'reason': 'QUANTITY_TOO_SMALL',
                 'message': f'Order quantity {quantity} below minimum {self.min_order_quantity} shares'
             }
+        
+        # 🔥 FIX: Block small order VALUE - brokerage eats profits on tiny trades
+        # Exit orders bypass this check to allow closing positions
+        if price > 0 and not is_exit_order:
+            order_value = quantity * price
+            if order_value < self.min_order_value:
+                logger.warning(f"🚫 SMALL ORDER VALUE BLOCKED: {symbol} {action} ₹{order_value:,.0f} < min ₹{self.min_order_value:,.0f}")
+                return {
+                    'allowed': False,
+                    'reason': 'ORDER_VALUE_TOO_SMALL',
+                    'message': f'Order value ₹{order_value:,.0f} below minimum ₹{self.min_order_value:,.0f}'
+                }
         
         # 🔥 FIX: Exit orders bypass cooldown - MUST be able to close positions
         if is_exit_order:
