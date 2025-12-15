@@ -4459,6 +4459,8 @@ class TradingOrchestrator:
                         'quantity': existing_qty,
                         'order_type': 'MARKET',  # Exit immediately at market
                         'product': 'MIS',  # Intraday
+                        'tag': 'FULL_EXIT',  # 🔥 FIX: Mark as exit to bypass cooldown
+                        'metadata': {'is_exit': True, 'exit_reason': reason}  # Additional exit marker
                     }
                     
                     self.logger.info(f"📤 Placing reversal exit order: {order_params}")
