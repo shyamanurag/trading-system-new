@@ -4468,9 +4468,17 @@ class TradingOrchestrator:
                     # FIXED: place_order expects dict, not kwargs
                     order_result = await self.zerodha_client.place_order(order_params)
                     
-                    if order_result and order_result.get('order_id'):
+                    # 🔥 FIX: place_order may return string (order_id) or dict
+                    order_id = None
+                    if order_result:
+                        if isinstance(order_result, str):
+                            order_id = order_result
+                        elif isinstance(order_result, dict):
+                            order_id = order_result.get('order_id')
+                    
+                    if order_id:
                         self.logger.info(f"✅ REVERSAL EXIT ORDER PLACED: {symbol}")
-                        self.logger.info(f"   Order ID: {order_result.get('order_id')}")
+                        self.logger.info(f"   Order ID: {order_id}")
                         
                         # Update strategy's position tracking
                         if hasattr(strategy_instance, 'active_positions'):

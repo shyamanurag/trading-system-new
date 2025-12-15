@@ -82,17 +82,32 @@ async def receive_zerodha_position_update(data: Dict[str, Any], request: Request
 
 # Generic Zerodha webhook endpoint (for any Zerodha notification)
 @router.post("/zerodha")
-async def receive_zerodha_webhook(data: Dict[str, Any], request: Request):
+async def receive_zerodha_webhook(request: Request):
     """Generic Zerodha webhook receiver for any notification"""
     try:
+        # 🔥 FIX: Manually parse body - Zerodha sends raw bytes
+        body = await request.body()
+        
+        # Parse bytes to dict
+        import json
+        if isinstance(body, bytes):
+            data = json.loads(body.decode('utf-8'))
+        else:
+            data = body
+        
         logger.info(f"Received Zerodha webhook from {request.client.host if request.client else 'unknown'}: {data}")
         
-        # Handle different types of Zerodha notifications
-        notification_type = data.get("type", "unknown")
+        # Handle order postback
+        order_id = data.get("order_id")
+        status = data.get("status")
+        symbol = data.get("tradingsymbol")
+        
+        if order_id and status:
+            logger.info(f"📥 ORDER POSTBACK: {symbol} Order {order_id} -> {status}")
         
         return {
             "status": "received",
-            "type": notification_type,
+            "order_id": order_id,
             "timestamp": datetime.utcnow().isoformat()
         }
         
