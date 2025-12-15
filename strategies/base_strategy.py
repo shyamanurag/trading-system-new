@@ -3282,6 +3282,182 @@ class BaseStrategy:
             'kc_lower': 0
         }
     
+    def detect_candlestick_patterns(self, symbol: str, candles: List[Dict]) -> Dict:
+        """
+        🔥 NEW: Professional Candlestick Pattern Detection
+        
+        Detects classic candlestick patterns that indicate:
+        1. Reversal signals (Hammer, Shooting Star, Engulfing)
+        2. Continuation signals (Three Soldiers, Marubozu)
+        3. Indecision (Doji, Spinning Top)
+        
+        Args:
+            symbol: Trading symbol
+            candles: List of candle dicts with 'open', 'high', 'low', 'close'
+                    (most recent candle LAST)
+        
+        Returns:
+            Dict with pattern info and trading bias
+        """
+        try:
+            if not candles or len(candles) < 3:
+                return self._empty_candle_pattern()
+            
+            # Get last 3 candles for pattern detection
+            c1 = candles[-3]  # 3 bars ago
+            c2 = candles[-2]  # 2 bars ago  
+            c3 = candles[-1]  # Current bar
+            
+            # Helper calculations
+            def body(c):
+                return c['close'] - c['open']
+            
+            def body_size(c):
+                return abs(body(c))
+            
+            def upper_wick(c):
+                return c['high'] - max(c['open'], c['close'])
+            
+            def lower_wick(c):
+                return min(c['open'], c['close']) - c['low']
+            
+            def candle_range(c):
+                return c['high'] - c['low'] if c['high'] > c['low'] else 0.0001
+            
+            def is_bullish(c):
+                return c['close'] > c['open']
+            
+            def is_bearish(c):
+                return c['close'] < c['open']
+            
+            patterns_found = []
+            bullish_score = 0
+            bearish_score = 0
+            
+            # ============= SINGLE CANDLE PATTERNS (Current Bar) =============
+            c3_body = body_size(c3)
+            c3_range = candle_range(c3)
+            c3_upper = upper_wick(c3)
+            c3_lower = lower_wick(c3)
+            
+            # DOJI: Tiny body, indecision
+            if c3_body < c3_range * 0.1:
+                patterns_found.append('DOJI')
+                # Doji at top = bearish, at bottom = bullish
+                if c3['close'] > c3['open']:
+                    bullish_score += 1
+                else:
+                    bearish_score += 1
+            
+            # HAMMER: Small body at top, long lower wick (bullish reversal)
+            if c3_lower > c3_body * 2 and c3_upper < c3_body * 0.5:
+                patterns_found.append('HAMMER')
+                bullish_score += 3
+            
+            # SHOOTING STAR: Small body at bottom, long upper wick (bearish reversal)
+            if c3_upper > c3_body * 2 and c3_lower < c3_body * 0.5:
+                patterns_found.append('SHOOTING_STAR')
+                bearish_score += 3
+            
+            # MARUBOZU: Strong body, minimal wicks (strong trend)
+            if c3_body > c3_range * 0.8:
+                if is_bullish(c3):
+                    patterns_found.append('BULLISH_MARUBOZU')
+                    bullish_score += 2
+                else:
+                    patterns_found.append('BEARISH_MARUBOZU')
+                    bearish_score += 2
+            
+            # ============= TWO CANDLE PATTERNS =============
+            c2_body = body_size(c2)
+            
+            # BULLISH ENGULFING: Green candle engulfs previous red
+            if is_bearish(c2) and is_bullish(c3) and c3_body > c2_body * 1.2:
+                if c3['close'] > c2['open'] and c3['open'] < c2['close']:
+                    patterns_found.append('BULLISH_ENGULFING')
+                    bullish_score += 4
+            
+            # BEARISH ENGULFING: Red candle engulfs previous green
+            if is_bullish(c2) and is_bearish(c3) and c3_body > c2_body * 1.2:
+                if c3['close'] < c2['open'] and c3['open'] > c2['close']:
+                    patterns_found.append('BEARISH_ENGULFING')
+                    bearish_score += 4
+            
+            # ============= THREE CANDLE PATTERNS =============
+            
+            # THREE WHITE SOLDIERS: 3 consecutive bullish candles with higher closes
+            if is_bullish(c1) and is_bullish(c2) and is_bullish(c3):
+                if c2['close'] > c1['close'] and c3['close'] > c2['close']:
+                    patterns_found.append('THREE_WHITE_SOLDIERS')
+                    bullish_score += 5
+            
+            # THREE BLACK CROWS: 3 consecutive bearish candles with lower closes
+            if is_bearish(c1) and is_bearish(c2) and is_bearish(c3):
+                if c2['close'] < c1['close'] and c3['close'] < c2['close']:
+                    patterns_found.append('THREE_BLACK_CROWS')
+                    bearish_score += 5
+            
+            # MORNING STAR: Bearish -> Small body -> Bullish (reversal up)
+            if is_bearish(c1) and body_size(c2) < body_size(c1) * 0.3 and is_bullish(c3):
+                if c3['close'] > (c1['open'] + c1['close']) / 2:
+                    patterns_found.append('MORNING_STAR')
+                    bullish_score += 4
+            
+            # EVENING STAR: Bullish -> Small body -> Bearish (reversal down)
+            if is_bullish(c1) and body_size(c2) < body_size(c1) * 0.3 and is_bearish(c3):
+                if c3['close'] < (c1['open'] + c1['close']) / 2:
+                    patterns_found.append('EVENING_STAR')
+                    bearish_score += 4
+            
+            # ============= CALCULATE NET BIAS =============
+            net_score = bullish_score - bearish_score
+            
+            if net_score >= 3:
+                bias = 'STRONG_BULLISH'
+            elif net_score >= 1:
+                bias = 'BULLISH'
+            elif net_score <= -3:
+                bias = 'STRONG_BEARISH'
+            elif net_score <= -1:
+                bias = 'BEARISH'
+            else:
+                bias = 'NEUTRAL'
+            
+            result = {
+                'patterns': patterns_found,
+                'bullish_score': bullish_score,
+                'bearish_score': bearish_score,
+                'net_score': net_score,
+                'bias': bias,
+                'has_reversal_signal': any(p in ['HAMMER', 'SHOOTING_STAR', 'BULLISH_ENGULFING', 
+                                                  'BEARISH_ENGULFING', 'MORNING_STAR', 'EVENING_STAR'] 
+                                          for p in patterns_found),
+                'has_continuation': any(p in ['THREE_WHITE_SOLDIERS', 'THREE_BLACK_CROWS', 
+                                               'BULLISH_MARUBOZU', 'BEARISH_MARUBOZU'] 
+                                        for p in patterns_found)
+            }
+            
+            if patterns_found:
+                logger.info(f"🕯️ CANDLE PATTERNS: {symbol} {patterns_found} → {bias} (score: {net_score:+d})")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error detecting candle patterns for {symbol}: {e}")
+            return self._empty_candle_pattern()
+    
+    def _empty_candle_pattern(self) -> Dict:
+        """Return empty candle pattern result"""
+        return {
+            'patterns': [],
+            'bullish_score': 0,
+            'bearish_score': 0,
+            'net_score': 0,
+            'bias': 'NEUTRAL',
+            'has_reversal_signal': False,
+            'has_continuation': False
+        }
+    
     def calculate_macd_signal(self, prices: List[float], fast: int = 12, slow: int = 26, signal: int = 9) -> Dict:
         """
         🎯 CODE ENHANCEMENT: MACD with histogram divergence detection
