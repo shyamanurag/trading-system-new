@@ -7037,8 +7037,25 @@ class BaseStrategy:
     def _fetch_zerodha_lot_size(self, underlying_symbol: str) -> int:
         """🎯 DYNAMIC: Fetch actual lot size from Zerodha instruments API"""
         try:
+            # 🔥 CRITICAL FIX: Hardcoded index lot sizes (these are well-known and rarely change)
+            # Zerodha API sometimes returns stale data, so override for indices
+            INDEX_LOT_SIZES = {
+                'NIFTY': 75,      # Changed from 50 to 75 (Nov 2024)
+                'BANKNIFTY': 30,  # Changed from 15 to 30 (Nov 2024) - NOT 35!
+                'FINNIFTY': 25,   # Lot size = 25
+                'MIDCPNIFTY': 50, # Lot size = 50
+                'SENSEX': 10,     # Lot size = 10
+                'BANKEX': 15,     # Lot size = 15
+            }
+            
             # Log symbol mapping for debugging
             clean_underlying = self._map_truedata_to_zerodha_symbol(underlying_symbol)
+            
+            # Check if it's an index with hardcoded lot size
+            if clean_underlying in INDEX_LOT_SIZES:
+                lot_size = INDEX_LOT_SIZES[clean_underlying]
+                logger.info(f"✅ INDEX LOT SIZE (hardcoded): {clean_underlying} = {lot_size}")
+                return lot_size
             if clean_underlying != underlying_symbol:
                 logger.info(f"🔄 SYMBOL MAPPING: {underlying_symbol} → {clean_underlying}")
             
