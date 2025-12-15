@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Generic webhook endpoint
-@router.post("/webhooks/generic")
+# 🔥 FIX: Removed /webhooks/ prefix since router is mounted at /api/v1/webhooks
+@router.post("/generic")
 async def receive_webhook(data: Dict[str, Any], request: Request):
     """Generic webhook receiver"""
     try:
@@ -28,7 +29,7 @@ async def receive_webhook(data: Dict[str, Any], request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 # Market Data Webhooks
-@router.post("/webhooks/market-data")
+@router.post("/market-data")
 async def receive_market_data(data: Dict[str, Any], request: Request):
     """Receive real-time market data"""
     try:
@@ -44,7 +45,7 @@ async def receive_market_data(data: Dict[str, Any], request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 # Order & Position Webhooks
-@router.post("/webhooks/zerodha/order-update")
+@router.post("/zerodha/order-update")
 async def receive_zerodha_order_update(data: Dict[str, Any], request: Request):
     """Receive order status updates from Zerodha"""
     try:
@@ -64,7 +65,7 @@ async def receive_zerodha_order_update(data: Dict[str, Any], request: Request):
         logger.error(f"Error processing Zerodha order update: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/webhooks/zerodha/position-update")
+@router.post("/zerodha/position-update")
 async def receive_zerodha_position_update(data: Dict[str, Any], request: Request):
     """Receive position updates from Zerodha"""
     try:
@@ -80,7 +81,7 @@ async def receive_zerodha_position_update(data: Dict[str, Any], request: Request
         raise HTTPException(status_code=500, detail=str(e))
 
 # Generic Zerodha webhook endpoint (for any Zerodha notification)
-@router.post("/webhooks/zerodha")
+@router.post("/zerodha")
 async def receive_zerodha_webhook(data: Dict[str, Any], request: Request):
     """Generic Zerodha webhook receiver for any notification"""
     try:
@@ -100,7 +101,7 @@ async def receive_zerodha_webhook(data: Dict[str, Any], request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 # 🔧 FIX: Add GET handler for webhook endpoint debugging
-@router.get("/webhooks/zerodha")
+@router.get("/zerodha")
 async def zerodha_webhook_info(request: Request):
     """Webhook endpoint info (for debugging 405 errors)"""
     return {
@@ -111,7 +112,7 @@ async def zerodha_webhook_info(request: Request):
     }
 
 # News & Events Webhooks
-@router.post("/webhooks/news-feed")
+@router.post("/news-feed")
 async def receive_news(data: Dict[str, Any], request: Request):
     """Receive news events"""
     try:
@@ -127,7 +128,7 @@ async def receive_news(data: Dict[str, Any], request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 # System Health Webhooks
-@router.post("/webhooks/system-health")
+@router.post("/system-health")
 async def receive_health_update(data: Dict[str, Any], request: Request):
     """Receive system health updates"""
     try:
@@ -165,7 +166,7 @@ async def n8n_webhook(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 # Risk Management Webhooks
-@router.post("/webhooks/risk-alert")
+@router.post("/risk-alert")
 async def receive_risk_alert(data: Dict[str, Any], request: Request):
     """Receive risk management alerts"""
     try:
@@ -181,7 +182,7 @@ async def receive_risk_alert(data: Dict[str, Any], request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 # Compliance Webhooks
-@router.post("/webhooks/compliance-update")
+@router.post("/compliance-update")
 async def receive_compliance_update(data: Dict[str, Any], request: Request):
     """Receive compliance updates"""
     try:

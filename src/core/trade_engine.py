@@ -396,17 +396,17 @@ class TradeEngine:
                 await orchestrator.signal_deduplicator.mark_signal_executed(signal)
                 self.logger.debug(f"✅ Signal marked as executed in deduplicator: {signal.get('symbol')}")
             else:
-                # 🔧 FIX: Try to initialize signal deduplicator if not available
+                # 🔧 FIX: Try to create signal deduplicator if not available
                 if orchestrator and not hasattr(orchestrator, 'signal_deduplicator'):
                     try:
                         from src.core.signal_deduplicator import SignalDeduplicator
                         orchestrator.signal_deduplicator = SignalDeduplicator()
-                        await orchestrator.signal_deduplicator.initialize()
+                        # 🔥 FIX: SignalDeduplicator doesn't have initialize() method - just use directly
                         await orchestrator.signal_deduplicator.mark_signal_executed(signal)
-                        self.logger.info("✅ Signal deduplicator initialized and signal marked")
+                        self.logger.info("✅ Signal deduplicator created and signal marked")
                         return
                     except Exception as init_error:
-                        self.logger.warning(f"⚠️ Could not initialize signal deduplicator: {init_error}")
+                        self.logger.warning(f"⚠️ Could not create signal deduplicator: {init_error}")
                 
                 self.logger.debug("⚠️ Signal deduplicator not available - skipping duplicate marking")
                 

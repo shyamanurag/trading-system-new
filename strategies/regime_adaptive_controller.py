@@ -874,7 +874,26 @@ class RegimeAdaptiveController:
                     volumes_arr = np.array(volumes)
                     
                     returns = np.diff(closes_arr) / closes_arr[:-1]
-                    volatility = float(np.std(returns)) if len(returns) > 1 else 0.02
+                    
+                    # 🔥 FIX: Apply same robust filtering as real-time calculation
+                    if len(returns) > 1:
+                        # Filter outliers using MAD (Median Absolute Deviation)
+                        returns_median = np.median(returns)
+                        returns_mad = np.median(np.abs(returns - returns_median))
+                        if returns_mad > 0:
+                            z_scores = 0.6745 * (returns - returns_median) / returns_mad
+                            filtered_returns = returns[np.abs(z_scores) < 3]
+                            if len(filtered_returns) > 1:
+                                vol_raw = float(np.std(filtered_returns))
+                            else:
+                                vol_raw = float(np.std(returns))
+                        else:
+                            vol_raw = float(np.std(returns))
+                        # Clip to realistic range (0.5% to 15%)
+                        volatility = float(np.clip(vol_raw, 0.005, 0.15))
+                    else:
+                        volatility = 0.02  # 2% default
+                    
                     momentum = float(np.mean(returns)) if len(returns) > 0 else 0.0
                     volume_profile = float(np.std(volumes_arr) / np.mean(volumes_arr)) if np.mean(volumes_arr) > 0 else 0.0
                     trend_strength = float((closes_arr[-1] - closes_arr[0]) / closes_arr[0]) if closes_arr[0] > 0 else 0.0

@@ -31,6 +31,11 @@ class OrderRateLimiter:
         self.min_order_quantity = 5  # Minimum 5 shares per order
         self.min_order_value = 15000.0  # Minimum ₹15,000 order value to avoid brokerage losses
         
+        # 🔥 NEW: Per-symbol daily trade limit to prevent churning
+        self._daily_symbol_trades: Dict[str, int] = {}  # symbol -> trade count today
+        self.max_trades_per_symbol_per_day = 3  # Max 3 round-trips per symbol per day
+        self._last_reset_date = datetime.now().date()
+        
         # Conservative limits to stay well below Zerodha's thresholds
         self.limits = {
             'daily_max': 1800,          # Stay below 2000 limit
@@ -43,6 +48,25 @@ class OrderRateLimiter:
         logger.info("🛡️ OrderRateLimiter: Preventing order loops, churning, and tiny orders")
     
     async def can_place_order(self, symbol: str, action: str, quantity: int, price: float = 0, signal_id: str = None, is_exit_order: bool = False) -> Dict:
+        
+        # 🔥 Reset daily counters if new day
+        today = datetime.now().date()
+        if today != self._last_reset_date:
+            self._daily_symbol_trades = {}
+            self._last_reset_date = today
+            logger.info("📅 Daily trade counters reset")
+        
+        # 🔥 NEW: Per-symbol daily trade limit to prevent churning
+        # Only check for NEW entries, exits are always allowed
+        if not is_exit_order:
+            current_trades = self._daily_symbol_trades.get(symbol, 0)
+            if current_trades >= self.max_trades_per_symbol_per_day:
+                logger.warning(f"🚫 CHURNING BLOCKED: {symbol} already traded {current_trades}x today (max {self.max_trades_per_symbol_per_day})")
+                return {
+                    'allowed': False,
+                    'reason': 'DAILY_SYMBOL_LIMIT',
+                    'message': f'{symbol} hit daily limit: {current_trades}/{self.max_trades_per_symbol_per_day} trades'
+                }
         
         # 🔥 NEW: Block tiny orders (< 5 shares) - wastes brokerage
         # BUT allow exits of any size to close positions
@@ -123,7 +147,14 @@ class OrderRateLimiter:
         # 🔥 NEW: Set cooldown after successful order
         if success and symbol:
             self._last_trade_time[symbol] = datetime.now()
+            
+            # 🔥 NEW: Increment daily symbol trade count
+            self._daily_symbol_trades[symbol] = self._daily_symbol_trades.get(symbol, 0) + 1
+            trade_count = self._daily_symbol_trades[symbol]
+            remaining = self.max_trades_per_symbol_per_day - trade_count
+            
             logger.info(f"🧊 COOLDOWN SET: {symbol} - {self.trade_cooldown_seconds}s cooldown started")
+            logger.info(f"📊 DAILY TRADE COUNT: {symbol} = {trade_count}/{self.max_trades_per_symbol_per_day} ({remaining} remaining)")
         
         if not success and symbol:
             self.failed_orders[symbol] += 1
