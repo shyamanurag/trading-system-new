@@ -3342,14 +3342,22 @@ class BaseStrategy:
             c3_upper = upper_wick(c3)
             c3_lower = lower_wick(c3)
             
-            # DOJI: Tiny body, indecision
+            # DOJI: Tiny body, indecision - significance depends on TREND position
             if c3_body < c3_range * 0.1:
                 patterns_found.append('DOJI')
-                # Doji at top = bearish, at bottom = bullish
-                if c3['close'] > c3['open']:
-                    bullish_score += 1
-                else:
-                    bearish_score += 1
+                # 🔥 FIX: Check TREND from previous candles, not the tiny doji body
+                # Doji after uptrend (at top) = bearish reversal signal
+                # Doji after downtrend (at bottom) = bullish reversal signal
+                prior_trend = (c2['close'] - c1['close']) + (c3['close'] - c2['close']) / 2
+                if prior_trend > 0:
+                    # Was rising → Doji at TOP → bearish reversal
+                    bearish_score += 2
+                    patterns_found.append('DOJI_AT_TOP')
+                elif prior_trend < 0:
+                    # Was falling → Doji at BOTTOM → bullish reversal
+                    bullish_score += 2
+                    patterns_found.append('DOJI_AT_BOTTOM')
+                # If flat trend, doji is just indecision - no score change
             
             # HAMMER: Small body at top, long lower wick (bullish reversal)
             if c3_lower > c3_body * 2 and c3_upper < c3_body * 0.5:
