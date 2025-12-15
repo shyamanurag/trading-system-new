@@ -4105,10 +4105,13 @@ class TradingOrchestrator:
             # Without this, strategies use stale client after token refresh
             if hasattr(self, 'strategies') and self.strategies and self.zerodha_client:
                 strategies_updated = 0
-                for strategy_name, strategy_instance in self.strategies.items():
+                for strategy_name, strategy_data in self.strategies.items():
                     try:
-                        if hasattr(strategy_instance, 'zerodha_client'):
-                            strategy_instance.zerodha_client = self.zerodha_client
+                        # 🔥 FIX: strategy_data is a dict with 'instance' key, not the strategy object
+                        # Bug: hasattr(strategy_data, 'zerodha_client') always False for dicts
+                        strategy_obj = strategy_data.get('instance') if isinstance(strategy_data, dict) else strategy_data
+                        if strategy_obj and hasattr(strategy_obj, 'zerodha_client'):
+                            strategy_obj.zerodha_client = self.zerodha_client
                             strategies_updated += 1
                     except Exception as strat_err:
                         self.logger.warning(f"⚠️ Could not update zerodha_client for {strategy_name}: {strat_err}")

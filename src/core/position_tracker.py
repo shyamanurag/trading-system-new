@@ -370,7 +370,10 @@ class ProductionPositionTracker:
                 # This can happen when processing historical trades out of order
                 # 🔥 FIX: Allow negative qty when syncing from Zerodha (is_broker_sync=True)
                 # AXISBANK bug: SHORT positions from Zerodha were being rejected, causing orphaned positions
-                is_options = 'CE' in symbol or 'PE' in symbol
+                # 🔥 FIX: Use regex for options detection - 'CE' in symbol incorrectly matched BAJFINANCE, PETRONET, ICICIBANK
+                # Options symbols have strike price (digits) before CE/PE: NIFTY25DEC26000CE, BANKNIFTY26JAN59400PE
+                import re
+                is_options = bool(re.search(r'\d+[CP]E$', symbol.upper())) if symbol else False
                 if quantity < 0 and not is_options and not is_broker_sync:
                     self.logger.warning(f"⚠️ IGNORED: Cannot create NEW position with negative qty for {symbol} (qty={quantity})")
                     self.logger.warning(f"   This usually means a SELL trade was processed without a matching BUY")
