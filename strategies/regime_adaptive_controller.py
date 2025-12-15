@@ -890,6 +890,8 @@ class RegimeAdaptiveController:
                         0.0   # kurtosis placeholder
                     ])
                     
+                    # 🔥 FIX: Include all keys for consistency with real-time data structure
+                    # Prevents KeyError when reading from feature_history
                     self.feature_history.append({
                         'timestamp': candle['date'],
                         'features': feature_vector,
@@ -897,7 +899,12 @@ class RegimeAdaptiveController:
                             'volatility': volatility,
                             'momentum': momentum,
                             'volume_profile': volume_profile,
-                            'trend_strength': trend_strength
+                            'trend_strength': trend_strength,
+                            'correlation_regime': 0.5,  # Default for historical data
+                            'skewness': 0.0,
+                            'kurtosis': 0.0,
+                            'n_symbols': 1,  # Single symbol historical data
+                            'nifty_bias': 0.0
                         }
                     })
                 
@@ -1374,10 +1381,30 @@ class RegimeAdaptiveController:
             # High volatility: > 0.05 (5%)
             # Crisis volatility: > 0.10 (10%)
             if len(changes_array) > 1:
+                # 🔥 FIX: Filter outliers before calculating std - some symbols may have extreme moves
+                # Remove values beyond 3 standard deviations (circuit hits, data errors)
+                changes_median = np.median(changes_array)
+                changes_mad = np.median(np.abs(changes_array - changes_median))  # Median Absolute Deviation
+                if changes_mad > 0:
+                    # Use robust z-score based on MAD
+                    z_scores = 0.6745 * (changes_array - changes_median) / changes_mad
+                    filtered_changes = changes_array[np.abs(z_scores) < 3]
+                    if len(filtered_changes) > 1:
+                        vol_raw = np.std(filtered_changes)
+                    else:
                 vol_raw = np.std(changes_array)
-                # Clip to reasonable range: 0-0.5 (50% max - even in crashes)
-                vol_clipped = float(np.clip(vol_raw, 0.0, 0.5))
+                else:
+                    vol_raw = np.std(changes_array)
+                
+                # 🔥 FIX: Clip to REALISTIC range - 15% is extreme for intraday
+                # 50% was way too high and indicated data issues
+                vol_clipped = float(np.clip(vol_raw, 0.005, 0.15))  # 0.5% to 15%
                 volatility = vol_clipped
+                
+                # Debug logging for investigation
+                if vol_raw > 0.10:
+                    logger.warning(f"⚠️ VOLATILITY DEBUG: Raw={vol_raw:.4f}, Clipped={vol_clipped:.4f}, "
+                                  f"Symbols={len(changes_array)}, Range=[{np.min(changes_array):.4f}, {np.max(changes_array):.4f}]")
             else:
                 volatility = 0.02  # 2% default
             
@@ -1735,13 +1762,15 @@ class RegimeAdaptiveController:
             self.regime_metrics.timestamp = datetime.now()
             
             # Update specific metrics from latest features
+            # 🔥 FIX: Use .get() with defaults to prevent KeyError
+            # Historical candle entries have 4 keys, real-time has more
             if self.feature_history:
                 latest = self.feature_history[-1]['raw_data']
-                self.regime_metrics.volatility = latest['volatility']
-                self.regime_metrics.momentum = latest['momentum']
-                self.regime_metrics.volume_profile = latest['volume_profile']
-                self.regime_metrics.trend_strength = latest['trend_strength']
-                self.regime_metrics.correlation_regime = latest['correlation_regime']
+                self.regime_metrics.volatility = latest.get('volatility', 0.02)
+                self.regime_metrics.momentum = latest.get('momentum', 0.0)
+                self.regime_metrics.volume_profile = latest.get('volume_profile', 0.0)
+                self.regime_metrics.trend_strength = latest.get('trend_strength', 0.0)
+                self.regime_metrics.correlation_regime = latest.get('correlation_regime', 0.5)
             
             logger.debug(f"📊 Regime confidence: {ensemble_confidence:.2f}, "
                         f"persistence: {persistence_score:.2f}")
