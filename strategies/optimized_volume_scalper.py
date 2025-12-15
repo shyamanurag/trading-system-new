@@ -2162,6 +2162,61 @@ class OptimizedVolumeScalper(BaseStrategy):
                 1.0 if signal.edge_source == "LIQUIDITY_GAP" else 0.0
             ])
             
+            # 🔥 FIX: TECHNICAL INDICATOR FEATURES (previously missing from ML!)
+            # These indicators were calculated but not passed to ML for weighting
+            if symbol in self.price_history and len(self.price_history[symbol]) >= 14:
+                prices = self.price_history[symbol]
+                prices_arr = np.array(prices)
+                
+                # RSI (normalized 0-1)
+                rsi = self._calculate_rsi(prices, 14)
+                rsi_normalized = rsi / 100.0
+                
+                # Momentum indicators
+                from strategies.momentum_surfer import ProfessionalMomentumModels
+                momentum_score = ProfessionalMomentumModels.momentum_score(prices_arr, min(20, len(prices)))
+                trend_strength = ProfessionalMomentumModels.trend_strength(prices_arr)
+                mean_reversion_prob = ProfessionalMomentumModels.mean_reversion_probability(prices_arr)
+                hp_trend, hp_cycle, hp_trend_direction = ProfessionalMomentumModels.hp_trend_filter(prices_arr)
+                
+                # MACD state (encoded)
+                macd_state_val = 0.0
+                if len(prices) >= 26:
+                    macd_data = self.calculate_macd_signal(prices)
+                    macd_crossover = macd_data.get('crossover')
+                    if macd_crossover == 'bullish':
+                        macd_state_val = 1.0
+                    elif macd_crossover == 'bearish':
+                        macd_state_val = -1.0
+                
+                # Buying/Selling pressure
+                ltp = symbol_data.get('ltp', symbol_data.get('close', 0))
+                high = symbol_data.get('high', ltp)
+                low = symbol_data.get('low', ltp)
+                close = symbol_data.get('close', ltp)
+                if high > low:
+                    buying_pressure = (close - low) / (high - low)
+                    selling_pressure = (high - close) / (high - low)
+                else:
+                    buying_pressure = 0.5
+                    selling_pressure = 0.5
+                
+                features.extend([
+                    rsi_normalized,           # 0-1: RSI normalized
+                    (rsi - 50) / 50,          # -1 to 1: RSI deviation from neutral
+                    momentum_score / 10.0,    # Normalized momentum score
+                    trend_strength,           # Raw trend strength
+                    mean_reversion_prob,      # 0-1: Mean reversion probability
+                    hp_trend_direction * 100, # HP trend direction (scaled)
+                    macd_state_val,           # -1, 0, 1: MACD state
+                    buying_pressure,          # 0-1: Buying pressure
+                    selling_pressure,         # 0-1: Selling pressure
+                    buying_pressure - selling_pressure  # -1 to 1: Net pressure
+                ])
+            else:
+                # Default values if insufficient data
+                features.extend([0.5, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.5, 0.5, 0.0])
+            
             return np.array(features)
             
         except Exception as e:
