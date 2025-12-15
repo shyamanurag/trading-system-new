@@ -1392,7 +1392,7 @@ class RegimeAdaptiveController:
                     if len(filtered_changes) > 1:
                         vol_raw = np.std(filtered_changes)
                     else:
-                vol_raw = np.std(changes_array)
+                        vol_raw = np.std(changes_array)
                 else:
                     vol_raw = np.std(changes_array)
                 
