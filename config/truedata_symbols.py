@@ -118,8 +118,8 @@ def get_complete_fo_symbols() -> List[str]:
         'PHOENIXLTD', 'SOBHA', 'MINDSPACE', 'BROOKFIELD', 'EMBASSY',
         'IGARASHI', 'IRB', 'GMRINFRA', 'CONCOR', 'BHARATFORG',
         
-        # Telecom & Media (10)
-        'IDEA', 'RCOM', 'GTPL', 'SITI', 'HATHWAY',
+        # Telecom & Media (8) - Removed RCOM (delisted), IDEA (penny stock)
+        'GTPL', 'SITI', 'HATHWAY',
         'DISHTV', 'TV18BRDCST', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',
         
         # Textiles & Apparel (10)
@@ -311,8 +311,8 @@ def is_fo_enabled(symbol: str) -> bool:
         # Normalize for comparison
         clean_symbol = symbol.replace('-I', '').replace('25', '').replace('26', '').strip().upper()
 
-        # Block delisted/suspended symbols
-        blocked_symbols = {'RCOM', 'RELCAPITAL', 'YESBANK', 'JETAIRWAYS'}
+        # Block delisted/suspended/penny stocks (< ₹50)
+        blocked_symbols = {'RCOM', 'RELCAPITAL', 'YESBANK', 'JETAIRWAYS', 'IDEA', 'SITI', 'DISHTV'}
         if clean_symbol in blocked_symbols:
             logger.warning(f"🚫 BLOCKED SYMBOL: {clean_symbol} - Known delisted/suspended stock")
             _fo_enabled_cache[clean_symbol] = False
@@ -464,8 +464,8 @@ def get_complete_fo_symbols() -> List[str]:
         'PHOENIXLTD', 'SOBHA', 'MINDSPACE', 'BROOKFIELD', 'EMBASSY',
         'IGARASHI', 'IRB', 'GMRINFRA', 'CONCOR', 'BHARATFORG',
         
-        # Telecom & Media (10)
-        'IDEA', 'RCOM', 'GTPL', 'SITI', 'HATHWAY',
+        # Telecom & Media (8) - Removed RCOM (delisted), IDEA (penny stock)
+        'GTPL', 'SITI', 'HATHWAY',
         'DISHTV', 'TV18BRDCST', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',
         
         # Textiles & Apparel (10)
