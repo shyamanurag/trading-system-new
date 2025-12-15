@@ -1018,15 +1018,37 @@ class RiskManager:
                 logger.info(f"🎯 TIME BYPASS: {symbol} {action} - Management/closing action allowed at {current_time_str} IST")
                 return True
             
-            # Time-based restrictions for regular signals
+            # 🔥 CRITICAL FIX: Allow EXIT orders after 3:00 PM
+            # Check if this is an exit/sell order for an existing position
+            is_exit_order = False
+            order_action = action.upper() if action else ''
+            
+            # Check various exit indicators
+            if isinstance(order, dict):
+                is_exit_order = (
+                    order.get('is_exit', False) or
+                    order.get('signal_type') == 'EXIT' or
+                    'EXIT' in tag.upper() or
+                    'FULL_EXIT' in tag.upper() or
+                    order.get('metadata', {}).get('is_exit', False) or
+                    order.get('exit_reason') is not None
+                )
+            
+            # After 3:00 PM, allow exits but block new positions
+            if current_time_ist >= no_new_signals_after:  # After 3:00 PM
+                if is_exit_order or order_action == 'SELL':
+                    logger.info(f"✅ EXIT ALLOWED AFTER 3PM: {symbol} {action} - Exit orders permitted at {current_time_str} IST")
+                    return True
+            
+            # Time-based restrictions for NEW positions only
             if current_time_ist >= mandatory_close_time:  # After 3:20 PM
-                logger.warning(f"🚨 MANDATORY CLOSE TIME: {symbol} {action} rejected - Only position management allowed after 3:20 PM IST (Current: {current_time_str} IST)")
+                logger.warning(f"🚨 MANDATORY CLOSE TIME: {symbol} {action} rejected - Only exits allowed after 3:20 PM IST (Current: {current_time_str} IST)")
                 return False
             elif current_time_ist >= warning_close_time:  # 3:15-3:20 PM
-                logger.warning(f"⚠️ WARNING CLOSE TIME: {symbol} {action} rejected - Only urgent position management allowed 3:15-3:20 PM IST (Current: {current_time_str} IST)")
+                logger.warning(f"⚠️ WARNING CLOSE TIME: {symbol} {action} rejected - Only exits allowed 3:15-3:20 PM IST (Current: {current_time_str} IST)")
                 return False
             elif current_time_ist >= no_new_signals_after:  # 3:00-3:15 PM
-                logger.warning(f"🕐 NO NEW SIGNALS: {symbol} {action} rejected - No new positions after 3:00 PM IST (Current: {current_time_str} IST)")
+                logger.warning(f"🕐 NO NEW POSITIONS: {symbol} {action} rejected - No new positions after 3:00 PM IST (Current: {current_time_str} IST)")
                 return False
             
             # Normal trading hours (9:15 AM - 3:00 PM)

@@ -113,10 +113,11 @@ def get_complete_fo_symbols() -> List[str]:
         'TATACONSUM', 'EMAMILTD', 'JYOTHYLAB', 'BAJAJCON', 'PAGEIND',
         'PIDILITIND', 'BERGER', 'KANSAINER', 'ASTRAL', 'RELAXO',
         
-        # Infrastructure & Real Estate (15)
+        # Infrastructure & Real Estate (20) - Added PSU Infra stocks
         'DLF', 'OBEROIRLTY', 'PRESTIGE', 'GODREJPROP', 'BRIGADE',
         'PHOENIXLTD', 'SOBHA', 'MINDSPACE', 'BROOKFIELD', 'EMBASSY',
         'IGARASHI', 'IRB', 'GMRINFRA', 'CONCOR', 'BHARATFORG',
+        'IRFC', 'RVNL', 'ANANTRAJ', 'IREDA', 'RECLTD',  # PSU Infra - popular retail stocks
         
         # Telecom & Media (6) - Removed RCOM, IDEA, SITI, DISHTV (delisted/penny stocks)
         'GTPL', 'HATHWAY', 'TV18BRDCST', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',
@@ -458,10 +459,11 @@ def get_complete_fo_symbols() -> List[str]:
         'TATACONSUM', 'EMAMILTD', 'JYOTHYLAB', 'BAJAJCON', 'PAGEIND',
         'PIDILITIND', 'BERGER', 'KANSAINER', 'ASTRAL', 'RELAXO',
         
-        # Infrastructure & Real Estate (15)
+        # Infrastructure & Real Estate (20) - Added PSU Infra stocks
         'DLF', 'OBEROIRLTY', 'PRESTIGE', 'GODREJPROP', 'BRIGADE',
         'PHOENIXLTD', 'SOBHA', 'MINDSPACE', 'BROOKFIELD', 'EMBASSY',
         'IGARASHI', 'IRB', 'GMRINFRA', 'CONCOR', 'BHARATFORG',
+        'IRFC', 'RVNL', 'ANANTRAJ', 'IREDA', 'RECLTD',  # PSU Infra - popular retail stocks
         
         # Telecom & Media (6) - Removed RCOM, IDEA, SITI, DISHTV (delisted/penny stocks)
         'GTPL', 'HATHWAY', 'TV18BRDCST', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',

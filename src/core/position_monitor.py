@@ -83,8 +83,9 @@ class PositionMonitor:
         self._local_exit_cooldown: Dict[str, datetime] = {}
         
         # Time-based exit configuration
-        self.intraday_exit_time = time(15, 15)  # 3:15 PM IST
-        self.market_close_time = time(15, 30)   # 3:30 PM IST
+        self.intraday_exit_time = time(15, 15)  # 3:15 PM IST - Start aggressive square-off
+        self.mandatory_close_time = time(15, 20)  # 3:20 PM IST - MUST close ALL positions
+        self.market_close_time = time(15, 30)   # 3:30 PM IST - Market close
         
         # Safety flags
         self.emergency_stop_active = False
@@ -486,27 +487,41 @@ class PositionMonitor:
     def _check_time_based_exit(self, symbol: str, position, current_time: time) -> Optional[ExitCondition]:
         """Check time-based exit conditions"""
         
-        # Market close exit (3:30 PM IST) - HIGHEST PRIORITY
+        # Market close exit (3:30 PM IST) - EMERGENCY (should never have positions here)
         if current_time >= self.market_close_time:
             if not self.market_close_initiated:
                 self.market_close_initiated = True
-                logger.warning(f"🚨 MARKET CLOSE: Initiating square-off for all positions")
+                logger.error(f"🚨🚨 MARKET CLOSE EMERGENCY: Positions still open at 3:30 PM! Force square-off!")
             
             return ExitCondition(
                 condition_type='time_based',
                 symbol=symbol,
                 trigger_time=datetime.now(self.ist_timezone),
-                reason=f'Market close square-off at {current_time.strftime("%H:%M:%S")} IST',
+                reason=f'EMERGENCY market close at {current_time.strftime("%H:%M:%S")} IST',
+                priority=0  # EMERGENCY priority
+            )
+        
+        # 🔥 MANDATORY CLOSE (3:20 PM IST) - MUST close ALL positions by this time
+        if current_time >= self.mandatory_close_time:
+            if not hasattr(self, '_mandatory_close_initiated') or not self._mandatory_close_initiated:
+                self._mandatory_close_initiated = True
+                logger.warning(f"🚨 MANDATORY 3:20 PM CLOSE: ALL positions MUST close NOW!")
+            
+            return ExitCondition(
+                condition_type='time_based',
+                symbol=symbol,
+                trigger_time=datetime.now(self.ist_timezone),
+                reason=f'MANDATORY close at {current_time.strftime("%H:%M:%S")} IST - ALL positions must close by 3:20 PM',
                 priority=1  # Highest priority
             )
         
-        # Intraday exit (3:15 PM IST) - HIGH PRIORITY
+        # Intraday exit window (3:15-3:20 PM IST) - Aggressive square-off
         if current_time >= self.intraday_exit_time:
             return ExitCondition(
                 condition_type='time_based',
                 symbol=symbol,
                 trigger_time=datetime.now(self.ist_timezone),
-                reason=f'Intraday exit at {current_time.strftime("%H:%M:%S")} IST',
+                reason=f'Intraday square-off at {current_time.strftime("%H:%M:%S")} IST (3:15-3:20 window)',
                 priority=2  # High priority
             )
         

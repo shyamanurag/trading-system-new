@@ -2571,6 +2571,23 @@ class ZerodhaIntegration:
             }
         """
         try:
+            # 🔥 FIX: Add rate limiting and caching to prevent "Too many requests" error
+            if not hasattr(self, '_option_chain_cache'):
+                self._option_chain_cache: Dict[str, tuple] = {}  # symbol -> (data, timestamp)
+            if not hasattr(self, '_option_chain_cooldown'):
+                self._option_chain_cooldown = 60  # 1 minute cache
+            
+            now = datetime.now()
+            cache_key = f"{underlying_symbol}_{expiry or 'nearest'}"
+            
+            # Check cache
+            if cache_key in self._option_chain_cache:
+                cached_data, cache_time = self._option_chain_cache[cache_key]
+                elapsed = (now - cache_time).total_seconds()
+                if elapsed < self._option_chain_cooldown:
+                    logger.debug(f"📦 Using cached option chain for {underlying_symbol} ({elapsed:.0f}s old)")
+                    return cached_data
+            
             if not self.kite or not self.is_connected:
                 logger.warning(f"⚠️ Zerodha not connected - cannot get option chain for {underlying_symbol}")
                 return {}
@@ -2832,6 +2849,9 @@ class ZerodhaIntegration:
             
             logger.info(f"✅ Option chain built: {len(calls_data)} calls, {len(puts_data)} puts")
             logger.info(f"📊 Analytics: PCR={analytics.get('pcr', 0):.2f}, Max Pain={analytics.get('max_pain', 0)}")
+            
+            # 🔥 FIX: Cache the result to prevent "Too many requests" error
+            self._option_chain_cache[cache_key] = (result, datetime.now())
             
             return result
             

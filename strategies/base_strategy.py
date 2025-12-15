@@ -1704,6 +1704,16 @@ class BaseStrategy:
                         'highest_profit': profit_pct
                     }
                     logger.info(f"🎯 {self.name}: Set trailing stop for {symbol} at ₹{trailing_stop_price:.2f} (profit: {profit_pct:.2f}%)")
+                    
+                    # 🔥 CRITICAL FIX: Sync to position_tracker when first setting trailing stop
+                    try:
+                        from src.core.position_tracker import position_tracker
+                        if symbol in position_tracker.positions:
+                            position_tracker.positions[symbol].trailing_stop = trailing_stop_price
+                            position_tracker.positions[symbol].stop_loss = trailing_stop_price
+                            logger.info(f"✅ NEW TRAILING STOP SYNCED: {symbol} → ₹{trailing_stop_price:.2f}")
+                    except Exception as sync_err:
+                        logger.error(f"❌ Failed to sync new trailing stop: {sync_err}")
                 else:
                     current_trailing = self.trailing_stops[symbol]
                     
@@ -1717,6 +1727,17 @@ class BaseStrategy:
                             'highest_profit': max(profit_pct, current_trailing['highest_profit'])
                         })
                         logger.info(f"🎯 {self.name}: Updated trailing stop for {symbol} to ₹{trailing_stop_price:.2f} (profit: {profit_pct:.2f}%)")
+                        
+                        # 🔥 CRITICAL FIX: Sync to position_tracker so position_monitor can trigger exits!
+                        try:
+                            from src.core.position_tracker import position_tracker
+                            if symbol in position_tracker.positions:
+                                position_tracker.positions[symbol].trailing_stop = trailing_stop_price
+                                # Also update stop_loss to the trailing level
+                                position_tracker.positions[symbol].stop_loss = trailing_stop_price
+                                logger.info(f"✅ TRAILING STOP SYNCED TO POSITION TRACKER: {symbol} → ₹{trailing_stop_price:.2f}")
+                        except Exception as sync_err:
+                            logger.error(f"❌ Failed to sync trailing stop to position_tracker: {sync_err}")
                         
                         # 🔥 CRITICAL FIX: Send trailing stop to broker
                         await self._modify_broker_stop_loss(symbol, trailing_stop_price, action)
@@ -1893,6 +1914,32 @@ class BaseStrategy:
             # Calculate quantity to book
             quantity_to_book = max(1, int(current_quantity * percentage / 100))
             
+            # 🔥 FIX: Minimum order value check for partial exits
+            # Partial exits that create tiny orders waste brokerage
+            MIN_PARTIAL_ORDER_VALUE = 50000.0  # ₹50,000 minimum for partial exits
+            partial_order_value = quantity_to_book * current_price
+            remaining_qty = current_quantity - quantity_to_book
+            remaining_value = remaining_qty * current_price
+            
+            if partial_order_value < MIN_PARTIAL_ORDER_VALUE:
+                # Partial exit too small - check if full exit makes sense
+                if remaining_value < MIN_PARTIAL_ORDER_VALUE:
+                    # Both partial and remaining are small - do FULL exit instead
+                    logger.warning(f"🔄 {symbol}: Partial exit ₹{partial_order_value:,.0f} too small, doing FULL exit instead")
+                    await self.exit_position(symbol, current_price, f'FULL_EXIT_SMALL_POSITION')
+                    return
+                else:
+                    # Skip partial, keep full position
+                    logger.info(f"⏭️ {symbol}: Skipping partial exit (₹{partial_order_value:,.0f} < ₹{MIN_PARTIAL_ORDER_VALUE:,.0f})")
+                    return
+            
+            # Also check remaining position isn't too small
+            if remaining_value < MIN_PARTIAL_ORDER_VALUE and remaining_qty > 0:
+                # Remaining would be too small - do full exit
+                logger.warning(f"🔄 {symbol}: Remaining ₹{remaining_value:,.0f} too small, doing FULL exit instead")
+                await self.exit_position(symbol, current_price, f'FULL_EXIT_SMALL_REMAINING')
+                return
+            
             # Create exit signal for partial quantity
             exit_action = 'SELL' if action == 'BUY' else 'BUY'
             
@@ -1979,7 +2026,7 @@ class BaseStrategy:
             should_update = False
             if action == 'BUY' and new_stop_loss > current_stop:
                 should_update = True
-            elif action == 'SELL' and new_stop_loss < current_stop:
+            elif action == 'SELL' and (current_stop == 0 or new_stop_loss < current_stop):
                 should_update = True
             
             if should_update:
@@ -1992,9 +2039,17 @@ class BaseStrategy:
                 self.management_actions_taken[symbol].append(f'STOP_LOSS_ADJUSTMENT_TO_{new_stop_loss:.2f}')
                 self.last_management_time[symbol] = datetime.now()
                 
-                # Update stop loss in position tracker/broker if available
-                # Note: Stop loss adjustments are applied to the position tracker
-                # The actual broker stop loss orders are managed by the position monitor
+                # 🔥 CRITICAL FIX: Sync stop loss to position_tracker so position_monitor can trigger exits!
+                # Without this, stop losses were only stored locally and NEVER executed
+                try:
+                    from src.core.position_tracker import position_tracker
+                    if symbol in position_tracker.positions:
+                        position_tracker.positions[symbol].stop_loss = new_stop_loss
+                        logger.info(f"✅ STOP LOSS SYNCED TO POSITION TRACKER: {symbol} → ₹{new_stop_loss:.2f}")
+                    else:
+                        logger.warning(f"⚠️ {symbol} not in position_tracker - stop loss only local")
+                except Exception as sync_err:
+                    logger.error(f"❌ Failed to sync stop loss to position_tracker: {sync_err}")
             
         except Exception as e:
             logger.error(f"Error adjusting stop loss for {symbol}: {e}")
@@ -2550,9 +2605,9 @@ class BaseStrategy:
                     data_source = cached['data_source']
                 else:
                     # Fallback to tick-based GARCH (less accurate but available)
-                    prices = np.array([h['close'] for h in history])
-                    garch_atr = ProfessionalMathFoundation.garch_atr(prices, period)
-                    traditional_atr = self._calculate_traditional_atr_internal(history, period)
+                prices = np.array([h['close'] for h in history])
+                garch_atr = ProfessionalMathFoundation.garch_atr(prices, period)
+                traditional_atr = self._calculate_traditional_atr_internal(history, period)
                     data_source = 'tick_based'
                 
                 # ENSEMBLE ATR (70% GARCH, 30% traditional)
@@ -4982,7 +5037,7 @@ class BaseStrategy:
                 if not should_allow and exceptional_rs:
                     logger.info(f"🚫 RS OVERRIDE BLOCKED: {symbol} {action} has exceptional RS but bias says NO - Respecting bias filter")
                     metadata['exceptional_rs_blocked'] = True
-                    metadata['relative_strength'] = exceptional_rs_value
+                        metadata['relative_strength'] = exceptional_rs_value
                 
                 if not should_allow:
                     logger.info(f"🚫 BIAS FILTER: {symbol} {action} rejected by market bias "
@@ -5519,8 +5574,8 @@ class BaseStrategy:
             trading_mode = f'INTRADAY_{hybrid_mode}'
             
             # 🔥 INTRADAY TIMEFRAME
-            timeframe = "Same Day (Intraday)"
-            square_off_time = "15:15 IST"
+                timeframe = "Same Day (Intraday)"
+                square_off_time = "15:15 IST"
             
             # ============================================================
             # 🎯 CRITICAL: PROPER POSITION SIZING (4x LEVERAGE + 1% MAX LOSS)
@@ -5558,8 +5613,8 @@ class BaseStrategy:
             margin_required = position_value / INTRADAY_LEVERAGE  # 25% of position
             
             # 🔥 FIX: Minimum order value to prevent brokerage losses on tiny trades
-            # Brokerage + taxes ~0.1% round-trip, need min ₹15,000 to make trades worthwhile
-            MIN_ORDER_VALUE = 15000.0
+            # At ₹50,000, a 1% move = ₹500 profit, covering brokerage (~₹60) with good buffer
+            MIN_ORDER_VALUE = 50000.0
             if position_value < MIN_ORDER_VALUE:
                 logger.warning(f"🚫 SMALL ORDER BLOCKED: {symbol} position ₹{position_value:,.0f} < min ₹{MIN_ORDER_VALUE:,.0f}")
                 return None
@@ -7453,7 +7508,7 @@ class BaseStrategy:
             
             # Priority 1: Get FRESH client from orchestrator (handles token refresh properly)
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
-                zerodha_client = orchestrator.zerodha_client
+                    zerodha_client = orchestrator.zerodha_client
                 # Verify kite is initialized
                 if hasattr(zerodha_client, 'kite') and zerodha_client.kite:
                     logger.debug("✅ Using orchestrator's Zerodha client (kite initialized)")

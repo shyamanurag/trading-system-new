@@ -29,7 +29,7 @@ class OrderRateLimiter:
         self._last_trade_time: Dict[str, datetime] = {}
         self.trade_cooldown_seconds = 300  # 5 minutes between trades on same symbol
         self.min_order_quantity = 5  # Minimum 5 shares per order
-        self.min_order_value = 15000.0  # Minimum ₹15,000 order value to avoid brokerage losses
+        self.min_order_value = 50000.0  # Minimum ₹50,000 order value to avoid brokerage losses
         
         # 🔥 NEW: Per-symbol daily trade limit to prevent churning
         self._daily_symbol_trades: Dict[str, int] = {}  # symbol -> trade count today

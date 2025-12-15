@@ -2324,28 +2324,64 @@ class TradingOrchestrator:
                     if self.trade_engine:
                         self.logger.info(f"🚀 SENDING {len(filtered_signals)} signals to trade engine for execution")
                         
-                        # 🚨 CRITICAL FIX: Record orders BEFORE execution to prevent duplicates
-                        # This ensures that if another signal generation cycle runs while orders are being placed,
-                        # it will see these pending orders and block duplicate signals
-                        for i, signal in enumerate(filtered_signals):
-                            symbol = signal.get('symbol', 'UNKNOWN')
-                            action = signal.get('action', 'UNKNOWN')
-                            quantity = signal.get('quantity', 0)
-                            self.logger.info(f"   📋 Signal {i+1}: {symbol} {action} qty={quantity}")
-                            
-                            # Record order placement to prevent duplicates (matches base_strategy pattern)
-                            try:
-                                strategy_key = signal.get('strategy', 'unknown')
-                                if strategy_key in self.strategies:
-                                    strategy_instance = self.strategies[strategy_key].get('instance')
-                                    if strategy_instance and hasattr(strategy_instance, '_record_order_placement'):
-                                        strategy_instance._record_order_placement(symbol)
-                                        self.logger.debug(f"🔒 LOCKED: {symbol} - Duplicate prevention activated for 2 minutes")
-                            except Exception as record_err:
-                                self.logger.warning(f"Could not record order placement for {symbol}: {record_err}")
+                        # 🔥 CROSS-STRATEGY SYMBOL LOCK - Prevent churning across strategies
+                        # If one strategy trades a symbol, other strategies cannot trade it for 5 minutes
+                        if not hasattr(self, '_cross_strategy_lock'):
+                            self._cross_strategy_lock: Dict[str, tuple] = {}  # symbol -> (strategy, timestamp, action)
                         
-                        await self.trade_engine.process_signals(filtered_signals)
-                        self.logger.info(f"✅ Trade engine processing completed for {len(filtered_signals)} signals")
+                        cross_lock_window = 300  # 5 minutes
+                        now = datetime.now()
+                        
+                        # Filter out signals blocked by cross-strategy lock
+                        cross_filtered = []
+                        for signal in filtered_signals:
+                            symbol = signal.get('symbol', 'UNKNOWN')
+                            strategy_key = signal.get('strategy', 'unknown')
+                            action = signal.get('action', 'BUY')
+                            
+                            if symbol in self._cross_strategy_lock:
+                                locked_strategy, lock_time, locked_action = self._cross_strategy_lock[symbol]
+                                elapsed = (now - lock_time).total_seconds()
+                                
+                                if elapsed < cross_lock_window and locked_strategy != strategy_key:
+                                    self.logger.warning(f"🔒 CROSS-STRATEGY LOCK: {symbol} locked by {locked_strategy} ({elapsed:.0f}s ago)")
+                                    self.logger.warning(f"   Blocking {strategy_key} {action} to prevent churning")
+                                    continue  # Skip this signal
+                            
+                            # Lock this symbol for this strategy
+                            self._cross_strategy_lock[symbol] = (strategy_key, now, action)
+                            cross_filtered.append(signal)
+                        
+                        if len(cross_filtered) < len(filtered_signals):
+                            self.logger.info(f"🔒 CROSS-STRATEGY FILTER: {len(filtered_signals)} → {len(cross_filtered)} (blocked churning)")
+                        
+                        filtered_signals = cross_filtered
+                        
+                        if not filtered_signals:
+                            self.logger.info("📭 All signals blocked by cross-strategy lock")
+                        else:
+                            # 🚨 CRITICAL FIX: Record orders BEFORE execution to prevent duplicates
+                            # This ensures that if another signal generation cycle runs while orders are being placed,
+                            # it will see these pending orders and block duplicate signals
+                            for i, signal in enumerate(filtered_signals):
+                                symbol = signal.get('symbol', 'UNKNOWN')
+                                action = signal.get('action', 'UNKNOWN')
+                                quantity = signal.get('quantity', 0)
+                                self.logger.info(f"   📋 Signal {i+1}: {symbol} {action} qty={quantity}")
+                                
+                                # Record order placement to prevent duplicates (matches base_strategy pattern)
+                                try:
+                                    strategy_key = signal.get('strategy', 'unknown')
+                                    if strategy_key in self.strategies:
+                                        strategy_instance = self.strategies[strategy_key].get('instance')
+                                        if strategy_instance and hasattr(strategy_instance, '_record_order_placement'):
+                                            strategy_instance._record_order_placement(symbol)
+                                            self.logger.debug(f"🔒 LOCKED: {symbol} - Duplicate prevention activated for 2 minutes")
+                                except Exception as record_err:
+                                    self.logger.warning(f"Could not record order placement for {symbol}: {record_err}")
+                            
+                            await self.trade_engine.process_signals(filtered_signals)
+                            self.logger.info(f"✅ Trade engine processing completed for {len(filtered_signals)} signals")
                     else:
                         self.logger.error("❌ Trade engine not available - signals cannot be processed")
                         # TRACK: Mark all signals as failed due to no trade engine
@@ -4431,23 +4467,6 @@ class TradingOrchestrator:
         previously did nothing. Now it will close the losing BUY position.
         """
         try:
-            # 🔥 FIX: Prevent duplicate reversal exits (VEDL 6x BUY bug)
-            # Track reversal exits in progress with 60-second cooldown
-            if not hasattr(self, '_reversal_exit_cooldown'):
-                self._reversal_exit_cooldown: Dict[str, datetime] = {}
-            
-            now = datetime.now()
-            cooldown_seconds = 60  # 1 minute between reversal exits for same symbol
-            
-            if symbol in self._reversal_exit_cooldown:
-                elapsed = (now - self._reversal_exit_cooldown[symbol]).total_seconds()
-                if elapsed < cooldown_seconds:
-                    self.logger.warning(f"🚫 REVERSAL EXIT BLOCKED: {symbol} - Already triggered {elapsed:.0f}s ago (cooldown: {cooldown_seconds}s)")
-                    return
-            
-            # Mark this symbol as having a reversal exit in progress
-            self._reversal_exit_cooldown[symbol] = now
-            
             self.logger.warning(f"🔄 EXECUTING REVERSAL EXIT: {symbol}")
             
             # Get position details
