@@ -2162,10 +2162,13 @@ class EnhancedMomentumSurfer(BaseStrategy):
         
         # 🔥 CRITICAL FIX: Don't generate BUY signal if SHORT position already exists!
         # AXISBANK bug: RSI divergence triggered BUY which squared off profitable SHORT
-        if hasattr(self, 'open_positions') and symbol in self.open_positions:
-            pos = self.open_positions[symbol]
-            pos_side = getattr(pos, 'side', None) or ('LONG' if getattr(pos, 'quantity', 0) > 0 else 'SHORT')
-            if pos_side == 'SHORT' or getattr(pos, 'quantity', 0) < 0:
+        if hasattr(self, 'active_positions') and symbol in self.active_positions:
+            pos = self.active_positions[symbol]
+            pos_qty = pos.get('quantity', 0) if isinstance(pos, dict) else getattr(pos, 'quantity', 0)
+            pos_side = pos.get('side', None) if isinstance(pos, dict) else getattr(pos, 'side', None)
+            if pos_side is None:
+                pos_side = 'LONG' if pos_qty > 0 else 'SHORT'
+            if pos_side == 'SHORT' or pos_qty < 0:
                 logger.info(f"🚫 REVERSAL BLOCKED: {symbol} has existing SHORT position - not generating BUY")
                 return None
         
@@ -2216,10 +2219,13 @@ class EnhancedMomentumSurfer(BaseStrategy):
         data = market_data.get(symbol, {})
         
         # 🔥 CRITICAL FIX: Don't generate SELL signal if LONG position already exists!
-        if hasattr(self, 'open_positions') and symbol in self.open_positions:
-            pos = self.open_positions[symbol]
-            pos_side = getattr(pos, 'side', None) or ('LONG' if getattr(pos, 'quantity', 0) > 0 else 'SHORT')
-            if pos_side == 'LONG' or getattr(pos, 'quantity', 0) > 0:
+        if hasattr(self, 'active_positions') and symbol in self.active_positions:
+            pos = self.active_positions[symbol]
+            pos_qty = pos.get('quantity', 0) if isinstance(pos, dict) else getattr(pos, 'quantity', 0)
+            pos_side = pos.get('side', None) if isinstance(pos, dict) else getattr(pos, 'side', None)
+            if pos_side is None:
+                pos_side = 'LONG' if pos_qty > 0 else 'SHORT'
+            if pos_side == 'LONG' or pos_qty > 0:
                 logger.info(f"🚫 REVERSAL BLOCKED: {symbol} has existing LONG position - not generating SELL")
                 return None
         
