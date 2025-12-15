@@ -2610,8 +2610,10 @@ class BaseStrategy:
             atr = np.mean(recent_trs)
             
             # Ensure minimum ATR (0.1% of price) and reasonable maximum (10% of price)
-            min_atr = current_close * 0.001 if hasattr(self, 'current_close') else 1.0
-            max_atr = current_close * 0.1 if hasattr(self, 'current_close') else 100.0
+            # Use last candle's close from history for reference price
+            last_close = history[-1]['close'] if history else 100.0
+            min_atr = last_close * 0.001
+            max_atr = last_close * 0.1
             
             return max(min_atr, min(atr, max_atr))
             
