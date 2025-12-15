@@ -360,7 +360,10 @@ class ProductionPositionTracker:
                     position.unrealized_pnl = (position.average_price - price) * position.quantity
                 
                 # Log for options debugging
-                if 'CE' in symbol or 'PE' in symbol:
+                # 🔥 FIX: Use regex to correctly identify options (BAJFINANCE was incorrectly matched)
+                import re
+                is_options_symbol = bool(re.search(r'\d+[CP]E$', symbol.upper())) if symbol else False
+                if is_options_symbol:
                     self.logger.info(f"📊 OPTIONS P&L UPDATE: {symbol} | Entry: ₹{position.average_price:.2f} | Current: ₹{price:.2f} | P&L: ₹{position.unrealized_pnl:.2f}")
                 
             else:
