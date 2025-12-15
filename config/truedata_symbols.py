@@ -118,9 +118,8 @@ def get_complete_fo_symbols() -> List[str]:
         'PHOENIXLTD', 'SOBHA', 'MINDSPACE', 'BROOKFIELD', 'EMBASSY',
         'IGARASHI', 'IRB', 'GMRINFRA', 'CONCOR', 'BHARATFORG',
         
-        # Telecom & Media (8) - Removed RCOM (delisted), IDEA (penny stock)
-        'GTPL', 'SITI', 'HATHWAY',
-        'DISHTV', 'TV18BRDCST', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',
+        # Telecom & Media (6) - Removed RCOM, IDEA, SITI, DISHTV (delisted/penny stocks)
+        'GTPL', 'HATHWAY', 'TV18BRDCST', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',
         
         # Textiles & Apparel (10)
         'RTNPOWER', 'VARDHMAN', 'WELSPUNIND', 'RAYMOND', 'ARVIND',
@@ -464,9 +463,8 @@ def get_complete_fo_symbols() -> List[str]:
         'PHOENIXLTD', 'SOBHA', 'MINDSPACE', 'BROOKFIELD', 'EMBASSY',
         'IGARASHI', 'IRB', 'GMRINFRA', 'CONCOR', 'BHARATFORG',
         
-        # Telecom & Media (8) - Removed RCOM (delisted), IDEA (penny stock)
-        'GTPL', 'SITI', 'HATHWAY',
-        'DISHTV', 'TV18BRDCST', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',
+        # Telecom & Media (6) - Removed RCOM, IDEA, SITI, DISHTV (delisted/penny stocks)
+        'GTPL', 'HATHWAY', 'TV18BRDCST', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',
         
         # Textiles & Apparel (10)
         'RTNPOWER', 'VARDHMAN', 'WELSPUNIND', 'RAYMOND', 'ARVIND',
