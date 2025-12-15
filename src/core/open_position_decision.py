@@ -1023,7 +1023,93 @@ class EnhancedOpenPositionDecision:
                         }
                     )
             
-            # ============= STANDARD TRAILING STOP FOR PROFITABLE POSITIONS =============
+            # ============= OPTIONS-SPECIFIC TRAILING (FULL LOT ONLY) =============
+            # Options trade in lots - can't do partial exits
+            # Must trail aggressively with FULL position exit when stop hit
+            import re
+            is_options = bool(re.search(r'\d+[CP]E$', symbol.upper())) if symbol else False
+            
+            if is_options:
+                # 🔥 OPTIONS 10%+: VERY TIGHT 1% trail - lock in profits!
+                if pnl_percent >= 10.0:
+                    tight_trail = 1.0
+                    if action == 'BUY':
+                        new_stop = current_price * (1 - tight_trail / 100)
+                    else:
+                        new_stop = current_price * (1 + tight_trail / 100)
+                    
+                    logger.warning(f"🔥 OPTIONS BIG WINNER: {symbol} +{pnl_percent:.1f}% → 1% trail @ ₹{new_stop:.2f}")
+                    return OpenPositionDecisionResult(
+                        action=OpenPositionAction.TRAIL_STOP,
+                        exit_reason=None,
+                        confidence=9.5,
+                        urgency="HIGH",
+                        quantity_percentage=100.0,
+                        new_stop_loss=new_stop,
+                        new_target=None,
+                        reasoning=f"OPTIONS WINNER: {pnl_percent:.1f}% → 1% trail @ ₹{new_stop:.2f}",
+                        metadata={'pnl_percent': pnl_percent, 'new_stop_loss': new_stop, 
+                                  'trail_percentage': tight_trail, 'is_options': True}
+                    )
+                
+                # 🔥 OPTIONS 5-10%: Use 1.5% trail
+                if pnl_percent >= 5.0:
+                    options_trail = 1.5
+                    if action == 'BUY':
+                        new_stop = current_price * (1 - options_trail / 100)
+                    else:
+                        new_stop = current_price * (1 + options_trail / 100)
+                    
+                    logger.warning(f"🔥 OPTIONS TRAILING: {symbol} +{pnl_percent:.1f}% → 1.5% trail @ ₹{new_stop:.2f}")
+                    return OpenPositionDecisionResult(
+                        action=OpenPositionAction.TRAIL_STOP,
+                        exit_reason=None,
+                        confidence=9.0,
+                        urgency="HIGH",
+                        quantity_percentage=100.0,
+                        new_stop_loss=new_stop,
+                        new_target=None,
+                        reasoning=f"OPTIONS TRAILING: {pnl_percent:.1f}% → 1.5% trail @ ₹{new_stop:.2f}",
+                        metadata={'pnl_percent': pnl_percent, 'new_stop_loss': new_stop,
+                                  'trail_percentage': options_trail, 'is_options': True}
+                    )
+                
+                # 🔥 OPTIONS 3-5%: Early 2% trail
+                if pnl_percent >= 3.0:
+                    options_trail = 2.0
+                    if action == 'BUY':
+                        new_stop = current_price * (1 - options_trail / 100)
+                    else:
+                        new_stop = current_price * (1 + options_trail / 100)
+                    
+                    logger.info(f"📊 OPTIONS EARLY TRAIL: {symbol} +{pnl_percent:.1f}% → 2% trail @ ₹{new_stop:.2f}")
+                    return OpenPositionDecisionResult(
+                        action=OpenPositionAction.TRAIL_STOP,
+                        exit_reason=None,
+                        confidence=8.0,
+                        urgency="MEDIUM",
+                        quantity_percentage=100.0,
+                        new_stop_loss=new_stop,
+                        new_target=None,
+                        reasoning=f"OPTIONS EARLY TRAIL: {pnl_percent:.1f}% → 2% trail @ ₹{new_stop:.2f}",
+                        metadata={'pnl_percent': pnl_percent, 'new_stop_loss': new_stop,
+                                  'trail_percentage': options_trail, 'is_options': True}
+                    )
+                
+                # Options < 3% profit - no trailing yet
+                return OpenPositionDecisionResult(
+                    action=OpenPositionAction.HOLD,
+                    exit_reason=None,
+                    confidence=0.0,
+                    urgency="LOW",
+                    quantity_percentage=0.0,
+                    new_stop_loss=None,
+                    new_target=None,
+                    reasoning=f"OPTIONS: {pnl_percent:.1f}% < 3% activation - waiting",
+                    metadata={'is_options': True, 'pnl_percent': pnl_percent}
+                )
+            
+            # ============= STANDARD TRAILING STOP FOR EQUITY POSITIONS =============
             # Only trail if position is profitable enough
             if pnl_percent < self.trailing_stop_activation:
                 return OpenPositionDecisionResult(
@@ -1038,8 +1124,8 @@ class EnhancedOpenPositionDecision:
                     metadata={}
                 )
             
-            # Calculate trailing stop price for profitable positions
-            trail_percentage = 2.0  # 🔥 FIX: Tighter 2% trailing stop (was 3%)
+            # Calculate trailing stop price for profitable EQUITY positions
+            trail_percentage = 2.0  # 2% trailing stop for equity
             if action == 'BUY':
                 new_stop = current_price * (1 - trail_percentage / 100)
             else:
@@ -1053,7 +1139,7 @@ class EnhancedOpenPositionDecision:
                 quantity_percentage=0.0,
                 new_stop_loss=new_stop,
                 new_target=None,
-                reasoning=f"Trailing stop adjustment: {pnl_percent:.1f}% profit, new stop ₹{new_stop:.2f}",
+                reasoning=f"EQUITY trailing: {pnl_percent:.1f}% profit, stop @ ₹{new_stop:.2f}",
                 metadata={
                     'pnl_percent': pnl_percent,
                     'new_stop_loss': new_stop,
