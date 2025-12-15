@@ -110,7 +110,9 @@ class StrategyCoordinator:
         grouped = defaultdict(list)
         
         for signal in signals:
-            strategy = signal.get('metadata', {}).get('strategy', 'unknown')
+            # 🔥 FIX: Check both top-level 'strategy' and 'metadata.strategy'
+            # Signals have 'strategy' at top level, not in metadata
+            strategy = signal.get('strategy') or signal.get('metadata', {}).get('strategy', 'unknown')
             
             # Map strategy names to standardized keys
             if 'microstructure' in strategy.lower() or 'volume_scalper' in strategy.lower():

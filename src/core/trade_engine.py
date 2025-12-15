@@ -905,11 +905,14 @@ class TradeEngine:
             for attempt in range(max_retries):
                 try:
                     # Update position tracker using existing method
+                    # 🔥 FIX: Pass is_broker_sync=True to allow SHORT positions (negative qty)
+                    # NTPC bug: SHORT positions were being rejected, causing orphan position loop
                     success = await self.position_tracker.update_position(
                         symbol=symbol,
                         quantity=quantity if side == 'BUY' else -quantity,
                         price=price,
-                        side='long' if side == 'BUY' else 'short'
+                        side='long' if side == 'BUY' else 'short',
+                        is_broker_sync=True  # Allow creating SHORT positions from Zerodha trades
                     )
                     
                     if success:
