@@ -4476,6 +4476,20 @@ class TradingOrchestrator:
         previously did nothing. Now it will close the losing BUY position.
         """
         try:
+            # 🔥 FIX: Prevent duplicate reversal exits (VEDL 6x BUY bug)
+            # Track reversal exits with 60-second cooldown per symbol
+            if not hasattr(self, '_reversal_exit_cooldown'):
+                self._reversal_exit_cooldown: Dict[str, datetime] = {}
+            
+            now = datetime.now()
+            cooldown_seconds = 60  # 1 minute between reversal exits for same symbol
+            
+            if symbol in self._reversal_exit_cooldown:
+                elapsed = (now - self._reversal_exit_cooldown[symbol]).total_seconds()
+                if elapsed < cooldown_seconds:
+                    self.logger.warning(f"🚫 REVERSAL EXIT BLOCKED: {symbol} - Already triggered {elapsed:.0f}s ago (cooldown: {cooldown_seconds}s)")
+                    return
+            
             self.logger.warning(f"🔄 EXECUTING REVERSAL EXIT: {symbol}")
             
             # Get position details
@@ -4524,6 +4538,10 @@ class TradingOrchestrator:
                     if order_id:
                         self.logger.info(f"✅ REVERSAL EXIT ORDER PLACED: {symbol}")
                         self.logger.info(f"   Order ID: {order_id}")
+                        
+                        # 🔥 FIX: Set cooldown ONLY after successful order placement
+                        self._reversal_exit_cooldown[symbol] = now
+                        self.logger.info(f"   ⏱️ Reversal exit cooldown set for {symbol} (60s)")
                         
                         # Update strategy's position tracking
                         if hasattr(strategy_instance, 'active_positions'):

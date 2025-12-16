@@ -2602,9 +2602,9 @@ class BaseStrategy:
                 logger.warning(f"⚠️ INTRADAY SQUARE-OFF: New positions blocked. Current time: {current_time} "
                               f"(Square-off starts: {square_off_time})")
                 return False
-            # Note: Options-specific cutoff check removed - handled by _is_options_trading_hours() instead
-            # This method is for general trading hours check only
             else:
+                # Note: Options-specific cutoff check removed - handled by _is_options_trading_hours() instead
+                # This method is for general trading hours check only
                 return True  # Market is open for new positions
             
         except Exception as e:
