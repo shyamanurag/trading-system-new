@@ -911,8 +911,9 @@ class RegimeAdaptiveController:
                     
                     # 🔥 FIX: Include all keys for consistency with real-time data structure
                     # Prevents KeyError when reading from feature_history
+                    # Note: Zerodha historical data uses 'timestamp' not 'date'
                     self.feature_history.append({
-                        'timestamp': candle['date'],
+                        'timestamp': candle.get('timestamp') or candle.get('date'),
                         'features': feature_vector,
                         'raw_data': {
                             'volatility': volatility,
