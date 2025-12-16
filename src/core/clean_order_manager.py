@@ -89,11 +89,19 @@ class OrderManager:
             )
             
             if not is_emergency:
+                # 🔥 CRITICAL: Ensure rate limiter sees a real price so min_order_value is enforced.
+                # Many MARKET orders don't populate order_data['price'] but do have 'entry_price' / 'limit_price'.
+                rate_price = (
+                    order_data.get('price') or
+                    order_data.get('entry_price') or
+                    order_data.get('limit_price') or
+                    0
+                )
                 rate_check = await self.rate_limiter.can_place_order(
                     order_data['symbol'], 
                     order_data['side'], 
                     order_data['quantity'], 
-                    order_data.get('price', 0),
+                    rate_price,
                     is_exit_order=is_exit_order
                 )
                 if not rate_check['allowed']:

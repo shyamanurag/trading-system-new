@@ -131,6 +131,13 @@ class BaseStrategy:
         self._last_known_capital = 0.0  # Cache for capital when API fails
         self._latest_market_data = {}  # Store latest market data for relative strength checks
         
+        # 🔥 BASE CAPITAL FOR CONSISTENT POSITION SIZING
+        # Problem: Available capital decreases as positions are taken, causing later trades
+        # to be sized smaller and rejected by MIN_ORDER_VALUE.
+        # Solution: Use a fixed "base capital" for position sizing, refreshed daily.
+        self._base_capital = 0.0  # Will be set on first capital fetch each day
+        self._base_capital_date = None  # Date when base capital was set
+        
         # Signal generation throttling
         self._last_signal_generation = {}  # symbol -> timestamp
         self._signal_throttle_interval = 5.0  # 5 seconds between signals for same symbol
@@ -2603,8 +2610,8 @@ class BaseStrategy:
                               f"(Square-off starts: {square_off_time})")
                 return False
             else:
-                # Note: Options-specific cutoff check removed - handled by _is_options_trading_hours() instead
-                # This method is for general trading hours check only
+            # Note: Options-specific cutoff check removed - handled by _is_options_trading_hours() instead
+            # This method is for general trading hours check only
                 return True  # Market is open for new positions
             
         except Exception as e:
@@ -2741,9 +2748,9 @@ class BaseStrategy:
                     data_source = cached['data_source']
                 else:
                     # Fallback to tick-based GARCH (less accurate but available)
-                    prices = np.array([h['close'] for h in history])
-                    garch_atr = ProfessionalMathFoundation.garch_atr(prices, period)
-                    traditional_atr = self._calculate_traditional_atr_internal(history, period)
+                prices = np.array([h['close'] for h in history])
+                garch_atr = ProfessionalMathFoundation.garch_atr(prices, period)
+                traditional_atr = self._calculate_traditional_atr_internal(history, period)
                     data_source = 'tick_based'
                 
                 # ENSEMBLE ATR (70% GARCH, 30% traditional)
@@ -5173,7 +5180,7 @@ class BaseStrategy:
                 if not should_allow and exceptional_rs:
                     logger.info(f"🚫 RS OVERRIDE BLOCKED: {symbol} {action} has exceptional RS but bias says NO - Respecting bias filter")
                     metadata['exceptional_rs_blocked'] = True
-                    metadata['relative_strength'] = exceptional_rs_value
+                        metadata['relative_strength'] = exceptional_rs_value
                 
                 if not should_allow:
                     logger.info(f"🚫 BIAS FILTER: {symbol} {action} rejected by market bias "
@@ -5710,21 +5717,33 @@ class BaseStrategy:
             trading_mode = f'INTRADAY_{hybrid_mode}'
             
             # 🔥 INTRADAY TIMEFRAME
-            timeframe = "Same Day (Intraday)"
-            square_off_time = "15:15 IST"
+                timeframe = "Same Day (Intraday)"
+                square_off_time = "15:15 IST"
             
             # ============================================================
             # 🎯 CRITICAL: PROPER POSITION SIZING (4x LEVERAGE + 1% MAX LOSS)
             # ============================================================
             # REDUCED from 2% to 1% to limit daily losses
+            # Real-time available margin (feasibility cap)
             available_capital = self._get_available_capital()
+            if available_capital <= 0:
+                logger.warning(f"🚫 NO AVAILABLE CAPITAL: {symbol} - cannot size order")
+                return None
+
+            # Stable base capital (sizing base for the day)
+            sizing_capital = self._get_base_capital_for_sizing()
+            if sizing_capital <= 0:
+                sizing_capital = available_capital
             
             # Rule 1: Max loss = 1% of portfolio (was 2%)
-            max_loss_per_trade = available_capital * 0.01
+            max_loss_per_trade = sizing_capital * 0.01
             
             # Rule 2: Intraday leverage = 4x
             INTRADAY_LEVERAGE = 4.0
-            max_position_value = available_capital * INTRADAY_LEVERAGE
+            # Desired max position value based on base capital (consistent sizing)
+            max_position_value = sizing_capital * INTRADAY_LEVERAGE
+            # Hard feasibility cap based on what Zerodha says is currently available
+            max_position_value_by_available = available_capital * INTRADAY_LEVERAGE
             
             # Calculate quantity based on risk (stop loss distance)
             if risk_amount <= 0:
@@ -5736,9 +5755,12 @@ class BaseStrategy:
             
             # Quantity based on leverage limit
             qty_by_leverage = int(max_position_value / entry_price)
+
+            # Quantity based on real-time available margin (feasibility)
+            qty_by_available = int(max_position_value_by_available / entry_price) if entry_price > 0 else 0
             
             # Use the smaller of the two (most restrictive)
-            final_quantity = min(qty_by_risk, qty_by_leverage)
+            final_quantity = min(qty_by_risk, qty_by_leverage, qty_by_available)
             
             # Ensure minimum 1 share
             final_quantity = max(final_quantity, 1)
@@ -5756,9 +5778,15 @@ class BaseStrategy:
                 return None
             
             logger.info(f"📊 POSITION SIZING: {symbol} {action}")
-            logger.info(f"   💰 Capital: ₹{available_capital:,.0f} | Max Loss (1%): ₹{max_loss_per_trade:,.0f}")
+            logger.info(
+                f"   💰 Sizing Base: ₹{sizing_capital:,.0f} | Available Now: ₹{available_capital:,.0f} | "
+                f"Max Loss (1% of base): ₹{max_loss_per_trade:,.0f}"
+            )
             logger.info(f"   📉 Risk/Share: ₹{risk_amount:.2f} | Entry: ₹{entry_price:.2f} | SL: ₹{stop_loss:.2f}")
-            logger.info(f"   🎯 Qty by Risk: {qty_by_risk} | Qty by Leverage: {qty_by_leverage} | FINAL: {final_quantity}")
+            logger.info(
+                f"   🎯 Qty by Risk: {qty_by_risk} | Qty by Leverage(base): {qty_by_leverage} | "
+                f"Qty by Available(now): {qty_by_available} | FINAL: {final_quantity}"
+            )
             logger.info(f"   💵 Position Value: ₹{position_value:,.0f} | Margin: ₹{margin_required:,.0f} | Max Loss: ₹{actual_max_loss:,.0f}")
             
             # ============================================================
@@ -5897,8 +5925,13 @@ class BaseStrategy:
             if risk_per_share <= 0:
                 risk_per_share = entry_price * 0.02  # Default 2% SL
             
-            available_capital = getattr(self, 'available_capital', 100000)
-            max_loss_amount = available_capital * 0.01  # 1% max loss
+            # Use stable base capital for sizing, but keep real-time available for feasibility.
+            available_capital = self._get_available_capital()
+            sizing_capital = self._get_base_capital_for_sizing()
+            if sizing_capital <= 0:
+                sizing_capital = available_capital if available_capital > 0 else 100000.0
+
+            max_loss_amount = sizing_capital * 0.01  # 1% max loss (base)
             
             # Calculate quantity based on risk (in lots)
             qty_by_risk = int(max_loss_amount / (risk_per_share * lot_size)) * lot_size
@@ -5906,7 +5939,7 @@ class BaseStrategy:
             
             # Margin requirement check (futures typically need ~10-15% margin)
             margin_required = entry_price * qty_by_risk * 0.15  # 15% margin estimate
-            if margin_required > available_capital * 0.5:  # Don't use more than 50% capital on one position
+            if available_capital > 0 and margin_required > available_capital * 0.5:  # Don't use >50% of available now
                 qty_by_risk = int((available_capital * 0.5) / (entry_price * 0.15))
                 qty_by_risk = (qty_by_risk // lot_size) * lot_size  # Round to lot size
                 qty_by_risk = max(lot_size, qty_by_risk)
@@ -7728,7 +7761,7 @@ class BaseStrategy:
             
             # Priority 1: Get FRESH client from orchestrator (handles token refresh properly)
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
-                zerodha_client = orchestrator.zerodha_client
+                    zerodha_client = orchestrator.zerodha_client
                 # Verify kite is initialized
                 if hasattr(zerodha_client, 'kite') and zerodha_client.kite:
                     logger.debug("✅ Using orchestrator's Zerodha client (kite initialized)")
@@ -7807,6 +7840,99 @@ class BaseStrategy:
             logger.error(f"Error getting dynamic available capital: {e}")
             # Return hardcoded capital on error
             return 75000.0
+
+    def _get_base_capital_for_sizing(self) -> float:
+        """
+        🔥 BASE CAPITAL FOR CONSISTENT POSITION SIZING
+
+        Problem:
+        - We currently size trades off *available margin* (Zerodha equity.net).
+        - After each order, net margin reduces, so later trades are sized smaller.
+        - This causes inconsistent sizing and frequent rejections against MIN_ORDER_VALUE.
+
+        Fix:
+        - Use a fixed "base capital" once per IST trading day for sizing math.
+        - Still cap by *real-time* available margin for feasibility.
+        """
+        try:
+            import pytz
+            ist = pytz.timezone('Asia/Kolkata')
+            today = datetime.now(ist).date()
+
+            # Optional: allow config override (stable base, e.g. your starting capital)
+            configured_base = None
+            try:
+                if hasattr(self, 'config') and self.config:
+                    configured_base = self.config.get('base_capital') or self.config.get('available_capital')
+                else:
+                    from config import config as _global_config
+                    configured_base = _global_config.get('base_capital') or _global_config.get('available_capital')
+            except Exception:
+                configured_base = None
+
+            # Refresh base capital once per day (or if not set)
+            if not self._base_capital_date or self._base_capital_date != today or self._base_capital <= 0:
+                current_available = self._get_available_capital()
+                candidates = [c for c in [configured_base, current_available] if isinstance(c, (int, float)) and c > 0]
+                self._base_capital = float(max(candidates)) if candidates else 0.0
+                self._base_capital_date = today
+                if self._base_capital > 0:
+                    logger.info(f"🎯 BASE CAPITAL (sizing) set to ₹{self._base_capital:,.2f} for {today}")
+                else:
+                    logger.warning("⚠️ BASE CAPITAL (sizing) unavailable - sizing may be inconsistent")
+
+            return float(self._base_capital) if self._base_capital > 0 else float(self._get_available_capital())
+
+        except Exception as e:
+            logger.error(f"❌ Error computing base capital for sizing: {e}")
+            # Fallback to available capital so system can still trade
+            return float(self._get_available_capital())
+    
+    def _get_base_capital_for_sizing(self) -> float:
+        """
+        🔥 BASE CAPITAL FOR CONSISTENT POSITION SIZING
+        
+        Problem: When trades are taken, available margin decreases. This causes
+        later trades to have smaller position sizes that fail MIN_ORDER_VALUE check.
+        
+        Solution: Use a fixed "base capital" that is set once per trading day.
+        This ensures ALL trades are sized consistently based on starting capital,
+        not the dynamically decreasing available margin.
+        
+        Returns:
+            Base capital for position sizing (consistent throughout the day)
+        """
+        try:
+            import pytz
+            from datetime import date
+            
+            ist = pytz.timezone('Asia/Kolkata')
+            today = datetime.now(ist).date()
+            
+            # Check if we need to refresh base capital (new day or not set)
+            if self._base_capital <= 0 or self._base_capital_date != today:
+                # Get current available capital from Zerodha
+                current_capital = self._get_available_capital()
+                
+                if current_capital > 0:
+                    # Set base capital for the day
+                    self._base_capital = current_capital
+                    self._base_capital_date = today
+                    logger.info(f"🎯 BASE CAPITAL SET: ₹{self._base_capital:,.2f} for {today}")
+                else:
+                    # Fallback to config or hardcoded
+                    self._base_capital = 100000.0
+                    logger.warning(f"⚠️ BASE CAPITAL FALLBACK: ₹{self._base_capital:,.2f}")
+            
+            return self._base_capital
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting base capital: {e}")
+            # Return cached or fallback
+            if self._base_capital > 0:
+                return self._base_capital
+            return 100000.0
+
     async def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
         """🎯 USER REQUIREMENT: Select strike based on volume - use closest available strike to ATM"""
         try:
