@@ -8,10 +8,12 @@ import logging
 import json
 import time
 import threading
+import math
 from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
+from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING, ROUND_HALF_UP
 
 try:
     from kiteconnect import KiteConnect, KiteTicker
@@ -81,6 +83,7 @@ class ZerodhaIntegration:
         self._token_to_symbol = {}  # Reverse lookup for WebSocket ticks
         self._last_successful_call = None  # Track last successful API call
         self._websocket_tokens = []  # Instrument tokens for WebSocket subscription
+        self._tick_size_cache = {}  # Cache tick_size by exchange:tradingsymbol
         
         # WebSocket attributes
         self.ticker = None
@@ -682,8 +685,25 @@ class ZerodhaIntegration:
                     
                     price = order_params.get('price') or order_params.get('entry_price')
                     if price:
-                        zerodha_params['price'] = float(price)
-                        logger.info(f"📍 LIMIT order price set: ₹{float(price):.2f}")
+                        raw_price = float(price)
+                        tick_size = await self._get_tick_size_for_exchange_symbol(
+                            zerodha_params['exchange'],
+                            zerodha_params['tradingsymbol']
+                        )
+                        aligned_price = self._align_price_to_tick_size(
+                            raw_price,
+                            tick_size,
+                            action=action,
+                            mode="conservative"
+                        )
+                        zerodha_params['price'] = aligned_price
+                        if aligned_price != raw_price:
+                            logger.info(
+                                f"🎯 Tick aligned LIMIT price: ₹{raw_price:.2f} → ₹{aligned_price:.2f} "
+                                f"(tick={tick_size})"
+                            )
+                        else:
+                            logger.info(f"📍 LIMIT order price set: ₹{aligned_price:.2f}")
                     else:
                         # CRITICAL: LIMIT orders MUST have a price
                         logger.error(f"❌ LIMIT order requires price but none provided for {symbol}")
@@ -693,7 +713,23 @@ class ZerodhaIntegration:
                 # Add trigger price for stop loss orders
                 trigger_price = order_params.get('trigger_price') or order_params.get('stop_loss')
                 if trigger_price:
-                    zerodha_params['trigger_price'] = float(trigger_price)
+                    raw_trigger = float(trigger_price)
+                    tick_size = await self._get_tick_size_for_exchange_symbol(
+                        zerodha_params['exchange'],
+                        zerodha_params['tradingsymbol']
+                    )
+                    aligned_trigger = self._align_price_to_tick_size(
+                        raw_trigger,
+                        tick_size,
+                        action=action,
+                        mode="nearest"
+                    )
+                    zerodha_params['trigger_price'] = aligned_trigger
+                    if aligned_trigger != raw_trigger:
+                        logger.info(
+                            f"🎯 Tick aligned trigger: ₹{raw_trigger:.2f} → ₹{aligned_trigger:.2f} "
+                            f"(tick={tick_size})"
+                        )
                 
                 logger.info(f"🔴 REAL MODE: Placing LIVE order: {symbol} {action} {quantity}")
                 logger.warning(f"⚠️ REAL MONEY TRADE: This will use actual funds!")
@@ -727,6 +763,101 @@ class ZerodhaIntegration:
                 error_msg = str(e)
                 logger.error(f"❌ Error placing REAL order: {error_msg}")
                 return None
+
+    async def _get_tick_size_for_exchange_symbol(self, exchange: str, tradingsymbol: str) -> float:
+        """
+        Get tick size for a tradingsymbol on an exchange, with caching.
+        Falls back to 0.05 if unknown.
+        """
+        try:
+            exchange = (exchange or "").upper()
+            tradingsymbol = (tradingsymbol or "").upper()
+            cache_key = f"{exchange}:{tradingsymbol}"
+            cached = self._tick_size_cache.get(cache_key)
+            if isinstance(cached, (int, float)) and cached > 0:
+                return float(cached)
+
+            # Prefer already-cached instruments to avoid extra API calls
+            instruments = None
+            if exchange == "NSE" and isinstance(self._nse_instruments, list) and self._nse_instruments:
+                instruments = self._nse_instruments
+            elif exchange == "NFO" and isinstance(self._nfo_instruments, list) and self._nfo_instruments:
+                instruments = self._nfo_instruments
+
+            # If we don't have a cached list, fetch via existing instruments cache layer
+            if instruments is None:
+                instruments = await self.get_instruments(exchange)
+
+            tick = None
+            if isinstance(instruments, list):
+                for inst in instruments:
+                    if not isinstance(inst, dict):
+                        continue
+                    if (inst.get("tradingsymbol") or "").upper() == tradingsymbol:
+                        try:
+                            tick = float(inst.get("tick_size") or 0)
+                        except Exception:
+                            tick = None
+                        break
+
+            # Sensible fallbacks (most NSE/NFO symbols are 0.05)
+            if not tick or tick <= 0:
+                tick = 0.05
+
+            # Normalize tiny float noise (e.g., 0.05000000000001)
+            tick = float(Decimal(str(tick)))
+            self._tick_size_cache[cache_key] = tick
+            return tick
+        except Exception:
+            return 0.05
+
+    def _align_price_to_tick_size(self, price: float, tick_size: float, action: str, mode: str = "conservative") -> float:
+        """
+        Align a price to the instrument tick size to avoid Zerodha rejections.
+
+        - mode="conservative": BUY rounds DOWN, SELL rounds UP (never worse than requested limit)
+        - mode="nearest": rounds to nearest tick (used for trigger prices)
+        """
+        try:
+            if price is None:
+                return price
+            tick = float(tick_size or 0)
+            if tick <= 0:
+                return float(price)
+
+            p = Decimal(str(float(price)))
+            t = Decimal(str(tick))
+            q = p / t
+
+            mode_l = (mode or "").lower()
+            action_u = (action or "").upper()
+
+            if mode_l == "nearest":
+                q_int = q.to_integral_value(rounding=ROUND_HALF_UP)
+            else:
+                # conservative default
+                if action_u == "BUY":
+                    q_int = q.to_integral_value(rounding=ROUND_FLOOR)
+                elif action_u == "SELL":
+                    q_int = q.to_integral_value(rounding=ROUND_CEILING)
+                else:
+                    q_int = q.to_integral_value(rounding=ROUND_HALF_UP)
+
+            aligned = q_int * t
+
+            # Round to tick's decimal precision for clean floats in logs / API payload
+            decimals = max(0, -t.as_tuple().exponent)
+            aligned_f = float(round(float(aligned), decimals))
+            # Avoid negative zero
+            if aligned_f == 0.0:
+                aligned_f = 0.0
+            return aligned_f
+        except Exception:
+            # Last-resort: keep original price
+            try:
+                return float(price)
+            except Exception:
+                return price
 
     async def _async_api_call(self, func, *args, **kwargs):
         """Execute synchronous API call in thread pool"""
