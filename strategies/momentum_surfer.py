@@ -1481,21 +1481,47 @@ class EnhancedMomentumSurfer(BaseStrategy):
             # Calculate candle range and pressures (only if real OHLC available)
             if ohlc_available and high > low > 0 and open_price > 0:
                 candle_range = high - low
-                
-                # Buying pressure: how close to day's high (1.0 = at high, 0.0 = at low)
-                buying_pressure = (ltp - low) / candle_range
-                # Selling pressure: how close to day's low (1.0 = at low, 0.0 = at high)
-                selling_pressure = (high - ltp) / candle_range
-                
-                # Enhanced: Use intraday movement for more meaningful pressure
-                intraday_move = ltp - open_price
-                move_ratio = intraday_move / candle_range
-                if move_ratio > 0:
-                    buying_pressure = min(0.5 + move_ratio * 0.5, 1.0)
-                    selling_pressure = max(0.5 - move_ratio * 0.5, 0.0)
+
+                # Prefer pressure from the latest 5m candle OHLC (more stable than day-range).
+                # This avoids frequent 0%/100% when LTP is near day low/high.
+                mtf_series = self._get_indicator_series_from_mtf(symbol, timeframe='5min', limit=60)
+                opens_5m = mtf_series.get('opens', []) if isinstance(mtf_series, dict) else []
+                closes_5m = mtf_series.get('closes', []) if isinstance(mtf_series, dict) else []
+                highs_5m = mtf_series.get('highs', []) if isinstance(mtf_series, dict) else []
+                lows_5m = mtf_series.get('lows', []) if isinstance(mtf_series, dict) else []
+
+                if (
+                    opens_5m and closes_5m and highs_5m and lows_5m and
+                    len(opens_5m) == len(closes_5m) == len(highs_5m) == len(lows_5m)
+                ):
+                    last_open = float(opens_5m[-1] or 0)
+                    last_close = float(closes_5m[-1] or 0)
+                    last_high = float(highs_5m[-1] or 0)
+                    last_low = float(lows_5m[-1] or 0)
+
+                    rng = last_high - last_low
+                    if rng > 0 and last_open > 0 and last_close > 0:
+                        # Close position in range: 0..1 (0 at low, 1 at high)
+                        pos_in_range = (last_close - last_low) / rng
+                        pos_in_range = max(0.0, min(1.0, pos_in_range))
+
+                        # Body strength: 0..1, direction sets bias
+                        body = (last_close - last_open) / rng
+                        body_strength = min(1.0, abs(body))
+                        direction = 1.0 if body >= 0 else -1.0
+
+                        base_pressure = 0.5 + 0.5 * direction * body_strength  # 0..1
+                        buying_pressure = 0.6 * base_pressure + 0.4 * pos_in_range
+                        buying_pressure = max(0.01, min(0.99, buying_pressure))
+                        selling_pressure = 1.0 - buying_pressure
+                    else:
+                        buying_pressure = 0.5
+                        selling_pressure = 0.5
                 else:
-                    buying_pressure = max(0.5 + move_ratio * 0.5, 0.0)
-                    selling_pressure = min(0.5 - move_ratio * 0.5, 1.0)
+                    # Fallback: day-range-based pressure with soft clamp
+                    buying_pressure = (ltp - low) / candle_range
+                    buying_pressure = max(0.01, min(0.99, buying_pressure))
+                    selling_pressure = 1.0 - buying_pressure
             else:
                 # 🔥 NO FAKE VALUES - Use neutral pressure when OHLC unavailable
                 buying_pressure = 0.5
