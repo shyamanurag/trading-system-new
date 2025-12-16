@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Dict, Optional, List
 import json
 import redis
+import queue
 
 # Setup basic logging
 logger = logging.getLogger(__name__)
@@ -200,6 +201,82 @@ class TrueDataClient:
         # Background health monitor flags
         self._health_thread = None
         self._stop_health = threading.Event()
+        # Provide instance-level view for helpers that expect self.live_market_data
+        self.live_market_data = live_market_data
+
+        # Tick processing decoupling (prevents websocket ping/pong starvation)
+        # Heavy work (Redis, symbol conversion, logging) must NOT run on the websocket thread.
+        self._tick_queue: "queue.Queue" = queue.Queue(
+            maxsize=int(os.getenv('TRUEDATA_TICK_QUEUE_SIZE', '20000'))
+        )
+        self._tick_worker_stop = threading.Event()
+        self._tick_worker_threads: List[threading.Thread] = []
+        self._tick_workers_started = False
+        self._tick_worker_count = int(os.getenv('TRUEDATA_TICK_WORKERS', '2'))
+        self._tick_processor = None  # set in _setup_callback()
+
+    def _start_tick_workers(self):
+        """Start background tick workers (idempotent)."""
+        if self._tick_workers_started:
+            return
+        self._tick_worker_stop.clear()
+
+        def _worker_loop(worker_idx: int):
+            while not self._tick_worker_stop.is_set():
+                try:
+                    tick = self._tick_queue.get(timeout=1.0)
+                except queue.Empty:
+                    continue
+
+                try:
+                    processor = self._tick_processor
+                    if processor is not None:
+                        processor(tick)
+                except Exception as e:
+                    # Never let worker errors kill the thread
+                    logger.error(f"❌ TrueData tick worker error: {e}")
+                    try:
+                        import traceback
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                    except Exception:
+                        pass
+                finally:
+                    try:
+                        self._tick_queue.task_done()
+                    except Exception:
+                        pass
+
+        for i in range(max(1, self._tick_worker_count)):
+            t = threading.Thread(
+                target=_worker_loop,
+                args=(i + 1,),
+                name=f"TDTickWorker-{i + 1}",
+                daemon=True
+            )
+            t.start()
+            self._tick_worker_threads.append(t)
+
+        self._tick_workers_started = True
+        logger.info(f"🧵 TrueData tick workers started: {len(self._tick_worker_threads)}")
+
+    def _stop_tick_workers(self):
+        """Stop tick workers and drain queue (best-effort)."""
+        try:
+            self._tick_worker_stop.set()
+        except Exception:
+            pass
+        # Drain queue to release memory quickly
+        try:
+            while True:
+                self._tick_queue.get_nowait()
+                try:
+                    self._tick_queue.task_done()
+                except Exception:
+                    pass
+        except queue.Empty:
+            pass
+        self._tick_worker_threads = []
+        self._tick_workers_started = False
 
     def _generate_deployment_id(self):
         """Generate unique deployment ID for connection tracking"""
@@ -593,6 +670,11 @@ class TrueDataClient:
             self._stop_health.set()
         except Exception:
             pass
+        # Stop tick workers
+        try:
+            self._stop_tick_workers()
+        except Exception:
+            pass
         logger.info("🛑 Force disconnect completed")
 
     def _start_health_monitor(self):
@@ -976,42 +1058,27 @@ class TrueDataClient:
         if not self.td_obj:
             logger.error("❌ TrueData object is None - cannot setup callback")
             return
-        
-        # CRITICAL FIX: Track callback execution to prevent recursion loops
-        callback_execution_count = {'count': 0, 'last_reset': time.time()}
-        MAX_CALLBACKS_PER_SECOND = 1000  # Reasonable limit for high-frequency data
-            
-        @self.td_obj.trade_callback
-        def on_tick_data(tick_data):
+
+        # Move heavy processing off the websocket thread to avoid ping/pong timeouts.
+        def _process_tick_data(tick_data):
             """Process tick data from TrueData with Redis caching - OPTIONS PREMIUM AWARE"""
-            # CRITICAL FIX: Rate limit callback execution to prevent runaway recursion
-            current_time = time.time()
-            if current_time - callback_execution_count['last_reset'] > 1.0:
-                callback_execution_count['count'] = 0
-                callback_execution_count['last_reset'] = current_time
-            
-            callback_execution_count['count'] += 1
-            if callback_execution_count['count'] > MAX_CALLBACKS_PER_SECOND:
-                logger.error(f"❌ CALLBACK RATE LIMIT EXCEEDED: {callback_execution_count['count']}/sec - Dropping tick")
-                return  # Drop this tick to prevent system overload
-            
             try:
                 # DEBUG: Log all available attributes to understand TrueData schema
                 if hasattr(tick_data, '__dict__'):
                     attrs = {k: v for k, v in tick_data.__dict__.items() if not k.startswith('_')}
                     logger.debug(f"📊 TrueData tick attributes: {attrs}")
-                
+
                 # Extract symbol first
                 truedata_symbol = getattr(tick_data, 'symbol', 'UNKNOWN')
                 if truedata_symbol == 'UNKNOWN':
                     logger.warning("⚠️ Tick data missing symbol, skipping")
                     return
-                
+
                 # 🎯 CRITICAL FIX: Convert TrueData symbol to Zerodha format for strategy compatibility
                 try:
                     from config.truedata_symbols import _is_options_symbol
                     from config.options_symbol_mapping import convert_truedata_to_zerodha_options
-                    
+
                     if _is_options_symbol(truedata_symbol):
                         # Convert options symbol: TCS2408143000CE → TCS14AUG253000CE
                         symbol = convert_truedata_to_zerodha_options(truedata_symbol)
@@ -1019,23 +1086,23 @@ class TrueDataClient:
                     else:
                         # Keep underlying symbols as-is
                         symbol = truedata_symbol
-                        
+
                 except Exception as conv_error:
                     logger.warning(f"⚠️ Symbol conversion failed for {truedata_symbol}: {conv_error}")
                     symbol = truedata_symbol  # Fallback to original
-                
+
                 # Extract core price data with fallbacks
                 ltp = getattr(tick_data, 'ltp', 0) or getattr(tick_data, 'last_price', 0)
                 if ltp <= 0:
                     logger.warning(f"⚠️ Invalid LTP for {symbol}: {ltp}")
                     return
-                
+
                 # TEMPORARILY SIMPLIFIED OPTIONS PROCESSING - RESTORE DATA FLOW
                 try:
                     from config.truedata_symbols import _is_options_symbol, validate_options_premium
-                    
+
                     is_options = _is_options_symbol(symbol)
-                    
+
                     if is_options:
                         # SIMPLIFIED: Only basic validation, don't block on validation failures
                         try:
@@ -1043,26 +1110,26 @@ class TrueDataClient:
                                 logger.debug(f"✅ OPTIONS DATA: {symbol} = ₹{ltp}")
                             else:
                                 logger.debug(f"⚠️ Unusual options premium: {symbol} = ₹{ltp} (but allowing)")
-                        except:
+                        except Exception:
                             logger.debug(f"📊 OPTIONS (unvalidated): {symbol} = ₹{ltp}")
                     else:
                         logger.debug(f"📊 UNDERLYING PRICE: {symbol} = ₹{ltp}")
-                        
+
                 except ImportError:
                     logger.debug(f"📊 MARKET DATA: {symbol} = ₹{ltp} (no validation)")
-                
+
                 # Extract OHLC data - 🔥 FIX: Do NOT synthesize fake OHLC!
                 # Use real TrueData values or 0 (let strategies handle missing data)
                 high = getattr(tick_data, 'high', None) or getattr(tick_data, 'day_high', None) or 0
                 low = getattr(tick_data, 'low', None) or getattr(tick_data, 'day_low', None) or 0
                 open_price = getattr(tick_data, 'open', None) or getattr(tick_data, 'day_open', None) or 0
-                
+
                 # 🔥 CRITICAL: Mark if OHLC is real or missing (don't fake it!)
                 ohlc_available = (
                     high > 0 and low > 0 and open_price > 0 and
                     high != low  # Sanity check: range must exist
                 )
-                
+
                 # If OHLC truly not available from TrueData, use 0 (strategies will handle)
                 if not ohlc_available:
                     # Set to 0 so strategies know data is missing - DON'T FAKE IT!
@@ -1070,7 +1137,7 @@ class TrueDataClient:
                     low = 0
                     open_price = 0
                     logger.debug(f"⚠️ {symbol}: No real OHLC from TrueData - marked as unavailable")
-                
+
                 # Extract volume data with multiple field attempts
                 volume = (
                     getattr(tick_data, 'volume', 0) or
@@ -1079,10 +1146,10 @@ class TrueDataClient:
                     getattr(tick_data, 'vol', 0) or
                     0
                 )
-                
+
                 # Extract change and change_percent - FIXED: More comprehensive field mapping
                 change = getattr(tick_data, 'change', 0) or getattr(tick_data, 'net_change', 0)
-                
+
                 # Try all possible field names for change_percent
                 change_percent = (
                     getattr(tick_data, 'changeper', None) or
@@ -1093,11 +1160,11 @@ class TrueDataClient:
                     getattr(tick_data, 'chg_percent', None) or
                     getattr(tick_data, 'pct_change', None)
                 )
-                
+
                 # 🎯 CRITICAL FIX (2025-12-01): Calculate PREVIOUS_CLOSE from change data
                 # This is essential for dual-timeframe analysis
                 previous_close = 0.0
-                
+
                 # Method 1: Calculate from ltp and change (most reliable)
                 if change is not None and change != 0 and ltp > 0:
                     try:
@@ -1107,15 +1174,17 @@ class TrueDataClient:
                             # Also calculate change_percent if not available
                             if change_percent is None or change_percent == 0:
                                 change_percent = (change_float / previous_close) * 100
-                            logger.debug(f"📊 Calculated {symbol} previous_close: ₹{previous_close:.2f} "
-                                       f"(ltp={ltp}, change={change}, change%={change_percent:.3f}%)")
+                            logger.debug(
+                                f"📊 Calculated {symbol} previous_close: ₹{previous_close:.2f} "
+                                f"(ltp={ltp}, change={change}, change%={change_percent:.3f}%)"
+                            )
                         else:
                             logger.warning(f"⚠️ Invalid previous_close for {symbol}: {previous_close}")
                             previous_close = ltp  # Fallback to LTP
                     except (ValueError, TypeError):
                         logger.warning(f"⚠️ Invalid change value for {symbol}: {change}")
                         previous_close = ltp
-                
+
                 # Method 2: Try 'close' field from TrueData (it's often previous close)
                 if previous_close <= 0:
                     raw_close = getattr(tick_data, 'close', None) or getattr(tick_data, 'prev_close', None)
@@ -1124,20 +1193,20 @@ class TrueDataClient:
                         if change_percent is None or change_percent == 0:
                             change_percent = ((ltp - previous_close) / previous_close) * 100 if previous_close > 0 else 0
                         logger.debug(f"📊 Used raw close for {symbol}: ₹{previous_close:.2f}")
-                
+
                 # Fallback: Use LTP if nothing else works
                 if previous_close <= 0:
                     previous_close = ltp
                     logger.debug(f"⚠️ Using LTP as previous_close fallback for {symbol}")
-                
+
                 # Ensure change_percent is set
                 if change_percent is None:
                     change_percent = 0
-                
+
                 # Extract additional fields with fallbacks
                 bid = getattr(tick_data, 'bid', 0) or getattr(tick_data, 'best_bid', 0)
                 ask = getattr(tick_data, 'ask', 0) or getattr(tick_data, 'best_ask', 0)
-                
+
                 # 🎯 ENHANCED: Extract Open Interest (OI) for F&O analysis
                 oi = (
                     getattr(tick_data, 'oi', 0) or
@@ -1151,7 +1220,7 @@ class TrueDataClient:
                     getattr(tick_data, 'oi_day_change', 0) or
                     0
                 )
-                
+
                 # 🎯 ENHANCED (2025-12-01): Data structure with PREVIOUS_CLOSE for dual-timeframe analysis
                 market_data = {
                     'symbol': symbol,  # Zerodha format for strategy compatibility
@@ -1184,55 +1253,56 @@ class TrueDataClient:
                         'has_oi': oi > 0  # 🎯 NEW: Flag for OI availability
                     }
                 }
-                
+
                 # Store in local cache (existing behavior)
                 live_market_data[symbol] = market_data
-                
+
                 # CRITICAL: Also store in Redis for cross-process access
                 if redis_client:
                     try:
                         # Create safe version of market data for Redis storage
                         safe_market_data = create_safe_market_data(market_data)
-                        
+
                         # CRITICAL FIX: Use safe_json_serialize to pre-process, then json.dumps on the safe result
                         # This prevents recursion errors from json.dumps on complex nested structures
                         safe_json = safe_json_serialize(safe_market_data)
                         safe_json_str = json.dumps(safe_json) if isinstance(safe_json, (dict, list)) else str(safe_json)
-                        
+
                         # Store individual symbol data (JSON serialized to handle nested dicts)
                         redis_client.set(f"truedata:symbol:{symbol}", safe_json_str)
                         redis_client.expire(f"truedata:symbol:{symbol}", 300)  # 5 minutes
-                        
+
                         # Store in combined cache
                         redis_client.hset("truedata:live_cache", symbol, safe_json_str)
                         redis_client.expire("truedata:live_cache", 300)  # 5 minutes
-                        
+
                         # Update symbol count
                         redis_client.set("truedata:symbol_count", len(live_market_data))
-                        
+
                         # Store raw tick data for analysis
                         redis_client.lpush(f"truedata:ticks:{symbol}", safe_json_str)
                         redis_client.ltrim(f"truedata:ticks:{symbol}", 0, 100)  # Keep last 100 ticks
-                        
+
                     except RecursionError as re:
                         logger.error(f"Redis recursion error for {symbol}: {re} - Data dropped")
                         # Skip Redis storage for this tick
                         pass
                     except Exception as redis_error:
                         logger.error(f"Redis storage error for {symbol}: {redis_error}")
-                
+
                 # Enhanced logging with data quality info
                 if volume > 0:
                     quality = market_data['data_quality']
-                    logger.info(f"📊 {symbol}: ₹{ltp:,.2f} | {change_percent:+.2f}% | Vol: {volume:,} | "
-                              f"OHLC: {'✓' if quality['has_ohlc'] else '✗'} | "
-                              f"Deploy: {self._deployment_id}")
-                
+                    logger.info(
+                        f"📊 {symbol}: ₹{ltp:,.2f} | {change_percent:+.2f}% | Vol: {volume:,} | "
+                        f"OHLC: {'✓' if quality['has_ohlc'] else '✗'} | "
+                        f"Deploy: {self._deployment_id}"
+                    )
+
             except RecursionError as re:
                 # CRITICAL FIX: Catch recursion errors specifically to prevent cascading failures
                 logger.error(f"❌ RECURSION ERROR in tick callback: {re}")
                 logger.error("🚨 This tick will be dropped to prevent system crash")
-                # DO NOT re-raise - let the tick be dropped silently
                 return
             except Exception as e:
                 # CRITICAL FIX: Never let exceptions propagate from callback
@@ -1241,9 +1311,38 @@ class TrueDataClient:
                 try:
                     import traceback
                     logger.error(f"Traceback: {traceback.format_exc()}")
-                except:
+                except Exception:
                     pass  # Even traceback logging shouldn't crash
-                # DO NOT re-raise - absorb all errors to prevent callback recursion
+                return
+
+        # Set processor and ensure workers are running
+        self._tick_processor = _process_tick_data
+        self._start_tick_workers()
+        
+        # CRITICAL FIX: Track callback execution to prevent recursion loops
+        callback_execution_count = {'count': 0, 'last_reset': time.time()}
+        MAX_CALLBACKS_PER_SECOND = 1000  # Reasonable limit for high-frequency data
+            
+        @self.td_obj.trade_callback
+        def on_tick_data(tick_data):
+            """FAST PATH: enqueue tick for background processing (keeps websocket responsive)."""
+            # CRITICAL FIX: Rate limit callback execution to prevent runaway recursion
+            current_time = time.time()
+            if current_time - callback_execution_count['last_reset'] > 1.0:
+                callback_execution_count['count'] = 0
+                callback_execution_count['last_reset'] = current_time
+            
+            callback_execution_count['count'] += 1
+            if callback_execution_count['count'] > MAX_CALLBACKS_PER_SECOND:
+                logger.error(f"❌ CALLBACK RATE LIMIT EXCEEDED: {callback_execution_count['count']}/sec - Dropping tick")
+                return  # Drop this tick to prevent system overload
+            try:
+                self._tick_queue.put_nowait(tick_data)
+            except queue.Full:
+                # Drop tick if we're saturated; better than blocking websocket thread.
+                return
+            except Exception:
+                # Never let callback throw.
                 return
                 
         logger.info("✅ TrueData callback setup complete with RECURSION PROTECTION")
