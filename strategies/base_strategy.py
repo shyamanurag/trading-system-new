@@ -2741,9 +2741,9 @@ class BaseStrategy:
                     data_source = cached['data_source']
                 else:
                     # Fallback to tick-based GARCH (less accurate but available)
-                prices = np.array([h['close'] for h in history])
-                garch_atr = ProfessionalMathFoundation.garch_atr(prices, period)
-                traditional_atr = self._calculate_traditional_atr_internal(history, period)
+                    prices = np.array([h['close'] for h in history])
+                    garch_atr = ProfessionalMathFoundation.garch_atr(prices, period)
+                    traditional_atr = self._calculate_traditional_atr_internal(history, period)
                     data_source = 'tick_based'
                 
                 # ENSEMBLE ATR (70% GARCH, 30% traditional)
