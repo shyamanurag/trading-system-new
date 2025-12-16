@@ -2748,9 +2748,9 @@ class BaseStrategy:
                     data_source = cached['data_source']
                 else:
                     # Fallback to tick-based GARCH (less accurate but available)
-                prices = np.array([h['close'] for h in history])
-                garch_atr = ProfessionalMathFoundation.garch_atr(prices, period)
-                traditional_atr = self._calculate_traditional_atr_internal(history, period)
+                    prices = np.array([h['close'] for h in history])
+                    garch_atr = ProfessionalMathFoundation.garch_atr(prices, period)
+                    traditional_atr = self._calculate_traditional_atr_internal(history, period)
                     data_source = 'tick_based'
                 
                 # ENSEMBLE ATR (70% GARCH, 30% traditional)
@@ -5180,7 +5180,7 @@ class BaseStrategy:
                 if not should_allow and exceptional_rs:
                     logger.info(f"🚫 RS OVERRIDE BLOCKED: {symbol} {action} has exceptional RS but bias says NO - Respecting bias filter")
                     metadata['exceptional_rs_blocked'] = True
-                        metadata['relative_strength'] = exceptional_rs_value
+                    metadata['relative_strength'] = exceptional_rs_value
                 
                 if not should_allow:
                     logger.info(f"🚫 BIAS FILTER: {symbol} {action} rejected by market bias "
@@ -5717,8 +5717,8 @@ class BaseStrategy:
             trading_mode = f'INTRADAY_{hybrid_mode}'
             
             # 🔥 INTRADAY TIMEFRAME
-                timeframe = "Same Day (Intraday)"
-                square_off_time = "15:15 IST"
+            timeframe = "Same Day (Intraday)"
+            square_off_time = "15:15 IST"
             
             # ============================================================
             # 🎯 CRITICAL: PROPER POSITION SIZING (4x LEVERAGE + 1% MAX LOSS)
@@ -7761,7 +7761,7 @@ class BaseStrategy:
             
             # Priority 1: Get FRESH client from orchestrator (handles token refresh properly)
             if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
-                    zerodha_client = orchestrator.zerodha_client
+                zerodha_client = orchestrator.zerodha_client
                 # Verify kite is initialized
                 if hasattr(zerodha_client, 'kite') and zerodha_client.kite:
                     logger.debug("✅ Using orchestrator's Zerodha client (kite initialized)")
