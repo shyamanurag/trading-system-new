@@ -93,6 +93,11 @@ class BaseStrategy:
         self.symbol_cooldowns = {}   # Symbol-specific cooldowns
         self.position_cooldowns = {}  # Phantom position cleanup cooldowns
         
+        # 🎯 ADAPTIVE ENTRY: Track pending limit orders for smart cancellation
+        # {symbol: {'order_id': str, 'action': str, 'limit_price': float, 
+        #           'created_at': datetime, 'validity_seconds': int, 'original_signal': dict}}
+        self.pending_limit_orders: Dict[str, Dict] = {}
+        
         # EMERGENCY STOP LOSS THRESHOLDS (configurable)
         self.emergency_loss_amount = config.get('emergency_loss_amount', -1000)  # ₹1000 default
         self.emergency_loss_percent = config.get('emergency_loss_percent', -2.0)  # 2% default
@@ -1046,6 +1051,137 @@ class BaseStrategy:
             # Cooldown expired, remove it
             del self.position_cooldowns[symbol]
             return False
+    
+    async def check_and_cancel_stale_limit_orders(self, market_data: Dict) -> List[str]:
+        """
+        🎯 SMART LIMIT ORDER CANCELLATION
+        
+        Cancels pending limit orders if:
+        1. Order has expired (validity_seconds elapsed)
+        2. Sentiment/indicators have reversed against the order direction
+        3. Price has moved too far away from limit price
+        
+        Returns: List of cancelled order symbols
+        """
+        cancelled_symbols = []
+        
+        if not self.pending_limit_orders:
+            return cancelled_symbols
+        
+        try:
+            now = datetime.now()
+            symbols_to_remove = []
+            
+            for symbol, order_info in self.pending_limit_orders.items():
+                order_id = order_info.get('order_id')
+                action = order_info.get('action', 'BUY')
+                limit_price = order_info.get('limit_price', 0)
+                created_at = order_info.get('created_at', now)
+                validity_seconds = order_info.get('validity_seconds', 300)
+                
+                # Get current market data for this symbol
+                symbol_data = market_data.get(symbol, {})
+                current_price = symbol_data.get('ltp') or symbol_data.get('last_price', 0)
+                
+                should_cancel = False
+                cancel_reason = ""
+                
+                # CHECK 1: Time expiry
+                elapsed = (now - created_at).total_seconds()
+                if elapsed >= validity_seconds:
+                    should_cancel = True
+                    cancel_reason = f"EXPIRED ({elapsed:.0f}s >= {validity_seconds}s validity)"
+                
+                # CHECK 2: Sentiment/Indicator reversal
+                if not should_cancel and current_price > 0:
+                    # Get current indicators
+                    prices = self.price_history.get(symbol, [])
+                    if len(prices) >= 14:
+                        rsi = self._calculate_rsi(np.array(prices), 14)
+                        
+                        # For BUY limit order: Cancel if RSI now overbought (>70) or bearish momentum
+                        if action == 'BUY':
+                            if rsi > 70:
+                                should_cancel = True
+                                cancel_reason = f"SENTIMENT REVERSAL: RSI={rsi:.1f} > 70 (overbought) against BUY"
+                            # Also check if price moved significantly AWAY (up) from our limit
+                            elif current_price > limit_price * 1.01:  # 1% above limit
+                                should_cancel = True
+                                cancel_reason = f"PRICE MOVED AWAY: Current ₹{current_price:.2f} >> Limit ₹{limit_price:.2f}"
+                        
+                        # For SELL limit order: Cancel if RSI now oversold (<30) or bullish momentum
+                        elif action == 'SELL':
+                            if rsi < 30:
+                                should_cancel = True
+                                cancel_reason = f"SENTIMENT REVERSAL: RSI={rsi:.1f} < 30 (oversold) against SELL"
+                            # Also check if price moved significantly AWAY (down) from our limit
+                            elif current_price < limit_price * 0.99:  # 1% below limit
+                                should_cancel = True
+                                cancel_reason = f"PRICE MOVED AWAY: Current ₹{current_price:.2f} << Limit ₹{limit_price:.2f}"
+                
+                # CHECK 3: MTF reversal against order direction
+                if not should_cancel and current_price > 0:
+                    mtf_result = self.analyze_multi_timeframe(symbol, action)
+                    mtf_direction = mtf_result.get('direction', 'NEUTRAL')
+                    mtf_score = mtf_result.get('alignment_score', 0)
+                    
+                    # Strong MTF reversal against our order
+                    if mtf_score >= 2:
+                        if (action == 'BUY' and mtf_direction == 'BEARISH') or \
+                           (action == 'SELL' and mtf_direction == 'BULLISH'):
+                            should_cancel = True
+                            cancel_reason = f"MTF REVERSAL: {mtf_direction} ({mtf_score}/3 TF) against {action}"
+                
+                # Execute cancellation
+                if should_cancel:
+                    logger.warning(f"🚫 SMART CANCEL: {symbol} {action} limit @ ₹{limit_price:.2f}")
+                    logger.warning(f"   Reason: {cancel_reason}")
+                    
+                    # Cancel via Zerodha if we have order_id
+                    if order_id:
+                        try:
+                            from src.core.orchestrator import get_orchestrator_instance
+                            orchestrator = get_orchestrator_instance()
+                            if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                                await orchestrator.zerodha_client.cancel_order(order_id)
+                                logger.info(f"   ✅ Order {order_id} cancelled successfully")
+                        except Exception as cancel_error:
+                            logger.error(f"   ⚠️ Failed to cancel order {order_id}: {cancel_error}")
+                    
+                    symbols_to_remove.append(symbol)
+                    cancelled_symbols.append(symbol)
+            
+            # Remove cancelled orders from tracking
+            for symbol in symbols_to_remove:
+                del self.pending_limit_orders[symbol]
+            
+            if cancelled_symbols:
+                logger.info(f"🎯 SMART CANCELLATION: Cancelled {len(cancelled_symbols)} stale/reversed limit orders")
+            
+            return cancelled_symbols
+            
+        except Exception as e:
+            logger.error(f"Error checking stale limit orders: {e}")
+            return cancelled_symbols
+    
+    def track_pending_limit_order(self, symbol: str, order_id: str, action: str, 
+                                   limit_price: float, validity_seconds: int, signal: Dict):
+        """Track a new pending limit order for smart cancellation"""
+        self.pending_limit_orders[symbol] = {
+            'order_id': order_id,
+            'action': action,
+            'limit_price': limit_price,
+            'created_at': datetime.now(),
+            'validity_seconds': validity_seconds,
+            'original_signal': signal
+        }
+        logger.info(f"📋 TRACKING LIMIT ORDER: {symbol} {action} @ ₹{limit_price:.2f} (valid {validity_seconds}s)")
+    
+    def remove_pending_limit_order(self, symbol: str):
+        """Remove a pending limit order from tracking (when filled or cancelled)"""
+        if symbol in self.pending_limit_orders:
+            del self.pending_limit_orders[symbol]
+            logger.debug(f"📋 REMOVED LIMIT ORDER TRACKING: {symbol}")
     
     async def manage_existing_positions(self, market_data: Dict) -> List[Dict]:
         """🎯 COMPREHENSIVE POSITION MANAGEMENT - Active monitoring and management"""
@@ -5625,14 +5761,63 @@ class BaseStrategy:
             logger.info(f"   🎯 Qty by Risk: {qty_by_risk} | Qty by Leverage: {qty_by_leverage} | FINAL: {final_quantity}")
             logger.info(f"   💵 Position Value: ₹{position_value:,.0f} | Margin: ₹{margin_required:,.0f} | Max Loss: ₹{actual_max_loss:,.0f}")
             
+            # ============================================================
+            # 🎯 ADAPTIVE ENTRY PRICING (SWING/LIMIT ORDER LOGIC)
+            # ============================================================
+            # Strong signals (>9): MARKET - don't miss the opportunity
+            # Medium signals (8-9): LIMIT at 0.15% better price
+            # Normal signals (7-8): LIMIT at 0.30% better price
+            # This reduces slippage and gets better entries
+            
+            original_entry = entry_price
+            order_type = 'MARKET'  # Default
+            limit_discount_pct = 0.0
+            limit_validity_seconds = 300  # 5 minutes for limit orders
+            
+            # Normalize confidence to 0-10 scale if needed
+            conf_normalized = confidence if confidence > 1.0 else confidence * 10.0
+            
+            if conf_normalized >= 9.0:
+                # 🔥 STRONG SIGNAL: Use MARKET order - don't miss it!
+                order_type = 'MARKET'
+                limit_discount_pct = 0.0
+                logger.info(f"🎯 ADAPTIVE ENTRY: {symbol} STRONG signal ({conf_normalized:.1f}) → MARKET order")
+            elif conf_normalized >= 8.0:
+                # 📊 MEDIUM SIGNAL: Use LIMIT at 0.15% better
+                order_type = 'LIMIT'
+                limit_discount_pct = 0.15
+                limit_validity_seconds = 180  # 3 minutes
+                if action.upper() == 'BUY':
+                    entry_price = original_entry * (1 - limit_discount_pct / 100)
+                else:  # SELL
+                    entry_price = original_entry * (1 + limit_discount_pct / 100)
+                logger.info(f"🎯 ADAPTIVE ENTRY: {symbol} MEDIUM signal ({conf_normalized:.1f}) → LIMIT at {limit_discount_pct}% better (₹{original_entry:.2f} → ₹{entry_price:.2f})")
+            else:
+                # 📈 NORMAL SIGNAL: Use LIMIT at 0.30% better
+                order_type = 'LIMIT'
+                limit_discount_pct = 0.30
+                limit_validity_seconds = 300  # 5 minutes
+                if action.upper() == 'BUY':
+                    entry_price = original_entry * (1 - limit_discount_pct / 100)
+                else:  # SELL
+                    entry_price = original_entry * (1 + limit_discount_pct / 100)
+                logger.info(f"🎯 ADAPTIVE ENTRY: {symbol} NORMAL signal ({conf_normalized:.1f}) → LIMIT at {limit_discount_pct}% better (₹{original_entry:.2f} → ₹{entry_price:.2f})")
+            
+            # Recalculate position value with new entry price
+            position_value = final_quantity * entry_price
+            
             signal = {
                 'signal_id': f"{self.name}_{symbol}_{int(time_module.time())}",
                 'symbol': symbol,
                 'action': action.upper(),
                 'quantity': final_quantity,  # 🎯 FIXED: Risk-based quantity
                 'entry_price': round(entry_price, 2),
+                'original_entry_price': round(original_entry, 2),  # 🎯 Track original LTP
                 'stop_loss': round(stop_loss, 2),
                 'target': round(target, 2),
+                'order_type': order_type,  # 🎯 ADAPTIVE: MARKET or LIMIT
+                'limit_price': round(entry_price, 2) if order_type == 'LIMIT' else None,
+                'limit_validity_seconds': limit_validity_seconds if order_type == 'LIMIT' else None,
                 'strategy': self.name,
                 'strategy_name': self.__class__.__name__,
                 'confidence': confidence,
@@ -5732,12 +5917,45 @@ class BaseStrategy:
             logger.info(f"   SL: ₹{stop_loss:.2f} | Target: ₹{target:.2f}")
             logger.info(f"   Margin Est: ₹{margin_required:,.0f}")
             
+            # ============================================================
+            # 🎯 ADAPTIVE ENTRY PRICING FOR FUTURES
+            # ============================================================
+            original_entry = entry_price
+            order_type = 'LIMIT'  # Default for futures
+            limit_discount_pct = 0.0
+            limit_validity_seconds = 300
+            
+            conf_normalized = confidence if confidence > 1.0 else confidence * 10.0
+            
+            if conf_normalized >= 9.0:
+                order_type = 'MARKET'
+                logger.info(f"🎯 ADAPTIVE FUTURES: {symbol} STRONG signal ({conf_normalized:.1f}) → MARKET order")
+            elif conf_normalized >= 8.0:
+                order_type = 'LIMIT'
+                limit_discount_pct = 0.10  # Tighter for futures (more liquid)
+                limit_validity_seconds = 180
+                if action.upper() == 'BUY':
+                    entry_price = original_entry * (1 - limit_discount_pct / 100)
+                else:
+                    entry_price = original_entry * (1 + limit_discount_pct / 100)
+                logger.info(f"🎯 ADAPTIVE FUTURES: {symbol} MEDIUM → LIMIT at {limit_discount_pct}% (₹{original_entry:.2f} → ₹{entry_price:.2f})")
+            else:
+                order_type = 'LIMIT'
+                limit_discount_pct = 0.20
+                limit_validity_seconds = 300
+                if action.upper() == 'BUY':
+                    entry_price = original_entry * (1 - limit_discount_pct / 100)
+                else:
+                    entry_price = original_entry * (1 + limit_discount_pct / 100)
+                logger.info(f"🎯 ADAPTIVE FUTURES: {symbol} NORMAL → LIMIT at {limit_discount_pct}% (₹{original_entry:.2f} → ₹{entry_price:.2f})")
+            
             # Create signal with futures-specific fields
             signal = {
                 'symbol': futures_symbol,
                 'underlying': symbol,
                 'action': action,
                 'entry_price': round(entry_price, 2),
+                'original_entry_price': round(original_entry, 2),
                 'stop_loss': round(stop_loss, 2),
                 'target': round(target, 2),
                 'quantity': qty_by_risk,
@@ -5747,7 +5965,9 @@ class BaseStrategy:
                 'instrument_type': 'FUT',
                 'exchange': 'NFO',
                 'product': 'MIS',  # Intraday
-                'order_type': 'LIMIT',
+                'order_type': order_type,  # 🎯 ADAPTIVE
+                'limit_price': round(entry_price, 2) if order_type == 'LIMIT' else None,
+                'limit_validity_seconds': limit_validity_seconds if order_type == 'LIMIT' else None,
                 'validity': 'DAY',
                 'margin_required': round(margin_required, 2),
                 'risk_per_lot': round(risk_per_share * lot_size, 2),

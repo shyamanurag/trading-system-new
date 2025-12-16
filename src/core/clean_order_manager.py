@@ -250,14 +250,21 @@ class OrderManager:
             else:
                 side = action
             
+            # 🎯 ADAPTIVE ENTRY: Use order_type from signal (MARKET or LIMIT)
+            order_type = signal.get('order_type', 'MARKET')
+            entry_price = signal.get('entry_price') or signal.get('limit_price')
+            limit_validity = signal.get('limit_validity_seconds', 300)
+            
             # Create order data
             order_data = {
                 'symbol': symbol,
                 'side': side,
                 'quantity': quantity,
-                'order_type': 'MARKET',  # Use market order for quick execution
+                'order_type': order_type,  # 🎯 ADAPTIVE: MARKET or LIMIT from signal
                 'strategy': strategy_name,
-                'reason': signal.get('reason', 'Strategy order')
+                'reason': signal.get('reason', 'Strategy order'),
+                'entry_price': entry_price,  # For LIMIT orders
+                'price': entry_price  # Zerodha uses 'price' for limit orders
             }
             
             # Use default user for strategy orders
@@ -267,7 +274,27 @@ class OrderManager:
             order_id = await self.place_order(user_id, order_data)
             
             if order_id:
-                logger.info(f"✅ Strategy order placed: {strategy_name} - {symbol} {side} {quantity}")
+                logger.info(f"✅ Strategy order placed: {strategy_name} - {symbol} {side} {quantity} ({order_type})")
+                
+                # 🎯 Track LIMIT orders for smart cancellation
+                if order_type == 'LIMIT':
+                    try:
+                        from src.core.orchestrator import get_orchestrator_instance
+                        orchestrator = get_orchestrator_instance()
+                        if orchestrator:
+                            # Find the strategy instance and track the limit order
+                            for strat_key, strat_info in orchestrator.strategies.items():
+                                if strat_info.get('name') == strategy_name or strat_key == strategy_name:
+                                    strat_instance = strat_info.get('instance')
+                                    if strat_instance and hasattr(strat_instance, 'track_pending_limit_order'):
+                                        strat_instance.track_pending_limit_order(
+                                            symbol, order_id, side, entry_price, limit_validity, signal
+                                        )
+                                        logger.info(f"📋 LIMIT ORDER TRACKED: {symbol} for smart cancellation")
+                                    break
+                    except Exception as track_err:
+                        logger.debug(f"Could not track limit order: {track_err}")
+                
                 return [(user_id, order_id)]
             else:
                 logger.error(f"❌ Strategy order failed: {strategy_name} - {symbol}")

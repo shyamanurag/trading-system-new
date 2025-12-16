@@ -2109,6 +2109,15 @@ class TradingOrchestrator:
                         if hasattr(strategy_instance, 'process_pending_management_actions'):
                             await strategy_instance.process_pending_management_actions()
                         
+                        # 🎯 SMART LIMIT ORDER CANCELLATION: Check and cancel stale/reversed limit orders
+                        if hasattr(strategy_instance, 'check_and_cancel_stale_limit_orders'):
+                            try:
+                                cancelled = await strategy_instance.check_and_cancel_stale_limit_orders(enriched_data)
+                                if cancelled:
+                                    self.logger.info(f"🚫 {strategy_key}: Cancelled {len(cancelled)} stale limit orders: {cancelled}")
+                            except Exception as cancel_err:
+                                self.logger.debug(f"Limit order check failed: {cancel_err}")
+                        
                         # 🎯 PASS MARKET BIAS to strategy for coordinated signal generation
                         if hasattr(strategy_instance, 'set_market_bias') and hasattr(self, 'market_bias'):
                             strategy_instance.set_market_bias(self.market_bias)
