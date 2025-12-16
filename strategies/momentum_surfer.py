@@ -1512,11 +1512,19 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 self.price_history = {}
             if symbol not in self.price_history:
                 self.price_history[symbol] = []
-            
-            self.price_history[symbol].append(ltp)
-            self.price_history[symbol] = self.price_history[symbol][-50:]  # Keep 50 periods
-            
-            prices = np.array(self.price_history[symbol])
+
+            # Prefer candle closes from mtf_data (time-consistent indicators).
+            # Fall back to LTP buffer ONLY if candle data isn't available.
+            mtf_series = self._get_indicator_series_from_mtf(symbol, timeframe='5min', limit=60)
+            closes = mtf_series.get('closes', []) if isinstance(mtf_series, dict) else []
+
+            if len(closes) >= 14:
+                self.price_history[symbol] = closes[-50:]
+                prices = np.array(self.price_history[symbol])
+            else:
+                self.price_history[symbol].append(ltp)
+                self.price_history[symbol] = self.price_history[symbol][-50:]  # Keep 50 periods
+                prices = np.array(self.price_history[symbol])
             
             # ============= CROSS-SECTIONAL MOMENTUM (PREVIOUSLY DEAD CODE!) =============
             # Update symbol_price_history for cross-sectional analysis

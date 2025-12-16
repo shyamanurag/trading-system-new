@@ -991,8 +991,16 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 self.price_history = {}
             if underlying_symbol not in self.price_history:
                 self.price_history[underlying_symbol] = []
-            self.price_history[underlying_symbol].append(ltp)
-            self.price_history[underlying_symbol] = self.price_history[underlying_symbol][-50:]
+
+            # Prefer candle closes from mtf_data (time-consistent indicators).
+            # Fall back to LTP buffer ONLY if candle data isn't available.
+            mtf_series = self._get_indicator_series_from_mtf(underlying_symbol, timeframe='5min', limit=60)
+            closes = mtf_series.get('closes', []) if isinstance(mtf_series, dict) else []
+            if len(closes) >= 14:
+                self.price_history[underlying_symbol] = closes[-50:]
+            else:
+                self.price_history[underlying_symbol].append(ltp)
+                self.price_history[underlying_symbol] = self.price_history[underlying_symbol][-50:]
             
             prices = self.price_history[underlying_symbol]
             

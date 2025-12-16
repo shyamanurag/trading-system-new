@@ -411,6 +411,58 @@ class BaseStrategy:
             logger.debug(f"⚠️ MTF fetch error for {symbol}: {e}")
             return False
     
+    def _get_indicator_series_from_mtf(self, symbol: str, timeframe: str = '5min', limit: int = 50) -> Dict:
+        """
+        Get indicator input series from cached Zerodha candles (mtf_data).
+
+        This avoids using per-cycle LTP samples for indicators like RSI/MACD/Bollinger,
+        making calculations time-consistent (based on candle closes).
+
+        Returns:
+            {
+              'closes': List[float],
+              'highs': List[float],
+              'lows': List[float],
+              'volumes': List[float],
+              'source': 'mtf_data' | 'missing'
+            }
+        """
+        try:
+            tf = timeframe
+            if tf not in ('5min', '15min', '60min'):
+                tf = '5min'
+
+            if not hasattr(self, 'mtf_data') or symbol not in self.mtf_data:
+                return {'closes': [], 'highs': [], 'lows': [], 'volumes': [], 'source': 'missing'}
+
+            candles = self.mtf_data.get(symbol, {}).get(tf, []) or []
+            if not candles:
+                return {'closes': [], 'highs': [], 'lows': [], 'volumes': [], 'source': 'missing'}
+
+            candles = candles[-max(1, int(limit)):]
+
+            closes = []
+            highs = []
+            lows = []
+            volumes = []
+
+            for c in candles:
+                if not isinstance(c, dict):
+                    continue
+                close = float(c.get('close', 0) or 0)
+                high = float(c.get('high', close) or close)
+                low = float(c.get('low', close) or close)
+                vol = float(c.get('volume', 0) or 0)
+                if close > 0:
+                    closes.append(close)
+                    highs.append(high)
+                    lows.append(low)
+                    volumes.append(vol)
+
+            return {'closes': closes, 'highs': highs, 'lows': lows, 'volumes': volumes, 'source': 'mtf_data'}
+        except Exception:
+            return {'closes': [], 'highs': [], 'lows': [], 'volumes': [], 'source': 'missing'}
+
     def analyze_multi_timeframe(self, symbol: str, action: str = None) -> Dict:
         """
         🎯 MULTI-TIMEFRAME ANALYSIS for Higher Accuracy Signals
