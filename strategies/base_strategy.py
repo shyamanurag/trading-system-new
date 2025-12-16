@@ -5173,7 +5173,7 @@ class BaseStrategy:
                 if not should_allow and exceptional_rs:
                     logger.info(f"🚫 RS OVERRIDE BLOCKED: {symbol} {action} has exceptional RS but bias says NO - Respecting bias filter")
                     metadata['exceptional_rs_blocked'] = True
-                        metadata['relative_strength'] = exceptional_rs_value
+                    metadata['relative_strength'] = exceptional_rs_value
                 
                 if not should_allow:
                     logger.info(f"🚫 BIAS FILTER: {symbol} {action} rejected by market bias "
