@@ -420,6 +420,7 @@ class BaseStrategy:
 
         Returns:
             {
+              'opens': List[float],
               'closes': List[float],
               'highs': List[float],
               'lows': List[float],
@@ -433,14 +434,15 @@ class BaseStrategy:
                 tf = '5min'
 
             if not hasattr(self, 'mtf_data') or symbol not in self.mtf_data:
-                return {'closes': [], 'highs': [], 'lows': [], 'volumes': [], 'source': 'missing'}
+                return {'opens': [], 'closes': [], 'highs': [], 'lows': [], 'volumes': [], 'source': 'missing'}
 
             candles = self.mtf_data.get(symbol, {}).get(tf, []) or []
             if not candles:
-                return {'closes': [], 'highs': [], 'lows': [], 'volumes': [], 'source': 'missing'}
+                return {'opens': [], 'closes': [], 'highs': [], 'lows': [], 'volumes': [], 'source': 'missing'}
 
             candles = candles[-max(1, int(limit)):]
 
+            opens = []
             closes = []
             highs = []
             lows = []
@@ -449,19 +451,21 @@ class BaseStrategy:
             for c in candles:
                 if not isinstance(c, dict):
                     continue
+                open_ = float(c.get('open', 0) or 0)
                 close = float(c.get('close', 0) or 0)
                 high = float(c.get('high', close) or close)
                 low = float(c.get('low', close) or close)
                 vol = float(c.get('volume', 0) or 0)
                 if close > 0:
+                    opens.append(open_ if open_ > 0 else close)
                     closes.append(close)
                     highs.append(high)
                     lows.append(low)
                     volumes.append(vol)
 
-            return {'closes': closes, 'highs': highs, 'lows': lows, 'volumes': volumes, 'source': 'mtf_data'}
+            return {'opens': opens, 'closes': closes, 'highs': highs, 'lows': lows, 'volumes': volumes, 'source': 'mtf_data'}
         except Exception:
-            return {'closes': [], 'highs': [], 'lows': [], 'volumes': [], 'source': 'missing'}
+            return {'opens': [], 'closes': [], 'highs': [], 'lows': [], 'volumes': [], 'source': 'missing'}
 
     def analyze_multi_timeframe(self, symbol: str, action: str = None) -> Dict:
         """
@@ -1625,53 +1629,96 @@ class BaseStrategy:
                 low = float(enriched_data.get('low', ltp))
                 
                 if ltp > 0 and open_price > 0:
-                    # ============= CALCULATE RSI (PROPER 14-period RSI from history) =============
-                    # 🔥 FIX: Use real RSI from price history, not fake estimation
-                    rsi = await self._calculate_real_rsi(symbol, ltp)
-                    enriched_data['rsi'] = rsi
-                    
-                    day_range = high - low
                     change_pct = ((ltp - open_price) / open_price) * 100
-                    
-                    # Log RSI for debugging
-                    logger.debug(f"📊 {symbol} RSI CALCULATED: {rsi:.1f} (change={change_pct:+.2f}%, real_history=True)")
-                    
-                    # ============= CALCULATE BUYING/SELLING PRESSURE =============
-                    candle_body = ltp - open_price
-                    
-                    if day_range > 0:
-                        if candle_body > 0:  # Green candle
-                            buying_pressure = min(1.0, candle_body / day_range + 0.5)
-                            selling_pressure = 1 - buying_pressure
-                        else:  # Red candle
-                            selling_pressure = min(1.0, abs(candle_body) / day_range + 0.5)
-                            buying_pressure = 1 - selling_pressure
+
+                    # ============= PREFERRED: INDICATORS FROM 5m CANDLE CLOSES (mtf_data) =============
+                    # This matches the rest of the system (RSI/MACD/Bollinger based on candle closes),
+                    # not per-cycle LTP samples.
+                    mtf_series = self._get_indicator_series_from_mtf(symbol, timeframe='5min', limit=60)
+                    opens_5m = mtf_series.get('opens', []) if isinstance(mtf_series, dict) else []
+                    closes = mtf_series.get('closes', []) if isinstance(mtf_series, dict) else []
+                    highs_5m = mtf_series.get('highs', []) if isinstance(mtf_series, dict) else []
+                    lows_5m = mtf_series.get('lows', []) if isinstance(mtf_series, dict) else []
+
+                    # RSI (prefer candle closes; fallback to legacy real_rsi buffer if candles missing)
+                    if len(closes) >= 15:
+                        rsi = self._calculate_rsi(closes, 14)
+                        rsi_source = "mtf_5m"
                     else:
-                        buying_pressure = 0.5
-                        selling_pressure = 0.5
-                    
+                        rsi = await self._calculate_real_rsi(symbol, ltp)
+                        rsi_source = "ltp_buffer"
+                    enriched_data['rsi'] = rsi
+
+                    # Buying/Selling pressure (prefer last 5m candle range; fallback to day-range)
+                    buying_pressure = 0.5
+                    selling_pressure = 0.5
+                    if (
+                        highs_5m and lows_5m and opens_5m and closes and
+                        len(highs_5m) == len(lows_5m) == len(opens_5m) == len(closes)
+                    ):
+                        last_high = float(highs_5m[-1] or 0)
+                        last_low = float(lows_5m[-1] or 0)
+                        last_open = float(opens_5m[-1] or 0)
+                        last_close = float(closes[-1] or 0)
+                        rng = last_high - last_low
+
+                        if rng > 0 and last_close > 0 and last_open > 0:
+                            # Close position in range: 0..1 (0 at low, 1 at high)
+                            pos_in_range = (last_close - last_low) / rng
+                            pos_in_range = max(0.0, min(1.0, pos_in_range))
+
+                            # Candle body strength: 0..1, direction sets bias
+                            body = (last_close - last_open) / rng
+                            body_strength = min(1.0, abs(body))
+                            direction = 1.0 if body >= 0 else -1.0
+
+                            # Combine location + body into smoother pressure (avoids frequent 0/100 prints)
+                            base_pressure = 0.5 + 0.5 * direction * body_strength  # 0..1
+                            buying_pressure = 0.6 * base_pressure + 0.4 * pos_in_range
+
+                            # Soft clamp to avoid exact 0/100 from rounding unless truly extreme
+                            buying_pressure = max(0.01, min(0.99, buying_pressure))
+                            selling_pressure = 1.0 - buying_pressure
+                    else:
+                        day_range = high - low
+                        candle_body = ltp - open_price
+                        if day_range > 0:
+                            if candle_body > 0:  # Green day candle
+                                buying_pressure = min(1.0, candle_body / day_range + 0.5)
+                                selling_pressure = 1 - buying_pressure
+                            else:  # Red day candle
+                                selling_pressure = min(1.0, abs(candle_body) / day_range + 0.5)
+                                buying_pressure = 1 - selling_pressure
+
                     enriched_data['buying_pressure'] = buying_pressure
                     enriched_data['selling_pressure'] = selling_pressure
-                    
-                    # ============= ESTIMATE MACD CROSSOVER =============
-                    # Use change momentum to estimate MACD direction
-                    if change_pct > 0.3 and buying_pressure > 0.6:
-                        macd_crossover = 'bullish'
-                    elif change_pct < -0.3 and selling_pressure > 0.6:
-                        macd_crossover = 'bearish'
-                    else:
-                        macd_crossover = 'neutral'
-                    
-                    enriched_data['macd_crossover'] = macd_crossover
+
+                    # MACD (prefer real MACD from candle closes; fallback to neutral if not enough history)
+                    macd_state = 'neutral'
+                    macd_crossover_event = None
+                    macd_hist = 0.0
+                    if len(closes) >= 35:
+                        macd_data = self.calculate_macd_signal(closes)
+                        macd_state = macd_data.get('state', 'neutral') or 'neutral'
+                        macd_crossover_event = macd_data.get('crossover')
+                        macd_hist = float(macd_data.get('histogram', 0) or 0)
+
+                    # Backward-compatible field name expected by open_position_decision.py
+                    # Use crossover event when it exists, otherwise current state.
+                    enriched_data['macd_state'] = macd_state
+                    enriched_data['macd_crossover'] = macd_crossover_event or macd_state
+                    enriched_data['macd_histogram'] = macd_hist
                     
                     # ============= MOMENTUM AND TREND =============
                     enriched_data['momentum'] = change_pct / 2.0  # Normalized momentum
                     enriched_data['intraday_change_pct'] = change_pct
                     
                     # Log enriched data summary
-                    logger.info(f"📊 {symbol} POSITION ANALYSIS: RSI={enriched_data.get('rsi', 'N/A'):.1f}, "
-                               f"MACD={macd_crossover}, Change={change_pct:+.2f}%, "
-                               f"Buy/Sell={buying_pressure:.0%}/{selling_pressure:.0%}")
+                    logger.info(
+                        f"📊 {symbol} POSITION ANALYSIS: RSI={enriched_data.get('rsi', 'N/A'):.1f} ({rsi_source}), "
+                        f"MACD={enriched_data.get('macd_crossover', 'N/A')}, Change={change_pct:+.2f}%, "
+                        f"Buy/Sell={buying_pressure:.0%}/{selling_pressure:.0%}"
+                    )
             
             return enriched_data
             
@@ -1687,6 +1734,12 @@ class BaseStrategy:
         like RSI=41 for a stock up 3.31%. Real RSI requires historical price changes.
         """
         try:
+            # Prefer candle closes from mtf_data for RSI whenever available
+            mtf_series = self._get_indicator_series_from_mtf(symbol, timeframe='5min', limit=60)
+            closes = mtf_series.get('closes', []) if isinstance(mtf_series, dict) else []
+            if len(closes) >= period + 1:
+                return self._calculate_rsi(closes, period)
+
             # Initialize price history if needed
             if not hasattr(self, '_rsi_price_history'):
                 self._rsi_price_history = {}
