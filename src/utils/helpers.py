@@ -14,6 +14,23 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def _ema_series(values: np.ndarray, period: int) -> np.ndarray:
+    """
+    EMA series for a vector of values.
+    Returns an array same length as `values`.
+    """
+    if values is None or len(values) == 0:
+        return np.array([])
+    if period <= 1:
+        return values.astype(float, copy=True)
+
+    alpha = 2 / (period + 1)
+    ema = np.zeros(len(values), dtype=float)
+    ema[0] = float(values[0])
+    for i in range(1, len(values)):
+        ema[i] = (float(values[i]) * alpha) + (ema[i - 1] * (1 - alpha))
+    return ema
+
 
 def get_atm_strike(spot_price: float) -> int:
     """
@@ -261,10 +278,12 @@ def calculate_technical_indicators(data: Dict[str, Any]) -> Dict[str, float]:
             # Return error indicators instead of fake calculations
             return {
                 'error': 'SAFETY: Technical analysis disabled - real price history required',
+                'valid': False,
                 'sma_20': 0.0,
                 'rsi': 0.0,
                 'macd': 0.0,
                 'macd_signal': 0.0,
+                'macd_histogram': 0.0,
                 'bb_upper': 0.0,
                 'bb_lower': 0.0,
                 'bb_middle': 0.0,
@@ -299,20 +318,27 @@ def calculate_technical_indicators(data: Dict[str, Any]) -> Dict[str, float]:
         
         # Current price
         indicators['current_price'] = float(prices[-1]) if len(prices) > 0 else 100.0
+
+        # Mark as valid (useful for callers that want guardrails)
+        indicators['valid'] = True
         
         return indicators
         
     except Exception as e:
-        # Return default indicators if calculation fails
+        # Safer fallback: mark invalid and return neutral-ish values (avoid accidental signals)
+        logger.error(f"Error calculating technical indicators: {e}")
         return {
-            'sma_20': 100.0,
+            'error': 'Technical indicator calculation failed',
+            'valid': False,
+            'sma_20': 0.0,
             'rsi': 50.0,
             'macd': 0.0,
             'macd_signal': 0.0,
-            'bb_upper': 105.0,
-            'bb_lower': 95.0,
-            'bb_middle': 100.0,
-            'current_price': 100.0
+            'macd_histogram': 0.0,
+            'bb_upper': 0.0,
+            'bb_lower': 0.0,
+            'bb_middle': 0.0,
+            'current_price': float(data.get('price', data.get('ltp', 0.0)) or 0.0)
         }
 
 
@@ -342,62 +368,55 @@ def calculate_rsi(prices: np.ndarray, period: int = 14) -> float:
 def calculate_macd(prices: np.ndarray, fast: int = 12, slow: int = 26, signal: int = 9) -> Dict[str, float]:
     """Calculate MACD indicators"""
     try:
-        if len(prices) < slow:
+        if prices is None or len(prices) < slow:
             return {'macd': 0.0, 'macd_signal': 0.0, 'macd_histogram': 0.0}
-        
-        ema_fast = calculate_ema(prices, fast)
-        ema_slow = calculate_ema(prices, slow)
-        
-        macd_line = ema_fast - ema_slow
-        signal_line = macd_line  # Simplified - should be EMA of MACD line
-        histogram = macd_line - signal_line
-        
-        return {
-            'macd': float(macd_line),
-            'macd_signal': float(signal_line),
-            'macd_histogram': float(histogram)
-        }
-    except:
+
+        prices = np.asarray(prices, dtype=float)
+
+        # Full MACD series so signal line is correct (EMA of MACD series)
+        ema_fast = _ema_series(prices, fast)
+        ema_slow = _ema_series(prices, slow)
+        macd_series = ema_fast - ema_slow
+        signal_series = _ema_series(macd_series, signal)
+
+        macd_line = float(macd_series[-1])
+        signal_line = float(signal_series[-1]) if len(signal_series) else 0.0
+        histogram = float(macd_line - signal_line)
+
+        return {'macd': macd_line, 'macd_signal': signal_line, 'macd_histogram': histogram}
+    except Exception:
         return {'macd': 0.0, 'macd_signal': 0.0, 'macd_histogram': 0.0}
 
 
 def calculate_ema(prices: np.ndarray, period: int) -> float:
     """Calculate Exponential Moving Average"""
     try:
-        if len(prices) < period:
+        if prices is None or len(prices) == 0:
+            return 0.0
+        prices = np.asarray(prices, dtype=float)
+        if len(prices) < max(2, period):
             return float(np.mean(prices))
-        
-        alpha = 2 / (period + 1)
-        ema = prices[0]
-        for price in prices[1:]:
-            ema = alpha * price + (1 - alpha) * ema
-        return float(ema)
-    except:
+        return float(_ema_series(prices, period)[-1])
+    except Exception:
         return float(prices[-1]) if len(prices) > 0 else 100.0
 
 
 def calculate_bollinger_bands(prices: np.ndarray, period: int = 20, std_dev: int = 2) -> Dict[str, float]:
     """Calculate Bollinger Bands"""
     try:
-        if len(prices) < period:
-            current_price = float(prices[-1]) if len(prices) > 0 else 100.0
-            return {
-                'bb_upper': current_price * 1.05,
-                'bb_lower': current_price * 0.95,
-                'bb_middle': current_price
-            }
-        
-        sma = np.mean(prices[-period:])
-        std = np.std(prices[-period:])
+        if prices is None or len(prices) == 0:
+            return {'bb_upper': 0.0, 'bb_lower': 0.0, 'bb_middle': 0.0}
+
+        prices = np.asarray(prices, dtype=float)
+        window = prices[-min(period, len(prices)):]  # use available history, no synthetic 5% bands
+        sma = float(np.mean(window))
+        std = float(np.std(window))
+        mult = float(std_dev)
         
         return {
-            'bb_upper': float(sma + (std_dev * std)),
-            'bb_lower': float(sma - (std_dev * std)),
+            'bb_upper': float(sma + (mult * std)),
+            'bb_lower': float(sma - (mult * std)),
             'bb_middle': float(sma)
         }
-    except:
-        return {
-            'bb_upper': 105.0,
-            'bb_lower': 95.0,
-            'bb_middle': 100.0
-        } 
+    except Exception:
+        return {'bb_upper': 0.0, 'bb_lower': 0.0, 'bb_middle': 0.0}

@@ -190,9 +190,17 @@ class MarketDirectionalBias:
                 open_price = float(nifty_data.get('open', 0))
                 actual_change = ltp - open_price
                 actual_change_pct = (actual_change / open_price * 100) if open_price > 0 else 0
+                prev_close = float(
+                    nifty_data.get('previous_close', 0) or
+                    nifty_data.get('prev_close', 0) or
+                    nifty_data.get('close', 0) or
+                    0
+                )
+                day_change_pct = ((ltp - prev_close) / prev_close * 100) if prev_close > 0 else 0
                 logger.info(f"📊 NIFTY-I: LTP={ltp:.2f}, Open={open_price:.2f}, "
                            f"Actual Change={actual_change:.2f} ({actual_change_pct:+.2f}%), "
-                           f"Provided change_percent={nifty_data.get('change_percent', 'N/A')}")
+                           f"Day Change (PrevClose→Now)={day_change_pct:+.2f}%, "
+                           f"Provided day change_percent={nifty_data.get('change_percent', 'N/A')}")
             
             # 1. ANALYZE MARKET INTERNALS (if available)
             market_internals = None
