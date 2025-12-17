@@ -306,21 +306,12 @@ class TrueDataClient:
             pass  # Windows doesn't support all signals
 
     def _check_deployment_overlap(self):
-        """Check if this is a deployment overlap scenario - FIXED to reduce false positives"""
-        is_production = os.getenv('ENVIRONMENT') == 'production'
-        is_digitalocean = 'ondigitalocean.app' in os.getenv('APP_URL', '')
-        
-        # CRITICAL FIX: Only enable overlap handling during actual deployments, not normal operation
-        skip_auto_init = os.getenv('SKIP_TRUEDATA_AUTO_INIT', 'false').lower() == 'true'
-        
-        if skip_auto_init:
-            logger.info("⏭️ Deployment overlap handling DISABLED (SKIP_TRUEDATA_AUTO_INIT=true)")
-            return False
-        
-        if is_production or is_digitalocean:
-            logger.info("🏭 Production deployment detected - enabling overlap handling")
-            return True
-        return False
+        """Check if this is a deployment overlap scenario - DISABLED (broken logic removed)"""
+        # CRITICAL FIX: The "graceful takeover" logic was BROKEN - it created MORE failed connections
+        # instead of fixing the problem. Now we just fail fast and let circuit breaker handle it.
+        # The old logic tried to create a temp TD_live connection to "force disconnect" the existing
+        # one, but TrueData doesn't work that way - you can't force-disconnect another user's session.
+        return False  # Always return False - no special overlap handling needed
 
     def _attempt_graceful_takeover(self):
         """Attempt to gracefully take over existing connection"""
@@ -425,14 +416,16 @@ class TrueDataClient:
                 return False
             
             if "user already connected" in error_msg or "already connected" in error_msg:
-                logger.warning("⚠️ User Already Connected error detected - activating circuit breaker")
-                logger.info("💡 TIP: This usually means another instance is connected. Wait 60s for auto-disconnect.")
-                # Activate circuit breaker to prevent rapid reconnection attempts
+                logger.warning("⚠️ User Already Connected - FAST FAIL (no retry loop)")
+                logger.info("💡 Another instance is connected. System will use Zerodha for market data.")
+                logger.info("💡 TrueData will auto-retry after 2 minutes")
+                # CRITICAL: Activate circuit breaker with LONG timeout to prevent deployment loops
                 self._circuit_breaker_active = True
-                self._circuit_breaker_timeout = 60  # 60 second cooldown
+                self._circuit_breaker_timeout = 120  # 2 minute cooldown - enough for old deployment to die
                 self._last_connection_failure = time.time()
                 self._consecutive_failures += 1
                 truedata_connection_status['error'] = 'USER_ALREADY_CONNECTED'
+                truedata_connection_status['permanent_block'] = True  # Block all retries
                 truedata_connection_status['retry_disabled'] = True
                 return False
             
@@ -441,47 +434,46 @@ class TrueDataClient:
             return False
 
     def connect(self):
-        """Main connection method with optimized deployment overlap handling"""
+        """Main connection method - FAST FAIL on 'User Already Connected' to prevent deployment loops"""
         with self._lock:
             if self._shutdown_requested:
                 logger.info("🛑 Shutdown requested - skipping connection")
                 return False
             
-            # 🚨 CRITICAL: Check for permanent block (subscription expired)
+            # 🚨 CRITICAL: Check for permanent block (subscription expired or user already connected)
             if truedata_connection_status.get('permanent_block', False):
-                # Check if circuit breaker timeout has expired (subscription may be renewed)
+                error_type = truedata_connection_status.get('error', 'UNKNOWN')
+                # Check if circuit breaker timeout has expired
                 if self._circuit_breaker_active and self._last_connection_failure is not None:
                     time_since_failure = time.time() - self._last_connection_failure
                     if time_since_failure >= self._circuit_breaker_timeout:
-                        logger.info("🔄 Circuit breaker timeout expired - attempting reconnection after potential subscription renewal")
+                        logger.info(f"🔄 Circuit breaker timeout expired ({error_type}) - allowing retry")
                         # Reset block flags to allow retry
                         truedata_connection_status['permanent_block'] = False
                         truedata_connection_status['retry_disabled'] = False
                         self._circuit_breaker_active = False
                         self._consecutive_failures = 0
                     else:
-                        logger.warning(f"❌ TrueData connection blocked - Subscription expired (retry in {(self._circuit_breaker_timeout - time_since_failure)/60:.0f} min)")
-                        logger.info("💡 System using Zerodha-only mode for market data")
+                        remaining = int(self._circuit_breaker_timeout - time_since_failure)
+                        logger.warning(f"⚡ TrueData blocked ({error_type}) - retry in {remaining}s")
                         return False
                 else:
-                    logger.error("❌ TrueData connection BLOCKED - Subscription expired")
-                    logger.error("💡 SOLUTION: Renew your TrueData subscription")
+                    logger.warning(f"⚡ TrueData connection blocked: {error_type}")
                     return False
                 
-            # Circuit breaker check
+            # Circuit breaker check - FAST FAIL
             if self._circuit_breaker_active:
                 if self._last_connection_failure is not None:
                     time_since_failure = time.time() - self._last_connection_failure
                     if time_since_failure < self._circuit_breaker_timeout:
-                        logger.warning(f"⚡ Circuit breaker ACTIVE - cooling down for {self._circuit_breaker_timeout - time_since_failure:.0f}s")
+                        remaining = int(self._circuit_breaker_timeout - time_since_failure)
+                        logger.warning(f"⚡ Circuit breaker ACTIVE - cooling down for {remaining}s")
                         return False
                     else:
                         logger.info("⚡ Circuit breaker timeout expired - attempting connection")
                         self._circuit_breaker_active = False
                         self._consecutive_failures = 0
                 else:
-                    # If _last_connection_failure is None, reset circuit breaker
-                    logger.info("⚡ Circuit breaker timeout expired - attempting connection")
                     self._circuit_breaker_active = False
                     self._consecutive_failures = 0
                 
@@ -489,46 +481,17 @@ class TrueDataClient:
                 logger.info("✅ TrueData already connected")
                 return True
 
-            self._connection_attempts += 1
+            # SINGLE ATTEMPT - no retry loop during deployment
+            logger.info("🚀 TrueData connection attempt (single try, no retry loop)")
             
-            if self._connection_attempts > self._max_connection_attempts:
-                logger.error(f"❌ Max connection attempts ({self._max_connection_attempts}) exceeded")
-                self._activate_circuit_breaker()
-                return False
-
-            logger.info(f"🚀 TrueData connection attempt {self._connection_attempts}/{self._max_connection_attempts}")
-
-            # Check if this is a deployment overlap scenario
-            if self._check_deployment_overlap():
-                logger.info("🔄 Deployment overlap detected - using optimized graceful takeover")
-                
-                # OPTIMIZED Strategy 1: Quick graceful takeover with shorter waits
-                if self._attempt_optimized_takeover():
-                    self._reset_circuit_breaker()
-                    return True
-                
-                # OPTIMIZED Strategy 2: Reduced wait time for connection timeout
-                logger.info("⏳ Quick takeover failed - waiting for connection timeout (optimized)...")
-                time.sleep(5)  # Reduced from 15 seconds
-                
-                if self._direct_connect():
-                    self._reset_circuit_breaker()
-                    return True
-                
-                # Strategy 3: Activate circuit breaker to prevent spam
-                logger.warning("⚠️ All connection attempts failed - activating circuit breaker")
-                self._activate_circuit_breaker()
-                logger.info("💡 SOLUTION: Set SKIP_TRUEDATA_AUTO_INIT=true to break deployment overlap cycle")
-                logger.info("🔧 Then manually connect via: /api/v1/truedata/connect")
-                return False
+            # Direct connect - no "graceful takeover" attempts (those create MORE failed connections)
+            if self._direct_connect():
+                self._reset_circuit_breaker()
+                return True
             else:
-                # Local development - direct connect
-                if self._direct_connect():
-                    self._reset_circuit_breaker()
-                    return True
-                else:
-                    self._activate_circuit_breaker()
-                    return False
+                # Connection failed - circuit breaker already activated in _direct_connect()
+                logger.warning("⚠️ TrueData connection failed - will use Zerodha fallback")
+                return False
 
     def _attempt_optimized_takeover(self):
         """Optimized graceful takeover with faster timeouts"""

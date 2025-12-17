@@ -145,20 +145,23 @@ async def lifespan(app: FastAPI):
             def background_init():
                 import time
                 time.sleep(5)  # Wait for health checks to pass first
-                logger.info("🔄 Starting background TrueData initialization...")
+                logger.info("🔄 Starting background TrueData initialization (single attempt, no retry loop)...")
                 try:
                     truedata_success = initialize_truedata()
                     if truedata_success:
                         logger.info("✅ Background TrueData initialization successful!")
                     else:
-                        logger.warning("⚠️ Background TrueData initialization failed")
+                        # CRITICAL: Don't retry - let circuit breaker handle it
+                        logger.warning("⚠️ TrueData init failed - system will use Zerodha for market data")
+                        logger.info("💡 TrueData will auto-retry after circuit breaker timeout (2 min)")
                 except Exception as e:
                     logger.error(f"❌ Background TrueData error: {e}")
+                    logger.info("💡 System continues with Zerodha-only mode")
             
             # Start in background thread
             init_thread = threading.Thread(target=background_init, daemon=True)
             init_thread.start()
-            logger.info("✅ Background TrueData initialization started")
+            logger.info("✅ Background TrueData initialization started (fast-fail enabled)")
         else:
             # PRODUCTION: Initialize TrueData synchronously (normal operation)
             logger.info("🎯 PRODUCTION MODE: Initializing TrueData synchronously...")
