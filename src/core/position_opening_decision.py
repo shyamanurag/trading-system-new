@@ -119,6 +119,15 @@ class EnhancedPositionOpeningDecision:
             confidence = float(signal.get('confidence', 0.0))
             entry_price = float(signal.get('entry_price', 0.0))
             
+            # 🚨 CRITICAL FIX: OPTIONS CAN ONLY BE BOUGHT (not sold) due to margin constraints
+            # Margin for options selling is 130%+ of capital, while buying only needs premium
+            is_options = symbol.upper().endswith('CE') or symbol.upper().endswith('PE')
+            if is_options and action.upper() == 'SELL':
+                logger.warning(f"🚫 OPTIONS SELL BLOCKED: {symbol} - Cannot SELL options (margin requirement too high)")
+                logger.warning(f"   💡 Options can only be BOUGHT. Forcing BUY action.")
+                action = 'BUY'  # Force BUY for options
+                signal['action'] = 'BUY'  # Update the signal too
+            
             logger.info(f"🎯 EVALUATING POSITION OPENING: {symbol} {action} @ ₹{entry_price} (Confidence: {confidence:.1f})")
             
             # 🚨 DATA FLOW CHECK #3: Log position evaluation context

@@ -173,6 +173,15 @@ class SimpleTradeEngine:
                     
                     self.logger.info(f"📋 EXECUTING SIGNAL {i+1}/{len(signals)}: {symbol} {action} qty={quantity}")
                     
+                    # 🚨 CRITICAL: Block OPTIONS SELL signals - margin too high (130%+ of capital)
+                    # Options can ONLY be bought, not sold, due to capital constraints
+                    is_options = symbol.upper().endswith('CE') or symbol.upper().endswith('PE')
+                    if is_options and action.upper() == 'SELL':
+                        self.logger.error(f"🚫 OPTIONS SELL BLOCKED: {symbol} - Cannot SELL options due to margin requirements")
+                        self.logger.info(f"   💡 Options selling requires ~₹200K+ margin. Available: ~₹150K")
+                        self.logger.info(f"   🔄 Skipping this signal. Only BUY options are allowed.")
+                        continue
+                    
                     # 🚨 ATOMIC CLAIM: Prevent race condition where multiple signals arrive simultaneously
                     # This MUST be checked BEFORE attempting to execute
                     from src.core.signal_deduplicator import signal_deduplicator

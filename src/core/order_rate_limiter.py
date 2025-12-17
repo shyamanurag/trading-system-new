@@ -50,6 +50,18 @@ class OrderRateLimiter:
     
     async def can_place_order(self, symbol: str, action: str, quantity: int, price: float = 0, signal_id: str = None, is_exit_order: bool = False) -> Dict:
         
+        # 🚨 CRITICAL: Block OPTIONS SELL orders immediately (margin too high)
+        # Selling options requires ~₹200K+ margin, buying only needs premium (~₹10-20K)
+        is_options = symbol.upper().endswith('CE') or symbol.upper().endswith('PE')
+        if is_options and action.upper() == 'SELL' and not is_exit_order:
+            logger.error(f"🚫 OPTIONS SELL BLOCKED: {symbol} - Cannot SELL options (margin ~₹200K+ required)")
+            logger.info(f"   💡 Options can only be BOUGHT due to capital constraints (~₹150K available)")
+            return {
+                'allowed': False,
+                'reason': 'OPTIONS_SELL_BLOCKED',
+                'message': f'Cannot SELL options - margin requirement too high'
+            }
+        
         # 🔥 Reset daily counters if new day
         today = datetime.now().date()
         if today != self._last_reset_date:
