@@ -3866,11 +3866,21 @@ class TradingOrchestrator:
     @classmethod
     async def get_instance(cls):
         """Get singleton instance of TradingOrchestrator"""
+        # CRITICAL FIX: Check global instance FIRST (set by main.py during startup)
+        # This prevents API endpoints from creating new instances while startup is in progress
+        global _orchestrator_instance
+        if _orchestrator_instance is not None:
+            return _orchestrator_instance
+        
         if cls._instance is None:
             async with cls._lock:
                 if cls._instance is None:
-                    cls._instance = cls()
-                    await cls._instance.initialize()
+                    # Double-check global instance inside lock
+                    if _orchestrator_instance is not None:
+                        cls._instance = _orchestrator_instance
+                    else:
+                        cls._instance = cls()
+                        await cls._instance.initialize()
         return cls._instance
 
     @classmethod

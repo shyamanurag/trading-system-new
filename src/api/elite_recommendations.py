@@ -101,7 +101,7 @@ class AutonomousEliteScanner:
         try:
             # CRITICAL FIX: Use shared strategies from orchestrator instead of separate instances
             try:
-                from src.core.orchestrator import get_orchestrator
+                from src.core.dependencies import get_orchestrator
                 orchestrator = await get_orchestrator()
                 
                 if orchestrator and hasattr(orchestrator, 'strategies') and orchestrator.strategies:

@@ -489,9 +489,12 @@ class TrueDataClient:
                 self._reset_circuit_breaker()
                 return True
             else:
-                # Activate circuit breaker for general failures (network, timeout, auth, etc.)
-                # _direct_connect() only activates CB for specific errors, not general failures
-                self._activate_circuit_breaker()
+                # CRITICAL FIX: Activate circuit breaker for general failures too
+                # _direct_connect() only activates CB for specific errors (subscription expired, user already connected)
+                # For network errors, timeouts, auth issues, etc., we need to activate it here
+                if not self._circuit_breaker_active:
+                    self._activate_circuit_breaker()
+                    logger.info("🛡️ Circuit breaker activated for general connection failure")
                 logger.warning("⚠️ TrueData connection failed - will use Zerodha fallback")
                 return False
 

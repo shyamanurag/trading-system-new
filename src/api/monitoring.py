@@ -377,7 +377,7 @@ async def get_daily_pnl():
     try:
         # CRITICAL FIX: Use orchestrator to get real trading data instead of database
         try:
-            from src.core.orchestrator import get_orchestrator
+            from src.core.dependencies import get_orchestrator
             orchestrator = await get_orchestrator()
             if orchestrator:
                 trading_status = await orchestrator.get_trading_status()
@@ -428,9 +428,18 @@ async def get_orchestrator_status():
                 "timestamp": datetime.utcnow().isoformat()
             }
         
-        # Import and get orchestrator
-        from src.core.orchestrator import get_orchestrator
+        # Import and get orchestrator (use dependencies for fast-path access)
+        from src.core.dependencies import get_orchestrator
         orchestrator = await get_orchestrator()
+        
+        if not orchestrator:
+            return {
+                "success": False,
+                "message": "Orchestrator still initializing",
+                "running": False,
+                "components": {},
+                "timestamp": datetime.utcnow().isoformat()
+            }
         
         # Get detailed status
         status = await orchestrator.get_status()

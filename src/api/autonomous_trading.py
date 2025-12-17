@@ -30,11 +30,24 @@ router = APIRouter(prefix="/autonomous")
 
 # Lazy import to avoid circular dependency
 async def get_orchestrator():
-    """Get orchestrator instance with lazy import and comprehensive error handling"""
+    """Get orchestrator instance - FAST PATH first, then async fallback with timeout"""
     try:
-        from src.core.orchestrator import get_orchestrator as get_orchestrator_instance
-        orchestrator = await get_orchestrator_instance()
-        return orchestrator
+        # FAST PATH: Check global instance directly (no async, no blocking)
+        # This is set by main.py during startup and avoids blocking API calls
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        if orchestrator is not None:
+            return orchestrator
+        
+        # SLOW PATH: Try async initialization with timeout
+        # This should rarely be hit in production (only if API called before startup completes)
+        from src.core.orchestrator import get_orchestrator as get_orchestrator_async
+        try:
+            orchestrator = await asyncio.wait_for(get_orchestrator_async(), timeout=5.0)
+            return orchestrator
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ Orchestrator initialization timed out (5s) - returning None")
+            return None
     except ImportError as import_error:
         logger.error(f"Cannot import orchestrator: {import_error}")
         return None

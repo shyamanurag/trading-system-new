@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 import logging
 from datetime import datetime
 
-from src.core.orchestrator import get_orchestrator
+from src.core.dependencies import get_orchestrator
 
 logger = logging.getLogger(__name__)
 

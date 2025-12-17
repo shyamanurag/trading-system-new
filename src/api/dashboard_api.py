@@ -11,8 +11,9 @@ import logging
 from fastapi import Depends
 import asyncio
 
-# CRITICAL FIX: Add missing imports for dashboard router
-from src.core.orchestrator import TradingOrchestrator, get_orchestrator
+# CRITICAL FIX: Use dependencies for fast-path orchestrator access (prevents 504 timeouts)
+from src.core.orchestrator import TradingOrchestrator
+from src.core.dependencies import get_orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -260,8 +261,8 @@ async def _check_truedata_health() -> Dict[str, Any]:
 async def _check_trading_health() -> Dict[str, Any]:
     """Check real trading system status"""
     try:
-        # Try to get orchestrator status
-        from src.core.orchestrator import get_orchestrator
+        # Try to get orchestrator status (use dependencies for fast-path)
+        from src.core.dependencies import get_orchestrator
         orchestrator = await get_orchestrator()
         
         if not orchestrator:
@@ -360,9 +361,9 @@ async def get_dashboard_summary(orchestrator: TradingOrchestrator = Depends(get_
                 autonomous_status = await orchestrator.get_trading_status()
                 logger.info(f"🎯 Got autonomous status from DI: {autonomous_status.get('total_trades', 0)} trades, ₹{autonomous_status.get('daily_pnl', 0):,.2f} P&L")
             else:
-                # Fallback to get_instance method
-                from src.core.orchestrator import get_orchestrator
-                orchestrator_instance = await get_orchestrator()
+                # Fallback to get_instance method (use dependencies for fast-path)
+                from src.core.dependencies import get_orchestrator as get_orch_fallback
+                orchestrator_instance = await get_orch_fallback()
                 if orchestrator_instance:
                     autonomous_status = await orchestrator_instance.get_trading_status()
                     logger.info(f"🎯 Got autonomous status from get_orchestrator: {autonomous_status.get('total_trades', 0)} trades, ₹{autonomous_status.get('daily_pnl', 0):,.2f} P&L")
