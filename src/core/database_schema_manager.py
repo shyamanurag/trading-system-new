@@ -68,7 +68,7 @@ class DatabaseSchemaManager:
         'trade_id': {'type': 'SERIAL', 'primary_key': True, 'nullable': False},
         'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.id'},
         'position_id': {'type': 'INTEGER', 'nullable': True},
-        'symbol': {'type': 'VARCHAR(20)', 'nullable': False},
+        'symbol': {'type': 'VARCHAR(50)', 'nullable': False},  # Increased for options symbols like BANKNIFTY26JAN59100PE
         'trade_type': {'type': 'VARCHAR(10)', 'nullable': False},
         'quantity': {'type': 'INTEGER', 'nullable': False},
         'price': {'type': 'DECIMAL(10,2)', 'nullable': False},
