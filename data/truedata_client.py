@@ -20,6 +20,77 @@ import queue
 # Setup basic logging
 logger = logging.getLogger(__name__)
 
+# 🚨 DEPLOYMENT OVERLAP DETECTION: Intercept TrueData library's "User Already Connected" errors
+# The TrueData library auto-reconnects internally, bypassing our circuit breaker
+# We intercept these log messages and trigger cleanup
+class UserAlreadyConnectedHandler(logging.Handler):
+    """Custom handler to detect and stop TrueData's internal reconnection loop"""
+    
+    _instance = None  # Singleton
+    
+    def __init__(self):
+        super().__init__()
+        self.error_count = 0
+        self.max_errors = 3
+        self.last_error_time = 0
+        self.truedata_client_ref = None  # Will be set after TrueDataClient is created
+        
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+    
+    def emit(self, record):
+        try:
+            msg = record.getMessage().lower()
+            if "user already connected" in msg or "already connected" in msg:
+                current_time = time.time()
+                
+                # Reset counter if more than 5 minutes since last error
+                if current_time - self.last_error_time > 300:
+                    self.error_count = 0
+                
+                self.error_count += 1
+                self.last_error_time = current_time
+                
+                logger.warning(f"🚨 DETECTED 'User Already Connected' error #{self.error_count}/{self.max_errors}")
+                
+                if self.error_count >= self.max_errors and self.truedata_client_ref:
+                    logger.error("🛑 KILLING TrueData - too many 'User Already Connected' errors")
+                    logger.error("💡 Another deployment is still connected. Using Zerodha fallback.")
+                    
+                    # Permanently disable TrueData
+                    try:
+                        client = self.truedata_client_ref
+                        client._permanently_disabled = True
+                        client._circuit_breaker_active = True
+                        client._circuit_breaker_timeout = 3600  # 1 hour
+                        client.connected = False
+                        
+                        # Destroy the td_obj to stop library's reconnection
+                        if client.td_obj:
+                            try:
+                                client.td_obj.disconnect()
+                            except:
+                                pass
+                            client.td_obj = None
+                        
+                        # Stop health monitor
+                        client._stop_health.set()
+                        
+                        logger.info("✅ TrueData completely disabled - no more reconnection attempts")
+                    except Exception as e:
+                        logger.error(f"Error killing TrueData: {e}")
+                        
+        except Exception:
+            pass  # Never crash the logging system
+
+# Install the handler on TrueData's logger
+_uac_handler = UserAlreadyConnectedHandler.get_instance()
+logging.getLogger('truedata.websocket.TD_live').addHandler(_uac_handler)
+logging.getLogger('truedata').addHandler(_uac_handler)
+
 # Global data storage
 live_market_data: Dict[str, Dict] = {}
 
@@ -191,6 +262,13 @@ class TrueDataClient:
         # 🚀 STARTUP GRACE PERIOD: Suppress tick logging for first 60s to not block health checks
         self._startup_time = time.time()
         self._startup_log_grace_period = 60  # seconds
+        
+        # 🚨 DEPLOYMENT OVERLAP DETECTION: Track "User Already Connected" errors
+        # The TrueData library auto-reconnects internally, bypassing our circuit breaker
+        # We track this error and completely disable TrueData after seeing it N times
+        self._user_already_connected_count = 0
+        self._max_user_already_connected = 3  # Kill TrueData after 3 "User Already Connected" errors
+        self._permanently_disabled = False
         
         # Circuit breaker for connection attempts - IMPROVED for market closure
         self._circuit_breaker_active = False
@@ -1367,6 +1445,9 @@ class TrueDataClient:
 
 # Global instance
 truedata_client = TrueDataClient()
+
+# 🔗 Connect the logging handler to the client instance
+_uac_handler.truedata_client_ref = truedata_client
 
 # API functions with deployment awareness
 def initialize_truedata():
