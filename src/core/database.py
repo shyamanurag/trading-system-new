@@ -173,6 +173,27 @@ class DatabaseManager:
                     """))
                     
                     logger.info("✅ Database schema created successfully")
+                    
+                    # 🚨 MIGRATION: Increase symbol column size for options symbols
+                    # Options symbols like BANKNIFTY26JAN59100PE are 21+ characters
+                    try:
+                        conn.execute(text("""
+                            ALTER TABLE trades ALTER COLUMN symbol TYPE VARCHAR(50);
+                        """))
+                        logger.info("✅ Migration: trades.symbol increased to VARCHAR(50)")
+                    except Exception as alter_err:
+                        if "already exists" not in str(alter_err).lower():
+                            logger.debug(f"trades.symbol alter (may already be correct): {alter_err}")
+                    
+                    # Also fix other tables that might have symbol column
+                    for table_name in ['paper_trades', 'positions', 'orders']:
+                        try:
+                            conn.execute(text(f"""
+                                ALTER TABLE {table_name} ALTER COLUMN symbol TYPE VARCHAR(50);
+                            """))
+                            logger.info(f"✅ Migration: {table_name}.symbol increased to VARCHAR(50)")
+                        except Exception as alter_err:
+                            logger.debug(f"{table_name}.symbol alter skipped: {alter_err}")
                 
                 # Always ensure PAPER_TRADER_001 user exists for autonomous operation
                 # FIXED: Use correct schema with id as primary key, not user_id

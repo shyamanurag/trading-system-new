@@ -51,7 +51,7 @@ class DatabaseSchemaManager:
     PAPER_TRADES_TABLE_SCHEMA = {
         'id': {'type': 'SERIAL', 'primary_key': True, 'nullable': False},
         'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.id'},
-        'symbol': {'type': 'VARCHAR(20)', 'nullable': False},
+        'symbol': {'type': 'VARCHAR(50)', 'nullable': False},  # Increased for options symbols like BANKNIFTY26JAN59100PE
         'action': {'type': 'VARCHAR(10)', 'nullable': False},
         'quantity': {'type': 'INTEGER', 'nullable': False},
         'price': {'type': 'FLOAT', 'nullable': False},
@@ -86,7 +86,7 @@ class DatabaseSchemaManager:
     POSITIONS_TABLE_SCHEMA = {
         'position_id': {'type': 'SERIAL', 'primary_key': True, 'nullable': False},
         'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.id'},
-        'symbol': {'type': 'VARCHAR(20)', 'nullable': False},
+        'symbol': {'type': 'VARCHAR(50)', 'nullable': False},  # Increased for options symbols like BANKNIFTY26JAN59100PE
         'quantity': {'type': 'INTEGER', 'nullable': False},
         'entry_price': {'type': 'DECIMAL(10,2)', 'nullable': False},
         'current_price': {'type': 'DECIMAL(10,2)', 'nullable': True},
@@ -108,7 +108,7 @@ class DatabaseSchemaManager:
         'user_id': {'type': 'INTEGER', 'nullable': False, 'foreign_key': 'users.id'},
         'broker_order_id': {'type': 'VARCHAR(100)', 'nullable': True},
         'parent_order_id': {'type': 'VARCHAR(50)', 'nullable': True},
-        'symbol': {'type': 'VARCHAR(20)', 'nullable': False},
+        'symbol': {'type': 'VARCHAR(50)', 'nullable': False},  # Increased for options symbols like BANKNIFTY26JAN59100PE
         'order_type': {'type': 'VARCHAR(20)', 'nullable': False},
         'side': {'type': 'VARCHAR(10)', 'nullable': False},
         'quantity': {'type': 'INTEGER', 'nullable': False},
