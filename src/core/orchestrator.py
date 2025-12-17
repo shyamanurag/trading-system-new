@@ -3727,12 +3727,21 @@ class TradingOrchestrator:
         self.logger.info("🐕 Trading loop watchdog started")
         
         watchdog_check_interval = 30  # Check every 30 seconds
-        max_restart_attempts = 5
+        max_restart_attempts = 20  # INCREASED from 5 - don't give up too easily
         restart_attempts = 0
+        last_restart_hour = -1  # Track which hour we're in for reset
         
         while self.is_running:
             try:
                 await asyncio.sleep(watchdog_check_interval)
+                
+                # Reset restart counter each hour to prevent permanent shutdown from isolated issues
+                current_hour = datetime.now().hour
+                if current_hour != last_restart_hour:
+                    if restart_attempts > 0:
+                        self.logger.info(f"🔄 WATCHDOG: New hour - resetting restart counter (was {restart_attempts})")
+                    restart_attempts = 0
+                    last_restart_hour = current_hour
                 
                 # Check if trading task is still alive
                 if hasattr(self, '_trading_task') and self._trading_task is not None:
@@ -3766,9 +3775,12 @@ class TradingOrchestrator:
                             await asyncio.sleep(60)  # Wait 1 minute before resetting
                             restart_attempts = max(0, restart_attempts - 1)  # Gradually reduce count if stable
                         elif restart_attempts >= max_restart_attempts:
-                            self.logger.error(f"🚨 WATCHDOG: Max restart attempts ({max_restart_attempts}) reached - manual intervention required")
-                            self.is_running = False  # Stop system to prevent infinite restarts
-                            break
+                            self.logger.error(f"🚨 WATCHDOG: Max restart attempts ({max_restart_attempts}) this hour - waiting for next hour reset")
+                            self.logger.error("💡 Trading loop will auto-resume when counter resets at next hour")
+                            # DON'T stop the system - just wait for hourly reset
+                            # self.is_running = False  # REMOVED - this was causing permanent shutdown
+                            await asyncio.sleep(300)  # Wait 5 minutes before checking again
+                            continue  # Don't break - keep watchdog alive
                 else:
                     # Trading task doesn't exist - create it
                     if self.is_running:
