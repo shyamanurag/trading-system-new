@@ -188,6 +188,10 @@ class TrueDataClient:
         self._max_connection_attempts = 3
         self._deployment_id = self._generate_deployment_id()
         
+        # 🚀 STARTUP GRACE PERIOD: Suppress tick logging for first 60s to not block health checks
+        self._startup_time = time.time()
+        self._startup_log_grace_period = 60  # seconds
+        
         # Circuit breaker for connection attempts - IMPROVED for market closure
         self._circuit_breaker_active = False
         self._circuit_breaker_timeout = 60  # REDUCED: 1 minute during market closure instead of 5
@@ -1272,14 +1276,29 @@ class TrueDataClient:
                     except Exception as redis_error:
                         logger.error(f"Redis storage error for {symbol}: {redis_error}")
 
-                # Enhanced logging with data quality info
+                # RATE-LIMITED logging to prevent stdout flooding during startup
+                # Skip logging entirely during startup grace period (first 60s)
+                # Then log at most 1 tick per symbol every 30 seconds
                 if volume > 0:
-                    quality = market_data['data_quality']
-                    logger.info(
-                        f"📊 {symbol}: ₹{ltp:,.2f} | {change_percent:+.2f}% | Vol: {volume:,} | "
-                        f"OHLC: {'✓' if quality['has_ohlc'] else '✗'} | "
-                        f"Deploy: {self._deployment_id}"
-                    )
+                    current_time = time.time()
+                    
+                    # 🚀 STARTUP GRACE: Skip ALL tick logging for first 60 seconds
+                    time_since_startup = current_time - self._startup_time
+                    if time_since_startup < self._startup_log_grace_period:
+                        pass  # Silent during startup - let health checks pass
+                    else:
+                        last_log_key = f"_last_log_{symbol}"
+                        last_log_time = getattr(self, last_log_key, 0)
+                        
+                        # Only log if 30 seconds have passed since last log for this symbol
+                        if current_time - last_log_time > 30:
+                            setattr(self, last_log_key, current_time)
+                            quality = market_data['data_quality']
+                            logger.info(
+                                f"📊 {symbol}: ₹{ltp:,.2f} | {change_percent:+.2f}% | Vol: {volume:,} | "
+                                f"OHLC: {'✓' if quality['has_ohlc'] else '✗'} | "
+                                f"Deploy: {self._deployment_id}"
+                            )
 
             except RecursionError as re:
                 # CRITICAL FIX: Catch recursion errors specifically to prevent cascading failures
