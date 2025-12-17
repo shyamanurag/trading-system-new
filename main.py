@@ -201,49 +201,55 @@ async def lifespan(app: FastAPI):
     # STEP 3: Load routers (cache system will now find populated data)
     logger.info("🚀 STEP 3: Loading API routers (cache system will find populated data)...")
     
-    # STEP 4: Initialize Symbol Management System (after TrueData is ready)
-    try:
-        logger.info("🤖 STEP 4: Starting Intelligent Symbol Management System...")
-        from src.core.intelligent_symbol_manager import start_intelligent_symbol_management
-        await start_intelligent_symbol_management()
-        logger.info("✅ Intelligent Symbol Manager started successfully!")
-        logger.info("📊 Now managing symbols with populated cache")
-    except Exception as e:
-        logger.error(f"❌ Intelligent Symbol Manager startup failed: {e}")
-        logger.info("🔄 Will continue with basic symbol management")
+    # STEP 4/5 MUST NOT BLOCK APP STARTUP:
+    # DigitalOcean readiness probes will time out if lifespan doesn't yield quickly.
+    # Start long-running initialization (symbol manager + orchestrator) in background tasks.
+    async def _background_init_symbol_manager():
+        try:
+            logger.info("🤖 BACKGROUND: Starting Intelligent Symbol Management System...")
+            from src.core.intelligent_symbol_manager import start_intelligent_symbol_management
+            await start_intelligent_symbol_management()
+            logger.info("✅ BACKGROUND: Intelligent Symbol Manager started successfully!")
+        except Exception as e:
+            logger.error(f"❌ BACKGROUND: Intelligent Symbol Manager startup failed: {e}")
 
-    # STEP 5: Initialize Trading Orchestrator (after cache is populated)
+    async def _background_init_orchestrator():
+        global app_startup_complete
+        try:
+            logger.info("🚀 BACKGROUND: Initializing Trading Orchestrator...")
+            from src.core.orchestrator import TradingOrchestrator, set_orchestrator_instance
+
+            logger.info("🔧 BACKGROUND: Creating orchestrator instance...")
+            orchestrator = TradingOrchestrator()
+
+            init_success = await orchestrator.initialize()
+            if init_success and orchestrator:
+                set_orchestrator_instance(orchestrator)
+                logger.info("✅ BACKGROUND: Trading Orchestrator initialized successfully!")
+
+                try:
+                    from src.core.signal_lifecycle_manager import start_signal_lifecycle_management
+                    await start_signal_lifecycle_management()
+                    logger.info("✅ BACKGROUND: Signal lifecycle manager started")
+                except Exception as e:
+                    logger.error(f"❌ BACKGROUND: Failed to start signal lifecycle manager: {e}")
+            else:
+                logger.error("❌ BACKGROUND: Failed to initialize orchestrator instance")
+        except Exception as e:
+            logger.error(f"❌ BACKGROUND: Trading Orchestrator initialization failed: {e}")
+        finally:
+            # Mark full startup complete once background init finishes (success or failure).
+            app_startup_complete = True
+            logger.info("✅ BACKGROUND: Startup sequence finished (app responding; background init done)")
+
+    # Schedule background tasks and yield immediately.
+    app.state._startup_tasks = []
     try:
-        logger.info("🚀 STEP 5: Initializing Trading Orchestrator...")
-        from src.core.orchestrator import TradingOrchestrator, set_orchestrator_instance
-        
-        # Create orchestrator instance
-        logger.info("🔧 Creating orchestrator instance...")
-        orchestrator = TradingOrchestrator()
-        
-        # Initialize the orchestrator (cache should be populated now)
-        init_success = await orchestrator.initialize()
-        
-        if init_success and orchestrator:
-            # Store the instance globally for API access
-            set_orchestrator_instance(orchestrator)
-            logger.info("✅ Trading Orchestrator initialized successfully!")
-            
-            # Initialize signal lifecycle manager
-            try:
-                from src.core.signal_lifecycle_manager import start_signal_lifecycle_management
-                await start_signal_lifecycle_management()
-                logger.info("✅ Signal lifecycle manager started")
-            except Exception as e:
-                logger.error(f"❌ Failed to start signal lifecycle manager: {e}")
-            logger.info("🎯 Autonomous trading endpoints should now work")
-        else:
-            logger.error("❌ Failed to initialize orchestrator instance")
-            logger.info("🔄 API will use fallback mode")
-            
+        app.state._startup_tasks.append(asyncio.create_task(_background_init_symbol_manager()))
+        app.state._startup_tasks.append(asyncio.create_task(_background_init_orchestrator()))
+        logger.info("✅ Background initialization tasks scheduled (startup will not block health checks)")
     except Exception as e:
-        logger.error(f"❌ Trading Orchestrator initialization failed: {e}")
-        logger.info("🔄 API will use fallback mode")
+        logger.error(f"❌ Failed to schedule background startup tasks: {e}")
 
     # App state for debugging
     app.state.build_timestamp = datetime.now().isoformat()
@@ -255,16 +261,20 @@ async def lifespan(app: FastAPI):
     app.state.total_routers = len(router_imports)
     
     logger.info(f"Loaded {loaded_count}/{len(router_imports)} routers successfully")
-
-    # Mark startup as complete for health checks
-    global app_startup_complete
-    app_startup_complete = True
-    logger.info("✅ Application startup complete - FIXED LOADING SEQUENCE")
     
     yield
     
     # Cleanup
     logger.info("Shutting down AlgoAuto Trading System...")
+    # Cancel background tasks if still running
+    try:
+        tasks = getattr(app.state, "_startup_tasks", []) or []
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        logger.info(f"🧹 Cancelled {len(tasks)} startup background tasks")
+    except Exception as e:
+        logger.debug(f"Startup task cleanup error: {e}")
     try:
         from data.truedata_client import truedata_client
         truedata_client.disconnect()
