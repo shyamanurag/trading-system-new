@@ -56,10 +56,8 @@ async def get_orchestrator():
         return None
 
 @router.get("/status", response_model=TradingStatusResponse)
-async def get_status(
-    orchestrator: Any = Depends(get_orchestrator)
-):
-    """Get current autonomous trading status"""
+async def get_status():
+    """Get current autonomous trading status - NON-BLOCKING to prevent 504"""
     try:
         # CRITICAL FIX: Cache status for 15 seconds to prevent API hammering
         import time
@@ -70,6 +68,10 @@ async def get_status(
             if current_time - get_status._cache_time < 15:
                 logger.info("📊 Using cached autonomous status (preventing API hammering)")
                 return get_status._cache
+        
+        # 🚀 CRITICAL FIX: Get orchestrator WITHOUT blocking - just check global instance
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()  # Fast, non-blocking
         
         # CRITICAL FIX: Ensure we get proper status even if orchestrator is not fully initialized
         if not orchestrator or not hasattr(orchestrator, 'get_trading_status'):
@@ -173,15 +175,17 @@ async def reset_orchestrator():
         raise HTTPException(status_code=500, detail=f"Failed to reset orchestrator: {str(e)}")
 
 @router.post("/start", response_model=BaseResponse)
-async def start_trading(
-    orchestrator: Any = Depends(get_orchestrator)
-):
+async def start_trading():
     """
     Start autonomous trading - Returns immediately, initialization happens in background
-    ⚡ FIXED: No more 504 timeouts
+    ⚡ FIXED: No more 504 timeouts - NO DEPENDENCY INJECTION to avoid blocking
     """
     try:
         logger.info("🚀 Starting autonomous trading system...")
+        
+        # 🚀 CRITICAL FIX: Get orchestrator WITHOUT blocking - check global only
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()  # Fast, non-blocking check
         
         # 🚀 CRITICAL FIX: Start initialization in background to avoid 504 timeout
         async def background_startup():
@@ -291,10 +295,10 @@ async def start_trading(
         raise HTTPException(status_code=500, detail=f"Failed to start autonomous trading: {str(e)}")
 
 @router.post("/stop", response_model=BaseResponse)
-async def stop_trading(
-    orchestrator: Any = Depends(get_orchestrator)
-):
-    """Stop autonomous trading"""
+async def stop_trading():
+    """Stop autonomous trading - NON-BLOCKING"""
+    from src.core.orchestrator import get_orchestrator_instance
+    orchestrator = get_orchestrator_instance()
     try:
         await orchestrator.disable_trading()
         return BaseResponse(
@@ -327,10 +331,10 @@ async def get_positions(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/performance", response_model=PerformanceMetricsResponse)
-async def get_performance(
-    orchestrator: Any = Depends(get_orchestrator)
-):
-    """Get trading performance metrics"""
+async def get_performance():
+    """Get trading performance metrics - NON-BLOCKING"""
+    from src.core.orchestrator import get_orchestrator_instance
+    orchestrator = get_orchestrator_instance()
     try:
         # Return basic metrics for now
         metrics = {
@@ -374,10 +378,10 @@ async def get_strategies(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/risk", response_model=RiskMetricsResponse)
-async def get_risk_metrics(
-    orchestrator: Any = Depends(get_orchestrator)
-):
-    """Get current risk metrics"""
+async def get_risk_metrics():
+    """Get current risk metrics - NON-BLOCKING"""
+    from src.core.orchestrator import get_orchestrator_instance
+    orchestrator = get_orchestrator_instance()
     try:
         # Fix: Check if risk_manager is properly initialized
         if hasattr(orchestrator, 'risk_manager') and orchestrator.risk_manager is not None:
@@ -469,10 +473,10 @@ async def get_orders(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/trades")
-async def get_trades(
-    orchestrator: Any = Depends(get_orchestrator)
-):
-    """Get today's trades from Zerodha"""
+async def get_trades():
+    """Get today's trades from Zerodha - NON-BLOCKING"""
+    from src.core.orchestrator import get_orchestrator_instance
+    orchestrator = get_orchestrator_instance()
     try:
         # Get Zerodha client
         if not orchestrator or not orchestrator.zerodha_client:
