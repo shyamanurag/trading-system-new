@@ -810,13 +810,26 @@ class RegimeAdaptiveController:
         logger.info(f"Initializing {self.__class__.__name__} strategy")
         self._initialize_strategy()
         
-        # 🔥 FIX: HMM COLD START - Pre-load historical data for regime detection
-        await self._warmup_hmm_with_historical_data()
-        
-        # CRITICAL FIX: Set strategy to active
+        # CRITICAL FIX: Set strategy to active FIRST (don't block on warmup)
         self.is_active = True
         logger.info(f"✅ {self.name} strategy activated successfully")
+        
+        # 🚀 FIX: HMM warmup in BACKGROUND to not block health checks
+        # Strategy works without warmup (just uses live data), warmup improves accuracy
+        import asyncio
+        asyncio.create_task(self._background_hmm_warmup())
+        logger.info("🔄 HMM warmup scheduled in background (non-blocking)")
+        
         return True
+    
+    async def _background_hmm_warmup(self):
+        """Background task for HMM warmup - doesn't block startup"""
+        try:
+            # Small delay to let app startup complete
+            await asyncio.sleep(5)
+            await self._warmup_hmm_with_historical_data()
+        except Exception as e:
+            logger.warning(f"⚠️ Background HMM warmup failed: {e} - will use live data")
     
     async def _warmup_hmm_with_historical_data(self):
         """
