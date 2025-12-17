@@ -427,6 +427,20 @@ class TrueDataClient:
                 truedata_connection_status['error'] = 'USER_ALREADY_CONNECTED'
                 truedata_connection_status['permanent_block'] = True  # Block all retries
                 truedata_connection_status['retry_disabled'] = True
+                
+                # 🚨 CRITICAL FIX: Destroy td_obj to stop TrueData library's internal reconnection attempts
+                # The TrueData library has background threads that keep reconnecting even after errors
+                self.connected = False
+                try:
+                    if self.td_obj:
+                        logger.info("🔌 Forcefully disconnecting TrueData to stop reconnection loop...")
+                        self.td_obj.disconnect()
+                except Exception as disc_err:
+                    logger.debug(f"Disconnect during cleanup: {disc_err}")
+                finally:
+                    self.td_obj = None  # CRITICAL: Set to None to prevent any further usage
+                    logger.info("✅ TrueData object destroyed - no more reconnection attempts")
+                
                 return False
             
             self.connected = False
