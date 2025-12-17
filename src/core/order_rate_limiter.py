@@ -29,7 +29,8 @@ class OrderRateLimiter:
         self._last_trade_time: Dict[str, datetime] = {}
         self.trade_cooldown_seconds = 300  # 5 minutes between trades on same symbol
         self.min_order_quantity = 5  # Minimum 5 shares per order
-        self.min_order_value = 50000.0  # Minimum ₹50,000 order value to avoid brokerage losses
+        self.min_order_value = 50000.0  # Minimum ₹50,000 order value for equities
+        self.min_options_order_value = 5000.0  # Minimum ₹5,000 for options (lower threshold)
         
         # 🔥 NEW: Per-symbol daily trade limit to prevent churning
         self._daily_symbol_trades: Dict[str, int] = {}  # symbol -> trade count today
@@ -80,15 +81,28 @@ class OrderRateLimiter:
         
         # 🔥 FIX: Block small order VALUE - brokerage eats profits on tiny trades
         # Exit orders bypass this check to allow closing positions
+        # OPTIONS trades use lower threshold (risk is limited to premium)
         if price > 0 and not is_exit_order:
             order_value = quantity * price
-            if order_value < self.min_order_value:
-                logger.warning(f"🚫 SMALL ORDER VALUE BLOCKED: {symbol} {action} ₹{order_value:,.0f} < min ₹{self.min_order_value:,.0f}")
+            
+            # Detect OPTIONS trades (symbol ends with CE or PE)
+            is_options = symbol.upper().endswith('CE') or symbol.upper().endswith('PE')
+            min_value = self.min_options_order_value if is_options else self.min_order_value
+            
+            if order_value < min_value:
+                if is_options:
+                    logger.warning(f"🚫 SMALL OPTIONS ORDER BLOCKED: {symbol} {action} ₹{order_value:,.0f} < min ₹{min_value:,.0f}")
+                else:
+                    logger.warning(f"🚫 SMALL ORDER VALUE BLOCKED: {symbol} {action} ₹{order_value:,.0f} < min ₹{min_value:,.0f}")
                 return {
                     'allowed': False,
                     'reason': 'ORDER_VALUE_TOO_SMALL',
-                    'message': f'Order value ₹{order_value:,.0f} below minimum ₹{self.min_order_value:,.0f}'
+                    'message': f'Order value ₹{order_value:,.0f} below minimum ₹{min_value:,.0f}'
                 }
+            
+            # Log options bypass for visibility
+            if is_options and order_value < self.min_order_value:
+                logger.info(f"✅ OPTIONS BYPASS: {symbol} ₹{order_value:,.0f} allowed (options min: ₹{self.min_options_order_value:,.0f})")
         
         # 🔥 FIX: Exit orders bypass cooldown - MUST be able to close positions
         if is_exit_order:
