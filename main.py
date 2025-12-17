@@ -139,15 +139,31 @@ async def lifespan(app: FastAPI):
         if skip_truedata:
             logger.info("⏭️ TrueData auto-init SKIPPED (SKIP_TRUEDATA_AUTO_INIT=true)")
         elif is_deployment or is_production:
-            # 🚨 CRITICAL FIX: Do NOT auto-connect TrueData during deployment
-            # The TrueData library has an internal websocket that auto-reconnects
-            # even after we try to kill it. This causes infinite "User Already Connected" 
-            # loops during deployment overlap (old container still running).
-            # SOLUTION: Skip TrueData entirely - connect manually after deployment succeeds.
-            logger.info("🚀 DEPLOYMENT MODE: TrueData auto-init DISABLED to prevent reconnection loops")
-            logger.info("💡 TrueData will NOT connect automatically during deployment")
-            logger.info("💡 Use /api/v1/truedata/connect to manually connect after deployment")
-            logger.info("💡 System will use Zerodha WebSocket for market data until then")
+            # DEPLOYMENT MODE: Initialize TrueData in background after health checks pass
+            # This was the working approach from 10 days ago
+            logger.info("🚀 DEPLOYMENT MODE: TrueData will initialize in background after health checks")
+            import threading
+            def background_init():
+                import time
+                # Wait 5 seconds for health checks to pass first
+                time.sleep(5)
+                logger.info("🔄 Starting background TrueData initialization...")
+                try:
+                    truedata_success = initialize_truedata()
+                    if truedata_success:
+                        logger.info("✅ Background TrueData initialization successful!")
+                    else:
+                        # Don't retry - circuit breaker will handle it
+                        logger.warning("⚠️ TrueData init failed - system will use Zerodha for market data")
+                        logger.info("💡 Circuit breaker will auto-retry in 60 seconds")
+                except Exception as e:
+                    logger.error(f"❌ Background TrueData error: {e}")
+                    logger.info("💡 System continues with Zerodha-only mode")
+            
+            # Start in background thread
+            init_thread = threading.Thread(target=background_init, daemon=True)
+            init_thread.start()
+            logger.info("✅ Background TrueData initialization scheduled (5s delay)")
         else:
             # PRODUCTION: Initialize TrueData synchronously (normal operation)
             logger.info("🎯 PRODUCTION MODE: Initializing TrueData synchronously...")
