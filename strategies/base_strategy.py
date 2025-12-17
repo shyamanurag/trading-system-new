@@ -4754,9 +4754,10 @@ class BaseStrategy:
             (min_confidence_threshold, reason_string)
         """
         try:
-            # Default threshold - LOWERED to 8.0 to capture 8.2 confidence signals
-            # Market swung +90 points and we missed it with 9.0 threshold
-            min_conf = 8.0
+            # Default threshold - LOWERED to 7.8 to capture 8.0+ confidence signals
+            # User insight: CHOPPY markets still have opportunities, be selective but not blocked
+            # 7.8 base + 0.3 CHOPPY + 0.3 regime + 0.2 bias = 8.6 → capped to 8.5
+            min_conf = 7.8
             reasons = []
             
             # 🔥 EXCEPTIONAL RS THRESHOLD REDUCTION
@@ -4808,11 +4809,12 @@ class BaseStrategy:
                     'FLAT_TRENDING_UP': {'BUY': -0.5, 'SELL': +1.0},
                     'FLAT_TRENDING_DOWN': {'BUY': +1.0, 'SELL': -0.5},
                     
-                    # Choppy - increase threshold for all
-                    'CHOPPY': {'BUY': +1.0, 'SELL': +1.0},
+                    # Choppy - REDUCED penalty (was +1.0, too harsh)
+                    # User insight: Still want to trade in choppy markets, just be selective
+                    'CHOPPY': {'BUY': +0.3, 'SELL': +0.3},
                     
-                    # Mixed signals - moderate increase
-                    'MIXED_SIGNALS': {'BUY': +0.5, 'SELL': +0.5},
+                    # Mixed signals - minimal increase
+                    'MIXED_SIGNALS': {'BUY': +0.2, 'SELL': +0.2},
                 }
                 
                 if scenario in scenario_adjustments:
@@ -4906,9 +4908,10 @@ class BaseStrategy:
                 reasons.append("MOD_BIAS+0.1")
             
             # ============= FINAL BOUNDS =============
-            # LOWERED: Cap at 8.5 to allow 8.2 signals through
-            # Market moved +90 points (from -32 to +60), missed opportunities with 9.0
-            min_conf = max(6.5, min(min_conf, 8.5))
+            # LOWERED: Cap at 8.0 to allow 8.2 signals through in CHOPPY markets
+            # User insight: With 8.5 cap, 8.2 signals still rejected
+            # 8.0 cap means even worst-case adjustments allow decent signals
+            min_conf = max(6.5, min(min_conf, 8.0))
             
             reason_str = " | ".join(reasons) if reasons else "default"
             return min_conf, reason_str
