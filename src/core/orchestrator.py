@@ -961,6 +961,14 @@ class TradingOrchestrator:
         """Schedule TrueData connection after deployment stabilizes"""
         import asyncio
         import threading
+        import os
+
+        # If auto-init is explicitly disabled, never schedule delayed connect.
+        # This prevents repeated "User Already Connected" loops in deployments where another instance is active.
+        if os.getenv('SKIP_TRUEDATA_AUTO_INIT', 'false').lower() == 'true':
+            self.logger.info("SKIP: TrueData delayed connect NOT scheduled (SKIP_TRUEDATA_AUTO_INIT=true)")
+            self.logger.info("TIP: Use /api/v1/truedata/connect for manual connection")
+            return
         
         def connect_truedata_delayed():
             """Connect TrueData after delay"""

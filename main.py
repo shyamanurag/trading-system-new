@@ -204,52 +204,72 @@ async def lifespan(app: FastAPI):
     # STEP 4/5 MUST NOT BLOCK APP STARTUP:
     # DigitalOcean readiness probes will time out if lifespan doesn't yield quickly.
     # Start long-running initialization (symbol manager + orchestrator) in background tasks.
+    # NOTE: Even background tasks can starve the event loop if they do CPU-heavy work without awaits.
+    # In production deployments, delay these tasks slightly so readiness checks can pass first.
+    try:
+        startup_delay_env = os.getenv("STARTUP_BACKGROUND_DELAY_SECONDS")
+        if startup_delay_env is not None:
+            startup_background_delay = max(0, int(startup_delay_env))
+        else:
+            is_deployment = os.getenv('DEPLOYMENT_MODE', 'false').lower() == 'true'
+            is_production = os.getenv('ENVIRONMENT', 'development').lower() == 'production'
+            # Default: give the platform enough time to pass readiness probes
+            startup_background_delay = 60 if (is_deployment or is_production) else 0
+    except Exception:
+        startup_background_delay = 0
+
     async def _background_init_symbol_manager():
         try:
-            logger.info("🤖 BACKGROUND: Starting Intelligent Symbol Management System...")
+            if startup_background_delay > 0:
+                logger.info(f"BACKGROUND: Delaying symbol manager init by {startup_background_delay}s for readiness")
+                await asyncio.sleep(startup_background_delay)
+            logger.info("BACKGROUND: Starting Intelligent Symbol Management System...")
             from src.core.intelligent_symbol_manager import start_intelligent_symbol_management
             await start_intelligent_symbol_management()
-            logger.info("✅ BACKGROUND: Intelligent Symbol Manager started successfully!")
+            logger.info("BACKGROUND: Intelligent Symbol Manager started successfully")
         except Exception as e:
-            logger.error(f"❌ BACKGROUND: Intelligent Symbol Manager startup failed: {e}")
+            logger.error(f"BACKGROUND: Intelligent Symbol Manager startup failed: {e}")
 
     async def _background_init_orchestrator():
         global app_startup_complete
         try:
-            logger.info("🚀 BACKGROUND: Initializing Trading Orchestrator...")
+            if startup_background_delay > 0:
+                logger.info(f"BACKGROUND: Delaying orchestrator init by {startup_background_delay}s for readiness")
+                await asyncio.sleep(startup_background_delay)
+            logger.info("BACKGROUND: Initializing Trading Orchestrator...")
             from src.core.orchestrator import TradingOrchestrator, set_orchestrator_instance
 
-            logger.info("🔧 BACKGROUND: Creating orchestrator instance...")
+            logger.info("BACKGROUND: Creating orchestrator instance...")
             orchestrator = TradingOrchestrator()
 
             init_success = await orchestrator.initialize()
             if init_success and orchestrator:
                 set_orchestrator_instance(orchestrator)
-                logger.info("✅ BACKGROUND: Trading Orchestrator initialized successfully!")
+                logger.info("BACKGROUND: Trading Orchestrator initialized successfully")
 
                 try:
                     from src.core.signal_lifecycle_manager import start_signal_lifecycle_management
                     await start_signal_lifecycle_management()
-                    logger.info("✅ BACKGROUND: Signal lifecycle manager started")
+                    logger.info("BACKGROUND: Signal lifecycle manager started")
                 except Exception as e:
-                    logger.error(f"❌ BACKGROUND: Failed to start signal lifecycle manager: {e}")
+                    logger.error(f"BACKGROUND: Failed to start signal lifecycle manager: {e}")
             else:
-                logger.error("❌ BACKGROUND: Failed to initialize orchestrator instance")
+                logger.error("BACKGROUND: Failed to initialize orchestrator instance")
         except Exception as e:
-            logger.error(f"❌ BACKGROUND: Trading Orchestrator initialization failed: {e}")
+            logger.error(f"BACKGROUND: Trading Orchestrator initialization failed: {e}")
         finally:
             # Mark full startup complete once background init finishes (success or failure).
             app_startup_complete = True
-            logger.info("✅ BACKGROUND: Startup sequence finished (app responding; background init done)")
+            logger.info("BACKGROUND: Startup sequence finished (app responding; background init done)")
 
     # Schedule background tasks and yield immediately.
     app.state._startup_tasks = []
     try:
         app.state._startup_tasks.append(asyncio.create_task(_background_init_symbol_manager()))
         app.state._startup_tasks.append(asyncio.create_task(_background_init_orchestrator()))
-        logger.info("✅ Background initialization tasks scheduled (startup will not block health checks)")
+        logger.info("Background initialization tasks scheduled (startup will not block health checks)")
     except Exception as e:
-        logger.error(f"❌ Failed to schedule background startup tasks: {e}")
+        logger.error(f"Failed to schedule background startup tasks: {e}")
 
     # App state for debugging
     app.state.build_timestamp = datetime.now().isoformat()
