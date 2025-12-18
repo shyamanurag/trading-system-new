@@ -3537,6 +3537,98 @@ class BaseStrategy:
             # Default to allowing the trade if check fails
             return {'strong_trend': True, 'reason': '', 'details': 'Trend check skipped'}
     
+    def _validate_options_signal_with_oi(self, symbol: str, action: str, metadata: Dict) -> Dict:
+        """
+        🎯 ALGO IMPROVEMENT: Validate options using OI analysis
+        OI buildup + price rise = BULLISH, OI buildup + price fall = BEARISH
+        """
+        try:
+            result = {'valid': True, 'reason': '', 'strength': ''}
+            oi_change_pct = metadata.get('oi_change_pct', 0)
+            price_change_pct = metadata.get('change_percent', 0)
+            
+            if abs(oi_change_pct) < 1:
+                return {'valid': True, 'strength': 'OI neutral'}
+            
+            is_bullish = action.upper() == 'BUY'
+            
+            if oi_change_pct > 5 and price_change_pct > 0.5:
+                if is_bullish:
+                    result['strength'] = f'LONG BUILDUP: OI+{oi_change_pct:.1f}%'
+                else:
+                    result['valid'] = False
+                    result['reason'] = 'Long buildup - avoid PUT'
+            elif oi_change_pct > 5 and price_change_pct < -0.5:
+                if not is_bullish:
+                    result['strength'] = f'SHORT BUILDUP: OI+{oi_change_pct:.1f}%'
+                else:
+                    result['valid'] = False
+                    result['reason'] = 'Short buildup - avoid CALL'
+            return result
+        except Exception as e:
+            return {'valid': True, 'strength': 'OI check skipped'}
+    
+    def _check_pcr_for_options_entry(self, symbol: str, action: str, metadata: Dict) -> Dict:
+        """
+        🎯 ALGO IMPROVEMENT: PCR sentiment filter
+        PCR < 0.5 = extreme bullish (avoid calls), PCR > 1.8 = extreme bearish (avoid puts)
+        """
+        try:
+            result = {'allowed': True, 'reason': '', 'edge': ''}
+            pcr = metadata.get('pcr', 1.0)
+            is_call = action.upper() == 'BUY'
+            
+            if pcr < 0.5:
+                if is_call:
+                    result['allowed'] = False
+                    result['reason'] = f'PCR {pcr:.2f} extreme low - overbought'
+                else:
+                    result['edge'] = f'Contrarian PUT: PCR {pcr:.2f}'
+            elif pcr > 1.8:
+                if not is_call:
+                    result['allowed'] = False
+                    result['reason'] = f'PCR {pcr:.2f} extreme high - oversold'
+                else:
+                    result['edge'] = f'Contrarian CALL: PCR {pcr:.2f}'
+            else:
+                result['edge'] = f'PCR {pcr:.2f} in normal range'
+            return result
+        except Exception as e:
+            return {'allowed': True, 'edge': 'PCR check skipped'}
+    
+    def _check_max_pain_for_options(self, symbol: str, action: str, current_price: float, metadata: Dict) -> Dict:
+        """
+        🎯 ALGO IMPROVEMENT: Max Pain gravity analysis
+        Price gravitates toward max pain - don't fight it
+        """
+        try:
+            result = {'favorable': True, 'reason': '', 'tailwind': ''}
+            max_pain = metadata.get('max_pain', 0)
+            
+            if max_pain <= 0:
+                return {'favorable': True, 'tailwind': 'Max pain N/A'}
+            
+            is_call = action.upper() == 'BUY'
+            distance_pct = ((current_price - max_pain) / max_pain) * 100
+            
+            if abs(distance_pct) < 1.0:
+                result['tailwind'] = f'Near max pain ₹{max_pain:.0f}'
+            elif distance_pct > 2.0:
+                if is_call:
+                    result['favorable'] = False
+                    result['reason'] = f'CALL risky: {distance_pct:.1f}% above max pain'
+                else:
+                    result['tailwind'] = f'PUT tailwind: gravity to ₹{max_pain:.0f}'
+            elif distance_pct < -2.0:
+                if not is_call:
+                    result['favorable'] = False
+                    result['reason'] = f'PUT risky: {abs(distance_pct):.1f}% below max pain'
+                else:
+                    result['tailwind'] = f'CALL tailwind: gravity to ₹{max_pain:.0f}'
+            return result
+        except Exception as e:
+            return {'favorable': True, 'tailwind': 'Max pain check skipped'}
+    
     def _is_intraday_square_off_time(self) -> bool:
         """Check if it's time to square off intraday positions"""
         try:
