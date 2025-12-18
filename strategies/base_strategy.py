@@ -5554,6 +5554,14 @@ class BaseStrategy:
                               stop_loss: float, target: float, confidence: float, metadata: Dict) -> Dict:
         """Create standardized signal format for options"""
         try:
+            # 🚨 OPTIONS TRADING DISABLED - 80% loss rate in last 10 trades
+            # Will be re-enabled after algo analysis and fixes
+            import os
+            OPTIONS_TRADING_ENABLED = os.getenv('ENABLE_OPTIONS_TRADING', 'false').lower() == 'true'
+            if not OPTIONS_TRADING_ENABLED:
+                logger.warning(f"🚫 OPTIONS DISABLED: {symbol} - Falling back to equity signal")
+                return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            
             # If outside options trading hours, skip (stricter cutoff to avoid theta decay)
             if not self._is_options_trading_hours():
                 logger.warning(f"⏸️ OPTIONS HOURS CLOSED - Skipping options signal for {symbol}")
