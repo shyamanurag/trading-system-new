@@ -873,6 +873,10 @@ class RegimeAdaptiveController:
                     if i < 20:  # Need some history to calculate features
                         continue
                     
+                    # 🚨 CRITICAL: Yield to event loop every 20 candles to not block health checks
+                    if i % 20 == 0:
+                        await asyncio.sleep(0)
+                    
                     # Calculate features from historical candles
                     recent_candles = historical_data[max(0, i-20):i+1]
                     closes = [c['close'] for c in recent_candles]
@@ -947,8 +951,13 @@ class RegimeAdaptiveController:
                 
                 # Train HMM with historical data if we have enough
                 if len(self.feature_history) >= 50:
+                    # 🚨 CRITICAL: Yield before CPU-intensive training
+                    await asyncio.sleep(0)
+                    
                     feature_matrix = np.array([f['features'][:3] for f in self.feature_history])
-                    self.hmm_model.baum_welch(feature_matrix, n_iterations=10)
+                    
+                    # Run CPU-intensive training in thread pool to not block event loop
+                    await asyncio.to_thread(self.hmm_model.baum_welch, feature_matrix, 10)
                     logger.info(f"✅ HMM WARMUP COMPLETE: Trained on {len(self.feature_history)} observations")
                     
                     # Run Viterbi to get initial regime
