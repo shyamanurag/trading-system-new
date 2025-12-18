@@ -685,7 +685,20 @@ class RiskManager:
             symbol = signal.symbol
             strategy_name = signal.strategy_name
             quantity = signal.quantity
-            entry_price = getattr(signal, 'entry_price', 0.0)
+            # 🔥 FIX: Handle None entry_price (can happen for exit signals from position monitor)
+            entry_price_raw = getattr(signal, 'entry_price', None)
+            entry_price = float(entry_price_raw) if entry_price_raw is not None else 0.0
+            
+            # If entry_price is 0 or None, try to get current LTP for the symbol
+            if entry_price <= 0:
+                try:
+                    from data.truedata_client import get_live_data_for_symbol
+                    live_data = get_live_data_for_symbol(symbol)
+                    if live_data and live_data.get('ltp'):
+                        entry_price = float(live_data.get('ltp', 0))
+                        logger.info(f"   📊 Using live LTP for {symbol}: ₹{entry_price:.2f}")
+                except Exception:
+                    pass
             
             # CRITICAL DEBUG: Log signal validation details
             logger.info(f"🔍 SIGNAL VALIDATION: {symbol} | Qty: {quantity} | Price: ₹{entry_price} | Strategy: {strategy_name}")
