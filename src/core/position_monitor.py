@@ -730,6 +730,19 @@ class PositionMonitor:
                 # 🔥 FIX: Minimum quantity for partial exits to avoid tiny trades
                 MIN_PARTIAL_EXIT_QTY = 10  # Minimum 10 shares for partial exit
                 
+                # 🚨 OPTIONS FIX: Options can only be traded in lot sizes (75 for NIFTY, 30 for BANKNIFTY)
+                # Partial exits don't work for options - always do FULL exit
+                is_options = any(x in symbol.upper() for x in ['CE', 'PE'])
+                if is_options:
+                    logger.info(f"   📋 OPTIONS POSITION: {symbol} - Lot-size constraint, doing FULL EXIT")
+                    return ExitCondition(
+                        condition_type='target',
+                        symbol=symbol,
+                        trigger_price=current_price,
+                        reason=f'Target achieved: Full exit for options (lot-size constraint) (Profit: ₹{current_pnl:.2f})',
+                        priority=3
+                    )
+                
                 if position.quantity <= MIN_PARTIAL_EXIT_QTY:
                     logger.info(f"   ℹ️ Small position (qty={position.quantity} <= {MIN_PARTIAL_EXIT_QTY}) - Doing FULL EXIT instead of partial")
                     return ExitCondition(
@@ -807,6 +820,19 @@ class PositionMonitor:
                 
                 # 🔥 FIX: Minimum quantity for partial exits to avoid tiny trades
                 MIN_PARTIAL_EXIT_QTY = 10  # Minimum 10 shares for partial exit
+                
+                # 🚨 OPTIONS FIX: Options can only be traded in lot sizes
+                # Partial exits don't work for options - always do FULL exit
+                is_options = any(x in symbol.upper() for x in ['CE', 'PE'])
+                if is_options:
+                    logger.info(f"   📋 OPTIONS POSITION: {symbol} - Lot-size constraint, doing FULL EXIT")
+                    return ExitCondition(
+                        condition_type='target',
+                        symbol=symbol,
+                        trigger_price=current_price,
+                        reason=f'Target achieved: Full exit for options (lot-size constraint) (Profit: ₹{current_pnl:.2f})',
+                        priority=3
+                    )
                 
                 if position.quantity <= MIN_PARTIAL_EXIT_QTY:
                     logger.info(f"   ℹ️ Small position (qty={position.quantity} <= {MIN_PARTIAL_EXIT_QTY}) - Doing FULL EXIT instead of partial")
