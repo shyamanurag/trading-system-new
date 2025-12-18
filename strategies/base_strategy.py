@@ -972,6 +972,285 @@ class BaseStrategy:
     # CRITICAL: POSITION MANAGEMENT SYSTEM
     # ========================================
     
+    # ========================================
+    # 🚨 OPTIONS POSITION MANAGEMENT HELPERS
+    # ========================================
+    
+    def _parse_options_symbol(self, symbol: str) -> tuple:
+        """
+        Parse options symbol to extract: (underlying, option_type, strike, expiry)
+        
+        Examples:
+            BANKNIFTY25DEC26900PE → (BANKNIFTY, PE, 26900, 25DEC)
+            NIFTY25D2726000CE → (NIFTY, CE, 26000, 25D27)
+            RELIANCE → (RELIANCE, EQUITY, None, None)
+        """
+        if not symbol:
+            return ('', 'EQUITY', None, None)
+        
+        symbol = symbol.upper().strip()
+        
+        # Check if it's an options symbol (ends with CE or PE)
+        if not (symbol.endswith('CE') or symbol.endswith('PE')):
+            return (symbol, 'EQUITY', None, None)
+        
+        option_type = 'CE' if symbol.endswith('CE') else 'PE'
+        base = symbol[:-2]
+        
+        # Extract strike price (digits at the end)
+        import re
+        strike_match = re.search(r'(\d+)$', base)
+        if not strike_match:
+            return (symbol, option_type, None, None)
+        
+        strike = int(strike_match.group(1))
+        remaining = base[:strike_match.start()]
+        
+        # Extract expiry and underlying
+        expiry_match = re.search(r'(\d{2}[A-Z0-9]+)$', remaining)
+        if expiry_match:
+            expiry = expiry_match.group(1)
+            underlying = remaining[:expiry_match.start()]
+        else:
+            expiry = None
+            underlying = remaining
+        
+        # Clean underlying
+        underlying = re.sub(r'\d+$', '', underlying)
+        
+        return (underlying, option_type, strike, expiry)
+    
+    def _get_options_position_group_key(self, symbol: str) -> str:
+        """
+        Get position group key - all strikes of same underlying+type share same key.
+        BANKNIFTY25DEC26900PE → BANKNIFTY:PE
+        BANKNIFTY25DEC26850PE → BANKNIFTY:PE (SAME GROUP!)
+        """
+        underlying, option_type, _, _ = self._parse_options_symbol(symbol)
+        return f"{underlying}:{option_type}"
+    
+    async def _has_existing_options_position(self, options_symbol: str, zerodha_client) -> tuple:
+        """
+        Check if there's already a position for this underlying + option type.
+        All strikes of same underlying+type are treated as ONE position.
+        
+        Returns: (has_position, existing_position_info)
+        """
+        try:
+            underlying, option_type, strike, _ = self._parse_options_symbol(options_symbol)
+            
+            if option_type == 'EQUITY':
+                return False, None
+            
+            if zerodha_client:
+                positions = zerodha_client.get_positions_sync()
+                if positions and isinstance(positions, dict):
+                    for pos_list in [positions.get('net', []), positions.get('day', [])]:
+                        if isinstance(pos_list, list):
+                            for pos in pos_list:
+                                pos_symbol = pos.get('tradingsymbol', '')
+                                pos_qty = pos.get('quantity', 0)
+                                
+                                if pos_qty == 0:
+                                    continue
+                                
+                                pos_underlying, pos_type, pos_strike, _ = self._parse_options_symbol(pos_symbol)
+                                
+                                # Check if same underlying AND same option type
+                                if pos_underlying == underlying and pos_type == option_type:
+                                    logger.warning(f"🚫 OPTIONS DUPLICATE: {options_symbol} blocked - Already have {pos_type} on {pos_underlying}")
+                                    logger.warning(f"   Existing: {pos_symbol} (strike {pos_strike}) qty={pos_qty}")
+                                    return True, {
+                                        'existing_symbol': pos_symbol,
+                                        'existing_strike': pos_strike,
+                                        'existing_quantity': pos_qty
+                                    }
+            
+            return False, None
+            
+        except Exception as e:
+            logger.error(f"❌ Error checking options position: {e}")
+            return False, None
+    
+    async def _get_opposite_side_positions(self, options_symbol: str, zerodha_client) -> list:
+        """
+        Get positions on opposite side that need square-off.
+        If buying CE, returns any PE positions for same underlying.
+        """
+        try:
+            underlying, option_type, _, _ = self._parse_options_symbol(options_symbol)
+            
+            if option_type == 'EQUITY':
+                return []
+            
+            opposite_type = 'PE' if option_type == 'CE' else 'CE'
+            opposite_positions = []
+            
+            if zerodha_client:
+                positions = zerodha_client.get_positions_sync()
+                if positions and isinstance(positions, dict):
+                    for pos_list in [positions.get('net', []), positions.get('day', [])]:
+                        if isinstance(pos_list, list):
+                            for pos in pos_list:
+                                pos_symbol = pos.get('tradingsymbol', '')
+                                pos_qty = pos.get('quantity', 0)
+                                
+                                if pos_qty == 0:
+                                    continue
+                                
+                                pos_underlying, pos_type, pos_strike, _ = self._parse_options_symbol(pos_symbol)
+                                
+                                # Same underlying BUT opposite type
+                                if pos_underlying == underlying and pos_type == opposite_type:
+                                    opposite_positions.append({
+                                        'symbol': pos_symbol,
+                                        'quantity': pos_qty,
+                                        'strike': pos_strike,
+                                        'type': pos_type,
+                                        'pnl': pos.get('pnl', 0),
+                                        'average_price': pos.get('average_price', 0)
+                                    })
+            
+            if opposite_positions:
+                logger.info(f"⚠️ OPPOSITE SIDE: {options_symbol} ({option_type}) has {len(opposite_positions)} {opposite_type} positions")
+            
+            return opposite_positions
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting opposite positions: {e}")
+            return []
+    
+    async def _square_off_opposite_positions(self, options_symbol: str, zerodha_client) -> list:
+        """Square off opposite side positions before entering new direction."""
+        try:
+            opposite_positions = await self._get_opposite_side_positions(options_symbol, zerodha_client)
+            
+            if not opposite_positions:
+                return []
+            
+            _, new_type, _, _ = self._parse_options_symbol(options_symbol)
+            opposite_type = 'PE' if new_type == 'CE' else 'CE'
+            
+            logger.info(f"🔄 AUTO SQUARE-OFF: Closing {len(opposite_positions)} {opposite_type} before {new_type}")
+            
+            results = []
+            for pos in opposite_positions:
+                try:
+                    exit_action = 'SELL' if pos['quantity'] > 0 else 'BUY'
+                    exit_qty = abs(pos['quantity'])
+                    
+                    logger.info(f"   🔴 Squaring off: {pos['symbol']} {exit_action} {exit_qty}")
+                    
+                    result = await zerodha_client.place_order(
+                        symbol=pos['symbol'],
+                        quantity=exit_qty,
+                        order_type=exit_action,
+                        product='MIS',
+                        price_type='MARKET',
+                        exchange='NFO'
+                    )
+                    
+                    results.append({
+                        'symbol': pos['symbol'],
+                        'action': exit_action,
+                        'quantity': exit_qty,
+                        'order_id': result.get('order_id') if result else None,
+                        'reason': f'Auto square-off before {new_type} entry'
+                    })
+                    
+                except Exception as sq_err:
+                    logger.error(f"   ❌ Square-off failed for {pos['symbol']}: {sq_err}")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Error in square_off_opposite_positions: {e}")
+            return []
+    
+    async def _is_order_pending_for_symbol(self, symbol: str, zerodha_client) -> tuple:
+        """
+        Check if there's a pending order for this symbol or its underlying+type.
+        Returns: (is_pending, pending_order_id)
+        """
+        try:
+            underlying, option_type, _, _ = self._parse_options_symbol(symbol)
+            
+            orders = await zerodha_client.get_orders()
+            if not orders:
+                return False, None
+            
+            for order in orders:
+                status = order.get('status', '').upper()
+                
+                if status not in ['PENDING', 'OPEN', 'TRIGGER PENDING', 'AMO REQ RECEIVED']:
+                    continue
+                
+                order_symbol = order.get('tradingsymbol', '')
+                order_underlying, order_type, _, _ = self._parse_options_symbol(order_symbol)
+                
+                # Block if same underlying + same type has pending order
+                if order_underlying == underlying and order_type == option_type:
+                    order_id = order.get('order_id')
+                    logger.warning(f"⏳ PENDING ORDER: {order_symbol} (order_id={order_id}) - blocking {symbol}")
+                    return True, order_id
+            
+            return False, None
+            
+        except Exception as e:
+            logger.debug(f"Pending order check error: {e}")
+            return False, None
+    
+    async def _cancel_stale_pending_orders(self, zerodha_client, max_age_minutes: int = 15) -> list:
+        """Cancel pending orders older than max_age_minutes."""
+        try:
+            cancelled = []
+            now = datetime.now()
+            
+            orders = await zerodha_client.get_orders()
+            if not orders:
+                return []
+            
+            for order in orders:
+                order_id = order.get('order_id')
+                status = order.get('status', '').upper()
+                
+                if status not in ['PENDING', 'OPEN', 'TRIGGER PENDING', 'AMO REQ RECEIVED']:
+                    continue
+                
+                order_time_str = order.get('order_timestamp') or order.get('exchange_timestamp')
+                if not order_time_str:
+                    continue
+                
+                try:
+                    if isinstance(order_time_str, str):
+                        order_time = datetime.fromisoformat(order_time_str.replace('Z', '+00:00'))
+                    else:
+                        order_time = order_time_str
+                    
+                    age_minutes = (now - order_time.replace(tzinfo=None)).total_seconds() / 60
+                    
+                    if age_minutes >= max_age_minutes:
+                        symbol = order.get('tradingsymbol', 'UNKNOWN')
+                        logger.warning(f"⏰ STALE ORDER: {order_id} ({symbol}) - {age_minutes:.1f} min old")
+                        
+                        cancel_result = await zerodha_client.cancel_order(order_id)
+                        
+                        if cancel_result:
+                            cancelled.append({'order_id': order_id, 'symbol': symbol, 'age': age_minutes})
+                            logger.info(f"   ✅ Cancelled stale order: {order_id}")
+                            
+                except Exception as parse_err:
+                    continue
+            
+            if cancelled:
+                logger.info(f"🧹 Cancelled {len(cancelled)} stale pending orders")
+            
+            return cancelled
+            
+        except Exception as e:
+            logger.error(f"❌ Error cancelling stale orders: {e}")
+            return []
+    
     def has_existing_position(self, symbol: str) -> bool:
         """🚨 CRITICAL FIX: Check for existing positions to prevent DUPLICATE ORDERS"""
         
@@ -6055,13 +6334,13 @@ class BaseStrategy:
                               stop_loss: float, target: float, confidence: float, metadata: Dict) -> Dict:
         """Create standardized signal format for options"""
         try:
-            # 🚨 OPTIONS TRADING DISABLED - 80% loss rate in last 10 trades
-            # Will be re-enabled after algo analysis and fixes
-            import os
-            OPTIONS_TRADING_ENABLED = os.getenv('ENABLE_OPTIONS_TRADING', 'false').lower() == 'true'
-            if not OPTIONS_TRADING_ENABLED:
-                logger.warning(f"🚫 OPTIONS DISABLED: {symbol} - Falling back to equity signal")
-                return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            # ✅ OPTIONS TRADING RE-ENABLED (Dec 18, 2024)
+            # Fixes implemented:
+            # 1. All strikes of same underlying+type = ONE position (no duplicates)
+            # 2. Auto square-off opposite side (CE→PE or PE→CE)
+            # 3. Pending order tracking (block duplicates, cancel stale after 15 min)
+            # 4. IV filter, momentum confirmation, Greeks check, trend strength filter
+            # 5. Tighter stop losses and faster profit booking for options
             
             # If outside options trading hours, skip (stricter cutoff to avoid theta decay)
             if not self._is_options_trading_hours():
@@ -6139,6 +6418,52 @@ class BaseStrategy:
             logger.info(f"   Original: {symbol} → Options: {options_symbol}")
             logger.info(f"   Type: {option_type}, Action: {final_action}")
             logger.info(f"   Entry Price: ₹{entry_price} (underlying)")
+            
+            # ========================================
+            # 🚨 FIX #7: OPTIONS POSITION MANAGEMENT
+            # - Check for existing position (same underlying + type = ONE position)
+            # - Square off opposite side automatically
+            # - Check for pending orders
+            # ========================================
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                zerodha_client = orchestrator.zerodha_client if orchestrator else None
+                
+                if zerodha_client:
+                    # CHECK 1: Is there already a position for same underlying + option type?
+                    # BANKNIFTY 26900 PE and BANKNIFTY 26850 PE are treated as ONE position
+                    has_position, existing_info = await self._has_existing_options_position(options_symbol, zerodha_client)
+                    if has_position:
+                        logger.warning(f"🚫 OPTIONS DUPLICATE BLOCKED: {options_symbol}")
+                        logger.warning(f"   Already have {option_type} position on {symbol}: {existing_info.get('existing_symbol', 'unknown')}")
+                        logger.info(f"   💡 All strikes of same underlying+type are ONE position. Close existing first.")
+                        return None  # Block the signal completely
+                    
+                    # CHECK 2: Is there an opposite side position that needs to be squared off?
+                    # If buying CE, square off any PE positions first
+                    opposite_positions = await self._get_opposite_side_positions(options_symbol, zerodha_client)
+                    if opposite_positions:
+                        opposite_type = 'PE' if option_type == 'CE' else 'CE'
+                        logger.info(f"🔄 AUTO SQUARE-OFF REQUIRED: Found {len(opposite_positions)} {opposite_type} positions")
+                        
+                        # Square off the opposite positions
+                        square_off_results = await self._square_off_opposite_positions(options_symbol, zerodha_client)
+                        logger.info(f"   ✅ Square-off orders placed: {len(square_off_results)}")
+                        
+                        # Wait a moment for the square-offs to process
+                        await asyncio.sleep(2)
+                    
+                    # CHECK 3: Is there a pending order for this underlying + type?
+                    is_pending, pending_order_id = await self._is_order_pending_for_symbol(options_symbol, zerodha_client)
+                    if is_pending:
+                        logger.warning(f"⏳ PENDING ORDER BLOCKS NEW SIGNAL: {options_symbol}")
+                        logger.warning(f"   Pending order_id: {pending_order_id}")
+                        logger.info(f"   💡 Wait for pending order to execute or be cancelled")
+                        return None  # Block the signal
+                        
+            except Exception as opm_err:
+                logger.warning(f"⚠️ Options position check error (continuing): {opm_err}")
             
             # 🎯 CRITICAL FIX: Get actual options premium from TrueData instead of stock price
             options_entry_price = self._get_options_premium(options_symbol, symbol)

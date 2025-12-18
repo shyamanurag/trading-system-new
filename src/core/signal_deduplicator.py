@@ -266,6 +266,59 @@ class SignalDeduplicator:
         self.position_tracker = position_tracker
         logger.info("✅ Position tracker connected to signal deduplicator")
     
+    def _parse_options_symbol(self, symbol: str) -> tuple:
+        """Parse options symbol to extract: (underlying, option_type, strike)"""
+        if not symbol:
+            return ('', 'EQUITY', None)
+        
+        symbol = symbol.upper().strip()
+        
+        if not (symbol.endswith('CE') or symbol.endswith('PE')):
+            return (symbol, 'EQUITY', None)
+        
+        option_type = 'CE' if symbol.endswith('CE') else 'PE'
+        base = symbol[:-2]
+        
+        import re
+        strike_match = re.search(r'(\d+)$', base)
+        if not strike_match:
+            return (symbol, option_type, None)
+        
+        strike = int(strike_match.group(1))
+        remaining = base[:strike_match.start()]
+        underlying = re.sub(r'\d{2}[A-Z0-9]*$', '', remaining)
+        underlying = re.sub(r'\d+$', '', underlying)
+        
+        return (underlying, option_type, strike)
+    
+    async def _check_pending_order(self, symbol: str, zerodha_client) -> tuple:
+        """Check if there's a pending order for this symbol or underlying+type."""
+        try:
+            underlying, option_type, _ = self._parse_options_symbol(symbol)
+            
+            orders = await zerodha_client.get_orders()
+            if not orders:
+                return False, None
+            
+            for order in orders:
+                status = order.get('status', '').upper()
+                
+                if status not in ['PENDING', 'OPEN', 'TRIGGER PENDING', 'AMO REQ RECEIVED']:
+                    continue
+                
+                order_symbol = order.get('tradingsymbol', '')
+                order_underlying, order_type, _ = self._parse_options_symbol(order_symbol)
+                
+                # Block if same underlying + same type has pending order
+                if order_underlying == underlying and order_type == option_type:
+                    return True, order.get('order_id')
+            
+            return False, None
+            
+        except Exception as e:
+            logger.debug(f"Pending order check error: {e}")
+            return False, None
+    
     async def check_trade_cooldown(self, symbol: str) -> tuple[bool, str]:
         """
         🔥 Check if symbol is in trade cooldown period.
@@ -324,6 +377,7 @@ class SignalDeduplicator:
         - Blocks only if there's an ACTIVE/OPEN position for the same symbol + action
         - Does NOT block based on previous signals that were just recorded
         - Manually squared-off positions should NOT block new signals
+        - 🚨 NEW: Also blocks if there's a PENDING order for same symbol
         """
         try:
             # 🎯 BYPASS DEDUPLICATION FOR POSITION MANAGEMENT ACTIONS
@@ -338,6 +392,18 @@ class SignalDeduplicator:
             
             symbol = signal.get('symbol')
             action = signal.get('action', 'BUY')
+            
+            # 🚨 FIX: Check for PENDING orders - if order is pending, don't resend
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                    is_pending, pending_order_id = await self._check_pending_order(symbol, orchestrator.zerodha_client)
+                    if is_pending:
+                        logger.warning(f"🚫 PENDING ORDER BLOCKS SIGNAL: {symbol} {action} - order {pending_order_id} still pending")
+                        return True  # Block the signal
+            except Exception as pending_err:
+                logger.debug(f"Pending order check skipped: {pending_err}")
             
             # 🔥 NEW: Check trade cooldown to prevent churning
             is_blocked, cooldown_reason = await self.check_trade_cooldown(symbol)
