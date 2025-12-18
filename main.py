@@ -547,10 +547,7 @@ async def health_check():
     """Health check endpoint for DigitalOcean"""
     return {"status": "healthy", "timestamp": datetime.utcnow()}
 
-@app.get("/ready", tags=["health"])
-async def ready_check():
-    """Ready check endpoint for DigitalOcean health checks"""
-    return {"status": "ready", "timestamp": datetime.utcnow()}
+# NOTE: Main /ready endpoint is defined below - keeping single definition to avoid conflicts
 
 @app.post("/emergency-cleanup-contaminated-database", tags=["emergency"])
 async def emergency_cleanup_contaminated_database():
@@ -710,23 +707,12 @@ async def health_ready_json():
             headers={"Content-Type": "application/json"}
         )
 
-@app.get("/ready")
+@app.get("/ready", tags=["health"])
 async def readiness_check():
-    """Fast readiness check - responds immediately during startup"""
-    global app_startup_complete
-    
-    # Always return 200 during startup - DigitalOcean just needs to know the server is responding
-    # The actual initialization can continue in the background
-    return JSONResponse(
-        status_code=200,
-        content={
-            "status": "ready" if app_startup_complete else "starting",
-            "message": "Server is responding" if not app_startup_complete else "Application fully initialized and ready",
-            "ready": True,  # Always True - server is ready to accept requests
-            "app_fully_initialized": app_startup_complete,
-            "timestamp": datetime.now().isoformat()
-        }
-    )
+    """Ultra-fast readiness check - responds immediately, no blocking operations"""
+    # Always return 200 immediately - DigitalOcean just needs to know the server is alive
+    # Using minimal dict response to avoid any serialization overhead
+    return {"status": "ready", "ok": True}
 
 # Debug endpoint to check request details
 @app.get("/debug/request", tags=["debug"])
