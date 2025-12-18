@@ -791,6 +791,19 @@ class BaseStrategy:
         # Position management tracking
         self.management_actions_taken = {}  # symbol -> list of actions taken
         self.last_management_time = {}  # symbol -> last management timestamp
+        self.options_partial_bookings = {}  # symbol -> set of booking levels done
+    
+    def _has_booked_partial(self, symbol: str, level: str) -> bool:
+        """Check if a partial booking level has already been done for this symbol"""
+        if symbol not in self.options_partial_bookings:
+            return False
+        return level in self.options_partial_bookings[symbol]
+    
+    def _record_partial_booking(self, symbol: str, level: str):
+        """Record that a partial booking was done"""
+        if symbol not in self.options_partial_bookings:
+            self.options_partial_bookings[symbol] = set()
+        self.options_partial_bookings[symbol].add(level)
         
     def _is_trading_hours_active(self) -> bool:
         """⏰ CHECK TRADING HOURS - Simplified check for position management"""
@@ -2093,25 +2106,62 @@ class BaseStrategy:
                 'new_stop_loss': 0
             }
             
-            # 1. DYNAMIC PROFIT BOOKING (based on target achievement, not hardcoded %)
+            # 1. DYNAMIC PROFIT BOOKING - DIFFERENT FOR OPTIONS vs EQUITY
             target = position.get('target', 0)
-            if target > 0:
-                # Calculate distance to target
-                if action == 'BUY':
-                    target_achievement = (current_price - entry_price) / (target - entry_price) if target > entry_price else 0
-                else:
-                    target_achievement = (entry_price - current_price) / (entry_price - target) if entry_price > target else 0
+            is_options = position.get('is_options', False) or 'CE' in symbol or 'PE' in symbol
+            
+            if is_options:
+                # 🚨 OPTIONS PROFIT BOOKING - Much quicker due to theta decay
+                # Options profits vanish quickly if not booked!
                 
-                # Dynamic profit booking based on target progress
-                if target_achievement >= 0.8:  # 80% of target achieved
-                    if position_age > 30:  # Held for 30+ minutes - book profits
-                        actions['book_partial_profits'] = True
-                        actions['partial_percentage'] = 60  # Book 60% of position
-                        logger.info(f"💰 {self.name}: {symbol} - Booking 60% profits (Target: {target_achievement*100:.1f}%, Age: {position_age:.1f}min)")
-                elif target_achievement >= 1.0:  # Target exceeded - aggressive booking
+                if pnl_pct >= 15 and not self._has_booked_partial(symbol, '50%'):
+                    # 15%+ profit: Book 50% immediately
                     actions['book_partial_profits'] = True
-                    actions['partial_percentage'] = 80  # Book 80% profits
-                    logger.info(f"💰 {self.name}: {symbol} - Target exceeded! Booking 80% profits (Achievement: {target_achievement*100:.1f}%)")
+                    actions['partial_percentage'] = 50
+                    logger.info(f"💰 OPTIONS PROFIT: {symbol} - Booking 50% at +{pnl_pct:.1f}% (15% threshold)")
+                    
+                elif pnl_pct >= 25 and not self._has_booked_partial(symbol, '75%'):
+                    # 25%+ profit: Book another 25% (total 75% booked)
+                    actions['book_partial_profits'] = True
+                    actions['partial_percentage'] = 50  # 50% of remaining = 25% of original
+                    logger.info(f"💰 OPTIONS PROFIT: {symbol} - Booking 50% of remaining at +{pnl_pct:.1f}% (25% threshold)")
+                    
+                elif pnl_pct >= 40:
+                    # 40%+ profit: Book everything, don't be greedy
+                    actions['immediate_exit'] = True
+                    actions['exit_reason'] = 'OPTIONS_PROFIT_40PCT'
+                    logger.info(f"💰 OPTIONS PROFIT: {symbol} - FULL EXIT at +{pnl_pct:.1f}% (40% is great for options!)")
+                    
+                # Time-based exit for options regardless of profit
+                if position_age >= 60:  # 1 hour max hold for options
+                    if pnl_pct > 0:
+                        actions['immediate_exit'] = True
+                        actions['exit_reason'] = 'OPTIONS_TIME_EXIT_1HR_PROFIT'
+                        logger.info(f"⏰ OPTIONS TIME EXIT: {symbol} - Exiting with +{pnl_pct:.1f}% after 1hr (theta risk)")
+                    elif pnl_pct > -5:
+                        actions['immediate_exit'] = True
+                        actions['exit_reason'] = 'OPTIONS_TIME_EXIT_1HR_SMALL_LOSS'
+                        logger.info(f"⏰ OPTIONS TIME EXIT: {symbol} - Exiting at {pnl_pct:.1f}% after 1hr (cut losses)")
+                        
+            else:
+                # EQUITY PROFIT BOOKING (original logic)
+                if target > 0:
+                    # Calculate distance to target
+                    if action == 'BUY':
+                        target_achievement = (current_price - entry_price) / (target - entry_price) if target > entry_price else 0
+                    else:
+                        target_achievement = (entry_price - current_price) / (entry_price - target) if entry_price > target else 0
+                    
+                    # Dynamic profit booking based on target progress
+                    if target_achievement >= 0.8:  # 80% of target achieved
+                        if position_age > 30:  # Held for 30+ minutes - book profits
+                            actions['book_partial_profits'] = True
+                            actions['partial_percentage'] = 60  # Book 60% of position
+                            logger.info(f"💰 {self.name}: {symbol} - Booking 60% profits (Target: {target_achievement*100:.1f}%, Age: {position_age:.1f}min)")
+                    elif target_achievement >= 1.0:  # Target exceeded - aggressive booking
+                        actions['book_partial_profits'] = True
+                        actions['partial_percentage'] = 80  # Book 80% profits
+                        logger.info(f"💰 {self.name}: {symbol} - Target exceeded! Booking 80% profits (Achievement: {target_achievement*100:.1f}%)")
             
             # 2. MOMENTUM-BASED POSITION SCALING (Conservative - only for strong setups)
             # Only scale if risk per trade is still within 1% limit
@@ -2122,18 +2172,53 @@ class BaseStrategy:
                     actions['scale_quantity'] = max(1, int(quantity * 0.15))  # Scale by 15% only
                     logger.info(f"📈 {self.name}: {symbol} - Conservative scaling by {actions['scale_quantity']} shares (risk: {current_risk_percent:.2f}%)")
             
-            # 3. DYNAMIC TRAILING STOP (based on original stop distance, not hardcoded %)
+            # 3. DYNAMIC TRAILING STOP - DIFFERENT FOR OPTIONS vs EQUITY
             original_stop = position.get('stop_loss', 0)
-            if original_stop > 0 and pnl_pct > 5:  # Only after decent profit
-                original_risk_distance = abs(entry_price - original_stop)
-                buffer_distance = original_risk_distance * 0.3  # 30% of original risk as buffer
-                
-                if action == 'BUY':
-                    actions['new_stop_loss'] = max(entry_price + buffer_distance, current_price - original_risk_distance * 0.8)
-                else:
-                    actions['new_stop_loss'] = min(entry_price - buffer_distance, current_price + original_risk_distance * 0.8)
-                actions['adjust_stop_loss'] = True
-                logger.info(f"🛡️ {self.name}: {symbol} - Dynamic trailing stop (P&L: {pnl_pct:.2f}%, Risk Distance: {original_risk_distance:.2f})")
+            is_options = position.get('is_options', False) or 'CE' in symbol or 'PE' in symbol
+            
+            if is_options:
+                # 🚨 OPTIONS TRAILING STOP - Much more aggressive due to theta decay
+                # Options need to lock in profits quickly or theta eats them
+                if pnl_pct >= 10:
+                    # 10%+ profit: Move stop to ENTRY (lock in zero loss)
+                    if action == 'BUY':
+                        actions['new_stop_loss'] = entry_price  # Breakeven
+                    else:
+                        actions['new_stop_loss'] = entry_price
+                    actions['adjust_stop_loss'] = True
+                    logger.info(f"🛡️ OPTIONS TRAILING: {symbol} - Moving stop to BREAKEVEN (P&L: {pnl_pct:.2f}%)")
+                    
+                elif pnl_pct >= 20:
+                    # 20%+ profit: Lock in 50% of profits
+                    locked_profit = (current_price - entry_price) * 0.5 if action == 'BUY' else (entry_price - current_price) * 0.5
+                    if action == 'BUY':
+                        actions['new_stop_loss'] = entry_price + locked_profit
+                    else:
+                        actions['new_stop_loss'] = entry_price - locked_profit
+                    actions['adjust_stop_loss'] = True
+                    logger.info(f"🛡️ OPTIONS TRAILING: {symbol} - Locking 50% profit (P&L: {pnl_pct:.2f}%)")
+                    
+                elif pnl_pct >= 30:
+                    # 30%+ profit: Lock in 70% of profits (tight trailing)
+                    locked_profit = (current_price - entry_price) * 0.7 if action == 'BUY' else (entry_price - current_price) * 0.7
+                    if action == 'BUY':
+                        actions['new_stop_loss'] = entry_price + locked_profit
+                    else:
+                        actions['new_stop_loss'] = entry_price - locked_profit
+                    actions['adjust_stop_loss'] = True
+                    logger.info(f"🛡️ OPTIONS TRAILING: {symbol} - Locking 70% profit (P&L: {pnl_pct:.2f}%)")
+            else:
+                # EQUITY trailing stop (original logic)
+                if original_stop > 0 and pnl_pct > 5:  # Only after decent profit
+                    original_risk_distance = abs(entry_price - original_stop)
+                    buffer_distance = original_risk_distance * 0.3  # 30% of original risk as buffer
+                    
+                    if action == 'BUY':
+                        actions['new_stop_loss'] = max(entry_price + buffer_distance, current_price - original_risk_distance * 0.8)
+                    else:
+                        actions['new_stop_loss'] = min(entry_price - buffer_distance, current_price + original_risk_distance * 0.8)
+                    actions['adjust_stop_loss'] = True
+                    logger.info(f"🛡️ {self.name}: {symbol} - Dynamic trailing stop (P&L: {pnl_pct:.2f}%, Risk Distance: {original_risk_distance:.2f})")
             
             # 4. SCALPING AUTO-EXIT: Close positions after 10 minutes max (quick in/out)
             if position_age > 10:  # 10 minutes max hold for scalping
@@ -2756,6 +2841,422 @@ class BaseStrategy:
         except Exception as e:
             logger.error(f"Error checking options trading hours: {e}")
             return False
+    
+    async def _get_iv_rank(self, symbol: str) -> Optional[float]:
+        """
+        Get IV Rank for symbol (0-100 scale)
+        IV Rank > 50 = expensive options (high IV relative to historical)
+        IV Rank < 50 = cheap options (low IV relative to historical)
+        """
+        try:
+            # Try to get IV from Zerodha option chain
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                # Get option chain with IV data
+                option_chain = await orchestrator.zerodha_client.get_option_chain(symbol)
+                if option_chain and 'analytics' in option_chain:
+                    # Calculate simple IV rank from current IV vs typical range
+                    current_iv = option_chain.get('analytics', {}).get('implied_volatility', 0)
+                    if current_iv > 0:
+                        # Simple approximation: IV below 20% = low, above 30% = high
+                        # Convert to rank: (current - min) / (max - min) * 100
+                        iv_min, iv_max = 15, 40  # Typical NIFTY/BANKNIFTY range
+                        iv_rank = min(100, max(0, (current_iv - iv_min) / (iv_max - iv_min) * 100))
+                        logger.info(f"📊 IV RANK: {symbol} IV={current_iv:.1f}%, Rank={iv_rank:.0f}%")
+                        return iv_rank
+            
+            return None  # IV data not available
+            
+        except Exception as e:
+            logger.debug(f"Error getting IV rank for {symbol}: {e}")
+            return None
+    
+    async def _get_days_to_expiry(self, symbol: str) -> Optional[int]:
+        """Get days to expiry for nearest options contract"""
+        try:
+            from datetime import datetime, timedelta
+            import re
+            
+            # Try to parse expiry from options symbol format (e.g., NIFTY25DEC25850PE)
+            # Pattern: NAME + YY + MMM + STRIKE + CE/PE
+            match = re.match(r'([A-Z]+)(\d{2})([A-Z]{3})(\d+)(CE|PE)', symbol.upper())
+            if match:
+                year_short = int(match.group(2))
+                month_str = match.group(3)
+                
+                # Convert month string to number
+                months = {'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+                         'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12}
+                month_num = months.get(month_str, 0)
+                
+                if month_num > 0:
+                    # Assume 20XX for year
+                    year = 2000 + year_short
+                    # Monthly expiry is last Thursday of month (approximate with day 28)
+                    expiry_date = datetime(year, month_num, 28)
+                    
+                    # Adjust to actual last Thursday
+                    while expiry_date.weekday() != 3:  # 3 = Thursday
+                        expiry_date -= timedelta(days=1)
+                    
+                    days_remaining = (expiry_date - datetime.now()).days
+                    logger.info(f"📅 EXPIRY CHECK: {symbol} expires in {days_remaining} days")
+                    return max(0, days_remaining)
+            
+            # For underlying symbols, get nearest expiry from Zerodha
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                next_expiry = await orchestrator.zerodha_client.get_next_expiry(symbol)
+                if next_expiry:
+                    days_remaining = (next_expiry - datetime.now()).days
+                    return max(0, days_remaining)
+            
+            return None  # Expiry data not available
+            
+        except Exception as e:
+            logger.debug(f"Error getting days to expiry for {symbol}: {e}")
+            return None
+    
+    async def _check_momentum_for_options(self, symbol: str, action: str, entry_price: float, metadata: Dict) -> Dict:
+        """
+        🎯 ALGORITHMIC FIX: Momentum Confirmation for Options Entry
+        
+        WHY MOMENTUM MATTERS FOR OPTIONS:
+        - Options have time decay (theta) working against you
+        - Need quick, strong moves to overcome theta + bid-ask spread
+        - Weak momentum = premium erosion before direction move
+        
+        CONFIRMATION REQUIRES:
+        1. RSI momentum aligned with direction (not overbought/oversold against you)
+        2. Volume surge (>1.5x average) = institutional participation
+        3. Price acceleration (recent candles trending)
+        """
+        try:
+            result = {
+                'confirmed': False,
+                'reason': '',
+                'details': '',
+                'strength_score': 0  # 0-100
+            }
+            
+            # Get market data
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if not orchestrator:
+                # Can't check momentum, be conservative
+                result['reason'] = 'No market data access'
+                return result
+            
+            # Get RSI if available from metadata or calculate
+            rsi = metadata.get('rsi', 50)
+            volume_ratio = metadata.get('volume_ratio', 1.0)
+            change_pct = metadata.get('change_percent', 0)
+            intraday_change = metadata.get('intraday_change_pct', 0)
+            
+            strength_score = 0
+            issues = []
+            confirmations = []
+            
+            # ========== CHECK 1: RSI ALIGNMENT ==========
+            # For BUY (calls): RSI should be 40-70 (momentum but not overbought)
+            # For SELL (puts): RSI should be 30-60 (weakness but not oversold)
+            if action.upper() == 'BUY':
+                if 40 <= rsi <= 70:
+                    strength_score += 30
+                    confirmations.append(f"RSI={rsi:.0f} bullish")
+                elif rsi > 70:
+                    issues.append(f"RSI={rsi:.0f} overbought")
+                elif rsi < 30:
+                    issues.append(f"RSI={rsi:.0f} too weak for calls")
+                else:
+                    strength_score += 15  # Partial credit
+            else:  # PUT
+                if 30 <= rsi <= 60:
+                    strength_score += 30
+                    confirmations.append(f"RSI={rsi:.0f} bearish")
+                elif rsi < 30:
+                    issues.append(f"RSI={rsi:.0f} oversold")
+                elif rsi > 70:
+                    issues.append(f"RSI={rsi:.0f} too strong for puts")
+                else:
+                    strength_score += 15
+            
+            # ========== CHECK 2: VOLUME SURGE ==========
+            # Need at least 1.5x average volume for options trade
+            if volume_ratio >= 2.0:
+                strength_score += 35
+                confirmations.append(f"Volume surge {volume_ratio:.1f}x")
+            elif volume_ratio >= 1.5:
+                strength_score += 25
+                confirmations.append(f"Good volume {volume_ratio:.1f}x")
+            elif volume_ratio >= 1.0:
+                strength_score += 10
+            else:
+                issues.append(f"Low volume {volume_ratio:.1f}x")
+            
+            # ========== CHECK 3: PRICE MOMENTUM ==========
+            # Check if price is moving in our direction
+            if action.upper() == 'BUY':
+                if intraday_change >= 0.5:
+                    strength_score += 35
+                    confirmations.append(f"Intraday +{intraday_change:.1f}%")
+                elif intraday_change >= 0:
+                    strength_score += 15
+                else:
+                    issues.append(f"Negative intraday {intraday_change:.1f}%")
+            else:  # PUT
+                if intraday_change <= -0.5:
+                    strength_score += 35
+                    confirmations.append(f"Intraday {intraday_change:.1f}%")
+                elif intraday_change <= 0:
+                    strength_score += 15
+                else:
+                    issues.append(f"Positive intraday {intraday_change:.1f}%")
+            
+            # ========== FINAL DECISION ==========
+            # Need at least 60 strength score for options
+            result['strength_score'] = strength_score
+            
+            if strength_score >= 60:
+                result['confirmed'] = True
+                result['details'] = ' | '.join(confirmations)
+            else:
+                result['confirmed'] = False
+                result['reason'] = ' + '.join(issues) if issues else f"Weak momentum (score={strength_score})"
+            
+            logger.info(f"📊 MOMENTUM CHECK: {symbol}")
+            logger.info(f"   Score: {strength_score}/100, Confirmed: {result['confirmed']}")
+            logger.info(f"   ✅ {', '.join(confirmations)}" if confirmations else "")
+            logger.info(f"   ❌ {', '.join(issues)}" if issues else "")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in momentum check for {symbol}: {e}")
+            return {'confirmed': False, 'reason': f'Error: {e}', 'strength_score': 0}
+    
+    async def _check_greeks_for_options(self, options_symbol: str, premium: float, underlying_price: float, option_type: str) -> Dict:
+        """
+        🎯 ALGORITHMIC FIX: Greeks-aware filtering for options
+        
+        WHY GREEKS MATTER:
+        - Delta: How much option moves per ₹1 underlying move. Low delta = needs huge move
+        - Theta: Daily time decay. High theta = losing money every day
+        - Delta/Theta ratio tells if potential gain > expected time decay
+        
+        RULES:
+        1. Delta should be 0.25-0.55 (not too OTM, not too ITM)
+        2. Delta/Theta ratio should be > 0.1 (can overcome daily decay)
+        3. Premium shouldn't be too cheap (< ₹10) or too expensive (> 3% of underlying)
+        """
+        try:
+            result = {
+                'favorable': True,  # Default optimistic if we can't check
+                'reason': '',
+                'details': '',
+                'estimated_delta': 0,
+                'estimated_theta': 0
+            }
+            
+            # ========== PREMIUM SANITY CHECKS ==========
+            # Too cheap = too far OTM, will decay to zero
+            if premium < 5:
+                result['favorable'] = False
+                result['reason'] = f'Premium ₹{premium:.1f} too cheap (< ₹5) - likely worthless'
+                return result
+            
+            # Too expensive = losing too much if wrong
+            premium_pct = (premium / underlying_price) * 100
+            if premium_pct > 5:
+                result['favorable'] = False
+                result['reason'] = f'Premium {premium_pct:.1f}% of underlying is too expensive (> 5%)'
+                return result
+            
+            # ========== ESTIMATE GREEKS (if actual Greeks not available) ==========
+            # Simple moneyness-based delta estimate
+            # ATM ≈ 0.5 delta, OTM ≈ 0.3-0.4, far OTM < 0.2
+            
+            # Calculate how far OTM the option is
+            # For CE: (strike - underlying) / underlying * 100
+            # For PE: (underlying - strike) / underlying * 100
+            try:
+                import re
+                # Extract strike from symbol like NIFTY25DEC24500CE
+                match = re.search(r'(\d{4,6})(CE|PE)$', options_symbol)
+                if match:
+                    strike = int(match.group(1))
+                    
+                    if option_type == 'CE':
+                        otm_pct = ((strike - underlying_price) / underlying_price) * 100
+                    else:  # PE
+                        otm_pct = ((underlying_price - strike) / underlying_price) * 100
+                    
+                    # Estimate delta based on OTM percentage
+                    if otm_pct <= 0:  # ITM
+                        estimated_delta = 0.55 + (abs(otm_pct) * 0.01)  # Deeper ITM = higher delta
+                        estimated_delta = min(0.9, estimated_delta)
+                    elif otm_pct <= 1:  # Near ATM
+                        estimated_delta = 0.45
+                    elif otm_pct <= 2:  # Slightly OTM
+                        estimated_delta = 0.35
+                    elif otm_pct <= 3:  # OTM
+                        estimated_delta = 0.25
+                    elif otm_pct <= 5:  # Far OTM
+                        estimated_delta = 0.15
+                    else:  # Very far OTM
+                        estimated_delta = 0.08
+                    
+                    result['estimated_delta'] = estimated_delta
+                    
+                    # Delta too low = needs huge move
+                    if estimated_delta < 0.15:
+                        result['favorable'] = False
+                        result['reason'] = f'Delta ~{estimated_delta:.2f} too low ({otm_pct:.1f}% OTM) - needs unrealistic move'
+                        return result
+                    
+                    # Estimate theta (rough: 0.5-2% of premium per day for weekly options)
+                    # Higher premium = higher absolute theta but lower relative decay
+                    estimated_theta = premium * 0.015  # 1.5% daily decay estimate
+                    result['estimated_theta'] = estimated_theta
+                    
+                    # Check delta/theta ratio
+                    # Good options: delta * expected_move > theta
+                    # Expected move in NIFTY = 0.5-1% per day
+                    expected_daily_move = underlying_price * 0.007  # 0.7% expected move
+                    daily_gain_potential = expected_daily_move * estimated_delta
+                    
+                    if daily_gain_potential < estimated_theta * 1.5:
+                        result['favorable'] = False
+                        result['reason'] = f'Theta decay (₹{estimated_theta:.1f}/day) exceeds potential gain (₹{daily_gain_potential:.1f})'
+                        return result
+                    
+                    result['details'] = f"Delta~{estimated_delta:.2f}, Theta~₹{estimated_theta:.1f}/day, {otm_pct:.1f}% OTM"
+                    
+            except Exception as calc_err:
+                logger.debug(f"Greeks calculation error: {calc_err}")
+            
+            # If we reach here, Greeks are acceptable
+            result['favorable'] = True
+            return result
+            
+        except Exception as e:
+            logger.debug(f"Error checking Greeks for {options_symbol}: {e}")
+            return {'favorable': True, 'reason': '', 'details': 'Greeks check skipped'}
+    
+    def _check_trend_strength_for_options(self, symbol: str, action: str, metadata: Dict) -> Dict:
+        """
+        🎯 ALGORITHMIC FIX: Only trade options in strong trending markets
+        
+        WHY TREND STRENGTH MATTERS:
+        - Options LOSE money in sideways markets (theta decay)
+        - Need strong directional trend to overcome time decay
+        - Choppy markets = whipsaw = options losses
+        
+        CHECKS:
+        1. ADX > 20 (trend strength indicator)
+        2. Moving averages aligned (price > SMA20 > SMA50 for bullish)
+        3. No recent reversals (consistent direction)
+        4. Day change and intraday change in same direction
+        """
+        try:
+            result = {
+                'strong_trend': False,
+                'reason': '',
+                'details': '',
+                'trend_score': 0
+            }
+            
+            trend_score = 0
+            confirmations = []
+            issues = []
+            
+            # ========== CHECK 1: MTF ALIGNMENT ==========
+            # Multi-timeframe alignment from metadata
+            mtf_aligned = metadata.get('mtf_aligned', False)
+            mtf_direction = metadata.get('mtf_direction', 'NEUTRAL')
+            
+            if mtf_aligned:
+                trend_score += 30
+                confirmations.append(f"MTF aligned {mtf_direction}")
+            else:
+                issues.append("MTF not aligned")
+            
+            # ========== CHECK 2: PRICE VS MOVING AVERAGES ==========
+            # Check if price is above/below key MAs
+            ma_signal = metadata.get('ma_signal', 'NEUTRAL')
+            
+            if action.upper() == 'BUY' and ma_signal == 'BULLISH':
+                trend_score += 25
+                confirmations.append("Price above MAs")
+            elif action.upper() == 'SELL' and ma_signal == 'BEARISH':
+                trend_score += 25
+                confirmations.append("Price below MAs")
+            elif ma_signal == 'NEUTRAL':
+                issues.append("MAs neutral/mixed")
+            else:
+                issues.append(f"MAs against direction ({ma_signal})")
+            
+            # ========== CHECK 3: DAY AND INTRADAY DIRECTION ALIGNMENT ==========
+            day_change = metadata.get('change_percent', 0)
+            intraday_change = metadata.get('intraday_change_pct', 0)
+            
+            if action.upper() == 'BUY':
+                if day_change > 0 and intraday_change > 0:
+                    trend_score += 25
+                    confirmations.append(f"Day +{day_change:.1f}%, Intra +{intraday_change:.1f}%")
+                elif day_change < 0 and intraday_change < 0:
+                    issues.append("Both negative for CALL")
+                else:
+                    issues.append("Mixed day/intraday for CALL")
+            else:  # PUT
+                if day_change < 0 and intraday_change < 0:
+                    trend_score += 25
+                    confirmations.append(f"Day {day_change:.1f}%, Intra {intraday_change:.1f}%")
+                elif day_change > 0 and intraday_change > 0:
+                    issues.append("Both positive for PUT")
+                else:
+                    issues.append("Mixed day/intraday for PUT")
+            
+            # ========== CHECK 4: VOLATILITY REGIME ==========
+            # Medium volatility is best for options (too low = no moves, too high = expensive)
+            vix = metadata.get('vix', 15)  # Default 15 if not available
+            
+            if 12 <= vix <= 25:
+                trend_score += 20
+                confirmations.append(f"VIX {vix:.0f} optimal")
+            elif vix < 12:
+                issues.append(f"VIX {vix:.0f} too low (no moves)")
+            elif vix > 25:
+                issues.append(f"VIX {vix:.0f} high (expensive)")
+            
+            # ========== FINAL DECISION ==========
+            result['trend_score'] = trend_score
+            
+            # Need at least 50 score for options
+            if trend_score >= 50:
+                result['strong_trend'] = True
+                result['details'] = ' | '.join(confirmations)
+            else:
+                result['strong_trend'] = False
+                result['reason'] = ' + '.join(issues) if issues else f"Weak trend (score={trend_score})"
+            
+            logger.info(f"📊 TREND CHECK: {symbol}")
+            logger.info(f"   Score: {trend_score}/100, Strong: {result['strong_trend']}")
+            if confirmations:
+                logger.info(f"   ✅ {', '.join(confirmations)}")
+            if issues:
+                logger.info(f"   ❌ {', '.join(issues)}")
+            
+            return result
+            
+        except Exception as e:
+            logger.debug(f"Error in trend check for {symbol}: {e}")
+            # Default to allowing the trade if check fails
+            return {'strong_trend': True, 'reason': '', 'details': 'Trend check skipped'}
     
     def _is_intraday_square_off_time(self) -> bool:
         """Check if it's time to square off intraday positions"""
@@ -5566,6 +6067,57 @@ class BaseStrategy:
             if not self._is_options_trading_hours():
                 logger.warning(f"⏸️ OPTIONS HOURS CLOSED - Skipping options signal for {symbol}")
                 return None
+            
+            # 🚨 FIX #1: TIME-BASED FILTER - No new options after 2:30 PM (theta acceleration)
+            from datetime import datetime
+            current_time = datetime.now()
+            if current_time.hour >= 14 and current_time.minute >= 30:
+                logger.warning(f"⏰ OPTIONS CUTOFF: {symbol} - No new options after 2:30 PM (theta decay risk)")
+                logger.info(f"   💡 Falling back to equity signal instead")
+                return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            
+            # 🚨 FIX #2: IV FILTER - Don't buy expensive options (high IV = expensive = likely to lose)
+            try:
+                iv_rank = await self._get_iv_rank(symbol)
+                if iv_rank and iv_rank > 50:
+                    logger.warning(f"📈 HIGH IV REJECTED: {symbol} IV Rank {iv_rank:.0f}% > 50% - Options too expensive")
+                    logger.info(f"   💡 Falling back to equity signal (cheaper, no theta decay)")
+                    return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            except Exception as iv_err:
+                logger.debug(f"IV check skipped for {symbol}: {iv_err}")
+            
+            # 🚨 FIX #3: EXPIRY CHECK - Avoid options with < 3 days to expiry (fast decay)
+            try:
+                days_to_expiry = await self._get_days_to_expiry(symbol)
+                if days_to_expiry is not None and days_to_expiry < 3:
+                    logger.warning(f"⏳ SHORT EXPIRY REJECTED: {symbol} only {days_to_expiry} days to expiry")
+                    logger.info(f"   💡 Falling back to equity signal (avoiding theta cliff)")
+                    return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            except Exception as exp_err:
+                logger.debug(f"Expiry check skipped for {symbol}: {exp_err}")
+            
+            # 🚨 FIX #4: MOMENTUM CONFIRMATION - Only enter options on strong moves
+            # Options need quick moves to overcome theta decay. Weak momentum = likely loss
+            momentum_check = await self._check_momentum_for_options(symbol, action, entry_price, metadata)
+            if not momentum_check.get('confirmed', False):
+                reason = momentum_check.get('reason', 'Weak momentum')
+                logger.warning(f"📉 MOMENTUM REJECTED: {symbol} - {reason}")
+                logger.info(f"   💡 Options need strong moves. Falling back to equity.")
+                return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            else:
+                logger.info(f"✅ MOMENTUM CONFIRMED: {symbol} - {momentum_check.get('details', '')}")
+            
+            # 🚨 FIX #6: TREND STRENGTH FILTER - Only trade options in strong trends
+            # Sideways/choppy markets kill options due to theta decay
+            trend_check = self._check_trend_strength_for_options(symbol, action, metadata)
+            if not trend_check.get('strong_trend', False):
+                reason = trend_check.get('reason', 'Weak/sideways trend')
+                logger.warning(f"📊 TREND REJECTED: {symbol} - {reason}")
+                logger.info(f"   💡 Options need trending markets. Falling back to equity.")
+                return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            else:
+                logger.info(f"✅ TREND CONFIRMED: {symbol} - {trend_check.get('details', '')}")
+            
             # 🎯 CRITICAL FIX: Convert to options symbol and force BUY action
             options_symbol, option_type = await self._convert_to_options_symbol(symbol, entry_price, action)
             
@@ -5592,6 +6144,16 @@ class BaseStrategy:
             
             # 🔍 DEBUG: Log premium fetching
             logger.info(f"   Options Premium: ₹{options_entry_price} (vs underlying ₹{entry_price})")
+            
+            # 🚨 FIX #5: GREEKS-AWARE CHECK - Verify delta/theta ratio is favorable
+            greeks_check = await self._check_greeks_for_options(options_symbol, options_entry_price, entry_price, option_type)
+            if not greeks_check.get('favorable', True):  # Default to True if check fails
+                reason = greeks_check.get('reason', 'Unfavorable Greeks')
+                logger.warning(f"📊 GREEKS REJECTED: {symbol} - {reason}")
+                logger.info(f"   💡 Options Greeks unfavorable. Falling back to equity.")
+                return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
+            elif greeks_check.get('details'):
+                logger.info(f"✅ GREEKS OK: {symbol} - {greeks_check.get('details', '')}")
             
             # 🚨 CRITICAL: Block options signals with zero LTP completely
             if options_entry_price <= 0:
@@ -7268,14 +7830,14 @@ class BaseStrategy:
             
             # If ATR calculation succeeded, use it; otherwise use volatility-based fallback
             if atr_percent and 0.5 <= atr_percent <= 10:  # Sanity check: 0.5% - 10% range
-                # 🚨 MATHEMATICAL FIX: Tighter multiplier for options
-                # Options have limited downside (premium), need tighter stops to preserve capital
-                base_risk_percent = min(atr_percent * 1.0, 0.10)  # 1.0x ATR (was 1.5x), max 10% (was 20%)
-                logger.info(f"✅ USING ATR: {underlying_symbol} - Risk={base_risk_percent*100:.1f}% (1.0x ATR, TIGHTENED)")
+                # 🚨 OPTIONS FIX: Much tighter stops - options decay fast, can't afford wide stops
+                # Max 6% stop loss (was 10%) - options need quick exits on wrong direction
+                base_risk_percent = min(atr_percent * 0.7, 0.06)  # 0.7x ATR (was 1.0x), max 6% (was 10%)
+                logger.info(f"✅ USING ATR: {underlying_symbol} - Risk={base_risk_percent*100:.1f}% (0.7x ATR, TIGHT OPTIONS STOP)")
             else:
-                # Fallback to volatility-based calculation
-                base_risk_percent = self._get_dynamic_risk_percentage(underlying_symbol, options_entry_price)
-                logger.info(f"⚠️ FALLBACK: {underlying_symbol} - Risk={base_risk_percent*100:.1f}% (volatility-based)")
+                # Fallback: Even tighter for options without ATR data
+                base_risk_percent = min(self._get_dynamic_risk_percentage(underlying_symbol, options_entry_price), 0.06)
+                logger.info(f"⚠️ FALLBACK: {underlying_symbol} - Risk={base_risk_percent*100:.1f}% (capped at 6%)")
             
             # DYNAMIC FIX: Use market-based reward-to-risk ratio for quality trading
             target_risk_reward_ratio = self._get_dynamic_target_risk_reward_ratio(underlying_symbol, options_entry_price, option_type)
@@ -7311,15 +7873,15 @@ class BaseStrategy:
             
         except Exception as e:
             logger.error(f"Error calculating options levels: {e}")
-            # 🚨 MATHEMATICAL FIX: Tighter conservative fallback
-            base_risk_percent = 0.08  # 8% fallback risk (was 15%)
+            # 🚨 OPTIONS FIX: Tight fallback for fast exits
+            base_risk_percent = 0.05  # 5% fallback risk (was 8%)
             risk_amount = options_entry_price * base_risk_percent  
-            target_ratio = 2.5  # Better fallback ratio (was 2.0)
+            target_ratio = 2.0  # Realistic 2:1 ratio (was 2.5)
             reward_amount = risk_amount * target_ratio
             stop_loss = options_entry_price - risk_amount
             target = options_entry_price + reward_amount
-            # Ensure minimum stop loss
-            stop_loss = max(stop_loss, options_entry_price * 0.10)  # Max 90% loss (was 95%)
+            # Ensure minimum stop loss - max 15% loss (was 90%)
+            stop_loss = max(stop_loss, options_entry_price * 0.85)
             return stop_loss, target
     
     def _calculate_dynamic_options_multiplier(self, option_type: str, options_entry_price: float) -> float:
@@ -8050,13 +8612,53 @@ class BaseStrategy:
             return 100000.0
 
     async def _get_volume_based_strike(self, underlying_symbol: str, current_price: float, expiry: str, action: str) -> int:
-        """🎯 USER REQUIREMENT: Select strike based on volume - use closest available strike to ATM"""
+        """
+        🎯 ALGORITHMIC FIX: Select OTM strikes for better risk/reward
+        
+        WHY OTM?
+        - ATM options are expensive (high premium = high risk)
+        - OTM options: cheaper premium, higher % gain on direction move
+        - 1-2 strikes OTM gives good delta (0.3-0.4) with lower cost
+        
+        LOGIC:
+        - For CALLS (bullish): Select strike ABOVE current price (1-2 strikes OTM)
+        - For PUTS (bearish): Select strike BELOW current price (1-2 strikes OTM)
+        """
         try:
             # First get ATM strike as baseline
             atm_strike = self._get_atm_strike_for_stock(current_price)
             
+            # Determine strike interval for this underlying
+            strike_interval = self._get_strike_interval(underlying_symbol, current_price)
+            
+            # 🎯 KEY ALGO CHANGE: Select OTM strike (1-2 strikes out of the money)
+            # Number of strikes OTM depends on market volatility
+            otm_offset = 1  # Default 1 strike OTM
+            
+            # Check if high volatility day - if so, go 2 strikes OTM for cheaper entry
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                if orchestrator and hasattr(orchestrator, 'market_volatility'):
+                    if orchestrator.market_volatility == 'HIGH':
+                        otm_offset = 2  # 2 strikes OTM in high vol
+                        logger.info(f"📈 HIGH VOLATILITY: Using 2 strikes OTM for cheaper entry")
+            except:
+                pass
+            
+            # Calculate OTM strike based on direction
+            if action.upper() == 'BUY':
+                # Bullish = BUY CALL = strike ABOVE current price (OTM call)
+                otm_strike = atm_strike + (strike_interval * otm_offset)
+                logger.info(f"🎯 OTM CALL: ATM={atm_strike} + {otm_offset} strikes = {otm_strike}")
+            else:
+                # Bearish = BUY PUT = strike BELOW current price (OTM put)
+                otm_strike = atm_strike - (strike_interval * otm_offset)
+                logger.info(f"🎯 OTM PUT: ATM={atm_strike} - {otm_offset} strikes = {otm_strike}")
+
             logger.info(f"🎯 STRIKE SELECTION for {underlying_symbol}")
-            logger.info(f"   Current Price: ₹{current_price:.2f}, Calculated ATM: {atm_strike}")
+            logger.info(f"   Current Price: ₹{current_price:.2f}, ATM: {atm_strike}, OTM Target: {otm_strike}")
+            logger.info(f"   Strike Interval: {strike_interval}, OTM Offset: {otm_offset}")
 
             # Get orchestrator to access Zerodha client
             from src.core.orchestrator import get_orchestrator_instance
@@ -8067,47 +8669,73 @@ class BaseStrategy:
                     # Map symbol to Zerodha format
                     zerodha_symbol = self._map_truedata_to_zerodha_symbol(underlying_symbol)
 
-                    # Find closest available strike using Zerodha's actual instruments
+                    # Find closest available strike to our OTM target
                     try:
                         closest_strike = await orchestrator.zerodha_client.find_closest_available_strike(
-                            zerodha_symbol, atm_strike, expiry
+                            zerodha_symbol, otm_strike, expiry  # Use OTM target, not ATM
                         )
 
                         # 🚨 DEFENSIVE: Validate the response from find_closest_available_strike
                         if closest_strike is None:
                             logger.warning(f"⚠️ find_closest_available_strike returned None for {zerodha_symbol}")
-                            return atm_strike
+                            return otm_strike
                         elif isinstance(closest_strike, int):
                             if closest_strike > 0:
-                                logger.info(f"✅ Using available strike: {closest_strike} (instead of {atm_strike})")
+                                logger.info(f"✅ Using OTM strike: {closest_strike} (target was {otm_strike})")
                                 return closest_strike
                             else:
-                                logger.warning(f"⚠️ Invalid strike value: {closest_strike}, using ATM: {atm_strike}")
-                                return atm_strike
+                                logger.warning(f"⚠️ Invalid strike value: {closest_strike}, using OTM: {otm_strike}")
+                                return otm_strike
                         else:
                             logger.error(f"❌ find_closest_available_strike returned {type(closest_strike)} instead of int: {closest_strike}")
-                            return atm_strike
+                            return otm_strike
 
                     except Exception as strike_error:
                         logger.error(f"❌ ERROR calling find_closest_available_strike for {zerodha_symbol}: {strike_error}")
                         logger.error(f"   Error type: {type(strike_error)}")
                         if "can't be used in 'await' expression" in str(strike_error):
                             logger.error(f"🚨 CRITICAL: Zerodha API returned non-coroutine in strike lookup")
-                        return atm_strike
+                        return otm_strike
 
                 except Exception as zerodha_err:
                     logger.warning(f"⚠️ Error accessing Zerodha strikes: {zerodha_err}")
-                    return atm_strike
+                    return otm_strike
             else:
-                logger.warning("⚠️ Zerodha client not available, using calculated ATM strike")
-            return atm_strike
-                
+                logger.warning("⚠️ Zerodha client not available, using calculated OTM strike")
+            return otm_strike
+
         except Exception as e:
-            logger.error(f"Error in volume-based strike selection: {e}")
-            # Fallback to ATM
+            logger.error(f"Error in OTM strike selection: {e}")
+            # Fallback to ATM (safer than random)
             atm_strike = self._get_atm_strike_for_stock(current_price)
             logger.warning(f"⚠️ Fallback to ATM strike: {atm_strike}")
             return atm_strike
+    
+    def _get_strike_interval(self, symbol: str, price: float) -> int:
+        """Get the strike interval for a symbol"""
+        symbol_upper = symbol.upper()
+        
+        # Index options - fixed intervals
+        if symbol_upper == 'NIFTY':
+            return 50
+        elif symbol_upper == 'BANKNIFTY':
+            return 100
+        elif symbol_upper == 'FINNIFTY':
+            return 50
+        elif symbol_upper == 'SENSEX':
+            return 100
+        else:
+            # Stock options - interval based on price
+            if price > 5000:
+                return 100
+            elif price > 1000:
+                return 50
+            elif price > 500:
+                return 25
+            elif price > 100:
+                return 10
+            else:
+                return 5
     
     def _get_strikes_volume_data(self, underlying_symbol: str, strikes: List[int], expiry: str, action: str) -> Dict:
         """Get volume data for strikes from market data sources"""
