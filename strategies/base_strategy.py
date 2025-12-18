@@ -6071,7 +6071,8 @@ class BaseStrategy:
             # 🚨 FIX #1: TIME-BASED FILTER - No new options after 2:30 PM (theta acceleration)
             from datetime import datetime
             current_time = datetime.now()
-            if current_time.hour >= 14 and current_time.minute >= 30:
+            # FIXED: block if hour > 14 (3pm+) OR if exactly 2:30pm+
+            if current_time.hour > 14 or (current_time.hour == 14 and current_time.minute >= 30):
                 logger.warning(f"⏰ OPTIONS CUTOFF: {symbol} - No new options after 2:30 PM (theta decay risk)")
                 logger.info(f"   💡 Falling back to equity signal instead")
                 return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
