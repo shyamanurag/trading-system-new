@@ -1106,11 +1106,16 @@ class ZerodhaIntegration:
                 return False
             
             # Get NSE instruments (stocks) AND INDICES (NIFTY, BANKNIFTY, etc.)
+            # 🔥 FIX: Check if kite is available before trying to fetch
+            if not self.kite:
+                logger.warning("⚠️ WebSocket: Waiting for Zerodha token - KiteConnect not initialized")
+                return False
+                
             nse_instruments = await self.get_instruments('NSE')
             indices_instruments = await self.get_instruments('INDICES')
-            
+
             if not nse_instruments and not indices_instruments:
-                logger.error("❌ Could not fetch NSE or INDICES instruments")
+                logger.error("❌ Could not fetch NSE or INDICES instruments - check Zerodha authentication")
                 return False
             
             # Build symbol to token mapping from BOTH sources
@@ -1777,6 +1782,18 @@ class ZerodhaIntegration:
             
             # Cache miss or expired - fetch fresh data with rate limit protection
             logger.info(f"🔄 Fetching fresh {exchange} instruments from Zerodha...")
+            
+            # 🔥 FIX: Check if kite client is initialized before calling API
+            if not self.kite:
+                logger.error(f"❌ Cannot fetch {exchange} instruments - KiteConnect not initialized (no token?)")
+                # Return cached data if available
+                if exchange == 'NFO' and self._nfo_instruments:
+                    logger.info(f"🔄 Returning cached NFO instruments while awaiting token")
+                    return self._nfo_instruments
+                elif exchange == 'NSE' and self._nse_instruments:
+                    logger.info(f"🔄 Returning cached NSE instruments while awaiting token")
+                    return self._nse_instruments
+                return []
             
             # Add delay to prevent rate limiting
             if hasattr(self, '_last_instruments_call'):

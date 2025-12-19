@@ -1191,15 +1191,18 @@ class TradingOrchestrator:
             self.logger.info(f"🔍 EXHAUSTIVE token search for user: {user_id}")
             
             # PRIORITIZED TOKEN SEARCH: Check specific user ID first, then fallbacks
+            # 🔥 FIX: Include ALL possible token key patterns from ALL auth endpoints
             master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
             token_keys_to_check = [
                 f"zerodha:token:{user_id}",                    # 1. Exact user ID (highest priority)
                 f"zerodha:token:{master_user_id}",             # 2. Master user ID  
-                f"zerodha:token:QSW899",                       # 3. Specific known user
-                f"zerodha:access_token",                       # 4. Simple pattern
-                f"zerodha:{user_id}:access_token",             # 5. Alternative pattern
-                f"zerodha_token_{user_id}",                    # 6. Alternative format
-                f"zerodha:token:ZERODHA_DEFAULT"               # 7. Default pattern
+                f"zerodha:multi:token:{user_id}",              # 3. 🔥 NEW: Multi-user auth pattern
+                f"zerodha:multi:token:{master_user_id}",       # 4. 🔥 NEW: Multi-user master pattern
+                f"zerodha:token:QSW899",                       # 5. Specific known user
+                f"zerodha:access_token",                       # 6. Simple pattern
+                f"zerodha:{user_id}:access_token",             # 7. Alternative pattern
+                f"zerodha_token_{user_id}",                    # 8. Alternative format
+                f"zerodha:token:ZERODHA_DEFAULT"               # 9. Default pattern
             ]
             
             # First check priority keys for the specific user
@@ -1260,7 +1263,7 @@ class TradingOrchestrator:
             self._memory_token_store[user_id] = access_token
             self.logger.info(f"✅ Token stored in memory for user: {user_id}")
             
-            # Try to store in Redis as well
+            # Try to store in Redis as well - with ALL key patterns for consistency
             try:
                 import redis.asyncio as redis
                 import os
@@ -1274,11 +1277,22 @@ class TradingOrchestrator:
                         ssl_check_hostname=False
                     )
                     
-                    # Store token with expiration (8 hours)
-                    redis_key = f"zerodha:token:{user_id}"
-                    await redis_client.set(redis_key, access_token, ex=28800)  # 8 hours
+                    # 🔥 FIX: Store token with ALL key patterns for maximum compatibility
+                    master_user_id = os.getenv('ZERODHA_USER_ID', 'QSW899')
+                    token_keys_to_store = [
+                        f"zerodha:token:{user_id}",
+                        f"zerodha:token:{master_user_id}",
+                        f"zerodha:multi:token:{user_id}",
+                        f"zerodha:multi:token:{master_user_id}",
+                        f"zerodha:access_token",
+                    ]
+                    
+                    # Store token with expiration (8 hours) in ALL key patterns
+                    for redis_key in token_keys_to_store:
+                        await redis_client.set(redis_key, access_token, ex=28800)  # 8 hours
+                    
                     await redis_client.close()
-                    self.logger.info(f"✅ Token stored in Redis at {redis_key}")
+                    self.logger.info(f"✅ Token stored in Redis with {len(token_keys_to_store)} key patterns")
                 else:
                     self.logger.warning("⚠️ REDIS_URL not available, using memory storage only")
             except Exception as redis_error:

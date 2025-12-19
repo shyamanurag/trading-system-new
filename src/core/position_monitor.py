@@ -188,7 +188,7 @@ class PositionMonitor:
     async def _update_realized_pnl_on_exit(self, condition, exit_signal: Dict):
         """
         🚨 CRITICAL: Update realized P&L when position exits
-        Integrates with daily loss limit tracking
+        Integrates with daily loss limit tracking AND signal performance feedback
         """
         try:
             symbol = condition.symbol
@@ -218,6 +218,23 @@ class PositionMonitor:
                 from src.core.position_opening_decision import position_decision_system
                 position_decision_system.update_realized_pnl(pnl, symbol)
                 logger.info(f"📊 Updated daily realized P&L (fallback): {symbol} → {'Profit' if pnl > 0 else 'Loss'} ₹{abs(pnl):,.2f}")
+            
+            # 🎯 NEW: FEEDBACK LOOP - Update signal performance tracking!
+            # This allows the system to LEARN from trade outcomes
+            try:
+                from src.core.signal_enhancement import signal_enhancer
+                
+                # Get strategy name from position metadata
+                strategy_name = getattr(position, 'strategy', None) or 'unknown'
+                signal_id = f"{symbol}_{position.entry_time.strftime('%Y%m%d_%H%M%S') if hasattr(position, 'entry_time') and position.entry_time else 'unknown'}"
+                
+                was_profitable = pnl > 0
+                signal_enhancer.update_signal_outcome(signal_id, strategy_name, was_profitable, pnl)
+                
+                logger.info(f"🎯 FEEDBACK LOOP: {strategy_name} {symbol} → {'WIN' if was_profitable else 'LOSS'} ₹{pnl:,.2f}")
+                
+            except Exception as feedback_err:
+                logger.warning(f"⚠️ Feedback loop update failed: {feedback_err}")
                 
         except Exception as e:
             logger.error(f"❌ Error updating realized P&L for {symbol}: {e}")

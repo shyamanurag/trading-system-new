@@ -4627,6 +4627,388 @@ class BaseStrategy:
             ema[i] = (data[i] * multiplier) + (ema[i-1] * (1 - multiplier))
         
         return ema
+
+    # ============================================================================
+    # 🎯 VOLUME-BASED LEADING INDICATORS - CAN PREDICT PRICE MOVES!
+    # ============================================================================
+    
+    def calculate_obv(self, prices: List[float], volumes: List[float]) -> Dict:
+        """
+        🎯 ON-BALANCE VOLUME (OBV) - A TRUE LEADING INDICATOR!
+        
+        OBV LEADS PRICE because:
+        - Smart money accumulates BEFORE price moves up
+        - Distribution happens BEFORE price drops
+        - Volume precedes price in most cases
+        
+        Returns:
+            obv: Current OBV value
+            obv_trend: 'rising', 'falling', 'flat'
+            obv_divergence: 'bullish' (price down, OBV up), 'bearish' (price up, OBV down), None
+            obv_breakout: True if OBV making new highs/lows before price
+            accumulation_signal: True if smart money accumulating
+        """
+        try:
+            if len(prices) < 10 or len(volumes) < 10:
+                return {
+                    'obv': 0, 'obv_trend': 'flat', 'obv_divergence': None,
+                    'obv_breakout': False, 'accumulation_signal': False
+                }
+            
+            prices = np.array(prices[-50:])  # Use last 50 periods
+            volumes = np.array(volumes[-50:])
+            
+            # Calculate OBV
+            obv = np.zeros(len(prices))
+            obv[0] = volumes[0]
+            
+            for i in range(1, len(prices)):
+                if prices[i] > prices[i-1]:
+                    obv[i] = obv[i-1] + volumes[i]  # Price up = add volume
+                elif prices[i] < prices[i-1]:
+                    obv[i] = obv[i-1] - volumes[i]  # Price down = subtract volume
+                else:
+                    obv[i] = obv[i-1]  # Price unchanged = OBV unchanged
+            
+            # OBV Trend (using 5-period regression)
+            if len(obv) >= 5:
+                obv_slope = (obv[-1] - obv[-5]) / 5
+                obv_avg = np.mean(obv[-10:])
+                obv_trend = 'rising' if obv_slope > obv_avg * 0.01 else ('falling' if obv_slope < -obv_avg * 0.01 else 'flat')
+            else:
+                obv_trend = 'flat'
+            
+            # 🎯 OBV DIVERGENCE - THE KEY LEADING SIGNAL!
+            # Bullish divergence: Price making lower lows, OBV making higher lows
+            # Bearish divergence: Price making higher highs, OBV making lower highs
+            obv_divergence = None
+            if len(prices) >= 10:
+                price_5d_change = prices[-1] - prices[-5]
+                obv_5d_change = obv[-1] - obv[-5]
+                
+                # Bullish divergence: price down but OBV up (accumulation!)
+                if price_5d_change < 0 and obv_5d_change > 0:
+                    obv_divergence = 'bullish'
+                # Bearish divergence: price up but OBV down (distribution!)
+                elif price_5d_change > 0 and obv_5d_change < 0:
+                    obv_divergence = 'bearish'
+            
+            # OBV Breakout - OBV making new highs/lows before price
+            obv_20_high = np.max(obv[-20:]) if len(obv) >= 20 else obv[-1]
+            obv_20_low = np.min(obv[-20:]) if len(obv) >= 20 else obv[-1]
+            price_20_high = np.max(prices[-20:]) if len(prices) >= 20 else prices[-1]
+            price_20_low = np.min(prices[-20:]) if len(prices) >= 20 else prices[-1]
+            
+            obv_breakout = False
+            if obv[-1] >= obv_20_high * 0.99 and prices[-1] < price_20_high * 0.98:
+                obv_breakout = True  # OBV at high but price not = bullish setup
+            elif obv[-1] <= obv_20_low * 1.01 and prices[-1] > price_20_low * 1.02:
+                obv_breakout = True  # OBV at low but price not = bearish setup
+            
+            # Accumulation Signal - sustained OBV rise without proportional price rise
+            accumulation_signal = False
+            if len(prices) >= 10:
+                price_pct_change = (prices[-1] - prices[-10]) / prices[-10] * 100
+                obv_pct_change = (obv[-1] - obv[-10]) / (abs(obv[-10]) + 1) * 100
+                
+                # OBV rising faster than price = accumulation
+                if obv_pct_change > price_pct_change + 5:  # OBV +5% more than price
+                    accumulation_signal = True
+            
+            return {
+                'obv': obv[-1],
+                'obv_trend': obv_trend,
+                'obv_divergence': obv_divergence,
+                'obv_breakout': obv_breakout,
+                'accumulation_signal': accumulation_signal,
+                'obv_slope': obv_slope if len(obv) >= 5 else 0
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating OBV: {e}")
+            return {
+                'obv': 0, 'obv_trend': 'flat', 'obv_divergence': None,
+                'obv_breakout': False, 'accumulation_signal': False
+            }
+
+    def calculate_money_flow_index(self, highs: List[float], lows: List[float], 
+                                   closes: List[float], volumes: List[float], period: int = 14) -> Dict:
+        """
+        🎯 MONEY FLOW INDEX (MFI) - RSI with Volume!
+        
+        MFI is better than RSI because:
+        - Incorporates volume (smart money leaves volume footprints)
+        - More reliable overbought/oversold signals
+        - Volume-weighted so it respects institutional activity
+        
+        Returns:
+            mfi: Current MFI value (0-100)
+            mfi_divergence: 'bullish', 'bearish', or None
+            overbought: True if MFI > 80
+            oversold: True if MFI < 20
+        """
+        try:
+            if len(closes) < period + 1:
+                return {'mfi': 50, 'mfi_divergence': None, 'overbought': False, 'oversold': False}
+            
+            highs = np.array(highs[-(period+5):])
+            lows = np.array(lows[-(period+5):])
+            closes = np.array(closes[-(period+5):])
+            volumes = np.array(volumes[-(period+5):])
+            
+            # Typical Price
+            typical_price = (highs + lows + closes) / 3
+            
+            # Raw Money Flow
+            raw_money_flow = typical_price * volumes
+            
+            # Positive and Negative Money Flow
+            positive_flow = np.zeros(len(typical_price))
+            negative_flow = np.zeros(len(typical_price))
+            
+            for i in range(1, len(typical_price)):
+                if typical_price[i] > typical_price[i-1]:
+                    positive_flow[i] = raw_money_flow[i]
+                elif typical_price[i] < typical_price[i-1]:
+                    negative_flow[i] = raw_money_flow[i]
+            
+            # Sum over period
+            positive_sum = np.sum(positive_flow[-period:])
+            negative_sum = np.sum(negative_flow[-period:])
+            
+            # Money Flow Ratio and MFI
+            if negative_sum == 0:
+                mfi = 100
+            else:
+                money_ratio = positive_sum / negative_sum
+                mfi = 100 - (100 / (1 + money_ratio))
+            
+            # MFI Divergence
+            mfi_divergence = None
+            if len(closes) >= 10:
+                price_trend = closes[-1] - closes[-5]
+                # Would need historical MFI for proper divergence, simplified here
+                if mfi < 30 and price_trend < 0:
+                    mfi_divergence = 'bullish'  # Oversold + falling price = potential reversal
+                elif mfi > 70 and price_trend > 0:
+                    mfi_divergence = 'bearish'  # Overbought + rising price = potential reversal
+            
+            return {
+                'mfi': mfi,
+                'mfi_divergence': mfi_divergence,
+                'overbought': mfi > 80,
+                'oversold': mfi < 20
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating MFI: {e}")
+            return {'mfi': 50, 'mfi_divergence': None, 'overbought': False, 'oversold': False}
+
+    def calculate_real_vwap(self, prices: List[float], volumes: List[float], 
+                            highs: List[float] = None, lows: List[float] = None) -> Dict:
+        """
+        🎯 REAL VWAP CALCULATION - Fixed version!
+        
+        VWAP = Σ(Price × Volume) / Σ(Volume)
+        
+        Returns:
+            vwap: Volume Weighted Average Price
+            vwap_deviation: How far current price is from VWAP (%)
+            above_vwap: True if price above VWAP (bullish)
+            vwap_trend: 'rising', 'falling', 'flat'
+        """
+        try:
+            if len(prices) < 5 or len(volumes) < 5:
+                return {'vwap': 0, 'vwap_deviation': 0, 'above_vwap': False, 'vwap_trend': 'flat'}
+            
+            prices = np.array(prices[-50:])
+            volumes = np.array(volumes[-50:])
+            
+            # Use typical price if OHLC available, otherwise just close
+            if highs is not None and lows is not None:
+                highs = np.array(highs[-50:])
+                lows = np.array(lows[-50:])
+                typical_prices = (highs + lows + prices) / 3
+            else:
+                typical_prices = prices
+            
+            # REAL VWAP: Each price weighted by its own volume
+            cumulative_volume = np.cumsum(volumes)
+            cumulative_vwap = np.cumsum(typical_prices * volumes)
+            
+            # Avoid division by zero
+            vwap_series = np.where(cumulative_volume > 0, 
+                                   cumulative_vwap / cumulative_volume, 
+                                   typical_prices)
+            
+            current_vwap = vwap_series[-1]
+            current_price = prices[-1]
+            
+            # VWAP Deviation
+            vwap_deviation = ((current_price - current_vwap) / current_vwap * 100) if current_vwap > 0 else 0
+            
+            # VWAP Trend
+            if len(vwap_series) >= 5:
+                vwap_slope = vwap_series[-1] - vwap_series[-5]
+                vwap_trend = 'rising' if vwap_slope > 0 else ('falling' if vwap_slope < 0 else 'flat')
+            else:
+                vwap_trend = 'flat'
+            
+            return {
+                'vwap': current_vwap,
+                'vwap_deviation': vwap_deviation,
+                'above_vwap': current_price > current_vwap,
+                'vwap_trend': vwap_trend
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating real VWAP: {e}")
+            return {'vwap': 0, 'vwap_deviation': 0, 'above_vwap': False, 'vwap_trend': 'flat'}
+
+    def calculate_volume_price_trend(self, prices: List[float], volumes: List[float]) -> Dict:
+        """
+        🎯 VOLUME PRICE TREND (VPT) - Another leading indicator!
+        
+        VPT = Previous VPT + Volume × (Price Change %)
+        
+        Shows the strength of price moves based on volume.
+        Divergence between VPT and price can signal reversals.
+        """
+        try:
+            if len(prices) < 10 or len(volumes) < 10:
+                return {'vpt': 0, 'vpt_trend': 'flat', 'vpt_divergence': None}
+            
+            prices = np.array(prices[-30:])
+            volumes = np.array(volumes[-30:])
+            
+            # Calculate VPT
+            vpt = np.zeros(len(prices))
+            for i in range(1, len(prices)):
+                price_change_pct = (prices[i] - prices[i-1]) / prices[i-1]
+                vpt[i] = vpt[i-1] + volumes[i] * price_change_pct
+            
+            # VPT Trend
+            vpt_slope = vpt[-1] - vpt[-5] if len(vpt) >= 5 else 0
+            vpt_trend = 'rising' if vpt_slope > 0 else ('falling' if vpt_slope < 0 else 'flat')
+            
+            # VPT Divergence
+            vpt_divergence = None
+            price_change = prices[-1] - prices[-5] if len(prices) >= 5 else 0
+            
+            if price_change < 0 and vpt_slope > 0:
+                vpt_divergence = 'bullish'  # Price down, VPT up = accumulation
+            elif price_change > 0 and vpt_slope < 0:
+                vpt_divergence = 'bearish'  # Price up, VPT down = distribution
+            
+            return {
+                'vpt': vpt[-1],
+                'vpt_trend': vpt_trend,
+                'vpt_divergence': vpt_divergence
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating VPT: {e}")
+            return {'vpt': 0, 'vpt_trend': 'flat', 'vpt_divergence': None}
+
+    def get_volume_leading_signals(self, symbol: str, prices: List[float], volumes: List[float],
+                                   highs: List[float] = None, lows: List[float] = None) -> Dict:
+        """
+        🎯 MASTER FUNCTION: Get all volume-based leading signals
+        
+        Combines OBV, MFI, VWAP, VPT into a single leading indicator score.
+        
+        Returns:
+            leading_score: -100 to +100 (negative=bearish, positive=bullish)
+            leading_signals: List of active signals
+            should_buy: True if strong buy setup
+            should_sell: True if strong sell setup
+            accumulation: True if smart money accumulating
+            distribution: True if smart money distributing
+        """
+        try:
+            signals = []
+            leading_score = 0
+            
+            # OBV Analysis
+            obv_data = self.calculate_obv(prices, volumes)
+            if obv_data['obv_divergence'] == 'bullish':
+                leading_score += 30
+                signals.append('OBV_BULLISH_DIVERGENCE')
+            elif obv_data['obv_divergence'] == 'bearish':
+                leading_score -= 30
+                signals.append('OBV_BEARISH_DIVERGENCE')
+            
+            if obv_data['accumulation_signal']:
+                leading_score += 20
+                signals.append('ACCUMULATION')
+            
+            if obv_data['obv_trend'] == 'rising':
+                leading_score += 10
+            elif obv_data['obv_trend'] == 'falling':
+                leading_score -= 10
+            
+            # MFI Analysis
+            if highs and lows:
+                mfi_data = self.calculate_money_flow_index(highs, lows, prices, volumes)
+                if mfi_data['oversold']:
+                    leading_score += 15
+                    signals.append('MFI_OVERSOLD')
+                elif mfi_data['overbought']:
+                    leading_score -= 15
+                    signals.append('MFI_OVERBOUGHT')
+                
+                if mfi_data['mfi_divergence'] == 'bullish':
+                    leading_score += 20
+                    signals.append('MFI_BULLISH_DIVERGENCE')
+                elif mfi_data['mfi_divergence'] == 'bearish':
+                    leading_score -= 20
+                    signals.append('MFI_BEARISH_DIVERGENCE')
+            
+            # VWAP Analysis
+            vwap_data = self.calculate_real_vwap(prices, volumes, highs, lows)
+            if vwap_data['above_vwap'] and vwap_data['vwap_trend'] == 'rising':
+                leading_score += 10
+                signals.append('ABOVE_RISING_VWAP')
+            elif not vwap_data['above_vwap'] and vwap_data['vwap_trend'] == 'falling':
+                leading_score -= 10
+                signals.append('BELOW_FALLING_VWAP')
+            
+            # VPT Analysis
+            vpt_data = self.calculate_volume_price_trend(prices, volumes)
+            if vpt_data['vpt_divergence'] == 'bullish':
+                leading_score += 15
+                signals.append('VPT_BULLISH_DIVERGENCE')
+            elif vpt_data['vpt_divergence'] == 'bearish':
+                leading_score -= 15
+                signals.append('VPT_BEARISH_DIVERGENCE')
+            
+            # Determine action
+            should_buy = leading_score >= 40  # Strong bullish signals
+            should_sell = leading_score <= -40  # Strong bearish signals
+            accumulation = 'ACCUMULATION' in signals or obv_data['accumulation_signal']
+            distribution = 'OBV_BEARISH_DIVERGENCE' in signals or 'VPT_BEARISH_DIVERGENCE' in signals
+            
+            logger.debug(f"📊 {symbol} VOLUME LEADING: Score={leading_score}, Signals={signals}")
+            
+            return {
+                'leading_score': leading_score,
+                'leading_signals': signals,
+                'should_buy': should_buy,
+                'should_sell': should_sell,
+                'accumulation': accumulation,
+                'distribution': distribution,
+                'obv_data': obv_data,
+                'vwap_data': vwap_data,
+                'vpt_data': vpt_data
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating volume leading signals for {symbol}: {e}")
+            return {
+                'leading_score': 0, 'leading_signals': [],
+                'should_buy': False, 'should_sell': False,
+                'accumulation': False, 'distribution': False
+            }
     
     def detect_market_regime(self, symbol: str, prices: List[float], volumes: List[float]) -> Dict:
         """
@@ -6794,22 +7176,68 @@ class BaseStrategy:
             logger.info(f"   💵 Position Value: ₹{position_value:,.0f} | Margin: ₹{margin_required:,.0f} | Max Loss: ₹{actual_max_loss:,.0f}")
             
             # ============================================================
-            # 🎯 ADAPTIVE ENTRY PRICING (SWING/LIMIT ORDER LOGIC)
+            # 🎯 SMART ENTRY PRICING (PULLBACK-AWARE)
             # ============================================================
-            # Strong signals (>9): MARKET - don't miss the opportunity
-            # Medium signals (8-9): LIMIT at 0.15% better price
-            # Normal signals (7-8): LIMIT at 0.30% better price
-            # This reduces slippage and gets better entries
+            # PROBLEM: Entering at LTP after signal confirmation = entering at peak
+            # SOLUTION: Check if we're at a peak and wait for pullback
             
             original_entry = entry_price
             order_type = 'MARKET'  # Default
             limit_discount_pct = 0.0
             limit_validity_seconds = 300  # 5 minutes for limit orders
+            peak_detected = False
+            pullback_available = False
             
             # Normalize confidence to 0-10 scale if needed
             conf_normalized = confidence if confidence > 1.0 else confidence * 10.0
             
-            if conf_normalized >= 9.0:
+            # 🎯 PEAK DETECTION: Check if current price is at recent high/low
+            try:
+                if hasattr(self, 'price_history') and symbol in self.price_history:
+                    prices = self.price_history.get(symbol, [])
+                    if len(prices) >= 10:
+                        recent_high = max(prices[-10:])
+                        recent_low = min(prices[-10:])
+                        price_range = recent_high - recent_low if recent_high > recent_low else 1
+                        
+                        if action.upper() == 'BUY':
+                            # Check if we're near the recent high (peak)
+                            distance_from_high = (recent_high - original_entry) / price_range
+                            if distance_from_high < 0.2:  # Within top 20% of range
+                                peak_detected = True
+                                logger.warning(f"⚠️ {symbol}: BUY at PEAK! Price near recent high (₹{recent_high:.2f})")
+                            elif distance_from_high > 0.4:  # Price has pulled back
+                                pullback_available = True
+                                logger.info(f"✅ {symbol}: PULLBACK DETECTED! Good entry (distance from high: {distance_from_high:.0%})")
+                        else:  # SELL
+                            # Check if we're near the recent low (trough)
+                            distance_from_low = (original_entry - recent_low) / price_range
+                            if distance_from_low < 0.2:  # Within bottom 20% of range
+                                peak_detected = True
+                                logger.warning(f"⚠️ {symbol}: SELL at TROUGH! Price near recent low (₹{recent_low:.2f})")
+                            elif distance_from_low > 0.4:  # Price has bounced
+                                pullback_available = True
+                                logger.info(f"✅ {symbol}: BOUNCE DETECTED! Good entry (distance from low: {distance_from_low:.0%})")
+            except Exception as peak_err:
+                logger.debug(f"Peak detection skipped: {peak_err}")
+            
+            # 🎯 ADAPTIVE ENTRY BASED ON PEAK DETECTION
+            if pullback_available and conf_normalized >= 8.5:
+                # Price has pulled back AND signal is strong - use MARKET to capture it
+                order_type = 'MARKET'
+                limit_discount_pct = 0.0
+                logger.info(f"🎯 PULLBACK ENTRY: {symbol} - Price already favorable → MARKET order")
+            elif peak_detected:
+                # At a peak - use aggressive LIMIT to only catch a pullback
+                order_type = 'LIMIT'
+                limit_discount_pct = 0.50  # Need 0.5% pullback from peak
+                limit_validity_seconds = 600  # 10 minutes to allow pullback
+                if action.upper() == 'BUY':
+                    entry_price = original_entry * (1 - limit_discount_pct / 100)
+                else:  # SELL
+                    entry_price = original_entry * (1 + limit_discount_pct / 100)
+                logger.info(f"⚠️ PEAK ENTRY: {symbol} at peak → LIMIT at {limit_discount_pct}% better (₹{original_entry:.2f} → ₹{entry_price:.2f})")
+            elif conf_normalized >= 9.0:
                 # 🔥 STRONG SIGNAL: Use MARKET order - don't miss it!
                 order_type = 'MARKET'
                 limit_discount_pct = 0.0

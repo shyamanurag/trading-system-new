@@ -1104,14 +1104,91 @@ class EnhancedMomentumSurfer(BaseStrategy):
                                 logger.warning(f"⚠️ {stock}: SELL signal near SUPPORT ({nearest_level.get('name')}) at ₹{nearest_level.get('price')}")
                                 signal['confidence'] = signal.get('confidence', 8.0) * 0.92
                         
+                        # 🎯 NEW: VOLUME LEADING INDICATORS - Can PREDICT price moves!
+                        # Get volume data for leading indicator analysis
+                        stock_data = market_data.get(stock, {})
+                        prices = []
+                        volumes = []
+                        highs = []
+                        lows = []
+                        
+                        # Extract price/volume data from MTF data or price history
+                        if hasattr(self, 'mtf_data') and stock in self.mtf_data:
+                            candles = self.mtf_data[stock].get('5min', [])
+                            if candles:
+                                prices = [c.get('close', 0) for c in candles if c.get('close', 0) > 0]
+                                volumes = [c.get('volume', 0) for c in candles if c.get('volume', 0) > 0]
+                                highs = [c.get('high', 0) for c in candles if c.get('high', 0) > 0]
+                                lows = [c.get('low', 0) for c in candles if c.get('low', 0) > 0]
+                        
+                        # Get volume-based leading signals
+                        volume_leading = {}
+                        if len(prices) >= 10 and len(volumes) >= 10:
+                            volume_leading = self.get_volume_leading_signals(
+                                stock, prices, volumes, highs if len(highs) >= 10 else None, lows if len(lows) >= 10 else None
+                            )
+                            
+                            leading_score = volume_leading.get('leading_score', 0)
+                            leading_signals = volume_leading.get('leading_signals', [])
+                            
+                            # 🎯 USE VOLUME LEADING INDICATORS TO ADJUST CONFIDENCE
+                            if signal_direction == 'BUY':
+                                if leading_score >= 30:
+                                    # Volume indicates accumulation - boost confidence
+                                    signal['confidence'] = signal.get('confidence', 8.0) * 1.1
+                                    logger.info(f"🎯 {stock}: VOLUME LEADS UP! Score={leading_score}, Signals={leading_signals}")
+                                elif leading_score <= -20:
+                                    # Volume indicates distribution - reduce confidence or skip
+                                    signal['confidence'] = signal.get('confidence', 8.0) * 0.8
+                                    logger.warning(f"⚠️ {stock}: BUY signal but DISTRIBUTION detected (Score={leading_score})")
+                                    if volume_leading.get('distribution'):
+                                        logger.warning(f"🚫 {stock}: BUY signal BLOCKED - Smart money distributing!")
+                                        continue  # Skip this signal
+                            
+                            elif signal_direction == 'SELL':
+                                if leading_score <= -30:
+                                    # Volume indicates distribution - boost confidence
+                                    signal['confidence'] = signal.get('confidence', 8.0) * 1.1
+                                    logger.info(f"🎯 {stock}: VOLUME LEADS DOWN! Score={leading_score}, Signals={leading_signals}")
+                                elif leading_score >= 20:
+                                    # Volume indicates accumulation - reduce confidence or skip
+                                    signal['confidence'] = signal.get('confidence', 8.0) * 0.8
+                                    logger.warning(f"⚠️ {stock}: SELL signal but ACCUMULATION detected (Score={leading_score})")
+                                    if volume_leading.get('accumulation'):
+                                        logger.warning(f"🚫 {stock}: SELL signal BLOCKED - Smart money accumulating!")
+                                        continue  # Skip this signal
+                        
+                        # 🎯 NEW: CALIBRATE CONFIDENCE based on actual performance
+                        try:
+                            from src.core.signal_enhancement import signal_enhancer
+                            
+                            # Get calibrated confidence based on actual win rate
+                            strategy_name = self.name if hasattr(self, 'name') else 'momentum_surfer'
+                            base_conf = signal.get('confidence', 8.0)
+                            calibrated_conf, cal_reason = signal_enhancer.get_calibrated_confidence(strategy_name, base_conf)
+                            
+                            if abs(calibrated_conf - base_conf) > 0.3:
+                                signal['confidence'] = calibrated_conf
+                                signal['metadata']['confidence_calibration'] = cal_reason
+                            
+                            # Check if strategy should be allowed based on performance
+                            allowed, perf_reason = signal_enhancer.should_allow_signal_based_on_performance(strategy_name, calibrated_conf)
+                            if not allowed:
+                                logger.warning(f"🚫 {stock}: Signal BLOCKED by performance filter: {perf_reason}")
+                                continue
+                                
+                        except Exception as cal_err:
+                            logger.debug(f"Confidence calibration skipped: {cal_err}")
+                        
                         # Add all analysis metadata to signal
                         signal['metadata'] = signal.get('metadata', {})
                         signal['metadata']['market_depth'] = depth_analysis
                         signal['metadata']['oi_analysis'] = oi_analysis
                         signal['metadata']['daily_weekly_levels'] = level_analysis
+                        signal['metadata']['volume_leading'] = volume_leading
                         
                         signals.append(signal)
-                        logger.info(f"✅ Signal generated for {stock}: {len(signals)}/{max_signals_per_cycle} (Depth: {depth_rec}, OI: {oi_bias}, Level: {level_recommendation})")
+                        logger.info(f"✅ Signal generated for {stock}: {len(signals)}/{max_signals_per_cycle} (Depth: {depth_rec}, OI: {oi_bias}, Level: {level_recommendation}, VolScore: {volume_leading.get('leading_score', 0)})")
 
             logger.info(f"📊 Smart Intraday Options generated {len(signals)} signals (limit: {max_signals_per_cycle})")
             return signals

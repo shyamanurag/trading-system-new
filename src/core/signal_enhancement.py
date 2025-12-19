@@ -537,6 +537,184 @@ class SignalEnhancer:
             'min_confluence_score': self.min_confluence_score
         }
 
+    def get_calibrated_confidence(self, strategy: str, base_confidence: float) -> Tuple[float, str]:
+        """
+        🎯 CALIBRATED CONFIDENCE - Adjusts arbitrary confidence based on ACTUAL win rate!
+        
+        If a strategy claims 8.0/10 confidence but only wins 40% of trades,
+        the calibrated confidence will be reduced.
+        
+        Args:
+            strategy: Strategy name
+            base_confidence: Original confidence (0-10)
+            
+        Returns:
+            calibrated_confidence: Adjusted confidence based on actual performance
+            reason: Explanation of adjustment
+        """
+        try:
+            if strategy not in self.strategy_performance:
+                return base_confidence, "NO_HISTORY"
+            
+            perf = self.strategy_performance[strategy]
+            
+            # Need at least 10 trades for meaningful calibration
+            if perf['total_signals'] < 10:
+                return base_confidence, f"INSUFFICIENT_DATA ({perf['total_signals']} trades)"
+            
+            actual_win_rate = perf['win_rate']
+            
+            # What confidence SHOULD be based on actual win rate
+            # Confidence 8.0 should mean 80% win rate
+            expected_win_rate = base_confidence / 10.0
+            
+            # Calibration factor: actual / expected
+            # If actual is 40% but expected is 80%, factor is 0.5
+            if expected_win_rate > 0:
+                calibration_factor = actual_win_rate / expected_win_rate
+            else:
+                calibration_factor = 1.0
+            
+            # Limit adjustment to ±30%
+            calibration_factor = max(0.7, min(1.3, calibration_factor))
+            
+            calibrated_confidence = base_confidence * calibration_factor
+            
+            # Also consider recent performance (last 20 trades)
+            recent_signals = [s for s in self.signal_history if s['strategy'] == strategy][-20:]
+            if len(recent_signals) >= 5:
+                recent_wins = sum(1 for s in recent_signals if s['profitable'])
+                recent_win_rate = recent_wins / len(recent_signals)
+                
+                # If recent performance is worse than historical, penalize more
+                if recent_win_rate < actual_win_rate - 0.1:
+                    calibrated_confidence *= 0.9  # 10% penalty for deteriorating performance
+                    reason = f"CALIBRATED: {actual_win_rate:.0%} win rate, RECENT WORSE ({recent_win_rate:.0%})"
+                elif recent_win_rate > actual_win_rate + 0.1:
+                    calibrated_confidence *= 1.1  # 10% boost for improving performance
+                    reason = f"CALIBRATED: {actual_win_rate:.0%} win rate, RECENT BETTER ({recent_win_rate:.0%})"
+                else:
+                    reason = f"CALIBRATED: {actual_win_rate:.0%} win rate ({perf['total_signals']} trades)"
+            else:
+                reason = f"CALIBRATED: {actual_win_rate:.0%} win rate ({perf['total_signals']} trades)"
+            
+            # Ensure within valid range
+            calibrated_confidence = max(0, min(10, calibrated_confidence))
+            
+            if abs(calibrated_confidence - base_confidence) > 0.5:
+                logger.info(f"🎯 CONFIDENCE CALIBRATION: {strategy} {base_confidence:.1f} → {calibrated_confidence:.1f} ({reason})")
+            
+            return calibrated_confidence, reason
+            
+        except Exception as e:
+            logger.error(f"Error in confidence calibration: {e}")
+            return base_confidence, "ERROR"
+
+    def get_strategy_performance_summary(self) -> Dict:
+        """
+        🎯 Get detailed performance summary for all strategies
+        
+        Returns comprehensive metrics for each strategy to help
+        identify which strategies are actually profitable.
+        """
+        try:
+            summary = {}
+            
+            for strategy, perf in self.strategy_performance.items():
+                if perf['total_signals'] == 0:
+                    continue
+                
+                # Calculate average P&L per trade
+                avg_pnl = perf['total_pnl'] / perf['total_signals']
+                
+                # Calculate profit factor
+                wins = perf['wins']
+                losses = perf['losses']
+                
+                # Get average win and loss amounts
+                win_signals = [s['pnl'] for s in self.signal_history 
+                               if s['strategy'] == strategy and s['profitable']]
+                loss_signals = [abs(s['pnl']) for s in self.signal_history 
+                                if s['strategy'] == strategy and not s['profitable']]
+                
+                avg_win = sum(win_signals) / len(win_signals) if win_signals else 0
+                avg_loss = sum(loss_signals) / len(loss_signals) if loss_signals else 0
+                
+                # Profit factor = gross profits / gross losses
+                gross_profit = sum(win_signals)
+                gross_loss = sum(loss_signals)
+                profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+                
+                # Risk/reward ratio
+                rr_ratio = avg_win / avg_loss if avg_loss > 0 else float('inf')
+                
+                # Expected value per trade
+                expected_value = (perf['win_rate'] * avg_win) - ((1 - perf['win_rate']) * avg_loss)
+                
+                summary[strategy] = {
+                    'total_trades': perf['total_signals'],
+                    'wins': wins,
+                    'losses': losses,
+                    'win_rate': perf['win_rate'],
+                    'total_pnl': perf['total_pnl'],
+                    'avg_pnl_per_trade': avg_pnl,
+                    'avg_win': avg_win,
+                    'avg_loss': avg_loss,
+                    'profit_factor': profit_factor,
+                    'rr_ratio': rr_ratio,
+                    'expected_value': expected_value,
+                    'recommendation': 'PROFITABLE' if expected_value > 0 else 'NEEDS_IMPROVEMENT'
+                }
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"Error getting strategy performance summary: {e}")
+            return {}
+
+    def should_allow_signal_based_on_performance(self, strategy: str, confidence: float) -> Tuple[bool, str]:
+        """
+        🎯 PERFORMANCE-BASED FILTER
+        
+        Block signals from strategies that are consistently losing money.
+        
+        Returns:
+            allowed: True if signal should be allowed
+            reason: Explanation
+        """
+        try:
+            if strategy not in self.strategy_performance:
+                return True, "NEW_STRATEGY"
+            
+            perf = self.strategy_performance[strategy]
+            
+            # Need at least 15 trades to make performance decisions
+            if perf['total_signals'] < 15:
+                return True, f"LEARNING ({perf['total_signals']}/15 trades)"
+            
+            win_rate = perf['win_rate']
+            
+            # Block if win rate is terrible
+            if win_rate < 0.30:  # Less than 30% win rate
+                logger.warning(f"🚫 BLOCKED: {strategy} has {win_rate:.0%} win rate - too low!")
+                return False, f"WIN_RATE_TOO_LOW ({win_rate:.0%})"
+            
+            # Block if losing money overall
+            if perf['total_pnl'] < -5000 and perf['total_signals'] >= 20:
+                logger.warning(f"🚫 BLOCKED: {strategy} has ₹{perf['total_pnl']:,.0f} total P&L - losing money!")
+                return False, f"NEGATIVE_PNL (₹{perf['total_pnl']:,.0f})"
+            
+            # Reduce confidence requirement for high-performing strategies
+            if win_rate > 0.60 and perf['total_pnl'] > 0:
+                return True, f"HIGH_PERFORMER ({win_rate:.0%} win rate)"
+            
+            # Standard approval
+            return True, f"APPROVED ({win_rate:.0%} win rate)"
+            
+        except Exception as e:
+            logger.error(f"Error in performance filter: {e}")
+            return True, "ERROR"
+
 # Global instance
 signal_enhancer = SignalEnhancer()
 
