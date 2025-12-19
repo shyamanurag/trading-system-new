@@ -199,6 +199,9 @@ class TrueDataClient:
         self._consecutive_failures = 0
         self._max_consecutive_failures = 3  # REDUCED: Be more aggressive about stopping attempts
         
+        # 🚨 KILL SWITCH for "User Already Connected" - prevents ALL reconnection attempts
+        self._killed = False
+        
         # Register cleanup handlers
         self._register_cleanup_handlers()
 
@@ -355,6 +358,11 @@ class TrueDataClient:
 
     def _direct_connect(self):
         """Direct connection attempt without overlap handling"""
+        # 🚨 CRITICAL: Check KILL flag before any connection attempt
+        if self._killed:
+            logger.debug("🛑 TrueData KILLED - _direct_connect blocked")
+            return False
+            
         try:
             from truedata import TD_live
 
@@ -433,18 +441,47 @@ class TrueDataClient:
                 truedata_connection_status['permanent_block'] = True  # Block all retries
                 truedata_connection_status['retry_disabled'] = True
                 
-                # 🚨 CRITICAL FIX: Destroy td_obj to stop TrueData library's internal reconnection attempts
-                # The TrueData library has background threads that keep reconnecting even after errors
+                # 🚨 CRITICAL FIX 2024-12-19: Set KILLED flag to stop ALL TrueData activity
+                # This prevents the TrueData library's internal auto-reconnect from looping
+                self._killed = True
+                self._shutdown_requested = True
                 self.connected = False
+                
+                # 🔥 NUCLEAR OPTION: Aggressively destroy the TD_live object and its internals
                 try:
                     if self.td_obj:
-                        logger.info("🔌 Forcefully disconnecting TrueData to stop reconnection loop...")
-                        self.td_obj.disconnect()
+                        logger.info("🔌 KILLING TrueData to stop reconnection loop...")
+                        
+                        # Step 1: Try to close the underlying websocket directly
+                        if hasattr(self.td_obj, 'ws') and self.td_obj.ws:
+                            try:
+                                self.td_obj.ws.close()
+                                logger.info("  ✅ Closed underlying websocket")
+                            except:
+                                pass
+                        
+                        # Step 2: Stop any internal run loop
+                        if hasattr(self.td_obj, '_running'):
+                            self.td_obj._running = False
+                        if hasattr(self.td_obj, 'running'):
+                            self.td_obj.running = False
+                        
+                        # Step 3: Call disconnect
+                        try:
+                            self.td_obj.disconnect()
+                        except:
+                            pass
+                        
+                        logger.info("  ✅ TD_live disconnected")
                 except Exception as disc_err:
                     logger.debug(f"Disconnect during cleanup: {disc_err}")
                 finally:
                     self.td_obj = None  # CRITICAL: Set to None to prevent any further usage
-                    logger.info("✅ TrueData object destroyed - no more reconnection attempts")
+                    logger.info("✅ TrueData KILLED - no more reconnection attempts until restart")
+                
+                # 🛑 Stop the health monitor thread to prevent it from reconnecting
+                self._stop_health.set()
+                logger.info("🛑 Health monitor stopped - preventing further reconnection attempts")
                 
                 return False
             
@@ -457,6 +494,11 @@ class TrueDataClient:
         with self._lock:
             if self._shutdown_requested:
                 logger.info("🛑 Shutdown requested - skipping connection")
+                return False
+            
+            # 🚨 CRITICAL: Check KILL flag (set when "User Already Connected" detected)
+            if self._killed:
+                logger.debug("🛑 TrueData KILLED - connection blocked (User Already Connected detected earlier)")
                 return False
             
             # 🚨 CRITICAL: Check for permanent block (subscription expired or user already connected)
@@ -723,6 +765,14 @@ class TrueDataClient:
                             logger.info(f"🏥 TrueData Health: {symbols_count} symbols, last tick {silence_secs}s ago")
                         
                         # Handle tick silence during market hours
+                        # 🚨 CRITICAL: Check KILLED flag before any reconnection attempt
+                        if self._killed:
+                            # Don't log every 3 seconds, just once per 5 minutes
+                            if int(current_time) % 300 == 0:
+                                logger.info("🛑 TrueData KILLED (User Already Connected) - skipping reconnection")
+                            time.sleep(3)
+                            continue
+                        
                         if (in_market and 
                             consecutive_silent_checks >= max_silent_before_reconnect and
                             (current_time - last_reconnect_attempt) > reconnect_cooldown):

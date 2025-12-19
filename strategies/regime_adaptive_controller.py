@@ -816,9 +816,14 @@ class RegimeAdaptiveController:
         
         # 🚀 FIX: HMM warmup in BACKGROUND to not block health checks
         # Strategy works without warmup (just uses live data), warmup improves accuracy
-        import asyncio
-        asyncio.create_task(self._background_hmm_warmup())
-        logger.info("🔄 HMM warmup scheduled in background (non-blocking)")
+        try:
+            # 🔥 FIX: Safely create background task with proper error handling
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._background_hmm_warmup())
+            logger.info("🔄 HMM warmup scheduled in background (non-blocking)")
+        except RuntimeError as e:
+            # Event loop not running yet - schedule for later
+            logger.warning(f"⚠️ Cannot schedule HMM warmup now ({e}) - will warmup from live data")
         
         return True
     
@@ -839,9 +844,18 @@ class RegimeAdaptiveController:
         try:
             logger.info("🔄 HMM WARMUP: Pre-loading historical data for regime detection...")
             
-            # Try to get Zerodha client from orchestrator
+            # 🔥 FIX: Use get_orchestrator_instance() which is more reliable than self.orchestrator
             zerodha_client = None
-            if hasattr(self, 'orchestrator') and self.orchestrator:
+            try:
+                from src.core.orchestrator import get_orchestrator_instance
+                orchestrator = get_orchestrator_instance()
+                if orchestrator and hasattr(orchestrator, 'zerodha_client'):
+                    zerodha_client = orchestrator.zerodha_client
+            except Exception as e:
+                logger.debug(f"Could not get orchestrator instance: {e}")
+            
+            # Fallback to self.orchestrator if available
+            if not zerodha_client and hasattr(self, 'orchestrator') and self.orchestrator:
                 zerodha_client = getattr(self.orchestrator, 'zerodha_client', None)
             
             if not zerodha_client:
@@ -960,8 +974,8 @@ class RegimeAdaptiveController:
                     await asyncio.to_thread(self.hmm_model.baum_welch, feature_matrix, 10)
                     logger.info(f"✅ HMM WARMUP COMPLETE: Trained on {len(self.feature_history)} observations")
                     
-                    # Run Viterbi to get initial regime
-                    state_path, _ = self.hmm_model.viterbi(feature_matrix)
+                    # 🔥 FIX: Run Viterbi in thread pool too (was blocking before!)
+                    state_path, _ = await asyncio.to_thread(self.hmm_model.viterbi, feature_matrix)
                     initial_regime = self.hmm_model.get_regime_from_state(state_path[-1])
                     self.current_regime = initial_regime
                     logger.info(f"🎯 HMM Initial Regime: {initial_regime.value}")

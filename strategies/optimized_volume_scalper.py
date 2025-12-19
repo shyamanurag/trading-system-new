@@ -1015,29 +1015,57 @@ class OptimizedVolumeScalper(BaseStrategy):
             return 50.0
     
     def _update_order_flow_proxy(self, symbol: str, symbol_data: Dict):
-        """Update order flow proxy using volume and price action"""
+        """Update order flow proxy using volume and price action
+        
+        🔧 FIX: Use candle-based buy/sell pressure instead of just price direction
+        This gives more realistic imbalance values (not always 1.0 or 0.0)
+        """
         if symbol not in self.order_flow_history:
             self.order_flow_history[symbol] = []
-            
+
         # Proxy for order flow imbalance
         volume = symbol_data.get('volume', 0)
         # Align to TrueData feed which uses change_percent in percent units
         change_percent = symbol_data.get('change_percent', 0)
         price_change = change_percent / 100.0 if isinstance(change_percent, (int, float)) else 0.0
         
-        # Volume-weighted directional flow
-        if volume > 0 and price_change != 0:
-            flow_direction = 1 if price_change > 0 else -1
-            flow_intensity = abs(price_change) * volume
+        # 🔧 FIX: Use OHLC to estimate buy/sell pressure more accurately
+        # Instead of binary direction, use candle position for nuanced flow
+        high = symbol_data.get('high', 0)
+        low = symbol_data.get('low', 0)
+        close = symbol_data.get('close', symbol_data.get('ltp', 0))
+        open_price = symbol_data.get('open', close)
+        
+        if volume > 0 and high > low:
+            # Calculate buy/sell pressure from candle structure
+            candle_range = high - low
             
+            # Buy pressure: how close is the close to the high?
+            buy_pressure = (close - low) / candle_range  # 0 to 1
+            sell_pressure = (high - close) / candle_range  # 0 to 1
+            
+            # 🔧 FIX: Use pressure difference for direction and intensity
+            # This gives values between -1 and +1, not just -1 or +1
+            pressure_diff = buy_pressure - sell_pressure  # -1 to +1
+            
+            # Direction is still binary, but intensity varies
+            flow_direction = 1 if pressure_diff > 0 else -1
+            
+            # 🔧 FIX: Intensity now includes the magnitude of pressure difference
+            # Previously: all-or-nothing based on price_change sign
+            # Now: weighted by actual buy/sell pressure from candle
+            flow_intensity = abs(pressure_diff) * volume * (1 + abs(price_change))
+
             self.order_flow_history[symbol].append({
                 'direction': flow_direction,
                 'intensity': flow_intensity,
                 'volume': volume,
                 'price_change': price_change,
+                'buy_pressure': buy_pressure,
+                'sell_pressure': sell_pressure,
                 'timestamp': datetime.now()
             })
-            
+
             if len(self.order_flow_history[symbol]) > self.order_flow_lookback:
                 self.order_flow_history[symbol].pop(0)
     
@@ -1141,9 +1169,32 @@ class OptimizedVolumeScalper(BaseStrategy):
             institutional_ratio = 1.0
             logger.debug(f"📊 {symbol}: Index future detected - treating as 100% institutional flow")
         else:
-            # Equity: Check tick volume against threshold
-            institutional_flows = [f for f in recent_flows if f['volume'] > self.institutional_size_threshold]
-            institutional_ratio = len(institutional_flows) / len(recent_flows) if recent_flows else 0
+            # 🔧 FIX: TrueData reports CUMULATIVE daily volume, not per-tick volume
+            # Previous logic: compare cumulative volume (50M) vs threshold (500k) → always institutional!
+            # New logic: Use volume CHANGE and relative intensity to detect institutional activity
+            
+            # Calculate volume intensity relative to recent average
+            volumes = [f['volume'] for f in recent_flows]
+            intensities = [f['intensity'] for f in recent_flows]
+            
+            if len(volumes) >= 5:
+                # Check for volume spikes (institutional = large relative volume)
+                avg_volume = np.mean(volumes)
+                avg_intensity = np.mean(intensities) if intensities else 0
+                
+                # Count ticks with above-average intensity (indicates larger interest)
+                high_intensity_flows = [f for f in recent_flows 
+                                        if f['intensity'] > avg_intensity * 1.5]
+                institutional_ratio = len(high_intensity_flows) / len(recent_flows) if recent_flows else 0
+                
+                # Also factor in pressure consistency
+                # If buy/sell pressure is consistently strong across ticks, likely institutional
+                if 'buy_pressure' in recent_flows[0]:
+                    buy_pressures = [f.get('buy_pressure', 0.5) for f in recent_flows]
+                    pressure_consistency = 1.0 - np.std(buy_pressures)  # Lower std = more consistent
+                    institutional_ratio = (institutional_ratio + pressure_consistency) / 2
+            else:
+                institutional_ratio = 0.3  # Default when not enough data
         
         # PROFESSIONAL IMBALANCE METRICS
         imbalance_ratio = max(buy_flow, sell_flow) / total_flow
@@ -1807,6 +1858,7 @@ class OptimizedVolumeScalper(BaseStrategy):
             
             # ============= PHASE 2: ADVANCED INDICATORS =============
             rsi = 50.0
+            mfi = 50.0  # 🔧 NEW: Money Flow Index (volume-weighted RSI)
             macd_crossover = None
             macd_state = 'neutral'
             bollinger_squeeze = False
@@ -1815,12 +1867,26 @@ class OptimizedVolumeScalper(BaseStrategy):
             momentum_score = 0.0
             trend_strength = 0.0
             hp_trend_direction = 0.0
-            
+
             # Import ProfessionalMomentumModels for advanced calculations
             from strategies.momentum_surfer import ProfessionalMomentumModels
-            
+
             if len(prices) >= 14:
                 rsi = self._calculate_rsi(prices, 14)
+                
+                # 🔧 NEW: Calculate MFI (volume-weighted RSI) for better accuracy
+                # MFI is more reliable than RSI because it factors in volume
+                if hasattr(self, 'mtf_data') and symbol in self.mtf_data:
+                    candles = self.mtf_data[symbol].get('5min', [])
+                    if candles and len(candles) >= 14:
+                        highs = [c.get('high', c.get('close', 0)) for c in candles[-20:]]
+                        lows = [c.get('low', c.get('close', 0)) for c in candles[-20:]]
+                        closes = [c.get('close', 0) for c in candles[-20:]]
+                        volumes = [c.get('volume', 0) for c in candles[-20:]]
+                        
+                        if all(v > 0 for v in volumes):  # Only if we have volume data
+                            mfi_data = self.calculate_money_flow_index(highs, lows, closes, volumes)
+                            mfi = mfi_data.get('mfi', 50.0)
                 prices_arr = np.array(prices)
                 momentum_score = ProfessionalMomentumModels.momentum_score(prices_arr, min(20, len(prices)))
                 mean_reversion_prob = ProfessionalMomentumModels.mean_reversion_probability(prices_arr)
@@ -1853,20 +1919,44 @@ class OptimizedVolumeScalper(BaseStrategy):
             alignment = dual_analysis.get('alignment', 'UNKNOWN')
             
             # ============= PHASE 2: RSI/MACD/HP TREND VALIDATION =============
+            # 🔧 FIX: Enhanced validation with proper MACD state check and pressure thresholds
+            
             # BUY signal validation
             if ms_signal.signal_type == 'BUY':
-                # Don't buy if overbought
+                # Don't buy if overbought (check both RSI and MFI)
                 if rsi > 70:
                     logger.info(f"⚠️ {symbol}: BUY rejected - RSI overbought ({rsi:.0f})")
                     return None
-                # Don't buy if MACD bearish (unless mean reversion)
-                if macd_crossover == 'bearish' and ms_signal.edge_source != "MEAN_REVERSION":
-                    logger.info(f"⚠️ {symbol}: BUY rejected - MACD bearish crossover")
+                
+                # 🔧 NEW: MFI (volume-weighted RSI) check - more reliable than plain RSI
+                if mfi > 80:
+                    logger.info(f"⚠️ {symbol}: BUY rejected - MFI overbought ({mfi:.0f})")
                     return None
-                # Don't buy if selling pressure is overwhelming
-                if selling_pressure > 0.8 and ms_signal.edge_source != "MEAN_REVERSION":
+                
+                # 🔧 FIX #1: Check MACD STATE (not just crossover event)
+                # Previously only checked crossover which is rare - bearish state was ignored!
+                if ms_signal.edge_source != "MEAN_REVERSION":
+                    if macd_crossover == 'bearish':
+                        logger.info(f"⚠️ {symbol}: BUY rejected - MACD bearish crossover")
+                        return None
+                    # 🔧 NEW: Also reject if MACD state is bearish (not just crossover)
+                    if macd_state == 'bearish' and rsi < 45:
+                        # Bearish MACD + weak RSI = strong sell signal, don't buy
+                        logger.info(f"⚠️ {symbol}: BUY rejected - MACD bearish state + weak RSI ({rsi:.0f})")
+                        return None
+                
+                # 🔧 FIX #2: Lower sell pressure threshold from 0.8 to 0.65
+                # Previously 66% sell pressure passed - too risky for momentum trading
+                if selling_pressure > 0.65 and ms_signal.edge_source != "MEAN_REVERSION":
                     logger.info(f"⚠️ {symbol}: BUY rejected - Strong selling pressure ({selling_pressure:.0%})")
                     return None
+                
+                # 🔧 FIX #3: NEW - Reject BUY if buying pressure is too low
+                # Can't buy when sellers dominate (like TATASTEEL 34%/66%)
+                if buying_pressure < 0.40 and ms_signal.edge_source != "MEAN_REVERSION":
+                    logger.info(f"⚠️ {symbol}: BUY rejected - Weak buying pressure ({buying_pressure:.0%})")
+                    return None
+                
                 # Don't buy if HP trend strongly negative (unless mean reversion)
                 if hp_trend_direction < -0.01 and ms_signal.edge_source != "MEAN_REVERSION":
                     logger.info(f"⚠️ {symbol}: BUY rejected - HP trend strongly negative ({hp_trend_direction:+.2%})")
@@ -1874,25 +1964,44 @@ class OptimizedVolumeScalper(BaseStrategy):
             
             # SELL signal validation
             elif ms_signal.signal_type == 'SELL':
-                # Don't sell if oversold
+                # Don't sell if oversold (check both RSI and MFI)
                 if rsi < 30:
                     logger.info(f"⚠️ {symbol}: SELL rejected - RSI oversold ({rsi:.0f})")
                     return None
-                # Don't sell if MACD bullish (unless mean reversion)
-                if macd_crossover == 'bullish' and ms_signal.edge_source != "MEAN_REVERSION":
-                    logger.info(f"⚠️ {symbol}: SELL rejected - MACD bullish crossover")
+                
+                # 🔧 NEW: MFI (volume-weighted RSI) check - more reliable than plain RSI
+                if mfi < 20:
+                    logger.info(f"⚠️ {symbol}: SELL rejected - MFI oversold ({mfi:.0f})")
                     return None
-                # Don't sell if buying pressure is overwhelming
-                if buying_pressure > 0.8 and ms_signal.edge_source != "MEAN_REVERSION":
+                
+                # 🔧 FIX #1: Check MACD STATE (not just crossover event)
+                if ms_signal.edge_source != "MEAN_REVERSION":
+                    if macd_crossover == 'bullish':
+                        logger.info(f"⚠️ {symbol}: SELL rejected - MACD bullish crossover")
+                        return None
+                    # 🔧 NEW: Also reject if MACD state is bullish (not just crossover)
+                    if macd_state == 'bullish' and rsi > 55:
+                        # Bullish MACD + strong RSI = strong buy signal, don't sell
+                        logger.info(f"⚠️ {symbol}: SELL rejected - MACD bullish state + strong RSI ({rsi:.0f})")
+                        return None
+                
+                # 🔧 FIX #2: Lower buy pressure threshold from 0.8 to 0.65
+                if buying_pressure > 0.65 and ms_signal.edge_source != "MEAN_REVERSION":
                     logger.info(f"⚠️ {symbol}: SELL rejected - Strong buying pressure ({buying_pressure:.0%})")
                     return None
+                
+                # 🔧 FIX #3: NEW - Reject SELL if selling pressure is too low
+                if selling_pressure < 0.40 and ms_signal.edge_source != "MEAN_REVERSION":
+                    logger.info(f"⚠️ {symbol}: SELL rejected - Weak selling pressure ({selling_pressure:.0%})")
+                    return None
+                
                 # Don't sell if HP trend strongly positive (unless mean reversion)
                 if hp_trend_direction > 0.01 and ms_signal.edge_source != "MEAN_REVERSION":
                     logger.info(f"⚠️ {symbol}: SELL rejected - HP trend strongly positive ({hp_trend_direction:+.2%})")
                     return None
             
-            # Log validation passed with ALL indicators
-            logger.info(f"✅ {symbol} {ms_signal.signal_type}: RSI={rsi:.0f}, MACD={macd_state}, Buy/Sell={buying_pressure:.0%}/{selling_pressure:.0%}")
+            # Log validation passed with ALL indicators (including MFI)
+            logger.info(f"✅ {symbol} {ms_signal.signal_type}: RSI={rsi:.0f}, MFI={mfi:.0f}, MACD={macd_state}, Buy/Sell={buying_pressure:.0%}/{selling_pressure:.0%}")
             logger.info(f"   📉 Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f} | HP: {hp_trend_direction:+.2%}")
             logger.info(f"   🔄 Mean Rev: {mean_reversion_prob:.0%} | Bollinger: {'SQUEEZE!' if bollinger_squeeze else 'normal'}")
             if bollinger_breakout:
@@ -2310,7 +2419,11 @@ class OptimizedVolumeScalper(BaseStrategy):
             logger.error(f"ML training data storage failed: {e}")
     
     async def _update_ml_model(self):
-        """Update ML model with new training data"""
+        """Update ML model with new training data
+        
+        🔧 FIX: Use train/test split for proper accuracy measurement
+        Previously reported 100% accuracy because it tested on training data!
+        """
         try:
             if len(self.ml_features_history) < 50:  # Need minimum data
                 return
@@ -2323,17 +2436,35 @@ class OptimizedVolumeScalper(BaseStrategy):
             if len(np.unique(y)) < 2:
                 return
             
-            # Scale features
-            X_scaled = self.feature_scaler.fit_transform(X)
+            # 🔧 FIX: Use train/test split for honest accuracy measurement
+            # Previously: trained and tested on same data → 100% accuracy (false!)
+            # Now: 80% train, 20% test → realistic accuracy
+            from sklearn.model_selection import train_test_split
             
-            # Train model
-            self.ml_model.fit(X_scaled, y)
+            # Only split if we have enough data
+            if len(X) >= 100:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42, stratify=y if len(np.unique(y)) >= 2 else None
+                )
+            else:
+                # Not enough data for split - use all for training, report as "training accuracy"
+                X_train, X_test, y_train, y_test = X, X, y, y
+            
+            # Scale features (fit on train, transform both)
+            X_train_scaled = self.feature_scaler.fit_transform(X_train)
+            X_test_scaled = self.feature_scaler.transform(X_test)
+            
+            # Train model on training set only
+            self.ml_model.fit(X_train_scaled, y_train)
             self.ml_trained = True
+
+            # 🔧 FIX: Calculate accuracy on TEST set (not training set!)
+            test_score = self.ml_model.score(X_test_scaled, y_test)
             
-            # Calculate model performance
-            train_score = self.ml_model.score(X_scaled, y)
-            
-            logger.info(f"🤖 ML MODEL UPDATED: {len(X)} samples, accuracy={train_score:.3f}")
+            # Also calculate class distribution for context
+            positive_ratio = np.mean(y) * 100
+
+            logger.info(f"🤖 ML MODEL UPDATED: {len(X)} samples, test_accuracy={test_score:.3f} (pos={positive_ratio:.0f}%)")
             
         except Exception as e:
             logger.error(f"ML model update failed: {e}")

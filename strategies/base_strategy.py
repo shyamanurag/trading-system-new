@@ -7148,6 +7148,54 @@ class BaseStrategy:
             # Rule 1: Max loss = 1% of portfolio (was 2%)
             max_loss_per_trade = sizing_capital * 0.01
             
+            # ============================================================
+            # 🎯 OPTION 2 FIX: TIGHTEN STOP LOSS FOR LOW-CAPITAL ACCOUNTS
+            # ============================================================
+            # Problem: Wide stops (>3%) with low capital creates position values
+            # below ₹50,000 minimum, blocking valid signals.
+            # Solution: Cap stop loss at 3% for accounts < ₹300,000
+            # This ensures: max_loss / (entry × 3%) × entry ≥ ₹50,000
+            LOW_CAPITAL_THRESHOLD = 300000.0  # ₹3 lakh
+            MAX_STOP_PERCENT_LOW_CAPITAL = 0.03  # 3% max stop for low capital
+            MIN_ORDER_VALUE = 50000.0  # Minimum position value
+            
+            if sizing_capital < LOW_CAPITAL_THRESHOLD:
+                current_stop_percent = risk_amount / entry_price
+                
+                if current_stop_percent > MAX_STOP_PERCENT_LOW_CAPITAL:
+                    # Recalculate stop loss with tighter distance
+                    old_stop_loss = stop_loss
+                    old_risk_amount = risk_amount
+                    
+                    new_stop_distance = entry_price * MAX_STOP_PERCENT_LOW_CAPITAL
+                    
+                    if action.upper() == 'BUY':
+                        stop_loss = entry_price - new_stop_distance
+                    else:  # SELL
+                        stop_loss = entry_price + new_stop_distance
+                    
+                    # Update risk metrics
+                    risk_amount = new_stop_distance
+                    risk_percent = MAX_STOP_PERCENT_LOW_CAPITAL * 100
+                    
+                    # Also adjust target to maintain R:R ratio (min 2.5:1 for intraday)
+                    min_rr_ratio = 2.5
+                    new_reward_amount = risk_amount * min_rr_ratio
+                    if action.upper() == 'BUY':
+                        target = entry_price + new_reward_amount
+                    else:
+                        target = entry_price - new_reward_amount
+                    
+                    reward_amount = new_reward_amount
+                    reward_percent = (reward_amount / entry_price) * 100
+                    risk_reward_ratio = min_rr_ratio
+                    
+                    logger.info(f"🔧 LOW CAPITAL ADJUSTMENT for {symbol}:")
+                    logger.info(f"   Capital: ₹{sizing_capital:,.0f} < ₹{LOW_CAPITAL_THRESHOLD:,.0f} threshold")
+                    logger.info(f"   Stop: {old_risk_amount/entry_price*100:.1f}% → {MAX_STOP_PERCENT_LOW_CAPITAL*100:.1f}%")
+                    logger.info(f"   SL: ₹{old_stop_loss:.2f} → ₹{stop_loss:.2f}")
+                    logger.info(f"   Target adjusted to ₹{target:.2f} (R:R = {min_rr_ratio}:1)")
+            
             # Rule 2: Intraday leverage = 4x
             INTRADAY_LEVERAGE = 4.0
             # Desired max position value based on base capital (consistent sizing)
