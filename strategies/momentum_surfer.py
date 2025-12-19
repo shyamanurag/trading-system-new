@@ -1158,6 +1158,9 @@ class EnhancedMomentumSurfer(BaseStrategy):
                                         logger.warning(f"🚫 {stock}: SELL signal BLOCKED - Smart money accumulating!")
                                         continue  # Skip this signal
                         
+                        # Add all analysis metadata to signal (initialize first to avoid KeyError)
+                        signal['metadata'] = signal.get('metadata', {})
+                        
                         # 🎯 NEW: CALIBRATE CONFIDENCE based on actual performance
                         try:
                             from src.core.signal_enhancement import signal_enhancer
@@ -1179,9 +1182,6 @@ class EnhancedMomentumSurfer(BaseStrategy):
                                 
                         except Exception as cal_err:
                             logger.debug(f"Confidence calibration skipped: {cal_err}")
-                        
-                        # Add all analysis metadata to signal
-                        signal['metadata'] = signal.get('metadata', {})
                         signal['metadata']['market_depth'] = depth_analysis
                         signal['metadata']['oi_analysis'] = oi_analysis
                         signal['metadata']['daily_weekly_levels'] = level_analysis
