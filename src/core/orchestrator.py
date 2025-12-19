@@ -3560,122 +3560,65 @@ class TradingOrchestrator:
     async def _trading_loop(self):
         """Main trading loop with connection monitoring and auto-recovery
         
-        🚨 CRITICAL FIX: Made resilient to TrueData reconnections
-        - Uses timeouts to prevent blocking
-        - Continues trading with cached data during reconnections
-        - Never blocks the main async loop
+        🚨 2025-12-19 FIX: SIMPLIFIED - Don't interfere with TrueData's own health monitor!
+        - TrueData has its own reconnection logic in _start_health_monitor()
+        - Orchestrator should NOT trigger TrueData reconnections (causes conflicts)
+        - Only handle Zerodha token refresh here
         """
-        self.logger.info("🔄 Starting enhanced trading loop with RECONNECTION RESILIENCE...")
+        self.logger.info("🔄 Starting SIMPLIFIED trading loop (TrueData manages itself)...")
         
         # Health monitoring counters
         consecutive_failures = 0
-        max_consecutive_failures = 10
+        max_consecutive_failures = 20  # More tolerant - TrueData handles its own issues
         last_successful_data = time_module.time()
         heartbeat_interval = 60  # Log heartbeat every 60 seconds
         last_heartbeat = time_module.time()
-        data_timeout = 300  # 5 minutes without data triggers reconnection
-        
-        # 🚨 RECONNECTION RESILIENCE: Track reconnection state
-        reconnection_in_progress = False
-        last_reconnection_attempt = 0
-        reconnection_cooldown = 60  # Minimum seconds between reconnection attempts
         
         while self.is_running:
             try:
                 # Heartbeat logging
                 current_time = time_module.time()
                 if current_time - last_heartbeat >= heartbeat_interval:
+                    # Get TrueData status without interfering
+                    try:
+                        from data.truedata_client import truedata_client, live_market_data
+                        td_connected = truedata_client.connected if truedata_client else False
+                        td_symbols = len(live_market_data) if live_market_data else 0
+                    except:
+                        td_connected = False
+                        td_symbols = 0
+                    
                     self.logger.info(f"💓 TRADING LOOP HEARTBEAT - Running: {self.is_running}, "
-                                   f"Failures: {consecutive_failures}, "
-                                   f"Last data: {int(current_time - last_successful_data)}s ago, "
-                                   f"Reconnecting: {reconnection_in_progress}")
+                                   f"TrueData: {'✅' if td_connected else '❌'} ({td_symbols} symbols), "
+                                   f"Last data: {int(current_time - last_successful_data)}s ago")
                     last_heartbeat = current_time
                 
-                # 🚨 CRITICAL FIX: Don't block during reconnection - just continue with cached data
-                if reconnection_in_progress:
-                    # Check if reconnection is done
-                    from data.truedata_client import truedata_client
-                    if truedata_client.connected:
-                        self.logger.info("✅ TrueData reconnection complete - resuming normal operation")
-                        reconnection_in_progress = False
-                        consecutive_failures = 0
-                    else:
-                        # Still reconnecting - use cached data and continue
-                        self.logger.debug("🔄 Reconnection in progress - using cached data")
-                        await asyncio.sleep(2)  # Short delay during reconnection
-                        # Continue processing with whatever cached data we have
-                        try:
-                            await asyncio.wait_for(self._process_market_data(), timeout=10.0)
-                        except asyncio.TimeoutError:
-                            self.logger.warning("⚠️ Market data processing timeout during reconnection")
-                        except Exception as proc_err:
-                            self.logger.debug(f"Processing error during reconnection: {proc_err}")
-                        continue
-                
-                # Check for data timeout - indicates stale connection
-                if current_time - last_successful_data > data_timeout:
-                    # Don't spam reconnection attempts
-                    if current_time - last_reconnection_attempt > reconnection_cooldown:
-                        self.logger.error(f"🚨 DATA TIMEOUT: No data for {int(current_time - last_successful_data)}s - requesting reconnection")
-                        reconnection_in_progress = True
-                        last_reconnection_attempt = current_time
-                        # Start reconnection in background - don't block!
-                        asyncio.create_task(self._reconnect_all_services_async())
-                        last_successful_data = current_time  # Reset timer
-                        consecutive_failures = 0
-                        continue
-                
-                # 🚨 CRITICAL FIX: Check Zerodha connection health EVERY CYCLE
-                # This catches token expiry even when TrueData is still working
+                # 🚨 ONLY check Zerodha - TrueData manages itself!
+                # Zerodha token can expire and needs manual refresh
                 if hasattr(self, 'zerodha_client') and self.zerodha_client:
                     if not self.zerodha_client.is_connected:
-                        self.logger.error(f"🚨 ZERODHA DISCONNECTED: Forcing reconnection to reload token")
-                        if current_time - last_reconnection_attempt > reconnection_cooldown:
-                            reconnection_in_progress = True
-                            last_reconnection_attempt = current_time
-                            asyncio.create_task(self._reconnect_all_services_async())
-                        await asyncio.sleep(5)  # Give time for reload
-                        continue  # Skip this cycle, retry on next
+                        self.logger.error(f"🚨 ZERODHA DISCONNECTED: Token may have expired - needs manual refresh")
+                        await asyncio.sleep(30)  # Wait before retry
+                        continue
                 
-                # 🚨 CRITICAL FIX: Add timeout to market data fetching
+                # Process market data - simple approach, no aggressive timeouts
                 try:
-                    market_data = await asyncio.wait_for(
-                        self._get_market_data_from_api(),
-                        timeout=15.0  # 15 second timeout - prevents blocking
-                    )
-                except asyncio.TimeoutError:
-                    self.logger.warning("⚠️ Market data fetch timeout - continuing with cached data")
-                    market_data = {}  # Empty but continue processing
-                    consecutive_failures += 1
+                    market_data = await self._get_market_data_from_api()
+                except Exception as fetch_err:
+                    self.logger.debug(f"Market data fetch issue: {fetch_err}")
+                    market_data = {}
                 
                 if market_data and len(market_data) > 0:
-                    # Data received successfully - process with timeout
-                    try:
-                        await asyncio.wait_for(
-                            self._process_market_data(),
-                            timeout=30.0  # 30 second timeout for processing
-                        )
-                        consecutive_failures = 0
-                        last_successful_data = current_time
-                    except asyncio.TimeoutError:
-                        self.logger.warning("⚠️ Market data processing timeout")
-                        consecutive_failures += 1
+                    # Data received successfully
+                    await self._process_market_data()
+                    consecutive_failures = 0
+                    last_successful_data = current_time
                 else:
-                    # No data received
+                    # No data - but DON'T trigger TrueData reconnection!
+                    # TrueData's health monitor handles this
                     consecutive_failures += 1
-                    if consecutive_failures % 5 == 0:  # Log every 5th failure to reduce noise
-                        self.logger.warning(f"⚠️ No market data (failure #{consecutive_failures}/{max_consecutive_failures})")
-                    
-                    # Check if we've exceeded failure threshold
-                    if consecutive_failures >= max_consecutive_failures:
-                        if current_time - last_reconnection_attempt > reconnection_cooldown:
-                            self.logger.error(f"🚨 CRITICAL: {consecutive_failures} consecutive data failures - requesting reconnection")
-                            reconnection_in_progress = True
-                            last_reconnection_attempt = current_time
-                            asyncio.create_task(self._reconnect_all_services_async())
-                            consecutive_failures = 0  # Reset counter after reconnection attempt
-                        await asyncio.sleep(5)  # Wait a bit
-                        continue
+                    if consecutive_failures % 10 == 0:  # Log every 10th failure
+                        self.logger.warning(f"⚠️ No market data (failure #{consecutive_failures}) - TrueData health monitor will handle")
                 
                 # Small delay to prevent overwhelming the system
                 await asyncio.sleep(1)
@@ -3685,67 +3628,22 @@ class TradingOrchestrator:
                 break
             except Exception as e:
                 consecutive_failures += 1
-                self.logger.error(f"❌ Error in trading loop (failure #{consecutive_failures}): {e}")
-                
-                # Only log full traceback every 5th error to reduce noise
-                if consecutive_failures % 5 == 1:
-                    import traceback
-                    self.logger.error(f"Traceback: {traceback.format_exc()}")
-                
-                # If too many consecutive failures, attempt full reconnection
-                if consecutive_failures >= max_consecutive_failures:
-                    if current_time - last_reconnection_attempt > reconnection_cooldown:
-                        self.logger.error(f"🚨 CRITICAL: {consecutive_failures} consecutive errors - requesting reconnection")
-                        reconnection_in_progress = True
-                        last_reconnection_attempt = time_module.time()
-                        asyncio.create_task(self._reconnect_all_services_async())
-                        consecutive_failures = 0
-                    await asyncio.sleep(5)
-                else:
-                    await asyncio.sleep(2)  # Shorter wait to keep loop responsive
+                if consecutive_failures % 10 == 1:  # Log every 10th error
+                    self.logger.error(f"❌ Error in trading loop (failure #{consecutive_failures}): {e}")
+                await asyncio.sleep(2)
         
         self.logger.info("🛑 Trading loop stopped")
     
-    async def _reconnect_all_services_async(self):
-        """Async wrapper for reconnection - runs in background without blocking trading loop"""
-        try:
-            self.logger.info("🔄 Starting background reconnection...")
-            await self._reconnect_all_services()
-            self.logger.info("✅ Background reconnection completed")
-        except Exception as e:
-            self.logger.error(f"❌ Background reconnection failed: {e}")
-    
     async def _reconnect_all_services(self):
-        """Reconnect all services (TrueData, Redis, Zerodha) after connection failures
+        """Reconnect Redis and refresh Zerodha token
         
-        🚨 CRITICAL FIX: Made non-blocking to prevent trading loop stalls
-        - Each service reconnects independently
-        - Failures don't block other services
-        - Uses timeouts to prevent hanging
+        🚨 2025-12-19 FIX: DO NOT touch TrueData here!
+        - TrueData has its own health monitor that handles reconnection
+        - Orchestrator interfering caused ping/pong conflicts and crashes
+        - Only handle Redis and Zerodha here
         """
         try:
-            self.logger.info("🔄 RECONNECTING ALL SERVICES (non-blocking)...")
-            
-            # 1. Reconnect TrueData - in background thread to avoid blocking
-            try:
-                self.logger.info("🔄 Requesting TrueData reconnection...")
-                from data.truedata_client import truedata_client
-                
-                # Don't block - just request reconnection
-                # TrueData's health monitor will handle the actual reconnection
-                if hasattr(truedata_client, '_circuit_breaker_active'):
-                    truedata_client._circuit_breaker_active = False
-                if hasattr(truedata_client, '_consecutive_failures'):
-                    truedata_client._consecutive_failures = 0
-                
-                # Only force disconnect if completely stuck
-                if not truedata_client.connected:
-                    self.logger.info("🔌 TrueData disconnected - health monitor will reconnect")
-                else:
-                    self.logger.info("✅ TrueData still connected - no action needed")
-                    
-            except Exception as e:
-                self.logger.error(f"❌ TrueData reconnection request failed: {e}")
+            self.logger.info("🔄 RECONNECTING SERVICES (Redis + Zerodha only, TrueData manages itself)...")
             
             # 2. Reconnect Redis
             try:

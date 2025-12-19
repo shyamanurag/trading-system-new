@@ -216,7 +216,8 @@ class TrueDataClient:
         self._tick_worker_stop = threading.Event()
         self._tick_worker_threads: List[threading.Thread] = []
         self._tick_workers_started = False
-        self._tick_worker_count = int(os.getenv('TRUEDATA_TICK_WORKERS', '2'))
+        # 🚨 2025-12-19 FIX: Increased from 2 to 4 workers for better throughput
+        self._tick_worker_count = int(os.getenv('TRUEDATA_TICK_WORKERS', '4'))
         self._tick_processor = None  # set in _setup_callback()
 
     def _start_tick_workers(self):
@@ -1277,38 +1278,31 @@ class TrueDataClient:
                 # Store in local cache (existing behavior)
                 live_market_data[symbol] = market_data
 
-                # CRITICAL: Also store in Redis for cross-process access
+                # CRITICAL: Store in Redis for cross-process access
+                # 🚨 2025-12-19 FIX: Reduced from 7 Redis calls to 2 (was causing slowdown)
                 if redis_client:
                     try:
                         # Create safe version of market data for Redis storage
                         safe_market_data = create_safe_market_data(market_data)
-
-                        # CRITICAL FIX: Use safe_json_serialize to pre-process, then json.dumps on the safe result
-                        # This prevents recursion errors from json.dumps on complex nested structures
                         safe_json = safe_json_serialize(safe_market_data)
                         safe_json_str = json.dumps(safe_json) if isinstance(safe_json, (dict, list)) else str(safe_json)
 
-                        # Store individual symbol data (JSON serialized to handle nested dicts)
-                        redis_client.set(f"truedata:symbol:{symbol}", safe_json_str)
-                        redis_client.expire(f"truedata:symbol:{symbol}", 300)  # 5 minutes
-
-                        # Store in combined cache
+                        # 🚨 OPTIMIZED: Only 2 Redis calls instead of 7
+                        # 1. Store in hash (most efficient for bulk symbol data)
                         redis_client.hset("truedata:live_cache", symbol, safe_json_str)
-                        redis_client.expire("truedata:live_cache", 300)  # 5 minutes
+                        
+                        # 2. Update symbol count only every 100 ticks (not every tick!)
+                        if not hasattr(self, '_redis_count_ticker'):
+                            self._redis_count_ticker = 0
+                        self._redis_count_ticker += 1
+                        if self._redis_count_ticker >= 100:
+                            redis_client.set("truedata:symbol_count", len(live_market_data))
+                            redis_client.expire("truedata:live_cache", 300)  # Refresh TTL periodically
+                            self._redis_count_ticker = 0
 
-                        # Update symbol count
-                        redis_client.set("truedata:symbol_count", len(live_market_data))
-
-                        # Store raw tick data for analysis
-                        redis_client.lpush(f"truedata:ticks:{symbol}", safe_json_str)
-                        redis_client.ltrim(f"truedata:ticks:{symbol}", 0, 100)  # Keep last 100 ticks
-
-                    except RecursionError as re:
-                        logger.error(f"Redis recursion error for {symbol}: {re} - Data dropped")
-                        # Skip Redis storage for this tick
-                        pass
                     except Exception as redis_error:
-                        logger.error(f"Redis storage error for {symbol}: {redis_error}")
+                        # Silent fail - Redis errors shouldn't block tick processing
+                        pass
 
                 # RATE-LIMITED logging to prevent stdout flooding during startup
                 # Skip logging entirely during startup grace period (first 60s)
