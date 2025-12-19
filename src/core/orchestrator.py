@@ -3558,8 +3558,9 @@ class TradingOrchestrator:
         consecutive_failures = 0
         max_consecutive_failures = 20  # More tolerant - TrueData handles its own issues
         last_successful_data = time_module.time()
-        heartbeat_interval = 60  # Log heartbeat every 60 seconds
+        heartbeat_interval = 10  # Log heartbeat every 10 seconds (was 60 - too slow!)
         last_heartbeat = time_module.time()
+        strategy_run_counter = 0  # Track how many times strategies run
         
         while self.is_running:
             try:
@@ -3597,9 +3598,14 @@ class TradingOrchestrator:
                 
                 if market_data and len(market_data) > 0:
                     # Data received successfully
+                    strategy_run_counter += 1
                     await self._process_market_data()
                     consecutive_failures = 0
                     last_successful_data = current_time
+                    
+                    # Log every 10th cycle to show activity without spam
+                    if strategy_run_counter % 10 == 0:
+                        self.logger.info(f"🔄 TRADING CYCLE #{strategy_run_counter} - Processing {len(market_data)} symbols")
                 else:
                     # No data - but DON'T trigger TrueData reconnection!
                     # TrueData's health monitor handles this
