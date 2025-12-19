@@ -190,16 +190,26 @@ class StrategyCoordinator:
         metadata = signal.get('metadata', {})
         edge_source = metadata.get('edge_source', '')
         
-        # Block counter-trend strategies in trending markets
+        # 🔥 COUNTER-TREND MODE: Check if market is overextended
+        # When market moves 100-150+ points, allow counter-trend signals
+        counter_trend_allowed = self._is_counter_trend_mode_active()
+        
+        # Block counter-trend strategies in trending markets (UNLESS counter-trend mode is active)
         if regime in ['STRONG_TRENDING', 'TRENDING']:
             counter_trend_edges = ['MEAN_REVERSION', 'LIQUIDITY_GAP', 'RANGE_TRADING']
             if any(ct in edge_source for ct in counter_trend_edges):
+                if counter_trend_allowed:
+                    logger.info(f"✅ COUNTER-TREND ALLOWED: {signal.get('symbol')} mean reversion in overextended market")
+                    return True  # Allow counter-trend when market is overextended
                 logger.debug(f"⏭️ Blocking counter-trend signal {signal.get('symbol')} in {regime}")
                 return False
             
             # Also check signal_type metadata
             signal_type = metadata.get('signal_type', '')
             if 'reversal' in signal_type.lower() or 'sideways' in signal_type.lower():
+                if counter_trend_allowed:
+                    logger.info(f"✅ REVERSAL ALLOWED: {signal.get('symbol')} in overextended market")
+                    return True
                 return False
         
         # Block trend-following in ranging markets
@@ -215,6 +225,41 @@ class StrategyCoordinator:
                 return False
         
         return True
+    
+    def _is_counter_trend_mode_active(self) -> bool:
+        """
+        🔥 Check if counter-trend mode is active (market overextended)
+        
+        Returns True if NIFTY has moved 100+ points (0.4%+) from open,
+        indicating mean reversion opportunities.
+        """
+        try:
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if orchestrator and hasattr(orchestrator, 'market_bias') and orchestrator.market_bias:
+                # Use the new get_counter_trend_status method
+                if hasattr(orchestrator.market_bias, 'get_counter_trend_status'):
+                    status = orchestrator.market_bias.get_counter_trend_status()
+                    if status.get('mode') == 'COUNTER_TREND':
+                        logger.info(f"🔄 COUNTER-TREND MODE ACTIVE: NIFTY {status.get('nifty_percent', 0):+.2f}% "
+                                   f"({status.get('extension_level', 'UNKNOWN')} extension)")
+                        return True
+                
+                # Fallback: Check NIFTY momentum directly
+                current_bias = getattr(orchestrator.market_bias, 'current_bias', None)
+                if current_bias:
+                    nifty_change = getattr(current_bias, 'nifty_momentum', 0.0)
+                    # 0.4% = ~100 points at NIFTY 24000
+                    if abs(nifty_change) >= 0.4:
+                        logger.info(f"🔄 COUNTER-TREND MODE (fallback): NIFTY {nifty_change:+.2f}% overextended")
+                        return True
+            
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Counter-trend mode check failed: {e}")
+            return False
     
     def _resolve_conflicts(self, signals_by_strategy: Dict[str, List[Dict]], regime: str) -> List[Dict]:
         """Detect and resolve contradictory signals from different strategies"""

@@ -412,8 +412,13 @@ class MarketDirectionalBias:
                         adjusted_confidence *= 0.8  # Extended, reduce confidence
                         logger.info(f"⚠️ {scenario}: Extended move, reducing +confidence -20%")
                 else:
-                    adjusted_confidence *= 0.5  # Heavily penalize counter-trend
-                    logger.info(f"🚫 {scenario}: Counter-trend signal penalized -50%")
+                    # 🔥 COUNTER-TREND: Less penalty when market is overextended
+                    if move_zone in ['EXTENDED', 'EXTREME']:
+                        adjusted_confidence *= 0.85  # Only 15% penalty in extended zone
+                        logger.info(f"🔄 {scenario}: Counter-trend in EXTENDED zone - reduced penalty")
+                    else:
+                        adjusted_confidence *= 0.5  # Full penalty in early/mid zone
+                        logger.info(f"🚫 {scenario}: Counter-trend signal penalized -50%")
             
             # SCENARIO 2: GAP UP + FADE (Bearish Reversal Signal)
             elif scenario == 'GAP_UP_FADE':
@@ -438,8 +443,13 @@ class MarketDirectionalBias:
                         adjusted_confidence *= 0.8
                         logger.info(f"⚠️ {scenario}: Extended, reducing confidence -20%")
                 else:
-                    adjusted_confidence *= 0.5
-                    logger.info(f"🚫 {scenario}: Counter-trend signal penalized -50%")
+                    # 🔥 COUNTER-TREND: Less penalty when market is overextended
+                    if move_zone in ['EXTENDED', 'EXTREME']:
+                        adjusted_confidence *= 0.85  # Only 15% penalty in extended zone
+                        logger.info(f"🔄 {scenario}: Counter-trend in EXTENDED zone - reduced penalty")
+                    else:
+                        adjusted_confidence *= 0.5
+                        logger.info(f"🚫 {scenario}: Counter-trend signal penalized -50%")
             
             # SCENARIO 4: GAP DOWN + RECOVERY (Bullish Reversal Signal)
             elif scenario == 'GAP_DOWN_RECOVERY':
@@ -450,8 +460,13 @@ class MarketDirectionalBias:
                         adjusted_confidence *= 1.3
                         logger.info(f"🔄 {scenario}: Full gap recovery, BULLISH +30%")
                     else:
-                        adjusted_confidence *= 0.5
-                        logger.info(f"⚠️ {scenario}: Gap recovered, BEARISH penalized -50%")
+                        # 🔥 COUNTER-TREND: This is actually a mean reversion scenario
+                        if move_zone in ['EXTENDED', 'EXTREME']:
+                            adjusted_confidence *= 0.85  # Reduced penalty
+                            logger.info(f"🔄 {scenario}: BEARISH counter-trend in extended recovery")
+                        else:
+                            adjusted_confidence *= 0.5
+                            logger.info(f"⚠️ {scenario}: Gap recovered, BEARISH penalized -50%")
                 else:
                     # Partial recovery - day still down, BE CAUTIOUS
                     if bias_direction == 'BULLISH':
@@ -467,16 +482,26 @@ class MarketDirectionalBias:
                     adjusted_confidence *= 1.15 if move_zone in ['EARLY', 'MID'] else 0.85
                     logger.info(f"📈 {scenario}: Clean uptrend from flat open")
                 else:
-                    adjusted_confidence *= 0.6
-                    logger.info(f"🚫 {scenario}: Fighting clean uptrend, penalized -40%")
+                    # 🔥 COUNTER-TREND: Less penalty when market is overextended
+                    if move_zone in ['EXTENDED', 'EXTREME']:
+                        adjusted_confidence *= 0.85  # Only 15% penalty
+                        logger.info(f"🔄 {scenario}: Counter-trend in EXTENDED uptrend - reduced penalty")
+                    else:
+                        adjusted_confidence *= 0.6
+                        logger.info(f"🚫 {scenario}: Fighting clean uptrend, penalized -40%")
             
             elif scenario == 'FLAT_TRENDING_DOWN':
                 if bias_direction == 'BEARISH':
                     adjusted_confidence *= 1.15 if move_zone in ['EARLY', 'MID'] else 0.85
                     logger.info(f"📉 {scenario}: Clean downtrend from flat open")
                 else:
-                    adjusted_confidence *= 0.6
-                    logger.info(f"🚫 {scenario}: Fighting clean downtrend, penalized -40%")
+                    # 🔥 COUNTER-TREND: Less penalty when market is overextended
+                    if move_zone in ['EXTENDED', 'EXTREME']:
+                        adjusted_confidence *= 0.85  # Only 15% penalty
+                        logger.info(f"🔄 {scenario}: Counter-trend in EXTENDED downtrend - reduced penalty")
+                    else:
+                        adjusted_confidence *= 0.6
+                        logger.info(f"🚫 {scenario}: Fighting clean downtrend, penalized -40%")
             
             # SCENARIO 6: CHOPPY / RANGE-BOUND
             elif scenario == 'CHOPPY':

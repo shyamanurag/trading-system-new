@@ -867,13 +867,17 @@ class EnhancedPositionOpeningDecision:
     
     async def _check_rsi_extreme_filter(self, symbol: str, action: str, market_data: Dict) -> PositionDecisionResult:
         """
-        🚨 GLOBAL RSI EXTREME FILTER - Prevents ALL strategies from trading at extremes
+        🚨 GLOBAL RSI EXTREME FILTER - With COUNTER-TREND MODE support
         
-        Logic:
+        TREND-FOLLOWING MODE (normal):
         - RSI < 20: Stock extremely oversold → Don't SHORT (bounce likely)
         - RSI > 80: Stock extremely overbought → Don't BUY (drop likely)
         
-        This is a SAFETY filter that overrides individual strategy decisions.
+        🔥 COUNTER-TREND MODE (when market overextended):
+        - RSI > 70: Stock overbought → ALLOW SHORT (mean reversion)
+        - RSI < 30: Stock oversold → ALLOW BUY (mean reversion)
+        
+        This filter adapts based on market conditions.
         """
         try:
             # Get RSI from market_data or signal metadata
@@ -903,9 +907,46 @@ class EnhancedPositionOpeningDecision:
                 except Exception as rsi_calc_err:
                     logger.debug(f"Could not calculate RSI for {symbol}: {rsi_calc_err}")
             
-            # 🚨 EXTREME RSI FILTER
+            # 🔥 CHECK COUNTER-TREND MODE
+            counter_trend_active = await self._is_counter_trend_mode_active()
+            
+            # 🚨 RSI THRESHOLDS
             RSI_EXTREME_OVERSOLD = 20.0
             RSI_EXTREME_OVERBOUGHT = 80.0
+            RSI_COUNTER_TREND_OVERBOUGHT = 70.0  # For counter-trend shorts
+            RSI_COUNTER_TREND_OVERSOLD = 30.0    # For counter-trend longs
+            
+            # 🔥 COUNTER-TREND MODE: Allow trades that normally would be blocked
+            if counter_trend_active:
+                # In counter-trend mode, RSI extremes are SIGNALS, not blockers
+                
+                # SELL when overbought = GOOD counter-trend setup
+                if action.upper() in ['SELL', 'SHORT'] and rsi > RSI_COUNTER_TREND_OVERBOUGHT:
+                    logger.info(f"✅ COUNTER-TREND RSI: {symbol} RSI={rsi:.1f} > {RSI_COUNTER_TREND_OVERBOUGHT} - "
+                               f"ALLOWING {action} (overbought = mean reversion opportunity)")
+                    return PositionDecisionResult(
+                        decision=PositionDecision.APPROVED,
+                        confidence_score=0.0,
+                        risk_score=0.0,
+                        position_size=0,
+                        reasoning=f"✅ COUNTER-TREND: RSI {rsi:.1f} overbought - {action} allowed for mean reversion",
+                        metadata={'rsi': rsi, 'mode': 'COUNTER_TREND', 'action': action}
+                    )
+                
+                # BUY when oversold = GOOD counter-trend setup
+                if action.upper() in ['BUY', 'LONG'] and rsi < RSI_COUNTER_TREND_OVERSOLD:
+                    logger.info(f"✅ COUNTER-TREND RSI: {symbol} RSI={rsi:.1f} < {RSI_COUNTER_TREND_OVERSOLD} - "
+                               f"ALLOWING {action} (oversold = mean reversion opportunity)")
+                    return PositionDecisionResult(
+                        decision=PositionDecision.APPROVED,
+                        confidence_score=0.0,
+                        risk_score=0.0,
+                        position_size=0,
+                        reasoning=f"✅ COUNTER-TREND: RSI {rsi:.1f} oversold - {action} allowed for mean reversion",
+                        metadata={'rsi': rsi, 'mode': 'COUNTER_TREND', 'action': action}
+                    )
+            
+            # 🚨 TREND-FOLLOWING MODE: Block trades against RSI extremes
             
             # Don't SHORT when extremely oversold (bounce likely)
             if action.upper() in ['SELL', 'SHORT'] and rsi < RSI_EXTREME_OVERSOLD and rsi > 0:
@@ -952,6 +993,38 @@ class EnhancedPositionOpeningDecision:
                 reasoning="RSI check skipped (calculation error)",
                 metadata={'error': str(e)}
             )
+    
+    async def _is_counter_trend_mode_active(self) -> bool:
+        """
+        🔥 Check if counter-trend mode is active (market overextended)
+        
+        Returns True if NIFTY has moved 100+ points (0.4%+) from open,
+        indicating mean reversion opportunities are valid.
+        """
+        try:
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            
+            if orchestrator and hasattr(orchestrator, 'market_bias') and orchestrator.market_bias:
+                # Use the get_counter_trend_status method
+                if hasattr(orchestrator.market_bias, 'get_counter_trend_status'):
+                    status = orchestrator.market_bias.get_counter_trend_status()
+                    if status.get('mode') == 'COUNTER_TREND':
+                        return True
+                
+                # Fallback: Check NIFTY momentum directly
+                current_bias = getattr(orchestrator.market_bias, 'current_bias', None)
+                if current_bias:
+                    nifty_change = getattr(current_bias, 'nifty_momentum', 0.0)
+                    # 0.4% = ~100 points at NIFTY 24000
+                    if abs(nifty_change) >= 0.4:
+                        return True
+            
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Counter-trend mode check failed: {e}")
+            return False
     
     def _calculate_rsi(self, prices: list, period: int = 14) -> float:
         """Calculate RSI from price list"""
