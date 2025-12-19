@@ -492,6 +492,20 @@ class ZerodhaIntegration:
     async def place_order(self, order_params: Dict) -> Optional[str]:
         """Place order with built-in rate limiting, cooldown, and retry logic"""
         
+        # 🔥 PRE-MARKET CHECK: Block orders before 9:15 AM and after 3:30 PM
+        from datetime import datetime, time as dt_time
+        now = datetime.now()
+        market_open = dt_time(9, 15)
+        market_close = dt_time(15, 30)
+        current_time = now.time()
+        
+        if current_time < market_open:
+            logger.warning(f"🚫 PRE-MARKET BLOCKED: Order rejected - market opens at 9:15 AM (current: {now.strftime('%H:%M:%S')})")
+            return None
+        elif current_time > market_close:
+            logger.warning(f"🚫 POST-MARKET BLOCKED: Order rejected - market closed at 3:30 PM (current: {now.strftime('%H:%M:%S')})")
+            return None
+        
         # 🔥 ANTI-CHURN: Per-symbol cooldown and minimum quantity check
         symbol = order_params.get('symbol', '')
         quantity = order_params.get('quantity', 0)
@@ -653,7 +667,10 @@ class ZerodhaIntegration:
                 # Build Zerodha order parameters
                 # 🚨 CRITICAL FIX: Use LIMIT orders for stock options to avoid Zerodha blocking
                 # Stock options MUST use LIMIT orders (Zerodha requirement for illiquid options)
-                is_stock_option = symbol and (symbol.endswith('CE') or symbol.endswith('PE')) and not any(index in symbol for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY'])
+                # 🔥 FIX: Use regex to properly detect options - must have DIGITS before CE/PE (strike price)
+                # Stocks like RELIANCE, BAJFINANCE end with CE but are NOT options!
+                import re
+                is_stock_option = bool(symbol and re.search(r'\d+[CP]E$', symbol) and not any(index in symbol for index in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']))
                 
                 if is_stock_option:
                     # FORCE LIMIT order for stock options (ignore order_params)
