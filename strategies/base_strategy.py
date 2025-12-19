@@ -4804,6 +4804,227 @@ class BaseStrategy:
             logger.error(f"Error calculating MFI: {e}")
             return {'mfi': 50, 'mfi_divergence': None, 'overbought': False, 'oversold': False}
 
+    def calculate_volume_weighted_rsi(self, prices: List[float], volumes: List[float], period: int = 14) -> Dict:
+        """
+        🎯 VOLUME-WEIGHTED RSI (VRSI) - RSI that respects volume!
+        
+        Standard RSI treats all price changes equally, but a 1% move on 10M volume
+        is more significant than 1% on 100K volume. VRSI weights changes by volume.
+        
+        Formula:
+            - Weight each price change by its corresponding volume
+            - Separate into volume-weighted gains and losses
+            - VRSI = 100 - (100 / (1 + volume_weighted_RS))
+        
+        Returns:
+            vrsi: Volume-Weighted RSI (0-100)
+            rsi: Standard RSI for comparison
+            divergence: 'bullish' if VRSI > RSI (volume supports move), 'bearish' if VRSI < RSI
+            volume_confirmation: True if volume confirms RSI signal
+        """
+        try:
+            if len(prices) < period + 1 or len(volumes) < period + 1:
+                return {'vrsi': 50, 'rsi': 50, 'divergence': None, 'volume_confirmation': False}
+            
+            prices = np.array(prices[-(period+1):])
+            volumes = np.array(volumes[-(period+1):])
+            
+            # Calculate price changes
+            deltas = np.diff(prices)
+            
+            # Corresponding volumes (for each price change, use the volume of that period)
+            change_volumes = volumes[1:]  # volumes corresponding to each delta
+            
+            # Volume-weighted gains and losses
+            gains = np.where(deltas > 0, deltas, 0)
+            losses = np.where(deltas < 0, -deltas, 0)
+            
+            volume_weighted_gains = gains * change_volumes
+            volume_weighted_losses = losses * change_volumes
+            
+            # Sum over period
+            total_volume = np.sum(change_volumes[-period:])
+            if total_volume == 0:
+                return {'vrsi': 50, 'rsi': 50, 'divergence': None, 'volume_confirmation': False}
+            
+            # Volume-weighted averages
+            avg_vw_gain = np.sum(volume_weighted_gains[-period:]) / total_volume
+            avg_vw_loss = np.sum(volume_weighted_losses[-period:]) / total_volume
+            
+            # Standard RSI for comparison
+            avg_gain = np.mean(gains[-period:])
+            avg_loss = np.mean(losses[-period:])
+            
+            # Calculate standard RSI
+            if avg_loss == 0 and avg_gain == 0:
+                rsi = 50
+            elif avg_loss == 0:
+                rsi = 95
+            elif avg_gain == 0:
+                rsi = 5
+            else:
+                rs = avg_gain / avg_loss
+                rsi = 100 - (100 / (1 + rs))
+            
+            # Calculate VRSI
+            if avg_vw_loss == 0 and avg_vw_gain == 0:
+                vrsi = 50
+            elif avg_vw_loss == 0:
+                vrsi = 95
+            elif avg_vw_gain == 0:
+                vrsi = 5
+            else:
+                vw_rs = avg_vw_gain / avg_vw_loss
+                vrsi = 100 - (100 / (1 + vw_rs))
+            
+            # Detect divergence between VRSI and RSI
+            divergence = None
+            diff = vrsi - rsi
+            if diff > 10:
+                divergence = 'bullish'  # Volume supports upward momentum more than price shows
+            elif diff < -10:
+                divergence = 'bearish'  # Volume supports downward momentum more than price shows
+            
+            # Volume confirmation
+            # If both RSI and VRSI agree on direction (both oversold or both overbought)
+            volume_confirmation = (
+                (rsi < 30 and vrsi < 35) or  # Both oversold
+                (rsi > 70 and vrsi > 65) or  # Both overbought
+                (40 < rsi < 60 and 40 < vrsi < 60)  # Both neutral
+            )
+            
+            return {
+                'vrsi': round(vrsi, 1),
+                'rsi': round(rsi, 1),
+                'divergence': divergence,
+                'volume_confirmation': volume_confirmation,
+                'vrsi_overbought': vrsi > 70,
+                'vrsi_oversold': vrsi < 30
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating VRSI: {e}")
+            return {'vrsi': 50, 'rsi': 50, 'divergence': None, 'volume_confirmation': False}
+
+    def calculate_volume_weighted_pressure(self, highs: List[float], lows: List[float], 
+                                           closes: List[float], volumes: List[float],
+                                           opens: List[float] = None) -> Dict:
+        """
+        🎯 VOLUME-WEIGHTED BUY/SELL PRESSURE
+        
+        Instead of just using price position in candle range, weight by volume.
+        High volume at the top of the range = strong selling pressure
+        High volume at the bottom of the range = strong buying pressure
+        
+        Formula:
+            - For each candle, calculate buy/sell pressure from price position
+            - Weight by volume of that candle
+            - Aggregate over recent candles
+        
+        Returns:
+            vw_buying_pressure: 0-1 (volume-weighted)
+            vw_selling_pressure: 0-1 (volume-weighted)
+            pressure_ratio: buying/selling ratio
+            dominant_pressure: 'BUY', 'SELL', or 'NEUTRAL'
+            volume_intensity: How much volume is behind the pressure
+        """
+        try:
+            min_len = min(len(highs), len(lows), len(closes), len(volumes))
+            if min_len < 5:
+                return {
+                    'vw_buying_pressure': 0.5, 'vw_selling_pressure': 0.5,
+                    'pressure_ratio': 1.0, 'dominant_pressure': 'NEUTRAL',
+                    'volume_intensity': 0
+                }
+            
+            # Use last 20 candles for pressure calculation
+            lookback = min(20, min_len)
+            
+            highs = np.array(highs[-lookback:])
+            lows = np.array(lows[-lookback:])
+            closes = np.array(closes[-lookback:])
+            volumes = np.array(volumes[-lookback:])
+            
+            if opens is not None and len(opens) >= lookback:
+                opens = np.array(opens[-lookback:])
+            else:
+                opens = None
+            
+            total_volume = np.sum(volumes)
+            if total_volume == 0:
+                return {
+                    'vw_buying_pressure': 0.5, 'vw_selling_pressure': 0.5,
+                    'pressure_ratio': 1.0, 'dominant_pressure': 'NEUTRAL',
+                    'volume_intensity': 0
+                }
+            
+            # Calculate pressure for each candle
+            vw_buy_pressure_sum = 0
+            vw_sell_pressure_sum = 0
+            
+            for i in range(len(closes)):
+                candle_range = highs[i] - lows[i]
+                if candle_range <= 0:
+                    continue
+                
+                # Basic pressure from close position in range
+                buy_pressure = (closes[i] - lows[i]) / candle_range
+                sell_pressure = (highs[i] - closes[i]) / candle_range
+                
+                # If we have open, also factor in candle direction
+                if opens is not None:
+                    candle_body = closes[i] - opens[i]
+                    body_ratio = abs(candle_body) / candle_range if candle_range > 0 else 0
+                    
+                    if candle_body > 0:  # Bullish candle
+                        buy_pressure = buy_pressure * 0.7 + body_ratio * 0.3
+                    else:  # Bearish candle
+                        sell_pressure = sell_pressure * 0.7 + body_ratio * 0.3
+                
+                # Weight by volume
+                volume_weight = volumes[i] / total_volume
+                vw_buy_pressure_sum += buy_pressure * volume_weight
+                vw_sell_pressure_sum += sell_pressure * volume_weight
+            
+            # Normalize to 0-1
+            vw_buying_pressure = min(max(vw_buy_pressure_sum, 0), 1)
+            vw_selling_pressure = min(max(vw_sell_pressure_sum, 0), 1)
+            
+            # Pressure ratio
+            if vw_selling_pressure > 0:
+                pressure_ratio = vw_buying_pressure / vw_selling_pressure
+            else:
+                pressure_ratio = 2.0 if vw_buying_pressure > 0.5 else 1.0
+            
+            # Determine dominant pressure
+            if pressure_ratio > 1.5:
+                dominant_pressure = 'BUY'
+            elif pressure_ratio < 0.67:
+                dominant_pressure = 'SELL'
+            else:
+                dominant_pressure = 'NEUTRAL'
+            
+            # Volume intensity (average volume vs typical)
+            avg_volume = np.mean(volumes)
+            recent_volume = np.mean(volumes[-5:])
+            volume_intensity = recent_volume / avg_volume if avg_volume > 0 else 1.0
+            
+            return {
+                'vw_buying_pressure': round(vw_buying_pressure, 3),
+                'vw_selling_pressure': round(vw_selling_pressure, 3),
+                'pressure_ratio': round(pressure_ratio, 2),
+                'dominant_pressure': dominant_pressure,
+                'volume_intensity': round(volume_intensity, 2)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating volume-weighted pressure: {e}")
+            return {
+                'vw_buying_pressure': 0.5, 'vw_selling_pressure': 0.5,
+                'pressure_ratio': 1.0, 'dominant_pressure': 'NEUTRAL',
+                'volume_intensity': 0
+            }
+
     def calculate_real_vwap(self, prices: List[float], volumes: List[float], 
                             highs: List[float] = None, lows: List[float] = None) -> Dict:
         """
