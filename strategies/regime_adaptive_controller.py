@@ -1538,12 +1538,21 @@ class RegimeAdaptiveController:
             # Extract feature matrix
             feature_matrix = np.array([f['features'] for f in self.feature_history])
             
+            # 🚀 CRITICAL FIX: Yield to event loop to prevent health check failures
+            await asyncio.sleep(0)
+            
             # METHOD 1: GARCH-based volatility regime
             returns = feature_matrix[:, 1]  # momentum as proxy for returns
             volatility, vol_regime = self.math_models.garch_volatility_regime(returns)
             
+            # 🚀 FIX: Run GMM in thread pool (involves iterative fitting)
             # METHOD 2: Multivariate regime detection (GMM)
-            regime_id, gmm_confidence = self.math_models.multivariate_regime_detection(feature_matrix)
+            regime_id, gmm_confidence = await asyncio.to_thread(
+                self.math_models.multivariate_regime_detection, feature_matrix
+            )
+            
+            # Yield again after heavy computation
+            await asyncio.sleep(0)
             
             # METHOD 3: Rule-based regime classification
             latest_features = self.feature_history[-1]['raw_data']
@@ -1555,12 +1564,17 @@ class RegimeAdaptiveController:
             try:
                 if len(feature_matrix) >= 20:
                     # Train HMM if enough data (every 50 observations)
+                    # 🚀 CRITICAL FIX: Run in thread pool to not block event loop/health checks
                     if len(self.feature_history) % 50 == 0:
-                        self.hmm_model.baum_welch(feature_matrix[:, :3], n_iterations=5)
-                        logger.info("🧠 HMM model updated via Baum-Welch")
+                        await asyncio.to_thread(
+                            self.hmm_model.baum_welch, feature_matrix[:, :3], 5
+                        )
+                        logger.info("🧠 HMM model updated via Baum-Welch (non-blocking)")
                     
-                    # Get Viterbi path for most likely state sequence
-                    state_path, log_prob = self.hmm_model.viterbi(feature_matrix[:, :3])
+                    # 🚀 FIX: Also run Viterbi in thread pool (CPU-intensive)
+                    state_path, log_prob = await asyncio.to_thread(
+                        self.hmm_model.viterbi, feature_matrix[:, :3]
+                    )
                     current_state = state_path[-1]
                     hmm_regime = self.hmm_model.get_regime_from_state(current_state)
                     
