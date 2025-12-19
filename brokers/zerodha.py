@@ -492,18 +492,21 @@ class ZerodhaIntegration:
     async def place_order(self, order_params: Dict) -> Optional[str]:
         """Place order with built-in rate limiting, cooldown, and retry logic"""
         
-        # 🔥 PRE-MARKET CHECK: Block orders before 9:15 AM and after 3:30 PM
-        from datetime import datetime, time as dt_time
-        now = datetime.now()
+        # 🔥 PRE-MARKET CHECK: Block orders before 9:15 AM and after 3:30 PM IST
+        from datetime import datetime, time as dt_time, timezone, timedelta
+        
+        # Convert to IST (UTC+5:30) - server may be in UTC
+        IST = timezone(timedelta(hours=5, minutes=30))
+        now_ist = datetime.now(IST)
         market_open = dt_time(9, 15)
         market_close = dt_time(15, 30)
-        current_time = now.time()
+        current_time_ist = now_ist.time()
         
-        if current_time < market_open:
-            logger.warning(f"🚫 PRE-MARKET BLOCKED: Order rejected - market opens at 9:15 AM (current: {now.strftime('%H:%M:%S')})")
+        if current_time_ist < market_open:
+            logger.warning(f"🚫 PRE-MARKET BLOCKED: Order rejected - market opens at 9:15 AM IST (current: {now_ist.strftime('%H:%M:%S')} IST)")
             return None
-        elif current_time > market_close:
-            logger.warning(f"🚫 POST-MARKET BLOCKED: Order rejected - market closed at 3:30 PM (current: {now.strftime('%H:%M:%S')})")
+        elif current_time_ist > market_close:
+            logger.warning(f"🚫 POST-MARKET BLOCKED: Order rejected - market closed at 3:30 PM IST (current: {now_ist.strftime('%H:%M:%S')} IST)")
             return None
         
         # 🔥 ANTI-CHURN: Per-symbol cooldown and minimum quantity check
