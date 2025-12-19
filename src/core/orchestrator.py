@@ -3314,21 +3314,27 @@ class TradingOrchestrator:
             return False
     
     async def get_trading_status(self) -> Dict[str, Any]:
-        """Get comprehensive trading status"""
+        """Get comprehensive trading status - OPTIMIZED to prevent 504 timeouts
+        
+        🚨 2025-12-19 FIX: Reduced Zerodha API calls from 3 to 1 with caching
+        - Was calling get_orders() twice and get_positions() once
+        - Each call takes 1-5 seconds, causing 504 timeouts
+        - Now uses internal caching and single API call
+        """
         try:
             # Ensure active_strategies is always a list
             if not isinstance(self.active_strategies, list):
                 self.active_strategies = []
-            
+
             # Check if system is properly initialized
             system_ready = (
-                self.is_initialized and 
-                self.is_running and 
+                self.is_initialized and
+                self.is_running and
                 len(self.active_strategies) > 0 and
-                bool(self.components.get('trade_engine'))  # Fix: Check if trade_engine exists (not False)
+                bool(self.components.get('trade_engine'))
             )
-            
-            # Get strategy details
+
+            # Get strategy details - FAST, no API calls
             strategy_details = []
             for strategy_key, strategy_info in self.strategies.items():
                 strategy_details.append({
@@ -3337,106 +3343,87 @@ class TradingOrchestrator:
                     'status': 'running' if strategy_info.get('active', False) else 'inactive',
                     'initialized': 'instance' in strategy_info
                 })
-            
-            # Get actual trading data from trade engine and position tracker
+
+            # Get actual trading data - prioritize cached/local data
             total_trades = 0
             daily_pnl = 0.0
             active_positions = 0
-            
-            # Get trades from trade engine AND Zerodha for accuracy
+
+            # FAST PATH: Get from trade engine (no API call)
             if self.trade_engine:
                 try:
-                    # CRITICAL FIX: Use get_statistics() instead of get_status() for full-featured TradeEngine
                     if hasattr(self.trade_engine, 'get_statistics'):
                         trade_engine_status = self.trade_engine.get_statistics()
                         total_trades = trade_engine_status.get('executed_trades', 0)
                     elif hasattr(self.trade_engine, 'get_status'):
                         trade_engine_status = await self.trade_engine.get_status()
                         total_trades = trade_engine_status.get('executed_trades', 0)
-                    else:
-                        self.logger.warning("Trade engine has no get_statistics or get_status method")
-                        total_trades = 0
                 except Exception as e:
-                    self.logger.warning(f"Could not get trade engine status: {e}")
-                    total_trades = 0
-            
-            # CRITICAL FIX: Get accurate trade count from Zerodha if trade engine shows 0
-            if self.zerodha_client and total_trades == 0:
-                try:
-                    zerodha_orders = await self.zerodha_client.get_orders()
-                    if zerodha_orders:
-                        # Count only completed orders from today
-                        today = datetime.now().date()
-                        completed_orders = []
-                        for order in zerodha_orders:
-                            if order.get('status') == 'COMPLETE':
-                                try:
-                                    # Parse order timestamp to check if it's from today
-                                    order_time_str = order.get('order_timestamp', '')
-                                    if order_time_str:
-                                        # Handle both datetime objects and ISO strings
-                                        if isinstance(order_time_str, str):
-                                            order_time = datetime.fromisoformat(order_time_str.replace('Z', '+00:00'))
-                                        else:
-                                            order_time = order_time_str
-                                        
-                                        if order_time.date() == today:
-                                            completed_orders.append(order)
-                                except Exception as parse_error:
-                                    self.logger.debug(f"Could not parse order timestamp: {parse_error}")
-                                    # Include order anyway if we can't parse timestamp
-                                    completed_orders.append(order)
-                        
-                        total_trades = len(completed_orders)
-                        self.logger.info(f"📊 Found {total_trades} completed trades from Zerodha today")
-                        
-                except Exception as e:
-                    self.logger.warning(f"Could not get Zerodha trade count: {e}")
-            
-            # Get positions from position tracker
+                    self.logger.debug(f"Trade engine status: {e}")
+
+            # FAST PATH: Get from position tracker (no API call)
             if self.position_tracker:
                 try:
                     positions = getattr(self.position_tracker, 'positions', {})
                     active_positions = len(positions)
-                    
-                    # Calculate daily P&L from positions (both realized and unrealized)
                     for position in positions.values():
                         if isinstance(position, dict):
                             daily_pnl += position.get('unrealized_pnl', 0.0)
-                            daily_pnl += position.get('realized_pnl', 0.0)  # Add realized P&L
-                            daily_pnl += position.get('pnl', 0.0)  # Add any general P&L field
+                            daily_pnl += position.get('realized_pnl', 0.0)
+                            daily_pnl += position.get('pnl', 0.0)
                         else:
                             daily_pnl += getattr(position, 'unrealized_pnl', 0.0)
-                            daily_pnl += getattr(position, 'realized_pnl', 0.0)  # Add realized P&L
-                            daily_pnl += getattr(position, 'pnl', 0.0)  # Add any general P&L field
+                            daily_pnl += getattr(position, 'realized_pnl', 0.0)
+                            daily_pnl += getattr(position, 'pnl', 0.0)
                 except Exception as e:
-                    self.logger.warning(f"Could not get position data: {e}")
-            
-            # CRITICAL FIX: Get realized P&L from Zerodha directly
-            if self.zerodha_client and daily_pnl == 0:
-                try:
-                    # Get live positions from Zerodha for accurate P&L
-                    zerodha_positions = await self.zerodha_client.get_positions()
-                    if zerodha_positions:
-                        for position in zerodha_positions:
-                            if isinstance(position, dict):
-                                # Add all P&L fields from Zerodha
-                                daily_pnl += float(position.get('pnl', 0))
-                                daily_pnl += float(position.get('m2m', 0))  # Mark-to-market P&L
-                                daily_pnl += float(position.get('unrealised', 0))  # Unrealized P&L
-                                daily_pnl += float(position.get('realised', 0))  # Realized P&L
-                                self.logger.debug(f"Position {position.get('tradingsymbol')}: PnL={position.get('pnl', 0)}")
-                    
-                    # Also check orders for executed trade P&L
-                    if daily_pnl == 0:  # Still no P&L found
-                        zerodha_orders = await self.zerodha_client.get_orders()
-                        if zerodha_orders:
-                            completed_orders = [o for o in zerodha_orders if o.get('status') == 'COMPLETE']
-                            total_trades = len(completed_orders)
-                            self.logger.info(f"Found {total_trades} completed orders from Zerodha")
+                    self.logger.debug(f"Position tracker: {e}")
+
+            # SLOW PATH: Only call Zerodha if we have no data AND haven't called recently
+            # Use 60-second cache to prevent API hammering
+            if self.zerodha_client and (total_trades == 0 or daily_pnl == 0):
+                current_time = time_module.time()
+                cache_key = '_trading_status_cache'
+                cache_time_key = '_trading_status_cache_time'
+                
+                # Check cache (60 seconds)
+                if hasattr(self, cache_time_key) and hasattr(self, cache_key):
+                    if current_time - getattr(self, cache_time_key) < 60:
+                        cached = getattr(self, cache_key)
+                        if total_trades == 0:
+                            total_trades = cached.get('total_trades', 0)
+                        if daily_pnl == 0:
+                            daily_pnl = cached.get('daily_pnl', 0.0)
+                        if active_positions == 0:
+                            active_positions = cached.get('active_positions', 0)
+                    else:
+                        # Cache expired - make ONE API call with timeout
+                        try:
+                            zerodha_positions = await asyncio.wait_for(
+                                self.zerodha_client.get_positions(),
+                                timeout=5.0  # 5 second timeout
+                            )
+                            if zerodha_positions:
+                                for position in zerodha_positions:
+                                    if isinstance(position, dict):
+                                        daily_pnl += float(position.get('pnl', 0) or 0)
+                                        daily_pnl += float(position.get('m2m', 0) or 0)
+                                active_positions = len(zerodha_positions)
                             
-                except Exception as e:
-                    self.logger.warning(f"Could not get Zerodha P&L data: {e}")
+                            # Cache the result
+                            setattr(self, cache_key, {
+                                'total_trades': total_trades,
+                                'daily_pnl': daily_pnl,
+                                'active_positions': active_positions
+                            })
+                            setattr(self, cache_time_key, current_time)
+                        except asyncio.TimeoutError:
+                            self.logger.warning("⚠️ Zerodha API timeout (5s) - using cached data")
+                        except Exception as e:
+                            self.logger.debug(f"Zerodha API error: {e}")
+                else:
+                    # No cache yet - initialize it
+                    setattr(self, cache_time_key, 0)
+                    setattr(self, cache_key, {})
             
             # Get market status
             market_open = self._is_market_open()

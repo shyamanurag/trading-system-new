@@ -1941,13 +1941,21 @@ async def get_user_metrics_direct():
 
 @app.get("/api/balance/realtime", tags=["balance"])
 async def get_realtime_balance():
-    """Get real-time balance from Zerodha"""
+    """Get real-time balance from Zerodha - with caching to prevent 504 timeouts"""
+    import time as time_module
+    import asyncio
+    
+    # 🚨 FIX: Cache for 30 seconds to prevent API hammering and 504 timeouts
+    current_time = time_module.time()
+    if hasattr(get_realtime_balance, '_cache') and hasattr(get_realtime_balance, '_cache_time'):
+        if current_time - get_realtime_balance._cache_time < 30:
+            return get_realtime_balance._cache
+    
     try:
         from src.core.orchestrator import get_orchestrator_instance
         orchestrator = get_orchestrator_instance()
         
         if not orchestrator or not orchestrator.zerodha_client:
-            logger.warning("Zerodha client not available for realtime balance")
             return {
                 "success": False,
                 "available_cash": 0.0,
@@ -1956,8 +1964,22 @@ async def get_realtime_balance():
                 "error": "Zerodha client not initialized"
             }
         
-        # Fetch fresh margins
-        margins = await orchestrator.zerodha_client.get_margins()
+        # Fetch margins with 5 second timeout
+        try:
+            margins = await asyncio.wait_for(
+                orchestrator.zerodha_client.get_margins(),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ Zerodha margin API timeout (5s)")
+            return {
+                "success": False,
+                "available_cash": 0.0,
+                "used_margin": 0.0,
+                "total_balance": 0.0,
+                "error": "API timeout"
+            }
+        
         if not margins:
             return {
                 "success": False,
@@ -1972,13 +1994,19 @@ async def get_realtime_balance():
         used = float(margins.get('equity', {}).get('utilised', {}).get('total', 0) or 0)
         total = available + used
         
-        return {
+        result = {
             "success": True,
             "available_cash": available,
             "used_margin": used,
             "total_balance": total,
             "timestamp": datetime.now().isoformat()
         }
+        
+        # Cache result
+        get_realtime_balance._cache = result
+        get_realtime_balance._cache_time = current_time
+        
+        return result
         
     except Exception as e:
         logger.error(f"Error getting realtime balance: {str(e)}")
@@ -2011,9 +2039,17 @@ async def get_live_trades_direct():
                 logger.info("📊 Using cached live trades (preventing API hammering)")
                 return get_live_trades_direct._cache
         
-        # Get ACTUAL live orders from Zerodha API (now cached)
+        # Get ACTUAL live orders from Zerodha API (now cached) - with timeout
         logger.info("📋 Fetching live orders from Zerodha (cache miss)...")
-        orders = await orchestrator.zerodha_client.get_orders()
+        import asyncio
+        try:
+            orders = await asyncio.wait_for(
+                orchestrator.zerodha_client.get_orders(),
+                timeout=5.0  # 5 second timeout to prevent 504
+            )
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ Zerodha orders API timeout (5s)")
+            return {"trades": [], "success": False, "error": "API timeout"}
         
         if not orders:
             return {"trades": [], "success": True}
