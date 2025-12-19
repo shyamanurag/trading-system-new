@@ -252,6 +252,7 @@ async def lifespan(app: FastAPI):
             if init_success and orchestrator:
                 set_orchestrator_instance(orchestrator)
                 logger.info("BACKGROUND: Trading Orchestrator initialized successfully")
+                logger.info("BACKGROUND: ⏳ Waiting for daily Zerodha auth token before trading can start")
 
                 try:
                     from src.core.signal_lifecycle_manager import start_signal_lifecycle_management
