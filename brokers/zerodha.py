@@ -1837,10 +1837,18 @@ class ZerodhaIntegration:
                 return []
                 
         except Exception as e:
-            logger.error(f"❌ Get instruments attempt failed: {e}")
+            error_str = str(e)
             
+            # 🔥 FIX: Detect token/auth issues from error message
+            if 'AccessDenied' in error_str or 'Access Denied' in error_str:
+                logger.error(f"❌ Get instruments failed: ACCESS DENIED - Token missing or expired. Please submit daily Zerodha token.")
+            elif 'TokenException' in error_str or 'Invalid' in error_str:
+                logger.error(f"❌ Get instruments failed: Invalid token - Please re-authenticate with Zerodha")
+            else:
+                logger.error(f"❌ Get instruments attempt failed: {e}")
+
             # 🚨 DEFENSIVE: Reset cache if corrupted
-            if "'timestamp'" in str(e) or "KeyError" in str(e):
+            if "'timestamp'" in error_str or "KeyError" in error_str:
                 logger.warning("🔄 Cache corruption detected - resetting instruments cache")
                 self._reset_caches()
             
