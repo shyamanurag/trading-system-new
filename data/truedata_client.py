@@ -790,17 +790,20 @@ class TrueDataClient:
 
     def _get_symbols_to_subscribe(self):
         """Get symbols from autonomous configuration - FULLY AUTONOMOUS SELECTION"""
+        # 🚨 CRITICAL: TrueData subscription limit - user has 250 symbol plan
+        TRUEDATA_SYMBOL_LIMIT = 250
+        
         try:
             from config.truedata_symbols import get_complete_fo_symbols, get_autonomous_symbol_status
             
             # Get autonomous symbol selection based on market conditions
-            symbols = get_complete_fo_symbols()
+            all_fo_symbols = get_complete_fo_symbols()
             status = get_autonomous_symbol_status()
             
             logger.info(f"🤖 AUTONOMOUS SYMBOL SELECTION:")
             logger.info(f"   Strategy: {status['current_strategy']}")
-            logger.info(f"   Symbols: {len(symbols)} (limit: 250)")
-            logger.info(f"   Decision: Fully autonomous based on market conditions")
+            logger.info(f"   Available F&O Symbols: {len(all_fo_symbols)}")
+            logger.info(f"   TrueData Subscription Limit: {TRUEDATA_SYMBOL_LIMIT}")
             
             # Log autonomous decision details
             current_hour = datetime.now().hour
@@ -815,14 +818,52 @@ class TrueDataClient:
             else:
                 logger.info(f"   🔍 POST-MARKET: Strategy optimized for analysis")
             
-            # 🎯 CRITICAL FIX: Add options symbols for real-time options data
-            options_symbols = self._get_dynamic_options_symbols(symbols)
-            all_symbols = symbols + options_symbols
+            # 🚨 PRIORITY-BASED SYMBOL SELECTION to stay within 250 limit
+            # Priority 1: Indices (most important for market direction)
+            indices = [s for s in all_fo_symbols if s.endswith('-I')]
             
-            logger.info(f"📊 FINAL SUBSCRIPTION LIST:")
-            logger.info(f"   Underlying: {len(symbols)} symbols")
+            # Priority 2: Top liquid stocks (sorted by typical F&O volume)
+            top_liquid_stocks = [
+                'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY', 'SBIN', 'BHARTIARTL',
+                'KOTAKBANK', 'LT', 'AXISBANK', 'MARUTI', 'WIPRO', 'TITAN', 'BAJFINANCE',
+                'TECHM', 'SUNPHARMA', 'HCLTECH', 'TATAMOTORS', 'INDUSINDBK', 'ADANIPORTS',
+                'ASIANPAINT', 'NTPC', 'POWERGRID', 'ONGC', 'COALINDIA', 'DRREDDY', 'CIPLA',
+                'NESTLEIND', 'ULTRACEMCO', 'HINDUNILVR', 'TATASTEEL', 'JSWSTEEL', 'HINDALCO',
+                'VEDL', 'ITC', 'BRITANNIA', 'IOC', 'BPCL', 'GAIL', 'M&M', 'BAJAJ-AUTO',
+                'HEROMOTOCO', 'EICHERMOT', 'TVSMOTOR', 'APOLLOHOSP', 'BANDHANBNK', 'PNB',
+                'FEDERALBNK', 'IDFCFIRSTB', 'BIOCON', 'LUPIN'
+            ]
+            
+            # Priority 3: Other F&O stocks
+            other_stocks = [s for s in all_fo_symbols if s not in indices and s not in top_liquid_stocks]
+            
+            # Build prioritized list - indices first, then top liquid, then others
+            prioritized_symbols = indices + [s for s in top_liquid_stocks if s in all_fo_symbols]
+            remaining_slots = TRUEDATA_SYMBOL_LIMIT - len(prioritized_symbols) - 50  # Reserve 50 for options
+            
+            if remaining_slots > 0:
+                prioritized_symbols.extend(other_stocks[:remaining_slots])
+            
+            # Calculate how many slots for options (max 50 during market hours)
+            options_budget = min(50, TRUEDATA_SYMBOL_LIMIT - len(prioritized_symbols))
+            
+            # 🎯 Add options symbols only during market hours and within budget
+            options_symbols = []
+            if 9 <= current_hour <= 15 and options_budget > 0:
+                options_symbols = self._get_dynamic_options_symbols(prioritized_symbols)[:options_budget]
+            
+            all_symbols = prioritized_symbols + options_symbols
+            
+            # 🚨 FINAL SAFETY CHECK: Ensure we never exceed 250
+            if len(all_symbols) > TRUEDATA_SYMBOL_LIMIT:
+                logger.warning(f"⚠️ Symbol count {len(all_symbols)} exceeds limit {TRUEDATA_SYMBOL_LIMIT}, trimming...")
+                all_symbols = all_symbols[:TRUEDATA_SYMBOL_LIMIT]
+            
+            logger.info(f"📊 FINAL SUBSCRIPTION LIST (within {TRUEDATA_SYMBOL_LIMIT} limit):")
+            logger.info(f"   Indices: {len(indices)} symbols")
+            logger.info(f"   Underlying Stocks: {len(prioritized_symbols) - len(indices)} symbols")
             logger.info(f"   Options: {len(options_symbols)} symbols") 
-            logger.info(f"   Total: {len(all_symbols)} symbols (TrueData limit: 250)")
+            logger.info(f"   Total: {len(all_symbols)} symbols ✅")
             
             return all_symbols
             
@@ -831,61 +872,54 @@ class TrueDataClient:
             # Enhanced fallback with autonomous logic
             current_hour = datetime.now().hour
             
-            if 9 <= current_hour < 11 or 13 <= current_hour < 15:
-                # High volatility periods - options focus
-                symbols = [
-                    # Core indices
-                    'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
-                    # Top liquid F&O stocks
-                    'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
-                    'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
-                    'POWERGRID', 'NTPC', 'COALINDIA', 'TECHM', 'MARUTI', 'ASIANPAINT'
-                ]
-                logger.info(f"🤖 AUTONOMOUS FALLBACK: Options-focused ({len(symbols)} symbols)")
-            else:
-                # Lower volatility - underlying focus
-                symbols = [
-                    # Core indices
-                    'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
-                    # Extended F&O stocks for analysis
-                    'RELIANCE', 'TCS', 'HDFC', 'INFY', 'ICICIBANK', 'HDFCBANK', 'ITC',
-                    'BHARTIARTL', 'KOTAKBANK', 'LT', 'SBIN', 'WIPRO', 'AXISBANK',
-                    'MARUTI', 'ASIANPAINT', 'HCLTECH', 'POWERGRID', 'NTPC', 'COALINDIA',
-                    'TECHM', 'TATAMOTORS', 'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND',
-                    'TITAN', 'BAJFINANCE', 'M&M', 'DRREDDY', 'SUNPHARMA', 'CIPLA'
-                ]
-                logger.info(f"🤖 AUTONOMOUS FALLBACK: Underlying-focused ({len(symbols)} symbols)")
+            # Core symbols always included
+            symbols = [
+                # Core indices (5)
+                'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I',
+                # Top liquid F&O stocks for fallback (195 max to leave room for options)
+                'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'SBIN', 'ITC',
+                'BHARTIARTL', 'KOTAKBANK', 'LT', 'AXISBANK', 'WIPRO', 'MARUTI',
+                'POWERGRID', 'NTPC', 'COALINDIA', 'TECHM', 'ASIANPAINT', 'HCLTECH',
+                'TATAMOTORS', 'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND', 'TITAN',
+                'BAJFINANCE', 'M&M', 'DRREDDY', 'SUNPHARMA', 'CIPLA', 'HINDUNILVR',
+                'ONGC', 'BPCL', 'IOC', 'GAIL', 'VEDL', 'HINDALCO', 'JSWSTEEL',
+                'TATASTEEL', 'APOLLOHOSP', 'INDUSINDBK', 'BANDHANBNK', 'PNB'
+            ]
+            logger.info(f"🤖 AUTONOMOUS FALLBACK: {len(symbols)} core symbols")
             
-            # 🎯 CRITICAL FIX: Add options symbols for real-time options data
-            options_symbols = self._get_dynamic_options_symbols(symbols)
+            # Calculate options budget (max 50, only during market hours)
+            options_budget = min(50, TRUEDATA_SYMBOL_LIMIT - len(symbols))
+            options_symbols = []
+            
+            if 9 <= current_hour <= 15 and options_budget > 0:
+                options_symbols = self._get_dynamic_options_symbols(symbols)[:options_budget]
+            
             all_symbols = symbols + options_symbols
             
-            logger.info(f"📊 FINAL SUBSCRIPTION LIST:")
+            # 🚨 FINAL SAFETY CHECK
+            if len(all_symbols) > TRUEDATA_SYMBOL_LIMIT:
+                all_symbols = all_symbols[:TRUEDATA_SYMBOL_LIMIT]
+            
+            logger.info(f"📊 FALLBACK SUBSCRIPTION LIST (within {TRUEDATA_SYMBOL_LIMIT} limit):")
             logger.info(f"   Underlying: {len(symbols)} symbols")
             logger.info(f"   Options: {len(options_symbols)} symbols") 
-            logger.info(f"   Total: {len(all_symbols)} symbols (TrueData limit: 250)")
-            
-            # Ensure we don't exceed TrueData limits
-            if len(all_symbols) > 250:
-                logger.warning(f"⚠️ Symbol count ({len(all_symbols)}) exceeds TrueData limit (250)")
-                # Keep underlying symbols + top liquid options
-                priority_options = self._get_priority_options_symbols(symbols[:50])  # Top 50 underlying
-                all_symbols = symbols + priority_options
-                logger.info(f"✂️ TRIMMED: {len(symbols)} underlying + {len(priority_options)} priority options = {len(all_symbols)}")
+            logger.info(f"   Total: {len(all_symbols)} symbols ✅")
             
             return all_symbols
     
     def _get_dynamic_options_symbols(self, underlying_symbols: List[str]) -> List[str]:
         """Generate options symbols for real-time trading based on strategy needs"""
+        # 🚨 CRITICAL: Limit options to 50 max to stay within 250 symbol TrueData limit
+        OPTIONS_LIMIT = 50
+        
         try:
             options_symbols = []
             current_time = datetime.now()
             
-            # Focus on most liquid underlying symbols for options
+            # Focus on ONLY the most liquid index options (indices have highest options volume)
             priority_underlyings = [
-                'NIFTY', 'BANKNIFTY', 'FINNIFTY',  # Indices (most liquid)
-                'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY',  # Top stocks
-                'BHARTIARTL', 'KOTAKBANK', 'SBIN', 'AXISBANK', 'WIPRO'
+                'NIFTY', 'BANKNIFTY',  # Top 2 index options (most liquid)
+                'FINNIFTY',  # Expiry on specific days
             ]
             
             for symbol in underlying_symbols:
@@ -897,10 +931,10 @@ class TrueDataClient:
                     symbol_options = self._generate_options_chain(clean_symbol)
                     options_symbols.extend(symbol_options)
                     
-                    if len(options_symbols) > 150:  # Limit options to 150 max
+                    if len(options_symbols) >= OPTIONS_LIMIT:
                         break
             
-            return options_symbols[:150]  # Hard cap at 150 options
+            return options_symbols[:OPTIONS_LIMIT]  # Hard cap at 50 options
             
         except Exception as e:
             logger.error(f"Error generating dynamic options symbols: {e}")
