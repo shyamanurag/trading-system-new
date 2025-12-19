@@ -2115,6 +2115,9 @@ class TradingOrchestrator:
                 self.logger.info(f"   📋 {strategy_key}: active={active}, has_instance={has_instance}")
             
             for strategy_key, strategy_info in self.strategies.items():
+                # 🚀 CRITICAL FIX: Yield between strategies to let HTTP handlers run
+                await asyncio.sleep(0)  # Cooperative yield point
+                
                 if strategy_info.get('active', False) and 'instance' in strategy_info:
                     try:
                         strategy_instance = strategy_info['instance']
@@ -3222,14 +3225,36 @@ class TradingOrchestrator:
             self.logger.info(f"✅ Active strategies list: {self.active_strategies}")
             
             # Start market data processing
-            if not hasattr(self, '_trading_task') or self._trading_task is None:
+            if not hasattr(self, '_trading_task') or self._trading_task is None or self._trading_task.done():
                 self._trading_task = asyncio.create_task(self._trading_loop())
-                self.logger.info("🔄 Started trading loop")
+                # 🚀 CRITICAL FIX: Add exception callback to log when task dies unexpectedly
+                def trading_task_callback(task):
+                    try:
+                        exc = task.exception()
+                        if exc:
+                            self.logger.error(f"🚨 TRADING TASK DIED with exception: {exc}")
+                            import traceback
+                            self.logger.error(f"   Traceback: {traceback.format_exception(type(exc), exc, exc.__traceback__)}")
+                    except asyncio.CancelledError:
+                        self.logger.info("🛑 Trading task was cancelled (normal shutdown)")
+                    except asyncio.InvalidStateError:
+                        pass  # Task didn't raise an exception
+                self._trading_task.add_done_callback(trading_task_callback)
+                self.logger.info("🔄 Started trading loop with exception callback")
             
             # Start watchdog to monitor trading task
-            if not hasattr(self, '_watchdog_task') or self._watchdog_task is None:
+            if not hasattr(self, '_watchdog_task') or self._watchdog_task is None or self._watchdog_task.done():
                 self._watchdog_task = asyncio.create_task(self._trading_loop_watchdog())
-                self.logger.info("🐕 Started trading loop watchdog")
+                # Add callback for watchdog too
+                def watchdog_task_callback(task):
+                    try:
+                        exc = task.exception()
+                        if exc:
+                            self.logger.error(f"🚨 WATCHDOG TASK DIED with exception: {exc}")
+                    except (asyncio.CancelledError, asyncio.InvalidStateError):
+                        pass
+                self._watchdog_task.add_done_callback(watchdog_task_callback)
+                self.logger.info("🐕 Started trading loop watchdog with exception callback")
             
             # CRITICAL FIX: Sync capital before trading starts
             if self.capital_sync:
@@ -3597,11 +3622,14 @@ class TradingOrchestrator:
                 
                 # 🚨 ONLY check Zerodha - TrueData manages itself!
                 # Zerodha token can expire and needs manual refresh
-                if hasattr(self, 'zerodha_client') and self.zerodha_client:
-                    if not self.zerodha_client.is_connected:
-                        self.logger.error(f"🚨 ZERODHA DISCONNECTED: Token may have expired - needs manual refresh")
-                        await asyncio.sleep(30)  # Wait before retry
-                        continue
+                try:
+                    if hasattr(self, 'zerodha_client') and self.zerodha_client:
+                        if not self.zerodha_client.is_connected:
+                            self.logger.error(f"🚨 ZERODHA DISCONNECTED: Token may have expired - needs manual refresh")
+                            await asyncio.sleep(30)  # Wait before retry
+                            continue
+                except Exception as zerodha_check_err:
+                    self.logger.warning(f"⚠️ Zerodha connection check failed: {zerodha_check_err}")
                 
                 # Process market data - simple approach, no aggressive timeouts
                 try:
@@ -3613,7 +3641,20 @@ class TradingOrchestrator:
                 if market_data and len(market_data) > 0:
                     # Data received successfully
                     strategy_run_counter += 1
-                    await self._process_market_data()
+                    
+                    # 🚀 CRITICAL FIX: Add timeout to prevent blocking the event loop
+                    # This allows HTTP requests to be processed even if strategies are slow
+                    try:
+                        await asyncio.wait_for(
+                            self._process_market_data(),
+                            timeout=30.0  # 30 second max per cycle
+                        )
+                    except asyncio.TimeoutError:
+                        self.logger.warning(f"⚠️ Strategy processing timed out (30s) - cycle skipped")
+                    
+                    # 🚀 CRITICAL FIX: Yield to let HTTP handlers run
+                    await asyncio.sleep(0.1)  # Brief yield point
+                    
                     consecutive_failures = 0
                     last_successful_data = current_time
                     
@@ -3732,7 +3773,8 @@ class TradingOrchestrator:
         """Watchdog task to monitor trading loop and restart if it dies"""
         self.logger.info("🐕 Trading loop watchdog started")
         
-        watchdog_check_interval = 30  # Check every 30 seconds
+        # 🚀 CRITICAL FIX: Reduced from 30s to 5s for faster recovery
+        watchdog_check_interval = 5  # Check every 5 seconds (was 30)
         max_restart_attempts = 20  # INCREASED from 5 - don't give up too easily
         restart_attempts = 0
         last_restart_hour = -1  # Track which hour we're in for reset

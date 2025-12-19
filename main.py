@@ -75,6 +75,7 @@ router_imports = {
     'daily_auth_workflow': ('src.api.daily_auth_workflow', 'router'),
     'websocket': ('src.api.websocket', 'router'),
     'monitoring': ('src.api.monitoring', 'router'),
+    'log_monitor': ('src.api.log_monitor', 'router'),
     'webhooks': ('src.api.webhooks', 'router'),
     'order_management': ('src.api.order_management', 'router'),
     'position_management': ('src.api.position_management', 'router'),
@@ -768,6 +769,7 @@ router_configs = [
     ('elite_recommendations', '/api/v1/elite', ('elite-recommendations',)),
     ('performance', '/api/v1/performance', ('performance',)),
     ('monitoring', '/api/v1/monitoring', ('monitoring',)),
+    ('log_monitor', '', ('log-monitor',)),  # Log monitoring - already has /api/v1/logs prefix
     ('error_monitoring', '/api/v1/errors', ('error-monitoring',)),
     ('database_health', '/api/v1/db-health', ('database-health',)),
     ('database_admin', '', ('database-admin',)),  # CRITICAL FIX: Mount database admin router

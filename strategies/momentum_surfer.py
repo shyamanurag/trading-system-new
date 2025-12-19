@@ -1158,10 +1158,6 @@ class EnhancedMomentumSurfer(BaseStrategy):
                                         logger.warning(f"🚫 {stock}: SELL signal BLOCKED - Smart money accumulating!")
                                         continue  # Skip this signal
                         
-                        # 🔥 FIX: Initialize metadata BEFORE calibration to prevent KeyError
-                        if 'metadata' not in signal:
-                            signal['metadata'] = {}
-                        
                         # 🎯 NEW: CALIBRATE CONFIDENCE based on actual performance
                         try:
                             from src.core.signal_enhancement import signal_enhancer

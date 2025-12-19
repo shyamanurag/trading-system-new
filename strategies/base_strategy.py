@@ -6438,7 +6438,31 @@ class BaseStrategy:
                 
                 # Use the new clearer method if available
                 if hasattr(market_bias, 'should_allow_signal'):
-                    should_allow = market_bias.should_allow_signal(action.upper(), normalized_confidence)
+                    # 🔥 COUNTER-TREND SUPPORT: Pass micro indicators for counter-trend validation
+                    # Extract micro indicators from metadata for intraday scalping decisions
+                    micro_indicators = None
+                    if metadata:
+                        micro_indicators = {
+                            'rsi': metadata.get('rsi', metadata.get('fast_rsi', 50)),
+                            'bollinger_squeeze': metadata.get('bollinger_squeeze', False),
+                            'bollinger_position': metadata.get('bollinger_position', 'middle'),
+                            'stoch_rsi': metadata.get('stoch_rsi', 0.5),
+                            'vwap_deviation': metadata.get('vwap_deviation', 0),
+                        }
+                    
+                    # Get stock change percent from market data for relative strength
+                    stock_change = None
+                    if market_data and symbol in market_data:
+                        stock_data = market_data.get(symbol, {})
+                        stock_change = stock_data.get('change_percent', stock_data.get('day_change_percent'))
+                    
+                    should_allow = market_bias.should_allow_signal(
+                        action.upper(), 
+                        normalized_confidence,
+                        symbol=symbol,
+                        stock_change_percent=stock_change,
+                        micro_indicators=micro_indicators
+                    )
                 else:
                     # Fallback: if no bias method available, BLOCK signal (quality over quantity)
                     should_allow = False

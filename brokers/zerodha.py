@@ -935,6 +935,24 @@ class ZerodhaIntegration:
             return symbol.replace('-I', '')  # NIFTY-I -> NIFTY
         return symbol
 
+    def _is_options_contract(self, symbol: str) -> bool:
+        """
+        Detect if a symbol is an options contract.
+        Options have a strike price (digits) followed by CE or PE at the end.
+        Examples: RELIANCE1500CE ✓, NIFTY26000PE ✓, RELIANCE ✗, FORCEMOTORS ✗
+        
+        🔥 CRITICAL: Simple 'CE' in symbol check fails for stocks like:
+        - RELIANCE (contains 'CE')
+        - FORCEMOTORS (contains 'CE') 
+        - SPENCERS (contains 'PE')
+        """
+        import re
+        if not symbol:
+            return False
+        # Options must have digits followed by CE or PE at the end
+        # Pattern: one or more digits, then CE or PE, at end of string
+        return bool(re.search(r'\d+(CE|PE)$', symbol.upper()))
+
     def _get_product_type_for_symbol(self, symbol: str, order_params: Dict) -> str:
         """Get appropriate product type for symbol - FIXED for short selling"""
         # Check if user explicitly specified product type
@@ -945,16 +963,19 @@ class ZerodhaIntegration:
         action = self._get_transaction_type(order_params)
         
         # INTRADAY ONLY: Use MIS for ALL orders (equity and options)
-        if 'CE' in symbol or 'PE' in symbol:
-            return 'MIS'  # Options BUY with intraday auto square-off
+        # 🔥 FIX: Use proper options detection instead of simple substring check
+        if self._is_options_contract(symbol):
+            return 'MIS'  # Options with intraday auto square-off
         else:
             # Equity intraday
             return 'MIS'  # Margin Intraday Square-off
 
     def _get_exchange_for_symbol(self, symbol: str) -> str:
         """Get appropriate exchange for symbol - FIXED for options and indices"""
-        # 🔧 CRITICAL FIX: Options contracts (CE/PE) trade on NFO, not NSE
-        if 'CE' in symbol or 'PE' in symbol:
+        # 🔧 CRITICAL FIX: Options contracts trade on NFO, not NSE
+        # 🔥 FIX: Use regex to detect options - simple 'CE'/'PE' substring check 
+        # incorrectly matches stocks like RELIANCE, FORCEMOTORS, SPENCERS
+        if self._is_options_contract(symbol):
             return 'NFO'  # Options contracts
         elif symbol.endswith('-I') or symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX']:
             return 'NSE'  # Indices on NSE (Zerodha uses NSE for index quotes)
@@ -3162,6 +3183,11 @@ class ZerodhaIntegration:
     # 🔥 ZERODHA HISTORICAL DATA API (FREE!)
     # ========================================
     
+    # 🚀 GLOBAL HISTORICAL DATA CACHE - Shared across all strategies
+    # This prevents duplicate API calls when multiple strategies need same data
+    _historical_data_cache = {}
+    _historical_cache_ttl = 300  # 5 minutes cache (matches MTF refresh interval)
+    
     async def get_historical_data(
         self, 
         symbol: str, 
@@ -3171,9 +3197,10 @@ class ZerodhaIntegration:
         exchange: str = "NSE"
     ) -> List[Dict]:
         """
-        Fetch historical OHLC candle data from Zerodha.
+        Fetch historical OHLC candle data from Zerodha WITH CACHING.
         
         🔥 THIS IS FREE with Kite Connect subscription!
+        🚀 CACHED for 5 minutes to prevent duplicate API calls across strategies
         
         Args:
             symbol: Trading symbol (e.g., 'RELIANCE', 'NIFTY 50')
@@ -3191,6 +3218,18 @@ class ZerodhaIntegration:
             # Returns last 30 days of 5-minute candles
         """
         try:
+            import time as time_module
+            current_time = time_module.time()
+            
+            # 🚀 CACHE CHECK: Prevent duplicate API calls across strategies
+            cache_key = f"{symbol}:{interval}:{exchange}"
+            if cache_key in ZerodhaIntegration._historical_data_cache:
+                cached_entry = ZerodhaIntegration._historical_data_cache[cache_key]
+                cache_age = current_time - cached_entry['timestamp']
+                if cache_age < ZerodhaIntegration._historical_cache_ttl:
+                    logger.debug(f"📊 Using cached historical data for {symbol} ({interval}) - age: {cache_age:.0f}s")
+                    return cached_entry['data']
+            
             if not self.kite:
                 logger.error("❌ Kite not initialized for historical data")
                 return []
@@ -3238,6 +3277,13 @@ class ZerodhaIntegration:
                         'close': float(candle['close']),
                         'volume': int(candle['volume'])
                     })
+                
+                # 🚀 STORE IN CACHE for sharing across strategies
+                ZerodhaIntegration._historical_data_cache[cache_key] = {
+                    'data': candles,
+                    'timestamp': current_time
+                }
+                logger.debug(f"📊 Cached historical data for {symbol} ({interval}) - {len(candles)} candles")
                 
                 return candles
             

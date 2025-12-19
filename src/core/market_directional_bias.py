@@ -1030,39 +1030,41 @@ class MarketDirectionalBias:
         return consistency - 0.5  # 0.5 to 0.5 range, where 0.5 = all same direction
     
     def should_allow_signal(self, signal_direction: str, signal_confidence: float, symbol: str = None, 
-                          stock_change_percent: float = None) -> bool:
+                          stock_change_percent: float = None, 
+                          micro_indicators: dict = None) -> bool:
         """
-        Determine if a signal should be allowed based on market bias with RELATIVE STRENGTH
+        Determine if a signal should be allowed based on market bias with COUNTER-TREND SUPPORT
+        
+        🔥 2024-12-19: ENHANCED for intraday counter-trend scalping
+        - When NIFTY is up 100-150+ points, favor SHORT signals (mean reversion)
+        - When NIFTY is down 100-150+ points, favor LONG signals (mean reversion)
+        - Use micro indicators (fast RSI, Bollinger squeeze) for counter-trend validation
         
         Args:
             signal_direction: 'BUY' or 'SELL'
             signal_confidence: Signal confidence (0-10)
             symbol: Trading symbol (optional, used to identify index vs stock)
             stock_change_percent: Stock's % change (for relative strength check)
+            micro_indicators: Dict with fast indicators {'rsi': 75, 'bollinger_squeeze': True, 'stoch_rsi': 0.9}
             
         Returns:
             True if signal should be allowed, False if it should be rejected
         """
         try:
             # CRITICAL FIX: Normalize confidence to 0-10 scale
-            # Strategies send confidence in 0-1 scale (0.85 = 85%)
-            # Market bias expects 0-10 scale (8.5 = 85%)
             if signal_confidence <= 1.0:
-                # Convert from 0-1 scale to 0-10 scale
                 signal_confidence = signal_confidence * 10.0
                 logger.debug(f"Normalized confidence from 0-1 scale to 0-10 scale: {signal_confidence:.1f}/10")
             elif signal_confidence > 10:
-                # Handle percentage scale (85 = 85%)
                 logger.debug(f"Normalizing confidence from percentage: {signal_confidence} → {signal_confidence/10}")
                 signal_confidence = signal_confidence / 10.0
             
             # Regime-aware thresholds
             regime = getattr(self.current_bias, 'market_regime', 'NORMAL')
-            # Make counter-trend overrides harder in choppy/sideways days
-            override_threshold = 8.5  # REDUCED from 9.7/9.9 to allow more signals through
+            override_threshold = 8.5
             neutral_threshold = 6.5 if regime in ('CHOPPY', 'VOLATILE_CHOPPY') else 6.5
 
-            # HIGH CONFIDENCE OVERRIDE: Allow counter-trend for very strong signals (regime aware)
+            # HIGH CONFIDENCE OVERRIDE
             if signal_confidence >= override_threshold:
                 logger.info(f"🎯 HIGH CONFIDENCE OVERRIDE: {signal_direction} allowed (confidence={signal_confidence:.1f}, regime={regime})")
                 return True
@@ -1072,107 +1074,321 @@ class MarketDirectionalBias:
             if getattr(self.current_bias, 'confidence', 0.0) < 3.0:
                 effective_direction = "NEUTRAL"
 
-            # NEUTRAL BIAS: Allow signals with moderate confidence (regime aware)
+            # NEUTRAL BIAS: Allow signals with moderate confidence
             if effective_direction == "NEUTRAL":
                 allowed = signal_confidence >= neutral_threshold
                 if not allowed:
-                    logger.debug(f"Signal rejected: Confidence {signal_confidence:.1f} < {neutral_threshold} threshold for neutral bias (regime={regime})")
+                    logger.debug(f"Signal rejected: Confidence {signal_confidence:.1f} < {neutral_threshold} threshold for neutral bias")
                 return allowed
             
-            # DIRECTIONAL BIAS: Adaptive strategy based on bias strength
-            # 🎯 CRITICAL IMPROVEMENT: Mean reversion for INDEX trades ONLY
-            # 🎯 USER INSIGHT: Stocks can swing 3-5% independently, indices limited to 1-2%
-            bias_strength = getattr(self.current_bias, 'confidence', 0.0)
-            nifty_change = getattr(self.current_bias, 'nifty_momentum', 0.0)  # nifty_momentum = % change
+            # Get NIFTY move data
+            nifty_change = getattr(self.current_bias, 'nifty_momentum', 0.0)  # % change
+            nifty_points = self._get_nifty_points_from_open()  # Actual points move
             
-            # Detect if this is an INDEX trade (NIFTY/BANKNIFTY options) vs STOCK trade
+            # Detect if this is an INDEX trade
             is_index_trade = False
             if symbol:
-                # Check if symbol contains index names
                 index_identifiers = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX']
                 is_index_trade = any(idx in symbol.upper() for idx in index_identifiers)
             
-            # Determine if market is OVEREXTENDED (mean reversion opportunity)
-            # ONLY apply to index trades - stocks have independent swings
-            is_overextended = abs(nifty_change) >= 1.0 and is_index_trade  # ±1.0% NIFTY for INDEX trades only
+            # 🔥 COUNTER-TREND MODE DETECTION
+            # Intraday trading: Market moves 100-150+ points = overextended = mean reversion opportunity
+            # At NIFTY 24000: 100 pts = 0.42%, 150 pts = 0.63%
+            counter_trend_mode = self._is_counter_trend_opportunity(
+                nifty_change=nifty_change,
+                nifty_points=nifty_points,
+                signal_direction=signal_direction,
+                effective_direction=effective_direction,
+                micro_indicators=micro_indicators,
+                is_index_trade=is_index_trade
+            )
             
-            # ADAPTIVE LOGIC (INDEX ONLY):
-            # 1. Moderate NIFTY (< 1.0%): TREND FOLLOWING for indices
-            # 2. Extended NIFTY (>= 1.0%): MEAN REVERSION for indices only
-            # 3. STOCKS: Always trend following (can swing independently)
+            if counter_trend_mode['enabled']:
+                # 🎯 COUNTER-TREND ALLOWED: Market is overextended, favor fading the move
+                logger.info(f"🔄 COUNTER-TREND MODE: {counter_trend_mode['reason']}")
+                logger.info(f"   NIFTY: {nifty_points:+.0f} pts ({nifty_change:+.2f}%) | Signal: {signal_direction} {symbol}")
+                
+                # Counter-trend with confirmation gets LOWER threshold (easier entry)
+                required_confidence = counter_trend_mode['required_confidence']
+                allowed = signal_confidence >= required_confidence
+                
+                if allowed:
+                    logger.info(f"✅ COUNTER-TREND SIGNAL ALLOWED: {symbol} {signal_direction} "
+                              f"(Confidence: {signal_confidence:.1f} >= {required_confidence:.1f})")
+                else:
+                    logger.debug(f"Counter-trend signal rejected: Confidence {signal_confidence:.1f} < {required_confidence:.1f}")
+                return allowed
             
-            if is_overextended:
-                # MEAN REVERSION MODE: Fade the market move (INDEX ONLY)
-                # If NIFTY +1%, favor NIFTY SHORTS (index upside limited)
-                # If NIFTY -1%, favor NIFTY LONGS (index downside limited)
-                bias_aligned = (
-                    (effective_direction == "BULLISH" and signal_direction == "SELL") or
-                    (effective_direction == "BEARISH" and signal_direction == "BUY")
-                )
-                logger.info(f"🔄 MEAN REVERSION (INDEX): NIFTY {nifty_change:+.1f}% (±1% = limited room) → "
-                          f"Favoring {signal_direction} {symbol} counter-trend")
-            else:
-                # TREND FOLLOWING MODE: Ride the momentum
-                # For STOCKS: Always use this (independent swings)
-                # For INDEX: Use when NIFTY < 1%
-                bias_aligned = (
-                    (effective_direction == "BULLISH" and signal_direction == "BUY") or
-                    (effective_direction == "BEARISH" and signal_direction == "SELL")
-                )
-                symbol_type = "INDEX" if is_index_trade else "STOCK"
-                logger.debug(f"📈 TREND FOLLOWING ({symbol_type}): NIFTY {nifty_change:+.1f}% → "
-                           f"Favoring {signal_direction} {symbol} with {effective_direction} bias")
+            # 🎯 STANDARD TREND-FOLLOWING LOGIC
+            bias_aligned = (
+                (effective_direction == "BULLISH" and signal_direction == "BUY") or
+                (effective_direction == "BEARISH" and signal_direction == "SELL")
+            )
+            
+            symbol_type = "INDEX" if is_index_trade else "STOCK"
+            logger.debug(f"📈 TREND FOLLOWING ({symbol_type}): NIFTY {nifty_change:+.1f}% → "
+                       f"Favoring {signal_direction} {symbol} with {effective_direction} bias")
             
             if bias_aligned:
-                # 🎯 RELATIVE STRENGTH CHECK (User insight: Stock must OUTPERFORM market)
-                # For LONGS: Stock must be stronger than NIFTY
-                # For SHORTS: Stock must be weaker than NIFTY
+                # RELATIVE STRENGTH CHECK for aligned signals
                 if stock_change_percent is not None and not is_index_trade:
                     relative_strength = stock_change_percent - nifty_change
-                    min_outperformance = 0.3  # Stock must outperform by at least 0.3%
+                    min_outperformance = 0.3
                     
-                    if signal_direction == "BUY":
-                        # LONG: Stock must outperform market
-                        if relative_strength < min_outperformance:
-                            logger.info(f"❌ RELATIVE STRENGTH FAIL: {symbol} {signal_direction} rejected - "
-                                      f"Stock {stock_change_percent:+.2f}% vs NIFTY {nifty_change:+.2f}% "
-                                      f"(RS: {relative_strength:+.2f}% < {min_outperformance:+.2f}% required)")
-                            return False
-                        else:
-                            logger.info(f"✅ RELATIVE STRENGTH: {symbol} OUTPERFORMING - "
-                                      f"Stock {stock_change_percent:+.2f}% vs NIFTY {nifty_change:+.2f}% "
-                                      f"(RS: {relative_strength:+.2f}%)")
-                    
-                    elif signal_direction == "SELL":
-                        # SHORT: Stock must underperform market
-                        if relative_strength > -min_outperformance:
-                            logger.info(f"❌ RELATIVE WEAKNESS FAIL: {symbol} {signal_direction} rejected - "
-                                      f"Stock {stock_change_percent:+.2f}% vs NIFTY {nifty_change:+.2f}% "
-                                      f"(RS: {relative_strength:+.2f}% > {-min_outperformance:+.2f}% max)")
-                            return False
-                        else:
-                            logger.info(f"✅ RELATIVE WEAKNESS: {symbol} UNDERPERFORMING - "
-                                      f"Stock {stock_change_percent:+.2f}% vs NIFTY {nifty_change:+.2f}% "
-                                      f"(RS: {relative_strength:+.2f}%)")
+                    if signal_direction == "BUY" and relative_strength < min_outperformance:
+                        logger.info(f"❌ RELATIVE STRENGTH FAIL: {symbol} {signal_direction} rejected - "
+                                  f"Stock {stock_change_percent:+.2f}% vs NIFTY {nifty_change:+.2f}%")
+                        return False
+                    elif signal_direction == "SELL" and relative_strength > -min_outperformance:
+                        logger.info(f"❌ RELATIVE WEAKNESS FAIL: {symbol} {signal_direction} rejected")
+                        return False
                 
                 # Aligned signals get lower threshold
                 allowed = signal_confidence >= 5.5
-                if not allowed:
-                    logger.debug(f"Aligned signal rejected: Confidence {signal_confidence:.1f} < 5.5 threshold")
                 return allowed
             else:
-                # Counter-trend signals need much higher confidence, scaled by bias confidence
+                # Non-counter-trend, non-aligned = very high threshold
                 bias_conf = getattr(self.current_bias, 'confidence', 0.0)
-                required = 7.5 + min(bias_conf, 3.0)  # 7.5 to 10.5, capped effectively by 10
+                required = 7.5 + min(bias_conf, 3.0)
                 required = min(required, 9.9)
                 allowed = signal_confidence >= required
                 if not allowed:
-                    logger.debug(f"Counter-trend signal rejected: Confidence {signal_confidence:.1f} < {required:.1f} threshold (bias_conf={bias_conf:.1f})")
+                    logger.debug(f"Counter-trend signal rejected: Confidence {signal_confidence:.1f} < {required:.1f}")
                 return allowed
                 
         except Exception as e:
             logger.warning(f"Error in bias alignment check: {e}")
-            return signal_confidence >= 7.0  # Default threshold
+            return signal_confidence >= 7.0
+    
+    def _get_nifty_points_from_open(self) -> float:
+        """Get NIFTY points move from today's open"""
+        try:
+            if hasattr(self, 'todays_open') and self.todays_open and hasattr(self, 'current_bias'):
+                # Try to get current NIFTY price from stored data
+                if hasattr(self, '_nifty_data') and self._nifty_data:
+                    current_price = self._nifty_data.get('close', self._nifty_data.get('ltp', 0))
+                    if current_price > 0 and self.todays_open > 0:
+                        return current_price - self.todays_open
+            
+            # Fallback: estimate from percentage (assumes NIFTY ~24000)
+            nifty_change = getattr(self.current_bias, 'nifty_momentum', 0.0)
+            estimated_nifty = 24000  # Approximate NIFTY level
+            return (nifty_change / 100) * estimated_nifty
+            
+        except Exception:
+            return 0.0
+    
+    def _is_counter_trend_opportunity(self, nifty_change: float, nifty_points: float,
+                                       signal_direction: str, effective_direction: str,
+                                       micro_indicators: dict = None,
+                                       is_index_trade: bool = False) -> dict:
+        """
+        🔥 INTRADAY COUNTER-TREND DETECTION
+        
+        Determines if current market conditions favor counter-trend (mean reversion) trades.
+        
+        COUNTER-TREND TRIGGERS:
+        1. NIFTY up 100-150+ points (0.4-0.6%+) → Favor SHORTS
+        2. NIFTY down 100-150+ points → Favor LONGS
+        3. Micro indicators confirm: RSI overbought/oversold, Bollinger squeeze on reversal side
+        
+        Returns:
+            {
+                'enabled': bool,
+                'reason': str,
+                'required_confidence': float (lower = easier entry)
+            }
+        """
+        result = {'enabled': False, 'reason': '', 'required_confidence': 9.0}
+        
+        # 🔥 PERCENTAGE-BASED THRESHOLDS (adapts to any NIFTY level)
+        # At NIFTY 24000: 0.4% = 96 pts, 0.6% = 144 pts, 0.8% = 192 pts
+        MODERATE_EXTENSION = 0.40   # 100 pts approx - start considering counter-trend
+        STRONG_EXTENSION = 0.60     # 150 pts approx - favor counter-trend
+        EXTREME_EXTENSION = 0.80    # 200 pts approx - strongly favor counter-trend
+        
+        abs_nifty_change = abs(nifty_change)
+        abs_nifty_points = abs(nifty_points)
+        
+        # Determine if signal is counter-trend to current move
+        is_counter_trend_signal = (
+            (nifty_change > 0 and signal_direction == "SELL") or  # Market up, wanting to short
+            (nifty_change < 0 and signal_direction == "BUY")      # Market down, wanting to long
+        )
+        
+        if not is_counter_trend_signal:
+            return result  # Not a counter-trend signal, use normal logic
+        
+        # 🎯 LEVEL 1: MODERATE EXTENSION (0.4-0.6% / 100-150 pts)
+        # Counter-trend allowed with decent micro indicator confirmation
+        if MODERATE_EXTENSION <= abs_nifty_change < STRONG_EXTENSION:
+            micro_confirmation = self._check_micro_indicator_confirmation(
+                signal_direction, micro_indicators, level='moderate'
+            )
+            
+            if micro_confirmation['confirmed']:
+                result['enabled'] = True
+                result['reason'] = (f"MODERATE EXTENSION: NIFTY {nifty_points:+.0f} pts ({nifty_change:+.2f}%) - "
+                                   f"{micro_confirmation['reason']}")
+                result['required_confidence'] = 6.5  # Lower than normal counter-trend (was 7.5+)
+                return result
+        
+        # 🎯 LEVEL 2: STRONG EXTENSION (0.6-0.8% / 150-200 pts)
+        # Counter-trend favored even with basic confirmation
+        elif STRONG_EXTENSION <= abs_nifty_change < EXTREME_EXTENSION:
+            micro_confirmation = self._check_micro_indicator_confirmation(
+                signal_direction, micro_indicators, level='strong'
+            )
+            
+            result['enabled'] = True
+            if micro_confirmation['confirmed']:
+                result['reason'] = (f"STRONG EXTENSION: NIFTY {nifty_points:+.0f} pts ({nifty_change:+.2f}%) - "
+                                   f"{micro_confirmation['reason']}")
+                result['required_confidence'] = 5.5  # Easy entry with confirmation
+            else:
+                result['reason'] = (f"STRONG EXTENSION: NIFTY {nifty_points:+.0f} pts ({nifty_change:+.2f}%) - "
+                                   f"Mean reversion likely")
+                result['required_confidence'] = 6.5  # Still easier than normal
+            return result
+        
+        # 🎯 LEVEL 3: EXTREME EXTENSION (0.8%+ / 200+ pts)
+        # Counter-trend strongly favored - these moves rarely sustain intraday
+        elif abs_nifty_change >= EXTREME_EXTENSION:
+            result['enabled'] = True
+            result['reason'] = (f"EXTREME EXTENSION: NIFTY {nifty_points:+.0f} pts ({nifty_change:+.2f}%) - "
+                               f"Mean reversion HIGHLY likely (intraday limit reached)")
+            result['required_confidence'] = 5.0  # Very easy entry
+            return result
+        
+        return result
+    
+    def _check_micro_indicator_confirmation(self, signal_direction: str, 
+                                            micro_indicators: dict = None,
+                                            level: str = 'moderate') -> dict:
+        """
+        🎯 Check micro (intraday) indicators for counter-trend confirmation
+        
+        MICRO INDICATORS for intraday scalping:
+        - Fast RSI (5-7 period on 5-min candles): Overbought > 70, Oversold < 30
+        - Bollinger Squeeze: Price at upper/lower band with squeeze
+        - Stochastic RSI: Overbought > 0.8, Oversold < 0.2
+        - VWAP deviation: Price far from VWAP
+        
+        Args:
+            signal_direction: 'BUY' or 'SELL'
+            micro_indicators: Dict with indicator values
+            level: 'moderate' (needs strong confirmation) or 'strong' (basic confirmation OK)
+        """
+        result = {'confirmed': False, 'reason': ''}
+        
+        if not micro_indicators:
+            # No micro indicators passed - check if market extension alone is enough
+            if level == 'strong':
+                result['confirmed'] = True
+                result['reason'] = "Market extension sufficient for counter-trend"
+            return result
+        
+        confirmation_signals = []
+        rsi = micro_indicators.get('rsi', 50)
+        bollinger_squeeze = micro_indicators.get('bollinger_squeeze', False)
+        bollinger_position = micro_indicators.get('bollinger_position', 'middle')  # 'upper', 'lower', 'middle'
+        stoch_rsi = micro_indicators.get('stoch_rsi', 0.5)
+        vwap_deviation = micro_indicators.get('vwap_deviation', 0)  # % deviation from VWAP
+        
+        if signal_direction == "SELL":
+            # Looking to SHORT - need overbought signals
+            if rsi > 70:
+                confirmation_signals.append(f"RSI overbought ({rsi:.0f})")
+            if rsi > 80:
+                confirmation_signals.append(f"RSI EXTREME ({rsi:.0f})")
+            if bollinger_squeeze and bollinger_position == 'upper':
+                confirmation_signals.append("Bollinger squeeze at upper band")
+            if stoch_rsi > 0.8:
+                confirmation_signals.append(f"StochRSI overbought ({stoch_rsi:.2f})")
+            if vwap_deviation > 0.5:  # 0.5% above VWAP
+                confirmation_signals.append(f"Price above VWAP (+{vwap_deviation:.2f}%)")
+                
+        elif signal_direction == "BUY":
+            # Looking to LONG - need oversold signals
+            if rsi < 30:
+                confirmation_signals.append(f"RSI oversold ({rsi:.0f})")
+            if rsi < 20:
+                confirmation_signals.append(f"RSI EXTREME ({rsi:.0f})")
+            if bollinger_squeeze and bollinger_position == 'lower':
+                confirmation_signals.append("Bollinger squeeze at lower band")
+            if stoch_rsi < 0.2:
+                confirmation_signals.append(f"StochRSI oversold ({stoch_rsi:.2f})")
+            if vwap_deviation < -0.5:  # 0.5% below VWAP
+                confirmation_signals.append(f"Price below VWAP ({vwap_deviation:.2f}%)")
+        
+        # Determine if confirmed based on level
+        if level == 'moderate':
+            # Need at least 2 confirmation signals
+            result['confirmed'] = len(confirmation_signals) >= 2
+        else:  # 'strong'
+            # Need at least 1 confirmation signal
+            result['confirmed'] = len(confirmation_signals) >= 1
+        
+        if confirmation_signals:
+            result['reason'] = " + ".join(confirmation_signals)
+        else:
+            result['reason'] = "No micro indicator confirmation"
+        
+        return result
+    
+    def get_counter_trend_status(self) -> dict:
+        """
+        🔥 Get current counter-trend status for strategies to use
+        
+        Returns:
+            {
+                'mode': 'TREND_FOLLOWING' or 'COUNTER_TREND',
+                'nifty_points': float,
+                'nifty_percent': float,
+                'favor_direction': 'BUY' or 'SELL' or None,
+                'extension_level': 'NONE', 'MODERATE', 'STRONG', 'EXTREME'
+            }
+        """
+        try:
+            nifty_change = getattr(self.current_bias, 'nifty_momentum', 0.0)
+            nifty_points = self._get_nifty_points_from_open()
+            abs_change = abs(nifty_change)
+            
+            # Determine extension level
+            if abs_change >= 0.80:
+                extension_level = 'EXTREME'
+            elif abs_change >= 0.60:
+                extension_level = 'STRONG'
+            elif abs_change >= 0.40:
+                extension_level = 'MODERATE'
+            else:
+                extension_level = 'NONE'
+            
+            # Determine favored direction
+            favor_direction = None
+            mode = 'TREND_FOLLOWING'
+            
+            if extension_level in ['MODERATE', 'STRONG', 'EXTREME']:
+                mode = 'COUNTER_TREND'
+                favor_direction = 'SELL' if nifty_change > 0 else 'BUY'
+            
+            return {
+                'mode': mode,
+                'nifty_points': nifty_points,
+                'nifty_percent': nifty_change,
+                'favor_direction': favor_direction,
+                'extension_level': extension_level
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error getting counter-trend status: {e}")
+            return {
+                'mode': 'TREND_FOLLOWING',
+                'nifty_points': 0,
+                'nifty_percent': 0,
+                'favor_direction': None,
+                'extension_level': 'NONE'
+            }
     
     def should_align_with_bias(self, signal_direction: str, signal_confidence: float) -> bool:
         """
