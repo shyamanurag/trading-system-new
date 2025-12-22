@@ -18,6 +18,26 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["stock-analysis"])
 
+def convert_numpy_types(obj):
+    """
+    Recursively convert numpy types to Python native types for JSON serialization.
+    This fixes the 'numpy.bool_' object is not iterable error.
+    """
+    if isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
+
 # Redis client for market data
 redis_client = None
 
@@ -1121,7 +1141,10 @@ async def get_stock_analysis(
             }
         
         logger.info(f"✅ Analysis complete for {symbol}: {analysis['recommendation'].get('recommendation', 'N/A')}")
-        
+
+        # Convert numpy types to native Python types for JSON serialization
+        analysis = convert_numpy_types(analysis)
+
         return {
             "success": True,
             "data": analysis,
