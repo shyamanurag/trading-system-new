@@ -564,31 +564,18 @@ def calculate_macd(prices: List[float], fast: int = 12, slow: int = 26, signal: 
         }
 
 def calculate_support_resistance(highs: List[float], lows: List[float], 
-                                   closes: List[float], current_price: float,
-                                   prev_day_high: float = None, prev_day_low: float = None,
-                                   prev_day_close: float = None) -> Dict:
-    """
-    Calculate Support/Resistance using pivot points.
-    For accurate pivots, pass prev_day_high/low/close from YESTERDAY's DAILY candle.
-    """
+                                   closes: List[float], current_price: float) -> Dict:
+    """Calculate Support/Resistance levels using pivot points and swing levels"""
     try:
         if len(closes) < 5:
             return {"error": "Insufficient data"}
         
-        # 🎯 USE PREVIOUS DAY'S DAILY OHLC (Standard Institutional Method)
-        if prev_day_high and prev_day_high > 0 and prev_day_low and prev_day_low > 0 and prev_day_close and prev_day_close > 0:
-            prev_high = prev_day_high
-            prev_low = prev_day_low
-            prev_close = prev_day_close
-            data_source = "daily_candle"
-        else:
-            # Fallback: estimate from intraday (less accurate)
-            prev_high = max(highs[-20:]) if len(highs) >= 20 else max(highs)
-            prev_low = min(lows[-20:]) if len(lows) >= 20 else min(lows)
-            prev_close = closes[-2] if len(closes) > 1 else closes[-1]
-            data_source = "intraday_estimate"
+        # Get previous day's OHLC (approximate from candle data)
+        prev_high = max(highs[-20:]) if len(highs) >= 20 else max(highs)
+        prev_low = min(lows[-20:]) if len(lows) >= 20 else min(lows)
+        prev_close = closes[-2] if len(closes) > 1 else closes[-1]
         
-        # Calculate Pivot Points (Floor Trader Formula)
+        # Calculate Pivot Points
         pivot = (prev_high + prev_low + prev_close) / 3
         
         # Standard Pivot Levels
@@ -655,88 +642,11 @@ def calculate_support_resistance(highs: List[float], lows: List[float],
             "nearest_support": round(nearest_support, 2) if nearest_support else None,
             "position": position,
             "swing_highs": [round(x, 2) for x in sorted(swing_highs)[-3:]] if swing_highs else [],
-            "swing_lows": [round(x, 2) for x in sorted(swing_lows)[:3]] if swing_lows else [],
-            "calculation_inputs": {
-                "prev_high": round(prev_high, 2),
-                "prev_low": round(prev_low, 2),
-                "prev_close": round(prev_close, 2),
-                "data_source": data_source
-            }
+            "swing_lows": [round(x, 2) for x in sorted(swing_lows)[:3]] if swing_lows else []
         }
         
     except Exception as e:
         return {"error": str(e)}
-
-
-async def get_previous_day_ohlc(symbol: str) -> Dict:
-    """Fetch PREVIOUS DAY's OHLC from daily candles for accurate pivot points."""
-    try:
-        zerodha_client = await get_zerodha_client()
-        if not zerodha_client:
-            return {"error": "No Zerodha client"}
-        if not getattr(zerodha_client, 'is_connected', False):
-            return {"error": "Zerodha not connected"}
-        
-        symbol_upper = symbol.upper().strip()
-        index_config = {
-            'NIFTY-I': ('NIFTY 50', 'NSE'), 'NIFTY': ('NIFTY 50', 'NSE'),
-            'BANKNIFTY-I': ('NIFTY BANK', 'NSE'), 'BANKNIFTY': ('NIFTY BANK', 'NSE'),
-            'FINNIFTY-I': ('NIFTY FIN SERVICE', 'NSE'), 'FINNIFTY': ('NIFTY FIN SERVICE', 'NSE'),
-            'SENSEX-I': ('SENSEX', 'BSE'), 'SENSEX': ('SENSEX', 'BSE'),
-        }
-        
-        if symbol_upper in index_config:
-            zerodha_symbol, exchange = index_config[symbol_upper]
-        else:
-            zerodha_symbol = symbol_upper
-            exchange = 'NSE'
-        
-        # Fetch last 10 days of daily candles (to handle weekends/holidays)
-        candles = await zerodha_client.get_historical_data(
-            symbol=zerodha_symbol, interval='day',
-            from_date=datetime.now() - timedelta(days=10),
-            to_date=datetime.now(),  # Include today
-            exchange=exchange
-        )
-        
-        if candles and len(candles) > 0:
-            # Get second-to-last candle if today exists, otherwise last candle
-            # This ensures we get "yesterday" regardless of time of day
-            if len(candles) >= 2 and candles[-1].get('date'):
-                # Check if last candle is today
-                last_date = candles[-1].get('date')
-                if isinstance(last_date, str):
-                    last_date_str = last_date[:10]  # Get YYYY-MM-DD
-                else:
-                    last_date_str = str(last_date)[:10]
-                
-                today_str = datetime.now().strftime('%Y-%m-%d')
-                
-                if last_date_str == today_str and len(candles) >= 2:
-                    # Last candle is today, use second-to-last (yesterday)
-                    last_daily = candles[-2]
-                    logger.info(f"✅ Prev day OHLC {symbol} (yesterday): H={last_daily.get('high')}, L={last_daily.get('low')}, C={last_daily.get('close')}, Date={last_daily.get('date')}")
-                else:
-                    # Last candle is yesterday or older
-                    last_daily = candles[-1]
-                    logger.info(f"✅ Prev day OHLC {symbol} (last trading day): H={last_daily.get('high')}, L={last_daily.get('low')}, C={last_daily.get('close')}, Date={last_daily.get('date')}")
-            else:
-                last_daily = candles[-1]
-                logger.info(f"✅ Prev day OHLC {symbol}: H={last_daily.get('high')}, L={last_daily.get('low')}, C={last_daily.get('close')}, Date={last_daily.get('date')}")
-            
-            return {
-                "high": float(last_daily.get('high', 0)),
-                "low": float(last_daily.get('low', 0)),
-                "close": float(last_daily.get('close', 0)),
-                "date": str(last_daily.get('date', ''))
-            }
-        
-        logger.warning(f"⚠️ No daily candles found for {symbol}")
-        return {"error": "No daily data"}
-    except Exception as e:
-        logger.error(f"Error fetching prev day OHLC for {symbol}: {e}")
-        return {"error": str(e)}
-
 
 def calculate_bollinger_bands(prices: List[float], period: int = 20, std_dev: float = 2.0) -> Dict:
     """Calculate Bollinger Bands with squeeze detection"""
@@ -1177,32 +1087,18 @@ async def get_stock_analysis(
             analysis["indicators"]["mfi"] = calculate_mfi(highs, lows, closes, volumes)
             analysis["indicators"]["macd"] = calculate_macd(closes)
             
-            # 🎯 Bollinger Bands - Include current price to avoid stale bands
-            # For intraday analysis, we need bands that reflect current price action
-            closes_with_live = closes + [current_price] if current_price > 0 else closes
-            analysis["indicators"]["bollinger"] = calculate_bollinger_bands(closes_with_live)
+            # 🎯 NEW: Bollinger Bands
+            analysis["indicators"]["bollinger"] = calculate_bollinger_bands(closes)
             
-            # 🎯 GARCH Volatility
+            # 🎯 NEW: GARCH Volatility
             analysis["indicators"]["garch"] = calculate_garch_volatility(closes)
             
-            # 🎯 Historical Volatility (multiple periods)
+            # 🎯 NEW: Historical Volatility (multiple periods)
             analysis["indicators"]["historical_volatility"] = calculate_historical_volatility(closes)
 
-            # 🎯 CRITICAL: Fetch YESTERDAY's DAILY candle for accurate pivot points
-            prev_day = await get_previous_day_ohlc(symbol)
-            if "error" not in prev_day:
-                analysis["support_resistance"] = calculate_support_resistance(
-                    highs, lows, closes, current_price,
-                    prev_day_high=prev_day.get("high"),
-                    prev_day_low=prev_day.get("low"),
-                    prev_day_close=prev_day.get("close")
-                )
-                logger.info(f"✅ Daily pivots for {symbol}: H={prev_day.get('high')}, L={prev_day.get('low')}, C={prev_day.get('close')}")
-            else:
-                logger.warning(f"⚠️ Intraday pivots for {symbol}: {prev_day.get('error')}")
-                analysis["support_resistance"] = calculate_support_resistance(
-                    highs, lows, closes, current_price
-                )
+            analysis["support_resistance"] = calculate_support_resistance(
+                highs, lows, closes, current_price
+            )
 
             analysis["volume_analysis"] = calculate_volume_analysis(volumes, closes)
             
