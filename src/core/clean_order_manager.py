@@ -10,9 +10,28 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import json
 import time
+import numpy as np
 from .order_rate_limiter import OrderRateLimiter
 
 logger = logging.getLogger(__name__)
+
+
+def convert_numpy_types(obj):
+    """Convert numpy types to Python native types for JSON serialization"""
+    if isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, (np.bool_, np.bool8)):
+        return bool(obj)
+    elif isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
 
 class OrderManager:
     """Clean OrderManager - NO FALLBACKS, NO FAKE DATA"""
@@ -167,6 +186,8 @@ class OrderManager:
                     'timestamp': datetime.now().isoformat(),
                     **order_data
                 }
+                # FIX: Convert numpy types to Python native types before JSON serialization
+                order_record = convert_numpy_types(order_record)
                 # FIX: Redis client.set is not async, remove await
                 self.redis_client.set(order_key, json.dumps(order_record))
             
