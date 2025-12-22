@@ -98,14 +98,47 @@ async def get_historical_candles(symbol: str, interval: str = '5minute', days: i
     try:
         zerodha_client = await get_zerodha_client()
         if not zerodha_client:
+            logger.warning(f"No Zerodha client available for historical data")
             return []
+        
+        # Map internal symbols to Zerodha trading symbols for historical data
+        symbol_upper = symbol.upper().strip()
+        
+        # Index symbols mapping with exchange info
+        index_config = {
+            'NIFTY-I': ('NIFTY 50', 'NSE'),
+            'NIFTY': ('NIFTY 50', 'NSE'),
+            'BANKNIFTY-I': ('NIFTY BANK', 'NSE'),
+            'BANKNIFTY': ('NIFTY BANK', 'NSE'),
+            'FINNIFTY-I': ('NIFTY FIN SERVICE', 'NSE'),
+            'FINNIFTY': ('NIFTY FIN SERVICE', 'NSE'),
+            'MIDCPNIFTY-I': ('NIFTY MID SELECT', 'NSE'),
+            'MIDCPNIFTY': ('NIFTY MID SELECT', 'NSE'),
+            'SENSEX-I': ('SENSEX', 'BSE'),
+            'SENSEX': ('SENSEX', 'BSE'),
+        }
+        
+        if symbol_upper in index_config:
+            zerodha_symbol, exchange = index_config[symbol_upper]
+        else:
+            zerodha_symbol = symbol_upper
+            exchange = 'NSE'
+        
+        logger.info(f"Fetching historical data: {symbol} -> {zerodha_symbol} ({exchange})")
             
         candles = await zerodha_client.get_historical_data(
-            symbol=symbol,
+            symbol=zerodha_symbol,
             interval=interval,
             from_date=datetime.now() - timedelta(days=days),
-            to_date=datetime.now()
+            to_date=datetime.now(),
+            exchange=exchange
         )
+        
+        if candles:
+            logger.info(f"Got {len(candles)} candles for {zerodha_symbol}")
+        else:
+            logger.warning(f"No historical candles returned for {zerodha_symbol}")
+            
         return candles if candles else []
         
     except Exception as e:
