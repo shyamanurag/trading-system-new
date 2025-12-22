@@ -1087,8 +1087,9 @@ async def get_stock_analysis(
             analysis["indicators"]["mfi"] = calculate_mfi(highs, lows, closes, volumes)
             analysis["indicators"]["macd"] = calculate_macd(closes)
             
-            # 🎯 NEW: Bollinger Bands
-            analysis["indicators"]["bollinger"] = calculate_bollinger_bands(closes)
+            # 🎯 Bollinger Bands - Include current price for intraday accuracy
+            closes_with_live = closes + [current_price] if current_price > 0 else closes
+            analysis["indicators"]["bollinger"] = calculate_bollinger_bands(closes_with_live)
             
             # 🎯 NEW: GARCH Volatility
             analysis["indicators"]["garch"] = calculate_garch_volatility(closes)
