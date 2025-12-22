@@ -720,15 +720,23 @@ const StockAnalysisDashboard = () => {
             const response = await fetchWithAuth(
                 `/api/v1/stock-analysis/${encodeURIComponent(symbol)}`
             );
+            
+            if (!response) {
+                setError('No response from server');
+                setAnalysis(null);
+                return;
+            }
+            
             const data = await response.json();
 
-            if (data.success) {
+            if (data && data.success) {
                 setAnalysis(data.data);
             } else {
-                setError(data.detail || 'Failed to fetch analysis');
+                setError(data?.detail || data?.message || 'Failed to fetch analysis');
                 setAnalysis(null);
             }
         } catch (err) {
+            console.error('Stock analysis error:', err);
             setError(err.message || 'Failed to connect to analysis service');
             setAnalysis(null);
         } finally {

@@ -85,9 +85,13 @@ function setCache(url, data) {
 
 // Retry with exponential backoff
 async function fetchWithRetry(url, options, maxRetries = 3) {
+    let lastResponse = null;
+    let lastError = null;
+    
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
             const response = await fetch(url, options);
+            lastResponse = response;
             
             if (response.ok) {
                 if (attempt > 0) console.log(`[Retry] SUCCESS on attempt ${attempt + 1}`);
@@ -102,16 +106,26 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
             // Retry server errors with exponential backoff
             if (attempt < maxRetries - 1) {
                 const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
-                console.warn(`[Retry] Attempt ${attempt + 1} failed, retrying in ${delay}ms`);
+                console.warn(`[Retry] Attempt ${attempt + 1} failed (status ${response.status}), retrying in ${delay}ms`);
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         } catch (error) {
+            lastError = error;
             if (attempt === maxRetries - 1) throw error;
             const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
             console.warn(`[Retry] Network error, retrying in ${delay}ms`);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
+    
+    // If we exhausted all retries, return last response or throw last error
+    if (lastResponse) {
+        return lastResponse;
+    }
+    if (lastError) {
+        throw lastError;
+    }
+    throw new Error('All retry attempts failed');
 }
 
 // Main authenticated fetch with all enhancements
