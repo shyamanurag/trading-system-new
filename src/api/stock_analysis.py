@@ -100,16 +100,73 @@ async def get_zerodha_client():
         logger.warning(f"Could not get Zerodha client: {e}")
     return None
 
-async def get_historical_candles(symbol: str, interval: str = '5minute', days: int = 3) -> List[Dict]:
-    """Fetch historical candles from Zerodha"""
+async def _get_mtf_data_from_strategies(symbol: str, interval: str = '5minute') -> List[Dict]:
+    """
+    Get cached MTF candle data from active strategies.
+    This is more reliable than direct Zerodha API calls during market hours
+    because strategies already have this data fetched and cached.
+    """
     try:
+        from src.core.orchestrator import get_orchestrator_instance
+        orchestrator = get_orchestrator_instance()
+        
+        if not orchestrator:
+            return []
+        
+        # Map interval to MTF timeframe key
+        interval_map = {
+            '5minute': '5min',
+            '15minute': '15min',
+            '60minute': '60min',
+            'minute': '5min',  # Fallback
+        }
+        tf_key = interval_map.get(interval, '5min')
+        
+        symbol_upper = symbol.upper().strip()
+        
+        # Try to get MTF data from any active strategy
+        strategies_to_check = []
+        
+        if hasattr(orchestrator, 'active_strategies'):
+            strategies_to_check = list(orchestrator.active_strategies.values())
+        elif hasattr(orchestrator, 'strategies'):
+            strategies_to_check = list(orchestrator.strategies.values())
+        
+        for strategy in strategies_to_check:
+            if not strategy:
+                continue
+                
+            # Check if strategy has MTF data for this symbol
+            if hasattr(strategy, 'mtf_data') and strategy.mtf_data:
+                mtf = strategy.mtf_data.get(symbol_upper, {})
+                candles = mtf.get(tf_key, [])
+                
+                if candles and len(candles) >= 14:
+                    logger.debug(f"Found MTF data for {symbol_upper} in {strategy.__class__.__name__}")
+                    return candles
+        
+        return []
+        
+    except Exception as e:
+        logger.debug(f"Could not get MTF data from strategies: {e}")
+        return []
+
+async def get_historical_candles(symbol: str, interval: str = '5minute', days: int = 3) -> List[Dict]:
+    """Fetch historical candles from Zerodha or strategy MTF cache"""
+    try:
+        # First, try to get MTF data from active strategies (already cached and working)
+        mtf_candles = await _get_mtf_data_from_strategies(symbol, interval)
+        if mtf_candles and len(mtf_candles) >= 14:
+            logger.info(f"✅ Using cached MTF data for {symbol}: {len(mtf_candles)} candles")
+            return mtf_candles
+        
         zerodha_client = await get_zerodha_client()
         if not zerodha_client:
             logger.warning(f"No Zerodha client available for historical data")
             return []
         
         # Check if Zerodha is connected
-        if not zerodha_client.is_connected:
+        if not getattr(zerodha_client, 'is_connected', False):
             logger.warning(f"Zerodha client not connected - cannot fetch historical data for {symbol}")
             return []
         
