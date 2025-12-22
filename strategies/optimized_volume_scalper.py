@@ -1957,6 +1957,11 @@ class OptimizedVolumeScalper(BaseStrategy):
                     logger.info(f"⚠️ {symbol}: BUY rejected - VRSI overbought ({vrsi:.0f})")
                     return None
                 
+                # 🔧 NEW: Low VRSI means volume NOT confirming upward momentum
+                if vrsi < 35 and ms_signal.edge_source != "MEAN_REVERSION":
+                    logger.info(f"⚠️ {symbol}: BUY rejected - VRSI too low ({vrsi:.0f}) - volume not confirming")
+                    return None
+
                 # 🔧 NEW: Volume-Weighted Sell Pressure check (more accurate than candle-based)
                 if vw_selling_pressure > 0.60 and ms_signal.edge_source != "MEAN_REVERSION":
                     logger.info(f"⚠️ {symbol}: BUY rejected - High volume-weighted selling pressure ({vw_selling_pressure:.0%})")
@@ -1972,8 +1977,8 @@ class OptimizedVolumeScalper(BaseStrategy):
                     if macd_crossover == 'bearish':
                         logger.info(f"⚠️ {symbol}: BUY rejected - MACD bearish crossover")
                         return None
-                    # Reject if MACD state is bearish + weak RSI
-                    if macd_state == 'bearish' and rsi < 45:
+                    # Reject if MACD state is bearish + weak/neutral RSI
+                    if macd_state == 'bearish' and rsi <= 50:
                         logger.info(f"⚠️ {symbol}: BUY rejected - MACD bearish state + weak RSI ({rsi:.0f})")
                         return None
                 
@@ -2008,6 +2013,11 @@ class OptimizedVolumeScalper(BaseStrategy):
                     logger.info(f"⚠️ {symbol}: SELL rejected - VRSI oversold ({vrsi:.0f})")
                     return None
                 
+                # 🔧 NEW: High VRSI means volume NOT confirming downward momentum
+                if vrsi > 65 and ms_signal.edge_source != "MEAN_REVERSION":
+                    logger.info(f"⚠️ {symbol}: SELL rejected - VRSI too high ({vrsi:.0f}) - volume not confirming")
+                    return None
+
                 # 🔧 NEW: Volume-Weighted Buy Pressure check (more accurate than candle-based)
                 if vw_buying_pressure > 0.60 and ms_signal.edge_source != "MEAN_REVERSION":
                     logger.info(f"⚠️ {symbol}: SELL rejected - High volume-weighted buying pressure ({vw_buying_pressure:.0%})")
@@ -2023,8 +2033,8 @@ class OptimizedVolumeScalper(BaseStrategy):
                     if macd_crossover == 'bullish':
                         logger.info(f"⚠️ {symbol}: SELL rejected - MACD bullish crossover")
                         return None
-                    # Reject if MACD state is bullish + strong RSI
-                    if macd_state == 'bullish' and rsi > 55:
+                    # Reject if MACD state is bullish + neutral/strong RSI
+                    if macd_state == 'bullish' and rsi >= 50:
                         logger.info(f"⚠️ {symbol}: SELL rejected - MACD bullish state + strong RSI ({rsi:.0f})")
                         return None
                 

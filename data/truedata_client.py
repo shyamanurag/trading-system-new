@@ -6,6 +6,7 @@ Implements graceful connection lifecycle management
 """
 
 import os
+import sys
 import logging
 import threading
 import time
@@ -16,6 +17,16 @@ from typing import Dict, Optional, List
 import json
 import redis
 import queue
+
+# 🔧 FIX: Increase recursion limit to prevent RecursionError in TrueData library's reconnection
+# The TrueData library has internal reconnection logic that can hit Python's default limit (1000)
+try:
+    current_limit = sys.getrecursionlimit()
+    if current_limit < 3000:
+        sys.setrecursionlimit(3000)
+        logging.getLogger(__name__).debug(f"Increased recursion limit from {current_limit} to 3000")
+except Exception:
+    pass
 
 # Setup basic logging
 logger = logging.getLogger(__name__)

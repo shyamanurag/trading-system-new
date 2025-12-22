@@ -1006,6 +1006,8 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             
             # ============= PHASE 2: ADVANCED INDICATORS =============
             rsi = 50.0
+            mfi = 50.0  # 🔧 NEW: Money Flow Index
+            vrsi = 50.0  # 🔧 NEW: Volume-Weighted RSI
             macd_crossover = None
             macd_state = 'neutral'
             bollinger_squeeze = False
@@ -1020,6 +1022,24 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             
             if len(prices) >= 14:
                 rsi = self._calculate_rsi(prices, 14)
+                
+                # 🔧 NEW: Calculate volume-weighted indicators
+                if hasattr(self, 'mtf_data') and underlying_symbol in self.mtf_data:
+                    candles = self.mtf_data[underlying_symbol].get('5min', [])
+                    if candles and len(candles) >= 14:
+                        c_highs = [c.get('high', c.get('close', 0)) for c in candles[-20:]]
+                        c_lows = [c.get('low', c.get('close', 0)) for c in candles[-20:]]
+                        c_closes = [c.get('close', 0) for c in candles[-20:]]
+                        c_volumes = [c.get('volume', 0) for c in candles[-20:]]
+                        
+                        if all(v > 0 for v in c_volumes):
+                            # MFI
+                            mfi_data = self.calculate_money_flow_index(c_highs, c_lows, c_closes, c_volumes)
+                            mfi = mfi_data.get('mfi', 50.0)
+                            
+                            # VRSI
+                            vrsi_data = self.calculate_volume_weighted_rsi(c_closes, c_volumes)
+                            vrsi = vrsi_data.get('vrsi', 50.0)
                 prices_arr = np.array(prices)
                 momentum_score = ProfessionalMomentumModels.momentum_score(prices_arr, min(20, len(prices)))
                 mean_reversion_prob = ProfessionalMomentumModels.mean_reversion_probability(prices_arr)
@@ -1049,13 +1069,33 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             # ============= PHASE 2: REVERSAL DETECTION + HP TREND =============
             # Don't buy CALL if selling pressure is high (reversal down)
             # Don't buy PUT if buying pressure is high (reversal up)
-            if weighted_bias > 0.5:  # Potential CALL
+            if weighted_bias > 0.5:  # Potential CALL (bullish)
                 if selling_pressure > 0.7 or rsi > 70:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - selling pressure {selling_pressure:.0%} or RSI {rsi:.0f} too high")
                     return None
+                
+                # 🔧 NEW: MFI overbought check
+                if mfi > 80:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - MFI overbought ({mfi:.0f})")
+                    return None
+                
+                # 🔧 NEW: VRSI checks
+                if vrsi > 75:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - VRSI overbought ({vrsi:.0f})")
+                    return None
+                if vrsi < 35:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - VRSI too low ({vrsi:.0f}) - volume not confirming")
+                    return None
+                
                 if macd_crossover == 'bearish':
                     logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - MACD bearish crossover")
                     return None
+                
+                # 🔧 NEW: Check MACD state (not just crossover)
+                if macd_state == 'bearish' and rsi <= 50:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - MACD bearish state + weak RSI ({rsi:.0f})")
+                    return None
+                
                 # HP trend filter - don't buy CALL if HP trend strongly negative
                 if hp_trend_direction < -0.01:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - HP trend strongly negative ({hp_trend_direction:+.2%})")
@@ -1064,13 +1104,34 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 if mean_reversion_prob > 0.8 and rsi > 60:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - High mean reversion prob ({mean_reversion_prob:.0%})")
                     return None
-            elif weighted_bias < -0.5:  # Potential PUT
+                    
+            elif weighted_bias < -0.5:  # Potential PUT (bearish)
                 if buying_pressure > 0.7 or rsi < 30:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - buying pressure {buying_pressure:.0%} or RSI {rsi:.0f} indicates reversal")
                     return None
+                
+                # 🔧 NEW: MFI oversold check
+                if mfi < 20:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - MFI oversold ({mfi:.0f})")
+                    return None
+                
+                # 🔧 NEW: VRSI checks
+                if vrsi < 25:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - VRSI oversold ({vrsi:.0f})")
+                    return None
+                if vrsi > 65:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - VRSI too high ({vrsi:.0f}) - volume not confirming")
+                    return None
+                
                 if macd_crossover == 'bullish':
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - MACD bullish crossover")
                     return None
+                
+                # 🔧 NEW: Check MACD state (not just crossover)
+                if macd_state == 'bullish' and rsi >= 50:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - MACD bullish state + strong RSI ({rsi:.0f})")
+                    return None
+                
                 # HP trend filter - don't buy PUT if HP trend strongly positive
                 if hp_trend_direction > 0.01:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - HP trend strongly positive ({hp_trend_direction:+.2%})")
@@ -1084,9 +1145,9 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             if abs(weighted_bias) < 0.5:  # Not enough movement
                 return None
             
-            # Log all indicators
+            # Log all indicators (including volume-weighted)
             logger.info(f"📊 {underlying_symbol} OPTIONS ANALYSIS:")
-            logger.info(f"   Bias: {weighted_bias:+.2f}% | RSI: {rsi:.0f} | MACD: {macd_state}")
+            logger.info(f"   Bias: {weighted_bias:+.2f}% | RSI: {rsi:.0f} | VRSI: {vrsi:.0f} | MFI: {mfi:.0f} | MACD: {macd_state}")
             logger.info(f"   📉 Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f} | HP: {hp_trend_direction:+.2%}")
             logger.info(f"   🔄 Mean Reversion: {mean_reversion_prob:.0%} | Buy Pressure: {buying_pressure:.0%} | Sell Pressure: {selling_pressure:.0%}")
             if bollinger_squeeze:

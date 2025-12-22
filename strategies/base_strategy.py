@@ -7514,47 +7514,145 @@ class BaseStrategy:
             except Exception as peak_err:
                 logger.debug(f"Peak detection skipped: {peak_err}")
             
-            # 🎯 ADAPTIVE ENTRY BASED ON PEAK DETECTION
-            if pullback_available and conf_normalized >= 8.5:
+            # ============================================================
+            # 🎯 SUPPORT/RESISTANCE BASED ENTRY (NOT FIXED PERCENTAGE!)
+            # ============================================================
+            # Instead of arbitrary 0.3% or 0.5% discount, use actual S/R levels
+            # where buyers/sellers are likely to step in
+            
+            support_entry = None
+            resistance_entry = None
+            sr_based_entry = False
+            
+            try:
+                # Get pivot levels for the symbol
+                pivot_data = self.calculate_pivot_levels(symbol, {
+                    'ltp': original_entry,
+                    'high': symbol_data.get('high', original_entry * 1.01) if symbol_data else original_entry * 1.01,
+                    'low': symbol_data.get('low', original_entry * 0.99) if symbol_data else original_entry * 0.99,
+                    'close': symbol_data.get('close', original_entry) if symbol_data else original_entry
+                })
+                
+                if pivot_data and 'levels' in pivot_data:
+                    levels = pivot_data['levels']
+                    
+                    if action.upper() == 'BUY':
+                        # Find nearest SUPPORT level below current price
+                        # Support levels: S1, S2, S3, pivot (if below price), swing low
+                        support_levels = []
+                        for level_name in ['s1', 's2', 'pivot', 'fib_s1', 'day_low']:
+                            level_val = levels.get(level_name, 0)
+                            if level_val > 0 and level_val < original_entry:
+                                distance_pct = (original_entry - level_val) / original_entry * 100
+                                # Only consider levels within 0.1% to 1.5% below
+                                if 0.1 <= distance_pct <= 1.5:
+                                    support_levels.append((level_name, level_val, distance_pct))
+                        
+                        # Also check swing low
+                        swing_low, swing_high = self._find_swing_levels(symbol)
+                        if swing_low > 0 and swing_low < original_entry:
+                            distance_pct = (original_entry - swing_low) / original_entry * 100
+                            if 0.1 <= distance_pct <= 1.5:
+                                support_levels.append(('swing_low', swing_low, distance_pct))
+                        
+                        if support_levels:
+                            # Pick the NEAREST support (smallest distance)
+                            support_levels.sort(key=lambda x: x[2])
+                            nearest_support = support_levels[0]
+                            support_entry = nearest_support[1]
+                            logger.info(f"📊 {symbol} BUY: Nearest support at {nearest_support[0]}=₹{support_entry:.2f} ({nearest_support[2]:.2f}% below LTP)")
+                    
+                    else:  # SELL
+                        # Find nearest RESISTANCE level above current price
+                        resistance_levels = []
+                        for level_name in ['r1', 'r2', 'pivot', 'fib_r1', 'day_high']:
+                            level_val = levels.get(level_name, 0)
+                            if level_val > 0 and level_val > original_entry:
+                                distance_pct = (level_val - original_entry) / original_entry * 100
+                                # Only consider levels within 0.1% to 1.5% above
+                                if 0.1 <= distance_pct <= 1.5:
+                                    resistance_levels.append((level_name, level_val, distance_pct))
+                        
+                        # Also check swing high
+                        swing_low, swing_high = self._find_swing_levels(symbol)
+                        if swing_high > 0 and swing_high > original_entry:
+                            distance_pct = (swing_high - original_entry) / original_entry * 100
+                            if 0.1 <= distance_pct <= 1.5:
+                                resistance_levels.append(('swing_high', swing_high, distance_pct))
+                        
+                        if resistance_levels:
+                            # Pick the NEAREST resistance (smallest distance)
+                            resistance_levels.sort(key=lambda x: x[2])
+                            nearest_resistance = resistance_levels[0]
+                            resistance_entry = nearest_resistance[1]
+                            logger.info(f"📊 {symbol} SELL: Nearest resistance at {nearest_resistance[0]}=₹{resistance_entry:.2f} ({nearest_resistance[2]:.2f}% above LTP)")
+            
+            except Exception as sr_err:
+                logger.debug(f"S/R detection skipped: {sr_err}")
+            
+            # ============================================================
+            # 🎯 ADAPTIVE ENTRY DECISION
+            # ============================================================
+            # Priority: 1) S/R levels, 2) Pullback/Peak detection, 3) Confidence-based
+            
+            if action.upper() == 'BUY' and support_entry and support_entry > 0:
+                # Use support level for BUY entry
+                order_type = 'LIMIT'
+                entry_price = round(support_entry, 2)
+                sr_based_entry = True
+                distance_pct = (original_entry - entry_price) / original_entry * 100
+                limit_validity_seconds = 300 if distance_pct < 0.5 else 600
+                logger.info(f"🎯 S/R ENTRY: {symbol} BUY at support ₹{entry_price:.2f} (LTP: ₹{original_entry:.2f}, -{distance_pct:.2f}%)")
+            
+            elif action.upper() == 'SELL' and resistance_entry and resistance_entry > 0:
+                # Use resistance level for SELL entry
+                order_type = 'LIMIT'
+                entry_price = round(resistance_entry, 2)
+                sr_based_entry = True
+                distance_pct = (entry_price - original_entry) / original_entry * 100
+                limit_validity_seconds = 300 if distance_pct < 0.5 else 600
+                logger.info(f"🎯 S/R ENTRY: {symbol} SELL at resistance ₹{entry_price:.2f} (LTP: ₹{original_entry:.2f}, +{distance_pct:.2f}%)")
+            
+            elif pullback_available and conf_normalized >= 8.5:
                 # Price has pulled back AND signal is strong - use MARKET to capture it
                 order_type = 'MARKET'
                 limit_discount_pct = 0.0
-                logger.info(f"🎯 PULLBACK ENTRY: {symbol} - Price already favorable → MARKET order")
+                logger.info(f"🎯 PULLBACK ENTRY: {symbol} - Price already at good level → MARKET order")
+            
             elif peak_detected:
-                # At a peak - use aggressive LIMIT to only catch a pullback
+                # At a peak without nearby S/R - use small discount and short validity
                 order_type = 'LIMIT'
-                limit_discount_pct = 0.50  # Need 0.5% pullback from peak
-                limit_validity_seconds = 600  # 10 minutes to allow pullback
+                limit_discount_pct = 0.20  # Reduced from 0.50%
+                limit_validity_seconds = 300  # Reduced from 600
                 if action.upper() == 'BUY':
                     entry_price = original_entry * (1 - limit_discount_pct / 100)
-                else:  # SELL
+                else:
                     entry_price = original_entry * (1 + limit_discount_pct / 100)
-                logger.info(f"⚠️ PEAK ENTRY: {symbol} at peak → LIMIT at {limit_discount_pct}% better (₹{original_entry:.2f} → ₹{entry_price:.2f})")
+                logger.info(f"⚠️ PEAK ENTRY: {symbol} at peak, no S/R nearby → LIMIT at {limit_discount_pct}% (₹{original_entry:.2f} → ₹{entry_price:.2f})")
+            
             elif conf_normalized >= 9.0:
                 # 🔥 STRONG SIGNAL: Use MARKET order - don't miss it!
                 order_type = 'MARKET'
                 limit_discount_pct = 0.0
-                logger.info(f"🎯 ADAPTIVE ENTRY: {symbol} STRONG signal ({conf_normalized:.1f}) → MARKET order")
-            elif conf_normalized >= 8.0:
-                # 📊 MEDIUM SIGNAL: Use LIMIT at 0.15% better
+                logger.info(f"🎯 STRONG SIGNAL: {symbol} ({conf_normalized:.1f}/10) → MARKET order (no S/R delay)")
+            
+            elif conf_normalized >= 7.5:
+                # 📊 MEDIUM/NORMAL SIGNAL: Use very tight LIMIT (0.10%)
+                # Changed from 0.15-0.30% to 0.10% - high chance of fill
                 order_type = 'LIMIT'
-                limit_discount_pct = 0.15
+                limit_discount_pct = 0.10
                 limit_validity_seconds = 180  # 3 minutes
                 if action.upper() == 'BUY':
                     entry_price = original_entry * (1 - limit_discount_pct / 100)
-                else:  # SELL
+                else:
                     entry_price = original_entry * (1 + limit_discount_pct / 100)
-                logger.info(f"🎯 ADAPTIVE ENTRY: {symbol} MEDIUM signal ({conf_normalized:.1f}) → LIMIT at {limit_discount_pct}% better (₹{original_entry:.2f} → ₹{entry_price:.2f})")
+                logger.info(f"🎯 TIGHT LIMIT: {symbol} ({conf_normalized:.1f}/10) → LIMIT at {limit_discount_pct}% (₹{original_entry:.2f} → ₹{entry_price:.2f})")
+            
             else:
-                # 📈 NORMAL SIGNAL: Use LIMIT at 0.30% better
-                order_type = 'LIMIT'
-                limit_discount_pct = 0.30
-                limit_validity_seconds = 300  # 5 minutes
-                if action.upper() == 'BUY':
-                    entry_price = original_entry * (1 - limit_discount_pct / 100)
-                else:  # SELL
-                    entry_price = original_entry * (1 + limit_discount_pct / 100)
-                logger.info(f"🎯 ADAPTIVE ENTRY: {symbol} NORMAL signal ({conf_normalized:.1f}) → LIMIT at {limit_discount_pct}% better (₹{original_entry:.2f} → ₹{entry_price:.2f})")
+                # Lower confidence - use MARKET to avoid missing if signal is valid
+                order_type = 'MARKET'
+                limit_discount_pct = 0.0
+                logger.info(f"🎯 DEFAULT MARKET: {symbol} ({conf_normalized:.1f}/10) → MARKET order")
             
             # Recalculate position value with new entry price
             position_value = final_quantity * entry_price
