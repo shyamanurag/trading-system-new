@@ -88,7 +88,14 @@ async def get_zerodha_client():
         from src.core.orchestrator import get_orchestrator_instance
         orchestrator = get_orchestrator_instance()
         if orchestrator and orchestrator.zerodha_client:
-            return orchestrator.zerodha_client
+            client = orchestrator.zerodha_client
+            # Check if client is properly initialized
+            if hasattr(client, 'kite') and client.kite and hasattr(client, 'is_connected'):
+                if client.is_connected:
+                    logger.debug(f"✅ Zerodha client available and connected")
+                else:
+                    logger.warning(f"⚠️ Zerodha client exists but not connected")
+            return client
     except Exception as e:
         logger.warning(f"Could not get Zerodha client: {e}")
     return None
@@ -99,6 +106,11 @@ async def get_historical_candles(symbol: str, interval: str = '5minute', days: i
         zerodha_client = await get_zerodha_client()
         if not zerodha_client:
             logger.warning(f"No Zerodha client available for historical data")
+            return []
+        
+        # Check if Zerodha is connected
+        if not zerodha_client.is_connected:
+            logger.warning(f"Zerodha client not connected - cannot fetch historical data for {symbol}")
             return []
         
         # Map internal symbols to Zerodha trading symbols for historical data
@@ -125,7 +137,8 @@ async def get_historical_candles(symbol: str, interval: str = '5minute', days: i
             exchange = 'NSE'
         
         logger.info(f"Fetching historical data: {symbol} -> {zerodha_symbol} ({exchange})")
-            
+        
+        # Fetch with extended days if initial fetch fails
         candles = await zerodha_client.get_historical_data(
             symbol=zerodha_symbol,
             interval=interval,
@@ -134,15 +147,26 @@ async def get_historical_candles(symbol: str, interval: str = '5minute', days: i
             exchange=exchange
         )
         
+        # If no candles, try fetching more days (some symbols may have gaps)
+        if not candles and days < 10:
+            logger.info(f"Retrying with extended period for {zerodha_symbol}...")
+            candles = await zerodha_client.get_historical_data(
+                symbol=zerodha_symbol,
+                interval=interval,
+                from_date=datetime.now() - timedelta(days=10),
+                to_date=datetime.now(),
+                exchange=exchange
+            )
+        
         if candles:
-            logger.info(f"Got {len(candles)} candles for {zerodha_symbol}")
+            logger.info(f"✅ Got {len(candles)} candles for {zerodha_symbol}")
         else:
-            logger.warning(f"No historical candles returned for {zerodha_symbol}")
+            logger.warning(f"⚠️ No historical candles returned for {zerodha_symbol} - check if symbol exists in {exchange}")
             
         return candles if candles else []
         
     except Exception as e:
-        logger.error(f"Error fetching historical data for {symbol}: {e}")
+        logger.error(f"❌ Error fetching historical data for {symbol}: {e}", exc_info=True)
         return []
 
 async def get_options_analytics(symbol: str) -> Dict:
