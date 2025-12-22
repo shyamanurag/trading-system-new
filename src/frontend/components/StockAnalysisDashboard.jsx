@@ -198,7 +198,27 @@ const SupportResistanceLevels = ({ levels, currentPrice }) => {
             </Typography>
             
             <Divider sx={{ my: 1 }} />
-            
+
+            {/* Debug: Show calculation inputs */}
+            {levels.calculation_inputs && (
+                <Box sx={{ mb: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
+                    <Typography variant="caption" color="text.secondary">
+                        Pivot Data: {levels.calculation_inputs.data_source === 'daily_candle' ? '✅ Previous Day' : '⚠️ Intraday Estimate'}
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">
+                            H: {formatPrice(levels.calculation_inputs.prev_high)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                            L: {formatPrice(levels.calculation_inputs.prev_low)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                            C: {formatPrice(levels.calculation_inputs.prev_close)}
+                        </Typography>
+                    </Box>
+                </Box>
+            )}
+
             <Grid container spacing={1}>
                 {/* Resistance Levels */}
                 <Grid item xs={6}>

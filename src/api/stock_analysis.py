@@ -691,22 +691,47 @@ async def get_previous_day_ohlc(symbol: str) -> Dict:
             zerodha_symbol = symbol_upper
             exchange = 'NSE'
         
+        # Fetch last 10 days of daily candles (to handle weekends/holidays)
         candles = await zerodha_client.get_historical_data(
             symbol=zerodha_symbol, interval='day',
             from_date=datetime.now() - timedelta(days=10),
-            to_date=datetime.now() - timedelta(days=1),
+            to_date=datetime.now(),  # Include today
             exchange=exchange
         )
         
         if candles and len(candles) > 0:
-            last_daily = candles[-1]
-            logger.info(f"✅ Prev day OHLC {symbol}: H={last_daily.get('high')}, L={last_daily.get('low')}, C={last_daily.get('close')}")
+            # Get second-to-last candle if today exists, otherwise last candle
+            # This ensures we get "yesterday" regardless of time of day
+            if len(candles) >= 2 and candles[-1].get('date'):
+                # Check if last candle is today
+                last_date = candles[-1].get('date')
+                if isinstance(last_date, str):
+                    last_date_str = last_date[:10]  # Get YYYY-MM-DD
+                else:
+                    last_date_str = str(last_date)[:10]
+                
+                today_str = datetime.now().strftime('%Y-%m-%d')
+                
+                if last_date_str == today_str and len(candles) >= 2:
+                    # Last candle is today, use second-to-last (yesterday)
+                    last_daily = candles[-2]
+                    logger.info(f"✅ Prev day OHLC {symbol} (yesterday): H={last_daily.get('high')}, L={last_daily.get('low')}, C={last_daily.get('close')}, Date={last_daily.get('date')}")
+                else:
+                    # Last candle is yesterday or older
+                    last_daily = candles[-1]
+                    logger.info(f"✅ Prev day OHLC {symbol} (last trading day): H={last_daily.get('high')}, L={last_daily.get('low')}, C={last_daily.get('close')}, Date={last_daily.get('date')}")
+            else:
+                last_daily = candles[-1]
+                logger.info(f"✅ Prev day OHLC {symbol}: H={last_daily.get('high')}, L={last_daily.get('low')}, C={last_daily.get('close')}, Date={last_daily.get('date')}")
+            
             return {
                 "high": float(last_daily.get('high', 0)),
                 "low": float(last_daily.get('low', 0)),
                 "close": float(last_daily.get('close', 0)),
                 "date": str(last_daily.get('date', ''))
             }
+        
+        logger.warning(f"⚠️ No daily candles found for {symbol}")
         return {"error": "No daily data"}
     except Exception as e:
         logger.error(f"Error fetching prev day OHLC for {symbol}: {e}")
@@ -1152,13 +1177,15 @@ async def get_stock_analysis(
             analysis["indicators"]["mfi"] = calculate_mfi(highs, lows, closes, volumes)
             analysis["indicators"]["macd"] = calculate_macd(closes)
             
-            # 🎯 NEW: Bollinger Bands
-            analysis["indicators"]["bollinger"] = calculate_bollinger_bands(closes)
+            # 🎯 Bollinger Bands - Include current price to avoid stale bands
+            # For intraday analysis, we need bands that reflect current price action
+            closes_with_live = closes + [current_price] if current_price > 0 else closes
+            analysis["indicators"]["bollinger"] = calculate_bollinger_bands(closes_with_live)
             
-            # 🎯 NEW: GARCH Volatility
+            # 🎯 GARCH Volatility
             analysis["indicators"]["garch"] = calculate_garch_volatility(closes)
             
-            # 🎯 NEW: Historical Volatility (multiple periods)
+            # 🎯 Historical Volatility (multiple periods)
             analysis["indicators"]["historical_volatility"] = calculate_historical_volatility(closes)
 
             # 🎯 CRITICAL: Fetch YESTERDAY's DAILY candle for accurate pivot points
