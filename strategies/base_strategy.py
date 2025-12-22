@@ -112,6 +112,11 @@ class BaseStrategy:
         self._garch_cache_expiry_minutes = 30  # Refresh cache every 30 minutes for intraday
         self._garch_cache = {}  # symbol -> {'garch_vol': float, 'atr': float, 'updated_at': datetime}
         
+        # 📊 CAMARILLA PIVOTS CACHE (refreshed daily)
+        # For professional intraday trading - uses previous day's daily OHLC
+        self._camarilla_cache = {}  # symbol -> {'h4': float, 'h3': float, ..., 'l4': float, 'calculated_date': str}
+        self._camarilla_cache_date = None  # Reset cache daily
+        
         # Symbol filtering and selection
         self.watchlist = set()  # Symbols this strategy is interested in
         self.active_symbols = set()  # Symbols currently being analyzed
@@ -6009,6 +6014,32 @@ class BaseStrategy:
             # Find swing levels from price history
             swing_low, swing_high = self._find_swing_levels(symbol)
             
+            # 📊 Get Camarilla levels for professional stop loss placement
+            camarilla_stop = None
+            try:
+                # Note: This is a synchronous context, so we can't use await
+                # Camarilla is used if cached, otherwise falls back to ATR/Swing
+                if symbol in self._camarilla_cache:
+                    camarilla = self._camarilla_cache[symbol]
+                    if action.upper() == 'BUY':
+                        # For BUY: Stop below L2 or L3 (key support levels)
+                        l2, l3 = camarilla['l2'], camarilla['l3']
+                        # Choose the level just below entry
+                        if l3 < entry_price:
+                            camarilla_stop = l3 * 0.998  # Just below L3
+                        elif l2 < entry_price:
+                            camarilla_stop = l2 * 0.998  # Just below L2
+                    else:  # SELL
+                        # For SELL: Stop above H2 or H3 (key resistance levels)
+                        h2, h3 = camarilla['h2'], camarilla['h3']
+                        # Choose the level just above entry
+                        if h3 > entry_price:
+                            camarilla_stop = h3 * 1.002  # Just above H3
+                        elif h2 > entry_price:
+                            camarilla_stop = h2 * 1.002  # Just above H2
+            except Exception:
+                pass
+            
             if action.upper() == 'BUY':
                 # ATR-based stop: 1.5x ATR below entry
                 atr_stop = entry_price - (atr * 1.5)
@@ -6016,16 +6047,24 @@ class BaseStrategy:
                 # Swing-based stop: Just below recent swing low
                 swing_stop = swing_low * 0.998 if swing_low > 0 else atr_stop
                 
-                # Use the TIGHTER stop (higher value) but respect limits
-                # Don't let stop be too close (min 0.5%) or too far (max 3%)
+                # Choose best stop: Camarilla > Swing > ATR (tightest valid stop)
+                candidate_stops = [atr_stop]
+                if swing_stop and swing_stop < entry_price:
+                    candidate_stops.append(swing_stop)
+                if camarilla_stop and camarilla_stop < entry_price:
+                    candidate_stops.append(camarilla_stop)
+                
+                # Use the TIGHTEST stop (highest value) but respect limits
                 min_stop = entry_price * 0.97   # Max 3% loss
                 max_stop = entry_price * 0.995  # Min 0.5% stop distance
                 
-                stop_loss = max(min_stop, min(max_stop, max(atr_stop, swing_stop)))
+                stop_loss = max(min_stop, min(max_stop, max(candidate_stops)))
                 
-                logger.info(f"📉 CHART-BASED SL (BUY): {symbol} ATR_SL=₹{atr_stop:.2f}, "
-                           f"Swing_SL=₹{swing_stop:.2f}, Final=₹{stop_loss:.2f} "
-                           f"({((entry_price - stop_loss) / entry_price * 100):.1f}%)")
+                log_msg = f"📉 CHART-BASED SL (BUY): {symbol} ATR=₹{atr_stop:.2f}, Swing=₹{swing_stop:.2f}"
+                if camarilla_stop:
+                    log_msg += f", Camarilla=₹{camarilla_stop:.2f}"
+                log_msg += f", Final=₹{stop_loss:.2f} ({((entry_price - stop_loss) / entry_price * 100):.1f}%)"
+                logger.info(log_msg)
                 
             else:  # SELL
                 # ATR-based stop: 1.5x ATR above entry
@@ -6034,15 +6073,24 @@ class BaseStrategy:
                 # Swing-based stop: Just above recent swing high
                 swing_stop = swing_high * 1.002 if swing_high > 0 else atr_stop
                 
-                # Use the TIGHTER stop (lower value) but respect limits
+                # Choose best stop: Camarilla > Swing > ATR (tightest valid stop)
+                candidate_stops = [atr_stop]
+                if swing_stop and swing_stop > entry_price:
+                    candidate_stops.append(swing_stop)
+                if camarilla_stop and camarilla_stop > entry_price:
+                    candidate_stops.append(camarilla_stop)
+                
+                # Use the TIGHTEST stop (lowest value) but respect limits
                 min_stop = entry_price * 1.005  # Min 0.5% stop distance
                 max_stop = entry_price * 1.03   # Max 3% loss
                 
-                stop_loss = min(max_stop, max(min_stop, min(atr_stop, swing_stop)))
+                stop_loss = min(max_stop, max(min_stop, min(candidate_stops)))
                 
-                logger.info(f"📉 CHART-BASED SL (SELL): {symbol} ATR_SL=₹{atr_stop:.2f}, "
-                           f"Swing_SL=₹{swing_stop:.2f}, Final=₹{stop_loss:.2f} "
-                           f"({((stop_loss - entry_price) / entry_price * 100):.1f}%)")
+                log_msg = f"📉 CHART-BASED SL (SELL): {symbol} ATR=₹{atr_stop:.2f}, Swing=₹{swing_stop:.2f}"
+                if camarilla_stop:
+                    log_msg += f", Camarilla=₹{camarilla_stop:.2f}"
+                log_msg += f", Final=₹{stop_loss:.2f} ({((stop_loss - entry_price) / entry_price * 100):.1f}%)"
+                logger.info(log_msg)
             
             return round(stop_loss, 2)
             
@@ -6094,7 +6142,112 @@ class BaseStrategy:
         except Exception as e:
             logger.error(f"Swing level detection failed for {symbol}: {e}")
             return 0, 0
-    
+
+    async def _get_camarilla_levels(self, symbol: str) -> Dict:
+        """
+        📊 CAMARILLA PIVOTS - Professional Intraday Trading Levels
+        
+        Fetches or calculates Camarilla pivot points using previous day's daily OHLC.
+        Levels are cached daily and reused for all intraday trades.
+        
+        Returns: {
+            'h4': float, 'h3': float, 'h2': float, 'h1': float,
+            'l1': float, 'l2': float, 'l3': float, 'l4': float,
+            'prev_high': float, 'prev_low': float, 'prev_close': float,
+            'signal': str  # STRONG_BULLISH, RANGE_BOUND, etc.
+        }
+        """
+        try:
+            # Check if cache needs refresh (new trading day)
+            today = datetime.now().strftime('%Y-%m-%d')
+            if self._camarilla_cache_date != today:
+                logger.info(f"📊 Refreshing Camarilla cache for new trading day: {today}")
+                self._camarilla_cache = {}
+                self._camarilla_cache_date = today
+            
+            # Return cached levels if available
+            if symbol in self._camarilla_cache:
+                return self._camarilla_cache[symbol]
+            
+            # Fetch previous day's daily OHLC from Zerodha
+            if not self.orchestrator or not hasattr(self.orchestrator, 'zerodha_client'):
+                logger.warning(f"⚠️ Camarilla: Zerodha client not available for {symbol}")
+                return {}
+            
+            zerodha_client = self.orchestrator.zerodha_client
+            if not zerodha_client or not getattr(zerodha_client, 'is_connected', False):
+                logger.warning(f"⚠️ Camarilla: Zerodha not connected for {symbol}")
+                return {}
+            
+            # Map index symbols
+            symbol_upper = symbol.upper().strip()
+            index_map = {
+                'NIFTY-I': ('NIFTY 50', 'NSE'), 'NIFTY': ('NIFTY 50', 'NSE'),
+                'BANKNIFTY-I': ('NIFTY BANK', 'NSE'), 'BANKNIFTY': ('NIFTY BANK', 'NSE'),
+                'FINNIFTY-I': ('NIFTY FIN SERVICE', 'NSE'), 'FINNIFTY': ('NIFTY FIN SERVICE', 'NSE'),
+                'SENSEX-I': ('SENSEX', 'BSE'), 'SENSEX': ('SENSEX', 'BSE'),
+            }
+            
+            zerodha_symbol, exchange = index_map.get(symbol_upper, (symbol_upper, 'NSE'))
+            
+            # Fetch last 5 daily candles (handles weekends/holidays)
+            candles = await zerodha_client.get_historical_data(
+                symbol=zerodha_symbol,
+                interval='day',
+                from_date=datetime.now() - timedelta(days=7),
+                to_date=datetime.now(),
+                exchange=exchange
+            )
+            
+            if not candles or len(candles) < 2:
+                logger.warning(f"⚠️ Camarilla: Insufficient daily data for {symbol}")
+                return {}
+            
+            # Get PREVIOUS DAY's complete candle (second-to-last)
+            yesterday = candles[-2]
+            prev_high = float(yesterday.get('high', 0))
+            prev_low = float(yesterday.get('low', 0))
+            prev_close = float(yesterday.get('close', 0))
+            
+            if prev_high <= 0 or prev_low <= 0 or prev_close <= 0:
+                logger.warning(f"⚠️ Camarilla: Invalid OHLC data for {symbol}")
+                return {}
+            
+            # Calculate Camarilla levels
+            range_val = prev_high - prev_low
+            
+            # Resistance levels (H1 to H4)
+            h4 = prev_close + range_val * 1.1 / 2
+            h3 = prev_close + range_val * 1.1 / 4
+            h2 = prev_close + range_val * 1.1 / 6
+            h1 = prev_close + range_val * 1.1 / 12
+            
+            # Support levels (L1 to L4)
+            l1 = prev_close - range_val * 1.1 / 12
+            l2 = prev_close - range_val * 1.1 / 6
+            l3 = prev_close - range_val * 1.1 / 4
+            l4 = prev_close - range_val * 1.1 / 2
+            
+            levels = {
+                'h4': round(h4, 2), 'h3': round(h3, 2), 'h2': round(h2, 2), 'h1': round(h1, 2),
+                'l1': round(l1, 2), 'l2': round(l2, 2), 'l3': round(l3, 2), 'l4': round(l4, 2),
+                'prev_high': round(prev_high, 2),
+                'prev_low': round(prev_low, 2),
+                'prev_close': round(prev_close, 2),
+                'range': round(range_val, 2),
+                'date': str(yesterday.get('date', ''))
+            }
+            
+            # Cache for the day
+            self._camarilla_cache[symbol] = levels
+            logger.info(f"✅ Camarilla levels for {symbol}: H4={h4:.2f}, L4={l4:.2f}, Range={range_val:.2f}")
+            
+            return levels
+            
+        except Exception as e:
+            logger.error(f"❌ Camarilla calculation failed for {symbol}: {e}")
+            return {}
+
     def calculate_chart_based_levels(self, symbol: str, action: str, entry_price: float,
                                      symbol_data: Dict = None) -> Tuple[float, float]:
         """
@@ -6730,6 +6883,41 @@ class BaseStrategy:
                             logger.info(f"⚠️ BIAS REDUCE: {symbol} {action} gets {bias_multiplier:.1f}x position size")
                     else:
                         metadata['bias_multiplier'] = 1.0
+            
+            # ============================================================
+            # 📊 CAMARILLA SIGNAL FILTER (Professional Risk Management)
+            # ============================================================
+            # Block signals that violate Camarilla pivot structure
+            try:
+                if camarilla_signal:
+                    # REJECT BUY signals in risky zones
+                    if action.upper() == 'BUY':
+                        if camarilla_signal == "BREAKDOWN_ZONE":
+                            logger.warning(f"🚫 CAMARILLA FILTER: {symbol} BUY blocked - Price below L4 breakdown level")
+                            return None
+                        elif camarilla_signal == "RESISTANCE_ZONE" and confidence < 9.0:
+                            logger.warning(f"🚫 CAMARILLA FILTER: {symbol} BUY blocked - Price near H3 resistance (conf={confidence:.1f})")
+                            return None
+                    
+                    # REJECT SELL signals in risky zones
+                    elif action.upper() == 'SELL':
+                        if camarilla_signal == "BREAKOUT_ZONE":
+                            logger.warning(f"🚫 CAMARILLA FILTER: {symbol} SELL blocked - Price above H4 breakout level")
+                            return None
+                        elif camarilla_signal == "SUPPORT_ZONE" and confidence < 9.0:
+                            logger.warning(f"🚫 CAMARILLA FILTER: {symbol} SELL blocked - Price near L3 support (conf={confidence:.1f})")
+                            return None
+                    
+                    # BOOST confidence for confirmed breakouts/breakdowns
+                    if camarilla_signal == "BREAKOUT_CONFIRMED" and action.upper() == 'BUY':
+                        logger.info(f"🚀 CAMARILLA BOOST: {symbol} BUY breakout above H4")
+                        metadata['camarilla_boost'] = True
+                        # Don't actually modify confidence, just mark it
+                    elif camarilla_signal == "BREAKDOWN_CONFIRMED" and action.upper() == 'SELL':
+                        logger.info(f"📉 CAMARILLA BOOST: {symbol} SELL breakdown below L4")
+                        metadata['camarilla_boost'] = True
+            except Exception as cam_filter_err:
+                logger.debug(f"Camarilla filter skipped: {cam_filter_err}")
             
             # CRITICAL FIX: Type validation to prevent float/string arithmetic errors
             try:
@@ -7515,80 +7703,106 @@ class BaseStrategy:
                 logger.debug(f"Peak detection skipped: {peak_err}")
             
             # ============================================================
-            # 🎯 SUPPORT/RESISTANCE BASED ENTRY (NOT FIXED PERCENTAGE!)
+            # 📊 CAMARILLA PIVOTS - Professional Intraday Entry Levels
             # ============================================================
-            # Instead of arbitrary 0.3% or 0.5% discount, use actual S/R levels
-            # where buyers/sellers are likely to step in
+            # Uses previous day's daily OHLC for precise support/resistance levels
+            # Levels: H4, H3, H2, H1 (resistance) and L1, L2, L3, L4 (support)
             
             support_entry = None
             resistance_entry = None
             sr_based_entry = False
+            camarilla_signal = None
             
             try:
-                # Get pivot levels for the symbol
-                pivot_data = self.calculate_pivot_levels(symbol, {
-                    'ltp': original_entry,
-                    'high': symbol_data.get('high', original_entry * 1.01) if symbol_data else original_entry * 1.01,
-                    'low': symbol_data.get('low', original_entry * 0.99) if symbol_data else original_entry * 0.99,
-                    'close': symbol_data.get('close', original_entry) if symbol_data else original_entry
-                })
+                # Get Camarilla levels (cached daily)
+                camarilla = await self._get_camarilla_levels(symbol)
                 
-                if pivot_data and 'levels' in pivot_data:
-                    levels = pivot_data['levels']
+                if camarilla:
+                    h4, h3, h2, h1 = camarilla['h4'], camarilla['h3'], camarilla['h2'], camarilla['h1']
+                    l1, l2, l3, l4 = camarilla['l1'], camarilla['l2'], camarilla['l3'], camarilla['l4']
                     
                     if action.upper() == 'BUY':
-                        # Find nearest SUPPORT level below current price
-                        # Support levels: S1, S2, S3, pivot (if below price), swing low
+                        # Find best BUY entry using Camarilla support levels
                         support_levels = []
-                        for level_name in ['s1', 's2', 'pivot', 'fib_s1', 'day_low']:
-                            level_val = levels.get(level_name, 0)
+                        
+                        # Priority order: L3 > L2 > L1 (key support levels)
+                        for level_name, level_val in [('L3', l3), ('L2', l2), ('L1', l1)]:
                             if level_val > 0 and level_val < original_entry:
                                 distance_pct = (original_entry - level_val) / original_entry * 100
-                                # Only consider levels within 0.1% to 1.5% below
-                                if 0.1 <= distance_pct <= 1.5:
+                                # Camarilla: wider range (0.05% to 2.5%) for intraday volatility
+                                if 0.05 <= distance_pct <= 2.5:
                                     support_levels.append((level_name, level_val, distance_pct))
                         
-                        # Also check swing low
+                        # Also check swing low as backup
                         swing_low, swing_high = self._find_swing_levels(symbol)
                         if swing_low > 0 and swing_low < original_entry:
                             distance_pct = (original_entry - swing_low) / original_entry * 100
-                            if 0.1 <= distance_pct <= 1.5:
+                            if 0.05 <= distance_pct <= 2.5:
                                 support_levels.append(('swing_low', swing_low, distance_pct))
                         
                         if support_levels:
-                            # Pick the NEAREST support (smallest distance)
+                            # Pick NEAREST support (most likely to be tested)
                             support_levels.sort(key=lambda x: x[2])
-                            nearest_support = support_levels[0]
-                            support_entry = nearest_support[1]
-                            logger.info(f"📊 {symbol} BUY: Nearest support at {nearest_support[0]}=₹{support_entry:.2f} ({nearest_support[2]:.2f}% below LTP)")
+                            nearest = support_levels[0]
+                            support_entry = nearest[1]
+                            logger.info(f"📊 CAMARILLA BUY: {symbol} → {nearest[0]}=₹{support_entry:.2f} (-{nearest[2]:.2f}% from LTP)")
+                        
+                        # Validate signal against Camarilla structure
+                        if original_entry > h3:
+                            camarilla_signal = "RESISTANCE_ZONE"
+                            logger.warning(f"⚠️ {symbol} BUY RISKY: Price above H3 resistance (₹{h3:.2f})")
+                        elif original_entry < l4:
+                            camarilla_signal = "BREAKDOWN_ZONE"
+                            logger.warning(f"⚠️ {symbol} BUY RISKY: Price below L4 breakdown (₹{l4:.2f})")
+                        elif original_entry > h4:
+                            camarilla_signal = "BREAKOUT_CONFIRMED"
+                            logger.info(f"🚀 {symbol} BUY BREAKOUT: Above H4 (₹{h4:.2f}) - STRONG BULLISH!")
+                        elif l3 <= original_entry <= h3:
+                            camarilla_signal = "RANGE_BOUND"
+                            logger.info(f"✅ {symbol} BUY: Within trading range L3-H3")
                     
                     else:  # SELL
-                        # Find nearest RESISTANCE level above current price
+                        # Find best SELL entry using Camarilla resistance levels
                         resistance_levels = []
-                        for level_name in ['r1', 'r2', 'pivot', 'fib_r1', 'day_high']:
-                            level_val = levels.get(level_name, 0)
+                        
+                        # Priority order: H3 > H2 > H1 (key resistance levels)
+                        for level_name, level_val in [('H3', h3), ('H2', h2), ('H1', h1)]:
                             if level_val > 0 and level_val > original_entry:
                                 distance_pct = (level_val - original_entry) / original_entry * 100
-                                # Only consider levels within 0.1% to 1.5% above
-                                if 0.1 <= distance_pct <= 1.5:
+                                # Camarilla: wider range (0.05% to 2.5%) for intraday volatility
+                                if 0.05 <= distance_pct <= 2.5:
                                     resistance_levels.append((level_name, level_val, distance_pct))
                         
-                        # Also check swing high
+                        # Also check swing high as backup
                         swing_low, swing_high = self._find_swing_levels(symbol)
                         if swing_high > 0 and swing_high > original_entry:
                             distance_pct = (swing_high - original_entry) / original_entry * 100
-                            if 0.1 <= distance_pct <= 1.5:
+                            if 0.05 <= distance_pct <= 2.5:
                                 resistance_levels.append(('swing_high', swing_high, distance_pct))
                         
                         if resistance_levels:
-                            # Pick the NEAREST resistance (smallest distance)
+                            # Pick NEAREST resistance (most likely to be tested)
                             resistance_levels.sort(key=lambda x: x[2])
-                            nearest_resistance = resistance_levels[0]
-                            resistance_entry = nearest_resistance[1]
-                            logger.info(f"📊 {symbol} SELL: Nearest resistance at {nearest_resistance[0]}=₹{resistance_entry:.2f} ({nearest_resistance[2]:.2f}% above LTP)")
+                            nearest = resistance_levels[0]
+                            resistance_entry = nearest[1]
+                            logger.info(f"📊 CAMARILLA SELL: {symbol} → {nearest[0]}=₹{resistance_entry:.2f} (+{nearest[2]:.2f}% from LTP)")
+                        
+                        # Validate signal against Camarilla structure
+                        if original_entry < l3:
+                            camarilla_signal = "SUPPORT_ZONE"
+                            logger.warning(f"⚠️ {symbol} SELL RISKY: Price below L3 support (₹{l3:.2f})")
+                        elif original_entry > h4:
+                            camarilla_signal = "BREAKOUT_ZONE"
+                            logger.warning(f"⚠️ {symbol} SELL RISKY: Price above H4 breakout (₹{h4:.2f})")
+                        elif original_entry < l4:
+                            camarilla_signal = "BREAKDOWN_CONFIRMED"
+                            logger.info(f"📉 {symbol} SELL BREAKDOWN: Below L4 (₹{l4:.2f}) - STRONG BEARISH!")
+                        elif l3 <= original_entry <= h3:
+                            camarilla_signal = "RANGE_BOUND"
+                            logger.info(f"✅ {symbol} SELL: Within trading range L3-H3")
             
             except Exception as sr_err:
-                logger.debug(f"S/R detection skipped: {sr_err}")
+                logger.debug(f"Camarilla pivot calculation skipped: {sr_err}")
             
             # ============================================================
             # 🎯 ADAPTIVE ENTRY DECISION
