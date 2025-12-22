@@ -43,17 +43,40 @@ setup_redis()
 def get_live_data(symbol: str) -> Dict:
     """Get live market data for a symbol from Redis cache"""
     try:
-        from config.truedata_symbols import get_zerodha_symbol
-        mapped_symbol = get_zerodha_symbol(symbol.upper())
+        symbol_upper = symbol.upper().strip()
+        
+        # Index symbols are stored with -I suffix in TrueData
+        index_symbols = {'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'}
+        
+        # Try multiple symbol variations
+        symbols_to_try = [symbol_upper]
+        
+        # If it's a known index without -I, add the -I version
+        if symbol_upper in index_symbols:
+            symbols_to_try.insert(0, f"{symbol_upper}-I")
+        
+        # If it already has -I, also try without
+        if symbol_upper.endswith('-I'):
+            base_symbol = symbol_upper[:-2]
+            symbols_to_try.append(base_symbol)
         
         if redis_client:
             cached_data = redis_client.hgetall("truedata:live_cache")
-            if cached_data and mapped_symbol in cached_data:
-                return json.loads(cached_data[mapped_symbol])
+            if cached_data:
+                for sym in symbols_to_try:
+                    if sym in cached_data:
+                        logger.debug(f"Found {symbol} as {sym} in Redis cache")
+                        return json.loads(cached_data[sym])
         
         # Fallback to direct cache
         from data.truedata_client import live_market_data
-        return live_market_data.get(mapped_symbol, {})
+        for sym in symbols_to_try:
+            if sym in live_market_data:
+                logger.debug(f"Found {symbol} as {sym} in direct cache")
+                return live_market_data.get(sym, {})
+        
+        logger.warning(f"Symbol {symbol} not found. Tried: {symbols_to_try}")
+        return {}
         
     except Exception as e:
         logger.error(f"Error getting live data for {symbol}: {e}")
