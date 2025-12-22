@@ -367,6 +367,209 @@ const VolumeAnalysis = ({ volume }) => {
     );
 };
 
+// Bollinger Bands Display Component
+const BollingerBandsDisplay = ({ bollinger }) => {
+    if (!bollinger || bollinger.error) {
+        return (
+            <Alert severity="info" sx={{ mt: 1 }}>
+                Bollinger data not available
+            </Alert>
+        );
+    }
+
+    const getPositionColor = () => {
+        switch (bollinger.position) {
+            case 'ABOVE_UPPER': return '#f44336';
+            case 'BELOW_LOWER': return '#4caf50';
+            case 'UPPER_HALF': return '#ff9800';
+            case 'LOWER_HALF': return '#8bc34a';
+            default: return '#2196f3';
+        }
+    };
+
+    return (
+        <Box sx={{ p: 2 }}>
+            <Grid container spacing={1}>
+                <Grid item xs={4}>
+                    <Typography variant="caption" color="text.secondary">Upper</Typography>
+                    <Typography variant="body2" color="error">
+                        ₹{bollinger.upper_band?.toFixed(2)}
+                    </Typography>
+                </Grid>
+                <Grid item xs={4}>
+                    <Typography variant="caption" color="text.secondary">Middle</Typography>
+                    <Typography variant="body2">
+                        ₹{bollinger.middle_band?.toFixed(2)}
+                    </Typography>
+                </Grid>
+                <Grid item xs={4}>
+                    <Typography variant="caption" color="text.secondary">Lower</Typography>
+                    <Typography variant="body2" color="success">
+                        ₹{bollinger.lower_band?.toFixed(2)}
+                    </Typography>
+                </Grid>
+            </Grid>
+            <Divider sx={{ my: 1 }} />
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Box>
+                    <Typography variant="caption" color="text.secondary">Bandwidth</Typography>
+                    <Typography variant="body2">{bollinger.bandwidth?.toFixed(2)}%</Typography>
+                </Box>
+                <Box>
+                    <Typography variant="caption" color="text.secondary">Position</Typography>
+                    <Typography variant="body2" sx={{ color: getPositionColor() }}>
+                        {bollinger.band_position?.toFixed(0)}%
+                    </Typography>
+                </Box>
+            </Box>
+            {bollinger.is_squeeze && (
+                <Chip 
+                    label={`SQUEEZE (${bollinger.squeeze_intensity?.toFixed(0)}%)`}
+                    size="small"
+                    color="warning"
+                    sx={{ mt: 1 }}
+                />
+            )}
+        </Box>
+    );
+};
+
+// GARCH Volatility Display Component
+const GARCHVolatilityDisplay = ({ garch, hv }) => {
+    if (!garch || garch.error) {
+        return (
+            <Alert severity="info" sx={{ mt: 1 }}>
+                Volatility data not available
+            </Alert>
+        );
+    }
+
+    const getRegimeColor = () => {
+        switch (garch.regime) {
+            case 'EXTREME': return '#c62828';
+            case 'HIGH': return '#f44336';
+            case 'NORMAL': return '#2196f3';
+            case 'LOW': return '#4caf50';
+            default: return '#9e9e9e';
+        }
+    };
+
+    const getTrendIcon = () => {
+        if (garch.trend === 'INCREASING') return <TrendingUp color="error" />;
+        if (garch.trend === 'DECREASING') return <TrendingDown color="success" />;
+        return <TrendingFlat />;
+    };
+
+    return (
+        <Box sx={{ p: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                <Box>
+                    <Typography variant="caption" color="text.secondary">GARCH Vol</Typography>
+                    <Typography variant="h6">{garch.garch_volatility?.toFixed(1)}%</Typography>
+                </Box>
+                <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="caption" color="text.secondary">Historical Vol</Typography>
+                    <Typography variant="h6">{garch.historical_volatility?.toFixed(1)}%</Typography>
+                </Box>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Chip 
+                    label={garch.regime}
+                    size="small"
+                    sx={{ bgcolor: getRegimeColor(), color: 'white' }}
+                />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    {getTrendIcon()}
+                    <Typography variant="caption">{garch.trend}</Typography>
+                </Box>
+            </Box>
+            {hv && !hv.error && (
+                <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    <Typography variant="caption">HV5: {hv.hv_5?.toFixed(1)}%</Typography>
+                    <Typography variant="caption">HV10: {hv.hv_10?.toFixed(1)}%</Typography>
+                    <Typography variant="caption">HV20: {hv.hv_20?.toFixed(1)}%</Typography>
+                </Box>
+            )}
+        </Box>
+    );
+};
+
+// Options Analytics Display Component (for indices)
+const OptionsAnalyticsDisplay = ({ options }) => {
+    if (!options || !options.available) {
+        return (
+            <Alert severity="info" sx={{ mt: 1 }}>
+                Options data not available
+            </Alert>
+        );
+    }
+
+    const getPCRColor = () => {
+        if (options.pcr > 1.2) return '#4caf50';
+        if (options.pcr < 0.8) return '#f44336';
+        return '#ff9800';
+    };
+
+    const formatOI = (oi) => {
+        if (!oi) return '-';
+        if (oi >= 10000000) return (oi / 10000000).toFixed(2) + ' Cr';
+        if (oi >= 100000) return (oi / 100000).toFixed(2) + ' L';
+        return oi.toLocaleString();
+    };
+
+    return (
+        <Box sx={{ p: 2 }}>
+            <Grid container spacing={2}>
+                <Grid item xs={6}>
+                    <Typography variant="caption" color="text.secondary">Put-Call Ratio</Typography>
+                    <Typography variant="h5" sx={{ color: getPCRColor() }}>
+                        {options.pcr?.toFixed(2)}
+                    </Typography>
+                    <Chip 
+                        label={options.pcr_interpretation?.replace('_', ' ')}
+                        size="small"
+                        sx={{ bgcolor: getPCRColor(), color: 'white' }}
+                    />
+                </Grid>
+                <Grid item xs={6}>
+                    <Typography variant="caption" color="text.secondary">Max Pain</Typography>
+                    <Typography variant="h5">₹{options.max_pain?.toLocaleString()}</Typography>
+                    <Typography variant="caption" color={options.distance_to_max_pain_pct > 0 ? 'success.main' : 'error.main'}>
+                        {options.distance_to_max_pain_pct > 0 ? '+' : ''}{options.distance_to_max_pain_pct?.toFixed(2)}% away
+                    </Typography>
+                </Grid>
+            </Grid>
+            <Divider sx={{ my: 1 }} />
+            <Grid container spacing={2}>
+                <Grid item xs={6}>
+                    <Typography variant="caption" color="text.secondary">Call OI</Typography>
+                    <Typography variant="body2" color="error">{formatOI(options.total_call_oi)}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                    <Typography variant="caption" color="text.secondary">Put OI</Typography>
+                    <Typography variant="body2" color="success">{formatOI(options.total_put_oi)}</Typography>
+                </Grid>
+            </Grid>
+            <Divider sx={{ my: 1 }} />
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Box>
+                    <Typography variant="caption" color="text.secondary">IV Mean</Typography>
+                    <Typography variant="body2">{options.iv_mean?.toFixed(1)}%</Typography>
+                </Box>
+                <Box>
+                    <Typography variant="caption" color="text.secondary">ATM Strike</Typography>
+                    <Typography variant="body2">₹{options.atm_strike?.toLocaleString()}</Typography>
+                </Box>
+            </Box>
+            {options.expiry && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                    Expiry: {options.expiry}
+                </Typography>
+            )}
+        </Box>
+    );
+};
+
 // Algorithm Recommendation Display
 const AlgorithmRecommendation = ({ recommendation }) => {
     if (!recommendation) {
@@ -772,6 +975,47 @@ const StockAnalysisDashboard = () => {
                             </CardContent>
                         </Card>
                     </Grid>
+
+                    {/* Bollinger Bands */}
+                    <Grid item xs={12} md={4}>
+                        <Card sx={{ height: '100%' }}>
+                            <CardContent>
+                                <Typography variant="h6" gutterBottom>
+                                    Bollinger Bands
+                                </Typography>
+                                <BollingerBandsDisplay bollinger={analysis.indicators?.bollinger} />
+                            </CardContent>
+                        </Card>
+                    </Grid>
+
+                    {/* Volatility Analysis */}
+                    <Grid item xs={12} md={4}>
+                        <Card sx={{ height: '100%' }}>
+                            <CardContent>
+                                <Typography variant="h6" gutterBottom>
+                                    Volatility (GARCH)
+                                </Typography>
+                                <GARCHVolatilityDisplay 
+                                    garch={analysis.indicators?.garch}
+                                    hv={analysis.indicators?.historical_volatility}
+                                />
+                            </CardContent>
+                        </Card>
+                    </Grid>
+
+                    {/* Options Analytics (for indices) */}
+                    {analysis.options_analytics?.available && (
+                        <Grid item xs={12} md={4}>
+                            <Card sx={{ height: '100%' }}>
+                                <CardContent>
+                                    <Typography variant="h6" gutterBottom>
+                                        Options Analytics
+                                    </Typography>
+                                    <OptionsAnalyticsDisplay options={analysis.options_analytics} />
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    )}
 
                     {/* Data Source Info */}
                     <Grid item xs={12}>

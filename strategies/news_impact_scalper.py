@@ -1066,6 +1066,27 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 bollinger_breakout = bollinger_data.get('breakout_direction')
                 squeeze_quality = bollinger_data.get('squeeze_quality', 'LOW')
             
+            # ============= 🚨 CRITICAL: NIFTY MARKET CONDITION CHECK =============
+            # Block CALL (BUY) signals when NIFTY is extremely overbought
+            # Block PUT (SELL) signals when NIFTY is extremely oversold
+            try:
+                nifty_data = market_data.get('NIFTY-I') or market_data.get('NIFTY') or {}
+                nifty_change = float(nifty_data.get('change_percent', 0) or 0)
+                
+                # 🚨 NIFTY EXTREME OVERBOUGHT: Block ALL CALL (BUY) signals
+                if weighted_bias > 0.5:  # Would generate CALL
+                    if nifty_change > 1.5:
+                        logger.warning(f"🚫 {underlying_symbol}: CALL BLOCKED - NIFTY EXTREME (+{nifty_change:.2f}% > 1.5%)")
+                        return None
+                
+                # 🚨 NIFTY EXTREME OVERSOLD: Block ALL PUT (SELL) signals
+                if weighted_bias < -0.5:  # Would generate PUT
+                    if nifty_change < -1.5:
+                        logger.warning(f"🚫 {underlying_symbol}: PUT BLOCKED - NIFTY EXTREME ({nifty_change:.2f}% < -1.5%)")
+                        return None
+            except Exception as e:
+                logger.debug(f"NIFTY market check failed: {e}")
+            
             # ============= PHASE 2: REVERSAL DETECTION + HP TREND =============
             # Don't buy CALL if selling pressure is high (reversal down)
             # Don't buy PUT if buying pressure is high (reversal up)

@@ -30,6 +30,13 @@ class MarketBias:
     breadth_score: float = 0.0  # Market breadth strength
     stability_score: float = 0.0  # Bias stability over time
     internals_alignment: float = 0.0  # How well internals align with bias
+    # 🎯 OPTIONS ANALYTICS (PCR, OI)
+    nifty_pcr: float = 1.0  # Put-Call Ratio (OI-based)
+    pcr_interpretation: str = "NEUTRAL"  # BULLISH, BEARISH, NEUTRAL
+    nifty_max_pain: float = 0.0  # Max pain strike
+    nifty_iv: float = 0.0  # Implied volatility
+    nifty_mfi: float = 50.0  # Money Flow Index
+    nifty_rsi: float = 50.0  # RSI
 
 class MarketDirectionalBias:
     """
@@ -268,6 +275,51 @@ class MarketDirectionalBias:
             if confidence < 1.5:
                 bias_direction = "NEUTRAL"
 
+            # 10B. 🎯 FETCH OPTIONS ANALYTICS (PCR, OI) - CACHED, NON-BLOCKING
+            nifty_pcr = 1.0
+            pcr_interpretation = "NEUTRAL"
+            nifty_max_pain = 0.0
+            nifty_iv = 0.0
+            
+            try:
+                # Only fetch every 5 minutes to avoid rate limiting
+                if not hasattr(self, '_last_pcr_fetch') or \
+                   (datetime.now() - self._last_pcr_fetch).total_seconds() > 300:
+                    from src.core.orchestrator import get_orchestrator_instance
+                    orchestrator = get_orchestrator_instance()
+                    if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                        option_chain = await orchestrator.zerodha_client.get_option_chain('NIFTY')
+                        if option_chain and option_chain.get('analytics'):
+                            analytics = option_chain['analytics']
+                            nifty_pcr = float(analytics.get('pcr', 1.0) or 1.0)
+                            nifty_max_pain = float(analytics.get('max_pain', 0) or 0)
+                            nifty_iv = float(analytics.get('iv_mean', 0) or 0)
+                            
+                            # PCR interpretation
+                            if nifty_pcr > 1.2:
+                                pcr_interpretation = "BULLISH"
+                            elif nifty_pcr < 0.8:
+                                pcr_interpretation = "BEARISH"
+                            elif nifty_pcr > 1.0:
+                                pcr_interpretation = "MILDLY_BULLISH"
+                            else:
+                                pcr_interpretation = "MILDLY_BEARISH"
+                            
+                            self._cached_pcr = nifty_pcr
+                            self._cached_pcr_interp = pcr_interpretation
+                            self._cached_max_pain = nifty_max_pain
+                            self._cached_iv = nifty_iv
+                            self._last_pcr_fetch = datetime.now()
+                            logger.info(f"📊 NIFTY OPTIONS: PCR={nifty_pcr:.2f} ({pcr_interpretation}), MaxPain={nifty_max_pain:.0f}, IV={nifty_iv:.1f}%")
+                else:
+                    # Use cached values
+                    nifty_pcr = getattr(self, '_cached_pcr', 1.0)
+                    pcr_interpretation = getattr(self, '_cached_pcr_interp', "NEUTRAL")
+                    nifty_max_pain = getattr(self, '_cached_max_pain', 0)
+                    nifty_iv = getattr(self, '_cached_iv', 0)
+            except Exception as pcr_err:
+                logger.debug(f"PCR fetch skipped: {pcr_err}")
+            
             # 11. UPDATE CURRENT BIAS
             self.current_bias = MarketBias(
                 direction=bias_direction,
@@ -280,7 +332,11 @@ class MarketDirectionalBias:
                 market_regime=market_regime,
                 breadth_score=breadth_score,
                 stability_score=stability_score,
-                internals_alignment=internals_alignment
+                internals_alignment=internals_alignment,
+                nifty_pcr=nifty_pcr,
+                pcr_interpretation=pcr_interpretation,
+                nifty_max_pain=nifty_max_pain,
+                nifty_iv=nifty_iv
             )
             
             # Update history

@@ -118,6 +118,7 @@ def get_complete_fo_symbols() -> List[str]:
         'PHOENIXLTD', 'SOBHA', 'MINDSPACE', 'BROOKFIELD', 'EMBASSY',
         'IGARASHI', 'IRB', 'GMRINFRA', 'CONCOR', 'BHARATFORG',
         'IRFC', 'RVNL', 'ANANTRAJ', 'IREDA', 'RECLTD',  # PSU Infra - popular retail stocks
+        'HUDCO', 'BSE',  # Housing finance & Exchange stock - user requested
         
         # Telecom & Media (6) - Removed RCOM, IDEA, SITI, DISHTV (delisted/penny stocks)
         'GTPL', 'HATHWAY', 'TV18BRDCST', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',
@@ -464,6 +465,7 @@ def get_complete_fo_symbols() -> List[str]:
         'PHOENIXLTD', 'SOBHA', 'MINDSPACE', 'BROOKFIELD', 'EMBASSY',
         'IGARASHI', 'IRB', 'GMRINFRA', 'CONCOR', 'BHARATFORG',
         'IRFC', 'RVNL', 'ANANTRAJ', 'IREDA', 'RECLTD',  # PSU Infra - popular retail stocks
+        'HUDCO', 'BSE',  # Housing finance & Exchange stock - user requested
         
         # Telecom & Media (6) - Removed RCOM, IDEA, SITI, DISHTV (delisted/penny stocks)
         'GTPL', 'HATHWAY', 'TV18BRDCST', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',

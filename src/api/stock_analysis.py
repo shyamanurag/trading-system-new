@@ -145,6 +145,93 @@ async def get_historical_candles(symbol: str, interval: str = '5minute', days: i
         logger.error(f"Error fetching historical data for {symbol}: {e}")
         return []
 
+async def get_options_analytics(symbol: str) -> Dict:
+    """
+    Fetch options analytics for indices (NIFTY, BANKNIFTY, etc.)
+    Also works for F&O stocks
+    Returns PCR, OI data, Max Pain, IV from Zerodha option chain
+    """
+    try:
+        # Known index symbols
+        index_symbols = {'NIFTY', 'NIFTY-I', 'BANKNIFTY', 'BANKNIFTY-I', 
+                        'FINNIFTY', 'FINNIFTY-I', 'MIDCPNIFTY', 'MIDCPNIFTY-I',
+                        'SENSEX', 'SENSEX-I'}
+        
+        symbol_upper = symbol.upper().strip()
+        base_symbol = symbol_upper.replace('-I', '')
+        
+        # For non-index symbols, still try to get options data if available
+        is_index = symbol_upper in index_symbols or base_symbol in index_symbols
+        
+        zerodha_client = await get_zerodha_client()
+        if not zerodha_client:
+            return {"available": False, "reason": "Zerodha client not available"}
+        
+        try:
+            # Fetch option chain from Zerodha
+            option_chain = await zerodha_client.get_option_chain(base_symbol)
+        except Exception as oc_err:
+            logger.warning(f"Option chain fetch failed for {symbol}: {oc_err}")
+            return {"available": False, "reason": "Option chain not available for this symbol"}
+        
+        if not option_chain or not option_chain.get('analytics'):
+            if not is_index:
+                return {"available": False, "reason": "Options analytics only for indices/F&O stocks"}
+            return {"available": False, "reason": "Could not fetch option chain"}
+        
+        analytics = option_chain.get('analytics', {})
+        
+        # Extract key metrics
+        pcr = analytics.get('pcr', 0) or 0
+        max_pain = analytics.get('max_pain', 0) or 0
+        total_call_oi = analytics.get('total_call_oi', 0) or 0
+        total_put_oi = analytics.get('total_put_oi', 0) or 0
+        iv_mean = analytics.get('iv_mean', 0) or 0
+        iv_skew = analytics.get('iv_skew', {}) or {}
+        
+        # OI analysis
+        oi_interpretation = "NEUTRAL"
+        if pcr > 1.2:
+            oi_interpretation = "BULLISH"  # High puts = writers expecting up
+        elif pcr < 0.8:
+            oi_interpretation = "BEARISH"  # High calls = writers expecting down
+        elif pcr > 1.0:
+            oi_interpretation = "MILDLY_BULLISH"
+        else:
+            oi_interpretation = "MILDLY_BEARISH"
+        
+        # Max pain analysis
+        spot_price = option_chain.get('spot_price', 0) or 0
+        if spot_price > 0 and max_pain > 0:
+            distance_to_max_pain = ((max_pain - spot_price) / spot_price) * 100
+        else:
+            distance_to_max_pain = 0
+        
+        return {
+            "available": True,
+            "is_index": is_index,
+            "pcr": round(float(pcr), 2),
+            "pcr_interpretation": oi_interpretation,
+            "total_call_oi": int(total_call_oi),
+            "total_put_oi": int(total_put_oi),
+            "max_pain": round(float(max_pain), 2),
+            "distance_to_max_pain_pct": round(float(distance_to_max_pain), 2),
+            "iv_mean": round(float(iv_mean), 2),
+            "iv_skew": {
+                "atm_call": round(float(iv_skew.get('atm_call', 0) or 0), 2),
+                "atm_put": round(float(iv_skew.get('atm_put', 0) or 0), 2),
+                "skew": round(float(iv_skew.get('skew', 0) or 0), 2)
+            },
+            "spot_price": round(float(spot_price), 2),
+            "atm_strike": option_chain.get('atm_strike'),
+            "expiry": option_chain.get('expiry'),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching options analytics for {symbol}: {e}")
+        return {"available": False, "reason": str(e)}
+
 def calculate_rsi(prices: List[float], period: int = 14) -> Dict:
     """Calculate RSI with interpretation"""
     try:
@@ -460,6 +547,162 @@ def calculate_support_resistance(highs: List[float], lows: List[float],
     except Exception as e:
         return {"error": str(e)}
 
+def calculate_bollinger_bands(prices: List[float], period: int = 20, std_dev: float = 2.0) -> Dict:
+    """Calculate Bollinger Bands with squeeze detection"""
+    try:
+        if len(prices) < period:
+            return {"error": "Insufficient data"}
+        
+        prices = np.array(prices)
+        current_price = prices[-1]
+        
+        # Calculate SMA and Standard Deviation
+        sma = np.mean(prices[-period:])
+        std = np.std(prices[-period:])
+        
+        # Bollinger Bands
+        upper_band = sma + (std_dev * std)
+        lower_band = sma - (std_dev * std)
+        bandwidth = (upper_band - lower_band) / sma * 100  # As percentage
+        
+        # Position within bands (0 = lower, 100 = upper)
+        band_position = ((current_price - lower_band) / (upper_band - lower_band) * 100) if (upper_band - lower_band) > 0 else 50
+        
+        # Squeeze detection (bandwidth < 4% is typically a squeeze)
+        is_squeeze = bandwidth < 4.0
+        
+        # Historical bandwidth for context
+        historical_bandwidths = []
+        for i in range(min(10, len(prices) - period)):
+            hist_sma = np.mean(prices[-(period+i):-(i) if i > 0 else None])
+            hist_std = np.std(prices[-(period+i):-(i) if i > 0 else None])
+            if hist_sma > 0:
+                historical_bandwidths.append((2 * std_dev * hist_std) / hist_sma * 100)
+        
+        avg_bandwidth = np.mean(historical_bandwidths) if historical_bandwidths else bandwidth
+        squeeze_intensity = max(0, 1 - (bandwidth / avg_bandwidth)) if avg_bandwidth > 0 else 0
+        
+        # Interpretation
+        if current_price > upper_band:
+            position_desc = "ABOVE_UPPER"
+        elif current_price < lower_band:
+            position_desc = "BELOW_LOWER"
+        elif current_price > sma:
+            position_desc = "UPPER_HALF"
+        else:
+            position_desc = "LOWER_HALF"
+        
+        return {
+            "upper_band": round(upper_band, 2),
+            "middle_band": round(sma, 2),
+            "lower_band": round(lower_band, 2),
+            "bandwidth": round(bandwidth, 2),
+            "band_position": round(band_position, 1),
+            "position": position_desc,
+            "is_squeeze": is_squeeze,
+            "squeeze_intensity": round(squeeze_intensity * 100, 1),
+            "interpretation": "SQUEEZE" if is_squeeze else "NORMAL"
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
+
+def calculate_garch_volatility(prices: List[float], period: int = 20) -> Dict:
+    """Calculate GARCH(1,1) volatility estimation"""
+    try:
+        if len(prices) < period + 5:
+            return {"error": "Insufficient data"}
+        
+        prices = np.array(prices)
+        
+        # Calculate returns
+        returns = np.diff(prices) / prices[:-1]
+        
+        if len(returns) < period:
+            return {"error": "Insufficient returns data"}
+        
+        # GARCH(1,1) parameters (standard values)
+        alpha = 0.10  # Weight for recent squared return
+        beta = 0.85   # Weight for previous variance
+        omega = np.var(returns) * (1 - alpha - beta)  # Long-run variance weight
+        
+        # GARCH recursion
+        n = len(returns)
+        variance = np.zeros(n)
+        variance[0] = np.var(returns[:min(20, n)])
+        
+        for t in range(1, n):
+            variance[t] = omega + alpha * (returns[t-1] ** 2) + beta * variance[t-1]
+        
+        # Current volatility (annualized for daily data, or intraday scaled)
+        current_variance = variance[-1]
+        current_volatility = np.sqrt(current_variance)
+        
+        # Annualized volatility (assuming 252 trading days)
+        annualized_volatility = current_volatility * np.sqrt(252)
+        
+        # Historical volatility for comparison
+        historical_volatility = np.std(returns[-period:]) * np.sqrt(252)
+        
+        # Volatility regime
+        if annualized_volatility > 0.40:
+            regime = "EXTREME"
+        elif annualized_volatility > 0.25:
+            regime = "HIGH"
+        elif annualized_volatility > 0.15:
+            regime = "NORMAL"
+        else:
+            regime = "LOW"
+        
+        # Volatility trend
+        recent_vol = np.std(returns[-5:]) if len(returns) >= 5 else current_volatility
+        older_vol = np.std(returns[-20:-5]) if len(returns) >= 20 else current_volatility
+        vol_trend = "INCREASING" if recent_vol > older_vol * 1.1 else \
+                   "DECREASING" if recent_vol < older_vol * 0.9 else "STABLE"
+        
+        return {
+            "garch_volatility": round(annualized_volatility * 100, 2),
+            "historical_volatility": round(historical_volatility * 100, 2),
+            "current_daily_vol": round(current_volatility * 100, 3),
+            "regime": regime,
+            "trend": vol_trend,
+            "interpretation": f"{regime} volatility, {vol_trend.lower()} trend"
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
+
+def calculate_historical_volatility(prices: List[float], periods: List[int] = [5, 10, 20]) -> Dict:
+    """Calculate Historical Volatility for multiple periods"""
+    try:
+        if len(prices) < max(periods) + 1:
+            return {"error": "Insufficient data"}
+        
+        prices = np.array(prices)
+        returns = np.diff(prices) / prices[:-1]
+        
+        result = {}
+        for period in periods:
+            if len(returns) >= period:
+                period_vol = np.std(returns[-period:]) * np.sqrt(252) * 100  # Annualized %
+                result[f"hv_{period}"] = round(period_vol, 2)
+        
+        # Current vs historical comparison
+        if "hv_5" in result and "hv_20" in result:
+            if result["hv_5"] > result["hv_20"] * 1.3:
+                result["trend"] = "EXPANDING"
+            elif result["hv_5"] < result["hv_20"] * 0.7:
+                result["trend"] = "CONTRACTING"
+            else:
+                result["trend"] = "STABLE"
+        else:
+            result["trend"] = "UNKNOWN"
+        
+        return result
+        
+    except Exception as e:
+        return {"error": str(e)}
+
 def calculate_volume_analysis(volumes: List[float], closes: List[float]) -> Dict:
     """Analyze volume patterns and buy/sell pressure"""
     try:
@@ -512,15 +755,16 @@ def calculate_volume_analysis(volumes: List[float], closes: List[float]) -> Dict
     except Exception as e:
         return {"error": str(e)}
 
-def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict, 
-                            volume: Dict, sr_levels: Dict, current_price: float) -> Dict:
-    """Generate overall algorithm recommendation"""
+def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
+                            volume: Dict, sr_levels: Dict, current_price: float,
+                            bollinger: Dict = None, garch: Dict = None) -> Dict:
+    """Generate overall algorithm recommendation including volatility analysis"""
     try:
         bullish_signals = 0
         bearish_signals = 0
         total_signals = 0
         reasons = []
-        
+
         # RSI Analysis
         if rsi.get("value"):
             total_signals += 1
@@ -597,6 +841,37 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
             elif sr_levels["position"] == "ABOVE_R1":
                 bearish_signals += 0.5  # Near resistance = potential rejection
                 reasons.append("Price near resistance levels")
+        
+        # Bollinger Bands Analysis
+        if bollinger and not bollinger.get("error"):
+            total_signals += 1
+            if bollinger.get("position") == "BELOW_LOWER":
+                bullish_signals += 1.5
+                reasons.append("Price below lower Bollinger band (oversold)")
+            elif bollinger.get("position") == "ABOVE_UPPER":
+                bearish_signals += 1.5
+                reasons.append("Price above upper Bollinger band (overbought)")
+            
+            # Squeeze detection
+            if bollinger.get("is_squeeze"):
+                reasons.append(f"Bollinger squeeze ({bollinger.get('squeeze_intensity', 0):.0f}% intensity)")
+        
+        # GARCH Volatility Analysis
+        if garch and not garch.get("error"):
+            total_signals += 0.5  # Lower weight for volatility
+            if garch.get("regime") == "EXTREME":
+                bearish_signals += 0.5  # Extreme vol = caution
+                reasons.append("Extreme volatility regime (caution)")
+            elif garch.get("regime") == "LOW":
+                bullish_signals += 0.3  # Low vol = potential breakout setup
+                reasons.append("Low volatility (potential breakout)")
+            
+            if garch.get("trend") == "INCREASING":
+                bearish_signals += 0.3
+                reasons.append("Volatility increasing")
+            elif garch.get("trend") == "DECREASING":
+                bullish_signals += 0.3
+                reasons.append("Volatility decreasing")
         
         # Calculate final scores
         total_weight = bullish_signals + bearish_signals
@@ -711,13 +986,25 @@ async def get_stock_analysis(
             analysis["indicators"]["mfi"] = calculate_mfi(highs, lows, closes, volumes)
             analysis["indicators"]["macd"] = calculate_macd(closes)
             
+            # 🎯 NEW: Bollinger Bands
+            analysis["indicators"]["bollinger"] = calculate_bollinger_bands(closes)
+            
+            # 🎯 NEW: GARCH Volatility
+            analysis["indicators"]["garch"] = calculate_garch_volatility(closes)
+            
+            # 🎯 NEW: Historical Volatility (multiple periods)
+            analysis["indicators"]["historical_volatility"] = calculate_historical_volatility(closes)
+
             analysis["support_resistance"] = calculate_support_resistance(
                 highs, lows, closes, current_price
             )
-            
+
             analysis["volume_analysis"] = calculate_volume_analysis(volumes, closes)
             
-            # Generate recommendation
+            # 🎯 NEW: Options Analytics (for indices only)
+            analysis["options_analytics"] = await get_options_analytics(symbol)
+
+            # Generate recommendation (including Bollinger and GARCH)
             analysis["recommendation"] = generate_recommendation(
                 analysis["indicators"]["rsi"],
                 analysis["indicators"]["vrsi"],
@@ -725,9 +1012,11 @@ async def get_stock_analysis(
                 analysis["indicators"]["macd"],
                 analysis["volume_analysis"],
                 analysis["support_resistance"],
-                current_price
+                current_price,
+                bollinger=analysis["indicators"]["bollinger"],
+                garch=analysis["indicators"]["garch"]
             )
-            
+
             analysis["data_source"] = "historical"
             analysis["candles_analyzed"] = len(candles)
             
@@ -737,8 +1026,13 @@ async def get_stock_analysis(
             analysis["indicators"]["vrsi"] = {"value": None, "error": "No historical data"}
             analysis["indicators"]["mfi"] = {"value": None, "error": "No historical data"}
             analysis["indicators"]["macd"] = {"state": None, "error": "No historical data"}
+            analysis["indicators"]["bollinger"] = {"error": "No historical data"}
+            analysis["indicators"]["garch"] = {"error": "No historical data"}
+            analysis["indicators"]["historical_volatility"] = {"error": "No historical data"}
             analysis["support_resistance"] = {"error": "No historical data"}
             analysis["volume_analysis"] = {"error": "No historical data"}
+            # Still try to get options analytics even without historical data
+            analysis["options_analytics"] = await get_options_analytics(symbol)
             analysis["recommendation"] = {
                 "recommendation": "INSUFFICIENT_DATA",
                 "confidence": 0,

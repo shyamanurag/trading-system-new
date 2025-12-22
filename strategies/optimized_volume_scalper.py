@@ -1940,6 +1940,49 @@ class OptimizedVolumeScalper(BaseStrategy):
             # ============= PHASE 2: RSI/MACD/HP TREND VALIDATION =============
             # 🔧 Enhanced with VOLUME-WEIGHTED indicators (VRSI, MFI, VW Pressure)
             
+            # ============= 🚨 CRITICAL: NIFTY MARKET CONDITION CHECK =============
+            # Block BUY signals when NIFTY is extremely overbought (contradictory trade)
+            # Block SELL signals when NIFTY is extremely oversold
+            try:
+                nifty_data = market_data.get('NIFTY-I') or market_data.get('NIFTY') or {}
+                nifty_change = float(nifty_data.get('change_percent', 0) or 0)
+                
+                # Get NIFTY's MFI/RSI from market bias if available
+                nifty_mfi = 50  # Default neutral
+                nifty_rsi = 50
+                if hasattr(self, 'market_bias') and self.market_bias:
+                    try:
+                        bias_info = self.market_bias.get_bias() if hasattr(self.market_bias, 'get_bias') else {}
+                        nifty_mfi = bias_info.get('nifty_mfi', 50)
+                        nifty_rsi = bias_info.get('nifty_rsi', 50)
+                    except:
+                        pass
+                
+                # 🚨 NIFTY EXTREME OVERBOUGHT: Block ALL BUY signals
+                # Conditions: NIFTY up > 1.0% AND (MFI > 80 OR RSI > 70)
+                if ms_signal.signal_type == 'BUY':
+                    if nifty_change > 1.0 and (nifty_mfi > 80 or nifty_rsi > 70):
+                        logger.warning(f"🚫 {symbol}: BUY BLOCKED - NIFTY EXTREME OVERBOUGHT "
+                                      f"(NIFTY +{nifty_change:.2f}%, MFI={nifty_mfi:.0f}, RSI={nifty_rsi:.0f})")
+                        return None
+                    # Also block if NIFTY up > 1.5% regardless of indicators
+                    if nifty_change > 1.5:
+                        logger.warning(f"🚫 {symbol}: BUY BLOCKED - NIFTY EXTENDED (+{nifty_change:.2f}% > 1.5%)")
+                        return None
+                
+                # 🚨 NIFTY EXTREME OVERSOLD: Block ALL SELL signals
+                if ms_signal.signal_type == 'SELL':
+                    if nifty_change < -1.0 and (nifty_mfi < 20 or nifty_rsi < 30):
+                        logger.warning(f"🚫 {symbol}: SELL BLOCKED - NIFTY EXTREME OVERSOLD "
+                                      f"(NIFTY {nifty_change:.2f}%, MFI={nifty_mfi:.0f}, RSI={nifty_rsi:.0f})")
+                        return None
+                    # Also block if NIFTY down > 1.5% regardless of indicators
+                    if nifty_change < -1.5:
+                        logger.warning(f"🚫 {symbol}: SELL BLOCKED - NIFTY EXTENDED ({nifty_change:.2f}% < -1.5%)")
+                        return None
+            except Exception as e:
+                logger.debug(f"NIFTY market check failed: {e}")
+            
             # BUY signal validation
             if ms_signal.signal_type == 'BUY':
                 # Don't buy if overbought (check RSI, MFI, and VRSI)
@@ -2052,11 +2095,37 @@ class OptimizedVolumeScalper(BaseStrategy):
                     logger.info(f"⚠️ {symbol}: SELL rejected - HP trend strongly positive ({hp_trend_direction:+.2%})")
                     return None
             
+            # ============= PHASE 3: BOLLINGER + GARCH REGIME VALIDATION =============
+            # Get GARCH volatility regime
+            vol_regime = 'NORMAL_VOLATILITY'
+            if symbol in self.volatility_history and self.volatility_history[symbol]:
+                latest_vol = self.volatility_history[symbol][-1]
+                vol_regime = latest_vol.get('vol_regime', 'NORMAL_VOLATILITY')
+            
+            # 🚨 EXTREME VOLATILITY FILTER: Be cautious in extreme volatility
+            if vol_regime == 'EXTREME_VOLATILITY':
+                # In extreme volatility, require HIGHER squeeze quality or strong breakout
+                if squeeze_quality == 'LOW' and not bollinger_breakout:
+                    logger.info(f"⚠️ {symbol}: Signal filtered - Extreme volatility + low squeeze quality")
+                    return None
+            
+            # 🎯 BOLLINGER SQUEEZE QUALITY ENHANCEMENT
+            # HIGH quality squeeze with breakout = high confidence
+            if bollinger_squeeze and squeeze_quality == 'HIGH' and bollinger_breakout:
+                if (ms_signal.signal_type == 'BUY' and bollinger_breakout == 'up') or \
+                   (ms_signal.signal_type == 'SELL' and bollinger_breakout == 'down'):
+                    ms_signal.confidence = min(ms_signal.confidence * 1.15, 10.0)
+                    logger.info(f"   ✨ HIGH QUALITY SQUEEZE BREAKOUT: Confidence boosted to {ms_signal.confidence:.1f}")
+                else:
+                    # Breakout direction conflicts with signal - reduce confidence
+                    logger.info(f"⚠️ {symbol}: Signal weakened - Breakout direction ({bollinger_breakout}) conflicts with {ms_signal.signal_type}")
+                    ms_signal.confidence *= 0.85
+            
             # Log validation passed with ALL indicators (including volume-weighted)
             logger.info(f"✅ {symbol} {ms_signal.signal_type}: RSI={rsi:.0f}, VRSI={vrsi:.0f}, MFI={mfi:.0f}, MACD={macd_state}")
             logger.info(f"   📊 Pressure: Candle={buying_pressure:.0%}/{selling_pressure:.0%} | VW={vw_buying_pressure:.0%}/{vw_selling_pressure:.0%}")
             logger.info(f"   📉 Momentum: {momentum_score:.3f} | Trend: {trend_strength:.2f} | HP: {hp_trend_direction:+.2%}")
-            logger.info(f"   🔄 Mean Rev: {mean_reversion_prob:.0%} | Bollinger: {'SQUEEZE!' if bollinger_squeeze else 'normal'} | Vol Confirm: {'✓' if volume_confirmation else '✗'}")
+            logger.info(f"   🔄 Mean Rev: {mean_reversion_prob:.0%} | Bollinger: {'SQUEEZE!' if bollinger_squeeze else 'normal'} ({squeeze_quality}) | Vol: {vol_regime}")
             if bollinger_breakout:
                 logger.info(f"   💥 BOLLINGER BREAKOUT: {bollinger_breakout.upper()}")
             
