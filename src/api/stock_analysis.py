@@ -564,28 +564,41 @@ def calculate_macd(prices: List[float], fast: int = 12, slow: int = 26, signal: 
         }
 
 def calculate_support_resistance(highs: List[float], lows: List[float], 
-                                   closes: List[float], current_price: float) -> Dict:
-    """Calculate Support/Resistance levels using pivot points and swing levels"""
+                                   closes: List[float], current_price: float,
+                                   today_high: float = None, today_low: float = None,
+                                   yesterday_close: float = None) -> Dict:
+    """
+    Calculate Support/Resistance using Standard Pivot Points.
+    For accurate intraday pivots, pass today_high, today_low, yesterday_close from live_data.
+    """
     try:
         if len(closes) < 5:
             return {"error": "Insufficient data"}
         
-        # Get previous day's OHLC (approximate from candle data)
-        prev_high = max(highs[-20:]) if len(highs) >= 20 else max(highs)
-        prev_low = min(lows[-20:]) if len(lows) >= 20 else min(lows)
-        prev_close = closes[-2] if len(closes) > 1 else closes[-1]
+        # Use live data for accurate intraday pivots (SIMPLE!)
+        if today_high and today_high > 0 and today_low and today_low > 0 and yesterday_close and yesterday_close > 0:
+            pivot_high = today_high
+            pivot_low = today_low
+            pivot_close = yesterday_close
+            data_source = "live_intraday_pivots"
+        else:
+            # Fallback: estimate from historical candles
+            pivot_high = max(highs[-20:]) if len(highs) >= 20 else max(highs)
+            pivot_low = min(lows[-20:]) if len(lows) >= 20 else min(lows)
+            pivot_close = closes[-2] if len(closes) > 1 else closes[-1]
+            data_source = "historical_estimate"
         
         # Calculate Pivot Points
-        pivot = (prev_high + prev_low + prev_close) / 3
+        pivot = (pivot_high + pivot_low + pivot_close) / 3
         
         # Standard Pivot Levels
-        r1 = 2 * pivot - prev_low
-        r2 = pivot + (prev_high - prev_low)
-        r3 = prev_high + 2 * (pivot - prev_low)
+        r1 = 2 * pivot - pivot_low
+        r2 = pivot + (pivot_high - pivot_low)
+        r3 = pivot_high + 2 * (pivot - pivot_low)
         
-        s1 = 2 * pivot - prev_high
-        s2 = pivot - (prev_high - prev_low)
-        s3 = prev_low - 2 * (prev_high - pivot)
+        s1 = 2 * pivot - pivot_high
+        s2 = pivot - (pivot_high - pivot_low)
+        s3 = pivot_low - 2 * (pivot_high - pivot)
         
         # Find swing highs/lows (local extrema)
         swing_highs = []
@@ -607,12 +620,12 @@ def calculate_support_resistance(highs: List[float], lows: List[float],
         nearest_support = None
         
         for level in all_resistance:
-            if level > current_price * 1.001:  # At least 0.1% above
+            if level > current_price * 1.001:
                 nearest_resistance = level
                 break
         
         for level in all_support:
-            if level < current_price * 0.999:  # At least 0.1% below
+            if level < current_price * 0.999:
                 nearest_support = level
                 break
         
@@ -642,7 +655,13 @@ def calculate_support_resistance(highs: List[float], lows: List[float],
             "nearest_support": round(nearest_support, 2) if nearest_support else None,
             "position": position,
             "swing_highs": [round(x, 2) for x in sorted(swing_highs)[-3:]] if swing_highs else [],
-            "swing_lows": [round(x, 2) for x in sorted(swing_lows)[:3]] if swing_lows else []
+            "swing_lows": [round(x, 2) for x in sorted(swing_lows)[:3]] if swing_lows else [],
+            "calculation_inputs": {
+                "high": round(pivot_high, 2),
+                "low": round(pivot_low, 2),
+                "close": round(pivot_close, 2),
+                "data_source": data_source
+            }
         }
         
     except Exception as e:
@@ -1093,11 +1112,15 @@ async def get_stock_analysis(
             # 🎯 NEW: GARCH Volatility
             analysis["indicators"]["garch"] = calculate_garch_volatility(closes)
             
-            # 🎯 NEW: Historical Volatility (multiple periods)
+            # 🎯 Historical Volatility (multiple periods)
             analysis["indicators"]["historical_volatility"] = calculate_historical_volatility(closes)
 
+            # 🎯 Support/Resistance - Use LIVE data (SIMPLE!)
             analysis["support_resistance"] = calculate_support_resistance(
-                highs, lows, closes, current_price
+                highs, lows, closes, current_price,
+                today_high=float(live_data.get('high', 0) or 0),
+                today_low=float(live_data.get('low', 0) or 0),
+                yesterday_close=float(live_data.get('previous_close', 0) or live_data.get('close', 0) or 0)
             )
 
             analysis["volume_analysis"] = calculate_volume_analysis(volumes, closes)
