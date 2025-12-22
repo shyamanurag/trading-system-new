@@ -1823,24 +1823,32 @@ class EnhancedMomentumSurfer(BaseStrategy):
             elif macd_crossover == 'bullish' and momentum_score > 0 and rsi < 60:
                 # Confirm with HP trend - smoothed trend should not be strongly negative
                 if hp_trend_direction >= -0.005:  # HP trend not strongly down
-                    condition = 'trending_up'
-                    confidence_factors.append(f"MACD BULLISH CROSSOVER with momentum confirmation")
-                    if hp_trend_direction > 0.002:
-                        confidence_factors.append(f"HP TREND CONFIRMS: {hp_trend_direction:+.2%}")
-                    if buying_pressure > 0.5:
-                        confidence_factors.append(f"Buying pressure: {buying_pressure:.0%}")
+                    # 🚨 FIX: MACD bullish REQUIRES buy pressure confirmation
+                    if selling_pressure > 0.58 and buying_pressure < 0.42:
+                        logger.info(f"⚠️ {symbol}: MACD bullish but sell pressure {selling_pressure:.0%} dominates - waiting")
+                    else:
+                        condition = 'trending_up'
+                        confidence_factors.append(f"MACD BULLISH CROSSOVER with momentum confirmation")
+                        if hp_trend_direction > 0.002:
+                            confidence_factors.append(f"HP TREND CONFIRMS: {hp_trend_direction:+.2%}")
+                        if buying_pressure > 0.5:
+                            confidence_factors.append(f"Buying pressure: {buying_pressure:.0%}")
                 else:
                     logger.info(f"⚠️ {symbol}: MACD bullish but HP trend negative ({hp_trend_direction:+.2%}) - waiting")
             
             elif macd_crossover == 'bearish' and momentum_score < 0 and rsi > 40:
                 # Confirm with HP trend - smoothed trend should not be strongly positive
                 if hp_trend_direction <= 0.005:  # HP trend not strongly up
-                    condition = 'trending_down'
-                    confidence_factors.append(f"MACD BEARISH CROSSOVER with momentum confirmation")
-                    if hp_trend_direction < -0.002:
-                        confidence_factors.append(f"HP TREND CONFIRMS: {hp_trend_direction:+.2%}")
-                    if selling_pressure > 0.5:
-                        confidence_factors.append(f"Selling pressure: {selling_pressure:.0%}")
+                    # 🚨 FIX: MACD bearish REQUIRES sell pressure confirmation
+                    if buying_pressure > 0.58 and selling_pressure < 0.42:
+                        logger.info(f"⚠️ {symbol}: MACD bearish but buy pressure {buying_pressure:.0%} dominates - waiting")
+                    else:
+                        condition = 'trending_down'
+                        confidence_factors.append(f"MACD BEARISH CROSSOVER with momentum confirmation")
+                        if hp_trend_direction < -0.002:
+                            confidence_factors.append(f"HP TREND CONFIRMS: {hp_trend_direction:+.2%}")
+                        if selling_pressure > 0.5:
+                            confidence_factors.append(f"Selling pressure: {selling_pressure:.0%}")
                 else:
                     logger.info(f"⚠️ {symbol}: MACD bearish but HP trend positive ({hp_trend_direction:+.2%}) - waiting")
             
@@ -1873,6 +1881,10 @@ class EnhancedMomentumSurfer(BaseStrategy):
                     if rsi > 70 or macd_crossover == 'bearish':
                         condition = 'reversal_down'
                         confidence_factors.append(f"EXHAUSTION: RSI {rsi:.1f}, MACD turning")
+                    # 🚨 FIX: Check buy/sell pressure - don't BUY if sell pressure dominates
+                    elif selling_pressure > 0.58 and buying_pressure < 0.42:
+                        logger.info(f"⚠️ {symbol}: Trending UP but sell pressure {selling_pressure:.0%} > buy pressure {buying_pressure:.0%} - WAITING")
+                        condition = None  # No signal
                     else:
                         condition = 'trending_up'
                         confidence_factors.append(f"MOMENTUM: {momentum_score:.3f}, TREND: {trend_strength:.2f}")
@@ -1880,6 +1892,9 @@ class EnhancedMomentumSurfer(BaseStrategy):
                     if mean_reversion_prob > 0.6:
                         condition = 'reversal_down'
                         confidence_factors.append(f"EXHAUSTION: Mean reversion prob {mean_reversion_prob:.0%}")
+                    elif selling_pressure > 0.58 and buying_pressure < 0.42:
+                        logger.info(f"⚠️ {symbol}: Would trend UP but sell pressure {selling_pressure:.0%} dominates - WAITING")
+                        condition = None  # No signal
                     else:
                         condition = 'trending_up'
             
