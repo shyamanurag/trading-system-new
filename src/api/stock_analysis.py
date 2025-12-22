@@ -564,18 +564,31 @@ def calculate_macd(prices: List[float], fast: int = 12, slow: int = 26, signal: 
         }
 
 def calculate_support_resistance(highs: List[float], lows: List[float], 
-                                   closes: List[float], current_price: float) -> Dict:
-    """Calculate Support/Resistance levels using pivot points and swing levels"""
+                                   closes: List[float], current_price: float,
+                                   prev_day_high: float = None, prev_day_low: float = None,
+                                   prev_day_close: float = None) -> Dict:
+    """
+    Calculate Support/Resistance using pivot points.
+    For accurate pivots, pass prev_day_high/low/close from YESTERDAY's DAILY candle.
+    """
     try:
         if len(closes) < 5:
             return {"error": "Insufficient data"}
         
-        # Get previous day's OHLC (approximate from candle data)
-        prev_high = max(highs[-20:]) if len(highs) >= 20 else max(highs)
-        prev_low = min(lows[-20:]) if len(lows) >= 20 else min(lows)
-        prev_close = closes[-2] if len(closes) > 1 else closes[-1]
+        # 🎯 USE PREVIOUS DAY'S DAILY OHLC (Standard Institutional Method)
+        if prev_day_high and prev_day_high > 0 and prev_day_low and prev_day_low > 0 and prev_day_close and prev_day_close > 0:
+            prev_high = prev_day_high
+            prev_low = prev_day_low
+            prev_close = prev_day_close
+            data_source = "daily_candle"
+        else:
+            # Fallback: estimate from intraday (less accurate)
+            prev_high = max(highs[-20:]) if len(highs) >= 20 else max(highs)
+            prev_low = min(lows[-20:]) if len(lows) >= 20 else min(lows)
+            prev_close = closes[-2] if len(closes) > 1 else closes[-1]
+            data_source = "intraday_estimate"
         
-        # Calculate Pivot Points
+        # Calculate Pivot Points (Floor Trader Formula)
         pivot = (prev_high + prev_low + prev_close) / 3
         
         # Standard Pivot Levels
@@ -642,108 +655,63 @@ def calculate_support_resistance(highs: List[float], lows: List[float],
             "nearest_support": round(nearest_support, 2) if nearest_support else None,
             "position": position,
             "swing_highs": [round(x, 2) for x in sorted(swing_highs)[-3:]] if swing_highs else [],
-            "swing_lows": [round(x, 2) for x in sorted(swing_lows)[:3]] if swing_lows else []
-        }
-        
-    except Exception as e:
-        return {"error": str(e)}
-
-def calculate_support_resistance_live(prev_high: float, prev_low: float, prev_close: float,
-                                       current_price: float, highs: List[float], lows: List[float]) -> Dict:
-    """
-    Calculate Support/Resistance levels using PREVIOUS DAY's OHLC data.
-    This is the standard method used by institutional traders.
-    
-    Args:
-        prev_high: Previous day's high (or today's high if previous not available)
-        prev_low: Previous day's low (or today's low if previous not available)
-        prev_close: Previous day's close
-        current_price: Current live price
-        highs: List of recent highs for swing detection
-        lows: List of recent lows for swing detection
-    """
-    try:
-        if prev_high <= 0 or prev_low <= 0 or prev_close <= 0:
-            return {"error": "Insufficient price data"}
-        
-        # Calculate Standard Pivot Points
-        pivot = (prev_high + prev_low + prev_close) / 3
-        
-        # Standard Pivot Levels (Floor Trader Pivots)
-        r1 = 2 * pivot - prev_low
-        r2 = pivot + (prev_high - prev_low)
-        r3 = prev_high + 2 * (pivot - prev_low)
-        
-        s1 = 2 * pivot - prev_high
-        s2 = pivot - (prev_high - prev_low)
-        s3 = prev_low - 2 * (prev_high - pivot)
-        
-        # Find swing highs/lows from recent data
-        swing_highs = []
-        swing_lows = []
-        
-        if len(highs) >= 5 and len(lows) >= 5:
-            for i in range(2, len(highs) - 2):
-                if highs[i] > highs[i-1] and highs[i] > highs[i-2] and \
-                   highs[i] > highs[i+1] and highs[i] > highs[i+2]:
-                    swing_highs.append(highs[i])
-                if lows[i] < lows[i-1] and lows[i] < lows[i-2] and \
-                   lows[i] < lows[i+1] and lows[i] < lows[i+2]:
-                    swing_lows.append(lows[i])
-        
-        # Find nearest support/resistance
-        all_resistance = sorted([r1, r2, r3] + swing_highs)
-        all_support = sorted([s1, s2, s3] + swing_lows, reverse=True)
-        
-        nearest_resistance = None
-        nearest_support = None
-        
-        for level in all_resistance:
-            if level > current_price * 1.001:  # At least 0.1% above
-                nearest_resistance = level
-                break
-        
-        for level in all_support:
-            if level < current_price * 0.999:  # At least 0.1% below
-                nearest_support = level
-                break
-        
-        # Price position relative to pivot
-        if current_price > r1:
-            position = "ABOVE_R1"
-        elif current_price > pivot:
-            position = "ABOVE_PIVOT"
-        elif current_price > s1:
-            position = "BELOW_PIVOT"
-        else:
-            position = "BELOW_S1"
-        
-        return {
-            "pivot": round(pivot, 2),
-            "resistance": {
-                "r1": round(r1, 2),
-                "r2": round(r2, 2),
-                "r3": round(r3, 2)
-            },
-            "support": {
-                "s1": round(s1, 2),
-                "s2": round(s2, 2),
-                "s3": round(s3, 2)
-            },
-            "nearest_resistance": round(nearest_resistance, 2) if nearest_resistance else None,
-            "nearest_support": round(nearest_support, 2) if nearest_support else None,
-            "position": position,
-            "swing_highs": [round(x, 2) for x in sorted(swing_highs)[-3:]] if swing_highs else [],
             "swing_lows": [round(x, 2) for x in sorted(swing_lows)[:3]] if swing_lows else [],
             "calculation_inputs": {
                 "prev_high": round(prev_high, 2),
                 "prev_low": round(prev_low, 2),
-                "prev_close": round(prev_close, 2)
+                "prev_close": round(prev_close, 2),
+                "data_source": data_source
             }
         }
         
     except Exception as e:
         return {"error": str(e)}
+
+
+async def get_previous_day_ohlc(symbol: str) -> Dict:
+    """Fetch PREVIOUS DAY's OHLC from daily candles for accurate pivot points."""
+    try:
+        zerodha_client = await get_zerodha_client()
+        if not zerodha_client:
+            return {"error": "No Zerodha client"}
+        if not getattr(zerodha_client, 'is_connected', False):
+            return {"error": "Zerodha not connected"}
+        
+        symbol_upper = symbol.upper().strip()
+        index_config = {
+            'NIFTY-I': ('NIFTY 50', 'NSE'), 'NIFTY': ('NIFTY 50', 'NSE'),
+            'BANKNIFTY-I': ('NIFTY BANK', 'NSE'), 'BANKNIFTY': ('NIFTY BANK', 'NSE'),
+            'FINNIFTY-I': ('NIFTY FIN SERVICE', 'NSE'), 'FINNIFTY': ('NIFTY FIN SERVICE', 'NSE'),
+            'SENSEX-I': ('SENSEX', 'BSE'), 'SENSEX': ('SENSEX', 'BSE'),
+        }
+        
+        if symbol_upper in index_config:
+            zerodha_symbol, exchange = index_config[symbol_upper]
+        else:
+            zerodha_symbol = symbol_upper
+            exchange = 'NSE'
+        
+        candles = await zerodha_client.get_historical_data(
+            symbol=zerodha_symbol, interval='day',
+            from_date=datetime.now() - timedelta(days=10),
+            to_date=datetime.now() - timedelta(days=1),
+            exchange=exchange
+        )
+        
+        if candles and len(candles) > 0:
+            last_daily = candles[-1]
+            logger.info(f"✅ Prev day OHLC {symbol}: H={last_daily.get('high')}, L={last_daily.get('low')}, C={last_daily.get('close')}")
+            return {
+                "high": float(last_daily.get('high', 0)),
+                "low": float(last_daily.get('low', 0)),
+                "close": float(last_daily.get('close', 0)),
+                "date": str(last_daily.get('date', ''))
+            }
+        return {"error": "No daily data"}
+    except Exception as e:
+        logger.error(f"Error fetching prev day OHLC for {symbol}: {e}")
+        return {"error": str(e)}
+
 
 def calculate_bollinger_bands(prices: List[float], period: int = 20, std_dev: float = 2.0) -> Dict:
     """Calculate Bollinger Bands with squeeze detection"""
@@ -1178,65 +1146,38 @@ async def get_stock_analysis(
             closes = [c.get('close', 0) for c in candles]
             volumes = [c.get('volume', 0) for c in candles]
             
-            # 🚨 CRITICAL FIX: Include current live price in the data
-            # This ensures indicators reflect the current market state, not stale data
-            if current_price > 0:
-                # Add current price as the latest data point
-                closes_with_live = closes + [current_price]
-                today_high = float(live_data.get('high', 0) or 0)
-                today_low = float(live_data.get('low', 0) or 0)
-                today_open = float(live_data.get('open', 0) or 0)
-                today_volume = float(live_data.get('volume', 0) or 0)
-                
-                if today_high > 0:
-                    highs_with_live = highs + [today_high]
-                else:
-                    highs_with_live = highs + [current_price]
-                    
-                if today_low > 0:
-                    lows_with_live = lows + [today_low]
-                else:
-                    lows_with_live = lows + [current_price]
-                    
-                opens_with_live = opens + [today_open if today_open > 0 else current_price]
-                volumes_with_live = volumes + [today_volume]
+            # Calculate all indicators
+            analysis["indicators"]["rsi"] = calculate_rsi(closes)
+            analysis["indicators"]["vrsi"] = calculate_vrsi(closes, volumes)
+            analysis["indicators"]["mfi"] = calculate_mfi(highs, lows, closes, volumes)
+            analysis["indicators"]["macd"] = calculate_macd(closes)
+            
+            # 🎯 NEW: Bollinger Bands
+            analysis["indicators"]["bollinger"] = calculate_bollinger_bands(closes)
+            
+            # 🎯 NEW: GARCH Volatility
+            analysis["indicators"]["garch"] = calculate_garch_volatility(closes)
+            
+            # 🎯 NEW: Historical Volatility (multiple periods)
+            analysis["indicators"]["historical_volatility"] = calculate_historical_volatility(closes)
+
+            # 🎯 CRITICAL: Fetch YESTERDAY's DAILY candle for accurate pivot points
+            prev_day = await get_previous_day_ohlc(symbol)
+            if "error" not in prev_day:
+                analysis["support_resistance"] = calculate_support_resistance(
+                    highs, lows, closes, current_price,
+                    prev_day_high=prev_day.get("high"),
+                    prev_day_low=prev_day.get("low"),
+                    prev_day_close=prev_day.get("close")
+                )
+                logger.info(f"✅ Daily pivots for {symbol}: H={prev_day.get('high')}, L={prev_day.get('low')}, C={prev_day.get('close')}")
             else:
-                closes_with_live = closes
-                highs_with_live = highs
-                lows_with_live = lows
-                opens_with_live = opens
-                volumes_with_live = volumes
-            
-            # Calculate all indicators using data WITH live price
-            analysis["indicators"]["rsi"] = calculate_rsi(closes_with_live)
-            analysis["indicators"]["vrsi"] = calculate_vrsi(closes_with_live, volumes_with_live)
-            analysis["indicators"]["mfi"] = calculate_mfi(highs_with_live, lows_with_live, closes_with_live, volumes_with_live)
-            analysis["indicators"]["macd"] = calculate_macd(closes_with_live)
-            
-            # 🎯 Bollinger Bands with live data
-            analysis["indicators"]["bollinger"] = calculate_bollinger_bands(closes_with_live)
-            
-            # 🎯 GARCH Volatility
-            analysis["indicators"]["garch"] = calculate_garch_volatility(closes_with_live)
-            
-            # 🎯 Historical Volatility (multiple periods)
-            analysis["indicators"]["historical_volatility"] = calculate_historical_volatility(closes_with_live)
+                logger.warning(f"⚠️ Intraday pivots for {symbol}: {prev_day.get('error')}")
+                analysis["support_resistance"] = calculate_support_resistance(
+                    highs, lows, closes, current_price
+                )
 
-            # 🚨 FIX: Use LIVE data for S/R calculation (previous close + today's OHLC)
-            prev_close = float(live_data.get('previous_close', 0) or live_data.get('close', 0) or closes[-1])
-            today_h = float(live_data.get('high', 0) or max(highs[-5:]))
-            today_l = float(live_data.get('low', 0) or min(lows[-5:]))
-            
-            analysis["support_resistance"] = calculate_support_resistance_live(
-                prev_high=today_h if today_h > 0 else max(highs[-20:]),
-                prev_low=today_l if today_l > 0 else min(lows[-20:]),
-                prev_close=prev_close,
-                current_price=current_price,
-                highs=highs_with_live,
-                lows=lows_with_live
-            )
-
-            analysis["volume_analysis"] = calculate_volume_analysis(volumes_with_live, closes_with_live)
+            analysis["volume_analysis"] = calculate_volume_analysis(volumes, closes)
             
             # 🎯 NEW: Options Analytics (for indices only)
             analysis["options_analytics"] = await get_options_analytics(symbol)
