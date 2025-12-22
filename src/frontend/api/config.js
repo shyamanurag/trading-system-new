@@ -197,6 +197,10 @@ export const API_ENDPOINTS = {
     SEARCH_RECOMMENDATIONS: createEndpoint('/api/v1/search/recommendations'),
     SEARCH_GLOBAL: createEndpoint('/api/v1/search/global'),
     SEARCH_AUTOCOMPLETE: createEndpoint('/api/v1/search/autocomplete'),
+
+    // Stock Analysis endpoints
+    STOCK_ANALYSIS: createEndpoint('/api/v1/stock-analysis'),
+    STOCK_ANALYSIS_SYMBOLS: createEndpoint('/api/v1/stock-analysis/symbols/available'),
 };
 
 // UNIFIED API Helper functions

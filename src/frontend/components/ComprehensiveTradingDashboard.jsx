@@ -8,6 +8,7 @@ import {
     Refresh,
     Search as SearchIcon,
     Security,
+    ShowChart,
     SmartToy,
     Star,
     Timeline
@@ -61,6 +62,7 @@ const TodaysTradeReport = lazy(() => import('./TodaysTradeReport'));
 const UserPerformanceDashboard = lazy(() => import('./UserPerformanceDashboard'));
 const DynamicUserManagement = lazy(() => import('./DynamicUserManagement'));
 const SystemHealthMonitor = lazy(() => import('./SystemHealthMonitor'));
+const StockAnalysisDashboard = lazy(() => import('./StockAnalysisDashboard'));
 
 // Import lightweight components normally
 import MarketIndicesWidget from './MarketIndicesWidget';
@@ -596,6 +598,11 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                     <Tab
                         icon={<Assessment />}
                         label="Today's Trades"
+                        sx={{ minHeight: 72, textTransform: 'none' }}
+                    />
+                    <Tab
+                        icon={<ShowChart />}
+                        label="Stock Analysis"
                         sx={{ minHeight: 72, textTransform: 'none' }}
                     />
                 </Tabs>
@@ -1134,6 +1141,15 @@ const ComprehensiveTradingDashboard = ({ userInfo, onLogout }) => {
                 <ErrorBoundary>
                     <Suspense fallback={<LoadingFallback />}>
                         <TodaysTradeReport tradingData={dashboardData} />
+                    </Suspense>
+                </ErrorBoundary>
+            </TabPanel>
+
+            {/* Stock Analysis Tab - Search any stock for technical analysis */}
+            <TabPanel value={selectedTab} index={8}>
+                <ErrorBoundary>
+                    <Suspense fallback={<LoadingFallback />}>
+                        <StockAnalysisDashboard />
                     </Suspense>
                 </ErrorBoundary>
             </TabPanel>

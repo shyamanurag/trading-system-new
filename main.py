@@ -96,6 +96,7 @@ router_imports = {
     'user_analytics_service': ('src.api.user_analytics_service', 'router'),
     'zerodha_analytics': ('src.api.zerodha_analytics', 'router'),
     'positions': ('src.api.positions', 'router'),
+    'stock_analysis': ('src.api.stock_analysis', 'router'),
 }
 
 # Import routers dynamically
@@ -798,6 +799,9 @@ router_configs = [
     
     # CRITICAL FIX: Add missing positions API that talks directly to Zerodha
     ('positions', '', ('positions',)),  # Mount positions API for real position data
+    
+    # Stock Analysis - Technical analysis with algo indicators
+    ('stock_analysis', '', ('stock-analysis',)),  # Mount at root, router has /api/v1 prefix
     
     # WebSocket
     ('websocket', '/ws', ('websocket',)),
