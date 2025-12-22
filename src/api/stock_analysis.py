@@ -565,107 +565,173 @@ def calculate_macd(prices: List[float], fast: int = 12, slow: int = 26, signal: 
 
 def calculate_support_resistance(highs: List[float], lows: List[float], 
                                    closes: List[float], current_price: float,
-                                   today_high: float = None, today_low: float = None,
-                                   yesterday_close: float = None) -> Dict:
+                                   prev_day_high: float = None, prev_day_low: float = None,
+                                   prev_day_close: float = None) -> Dict:
     """
-    Calculate Support/Resistance using Standard Pivot Points.
-    For accurate intraday pivots, pass today_high, today_low, yesterday_close from live_data.
+    Calculate Camarilla Pivot Points - BEST for Intraday Trading/Scalping.
+    
+    Uses PREVIOUS DAY's complete daily OHLC (not today's intraday range).
+    Camarilla pivots are specifically designed for day trading with 8 precise levels.
+    
+    Strategy:
+    - Price between L3 and H3: Range-bound, mean reversion trades
+    - Break above H4: Strong bullish breakout - GO LONG
+    - Break below L4: Strong bearish breakdown - GO SHORT
     """
     try:
         if len(closes) < 5:
             return {"error": "Insufficient data"}
         
-        # Use live data for accurate intraday pivots (SIMPLE!)
-        if today_high and today_high > 0 and today_low and today_low > 0 and yesterday_close and yesterday_close > 0:
-            pivot_high = today_high
-            pivot_low = today_low
-            pivot_close = yesterday_close
-            data_source = "live_intraday_pivots"
+        # Use PREVIOUS DAY's daily OHLC for professional Camarilla pivots
+        if prev_day_high and prev_day_high > 0 and prev_day_low and prev_day_low > 0 and prev_day_close and prev_day_close > 0:
+            prev_high = prev_day_high
+            prev_low = prev_day_low
+            prev_close = prev_day_close
+            data_source = "previous_day_daily"
         else:
-            # Fallback: estimate from historical candles
-            pivot_high = max(highs[-20:]) if len(highs) >= 20 else max(highs)
-            pivot_low = min(lows[-20:]) if len(lows) >= 20 else min(lows)
-            pivot_close = closes[-2] if len(closes) > 1 else closes[-1]
+            # Fallback: estimate from historical candles (less accurate)
+            prev_high = max(highs[-20:]) if len(highs) >= 20 else max(highs)
+            prev_low = min(lows[-20:]) if len(lows) >= 20 else min(lows)
+            prev_close = closes[-2] if len(closes) > 1 else closes[-1]
             data_source = "historical_estimate"
         
-        # Calculate Pivot Points
-        pivot = (pivot_high + pivot_low + pivot_close) / 3
+        # Calculate Camarilla Pivot Levels
+        range_val = prev_high - prev_low
         
-        # Standard Pivot Levels
-        r1 = 2 * pivot - pivot_low
-        r2 = pivot + (pivot_high - pivot_low)
-        r3 = pivot_high + 2 * (pivot - pivot_low)
+        # Resistance levels (H1 to H4)
+        h4 = prev_close + range_val * 1.1 / 2   # Strong breakout level
+        h3 = prev_close + range_val * 1.1 / 4   # Key resistance
+        h2 = prev_close + range_val * 1.1 / 6   # Minor resistance
+        h1 = prev_close + range_val * 1.1 / 12  # First resistance
         
-        s1 = 2 * pivot - pivot_high
-        s2 = pivot - (pivot_high - pivot_low)
-        s3 = pivot_low - 2 * (pivot_high - pivot)
+        # Support levels (L1 to L4)
+        l1 = prev_close - range_val * 1.1 / 12  # First support
+        l2 = prev_close - range_val * 1.1 / 6   # Minor support
+        l3 = prev_close - range_val * 1.1 / 4   # Key support
+        l4 = prev_close - range_val * 1.1 / 2   # Strong breakdown level
         
-        # Find swing highs/lows (local extrema)
-        swing_highs = []
-        swing_lows = []
-        
-        for i in range(2, len(closes) - 2):
-            if highs[i] > highs[i-1] and highs[i] > highs[i-2] and \
-               highs[i] > highs[i+1] and highs[i] > highs[i+2]:
-                swing_highs.append(highs[i])
-            if lows[i] < lows[i-1] and lows[i] < lows[i-2] and \
-               lows[i] < lows[i+1] and lows[i] < lows[i+2]:
-                swing_lows.append(lows[i])
-        
-        # Find nearest support/resistance
-        all_resistance = sorted([r1, r2, r3] + swing_highs)
-        all_support = sorted([s1, s2, s3] + swing_lows, reverse=True)
+        # Find nearest resistance/support from Camarilla levels
+        all_resistance = [h1, h2, h3, h4]
+        all_support = [l1, l2, l3, l4]
         
         nearest_resistance = None
         nearest_support = None
         
-        for level in all_resistance:
-            if level > current_price * 1.001:
+        for level in sorted(all_resistance):
+            if level > current_price * 1.001:  # At least 0.1% above
                 nearest_resistance = level
                 break
         
-        for level in all_support:
-            if level < current_price * 0.999:
+        for level in sorted(all_support, reverse=True):
+            if level < current_price * 0.999:  # At least 0.1% below
                 nearest_support = level
                 break
         
-        # Price position relative to pivot
-        if current_price > r1:
-            position = "ABOVE_R1"
-        elif current_price > pivot:
-            position = "ABOVE_PIVOT"
-        elif current_price > s1:
-            position = "BELOW_PIVOT"
+        # Price position relative to Camarilla levels
+        if current_price > h4:
+            position = "ABOVE_H4_BREAKOUT"
+            signal = "STRONG_BULLISH"
+        elif current_price > h3:
+            position = "ABOVE_H3"
+            signal = "BULLISH"
+        elif current_price > h1:
+            position = "ABOVE_H1"
+            signal = "SLIGHTLY_BULLISH"
+        elif current_price < l4:
+            position = "BELOW_L4_BREAKDOWN"
+            signal = "STRONG_BEARISH"
+        elif current_price < l3:
+            position = "BELOW_L3"
+            signal = "BEARISH"
+        elif current_price < l1:
+            position = "BELOW_L1"
+            signal = "SLIGHTLY_BEARISH"
         else:
-            position = "BELOW_S1"
+            position = "BETWEEN_L1_H1"
+            signal = "RANGE_BOUND"
         
         return {
-            "pivot": round(pivot, 2),
+            "type": "camarilla",
             "resistance": {
-                "r1": round(r1, 2),
-                "r2": round(r2, 2),
-                "r3": round(r3, 2)
+                "h4": round(h4, 2),  # Strong breakout level
+                "h3": round(h3, 2),  # Key resistance
+                "h2": round(h2, 2),  # Minor resistance
+                "h1": round(h1, 2)   # First resistance
             },
             "support": {
-                "s1": round(s1, 2),
-                "s2": round(s2, 2),
-                "s3": round(s3, 2)
+                "l1": round(l1, 2),  # First support
+                "l2": round(l2, 2),  # Minor support
+                "l3": round(l3, 2),  # Key support
+                "l4": round(l4, 2)   # Strong breakdown level
             },
             "nearest_resistance": round(nearest_resistance, 2) if nearest_resistance else None,
             "nearest_support": round(nearest_support, 2) if nearest_support else None,
             "position": position,
-            "swing_highs": [round(x, 2) for x in sorted(swing_highs)[-3:]] if swing_highs else [],
-            "swing_lows": [round(x, 2) for x in sorted(swing_lows)[:3]] if swing_lows else [],
+            "signal": signal,
             "calculation_inputs": {
-                "high": round(pivot_high, 2),
-                "low": round(pivot_low, 2),
-                "close": round(pivot_close, 2),
+                "prev_high": round(prev_high, 2),
+                "prev_low": round(prev_low, 2),
+                "prev_close": round(prev_close, 2),
+                "range": round(range_val, 2),
                 "data_source": data_source
+            },
+            "trading_strategy": {
+                "range_bound": f"Price between L3 ({round(l3, 2)}) and H3 ({round(h3, 2)})",
+                "bullish_breakout": f"If breaks above H4 ({round(h4, 2)}) - GO LONG",
+                "bearish_breakdown": f"If breaks below L4 ({round(l4, 2)}) - GO SHORT"
             }
         }
         
     except Exception as e:
         return {"error": str(e)}
+
+async def get_previous_day_ohlc(symbol: str) -> Dict:
+    """
+    Fetch PREVIOUS DAY's complete daily OHLC for Camarilla pivot calculation.
+    Uses Zerodha API to get yesterday's daily candle.
+    """
+    try:
+        zerodha_client = await get_zerodha_client()
+        if not zerodha_client or not getattr(zerodha_client, 'is_connected', False):
+            return {"error": "Zerodha not available"}
+        
+        symbol_upper = symbol.upper().strip()
+        
+        # Map index symbols
+        index_map = {
+            'NIFTY-I': ('NIFTY 50', 'NSE'), 'NIFTY': ('NIFTY 50', 'NSE'),
+            'BANKNIFTY-I': ('NIFTY BANK', 'NSE'), 'BANKNIFTY': ('NIFTY BANK', 'NSE'),
+            'FINNIFTY-I': ('NIFTY FIN SERVICE', 'NSE'), 'FINNIFTY': ('NIFTY FIN SERVICE', 'NSE'),
+            'SENSEX-I': ('SENSEX', 'BSE'), 'SENSEX': ('SENSEX', 'BSE'),
+        }
+        
+        zerodha_symbol, exchange = index_map.get(symbol_upper, (symbol_upper, 'NSE'))
+        
+        # Fetch last 5 daily candles (handles weekends/holidays)
+        candles = await zerodha_client.get_historical_data(
+            symbol=zerodha_symbol,
+            interval='day',
+            from_date=datetime.now() - timedelta(days=7),
+            to_date=datetime.now(),
+            exchange=exchange
+        )
+        
+        if candles and len(candles) >= 2:
+            # Get second-to-last candle (yesterday's complete daily candle)
+            yesterday = candles[-2]
+            logger.info(f"✅ Previous day OHLC for {symbol}: H={yesterday.get('high')}, L={yesterday.get('low')}, C={yesterday.get('close')}")
+            return {
+                "high": float(yesterday.get('high', 0)),
+                "low": float(yesterday.get('low', 0)),
+                "close": float(yesterday.get('close', 0)),
+                "date": str(yesterday.get('date', ''))
+            }
+        
+        return {"error": "Insufficient daily data"}
+    except Exception as e:
+        logger.error(f"Error fetching previous day OHLC for {symbol}: {e}")
+        return {"error": str(e)}
+
 
 def calculate_bollinger_bands(prices: List[float], period: int = 20, std_dev: float = 2.0) -> Dict:
     """Calculate Bollinger Bands with squeeze detection"""
@@ -1115,13 +1181,24 @@ async def get_stock_analysis(
             # 🎯 Historical Volatility (multiple periods)
             analysis["indicators"]["historical_volatility"] = calculate_historical_volatility(closes)
 
-            # 🎯 Support/Resistance - Use LIVE data (SIMPLE!)
-            analysis["support_resistance"] = calculate_support_resistance(
-                highs, lows, closes, current_price,
-                today_high=float(live_data.get('high', 0) or 0),
-                today_low=float(live_data.get('low', 0) or 0),
-                yesterday_close=float(live_data.get('previous_close', 0) or live_data.get('close', 0) or 0)
-            )
+            # 🎯 Camarilla Pivots - Fetch yesterday's DAILY candle for professional intraday pivots
+            prev_day_ohlc = await get_previous_day_ohlc(symbol)
+            
+            if "error" not in prev_day_ohlc:
+                # Use proper previous day's daily OHLC
+                analysis["support_resistance"] = calculate_support_resistance(
+                    highs, lows, closes, current_price,
+                    prev_day_high=prev_day_ohlc.get("high"),
+                    prev_day_low=prev_day_ohlc.get("low"),
+                    prev_day_close=prev_day_ohlc.get("close")
+                )
+                logger.info(f"✅ Camarilla pivots for {symbol} using {prev_day_ohlc.get('date')}")
+            else:
+                # Fallback to historical estimate
+                logger.warning(f"⚠️ Using historical estimate for {symbol}: {prev_day_ohlc.get('error')}")
+                analysis["support_resistance"] = calculate_support_resistance(
+                    highs, lows, closes, current_price
+                )
 
             analysis["volume_analysis"] = calculate_volume_analysis(volumes, closes)
             

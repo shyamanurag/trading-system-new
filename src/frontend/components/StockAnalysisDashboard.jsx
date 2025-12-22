@@ -199,11 +199,14 @@ const SupportResistanceLevels = ({ levels, currentPrice }) => {
             
             <Divider sx={{ my: 1 }} />
 
-            {/* Debug: Show calculation inputs */}
+            {/* Camarilla Pivots Info */}
             {levels.calculation_inputs && (
                 <Box sx={{ mb: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
-                    <Typography variant="caption" color="text.secondary">
-                        Pivot Data: {levels.calculation_inputs.data_source === 'daily_candle' ? '✅ Previous Day' : '⚠️ Intraday Estimate'}
+                    <Typography variant="caption" color="text.secondary" fontWeight="bold">
+                        📊 Camarilla Pivots (Intraday Trading)
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" display="block">
+                        Data: {levels.calculation_inputs.data_source === 'previous_day_daily' ? '✅ Previous Day' : '⚠️ Historical Estimate'}
                     </Typography>
                     <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
                         <Typography variant="caption" color="text.secondary">
@@ -218,62 +221,96 @@ const SupportResistanceLevels = ({ levels, currentPrice }) => {
                     </Box>
                 </Box>
             )}
+            
+            {/* Trading Strategy Hint */}
+            {levels.signal && (
+                <Alert severity={
+                    levels.signal === 'STRONG_BULLISH' ? 'success' :
+                    levels.signal === 'STRONG_BEARISH' ? 'error' :
+                    levels.signal === 'RANGE_BOUND' ? 'info' : 'warning'
+                } sx={{ mb: 1, py: 0.5 }}>
+                    <Typography variant="caption">
+                        {levels.signal.replace('_', ' ')}
+                        {levels.signal === 'STRONG_BULLISH' && ' - Breakout above H4'}
+                        {levels.signal === 'STRONG_BEARISH' && ' - Breakdown below L4'}
+                        {levels.signal === 'RANGE_BOUND' && ' - Trade between L3 and H3'}
+                    </Typography>
+                </Alert>
+            )}
 
             <Grid container spacing={1}>
-                {/* Resistance Levels */}
+                {/* Resistance Levels (H1-H4) */}
                 <Grid item xs={6}>
                     <Typography variant="caption" color="error.main" fontWeight="bold">
-                        RESISTANCE
+                        RESISTANCE (H-Levels)
                     </Typography>
                     {levels.resistance && (
                         <>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                                <Typography variant="caption">R1:</Typography>
+                                <Typography variant="caption" fontWeight="bold">H4:</Typography>
+                                <Typography variant="body2" color="error.dark" fontWeight="bold">
+                                    {formatPrice(levels.resistance.h4)}
+                                </Typography>
+                            </Box>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                                Breakout ↑
+                            </Typography>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                                <Typography variant="caption">H3:</Typography>
                                 <Typography variant="body2" color="error.main">
-                                    {formatPrice(levels.resistance.r1)}
+                                    {formatPrice(levels.resistance.h3)}
                                 </Typography>
                             </Box>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <Typography variant="caption">R2:</Typography>
-                                <Typography variant="body2" color="error.main">
-                                    {formatPrice(levels.resistance.r2)}
+                                <Typography variant="caption">H2:</Typography>
+                                <Typography variant="body2" color="error.light">
+                                    {formatPrice(levels.resistance.h2)}
                                 </Typography>
                             </Box>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <Typography variant="caption">R3:</Typography>
-                                <Typography variant="body2" color="error.main">
-                                    {formatPrice(levels.resistance.r3)}
+                                <Typography variant="caption">H1:</Typography>
+                                <Typography variant="body2" color="warning.main">
+                                    {formatPrice(levels.resistance.h1)}
                                 </Typography>
                             </Box>
                         </>
                     )}
                 </Grid>
 
-                {/* Support Levels */}
+                {/* Support Levels (L1-L4) */}
                 <Grid item xs={6}>
                     <Typography variant="caption" color="success.main" fontWeight="bold">
-                        SUPPORT
+                        SUPPORT (L-Levels)
                     </Typography>
                     {levels.support && (
                         <>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                                <Typography variant="caption">S1:</Typography>
-                                <Typography variant="body2" color="success.main">
-                                    {formatPrice(levels.support.s1)}
+                                <Typography variant="caption">L1:</Typography>
+                                <Typography variant="body2" color="success.light">
+                                    {formatPrice(levels.support.l1)}
                                 </Typography>
                             </Box>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <Typography variant="caption">S2:</Typography>
-                                <Typography variant="body2" color="success.main">
-                                    {formatPrice(levels.support.s2)}
+                                <Typography variant="caption">L2:</Typography>
+                                <Typography variant="body2" color="success.light">
+                                    {formatPrice(levels.support.l2)}
                                 </Typography>
                             </Box>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <Typography variant="caption">S3:</Typography>
+                                <Typography variant="caption">L3:</Typography>
                                 <Typography variant="body2" color="success.main">
-                                    {formatPrice(levels.support.s3)}
+                                    {formatPrice(levels.support.l3)}
                                 </Typography>
                             </Box>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                                <Typography variant="caption" fontWeight="bold">L4:</Typography>
+                                <Typography variant="body2" color="success.dark" fontWeight="bold">
+                                    {formatPrice(levels.support.l4)}
+                                </Typography>
+                            </Box>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                                Breakdown ↓
+                            </Typography>
                         </>
                     )}
                 </Grid>
@@ -281,16 +318,10 @@ const SupportResistanceLevels = ({ levels, currentPrice }) => {
 
             <Divider sx={{ my: 1 }} />
 
-            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="caption" color="text.secondary">Pivot:</Typography>
-                <Typography variant="body2" fontWeight="bold">
-                    {formatPrice(levels.pivot)}
-                </Typography>
-            </Box>
-
+            {/* Key Levels */}
             {levels.nearest_support && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography variant="caption" color="success.main">Nearest Support:</Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="caption" color="success.main">Next Support:</Typography>
                     <Typography variant="body2" color="success.main" fontWeight="bold">
                         {formatPrice(levels.nearest_support)}
                     </Typography>
@@ -298,10 +329,25 @@ const SupportResistanceLevels = ({ levels, currentPrice }) => {
             )}
 
             {levels.nearest_resistance && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography variant="caption" color="error.main">Nearest Resistance:</Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="caption" color="error.main">Next Resistance:</Typography>
                     <Typography variant="body2" color="error.main" fontWeight="bold">
                         {formatPrice(levels.nearest_resistance)}
+                    </Typography>
+                </Box>
+            )}
+            
+            {/* Camarilla Trading Hints */}
+            {levels.trading_strategy && (
+                <Box sx={{ mt: 1, p: 1, bgcolor: 'info.light', borderRadius: 1 }}>
+                    <Typography variant="caption" color="info.dark" display="block" sx={{ fontSize: '0.7rem' }}>
+                        💡 {levels.trading_strategy.range_bound}
+                    </Typography>
+                    <Typography variant="caption" color="success.dark" display="block" sx={{ fontSize: '0.7rem', mt: 0.5 }}>
+                        📈 {levels.trading_strategy.bullish_breakout}
+                    </Typography>
+                    <Typography variant="caption" color="error.dark" display="block" sx={{ fontSize: '0.7rem', mt: 0.5 }}>
+                        📉 {levels.trading_strategy.bearish_breakdown}
                     </Typography>
                 </Box>
             )}
