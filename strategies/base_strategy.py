@@ -7805,12 +7805,25 @@ class BaseStrategy:
             
             if action.upper() == 'BUY' and support_entry and support_entry > 0:
                 # Use support level for BUY entry
+                distance_pct = (original_entry - support_entry) / original_entry * 100
+                
+                # 🔧 FIX: Cap maximum distance - if support is too far, use smaller discount
+                # In bullish trend, waiting for price to go DOWN 1%+ to fill BUY is unrealistic
+                MAX_SR_DISTANCE_PCT = 0.5  # Max 0.5% below LTP for BUY limit
+                
+                if distance_pct > MAX_SR_DISTANCE_PCT:
+                    # Support too far - use small discount instead (0.15% below LTP)
+                    entry_price = round(original_entry * 0.9985, 2)  # 0.15% below LTP
+                    logger.warning(f"⚠️ S/R TOO FAR: {symbol} BUY - Support ₹{support_entry:.2f} is -{distance_pct:.2f}% away")
+                    logger.info(f"🎯 CAPPED ENTRY: {symbol} BUY at ₹{entry_price:.2f} (0.15% below LTP ₹{original_entry:.2f})")
+                    limit_validity_seconds = 180  # 3 minutes for close limit
+                else:
+                    entry_price = round(support_entry, 2)
+                    sr_based_entry = True
+                    limit_validity_seconds = 300 if distance_pct < 0.3 else 600
+                    logger.info(f"🎯 S/R ENTRY: {symbol} BUY at support ₹{entry_price:.2f} (LTP: ₹{original_entry:.2f}, -{distance_pct:.2f}%)")
+                
                 order_type = 'LIMIT'
-                entry_price = round(support_entry, 2)
-                sr_based_entry = True
-                distance_pct = (original_entry - entry_price) / original_entry * 100
-                limit_validity_seconds = 300 if distance_pct < 0.5 else 600
-                logger.info(f"🎯 S/R ENTRY: {symbol} BUY at support ₹{entry_price:.2f} (LTP: ₹{original_entry:.2f}, -{distance_pct:.2f}%)")
                 
                 # 🔧 FIX: Recalculate SL for new entry price - SL must be BELOW entry for BUY
                 if stop_loss >= entry_price:
@@ -7822,13 +7835,26 @@ class BaseStrategy:
             
             elif action.upper() == 'SELL' and resistance_entry and resistance_entry > 0:
                 # Use resistance level for SELL entry
-                order_type = 'LIMIT'
-                entry_price = round(resistance_entry, 2)
-                sr_based_entry = True
-                distance_pct = (entry_price - original_entry) / original_entry * 100
-                limit_validity_seconds = 300 if distance_pct < 0.5 else 600
-                logger.info(f"🎯 S/R ENTRY: {symbol} SELL at resistance ₹{entry_price:.2f} (LTP: ₹{original_entry:.2f}, +{distance_pct:.2f}%)")
+                distance_pct = (resistance_entry - original_entry) / original_entry * 100
                 
+                # 🔧 FIX: Cap maximum distance - if resistance is too far, use smaller discount
+                # In bearish trend, waiting for price to go UP 1%+ to fill SELL is unrealistic
+                MAX_SR_DISTANCE_PCT = 0.5  # Max 0.5% above LTP for SELL limit
+                
+                if distance_pct > MAX_SR_DISTANCE_PCT:
+                    # Resistance too far - use small discount instead (0.15% above LTP)
+                    entry_price = round(original_entry * 1.0015, 2)  # 0.15% above LTP
+                    logger.warning(f"⚠️ S/R TOO FAR: {symbol} SELL - Resistance ₹{resistance_entry:.2f} is +{distance_pct:.2f}% away")
+                    logger.info(f"🎯 CAPPED ENTRY: {symbol} SELL at ₹{entry_price:.2f} (0.15% above LTP ₹{original_entry:.2f})")
+                    limit_validity_seconds = 180  # 3 minutes for close limit
+                else:
+                    entry_price = round(resistance_entry, 2)
+                    sr_based_entry = True
+                    limit_validity_seconds = 300 if distance_pct < 0.3 else 600
+                    logger.info(f"🎯 S/R ENTRY: {symbol} SELL at resistance ₹{entry_price:.2f} (LTP: ₹{original_entry:.2f}, +{distance_pct:.2f}%)")
+                
+                order_type = 'LIMIT'
+
                 # 🔧 FIX: Recalculate SL for new entry price - SL must be ABOVE entry for SELL
                 if stop_loss <= entry_price:
                     # SL is below entry - invalid for SELL! Recalculate as 1% above new entry
