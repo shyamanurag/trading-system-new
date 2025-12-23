@@ -2071,14 +2071,21 @@ class TradingOrchestrator:
             # 🚨 PERFORMANCE OPTIMIZATION: Reduce market data processing load
             transformed_data = self._optimize_market_data_processing(market_data)
             
-            # 🎯 STEP 1: FETCH OPTION CHAINS for key underlyings (every 5th cycle to avoid rate limits)
-            if not hasattr(self, '_option_chain_cycle_counter'):
-                self._option_chain_cycle_counter = 0
-            self._option_chain_cycle_counter += 1
+            # 🎯 STEP 1: FETCH OPTION CHAINS for key underlyings (every 2 minutes to avoid timeout issues)
+            # 🔧 FIX: Changed from every 5 cycles (~5s) to every 2 minutes (120s)
+            # Option chain fetching takes ~15s which was consuming the 30s strategy timeout
+            import time as time_module
+            if not hasattr(self, '_last_option_chain_fetch'):
+                self._last_option_chain_fetch = 0
             
-            if self._option_chain_cycle_counter % 5 == 0:  # Fetch option chains every 5th cycle
+            current_time_epoch = time_module.time()
+            OPTION_CHAIN_INTERVAL_SECONDS = 120  # 2 minutes
+            
+            if current_time_epoch - self._last_option_chain_fetch >= OPTION_CHAIN_INTERVAL_SECONDS:
                 try:
+                    self.logger.info(f"🔄 Fetching option chains (every {OPTION_CHAIN_INTERVAL_SECONDS}s)...")
                     transformed_data = await self._fetch_and_merge_option_chains(transformed_data)
+                    self._last_option_chain_fetch = current_time_epoch
                 except Exception as e:
                     self.logger.debug(f"Could not fetch option chains: {e}")
             
@@ -3644,13 +3651,14 @@ class TradingOrchestrator:
                     
                     # 🚀 CRITICAL FIX: Add timeout to prevent blocking the event loop
                     # This allows HTTP requests to be processed even if strategies are slow
+                    # 🔧 FIX: Increased from 30s to 60s to allow strategies to complete
                     try:
                         await asyncio.wait_for(
                             self._process_market_data(),
-                            timeout=30.0  # 30 second max per cycle
+                            timeout=60.0  # 60 second max per cycle (was 30s)
                         )
                     except asyncio.TimeoutError:
-                        self.logger.warning(f"⚠️ Strategy processing timed out (30s) - cycle skipped")
+                        self.logger.warning(f"⚠️ Strategy processing timed out (60s) - cycle skipped")
                     
                     # 🚀 CRITICAL FIX: Yield to let HTTP handlers run
                     await asyncio.sleep(0.1)  # Brief yield point
