@@ -8073,11 +8073,12 @@ class BaseStrategy:
     
     def _get_futures_lot_size(self, symbol: str) -> int:
         """Get the lot size for futures contract of a symbol"""
-        # Standard lot sizes for major F&O stocks (as of 2024)
-        # These should be updated periodically
+        # Standard lot sizes for major F&O stocks (as of Dec 2024)
+        # 🔧 UPDATED: NIFTY = 75, BANKNIFTY = 30 (changed Nov 2024)
         LOT_SIZES = {
-            # Indices
-            'NIFTY': 25, 'BANKNIFTY': 15, 'FINNIFTY': 25, 'MIDCPNIFTY': 50,
+            # Indices (UPDATED Dec 2024)
+            'NIFTY': 75, 'BANKNIFTY': 30, 'FINNIFTY': 40, 'MIDCPNIFTY': 75,
+            'NIFTY-I': 75, 'BANKNIFTY-I': 30, 'FINNIFTY-I': 40, 'MIDCPNIFTY-I': 75,
             # Large caps
             'RELIANCE': 250, 'TCS': 150, 'HDFCBANK': 550, 'ICICIBANK': 700,
             'INFY': 300, 'HINDUNILVR': 300, 'ITC': 1600, 'SBIN': 750,
@@ -8095,8 +8096,11 @@ class BaseStrategy:
             # Add more as needed
         }
         
+        # Handle -I suffix for index futures from TrueData
+        clean_symbol = symbol.upper().replace('-I', '')
+        
         # Return lot size or default to a reasonable value
-        return LOT_SIZES.get(symbol.upper(), 500)  # Default 500 for unknown symbols
+        return LOT_SIZES.get(symbol.upper()) or LOT_SIZES.get(clean_symbol, 500)
     
     def _get_real_market_price(self, symbol: str) -> Optional[float]:
         """Get real market price from TrueData cache to ensure accurate strike calculation"""
@@ -9593,11 +9597,12 @@ class BaseStrategy:
         try:
             # 🔥 CRITICAL FIX: Hardcoded index lot sizes (these are well-known and rarely change)
             # Zerodha API sometimes returns stale data, so override for indices
+            # 🔧 UPDATED Dec 2024
             INDEX_LOT_SIZES = {
                 'NIFTY': 75,      # Changed from 50 to 75 (Nov 2024)
-                'BANKNIFTY': 30,  # Changed from 15 to 30 (Nov 2024) - NOT 35!
-                'FINNIFTY': 25,   # Lot size = 25
-                'MIDCPNIFTY': 50, # Lot size = 50
+                'BANKNIFTY': 30,  # Changed from 15 to 30 (Nov 2024)
+                'FINNIFTY': 40,   # Changed from 25 to 40 (Nov 2024)
+                'MIDCPNIFTY': 75, # Changed from 50 to 75 (Nov 2024)
                 'SENSEX': 10,     # Lot size = 10
                 'BANKEX': 15,     # Lot size = 15
             }

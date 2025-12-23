@@ -768,6 +768,9 @@ class RiskManager:
             except Exception:
                 total_capital_override = None
             
+            # 🔧 Detect index futures (trade in lots, bypass capital allocation limits)
+            is_index_futures = symbol.upper().endswith('-I') or symbol.upper() in ['NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I']
+            
             # Validate trade risk using existing method (skip single-position cap for management actions)
             if is_management_action:
                 # Only enforce emergency stop and basic sanity checks for exits
@@ -775,6 +778,10 @@ class RiskManager:
             elif is_options_trade:
                 risk_approved, risk_reason = True, "Options trade - no position size restrictions"
                 logger.info(f"🎯 OPTIONS BYPASS: {symbol} approved regardless of premium cost")
+            elif is_index_futures:
+                # Index futures bypass capital allocation limits (they trade in fixed lots)
+                risk_approved, risk_reason = True, "Index futures - fixed lot size, bypass capital limits"
+                logger.info(f"🎯 INDEX FUTURES BYPASS: {symbol} approved - trades in standard lots")
             else:
                 risk_approved, risk_reason = self.validate_trade_risk(position_value, strategy_name, symbol, total_capital_override)
             

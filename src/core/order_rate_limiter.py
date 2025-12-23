@@ -83,7 +83,38 @@ class OrderRateLimiter:
         
         # 🔥 NEW: Block tiny orders (< 5 shares) - wastes brokerage
         # BUT allow exits of any size to close positions
-        if quantity < self.min_order_quantity and not is_exit_order:
+        # EXCEPTION: Index futures (NIFTY-I, BANKNIFTY-I, FINNIFTY-I) trade in lots, not shares
+        is_index_futures = symbol.upper().endswith('-I') or symbol.upper() in ['NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I']
+        
+        # 🔧 Lot sizes for index futures (as of Dec 2024)
+        # 🔧 UPDATED: NIFTY=75, BANKNIFTY=30, FINNIFTY=40, MIDCPNIFTY=75
+        INDEX_LOT_SIZES = {
+            'NIFTY-I': 75,       # NIFTY 50 futures
+            'BANKNIFTY-I': 30,   # Bank NIFTY futures  
+            'FINNIFTY-I': 40,    # Financial NIFTY futures
+            'MIDCPNIFTY-I': 75,  # Midcap NIFTY futures
+        }
+        
+        # Validate lot size for index futures
+        if is_index_futures and not is_exit_order:
+            lot_size = INDEX_LOT_SIZES.get(symbol.upper(), 25)  # Default 25 if unknown
+            if quantity < lot_size:
+                logger.warning(f"🚫 INDEX LOT SIZE ERROR: {symbol} qty={quantity} < lot size {lot_size}")
+                return {
+                    'allowed': False,
+                    'reason': 'INVALID_LOT_SIZE',
+                    'message': f'{symbol} requires minimum {lot_size} units (1 lot), got {quantity}'
+                }
+            if quantity % lot_size != 0:
+                logger.warning(f"🚫 INDEX LOT SIZE ERROR: {symbol} qty={quantity} not multiple of lot size {lot_size}")
+                return {
+                    'allowed': False,
+                    'reason': 'INVALID_LOT_SIZE',
+                    'message': f'{symbol} quantity must be multiple of {lot_size}, got {quantity}'
+                }
+            logger.info(f"✅ INDEX FUTURES: {symbol} {quantity} units = {quantity // lot_size} lot(s)")
+        
+        if quantity < self.min_order_quantity and not is_exit_order and not is_index_futures and not is_options:
             logger.warning(f"🚫 TINY ORDER BLOCKED: {symbol} {action} qty={quantity} < min {self.min_order_quantity}")
             return {
                 'allowed': False,
