@@ -7019,6 +7019,12 @@ class BaseStrategy:
 
             signal_type = self._determine_optimal_signal_type(symbol, _entry_price_num, _confidence_num, metadata)
             
+            # 📊 Pre-fetch Camarilla levels for this symbol (cached daily for all signal types)
+            try:
+                await self._get_camarilla_levels(symbol)
+            except Exception as cam_err:
+                logger.debug(f"Camarilla prefetch skipped: {cam_err}")
+            
             if signal_type == 'OPTIONS':
                 # Convert to options signal
                 return await self._create_options_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
@@ -7704,8 +7710,8 @@ class BaseStrategy:
             camarilla_signal = None
             
             try:
-                # Get Camarilla levels (cached daily)
-                camarilla = await self._get_camarilla_levels(symbol)
+                # Get Camarilla levels from cache (sync access - levels are cached daily)
+                camarilla = self._camarilla_cache.get(symbol, {})
                 
                 if camarilla:
                     h4, h3, h2, h1 = camarilla['h4'], camarilla['h3'], camarilla['h2'], camarilla['h1']
