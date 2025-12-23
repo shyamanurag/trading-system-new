@@ -7811,6 +7811,14 @@ class BaseStrategy:
                 distance_pct = (original_entry - entry_price) / original_entry * 100
                 limit_validity_seconds = 300 if distance_pct < 0.5 else 600
                 logger.info(f"🎯 S/R ENTRY: {symbol} BUY at support ₹{entry_price:.2f} (LTP: ₹{original_entry:.2f}, -{distance_pct:.2f}%)")
+                
+                # 🔧 FIX: Recalculate SL for new entry price - SL must be BELOW entry for BUY
+                if stop_loss >= entry_price:
+                    # SL is above entry - invalid for BUY! Recalculate as 1% below new entry
+                    old_sl = stop_loss
+                    stop_loss = round(entry_price * 0.99, 2)  # 1% below new entry
+                    target = round(entry_price + (entry_price - stop_loss) * 2.0, 2)  # Maintain 1:2 R:R
+                    logger.info(f"🔧 SL ADJUSTED: {symbol} BUY - Old SL ₹{old_sl:.2f} > Entry ₹{entry_price:.2f} → New SL ₹{stop_loss:.2f}")
             
             elif action.upper() == 'SELL' and resistance_entry and resistance_entry > 0:
                 # Use resistance level for SELL entry
@@ -7820,6 +7828,14 @@ class BaseStrategy:
                 distance_pct = (entry_price - original_entry) / original_entry * 100
                 limit_validity_seconds = 300 if distance_pct < 0.5 else 600
                 logger.info(f"🎯 S/R ENTRY: {symbol} SELL at resistance ₹{entry_price:.2f} (LTP: ₹{original_entry:.2f}, +{distance_pct:.2f}%)")
+                
+                # 🔧 FIX: Recalculate SL for new entry price - SL must be ABOVE entry for SELL
+                if stop_loss <= entry_price:
+                    # SL is below entry - invalid for SELL! Recalculate as 1% above new entry
+                    old_sl = stop_loss
+                    stop_loss = round(entry_price * 1.01, 2)  # 1% above new entry
+                    target = round(entry_price - (stop_loss - entry_price) * 2.0, 2)  # Maintain 1:2 R:R
+                    logger.info(f"🔧 SL ADJUSTED: {symbol} SELL - Old SL ₹{old_sl:.2f} < Entry ₹{entry_price:.2f} → New SL ₹{stop_loss:.2f}")
             
             elif pullback_available and conf_normalized >= 8.5:
                 # Price has pulled back AND signal is strong - use MARKET to capture it
