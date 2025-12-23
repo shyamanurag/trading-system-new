@@ -769,7 +769,9 @@ class RiskManager:
                 total_capital_override = None
             
             # 🔧 Detect index futures (trade in lots, bypass capital allocation limits)
-            is_index_futures = symbol.upper().endswith('-I') or symbol.upper() in ['NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I']
+            # 🔧 FIX: Only match KNOWN index futures, not all -I suffixed symbols (which includes stock futures)
+            KNOWN_INDEX_FUTURES = {'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I', 'BANKEX-I'}
+            is_index_futures = symbol.upper() in KNOWN_INDEX_FUTURES
             
             # Validate trade risk using existing method (skip single-position cap for management actions)
             if is_management_action:

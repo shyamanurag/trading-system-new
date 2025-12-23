@@ -84,7 +84,9 @@ class OrderRateLimiter:
         # 🔥 NEW: Block tiny orders (< 5 shares) - wastes brokerage
         # BUT allow exits of any size to close positions
         # EXCEPTION: Index futures (NIFTY-I, BANKNIFTY-I, FINNIFTY-I) trade in lots, not shares
-        is_index_futures = symbol.upper().endswith('-I') or symbol.upper() in ['NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I']
+        # 🔧 FIX: Only match KNOWN index futures, not all -I suffixed symbols (which includes stock futures like RELIANCE-I)
+        KNOWN_INDEX_FUTURES = {'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I', 'BANKEX-I'}
+        is_index_futures = symbol.upper() in KNOWN_INDEX_FUTURES
         
         # 🔧 Lot sizes for index futures (as of Dec 2024)
         # 🔧 UPDATED: NIFTY=75, BANKNIFTY=30, FINNIFTY=40, MIDCPNIFTY=75
