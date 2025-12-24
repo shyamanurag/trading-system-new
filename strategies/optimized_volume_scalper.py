@@ -1831,14 +1831,27 @@ class OptimizedVolumeScalper(BaseStrategy):
             if not hasattr(self, '_historical_data_fetched') or symbol not in self._historical_data_fetched:
                 await self._fetch_historical_for_symbol(symbol)
             
-            # ============= PHASE 2: PRICE HISTORY =============
+            # ============= PHASE 2: PRICE HISTORY (CANDLE-BASED for accurate indicators) =============
+            # 🔧 FIX 2024-12-24: Use 5-minute candle closes for RSI/indicators, NOT tick data!
+            # Tick-based RSI is meaningless noise. Standard practice is candle-based RSI.
             if not hasattr(self, 'price_history'):
                 self.price_history = {}
             if symbol not in self.price_history:
                 self.price_history[symbol] = []
-            self.price_history[symbol].append(current_price)
-            self.price_history[symbol] = self.price_history[symbol][-50:]
-            prices = self.price_history[symbol]
+            
+            # PREFER candle closes from mtf_data (consistent with other strategies)
+            prices = []
+            if hasattr(self, 'mtf_data') and symbol in self.mtf_data:
+                candles = self.mtf_data[symbol].get('5min', [])
+                if candles and len(candles) >= 14:
+                    prices = [c.get('close', 0) for c in candles[-50:] if c.get('close', 0) > 0]
+                    self.price_history[symbol] = prices  # Update for consistency
+            
+            # Fallback to tick-based only if no candle data available
+            if len(prices) < 14:
+                self.price_history[symbol].append(current_price)
+                self.price_history[symbol] = self.price_history[symbol][-50:]
+                prices = self.price_history[symbol]
             
             # ============= PHASE 2: CANDLE ANALYSIS (FIXED FOR DAY OHLC) =============
             candle_range = high - low if high > low else 0.01

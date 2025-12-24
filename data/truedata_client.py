@@ -452,47 +452,25 @@ class TrueDataClient:
                 truedata_connection_status['permanent_block'] = True  # Block all retries
                 truedata_connection_status['retry_disabled'] = True
                 
-                # 🚨 CRITICAL FIX 2024-12-19: Set KILLED flag to stop ALL TrueData activity
-                # This prevents the TrueData library's internal auto-reconnect from looping
+                # Set flags to prevent our code from retrying
                 self._killed = True
                 self._shutdown_requested = True
                 self.connected = False
                 
-                # 🔥 NUCLEAR OPTION: Aggressively destroy the TD_live object and its internals
-                try:
-                    if self.td_obj:
-                        logger.info("🔌 KILLING TrueData to stop reconnection loop...")
-                        
-                        # Step 1: Try to close the underlying websocket directly
-                        if hasattr(self.td_obj, 'ws') and self.td_obj.ws:
-                            try:
-                                self.td_obj.ws.close()
-                                logger.info("  ✅ Closed underlying websocket")
-                            except:
-                                pass
-                        
-                        # Step 2: Stop any internal run loop
-                        if hasattr(self.td_obj, '_running'):
-                            self.td_obj._running = False
-                        if hasattr(self.td_obj, 'running'):
-                            self.td_obj.running = False
-                        
-                        # Step 3: Call disconnect
-                        try:
-                            self.td_obj.disconnect()
-                        except:
-                            pass
-                        
-                        logger.info("  ✅ TD_live disconnected")
-                except Exception as disc_err:
-                    logger.debug(f"Disconnect during cleanup: {disc_err}")
-                finally:
-                    self.td_obj = None  # CRITICAL: Set to None to prevent any further usage
-                    logger.info("✅ TrueData KILLED - no more reconnection attempts until restart")
-                
-                # 🛑 Stop the health monitor thread to prevent it from reconnecting
+                # Stop health monitor to prevent our reconnection attempts
                 self._stop_health.set()
-                logger.info("🛑 Health monitor stopped - preventing further reconnection attempts")
+                
+                # Simple cleanup - don't be aggressive, just mark as disconnected
+                # The TrueData library's internal reconnect may still log errors,
+                # but that's better than crashing or making things worse
+                if self.td_obj:
+                    try:
+                        self.td_obj.disconnect()
+                    except Exception:
+                        pass  # Ignore errors during cleanup
+                    self.td_obj = None
+                
+                logger.info("🛑 TrueData marked as disconnected - using Zerodha fallback")
                 
                 return False
             
