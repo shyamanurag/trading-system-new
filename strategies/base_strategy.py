@@ -1931,6 +1931,12 @@ class BaseStrategy:
                     # ============= PREFERRED: INDICATORS FROM 5m CANDLE CLOSES (mtf_data) =============
                     # This matches the rest of the system (RSI/MACD/Bollinger based on candle closes),
                     # not per-cycle LTP samples.
+                    
+                    # 🔧 FIX 2024-12-24: Ensure mtf_data is fetched BEFORE trying to use it!
+                    # Without this, position analysis was falling back to tick-based RSI.
+                    if not hasattr(self, 'mtf_data') or symbol not in self.mtf_data or not self.mtf_data.get(symbol, {}).get('5min'):
+                        await self.fetch_multi_timeframe_data(symbol)
+                    
                     mtf_series = self._get_indicator_series_from_mtf(symbol, timeframe='5min', limit=60)
                     opens_5m = mtf_series.get('opens', []) if isinstance(mtf_series, dict) else []
                     closes = mtf_series.get('closes', []) if isinstance(mtf_series, dict) else []
