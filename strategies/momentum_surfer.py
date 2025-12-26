@@ -2136,8 +2136,25 @@ class EnhancedMomentumSurfer(BaseStrategy):
         dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
         weighted_bias = dual_analysis.get('weighted_bias', 0.0)
         alignment = dual_analysis.get('alignment', 'UNKNOWN')
+        pattern = dual_analysis.get('pattern', 'UNKNOWN')
         
         ltp = data.get('ltp', 0)
+        
+        # 🚨 2025-12-26 FIX: Don't range trade trending stocks!
+        # If pattern is CONTINUATION (bullish or bearish), stock is TRENDING not RANGING
+        if 'CONTINUATION' in pattern:
+            logger.debug(f"⚠️ {symbol}: Skipping sideways strategy - {pattern} is a trending pattern")
+            return None
+        
+        # 🚨 FIX: Don't counter-trend when stock is WITH MARKET trend
+        # BUY signal when stock is falling WITH bearish market = wrong
+        # SELL signal when stock is rising WITH bullish market = wrong
+        if "WITH MARKET (BEAR)" in alignment and weighted_bias < 0:
+            logger.debug(f"⚠️ {symbol}: Skipping BUY in sideways - stock falling WITH bear market")
+            return None
+        if "WITH MARKET (BULL)" in alignment and weighted_bias > 0:
+            logger.debug(f"⚠️ {symbol}: Skipping SELL in sideways - stock rising WITH bull market")
+            return None
         
         # Range trading: buy at support, sell at resistance
         # Use weighted_bias to confirm we aren't in a strong trend
