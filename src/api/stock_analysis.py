@@ -1240,20 +1240,21 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
             signal = darvas_box.get("signal", "")
             position = darvas_box.get("position", "")
             volume_surge = darvas_box.get("volume_surge", False)
-            signal_strength = darvas_box.get("signal_strength", 50) / 100  # Normalize to 0-1
+            signal_strength_pct = darvas_box.get("signal_strength", 50)  # Raw percentage (0-100)
+            signal_strength = signal_strength_pct / 100  # Normalize to 0-1 for calculation
             
             if signal == "STRONG_BUY":
                 bullish_signals += 2.0 * signal_strength
-                reasons.append(f"Darvas Box BREAKOUT with volume (strength: {darvas_box.get('signal_strength', 0):.0f}%)")
+                reasons.append(f"Darvas Box BREAKOUT with volume (strength: {signal_strength_pct:.0f}%)")
             elif signal == "BUY":
                 bullish_signals += 1.5 * signal_strength
-                reasons.append(f"Darvas Box breakout (strength: {darvas_box.get('signal_strength', 0):.0f}%)")
+                reasons.append(f"Darvas Box breakout (strength: {signal_strength_pct:.0f}%)")
             elif signal == "STRONG_SELL":
                 bearish_signals += 2.0 * signal_strength
-                reasons.append(f"Darvas Box BREAKDOWN with volume (strength: {darvas_box.get('signal_strength', 0):.0f}%)")
+                reasons.append(f"Darvas Box BREAKDOWN with volume (strength: {signal_strength_pct:.0f}%)")
             elif signal == "SELL":
                 bearish_signals += 1.5 * signal_strength
-                reasons.append(f"Darvas Box breakdown (strength: {darvas_box.get('signal_strength', 0):.0f}%)")
+                reasons.append(f"Darvas Box breakdown (strength: {signal_strength_pct:.0f}%)")
             elif position == "UPPER_HALF":
                 bullish_signals += 0.5
                 reasons.append("Darvas Box: Price in upper half (watch for breakout)")
