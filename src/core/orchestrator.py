@@ -3613,17 +3613,27 @@ class TradingOrchestrator:
                 # Heartbeat logging
                 current_time = time_module.time()
                 if current_time - last_heartbeat >= heartbeat_interval:
-                    # Get TrueData status without interfering
+                    # Get TrueData status - use REDIS CACHE count (same source as market_data)
                     try:
-                        from data.truedata_client import truedata_client, live_market_data
+                        from data.truedata_client import truedata_client
                         td_connected = truedata_client.connected if truedata_client else False
-                        td_symbols = len(live_market_data) if live_market_data else 0
+                        
+                        # 🔧 FIX: Check Redis cache symbol count instead of live_market_data dict
+                        # Orchestrator uses Redis cache, so heartbeat should match that source
+                        if hasattr(self, 'redis_client') and self.redis_client:
+                            try:
+                                redis_keys = self.redis_client.keys('truedata:*')
+                                td_symbols = len(redis_keys) if redis_keys else 0
+                            except:
+                                td_symbols = 0
+                        else:
+                            td_symbols = 0
                     except:
                         td_connected = False
                         td_symbols = 0
                     
                     self.logger.info(f"💓 TRADING LOOP HEARTBEAT - Running: {self.is_running}, "
-                                   f"TrueData: {'✅' if td_connected else '❌'} ({td_symbols} symbols), "
+                                   f"TrueData: {'✅' if td_connected else '❌'} ({td_symbols} symbols in Redis), "
                                    f"Last data: {int(current_time - last_successful_data)}s ago")
                     last_heartbeat = current_time
                 
