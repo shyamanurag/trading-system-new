@@ -1092,57 +1092,93 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
         total_signals = 0
         reasons = []
 
-        # 🔥 INTRADAY PRICE MOMENTUM: Strong moves override lagging indicators
-        # A stock up 10%+ in a day is clearly bullish, regardless of MACD
+        # 🔥 BREAKOUT CONTEXT DETECTION
+        # In breakout context, overbought indicators confirm momentum (not bearish)
         change_pct = live_data.get("change_percent", 0) if live_data else 0
-        if abs(change_pct) > 5:  # Strong intraday move
-            total_signals += 2  # High weight for price action
+        is_bullish_breakout = False
+        is_bearish_breakout = False
+        
+        # Detect breakout from price momentum
+        if change_pct > 5:
+            is_bullish_breakout = True
+        elif change_pct < -5:
+            is_bearish_breakout = True
+        
+        # Detect breakout from Darvas Box
+        if darvas_box and not darvas_box.get("error"):
+            darvas_signal = darvas_box.get("signal", "")
+            if darvas_signal in ["STRONG_BUY", "BUY"]:
+                is_bullish_breakout = True
+            elif darvas_signal in ["STRONG_SELL", "SELL"]:
+                is_bearish_breakout = True
+
+        # 🔥 INTRADAY PRICE MOMENTUM
+        if abs(change_pct) > 5:
+            total_signals += 2
             if change_pct > 10:
-                bullish_signals += 3.0  # Very strong bullish momentum
+                bullish_signals += 3.0
                 reasons.insert(0, f"STRONG BULLISH MOMENTUM: +{change_pct:.1f}% today")
             elif change_pct > 5:
-                bullish_signals += 2.0  # Strong bullish momentum
+                bullish_signals += 2.0
                 reasons.insert(0, f"Strong bullish move: +{change_pct:.1f}% today")
             elif change_pct < -10:
-                bearish_signals += 3.0  # Very strong bearish momentum
+                bearish_signals += 3.0
                 reasons.insert(0, f"STRONG BEARISH MOMENTUM: {change_pct:.1f}% today")
             elif change_pct < -5:
-                bearish_signals += 2.0  # Strong bearish momentum
+                bearish_signals += 2.0
                 reasons.insert(0, f"Strong bearish move: {change_pct:.1f}% today")
 
-        # RSI Analysis
+        # RSI Analysis - CONTEXT AWARE
         if rsi.get("value"):
             total_signals += 1
-            if rsi["value"] <= 30:
-                bullish_signals += 1.5  # Extra weight for oversold
-                reasons.append(f"RSI oversold ({rsi['value']})")
-            elif rsi["value"] >= 70:
-                bearish_signals += 1.5
-                reasons.append(f"RSI overbought ({rsi['value']})")
-            elif rsi["value"] < 50:
+            rsi_val = rsi["value"]
+            if rsi_val <= 30:
+                bullish_signals += 1.5
+                reasons.append(f"RSI oversold ({rsi_val:.1f})")
+            elif rsi_val >= 70:
+                # In bullish breakout, overbought RSI = momentum confirmation, not bearish
+                if is_bullish_breakout:
+                    bullish_signals += 0.5  # Slight bullish (momentum confirmed)
+                    reasons.append(f"RSI overbought ({rsi_val:.1f}) - momentum confirmed")
+                else:
+                    bearish_signals += 1.5
+                    reasons.append(f"RSI overbought ({rsi_val:.1f})")
+            elif rsi_val < 50:
                 bearish_signals += 0.5
             else:
                 bullish_signals += 0.5
         
-        # VRSI Analysis
+        # VRSI Analysis - CONTEXT AWARE
         if vrsi.get("value"):
             total_signals += 1
-            if vrsi["value"] <= 35:
+            vrsi_val = vrsi["value"]
+            if vrsi_val <= 35:
                 bullish_signals += 1
-                reasons.append(f"VRSI showing volume-backed weakness ({vrsi['value']})")
-            elif vrsi["value"] >= 65:
-                bearish_signals += 1
-                reasons.append(f"VRSI showing volume-backed strength ({vrsi['value']})")
+                reasons.append(f"VRSI showing volume-backed weakness ({vrsi_val:.1f})")
+            elif vrsi_val >= 65:
+                # In bullish breakout, high VRSI = strong volume momentum
+                if is_bullish_breakout:
+                    bullish_signals += 1.0  # Bullish (volume confirming breakout)
+                    reasons.append(f"VRSI ({vrsi_val:.1f}) - volume confirming breakout")
+                else:
+                    bearish_signals += 1
+                    reasons.append(f"VRSI showing volume-backed strength ({vrsi_val:.1f})")
         
-        # MFI Analysis
+        # MFI Analysis - CONTEXT AWARE
         if mfi.get("value"):
             total_signals += 1
-            if mfi["value"] <= 20:
+            mfi_val = mfi["value"]
+            if mfi_val <= 20:
                 bullish_signals += 1.5
-                reasons.append(f"MFI oversold ({mfi['value']})")
-            elif mfi["value"] >= 80:
-                bearish_signals += 1.5
-                reasons.append(f"MFI overbought ({mfi['value']})")
+                reasons.append(f"MFI oversold ({mfi_val:.1f})")
+            elif mfi_val >= 80:
+                # In bullish breakout, overbought MFI = strong money flow
+                if is_bullish_breakout:
+                    bullish_signals += 0.5  # Slight bullish (money flowing in)
+                    reasons.append(f"MFI overbought ({mfi_val:.1f}) - strong money inflow")
+                else:
+                    bearish_signals += 1.5
+                    reasons.append(f"MFI overbought ({mfi_val:.1f})")
         
         # MACD Analysis (reduced weight - lagging indicator shouldn't override price action)
         if macd.get("state"):
@@ -1203,15 +1239,25 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
                 bullish_signals += 0.5
                 bearish_signals += 0.5
         
-        # Bollinger Bands Analysis
+        # Bollinger Bands Analysis - CONTEXT AWARE
         if bollinger and not bollinger.get("error"):
             total_signals += 1
             if bollinger.get("position") == "BELOW_LOWER":
-                bullish_signals += 1.5
-                reasons.append("Price below lower Bollinger band (oversold)")
+                # In bearish breakout, below lower band confirms momentum
+                if is_bearish_breakout:
+                    bearish_signals += 0.5
+                    reasons.append("Price below lower Bollinger (breakdown confirmed)")
+                else:
+                    bullish_signals += 1.5
+                    reasons.append("Price below lower Bollinger band (oversold)")
             elif bollinger.get("position") == "ABOVE_UPPER":
-                bearish_signals += 1.5
-                reasons.append("Price above upper Bollinger band (overbought)")
+                # In bullish breakout, above upper band = momentum, not overbought
+                if is_bullish_breakout:
+                    bullish_signals += 0.5
+                    reasons.append("Price above upper Bollinger (breakout momentum)")
+                else:
+                    bearish_signals += 1.5
+                    reasons.append("Price above upper Bollinger band (overbought)")
             
             # Squeeze detection
             if bollinger.get("is_squeeze"):
