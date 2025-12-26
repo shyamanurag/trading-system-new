@@ -1259,6 +1259,20 @@ async def get_stock_analysis(
             analysis["data_source"] = "historical"
             analysis["candles_analyzed"] = len(candles)
             
+            # Include OHLC candles for frontend charting (last 100 candles for performance)
+            chart_candles = candles[-100:] if len(candles) > 100 else candles
+            analysis["chart_data"] = [
+                {
+                    "time": c.get('date', c.get('timestamp', '')),
+                    "open": float(c.get('open', 0)),
+                    "high": float(c.get('high', 0)),
+                    "low": float(c.get('low', 0)),
+                    "close": float(c.get('close', 0)),
+                    "volume": int(c.get('volume', 0))
+                }
+                for c in chart_candles
+            ]
+            
         else:
             # Limited analysis with just live data
             analysis["indicators"]["rsi"] = {"value": None, "error": "No historical data"}
@@ -1277,6 +1291,7 @@ async def get_stock_analysis(
                 "confidence": 0,
                 "error": "Historical data required for full analysis"
             }
+            analysis["chart_data"] = []
         
         logger.info(f"✅ Analysis complete for {symbol}: {analysis['recommendation'].get('recommendation', 'N/A')}")
 

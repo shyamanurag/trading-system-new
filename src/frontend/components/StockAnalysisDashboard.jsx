@@ -26,8 +26,221 @@ import {
     Tooltip,
     Typography
 } from '@mui/material';
-import React, { useEffect, useState } from 'react';
+import { createChart, ColorType } from 'lightweight-charts';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import fetchWithAuth from '../api/fetchWithAuth';
+
+// Candlestick Chart Component using TradingView Lightweight Charts
+const CandlestickChart = ({ data, symbol }) => {
+    const chartContainerRef = useRef();
+    const chartRef = useRef(null);
+    const candleSeriesRef = useRef(null);
+    const volumeSeriesRef = useRef(null);
+
+    // Parse and format candle data for the chart
+    const formatChartData = useCallback((rawData) => {
+        if (!rawData || !Array.isArray(rawData) || rawData.length === 0) return { candles: [], volumes: [] };
+
+        const candles = [];
+        const volumes = [];
+
+        rawData.forEach((candle) => {
+            // Parse time - handle various formats
+            let timestamp;
+            const timeValue = candle.time;
+            
+            if (typeof timeValue === 'string') {
+                const date = new Date(timeValue);
+                timestamp = Math.floor(date.getTime() / 1000);
+            } else if (typeof timeValue === 'number') {
+                timestamp = timeValue > 1e10 ? Math.floor(timeValue / 1000) : timeValue;
+            } else {
+                return; // Skip invalid entries
+            }
+
+            if (isNaN(timestamp) || timestamp <= 0) return;
+
+            const open = parseFloat(candle.open) || 0;
+            const high = parseFloat(candle.high) || 0;
+            const low = parseFloat(candle.low) || 0;
+            const close = parseFloat(candle.close) || 0;
+            const volume = parseInt(candle.volume) || 0;
+
+            if (open > 0 && high > 0 && low > 0 && close > 0) {
+                candles.push({ time: timestamp, open, high, low, close });
+                volumes.push({
+                    time: timestamp,
+                    value: volume,
+                    color: close >= open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+                });
+            }
+        });
+
+        // Sort by time and remove duplicates
+        candles.sort((a, b) => a.time - b.time);
+        volumes.sort((a, b) => a.time - b.time);
+
+        // Remove duplicate timestamps
+        const uniqueCandles = [];
+        const uniqueVolumes = [];
+        const seenTimes = new Set();
+
+        candles.forEach((candle, idx) => {
+            if (!seenTimes.has(candle.time)) {
+                seenTimes.add(candle.time);
+                uniqueCandles.push(candle);
+                uniqueVolumes.push(volumes[idx]);
+            }
+        });
+
+        return { candles: uniqueCandles, volumes: uniqueVolumes };
+    }, []);
+
+    useEffect(() => {
+        if (!chartContainerRef.current) return;
+
+        // Create chart
+        const chart = createChart(chartContainerRef.current, {
+            layout: {
+                background: { type: ColorType.Solid, color: '#1e222d' },
+                textColor: '#d1d4dc',
+            },
+            grid: {
+                vertLines: { color: '#2B2B43' },
+                horzLines: { color: '#2B2B43' },
+            },
+            width: chartContainerRef.current.clientWidth,
+            height: 400,
+            crosshair: {
+                mode: 1,
+                vertLine: {
+                    color: '#758696',
+                    width: 1,
+                    style: 2,
+                    labelBackgroundColor: '#2962FF',
+                },
+                horzLine: {
+                    color: '#758696',
+                    width: 1,
+                    style: 2,
+                    labelBackgroundColor: '#2962FF',
+                },
+            },
+            rightPriceScale: {
+                borderColor: '#2B2B43',
+                scaleMargins: {
+                    top: 0.1,
+                    bottom: 0.25,
+                },
+            },
+            timeScale: {
+                borderColor: '#2B2B43',
+                timeVisible: true,
+                secondsVisible: false,
+            },
+        });
+
+        // Add candlestick series
+        const candleSeries = chart.addCandlestickSeries({
+            upColor: '#26a69a',
+            downColor: '#ef5350',
+            borderDownColor: '#ef5350',
+            borderUpColor: '#26a69a',
+            wickDownColor: '#ef5350',
+            wickUpColor: '#26a69a',
+        });
+
+        // Add volume series
+        const volumeSeries = chart.addHistogramSeries({
+            priceFormat: { type: 'volume' },
+            priceScaleId: '',
+            scaleMargins: {
+                top: 0.8,
+                bottom: 0,
+            },
+        });
+
+        chartRef.current = chart;
+        candleSeriesRef.current = candleSeries;
+        volumeSeriesRef.current = volumeSeries;
+
+        // Handle resize
+        const handleResize = () => {
+            if (chartContainerRef.current && chartRef.current) {
+                chartRef.current.applyOptions({
+                    width: chartContainerRef.current.clientWidth
+                });
+            }
+        };
+
+        window.addEventListener('resize', handleResize);
+
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            if (chartRef.current) {
+                chartRef.current.remove();
+                chartRef.current = null;
+            }
+        };
+    }, []);
+
+    // Update data when it changes
+    useEffect(() => {
+        if (!candleSeriesRef.current || !volumeSeriesRef.current) return;
+
+        const { candles, volumes } = formatChartData(data);
+
+        if (candles.length > 0) {
+            candleSeriesRef.current.setData(candles);
+            volumeSeriesRef.current.setData(volumes);
+            chartRef.current?.timeScale().fitContent();
+        }
+    }, [data, formatChartData]);
+
+    if (!data || data.length === 0) {
+        return (
+            <Box sx={{ 
+                height: 400, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                bgcolor: '#1e222d',
+                borderRadius: 1
+            }}>
+                <Typography color="text.secondary">
+                    No chart data available
+                </Typography>
+            </Box>
+        );
+    }
+
+    return (
+        <Box sx={{ position: 'relative' }}>
+            <Box 
+                ref={chartContainerRef} 
+                sx={{ 
+                    width: '100%', 
+                    height: 400,
+                    borderRadius: 1,
+                    overflow: 'hidden'
+                }} 
+            />
+            <Box sx={{ 
+                position: 'absolute', 
+                top: 8, 
+                left: 8, 
+                bgcolor: 'rgba(30, 34, 45, 0.8)',
+                px: 1.5,
+                py: 0.5,
+                borderRadius: 1
+            }}>
+                <Typography variant="caption" sx={{ color: '#d1d4dc', fontWeight: 'bold' }}>
+                    {symbol} • 5min
+                </Typography>
+            </Box>
+        </Box>
+    );
+};
 
 // Gauge component for indicators like RSI, MFI, VRSI
 const IndicatorGauge = ({ value, label, zones, interpretation }) => {
@@ -968,6 +1181,23 @@ const StockAnalysisDashboard = () => {
                             </CardContent>
                         </Card>
                     </Grid>
+
+                    {/* Candlestick Chart */}
+                    {analysis.chart_data && analysis.chart_data.length > 0 && (
+                        <Grid item xs={12}>
+                            <Card>
+                                <CardContent>
+                                    <Typography variant="h6" gutterBottom>
+                                        Price Chart
+                                    </Typography>
+                                    <CandlestickChart 
+                                        data={analysis.chart_data} 
+                                        symbol={analysis.price_data?.symbol || selectedSymbol}
+                                    />
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    )}
 
                     {/* Algorithm Recommendation */}
                     <Grid item xs={12} md={4}>
