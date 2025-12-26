@@ -646,6 +646,214 @@ const VolumeAnalysis = ({ volume }) => {
     );
 };
 
+// Darvas Box Display Component
+const DarvasBoxDisplay = ({ darvas, currentPrice }) => {
+    if (!darvas || darvas.error) {
+        return (
+            <Alert severity="info" sx={{ mt: 1 }}>
+                Darvas Box data not available
+            </Alert>
+        );
+    }
+
+    const getSignalColor = () => {
+        switch (darvas.signal) {
+            case 'STRONG_BUY': return '#2e7d32';
+            case 'BUY': return '#4caf50';
+            case 'STRONG_SELL': return '#c62828';
+            case 'SELL': return '#f44336';
+            default: return '#ff9800';
+        }
+    };
+
+    const getPositionColor = () => {
+        switch (darvas.position) {
+            case 'BREAKOUT': return '#4caf50';
+            case 'BREAKDOWN': return '#f44336';
+            case 'UPPER_HALF': return '#8bc34a';
+            case 'LOWER_HALF': return '#ffb74d';
+            default: return '#9e9e9e';
+        }
+    };
+
+    const formatPrice = (price) => {
+        if (!price) return '-';
+        return new Intl.NumberFormat('en-IN', { 
+            minimumFractionDigits: 2, 
+            maximumFractionDigits: 2 
+        }).format(price);
+    };
+
+    // Calculate price position within the box for visual
+    const boxRange = darvas.box_top - darvas.box_bottom;
+    const pricePosition = boxRange > 0 
+        ? Math.min(100, Math.max(0, ((currentPrice - darvas.box_bottom) / boxRange) * 100))
+        : 50;
+
+    return (
+        <Box sx={{ p: 2 }}>
+            {/* Signal Badge */}
+            <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                <Chip
+                    label={darvas.signal?.replace('_', ' ') || 'NEUTRAL'}
+                    sx={{
+                        bgcolor: getSignalColor(),
+                        color: 'white',
+                        fontWeight: 'bold',
+                        fontSize: '0.85rem'
+                    }}
+                />
+                {darvas.volume_surge && (
+                    <Chip
+                        label="📈 VOLUME"
+                        size="small"
+                        sx={{ ml: 1, bgcolor: '#2196f3', color: 'white' }}
+                    />
+                )}
+            </Box>
+
+            {/* Box Visualization */}
+            <Box sx={{ 
+                position: 'relative', 
+                height: 120, 
+                bgcolor: '#f5f5f5', 
+                borderRadius: 1,
+                border: '1px solid #e0e0e0',
+                overflow: 'hidden',
+                mb: 2
+            }}>
+                {/* Box Top Line */}
+                <Box sx={{ 
+                    position: 'absolute', 
+                    top: '15%', 
+                    left: 0, 
+                    right: 0, 
+                    borderBottom: '2px solid #f44336',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    px: 1
+                }}>
+                    <Typography variant="caption" sx={{ color: '#f44336', fontWeight: 'bold', transform: 'translateY(-100%)' }}>
+                        BOX TOP
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#f44336', fontWeight: 'bold', transform: 'translateY(-100%)' }}>
+                        ₹{formatPrice(darvas.box_top)}
+                    </Typography>
+                </Box>
+
+                {/* Box Bottom Line */}
+                <Box sx={{ 
+                    position: 'absolute', 
+                    bottom: '15%', 
+                    left: 0, 
+                    right: 0, 
+                    borderTop: '2px solid #4caf50',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    px: 1
+                }}>
+                    <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+                        BOX BOTTOM
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+                        ₹{formatPrice(darvas.box_bottom)}
+                    </Typography>
+                </Box>
+
+                {/* Midpoint Line */}
+                <Box sx={{ 
+                    position: 'absolute', 
+                    top: '50%', 
+                    left: 0, 
+                    right: 0, 
+                    borderBottom: '1px dashed #9e9e9e'
+                }} />
+
+                {/* Current Price Indicator */}
+                <Box sx={{ 
+                    position: 'absolute', 
+                    top: `${Math.max(5, Math.min(90, 85 - (pricePosition * 0.7)))}%`,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    bgcolor: getPositionColor(),
+                    color: 'white',
+                    px: 1.5,
+                    py: 0.5,
+                    borderRadius: 1,
+                    fontWeight: 'bold',
+                    fontSize: '0.75rem',
+                    boxShadow: 2
+                }}>
+                    ₹{formatPrice(currentPrice)}
+                </Box>
+            </Box>
+
+            {/* Box Metrics */}
+            <Grid container spacing={1}>
+                <Grid item xs={6}>
+                    <Typography variant="caption" color="text.secondary">Box Height</Typography>
+                    <Typography variant="body2" fontWeight="bold">
+                        ₹{formatPrice(darvas.box_height)} ({darvas.box_height_pct?.toFixed(1)}%)
+                    </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                    <Typography variant="caption" color="text.secondary">Position</Typography>
+                    <Typography variant="body2" fontWeight="bold" sx={{ color: getPositionColor() }}>
+                        {darvas.position?.replace('_', ' ')}
+                    </Typography>
+                </Grid>
+            </Grid>
+
+            <Divider sx={{ my: 1 }} />
+
+            {/* Distance to Levels */}
+            <Grid container spacing={1}>
+                <Grid item xs={6}>
+                    <Typography variant="caption" color="error.main">↑ To Top</Typography>
+                    <Typography variant="body2">
+                        {darvas.distance_to_top_pct > 0 ? '+' : ''}{darvas.distance_to_top_pct?.toFixed(2)}%
+                    </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                    <Typography variant="caption" color="success.main">↓ To Bottom</Typography>
+                    <Typography variant="body2">
+                        {darvas.distance_to_bottom_pct > 0 ? '+' : ''}{darvas.distance_to_bottom_pct?.toFixed(2)}%
+                    </Typography>
+                </Grid>
+            </Grid>
+
+            {/* Consolidation Badge */}
+            {darvas.is_tight_consolidation && (
+                <Chip
+                    label="🎯 TIGHT CONSOLIDATION"
+                    size="small"
+                    color="warning"
+                    sx={{ mt: 1 }}
+                />
+            )}
+
+            {/* Trading Hint */}
+            {darvas.trading_hint && (
+                <Alert 
+                    severity={
+                        darvas.signal?.includes('BUY') ? 'success' :
+                        darvas.signal?.includes('SELL') ? 'error' : 'info'
+                    }
+                    sx={{ mt: 1, py: 0.5 }}
+                >
+                    <Typography variant="caption">
+                        {darvas.trading_hint}
+                    </Typography>
+                </Alert>
+            )}
+
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                Box Age: {darvas.box_age_candles} candles | Strength: {darvas.signal_strength?.toFixed(0)}%
+            </Typography>
+        </Box>
+    );
+};
+
 // Bollinger Bands Display Component
 const BollingerBandsDisplay = ({ bollinger }) => {
     if (!bollinger || bollinger.error) {
@@ -1276,6 +1484,21 @@ const StockAnalysisDashboard = () => {
                                     Volume Analysis
                                 </Typography>
                                 <VolumeAnalysis volume={analysis.volume_analysis} />
+                            </CardContent>
+                        </Card>
+                    </Grid>
+
+                    {/* Darvas Box Analysis */}
+                    <Grid item xs={12} md={4}>
+                        <Card sx={{ height: '100%' }}>
+                            <CardContent>
+                                <Typography variant="h6" gutterBottom>
+                                    📦 Darvas Box
+                                </Typography>
+                                <DarvasBoxDisplay 
+                                    darvas={analysis.darvas_box}
+                                    currentPrice={analysis.price_data?.ltp}
+                                />
                             </CardContent>
                         </Card>
                     </Grid>

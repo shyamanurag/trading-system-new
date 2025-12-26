@@ -892,6 +892,143 @@ def calculate_historical_volatility(prices: List[float], periods: List[int] = [5
     except Exception as e:
         return {"error": str(e)}
 
+def calculate_darvas_box(highs: List[float], lows: List[float], closes: List[float], 
+                          volumes: List[float], current_price: float, lookback: int = 20) -> Dict:
+    """
+    Calculate Darvas Box levels for technical analysis.
+    
+    Darvas Box Theory:
+    - Box forms when price makes a new high, then consolidates
+    - Box Top = highest high during consolidation
+    - Box Bottom = lowest low during consolidation
+    - Breakout above box top = bullish signal
+    - Breakdown below box bottom = bearish signal
+    """
+    try:
+        if len(highs) < lookback or len(lows) < lookback:
+            return {"error": "Insufficient data for Darvas Box"}
+        
+        highs = np.array(highs[-lookback:])
+        lows = np.array(lows[-lookback:])
+        closes = np.array(closes[-lookback:])
+        volumes = np.array(volumes[-lookback:]) if len(volumes) >= lookback else np.array(volumes)
+        
+        # Find the most recent swing high (box formation starts here)
+        # A swing high is a high that is higher than the 2 candles before and after
+        box_top = None
+        box_top_idx = None
+        
+        for i in range(len(highs) - 3, 4, -1):  # Start from recent, go back
+            if highs[i] >= max(highs[i-3:i]) and highs[i] >= max(highs[i+1:i+3]):
+                box_top = highs[i]
+                box_top_idx = i
+                break
+        
+        if box_top is None:
+            # Fallback: use the highest high in recent period
+            box_top = float(max(highs[-10:]))
+            box_top_idx = len(highs) - 1 - np.argmax(highs[-10:][::-1])
+        
+        # Box bottom is the lowest low since box top formation
+        if box_top_idx is not None and box_top_idx < len(lows) - 1:
+            box_bottom = float(min(lows[box_top_idx:]))
+        else:
+            box_bottom = float(min(lows[-10:]))
+        
+        # Calculate box metrics
+        box_height = box_top - box_bottom
+        box_height_pct = (box_height / box_bottom * 100) if box_bottom > 0 else 0
+        box_midpoint = (box_top + box_bottom) / 2
+        
+        # Determine current position relative to box
+        if current_price > box_top:
+            position = "BREAKOUT"
+            breakout_pct = ((current_price - box_top) / box_top * 100) if box_top > 0 else 0
+        elif current_price < box_bottom:
+            position = "BREAKDOWN"
+            breakout_pct = ((box_bottom - current_price) / box_bottom * 100) if box_bottom > 0 else 0
+        elif current_price >= box_midpoint:
+            position = "UPPER_HALF"
+            breakout_pct = 0
+        else:
+            position = "LOWER_HALF"
+            breakout_pct = 0
+        
+        # Volume analysis for breakout confirmation
+        avg_volume = float(np.mean(volumes)) if len(volumes) > 0 else 0
+        recent_volume = float(volumes[-1]) if len(volumes) > 0 else 0
+        volume_surge = recent_volume > (avg_volume * 1.5) if avg_volume > 0 else False
+        
+        # Determine signal
+        if position == "BREAKOUT" and volume_surge:
+            signal = "STRONG_BUY"
+            signal_strength = min(100, 70 + breakout_pct * 3)
+        elif position == "BREAKOUT":
+            signal = "BUY"
+            signal_strength = min(85, 60 + breakout_pct * 2)
+        elif position == "BREAKDOWN" and volume_surge:
+            signal = "STRONG_SELL"
+            signal_strength = min(100, 70 + breakout_pct * 3)
+        elif position == "BREAKDOWN":
+            signal = "SELL"
+            signal_strength = min(85, 60 + breakout_pct * 2)
+        elif position == "UPPER_HALF":
+            signal = "WATCH_FOR_BREAKOUT"
+            signal_strength = 50
+        else:
+            signal = "WATCH_FOR_BREAKDOWN"
+            signal_strength = 50
+        
+        # Calculate distance to box levels
+        distance_to_top = ((box_top - current_price) / current_price * 100) if current_price > 0 else 0
+        distance_to_bottom = ((current_price - box_bottom) / current_price * 100) if current_price > 0 else 0
+        
+        # Box age (how many candles since box formed)
+        box_age = len(highs) - box_top_idx if box_top_idx else 0
+        
+        # Is the box tight (consolidation)?
+        is_tight_box = box_height_pct < 3.0  # Less than 3% range = tight consolidation
+        
+        return {
+            "box_top": round(box_top, 2),
+            "box_bottom": round(box_bottom, 2),
+            "box_midpoint": round(box_midpoint, 2),
+            "box_height": round(box_height, 2),
+            "box_height_pct": round(box_height_pct, 2),
+            "current_price": round(current_price, 2),
+            "position": position,
+            "signal": signal,
+            "signal_strength": round(signal_strength, 1),
+            "distance_to_top_pct": round(distance_to_top, 2),
+            "distance_to_bottom_pct": round(distance_to_bottom, 2),
+            "volume_surge": volume_surge,
+            "box_age_candles": box_age,
+            "is_tight_consolidation": is_tight_box,
+            "trading_hint": _get_darvas_trading_hint(position, signal, box_top, box_bottom, is_tight_box)
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}
+
+def _get_darvas_trading_hint(position: str, signal: str, box_top: float, box_bottom: float, is_tight: bool) -> str:
+    """Generate trading hint based on Darvas Box analysis"""
+    if signal == "STRONG_BUY":
+        return f"Breakout with volume! Consider BUY with stop loss at ₹{box_top:.2f}"
+    elif signal == "BUY":
+        return f"Breakout without volume confirmation. Wait for volume or set tight stop at ₹{box_top:.2f}"
+    elif signal == "STRONG_SELL":
+        return f"Breakdown with volume! Consider EXIT/SHORT with stop at ₹{box_bottom:.2f}"
+    elif signal == "SELL":
+        return f"Breakdown without volume. Caution - may be false breakdown. Stop at ₹{box_bottom:.2f}"
+    elif position == "UPPER_HALF":
+        if is_tight:
+            return f"Tight consolidation near resistance. Watch for breakout above ₹{box_top:.2f}"
+        return f"In upper half of box. Resistance at ₹{box_top:.2f}"
+    else:
+        if is_tight:
+            return f"Tight consolidation near support. Watch for breakdown below ₹{box_bottom:.2f}"
+        return f"In lower half of box. Support at ₹{box_bottom:.2f}"
+
 def calculate_volume_analysis(volumes: List[float], closes: List[float]) -> Dict:
     """Analyze volume patterns and buy/sell pressure"""
     try:
@@ -1217,6 +1354,9 @@ async def get_stock_analysis(
             
             # 🎯 Historical Volatility (multiple periods)
             analysis["indicators"]["historical_volatility"] = calculate_historical_volatility(closes)
+            
+            # 🎯 Darvas Box Analysis
+            analysis["darvas_box"] = calculate_darvas_box(highs, lows, closes, volumes, current_price)
 
             # 🎯 Camarilla Pivots - Fetch yesterday's DAILY candle for professional intraday pivots
             prev_day_ohlc = await get_previous_day_ohlc(symbol)
@@ -1292,6 +1432,7 @@ async def get_stock_analysis(
                 "error": "Historical data required for full analysis"
             }
             analysis["chart_data"] = []
+            analysis["darvas_box"] = {"error": "No historical data"}
         
         logger.info(f"✅ Analysis complete for {symbol}: {analysis['recommendation'].get('recommendation', 'N/A')}")
 
