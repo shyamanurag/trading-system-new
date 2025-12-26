@@ -1124,6 +1124,15 @@ class PositionMonitor:
                         # 🚨 CRITICAL: Update realized P&L for daily loss limit tracking
                         await self._update_realized_pnl_on_exit(condition, exit_signal)
                         
+                        # 🚪 SET EXIT COOLDOWN to prevent immediate re-entry after profit booking
+                        try:
+                            if hasattr(self, 'orchestrator') and self.orchestrator:
+                                if hasattr(self.orchestrator, 'signal_deduplicator') and self.orchestrator.signal_deduplicator:
+                                    await self.orchestrator.signal_deduplicator.set_exit_cooldown(condition.symbol)
+                                    logger.info(f"🚪 Exit cooldown set for {condition.symbol} via signal deduplicator")
+                        except Exception as cooldown_err:
+                            logger.warning(f"⚠️ Could not set exit cooldown for {condition.symbol}: {cooldown_err}")
+                        
                         return True
                     else:
                         logger.warning(f"⚠️ OrderManager returned no orders for {condition.symbol}")
@@ -1139,6 +1148,16 @@ class PositionMonitor:
             
             if realized_pnl is not None:
                 logger.info(f"✅ Position closed directly for {condition.symbol}, PnL: {realized_pnl:.2f}")
+                
+                # 🚪 SET EXIT COOLDOWN to prevent immediate re-entry after profit booking
+                try:
+                    if hasattr(self, 'orchestrator') and self.orchestrator:
+                        if hasattr(self.orchestrator, 'signal_deduplicator') and self.orchestrator.signal_deduplicator:
+                            await self.orchestrator.signal_deduplicator.set_exit_cooldown(condition.symbol)
+                            logger.info(f"🚪 Exit cooldown set for {condition.symbol} (direct close)")
+                except Exception as cooldown_err:
+                    logger.warning(f"⚠️ Could not set exit cooldown for {condition.symbol}: {cooldown_err}")
+                
                 return True
             else:
                 logger.error(f"❌ Failed to close position directly for {condition.symbol}")

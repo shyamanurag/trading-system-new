@@ -42,8 +42,12 @@ class SignalDeduplicator:
         self.post_exit_cooldown_seconds = 600
         
         # 🔥 NEW: Trade cooldown to prevent rapid back-and-forth trading
-        self.trade_cooldown_minutes = 5  # 5 minutes cooldown after any trade
+        self.trade_cooldown_minutes = 30  # 30 minutes cooldown after any trade (was 5 min - too short)
         self._last_trade_time: Dict[str, datetime] = {}  # symbol -> last trade time
+        
+        # 🚨 SEPARATE cooldown for exits to prevent immediate re-entry after profit booking
+        self.post_exit_cooldown_minutes = 30  # 30 minutes cooldown after full position exit
+        self._last_exit_time: Dict[str, datetime] = {}  # symbol -> last full exit time
 
         # Per-signal attempt tracking and TTL control
         self.max_attempts_per_signal = 10
@@ -324,20 +328,42 @@ class SignalDeduplicator:
         🔥 Check if symbol is in trade cooldown period.
         Prevents rapid back-and-forth trading (churning).
         
+        Checks BOTH:
+        1. General trade cooldown (30 min after any trade)
+        2. Exit cooldown (30 min after full position exit - stronger)
+        
         Returns:
             (is_blocked, reason): True if blocked, with reason
         """
         try:
             if not self.redis_client:
-                # Fallback to local memory
+                # Fallback to local memory - check EXIT cooldown first (stronger)
+                if symbol in self._last_exit_time:
+                    elapsed = (datetime.now() - self._last_exit_time[symbol]).total_seconds() / 60
+                    if elapsed < self.post_exit_cooldown_minutes:
+                        return True, f"EXIT cooldown: {self.post_exit_cooldown_minutes - elapsed:.1f} min remaining (no re-entry after profit booking)"
+                
+                # Then check general trade cooldown
                 if symbol in self._last_trade_time:
                     elapsed = (datetime.now() - self._last_trade_time[symbol]).total_seconds() / 60
                     if elapsed < self.trade_cooldown_minutes:
                         return True, f"Trade cooldown: {self.trade_cooldown_minutes - elapsed:.1f} min remaining"
                 return False, ""
             
-            # Check Redis for last trade time
+            # Check Redis for last exit time (stronger cooldown)
             today = datetime.now().strftime('%Y-%m-%d')
+            exit_cooldown_key = f"exit_cooldown:{today}:{symbol}"
+            
+            last_exit = await self.redis_client.get(exit_cooldown_key)
+            if last_exit:
+                last_exit_time = datetime.fromisoformat(last_exit)
+                elapsed = (datetime.now() - last_exit_time).total_seconds() / 60
+                
+                if elapsed < self.post_exit_cooldown_minutes:
+                    remaining = self.post_exit_cooldown_minutes - elapsed
+                    return True, f"EXIT cooldown: {remaining:.1f} min remaining (no re-entry after exit at {last_exit_time.strftime('%H:%M:%S')})"
+            
+            # Check Redis for last trade time
             cooldown_key = f"trade_cooldown:{today}:{symbol}"
             
             last_trade = await self.redis_client.get(cooldown_key)
@@ -368,6 +394,20 @@ class SignalDeduplicator:
                 logger.info(f"🧊 TRADE COOLDOWN SET: {symbol} - {self.trade_cooldown_minutes} min cooldown started")
         except Exception as e:
             logger.error(f"❌ Error setting trade cooldown: {e}")
+    
+    async def set_exit_cooldown(self, symbol: str):
+        """Set exit cooldown after FULL position exit (prevent immediate re-entry churn)"""
+        try:
+            now = datetime.now()
+            self._last_exit_time[symbol] = now
+            
+            if self.redis_client:
+                today = now.strftime('%Y-%m-%d')
+                exit_cooldown_key = f"exit_cooldown:{today}:{symbol}"
+                await self.redis_client.set(exit_cooldown_key, now.isoformat(), ex=self.post_exit_cooldown_minutes * 60)
+                logger.info(f"🚪 EXIT COOLDOWN SET: {symbol} - {self.post_exit_cooldown_minutes} min cooldown after full exit")
+        except Exception as e:
+            logger.error(f"❌ Error setting exit cooldown: {e}")
 
     async def _check_signal_already_executed(self, signal: Dict) -> bool:
         """
@@ -496,14 +536,15 @@ class SignalDeduplicator:
             symbol = signal.get('symbol')
             action = signal.get('action', 'BUY')
             
-            # Use a short-lived claim key (30 seconds TTL)
+            # Use a claim key with 2-minute TTL (increased from 30s to prevent duplicate orders)
             # This prevents race conditions when multiple signals arrive simultaneously
+            # Even if order execution is slow, this prevents duplicates
             today = datetime.now().strftime('%Y-%m-%d')
             claim_key = f"signal_claim:{today}:{symbol}:{action}"
             
             # ATOMIC SETNX: Only one caller can succeed
-            # NX = set only if Not eXists, EX = expire after 30 seconds
-            claimed = await self.redis_client.set(claim_key, "1", nx=True, ex=30)
+            # NX = set only if Not eXists, EX = expire after 120 seconds (2 minutes)
+            claimed = await self.redis_client.set(claim_key, "1", nx=True, ex=120)
             
             if claimed:
                 logger.info(f"🔒 SIGNAL CLAIMED: {symbol} {action} - This caller has exclusive rights to execute")

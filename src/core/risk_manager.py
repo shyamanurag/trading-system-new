@@ -1056,11 +1056,17 @@ class RiskManager:
                     order.get('exit_reason') is not None
                 )
             
-            # After 3:00 PM, allow exits but block new positions
+            # After 3:00 PM, allow exits but block new positions (including fresh SHORTs)
             if current_time_ist >= no_new_signals_after:  # After 3:00 PM
-                if is_exit_order or order_action == 'SELL':
+                # Only allow if it's explicitly marked as an exit
+                # Don't assume SELL = exit (could be fresh SHORT position)
+                if is_exit_order:
                     logger.info(f"✅ EXIT ALLOWED AFTER 3PM: {symbol} {action} - Exit orders permitted at {current_time_str} IST")
                     return True
+                else:
+                    # This is a fresh position (could be SHORT via SELL)
+                    logger.warning(f"🚫 NO FRESH TRADES AFTER 3PM: {symbol} {action} rejected - Fresh positions blocked after 3:00 PM IST (Current: {current_time_str} IST)")
+                    return False
             
             # Time-based restrictions for NEW positions only
             if current_time_ist >= mandatory_close_time:  # After 3:20 PM
