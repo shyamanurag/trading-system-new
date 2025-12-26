@@ -762,54 +762,24 @@ class TrueDataClient:
                             time.sleep(3)
                             continue
                         
+                        # 🚨 FIX: DISABLE our reconnection logic entirely
+                        # TrueData library has its OWN internal reconnection that we can't edit
+                        # Having both running creates a "connection storm" with race conditions
+                        # Let TrueData's internal logic handle ALL reconnections
                         if (in_market and 
-                            consecutive_silent_checks >= max_silent_before_reconnect and
-                            (current_time - last_reconnect_attempt) > reconnect_cooldown):
-
-                            silence_duration = int(current_time - last_ok)
-                            logger.warning(f"⚠️ TrueData TICK SILENCE: {silence_duration}s - attempting recovery")
+                            consecutive_silent_checks >= max_silent_before_reconnect):
                             
-                            try:
+                            silence_duration = int(current_time - last_ok)
+                            
+                            # Just log the issue - don't try to reconnect ourselves
+                            if (current_time - last_reconnect_attempt) > 60:  # Log once per minute
+                                logger.warning(f"⚠️ TrueData TICK SILENCE: {silence_duration}s")
+                                logger.info("💡 TrueData library's internal reconnection is handling this")
+                                logger.info("💡 Using Zerodha Redis fallback for live data")
                                 last_reconnect_attempt = current_time
-                                
-                                # Step 1: Try to refresh subscription first (less disruptive)
-                                if self.td_obj and hasattr(self.td_obj, 'get_symbol_list'):
-                                    logger.info("🔄 Attempting subscription refresh...")
-                                    try:
-                                        symbols = self._get_symbols_to_subscribe()
-                                        if symbols and hasattr(self.td_obj, 'set_symbolslist'):
-                                            self.td_obj.set_symbolslist(symbols)
-                                            logger.info(f"✅ Subscription refreshed with {len(symbols)} symbols")
-                                            time.sleep(5)
-                                            consecutive_silent_checks = 0
-                                            continue
-                                    except Exception as refresh_err:
-                                        logger.warning(f"⚠️ Subscription refresh failed: {refresh_err}")
-                                
-                                # Step 2: Full reconnection only if refresh failed
-                                if not self.connected or silence_duration > 60:
-                                    logger.info("🔌 Full reconnection required...")
-                                    self._activate_circuit_breaker()
-                                    time.sleep(3)
-                                    self._reset_circuit_breaker()
-                                    success = self._direct_connect()
-                                    if success:
-                                        last_ok = time.time()
-                                        consecutive_silent_checks = 0
-                                        # Increase cooldown after successful reconnect
-                                        reconnect_cooldown = min(reconnect_cooldown * 1.5, 300)
-                                        logger.info(f"✅ Reconnected! Next attempt cooldown: {int(reconnect_cooldown)}s")
-                                    else:
-                                        # Increase cooldown after failed attempt
-                                        reconnect_cooldown = min(reconnect_cooldown * 2, 600)
-                                        logger.warning(f"❌ Reconnect failed! Next attempt in {int(reconnect_cooldown)}s")
-                                else:
-                                    logger.info("✅ TrueData still connected, waiting for ticks...")
-
-                            except Exception as re_err:
-                                logger.error(f"❌ Health monitor recovery error: {re_err}")
-                                reconnect_cooldown = min(reconnect_cooldown * 2, 600)
-                                time.sleep(10)
+                            
+                            # Don't call _direct_connect() - let TrueData's internal logic handle it
+                            # Our reconnection attempts conflict with theirs, causing "User Already Connected"
                         
                         # Reset cooldown gradually if data is flowing
                         if recent_tick and reconnect_cooldown > 90:
