@@ -951,6 +951,24 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
         total_signals = 0
         reasons = []
 
+        # 🔥 INTRADAY PRICE MOMENTUM: Strong moves override lagging indicators
+        # A stock up 10%+ in a day is clearly bullish, regardless of MACD
+        change_pct = live_data.get("change_percent", 0) if live_data else 0
+        if abs(change_pct) > 5:  # Strong intraday move
+            total_signals += 2  # High weight for price action
+            if change_pct > 10:
+                bullish_signals += 3.0  # Very strong bullish momentum
+                reasons.insert(0, f"STRONG BULLISH MOMENTUM: +{change_pct:.1f}% today")
+            elif change_pct > 5:
+                bullish_signals += 2.0  # Strong bullish momentum
+                reasons.insert(0, f"Strong bullish move: +{change_pct:.1f}% today")
+            elif change_pct < -10:
+                bearish_signals += 3.0  # Very strong bearish momentum
+                reasons.insert(0, f"STRONG BEARISH MOMENTUM: {change_pct:.1f}% today")
+            elif change_pct < -5:
+                bearish_signals += 2.0  # Strong bearish momentum
+                reasons.insert(0, f"Strong bearish move: {change_pct:.1f}% today")
+
         # RSI Analysis
         if rsi.get("value"):
             total_signals += 1
@@ -985,27 +1003,27 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
                 bearish_signals += 1.5
                 reasons.append(f"MFI overbought ({mfi['value']})")
         
-        # MACD Analysis
+        # MACD Analysis (reduced weight - lagging indicator shouldn't override price action)
         if macd.get("state"):
-            total_signals += 2  # MACD gets more weight
+            total_signals += 1  # Reduced from 2 - MACD is lagging
             if macd["state"] == "STRONG_BULLISH":
-                bullish_signals += 2
+                bullish_signals += 1.5  # Reduced from 2
                 reasons.append("MACD strong bullish")
             elif macd["state"] == "BULLISH":
-                bullish_signals += 1
+                bullish_signals += 0.75  # Reduced from 1
                 reasons.append("MACD bullish")
             elif macd["state"] == "STRONG_BEARISH":
-                bearish_signals += 2
+                bearish_signals += 1.5  # Reduced from 2
                 reasons.append("MACD strong bearish")
             elif macd["state"] == "BEARISH":
-                bearish_signals += 1
+                bearish_signals += 0.75  # Reduced from 1
                 reasons.append("MACD bearish")
             
             if macd.get("crossover") == "BULLISH_CROSSOVER":
-                bullish_signals += 1
+                bullish_signals += 0.75  # Reduced from 1
                 reasons.append("MACD bullish crossover")
             elif macd.get("crossover") == "BEARISH_CROSSOVER":
-                bearish_signals += 1
+                bearish_signals += 0.75  # Reduced from 1
                 reasons.append("MACD bearish crossover")
         
         # Volume Analysis
@@ -1018,15 +1036,31 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
                 bearish_signals += 1
                 reasons.append(f"High selling pressure ({volume['sell_pressure']}%)")
         
-        # S/R Position
+        # S/R Position with Camarilla breakout detection
         if sr_levels.get("position"):
-            total_signals += 1
-            if sr_levels["position"] == "BELOW_S1":
-                bullish_signals += 0.5  # Near support = potential bounce
+            total_signals += 2  # Camarilla is important for intraday, weight it higher
+            
+            # 🚀 CRITICAL: Camarilla H4 breakout = STRONG BULLISH signal
+            if sr_levels["position"] == "ABOVE_H4_BREAKOUT":
+                bullish_signals += 2.5  # Strong bullish weight for H4 breakout
+                reasons.append("STRONG BULLISH: H4 breakout (Camarilla)")
+            # 📉 CRITICAL: Camarilla L4 breakdown = STRONG BEARISH signal
+            elif sr_levels["position"] == "BELOW_L4_BREAKDOWN":
+                bearish_signals += 2.5  # Strong bearish weight for L4 breakdown
+                reasons.append("STRONG BEARISH: L4 breakdown (Camarilla)")
+            # Near support = potential bounce
+            elif sr_levels["position"] == "BELOW_S1":
+                bullish_signals += 0.5
                 reasons.append("Price near support levels")
+            # Near resistance = potential rejection
             elif sr_levels["position"] == "ABOVE_R1":
-                bearish_signals += 0.5  # Near resistance = potential rejection
+                bearish_signals += 0.5
                 reasons.append("Price near resistance levels")
+            # Range-bound between L3-H3
+            elif "BETWEEN" in sr_levels["position"]:
+                # Neutral - no strong directional bias
+                bullish_signals += 0.5
+                bearish_signals += 0.5
         
         # Bollinger Bands Analysis
         if bollinger and not bollinger.get("error"):
