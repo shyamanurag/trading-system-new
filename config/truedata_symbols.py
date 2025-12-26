@@ -1,6 +1,10 @@
 """
 TrueData Symbol Mapping Configuration
 🎯 DYNAMIC SYMBOL MAPPING - Auto-detects TrueData vs Zerodha differences
+
+🚨 2025-12-26 UPDATE: Removed low-volume/low-volatility stocks.
+Added high-volume, high-volatility stocks for intraday trading.
+User requested: IEX, HCC, NAUKRI, BONDADA, GROWW
 """
 
 from typing import List
@@ -38,147 +42,148 @@ ZERODHA_SYMBOL_MAPPING = {
 
 def _is_options_symbol(symbol: str) -> bool:
     """🎯 CHECK: Whether symbol is an options contract"""
-    # Check for CE/PE suffix and date pattern (e.g., TCS14AUG3000CE, NIFTY07AUG24800PE)
     import re
     if not ('CE' in symbol or 'PE' in symbol):
         return False
-    
-    # Look for date pattern: digits + 3 letters (e.g., 14AUG, 07JUL)
     date_pattern = re.search(r'\d{1,2}[A-Z]{3}', symbol)
     return date_pattern is not None
 
 def validate_options_premium(symbol: str, price: float) -> bool:
     """🎯 VALIDATE: Options premium is within reasonable bounds"""
     if not _is_options_symbol(symbol):
-        return True  # Not options, no validation needed
-    
-    # Options premium validation rules
+        return True
     if price <= 0:
         return False
-    if price > 1000:  # Max premium threshold
+    if price > 1000:
         logger.warning(f"⚠️ High options premium: {symbol} = ₹{price}")
-        return True  # Allow but warn
-    if price < 0.05:  # Min premium threshold
+        return True
+    if price < 0.05:
         return False
-    
     return True
 
 def get_complete_fo_symbols() -> List[str]:
-    """🎯 GET: Complete list of F&O symbols for autonomous trading - EXPANDED"""
+    """🎯 GET: Complete list of F&O symbols for autonomous trading
+    
+    🚨 2025-12-26 UPDATE: Removed low-volume/low-volatility stocks that never trade.
+    Added high-volume, high-volatility stocks better suited for intraday trading.
+    User requested: IEX, HCC, NAUKRI, BONDADA, GROWW
+    """
     # Major indices
     indices = [
         'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I'
     ]
     
-    # Major stocks with F&O - EXPANDED TO ~200 SYMBOLS
+    # Major stocks with F&O - OPTIMIZED FOR INTRADAY (High Volume + Volatility)
     stocks = [
-        # Banking & Financial Services (25)
+        # Banking & Financial Services (30) - High liquidity banks
         'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
         'INFY', 'KOTAKBANK', 'LT', 'AXISBANK', 'MARUTI', 'ASIANPAINT',
         'TECHM', 'ADANIPORT', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO',
         'NESTLEIND', 'HINDUNILVR', 'POWERGRID', 'NTPC', 'COALINDIA',
         'ONGC', 'SUNPHARMA', 'DRREDDY', 'CIPLA', 'APOLLOHOSP',
-        'HCLTECH', 'INDUSINDBK', 'YESBANK', 'PNB', 'BANDHANBNK',
+        'HCLTECH', 'INDUSINDBK', 'PNB', 'BANDHANBNK',
+        'BANKBARODA', 'CANBK', 'UNIONBANK',  # High volume PSU banks
         
-        # Auto & Auto Components (15)
+        # Auto & Auto Components (12) - Removed low volume
         'TATAMOTORS', 'M&M', 'BAJAJ-AUTO', 'EICHERMOT', 'HEROMOTOCO',
-        'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'MAHINDRA',
-        'BOSCHLTD', 'MOTHERSUMI', 'BALKRISIND', 'AMARAJABAT', 'CUMMINSIND',
+        'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'EXIDEIND',
+        'BOSCHLTD', 'MOTHERSUMI', 'BALKRISIND',
         
-        # IT & Technology (20)
+        # IT & Technology (20) - High volume IT stocks + User requested
         'MINDTREE', 'MPHASIS', 'LTTS', 'PERSISTENT', 'COFORGE',
-        'RBLBANK', 'FEDERALBNK', 'IDFCFIRSTB', 'EQUITAS', 'SOUTHBANK',
-        'INTELLECT', 'RAMPGREEN', 'ZOMATO', 'PAYTM', 'NAUKRI',
-        'POLICYBZR', 'DMART', 'JUBLFOOD', 'DEVYANI', 'WESTLIFE',
+        'RBLBANK', 'FEDERALBNK', 'IDFCFIRSTB', 'LTIM', 'TATAELXSI',
+        'INTELLECT', 'ZOMATO', 'PAYTM', 'NAUKRI',  # NAUKRI - user requested
+        'POLICYBZR', 'DMART', 'JUBLFOOD', 'DIXON',
+        'GROWW',  # GROWW - user requested (newly listed)
         
-        # Pharmaceuticals & Healthcare (20)
-        'BIOCON', 'CADILAHC', 'LUPIN', 'GLENMARK', 'TORNTPHARM',
-        'ALKEM', 'ABBOTINDIA', 'PFIZER', 'GLAXO', 'NOVARTIS',
-        'AUROPHARMA', 'LALPATHLAB', 'METROPOLIS', 'THYROCARE', 'HEALTHINS',
-        'FORTIS', 'MAXHEALTH', 'NARAYANHRL', 'APOLLOTYRE', 'MRF',
+        # Pharmaceuticals & Healthcare (15) - Removed low volatility MNCs
+        'BIOCON', 'LUPIN', 'GLENMARK', 'TORNTPHARM', 'DIVISLAB',
+        'ALKEM', 'AUROPHARMA', 'LALPATHLAB', 'METROPOLIS', 'THYROCARE',
+        'FORTIS', 'MAXHEALTH', 'APOLLOTYRE', 'MRF', 'PIIND',
         
-        # Energy & Oil (15)
+        # Insurance & NBFC (10) - High volume financial services
+        'SBILIFE', 'HDFCLIFE', 'STARHEALTH', 'SHRIRAMFIN',
+        'MANAPPURAM', 'MUTHOOTFIN', 'CHOLAFIN', 'PFC', 'RECLTD', 'HUDCO',
+        
+        # Energy & Oil (15) - High volume energy stocks
         'IOC', 'BPCL', 'HINDPETRO', 'GAIL', 'OIL', 'PETRONET',
         'ADANIGREEN', 'ADANITRANS', 'ADANIPOWER', 'ADANIENTS',
-        'TATAPOWER', 'NHPC', 'SJVN', 'TORNTPOWER', 'CESC',
+        'TATAPOWER', 'NHPC', 'SJVN', 'TORNTPOWER', 
+        'IEX',  # IEX - user requested (Indian Energy Exchange)
         
-        # Metals & Mining (15)
-        'TATASTEEL', 'JSWSTEEL', 'SAILSTEEL', 'HINDALCO', 'VEDL',
-        'NMDC', 'COAL', 'JINDALSTEL', 'MOIL', 'WELCORP',
-        'RATNAMANI', 'MANAPPURAM', 'MUTHOOTFIN', 'CHOLAFIN', 'PFC',
+        # Metals & Mining (14) - High volume metals
+        'TATASTEEL', 'JSWSTEEL', 'SAIL', 'HINDALCO', 'VEDL',
+        'NMDC', 'JINDALSTEL', 'MOIL', 'WELCORP', 'NATIONALUM',
+        'SUZLON', 'HCC',  # HCC - user requested (high volatility)
+        'BONDADA',  # BONDADA - user requested
         
-        # FMCG & Consumer (20)
-        'ITC', 'BRITANNIA', 'DABUR', 'GODREJCP', 'MARICO',
-        'COLPAL', 'PGHH', 'VBL', 'CCL', 'RADICO',
-        'TATACONSUM', 'EMAMILTD', 'JYOTHYLAB', 'BAJAJCON', 'PAGEIND',
-        'PIDILITIND', 'BERGER', 'KANSAINER', 'ASTRAL', 'RELAXO',
+        # FMCG & Consumer (12) - Removed low volume
+        'ITC', 'BRITANNIA', 'DABUR', 'GODREJCP', 'MARICO', 'VBL',
+        'TATACONSUM', 'RADICO', 'EMAMILTD', 'PAGEIND',
+        'PIDILITIND', 'KANSAINER',
         
-        # Infrastructure & Real Estate (20) - Added PSU Infra stocks
+        # Infrastructure & Real Estate (18) - PSU Infra + high volume realty
         'DLF', 'OBEROIRLTY', 'PRESTIGE', 'GODREJPROP', 'BRIGADE',
-        'PHOENIXLTD', 'SOBHA', 'MINDSPACE', 'BROOKFIELD', 'EMBASSY',
-        'IGARASHI', 'IRB', 'GMRINFRA', 'CONCOR', 'BHARATFORG',
-        'IRFC', 'RVNL', 'ANANTRAJ', 'IREDA', 'RECLTD',  # PSU Infra - popular retail stocks
-        'HUDCO', 'BSE',  # Housing finance & Exchange stock - user requested
+        'SOBHA', 'IRB', 'CONCOR', 'BHARATFORG',
+        'IRFC', 'RVNL', 'ANANTRAJ', 'IREDA', 'IRCON',  # PSU Infra
+        'BSE', 'MCX', 'CDSL', 'CAMS',  # Exchange & financial infra
         
-        # Telecom & Media (6) - Removed RCOM, IDEA, SITI, DISHTV (delisted/penny stocks)
-        'GTPL', 'HATHWAY', 'TV18BRDCST', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',
+        # Cement (6) - High volume cement stocks
+        'AMBUJACEM', 'ACC', 'JKCEMENT', 'GRASIM', 'ASTRAL', 'SHREECEM',
         
-        # Textiles & Apparel (10)
-        'RTNPOWER', 'VARDHMAN', 'WELSPUNIND', 'RAYMOND', 'ARVIND',
-        'GRASIM', 'ADITTYABIRLA', 'CENTURYTEX', 'KPR', 'SIYARAM',
+        # Capital Goods & Electricals (12) - High volume industrials
+        'ABB', 'SIEMENS', 'CGPOWER', 'BHEL', 'HAL', 'BEL',
+        'POLYCAB', 'KEI', 'HAVELLS', 'HFCL', 'CUMMINSIND', 'CROMPTON',
         
-        # Aviation & Logistics (10)
-        'INDIGO', 'SPICEJET', 'BLUEDART', 'GLAND', 'ALLCARGO',
-        'VTL', 'TCI', 'MAHLOG', 'GATI', 'SNOWMAN'
+        # Media & Telecom (6) - High volume media
+        'ZEEL', 'SUNTV', 'PVRINOX', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',
+        
+        # Aviation & Logistics (4) - High volume only
+        'INDIGO', 'GLAND', 'ALLCARGO', 'DELHIVERY'
     ]
     
     # 🚨 FIX: Only log symbol count once to avoid duplicate log messages
     global _symbols_logged
     if not _symbols_logged:
-        logger.info(f"📊 EXPANDED SYMBOL LIST: {len(indices + stocks)} total symbols")
+        logger.info(f"📊 OPTIMIZED SYMBOL LIST: {len(indices + stocks)} total symbols (high volume/volatility for intraday)")
         _symbols_logged = True
     return indices + stocks
 
 def get_autonomous_symbol_status():
     """🎯 GET: Current autonomous trading symbol status and strategy"""
     return {
-        "current_strategy": "ALL_STRATEGIES",  # 🚨 FIX: System runs ALL strategies, not just one
+        "current_strategy": "ALL_STRATEGIES",
         "active_strategies": [
-            "optimized_volume_scalper",  # Market microstructure + Statistical arbitrage
-            "momentum_surfer",  # Momentum specialist with Hodrick-Prescott
-            "news_impact_scalper",  # Options specialist with Black-Scholes
-            "regime_adaptive_controller"  # Meta-strategy with HMM + Kalman
+            "optimized_volume_scalper",
+            "momentum_surfer",
+            "news_impact_scalper",
+            "regime_adaptive_controller"
         ],
         "active_symbols": get_complete_fo_symbols(),
         "symbol_count": len(get_complete_fo_symbols()),
         "status": "active",
-        "last_update": "2025-10-16T13:09:00"
+        "last_update": "2025-12-26T12:00:00"
     }
 
 def get_zerodha_symbol(internal_symbol: str) -> str:
     """🎯 DYNAMIC: Convert internal symbol to Zerodha's official symbol with auto-detection"""
-    # First check static mappings
     if internal_symbol in ZERODHA_SYMBOL_MAPPING:
         zerodha_symbol = ZERODHA_SYMBOL_MAPPING[internal_symbol]
         logger.debug(f"🔄 STATIC MAPPING: {internal_symbol} → {zerodha_symbol}")
         return zerodha_symbol
     
-    # Try dynamic detection if not in static mapping
     dynamic_symbol = _find_zerodha_symbol_dynamically(internal_symbol)
     if dynamic_symbol and dynamic_symbol != internal_symbol:
-        # Cache the result for future use
         ZERODHA_SYMBOL_MAPPING[internal_symbol] = dynamic_symbol
         logger.info(f"✅ DYNAMIC MAPPING: {internal_symbol} → {dynamic_symbol} (auto-detected)")
         return dynamic_symbol
     
-    # Fallback to original symbol
     logger.debug(f"📋 NO MAPPING: Using original symbol {internal_symbol}")
     return internal_symbol
 
 def _find_zerodha_symbol_dynamically(truedata_symbol: str) -> str:
     """🎯 AUTO-DETECT: Find correct Zerodha symbol by comparing with instruments API"""
     try:
-        # Get orchestrator instance to access Zerodha client
         from src.core.orchestrator import get_orchestrator_instance
         orchestrator = get_orchestrator_instance()
         
@@ -186,20 +191,16 @@ def _find_zerodha_symbol_dynamically(truedata_symbol: str) -> str:
             logger.debug(f"⚠️ Zerodha client not available for symbol detection: {truedata_symbol}")
             return None
         
-        # Try to get instruments data
         if hasattr(orchestrator.zerodha_client, 'kite') and orchestrator.zerodha_client.kite:
             try:
-                # Get all NSE instruments
                 nse_instruments = orchestrator.zerodha_client.kite.instruments('NSE')
                 
-                # Look for exact match first
                 for instrument in nse_instruments:
                     trading_symbol = instrument.get('tradingsymbol', '')
                     if trading_symbol == truedata_symbol:
                         logger.info(f"✅ EXACT MATCH: {truedata_symbol} exists in Zerodha NSE")
                         return truedata_symbol
                 
-                # Look for similar symbols (fuzzy matching)
                 candidates = []
                 clean_target = _clean_symbol_for_comparison(truedata_symbol)
                 
@@ -207,13 +208,11 @@ def _find_zerodha_symbol_dynamically(truedata_symbol: str) -> str:
                     trading_symbol = instrument.get('tradingsymbol', '')
                     clean_candidate = _clean_symbol_for_comparison(trading_symbol)
                     
-                    # Check for matches
                     if _symbols_are_similar(clean_target, clean_candidate):
                         candidates.append(trading_symbol)
-                        if len(candidates) >= 5:  # Limit candidates
+                        if len(candidates) >= 5:
                             break
                 
-                # If we found candidates, return the best match
                 if candidates:
                     best_match = _get_best_symbol_match(truedata_symbol, candidates)
                     logger.info(f"✅ FUZZY MATCH: {truedata_symbol} → {best_match}")
@@ -239,16 +238,13 @@ def _clean_symbol_for_comparison(symbol: str) -> str:
 
 def _symbols_are_similar(clean1: str, clean2: str) -> bool:
     """Check if two cleaned symbols are similar enough to be considered a match"""
-    # Exact match after cleaning
     if clean1 == clean2:
         return True
     
-    # Check if one is contained in the other (for partial matches)
     if len(clean1) >= 4 and len(clean2) >= 4:
         if clean1 in clean2 or clean2 in clean1:
             return True
     
-    # Check edit distance for close matches
     if len(clean1) >= 3 and len(clean2) >= 3:
         distance = _edit_distance(clean1, clean2)
         max_allowed_distance = min(2, max(len(clean1), len(clean2)) // 4)
@@ -267,17 +263,14 @@ def _get_best_symbol_match(target: str, candidates: List[str]) -> str:
     
     clean_target = _clean_symbol_for_comparison(target)
     
-    # Prefer exact matches after cleaning
     for candidate in candidates:
         if _clean_symbol_for_comparison(candidate) == clean_target:
             return candidate
     
-    # Prefer symbols with same length
     same_length = [c for c in candidates if len(c) == len(target)]
     if same_length:
         return same_length[0]
     
-    # Return shortest candidate (usually the base symbol)
     return min(candidates, key=len)
 
 def _edit_distance(s1: str, s2: str) -> int:
@@ -303,29 +296,19 @@ def _edit_distance(s1: str, s2: str) -> int:
 _fo_enabled_cache = {}
 
 def is_fo_enabled(symbol: str) -> bool:
-    """🎯 DYNAMIC CHECK: Determine if F&O is enabled for a symbol.
-
-    Long-term fix: use expanded F&O universe plus live Zerodha NFO instruments lookup,
-    with a small in-memory cache to avoid repeated heavy calls.
-    """
+    """🎯 DYNAMIC CHECK: Determine if F&O is enabled for a symbol."""
     try:
-        # Normalize for comparison
         clean_symbol = symbol.replace('-I', '').replace('25', '').replace('26', '').strip().upper()
 
-        # Block delisted/suspended/penny stocks (< ₹50)
-        blocked_symbols = {'RCOM', 'RELCAPITAL', 'YESBANK', 'JETAIRWAYS', 'IDEA', 'SITI', 'DISHTV'}
+        blocked_symbols = {'RCOM', 'RELCAPITAL', 'JETAIRWAYS', 'SITI', 'DISHTV'}
         if clean_symbol in blocked_symbols:
             logger.warning(f"🚫 BLOCKED SYMBOL: {clean_symbol} - Known delisted/suspended stock")
             _fo_enabled_cache[clean_symbol] = False
             return False
 
-        # Cache hit
         if clean_symbol in _fo_enabled_cache:
-            result = _fo_enabled_cache[clean_symbol]
-            logger.info(f"🔍 F&O CHECK (cache): {symbol} → {clean_symbol} → {result}")
-            return result
+            return _fo_enabled_cache[clean_symbol]
 
-        # Baseline liquid universe (kept for conservative allow-list)
         top_50_liquid_fo = {
             'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX',
             'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
@@ -336,23 +319,18 @@ def is_fo_enabled(symbol: str) -> bool:
             'TATASTEEL', 'JSWSTEEL', 'HINDALCO', 'VEDL', 'ITC', 'BRITANNIA',
             'DABUR', 'GODREJCP', 'MARICO', 'IOC', 'BPCL', 'HINDPETRO',
             'GAIL', 'ADANIPORT', 'ADANIGREEN', 'PNB', 'FEDERALBNK',
-            # Additional F&O enabled stocks from expanded universe
-            'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'MAHINDRA'
+            'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'IEX', 'HCC', 'NAUKRI'
         }
 
-        # Indices: always F&O enabled
         if clean_symbol in {'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'}:
             _fo_enabled_cache[clean_symbol] = True
-            logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → True (index)")
             return True
 
-        # Dynamic verification via Zerodha NFO instruments (authoritative)
         try:
             from src.core.orchestrator import get_orchestrator_instance
             orchestrator = get_orchestrator_instance()
             if orchestrator and getattr(orchestrator, 'zerodha_client', None) and getattr(orchestrator.zerodha_client, 'kite', None):
                 instruments = orchestrator.zerodha_client.kite.instruments('NFO')
-                # Any NFO tradingsymbol beginning with the underlying indicates options availability
                 clean_prefix = clean_symbol
                 found = any(
                     (inst.get('tradingsymbol', '') or '').upper().startswith(clean_prefix)
@@ -364,14 +342,11 @@ def is_fo_enabled(symbol: str) -> bool:
         except Exception as e:
             logger.debug(f"F&O dynamic lookup failed for {clean_symbol}: {e}")
 
-        # If broker lookup unavailable, conservatively allow only top_50 list; otherwise False
         if clean_symbol in top_50_liquid_fo:
             _fo_enabled_cache[clean_symbol] = True
-            logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → True (top-50 fallback)")
             return True
 
         _fo_enabled_cache[clean_symbol] = False
-        logger.info(f"🔍 F&O CHECK: {symbol} → {clean_symbol} → False (not in NFO, not in top-50)")
         return False
 
     except Exception as e:
@@ -380,269 +355,4 @@ def is_fo_enabled(symbol: str) -> bool:
 
 def should_use_equity_only(symbol: str) -> bool:
     """🎯 CHECK: Whether to use equity only (no F&O) for a symbol"""
-    # For symbols without F&O or during market hours restrictions
     return not is_fo_enabled(symbol)
-
-def _is_options_symbol(symbol: str) -> bool:
-    """🎯 CHECK: Whether symbol is an options contract"""
-    # Check for CE/PE suffix and date pattern (e.g., TCS14AUG3000CE, NIFTY07AUG24800PE)
-    import re
-    if not ('CE' in symbol or 'PE' in symbol):
-        return False
-    
-    # Look for date pattern: digits + 3 letters (e.g., 14AUG, 07JUL)
-    date_pattern = re.search(r'\d{1,2}[A-Z]{3}', symbol)
-    return date_pattern is not None
-
-def validate_options_premium(symbol: str, price: float) -> bool:
-    """🎯 VALIDATE: Options premium is within reasonable bounds"""
-    if not _is_options_symbol(symbol):
-        return True  # Not options, no validation needed
-    
-    # Options premium validation rules
-    if price <= 0:
-        return False
-    if price > 1000:  # Max premium threshold
-        logger.warning(f"⚠️ High options premium: {symbol} = ₹{price}")
-        return True  # Allow but warn
-    if price < 0.05:  # Min premium threshold
-        return False
-    
-    return True
-
-def get_complete_fo_symbols() -> List[str]:
-    """🎯 GET: Complete list of F&O symbols for autonomous trading - EXPANDED"""
-    # Major indices
-    indices = [
-        'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I'
-    ]
-    
-    # Major stocks with F&O - EXPANDED TO ~200 SYMBOLS
-    stocks = [
-        # Banking & Financial Services (25)
-        'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
-        'INFY', 'KOTAKBANK', 'LT', 'AXISBANK', 'MARUTI', 'ASIANPAINT',
-        'TECHM', 'ADANIPORT', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO',
-        'NESTLEIND', 'HINDUNILVR', 'POWERGRID', 'NTPC', 'COALINDIA',
-        'ONGC', 'SUNPHARMA', 'DRREDDY', 'CIPLA', 'APOLLOHOSP',
-        'HCLTECH', 'INDUSINDBK', 'YESBANK', 'PNB', 'BANDHANBNK',
-        
-        # Auto & Auto Components (15)
-        'TATAMOTORS', 'M&M', 'BAJAJ-AUTO', 'EICHERMOT', 'HEROMOTOCO',
-        'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'MAHINDRA',
-        'BOSCHLTD', 'MOTHERSUMI', 'BALKRISIND', 'AMARAJABAT', 'CUMMINSIND',
-        
-        # IT & Technology (20)
-        'MINDTREE', 'MPHASIS', 'LTTS', 'PERSISTENT', 'COFORGE',
-        'RBLBANK', 'FEDERALBNK', 'IDFCFIRSTB', 'EQUITAS', 'SOUTHBANK',
-        'INTELLECT', 'RAMPGREEN', 'ZOMATO', 'PAYTM', 'NAUKRI',
-        'POLICYBZR', 'DMART', 'JUBLFOOD', 'DEVYANI', 'WESTLIFE',
-        
-        # Pharmaceuticals & Healthcare (20)
-        'BIOCON', 'CADILAHC', 'LUPIN', 'GLENMARK', 'TORNTPHARM',
-        'ALKEM', 'ABBOTINDIA', 'PFIZER', 'GLAXO', 'NOVARTIS',
-        'AUROPHARMA', 'LALPATHLAB', 'METROPOLIS', 'THYROCARE', 'HEALTHINS',
-        'FORTIS', 'MAXHEALTH', 'NARAYANHRL', 'APOLLOTYRE', 'MRF',
-        
-        # Energy & Oil (15)
-        'IOC', 'BPCL', 'HINDPETRO', 'GAIL', 'OIL', 'PETRONET',
-        'ADANIGREEN', 'ADANITRANS', 'ADANIPOWER', 'ADANIENTS',
-        'TATAPOWER', 'NHPC', 'SJVN', 'TORNTPOWER', 'CESC',
-        
-        # Metals & Mining (15)
-        'TATASTEEL', 'JSWSTEEL', 'SAILSTEEL', 'HINDALCO', 'VEDL',
-        'NMDC', 'COAL', 'JINDALSTEL', 'MOIL', 'WELCORP',
-        'RATNAMANI', 'MANAPPURAM', 'MUTHOOTFIN', 'CHOLAFIN', 'PFC',
-        
-        # FMCG & Consumer (20)
-        'ITC', 'BRITANNIA', 'DABUR', 'GODREJCP', 'MARICO',
-        'COLPAL', 'PGHH', 'VBL', 'CCL', 'RADICO',
-        'TATACONSUM', 'EMAMILTD', 'JYOTHYLAB', 'BAJAJCON', 'PAGEIND',
-        'PIDILITIND', 'BERGER', 'KANSAINER', 'ASTRAL', 'RELAXO',
-        
-        # Infrastructure & Real Estate (20) - Added PSU Infra stocks
-        'DLF', 'OBEROIRLTY', 'PRESTIGE', 'GODREJPROP', 'BRIGADE',
-        'PHOENIXLTD', 'SOBHA', 'MINDSPACE', 'BROOKFIELD', 'EMBASSY',
-        'IGARASHI', 'IRB', 'GMRINFRA', 'CONCOR', 'BHARATFORG',
-        'IRFC', 'RVNL', 'ANANTRAJ', 'IREDA', 'RECLTD',  # PSU Infra - popular retail stocks
-        'HUDCO', 'BSE',  # Housing finance & Exchange stock - user requested
-        
-        # Telecom & Media (6) - Removed RCOM, IDEA, SITI, DISHTV (delisted/penny stocks)
-        'GTPL', 'HATHWAY', 'TV18BRDCST', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',
-        
-        # Textiles & Apparel (10)
-        'RTNPOWER', 'VARDHMAN', 'WELSPUNIND', 'RAYMOND', 'ARVIND',
-        'GRASIM', 'ADITTYABIRLA', 'CENTURYTEX', 'KPR', 'SIYARAM',
-        
-        # Aviation & Logistics (10)
-        'INDIGO', 'SPICEJET', 'BLUEDART', 'GLAND', 'ALLCARGO',
-        'VTL', 'TCI', 'MAHLOG', 'GATI', 'SNOWMAN'
-    ]
-    
-    # 🚨 FIX: Only log symbol count once to avoid duplicate log messages
-    global _symbols_logged
-    if not _symbols_logged:
-        logger.info(f"📊 EXPANDED SYMBOL LIST: {len(indices + stocks)} total symbols")
-        _symbols_logged = True
-    return indices + stocks
-
-def get_autonomous_symbol_status():
-    """🎯 GET: Current autonomous trading symbol status and strategy"""
-    return {
-        "current_strategy": "ALL_STRATEGIES",  # 🚨 FIX: System runs ALL strategies, not just one
-        "active_strategies": [
-            "optimized_volume_scalper",  # Market microstructure + Statistical arbitrage
-            "momentum_surfer",  # Momentum specialist with Hodrick-Prescott
-            "news_impact_scalper",  # Options specialist with Black-Scholes
-            "regime_adaptive_controller"  # Meta-strategy with HMM + Kalman
-        ],
-        "active_symbols": get_complete_fo_symbols(),
-        "symbol_count": len(get_complete_fo_symbols()),
-        "status": "active",
-        "last_update": "2025-10-16T13:09:00"
-    }
-
-def get_zerodha_symbol(internal_symbol: str) -> str:
-    """🎯 DYNAMIC: Convert internal symbol to Zerodha's official symbol with auto-detection"""
-    # First check static mappings
-    if internal_symbol in ZERODHA_SYMBOL_MAPPING:
-        zerodha_symbol = ZERODHA_SYMBOL_MAPPING[internal_symbol]
-        logger.debug(f"🔄 STATIC MAPPING: {internal_symbol} → {zerodha_symbol}")
-        return zerodha_symbol
-    
-    # Try dynamic detection if not in static mapping
-    dynamic_symbol = _find_zerodha_symbol_dynamically(internal_symbol)
-    if dynamic_symbol and dynamic_symbol != internal_symbol:
-        # Cache the result for future use
-        ZERODHA_SYMBOL_MAPPING[internal_symbol] = dynamic_symbol
-        logger.info(f"✅ DYNAMIC MAPPING: {internal_symbol} → {dynamic_symbol} (auto-detected)")
-        return dynamic_symbol
-    
-    # Fallback to original symbol
-    logger.debug(f"📋 NO MAPPING: Using original symbol {internal_symbol}")
-    return internal_symbol
-
-def _find_zerodha_symbol_dynamically(truedata_symbol: str) -> str:
-    """🎯 AUTO-DETECT: Find correct Zerodha symbol by comparing with instruments API"""
-    try:
-        # Get orchestrator instance to access Zerodha client
-        from src.core.orchestrator import get_orchestrator_instance
-        orchestrator = get_orchestrator_instance()
-        
-        if not orchestrator or not orchestrator.zerodha_client:
-            logger.debug(f"⚠️ Zerodha client not available for symbol detection: {truedata_symbol}")
-            return None
-        
-        # Try to get instruments data
-        if hasattr(orchestrator.zerodha_client, 'kite') and orchestrator.zerodha_client.kite:
-            try:
-                # Get all NSE instruments
-                nse_instruments = orchestrator.zerodha_client.kite.instruments('NSE')
-                
-                # Look for exact match first
-                for instrument in nse_instruments:
-                    trading_symbol = instrument.get('tradingsymbol', '')
-                    if trading_symbol == truedata_symbol:
-                        logger.info(f"✅ EXACT MATCH: {truedata_symbol} exists in Zerodha NSE")
-                        return truedata_symbol
-                
-                # Look for similar symbols (fuzzy matching)
-                candidates = []
-                clean_target = _clean_symbol_for_comparison(truedata_symbol)
-                
-                for instrument in nse_instruments:
-                    trading_symbol = instrument.get('tradingsymbol', '')
-                    clean_candidate = _clean_symbol_for_comparison(trading_symbol)
-                    
-                    # Check for matches
-                    if _symbols_are_similar(clean_target, clean_candidate):
-                        candidates.append(trading_symbol)
-                        if len(candidates) >= 5:  # Limit candidates
-                            break
-                
-                # If we found candidates, return the best match
-                if candidates:
-                    best_match = _get_best_symbol_match(truedata_symbol, candidates)
-                    logger.info(f"✅ FUZZY MATCH: {truedata_symbol} → {best_match}")
-                    return best_match
-                
-                logger.debug(f"🔍 No similar symbols found for {truedata_symbol} in Zerodha NSE")
-                return None
-                
-            except Exception as e:
-                logger.debug(f"⚠️ Error fetching Zerodha instruments for {truedata_symbol}: {e}")
-                return None
-        else:
-            logger.debug(f"⚠️ Zerodha KiteConnect not initialized for symbol detection")
-            return None
-            
-    except Exception as e:
-        logger.debug(f"Error in dynamic symbol detection for {truedata_symbol}: {e}")
-        return None
-
-def _clean_symbol_for_comparison(symbol: str) -> str:
-    """Clean symbol for comparison by removing common suffixes/prefixes"""
-    return symbol.replace('-I', '').replace('&', '').replace('-', '').strip().upper()
-
-def _symbols_are_similar(clean1: str, clean2: str) -> bool:
-    """Check if two cleaned symbols are similar enough to be considered a match"""
-    # Exact match after cleaning
-    if clean1 == clean2:
-        return True
-    
-    # Check if one is contained in the other (for partial matches)
-    if len(clean1) >= 4 and len(clean2) >= 4:
-        if clean1 in clean2 or clean2 in clean1:
-            return True
-    
-    # Check edit distance for close matches
-    if len(clean1) >= 3 and len(clean2) >= 3:
-        distance = _edit_distance(clean1, clean2)
-        max_allowed_distance = min(2, max(len(clean1), len(clean2)) // 4)
-        if distance <= max_allowed_distance:
-            return True
-    
-    return False
-
-def _get_best_symbol_match(target: str, candidates: List[str]) -> str:
-    """Get the best matching symbol from candidates"""
-    if not candidates:
-        return target
-    
-    if len(candidates) == 1:
-        return candidates[0]
-    
-    clean_target = _clean_symbol_for_comparison(target)
-    
-    # Prefer exact matches after cleaning
-    for candidate in candidates:
-        if _clean_symbol_for_comparison(candidate) == clean_target:
-            return candidate
-    
-    # Prefer symbols with same length
-    same_length = [c for c in candidates if len(c) == len(target)]
-    if same_length:
-        return same_length[0]
-    
-    # Return shortest candidate (usually the base symbol)
-    return min(candidates, key=len)
-
-def _edit_distance(s1: str, s2: str) -> int:
-    """Calculate Levenshtein distance between two strings"""
-    if len(s1) < len(s2):
-        return _edit_distance(s2, s1)
-    
-    if len(s2) == 0:
-        return len(s1)
-    
-    previous_row = list(range(len(s2) + 1))
-    for i, c1 in enumerate(s1):
-        current_row = [i + 1]
-        for j, c2 in enumerate(s2):
-            insertions = previous_row[j + 1] + 1
-            deletions = current_row[j] + 1
-            substitutions = previous_row[j] + (c1 != c2)
-            current_row.append(min(insertions, deletions, substitutions))
-        previous_row = current_row
-    
-    return previous_row[-1]

@@ -435,21 +435,18 @@ class TradeEngine:
                 self.logger.error("❌ NO FALLBACK EXECUTION - Real broker required for all trades") 
                 self.logger.error("🚨 SYSTEM DESIGNED TO FAIL WHEN BROKER UNAVAILABLE - FIX ZERODHA CONNECTION")
                 return None
-            elif not self.zerodha_client.is_connected:
-                self.logger.error(f"❌ CRITICAL: Zerodha client not connected - State: {getattr(self.zerodha_client, 'connection_state', 'UNKNOWN')}")
-                self.logger.error(f"❌ Kite object: {self.zerodha_client.kite is not None}")
-                self.logger.error(f"❌ Access token: {self.zerodha_client.access_token is not None}")
+            
+            # 🚨 2025-12-26 FIX: Check kite object and access_token, not stale is_connected flag
+            # The is_connected flag can be False even when Zerodha is working (WebSocket shows 6100 ticks)
+            # What matters for order placement is: kite object exists + access_token is set
+            has_kite = getattr(self.zerodha_client, 'kite', None) is not None
+            has_token = getattr(self.zerodha_client, 'access_token', None) is not None
+            ws_active = getattr(self.zerodha_client, 'ticker_connected', False)
+            
+            if not has_kite or not has_token:
+                self.logger.error(f"❌ CRITICAL: Zerodha not ready - kite: {has_kite}, token: {has_token}, ws: {ws_active}")
                 self.logger.error("❌ NO FALLBACK EXECUTION - Real broker required for all trades")
                 self.logger.error("🚨 SYSTEM DESIGNED TO FAIL WHEN BROKER UNAVAILABLE - FIX ZERODHA CONNECTION")
-
-                # 🚨 EMERGENCY DIAGNOSTIC: Log connection status for debugging
-                self.logger.error("🚨 EMERGENCY: Checking Zerodha connection diagnostics...")
-                try:
-                    connection_status = await self.zerodha_client.get_connection_status()
-                    self.logger.error(f"🚨 EMERGENCY: Connection status: {connection_status}")
-                except Exception as diag_error:
-                    self.logger.error(f"🚨 EMERGENCY: Could not get connection status: {diag_error}")
-
                 return None
             
             # CRITICAL: Check actual Zerodha wallet balance before placing order

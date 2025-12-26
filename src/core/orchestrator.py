@@ -3622,7 +3622,8 @@ class TradingOrchestrator:
                         # Orchestrator uses Redis cache, so heartbeat should match that source
                         if hasattr(self, 'redis_client') and self.redis_client:
                             try:
-                                redis_keys = self.redis_client.keys('truedata:*')
+                                # 🚨 2025-12-26 FIX: Use await for async Redis client
+                                redis_keys = await self.redis_client.keys('truedata:*')
                                 td_symbols = len(redis_keys) if redis_keys else 0
                             except:
                                 td_symbols = 0
@@ -3637,16 +3638,25 @@ class TradingOrchestrator:
                                    f"Last data: {int(current_time - last_successful_data)}s ago")
                     last_heartbeat = current_time
                 
-                # 🚨 ONLY check Zerodha - TrueData manages itself!
-                # Zerodha token can expire and needs manual refresh
+                # 🚨 2025-12-26 FIX: Don't block trading based on stale is_connected flag
+                # The REST API is_connected flag doesn't reflect WebSocket activity
+                # WebSocket can be active (6100 ticks) while is_connected is False
+                # Instead: warn but continue - let actual data flow determine if we can trade
                 try:
                     if hasattr(self, 'zerodha_client') and self.zerodha_client:
-                        if not self.zerodha_client.is_connected:
-                            self.logger.error(f"🚨 ZERODHA DISCONNECTED: Token may have expired - needs manual refresh")
-                            await asyncio.sleep(30)  # Wait before retry
-                            continue
+                        # Check WebSocket activity first (more accurate than is_connected)
+                        ws_active = getattr(self.zerodha_client, 'ticker_connected', False)
+                        rest_connected = getattr(self.zerodha_client, 'is_connected', False)
+                        
+                        if not rest_connected and not ws_active:
+                            # Only warn if BOTH are down - but don't block trading
+                            # Data may still flow from Redis cache
+                            self.logger.warning(f"⚠️ ZERODHA: REST API disconnected, WebSocket inactive - may need token refresh")
+                        elif not rest_connected and ws_active:
+                            # WebSocket active but REST flag stale - this is OK, don't spam logs
+                            pass  # WebSocket is working, ignore stale REST flag
                 except Exception as zerodha_check_err:
-                    self.logger.warning(f"⚠️ Zerodha connection check failed: {zerodha_check_err}")
+                    self.logger.debug(f"Zerodha connection check skipped: {zerodha_check_err}")
                 
                 # Process market data - simple approach, no aggressive timeouts
                 try:

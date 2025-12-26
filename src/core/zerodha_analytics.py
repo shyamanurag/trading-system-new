@@ -186,8 +186,9 @@ class ZerodhaAnalyticsService:
     async def _get_zerodha_orders(self, days: int = 30) -> List[Dict]:
         """Get orders from Zerodha API"""
         try:
-            if not self.zerodha_client or not self.zerodha_client.is_connected:
-                logger.warning("⚠️ Zerodha client not connected")
+            # 🚨 2025-12-26 FIX: Check kite object, not stale is_connected flag
+            if not self.zerodha_client or not getattr(self.zerodha_client, 'kite', None):
+                logger.warning("⚠️ Zerodha client not ready")
                 return []
             
             logger.info(f"📋 Fetching orders from Zerodha for last {days} days...")
@@ -293,7 +294,7 @@ class ZerodhaAnalyticsService:
     async def _get_zerodha_positions(self) -> Dict:
         """Get current positions from Zerodha"""
         try:
-            if not self.zerodha_client or not self.zerodha_client.is_connected:
+            if not self.zerodha_client or not getattr(self.zerodha_client, 'kite', None):
                 return {}
             
             positions = await self.zerodha_client.get_positions()
@@ -307,7 +308,7 @@ class ZerodhaAnalyticsService:
     async def _get_zerodha_holdings(self) -> Dict:
         """Get holdings from Zerodha"""
         try:
-            if not self.zerodha_client or not self.zerodha_client.is_connected:
+            if not self.zerodha_client or not getattr(self.zerodha_client, 'kite', None):
                 return {}
             
             holdings = await self.zerodha_client.get_holdings()
@@ -321,7 +322,7 @@ class ZerodhaAnalyticsService:
     async def _get_zerodha_margins(self) -> Dict:
         """Get margin information from Zerodha"""
         try:
-            if not self.zerodha_client or not self.zerodha_client.is_connected:
+            if not self.zerodha_client or not getattr(self.zerodha_client, 'kite', None):
                 return {}
             
             margins = await self.zerodha_client.get_margins()
@@ -549,7 +550,7 @@ class ZerodhaAnalyticsService:
     async def _get_account_summary(self) -> Dict:
         """Get account summary from Zerodha"""
         try:
-            if not self.zerodha_client or not self.zerodha_client.is_connected:
+            if not self.zerodha_client or not getattr(self.zerodha_client, 'kite', None):
                 return {}
             
             # Get profile information

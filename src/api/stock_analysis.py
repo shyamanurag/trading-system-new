@@ -185,9 +185,11 @@ async def get_historical_candles(symbol: str, interval: str = '5minute', days: i
             logger.warning(f"No Zerodha client available for historical data")
             return []
         
-        # Check if Zerodha is connected
-        if not getattr(zerodha_client, 'is_connected', False):
-            logger.warning(f"Zerodha client not connected - cannot fetch historical data for {symbol}")
+        # 🚨 2025-12-26 FIX: Don't block on stale is_connected flag
+        # Check if kite client exists - that's enough to attempt API call
+        # The API call will fail naturally if token is invalid
+        if not getattr(zerodha_client, 'kite', None):
+            logger.warning(f"Zerodha kite client not initialized - cannot fetch historical data for {symbol}")
             return []
         
         # Map internal symbols to Zerodha trading symbols for historical data
@@ -692,7 +694,8 @@ async def get_previous_day_ohlc(symbol: str) -> Dict:
     """
     try:
         zerodha_client = await get_zerodha_client()
-        if not zerodha_client or not getattr(zerodha_client, 'is_connected', False):
+        # 🚨 2025-12-26 FIX: Check kite client exists, not stale is_connected flag
+        if not zerodha_client or not getattr(zerodha_client, 'kite', None):
             return {"error": "Zerodha not available"}
         
         symbol_upper = symbol.upper().strip()
