@@ -943,7 +943,7 @@ def calculate_volume_analysis(volumes: List[float], closes: List[float]) -> Dict
 
 def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
                             volume: Dict, sr_levels: Dict, current_price: float,
-                            bollinger: Dict = None, garch: Dict = None) -> Dict:
+                            bollinger: Dict = None, garch: Dict = None, live_data: Dict = None) -> Dict:
     """Generate overall algorithm recommendation including volatility analysis"""
     try:
         bullish_signals = 0
@@ -1239,7 +1239,7 @@ async def get_stock_analysis(
             # 🎯 NEW: Options Analytics (for indices only)
             analysis["options_analytics"] = await get_options_analytics(symbol)
 
-            # Generate recommendation (including Bollinger and GARCH)
+            # Generate recommendation (including Bollinger and GARCH and live_data for price momentum)
             analysis["recommendation"] = generate_recommendation(
                 analysis["indicators"]["rsi"],
                 analysis["indicators"]["vrsi"],
@@ -1249,7 +1249,8 @@ async def get_stock_analysis(
                 analysis["support_resistance"],
                 current_price,
                 bollinger=analysis["indicators"]["bollinger"],
-                garch=analysis["indicators"]["garch"]
+                garch=analysis["indicators"]["garch"],
+                live_data=live_data
             )
 
             analysis["data_source"] = "historical"
