@@ -79,8 +79,8 @@ class BaseStrategy:
             'kelly_optimal_size': 0.02
         }
         
-        # CRITICAL: Signal rate limiting to prevent flooding
-        self.max_signals_per_hour = 50  # Maximum 50 signals per hour (manageable)
+        # Signal rate limiting to prevent flooding (not hard caps)
+        self.max_signals_per_hour = 50  # Maximum 50 signals per hour
         self.max_signals_per_strategy = 10  # Maximum 10 signals per strategy per hour
         self.signals_generated_this_hour = 0
         self.strategy_signals_this_hour = 0
@@ -6274,186 +6274,129 @@ class BaseStrategy:
     def _calculate_adaptive_confidence_threshold(self, symbol: str, action: str, confidence: float, 
                                                     relative_strength: float = None) -> Tuple[float, str]:
         """
-        🔥 PROFESSIONAL MEAN REVERSION-AWARE CONFIDENCE THRESHOLD
+        🎯 RATIONAL CONFIDENCE THRESHOLD SYSTEM (Recalibrated 2025-12-26)
         
-        Adjusts minimum confidence based on NIFTY move from open using multi-indicator system:
-        - Points from open (NIFTY-specific zones: 0-50-100-150+ pts)
-        - Market regime (TRENDING/CHOPPY)
-        - Bias confidence
-        - Signal alignment (with or against trend)
-        - 🔥 NEW: Exceptional relative strength bonus
+        DESIGN PRINCIPLES:
+        1. BASE = 8.0 (clean, round number - requires 80% confidence minimum)
+        2. PRIMARY adjustment: ONE scenario-based adjustment (-1.5 to +1.0)
+        3. SECONDARY adjustments: Small bonuses, capped at ±0.5 total
+        4. FINAL bounds: 7.0 to 9.0 (never too easy, never impossible)
+        
+        LOGIC:
+        - With-trend in clear trend: EASIER (confidence boost = lower threshold)
+        - Counter-trend: HARDER (need higher confidence)
+        - Mean reversion at extremes: EASIER (good setups)
+        - Choppy/unclear: SLIGHTLY HARDER (be selective)
+        - Exceptional RS stocks: EASIER (strength/weakness is clear)
         
         Returns:
             (min_confidence_threshold, reason_string)
         """
         try:
-            # Default threshold - LOWERED to 7.8 to capture 8.0+ confidence signals
-            # User insight: CHOPPY markets still have opportunities, be selective but not blocked
-            # 7.8 base + 0.3 CHOPPY + 0.3 regime + 0.2 bias = 8.6 → capped to 8.5
-            min_conf = 7.8
+            # ============= BASE THRESHOLD =============
+            # 8.0 = 80% confidence minimum - professional standard
+            BASE_THRESHOLD = 8.0
+            min_conf = BASE_THRESHOLD
             reasons = []
             
-            # 🔥 EXCEPTIONAL RS THRESHOLD REDUCTION
-            # Stocks with exceptional relative strength get lower thresholds
+            # ============= PRIMARY ADJUSTMENT: SCENARIO (only ONE applies) =============
+            # This is the main driver - based on market structure
+            primary_adj = 0.0
+            scenario = None
+            
+            if hasattr(self, 'market_bias') and self.market_bias:
+                current_bias = self.market_bias.current_bias
+                bias_direction = getattr(current_bias, 'direction', 'NEUTRAL')
+                scenario = getattr(self.market_bias, '_last_scenario', None)
+                
+                # Determine if signal is WITH or AGAINST the trend
+                is_with_trend = (
+                    (action.upper() == 'BUY' and bias_direction == 'BULLISH') or
+                    (action.upper() == 'SELL' and bias_direction == 'BEARISH')
+                )
+                
+                if scenario:
+                    # SCENARIO-BASED PRIMARY ADJUSTMENT
+                    # Clear logic: favor trend-following, allow mean reversion at extremes
+                    if scenario in ['GAP_UP_CONTINUATION', 'GAP_DOWN_CONTINUATION']:
+                        # Strong trend - reward aligned, penalize counter
+                        primary_adj = -1.0 if is_with_trend else +0.8
+                        reasons.append(f"TREND_CONT:{'WITH' if is_with_trend else 'COUNTER'}({primary_adj:+.1f})")
+                    
+                    elif scenario in ['FLAT_TRENDING_UP', 'FLAT_TRENDING_DOWN']:
+                        # Mild trend - small adjustments
+                        primary_adj = -0.5 if is_with_trend else +0.3
+                        reasons.append(f"FLAT_TREND:{'WITH' if is_with_trend else 'COUNTER'}({primary_adj:+.1f})")
+                    
+                    elif scenario in ['GAP_UP_FADE', 'GAP_DOWN_RECOVERY']:
+                        # Reversal scenario - counter-trend is actually WITH the reversal
+                        primary_adj = -0.8 if not is_with_trend else +0.5
+                        reasons.append(f"REVERSAL:{'FADE' if not is_with_trend else 'CHASE'}({primary_adj:+.1f})")
+                    
+                    elif scenario in ['RUBBER_BAND_RECOVERY', 'RUBBER_BAND_FADE']:
+                        # Mean reversion at extremes - strong setup
+                        primary_adj = -1.5 if not is_with_trend else +1.0
+                        reasons.append(f"MEAN_REV:{'FADE' if not is_with_trend else 'CHASE'}({primary_adj:+.1f})")
+                    
+                    elif scenario == 'GAP_DOWN_EARLY_RECOVERY':
+                        # Early recovery - favor buys
+                        primary_adj = -1.0 if action.upper() == 'BUY' else +0.5
+                        reasons.append(f"EARLY_RECOVERY({primary_adj:+.1f})")
+                    
+                    elif scenario in ['CHOPPY', 'MIXED_SIGNALS']:
+                        # Uncertain - be more selective
+                        primary_adj = +0.3
+                        reasons.append(f"CHOPPY({primary_adj:+.1f})")
+                    
+                    else:
+                        # Unknown scenario - neutral
+                        primary_adj = 0.0
+                else:
+                    # No scenario - use basic trend alignment
+                    primary_adj = -0.3 if is_with_trend else +0.3
+                    reasons.append(f"BASIC:{'WITH' if is_with_trend else 'COUNTER'}({primary_adj:+.1f})")
+            
+            min_conf += primary_adj
+            
+            # ============= SECONDARY ADJUSTMENTS (capped at ±0.5 total) =============
+            secondary_adj = 0.0
+            
+            # 1. Exceptional Relative Strength (±0.3)
             if relative_strength is not None:
                 if action.upper() == 'BUY' and relative_strength > 5.0:
-                    # Exceptional strength - reduce threshold significantly
-                    rs_reduction = min(2.0, relative_strength / 3.0)  # Max -2.0 reduction
-                    min_conf -= rs_reduction
-                    reasons.append(f"EXCEPTIONAL_RS:+{relative_strength:.1f}%(-{rs_reduction:.1f})")
-                    logger.info(f"🌟 {symbol} EXCEPTIONAL RS BOOST: threshold reduced by {rs_reduction:.1f} (RS: +{relative_strength:.1f}%)")
+                    rs_bonus = min(0.3, relative_strength / 20.0)
+                    secondary_adj -= rs_bonus
+                    reasons.append(f"RS:+{relative_strength:.1f}%(-{rs_bonus:.1f})")
                 elif action.upper() == 'SELL' and relative_strength < -5.0:
-                    # Exceptional weakness - reduce threshold for shorts
-                    rs_reduction = min(2.0, abs(relative_strength) / 3.0)
-                    min_conf -= rs_reduction
-                    reasons.append(f"EXCEPTIONAL_WEAK:{relative_strength:.1f}%(-{rs_reduction:.1f})")
-                    logger.info(f"🌟 {symbol} EXCEPTIONAL WEAKNESS BOOST: threshold reduced by {rs_reduction:.1f} (RS: {relative_strength:.1f}%)")
+                    rs_bonus = min(0.3, abs(relative_strength) / 20.0)
+                    secondary_adj -= rs_bonus
+                    reasons.append(f"RS:{relative_strength:.1f}%(-{rs_bonus:.1f})")
             
-            # Get market bias if available
-            if not (hasattr(self, 'market_bias') and self.market_bias):
-                return min_conf, "default"
+            # 2. Market Regime (±0.2)
+            if hasattr(self, 'market_bias') and self.market_bias:
+                market_regime = getattr(self.market_bias.current_bias, 'market_regime', 'NORMAL')
+                if market_regime in ['STRONG_TRENDING', 'TRENDING']:
+                    secondary_adj -= 0.2
+                    reasons.append("TRENDING(-0.2)")
+                elif market_regime in ['CHOPPY', 'VOLATILE_CHOPPY']:
+                    secondary_adj += 0.2
+                    reasons.append("CHOPPY(+0.2)")
             
-            current_bias = self.market_bias.current_bias
-            bias_direction = current_bias.direction
-            
-            # ============= SCENARIO-BASED THRESHOLD ADJUSTMENT =============
-            # Use the new scenario information from market bias system
-            scenario = getattr(self.market_bias, '_last_scenario', None)
-            
-            if scenario:
-                # Scenario-specific threshold adjustments
-                # 🚨 2025-12-26 FIX: Reduced counter-trend penalties from +1.0/+1.5/+2.0 to +0.5/+0.7/+1.0
-                # Previous values were too restrictive, blocking most signals
-                scenario_adjustments = {
-                    # Strong trending scenarios - encourage aligned, discourage counter
-                    'GAP_UP_CONTINUATION': {'BUY': -1.5, 'SELL': +1.0},   # Was +2.0
-                    'GAP_DOWN_CONTINUATION': {'BUY': +1.0, 'SELL': -1.5}, # Was +2.0
-                    
-                    # Reversal scenarios - encourage reversal direction
-                    'GAP_UP_FADE': {'BUY': +0.7, 'SELL': -1.0},   # Was +1.5
-                    'GAP_DOWN_RECOVERY': {'BUY': -1.0, 'SELL': +0.7},  # Was +1.5
-                    
-                    # 🔥 RUBBER BAND SCENARIOS - Strong mean reversion plays!
-                    'RUBBER_BAND_RECOVERY': {'BUY': -2.5, 'SELL': +1.5},  # Was +3.0
-                    'RUBBER_BAND_FADE': {'BUY': +1.5, 'SELL': -2.5},      # Was +3.0
-                    
-                    # 🔥 EARLY RECOVERY - Gap down but starting to recover
-                    'GAP_DOWN_EARLY_RECOVERY': {'BUY': -1.5, 'SELL': +1.0},  # Was +2.0
-                    
-                    # Flat open trending - REDUCED penalties
-                    'FLAT_TRENDING_UP': {'BUY': -0.5, 'SELL': +0.5},    # Was +1.0
-                    'FLAT_TRENDING_DOWN': {'BUY': +0.5, 'SELL': -0.5},  # Was +1.0
-                    
-                    # Choppy - MINIMAL penalty
-                    # User insight: Still want to trade in choppy markets, just be selective
-                    'CHOPPY': {'BUY': +0.2, 'SELL': +0.2},  # Was +0.3
-                    
-                    # Mixed signals - minimal increase
-                    'MIXED_SIGNALS': {'BUY': +0.1, 'SELL': +0.1},  # Was +0.2
-                }
-                
-                if scenario in scenario_adjustments:
-                    adj = scenario_adjustments[scenario].get(action.upper(), 0)
-                    min_conf += adj
-                    reasons.append(f"SCENARIO:{scenario}({adj:+.1f})")
-            
-            # ============= FALLBACK: ZONE-BASED ADJUSTMENT =============
-            # Use zone logic if scenario not available
-            nifty_data = self._get_nifty_data_from_bias()
-            if nifty_data and not scenario:
-                ltp = float(nifty_data.get('ltp', 0))
-                open_price = float(nifty_data.get('open', 0))
-                
-                if ltp and open_price:
-                    move_from_open = ltp - open_price
-                    abs_move = abs(move_from_open)
-                    
-                    # Zone-based adjustment
-                    if abs_move < 50:
-                        zone_adjustment = -1.0
-                        reasons.append(f"EARLY:{abs_move:.0f}pts")
-                    elif abs_move < 100:
-                        zone_adjustment = 0.0
-                        reasons.append(f"MID:{abs_move:.0f}pts")
-                    elif abs_move < 150:
-                        # Check if chasing or fading
-                        is_chasing = (
-                            (action == 'BUY' and bias_direction == 'BULLISH' and move_from_open > 0) or
-                            (action == 'SELL' and bias_direction == 'BEARISH' and move_from_open < 0)
-                        )
-                        if is_chasing:
-                            zone_adjustment = +1.5
-                            reasons.append(f"EXTENDED_CHASE:{abs_move:.0f}pts⚠️")
-                        else:
-                            zone_adjustment = -0.5
-                            reasons.append(f"EXTENDED_FADE:{abs_move:.0f}pts✅")
-                    else:  # >= 150 points
-                        is_chasing = (
-                            (action == 'BUY' and bias_direction == 'BULLISH' and move_from_open > 0) or
-                            (action == 'SELL' and bias_direction == 'BEARISH' and move_from_open < 0)
-                        )
-                        if is_chasing:
-                            zone_adjustment = +2.0
-                            reasons.append(f"EXTREME_CHASE:{abs_move:.0f}pts🔴")
-                        else:
-                            zone_adjustment = -1.5
-                            reasons.append(f"EXTREME_FADE:{abs_move:.0f}pts✅✅")
-                    
-                    min_conf += zone_adjustment
-            
-            # ============= MARKET REGIME ADJUSTMENT =============
-            # 🔥 REDUCED 2025-12-02: Was stacking too aggressively with bias adjustments
-            market_regime = getattr(current_bias, 'market_regime', 'NORMAL')
-            if market_regime in ['CHOPPY', 'VOLATILE_CHOPPY']:
-                min_conf += 0.3  # Reduced from 0.5
-                reasons.append("CHOPPY+0.3")
-            elif market_regime in ['STRONG_TRENDING', 'TRENDING', 'VOLATILE_TRENDING']:
-                min_conf -= 0.5
-                reasons.append("TRENDING-0.5")
-            elif market_regime == 'QUIET':
-                # Quiet market - mild adjustment (was causing signal rejection)
-                min_conf += 0.2  # Reduced from 0.3
-                reasons.append("QUIET+0.2")
-            
-            # ============= BIAS CONFIDENCE ADJUSTMENT =============
-            bias_confidence = getattr(current_bias, 'confidence', 0.0)
-            
-            # Check signal alignment
-            is_aligned = (
-                (action == 'BUY' and bias_direction == 'BULLISH') or
-                (action == 'SELL' and bias_direction == 'BEARISH')
-            )
-            
-            # 🔥 REDUCED 2025-12-02: Bias adjustments were too harsh
-            if bias_confidence >= 7.0:
-                if is_aligned:
-                    min_conf -= 0.5
-                    reasons.append("HIGH_BIAS_ALIGNED-0.5")
-                # Counter-trend with high bias = harder (but not impossible)
-                else:
-                    min_conf += 0.3  # Reduced from 0.5
-                    reasons.append("HIGH_BIAS_COUNTER+0.3")
-            elif bias_confidence <= 3.0:
-                # Low bias confidence = slight increase (was too aggressive at 0.5)
-                min_conf += 0.2  # Reduced from 0.5
-                reasons.append("WEAK_BIAS+0.2")
-            elif 3.0 < bias_confidence < 5.0:
-                # Moderate-low bias = minimal adjustment
-                min_conf += 0.1  # Reduced from 0.3
-                reasons.append("MOD_BIAS+0.1")
+            # Cap secondary adjustments
+            secondary_adj = max(-0.5, min(0.5, secondary_adj))
+            min_conf += secondary_adj
             
             # ============= FINAL BOUNDS =============
-            # LOWERED: Cap at 8.0 to allow 8.2 signals through in CHOPPY markets
-            # User insight: With 8.5 cap, 8.2 signals still rejected
-            # 8.0 cap means even worst-case adjustments allow decent signals
-            min_conf = max(6.5, min(min_conf, 8.0))
+            # 7.0 minimum = still need 70% confidence
+            # 9.0 maximum = counter-trend in extreme case, not impossible
+            min_conf = max(7.0, min(min_conf, 9.0))
             
-            reason_str = " | ".join(reasons) if reasons else "default"
+            reason_str = f"BASE:{BASE_THRESHOLD}→{min_conf:.1f} | " + " | ".join(reasons) if reasons else f"BASE:{BASE_THRESHOLD}"
             return min_conf, reason_str
             
         except Exception as e:
             logger.error(f"Error calculating adaptive threshold: {e}")
-            return 7.5, f"error"
+            return 8.0, "error:default"
     
     def _get_nifty_data_from_bias(self) -> Optional[Dict]:
         """Get NIFTY data from market bias system"""
