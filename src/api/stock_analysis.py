@@ -1083,8 +1083,9 @@ def calculate_volume_analysis(volumes: List[float], closes: List[float]) -> Dict
 
 def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
                             volume: Dict, sr_levels: Dict, current_price: float,
-                            bollinger: Dict = None, garch: Dict = None, live_data: Dict = None) -> Dict:
-    """Generate overall algorithm recommendation including volatility analysis"""
+                            bollinger: Dict = None, garch: Dict = None, live_data: Dict = None,
+                            darvas_box: Dict = None) -> Dict:
+    """Generate overall algorithm recommendation including volatility analysis and Darvas Box"""
     try:
         bullish_signals = 0
         bearish_signals = 0
@@ -1232,6 +1233,37 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
             elif garch.get("trend") == "DECREASING":
                 bullish_signals += 0.3
                 reasons.append("Volatility decreasing")
+        
+        # 📦 Darvas Box Analysis - Important for breakout/breakdown detection
+        if darvas_box and not darvas_box.get("error"):
+            total_signals += 1.5  # Darvas Box is important for trend confirmation
+            signal = darvas_box.get("signal", "")
+            position = darvas_box.get("position", "")
+            volume_surge = darvas_box.get("volume_surge", False)
+            signal_strength = darvas_box.get("signal_strength", 50) / 100  # Normalize to 0-1
+            
+            if signal == "STRONG_BUY":
+                bullish_signals += 2.0 * signal_strength
+                reasons.append(f"Darvas Box BREAKOUT with volume (strength: {darvas_box.get('signal_strength', 0):.0f}%)")
+            elif signal == "BUY":
+                bullish_signals += 1.5 * signal_strength
+                reasons.append(f"Darvas Box breakout (strength: {darvas_box.get('signal_strength', 0):.0f}%)")
+            elif signal == "STRONG_SELL":
+                bearish_signals += 2.0 * signal_strength
+                reasons.append(f"Darvas Box BREAKDOWN with volume (strength: {darvas_box.get('signal_strength', 0):.0f}%)")
+            elif signal == "SELL":
+                bearish_signals += 1.5 * signal_strength
+                reasons.append(f"Darvas Box breakdown (strength: {darvas_box.get('signal_strength', 0):.0f}%)")
+            elif position == "UPPER_HALF":
+                bullish_signals += 0.5
+                reasons.append("Darvas Box: Price in upper half (watch for breakout)")
+            elif position == "LOWER_HALF":
+                bearish_signals += 0.5
+                reasons.append("Darvas Box: Price in lower half (watch for breakdown)")
+            
+            # Tight consolidation = potential explosive move
+            if darvas_box.get("is_tight_consolidation"):
+                reasons.append("Darvas Box: Tight consolidation (potential explosive move)")
         
         # Calculate final scores
         total_weight = bullish_signals + bearish_signals
@@ -1393,7 +1425,8 @@ async def get_stock_analysis(
                 current_price,
                 bollinger=analysis["indicators"]["bollinger"],
                 garch=analysis["indicators"]["garch"],
-                live_data=live_data
+                live_data=live_data,
+                darvas_box=analysis.get("darvas_box")
             )
 
             analysis["data_source"] = "historical"
