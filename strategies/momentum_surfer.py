@@ -1137,12 +1137,15 @@ class EnhancedMomentumSurfer(BaseStrategy):
                                     # Volume indicates accumulation - boost confidence
                                     signal['confidence'] = signal.get('confidence', 8.0) * 1.1
                                     logger.info(f"🎯 {stock}: VOLUME LEADS UP! Score={leading_score}, Signals={leading_signals}")
-                                elif leading_score <= -20:
+                                elif leading_score <= -50:
+                                    # 🚨 2025-12-26 FIX: Raised threshold from -20 to -50
+                                    # Score -20 to -50 is weak - only block on STRONG distribution
                                     # Volume indicates distribution - reduce confidence or skip
                                     signal['confidence'] = signal.get('confidence', 8.0) * 0.8
-                                    logger.warning(f"⚠️ {stock}: BUY signal but DISTRIBUTION detected (Score={leading_score})")
-                                    if volume_leading.get('distribution'):
-                                        logger.warning(f"🚫 {stock}: BUY signal BLOCKED - Smart money distributing!")
+                                    logger.warning(f"⚠️ {stock}: BUY signal but STRONG DISTRIBUTION detected (Score={leading_score})")
+                                    if volume_leading.get('distribution') and leading_score <= -60:
+                                        # Only block on very strong distribution (score <= -60)
+                                        logger.warning(f"🚫 {stock}: BUY signal BLOCKED - Strong smart money distribution!")
                                         continue  # Skip this signal
                             
                             elif signal_direction == 'SELL':
@@ -1150,12 +1153,15 @@ class EnhancedMomentumSurfer(BaseStrategy):
                                     # Volume indicates distribution - boost confidence
                                     signal['confidence'] = signal.get('confidence', 8.0) * 1.1
                                     logger.info(f"🎯 {stock}: VOLUME LEADS DOWN! Score={leading_score}, Signals={leading_signals}")
-                                elif leading_score >= 20:
+                                elif leading_score >= 50:
+                                    # 🚨 2025-12-26 FIX: Raised threshold from 20 to 50
+                                    # Score 20-50 is weak - only block on STRONG accumulation
                                     # Volume indicates accumulation - reduce confidence or skip
                                     signal['confidence'] = signal.get('confidence', 8.0) * 0.8
-                                    logger.warning(f"⚠️ {stock}: SELL signal but ACCUMULATION detected (Score={leading_score})")
-                                    if volume_leading.get('accumulation'):
-                                        logger.warning(f"🚫 {stock}: SELL signal BLOCKED - Smart money accumulating!")
+                                    logger.warning(f"⚠️ {stock}: SELL signal but STRONG ACCUMULATION detected (Score={leading_score})")
+                                    if volume_leading.get('accumulation') and leading_score >= 60:
+                                        # Only block on very strong accumulation (score >= 60)
+                                        logger.warning(f"🚫 {stock}: SELL signal BLOCKED - Strong smart money accumulation!")
                                         continue  # Skip this signal
                         
                         # Add all analysis metadata to signal (initialize first to avoid KeyError)

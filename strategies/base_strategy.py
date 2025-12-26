@@ -6322,32 +6322,34 @@ class BaseStrategy:
             
             if scenario:
                 # Scenario-specific threshold adjustments
+                # 🚨 2025-12-26 FIX: Reduced counter-trend penalties from +1.0/+1.5/+2.0 to +0.5/+0.7/+1.0
+                # Previous values were too restrictive, blocking most signals
                 scenario_adjustments = {
                     # Strong trending scenarios - encourage aligned, discourage counter
-                    'GAP_UP_CONTINUATION': {'BUY': -1.5, 'SELL': +2.0},
-                    'GAP_DOWN_CONTINUATION': {'BUY': +2.0, 'SELL': -1.5},
+                    'GAP_UP_CONTINUATION': {'BUY': -1.5, 'SELL': +1.0},   # Was +2.0
+                    'GAP_DOWN_CONTINUATION': {'BUY': +1.0, 'SELL': -1.5}, # Was +2.0
                     
                     # Reversal scenarios - encourage reversal direction
-                    'GAP_UP_FADE': {'BUY': +1.5, 'SELL': -1.0},
-                    'GAP_DOWN_RECOVERY': {'BUY': -1.0, 'SELL': +1.5},
+                    'GAP_UP_FADE': {'BUY': +0.7, 'SELL': -1.0},   # Was +1.5
+                    'GAP_DOWN_RECOVERY': {'BUY': -1.0, 'SELL': +0.7},  # Was +1.5
                     
                     # 🔥 RUBBER BAND SCENARIOS - Strong mean reversion plays!
-                    'RUBBER_BAND_RECOVERY': {'BUY': -2.5, 'SELL': +3.0},  # Very bullish
-                    'RUBBER_BAND_FADE': {'BUY': +3.0, 'SELL': -2.5},      # Very bearish
+                    'RUBBER_BAND_RECOVERY': {'BUY': -2.5, 'SELL': +1.5},  # Was +3.0
+                    'RUBBER_BAND_FADE': {'BUY': +1.5, 'SELL': -2.5},      # Was +3.0
                     
                     # 🔥 EARLY RECOVERY - Gap down but starting to recover
-                    'GAP_DOWN_EARLY_RECOVERY': {'BUY': -1.5, 'SELL': +2.0},  # Favor BUY on strong stocks
+                    'GAP_DOWN_EARLY_RECOVERY': {'BUY': -1.5, 'SELL': +1.0},  # Was +2.0
                     
-                    # Flat open trending - moderate adjustments
-                    'FLAT_TRENDING_UP': {'BUY': -0.5, 'SELL': +1.0},
-                    'FLAT_TRENDING_DOWN': {'BUY': +1.0, 'SELL': -0.5},
+                    # Flat open trending - REDUCED penalties
+                    'FLAT_TRENDING_UP': {'BUY': -0.5, 'SELL': +0.5},    # Was +1.0
+                    'FLAT_TRENDING_DOWN': {'BUY': +0.5, 'SELL': -0.5},  # Was +1.0
                     
-                    # Choppy - REDUCED penalty (was +1.0, too harsh)
+                    # Choppy - MINIMAL penalty
                     # User insight: Still want to trade in choppy markets, just be selective
-                    'CHOPPY': {'BUY': +0.3, 'SELL': +0.3},
+                    'CHOPPY': {'BUY': +0.2, 'SELL': +0.2},  # Was +0.3
                     
                     # Mixed signals - minimal increase
-                    'MIXED_SIGNALS': {'BUY': +0.2, 'SELL': +0.2},
+                    'MIXED_SIGNALS': {'BUY': +0.1, 'SELL': +0.1},  # Was +0.2
                 }
                 
                 if scenario in scenario_adjustments:

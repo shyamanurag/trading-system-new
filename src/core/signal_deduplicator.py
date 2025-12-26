@@ -296,8 +296,14 @@ class SignalDeduplicator:
         return (underlying, option_type, strike)
     
     async def _check_pending_order(self, symbol: str, zerodha_client) -> tuple:
-        """Check if there's a pending order for this symbol or underlying+type."""
+        """Check if there's a pending order for this symbol or underlying+type.
+        
+        🚨 2025-12-26 FIX: Add order age check - stale orders (>3 min) don't block new signals.
+        LIMIT orders that haven't filled after 3 minutes are stale and should be cancelled/ignored.
+        """
         try:
+            from datetime import datetime, timedelta
+            
             underlying, option_type, _ = self._parse_options_symbol(symbol)
             
             orders = await zerodha_client.get_orders()
@@ -315,6 +321,28 @@ class SignalDeduplicator:
                 
                 # Block if same underlying + same type has pending order
                 if order_underlying == underlying and order_type == option_type:
+                    # 🚨 2025-12-26 FIX: Check order age - stale orders (>3 min) don't block
+                    order_time_str = order.get('order_timestamp') or order.get('exchange_timestamp')
+                    if order_time_str:
+                        try:
+                            if isinstance(order_time_str, str):
+                                order_time = datetime.fromisoformat(order_time_str.replace('Z', '+00:00'))
+                            else:
+                                order_time = order_time_str
+                            
+                            # Make both timezone-naive for comparison
+                            if hasattr(order_time, 'tzinfo') and order_time.tzinfo is not None:
+                                order_time = order_time.replace(tzinfo=None)
+                            
+                            age_minutes = (datetime.now() - order_time).total_seconds() / 60
+                            
+                            if age_minutes > 3:
+                                logger.info(f"⏰ STALE ORDER IGNORED: {order_symbol} order {order.get('order_id')} is {age_minutes:.1f}min old - allowing new signal")
+                                continue  # Ignore stale order, check next
+                        except Exception as time_err:
+                            logger.debug(f"Order time parse error: {time_err}")
+                            # If can't parse time, assume fresh and block
+                    
                     return True, order.get('order_id')
             
             return False, None

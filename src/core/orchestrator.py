@@ -3625,10 +3625,14 @@ class TradingOrchestrator:
                                 # 🚨 2025-12-26 FIX: Use await for async Redis client
                                 redis_keys = await self.redis_client.keys('truedata:*')
                                 td_symbols = len(redis_keys) if redis_keys else 0
-                            except:
-                                td_symbols = 0
+                            except Exception as redis_err:
+                                # Log the error to diagnose why it's failing
+                                self.logger.debug(f"Heartbeat Redis keys error: {type(redis_err).__name__}: {redis_err}")
+                                # Fallback: count from market_data dict if Redis fails
+                                td_symbols = len(self.market_data) if hasattr(self, 'market_data') and self.market_data else 0
                         else:
-                            td_symbols = 0
+                            # Fallback: use market_data dict count
+                            td_symbols = len(self.market_data) if hasattr(self, 'market_data') and self.market_data else 0
                     except:
                         td_connected = False
                         td_symbols = 0
