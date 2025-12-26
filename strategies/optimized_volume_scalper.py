@@ -1998,20 +1998,43 @@ class OptimizedVolumeScalper(BaseStrategy):
             
             # BUY signal validation
             if ms_signal.signal_type == 'BUY':
-                # Don't buy if overbought (check RSI, MFI, and VRSI)
+                # 🎯 CONTEXT-AWARE: Detect strong breakout scenarios
+                # In breakouts, overbought indicators CONFIRM momentum, not contradict it
+                day_change = dual_analysis.get('day_change', 0.0)
+                pattern = dual_analysis.get('pattern', '')
+                
+                # Strong breakout criteria (cautious thresholds):
+                # 1. Very strong move (>5%) regardless of pattern, OR
+                # 2. Moderate move (>2%) with BULLISH CONTINUATION pattern
+                is_strong_breakout = (
+                    day_change >= 5.0 or 
+                    (day_change >= 2.0 and 'BULLISH' in pattern and 'CONTINUATION' in pattern)
+                )
+                
+                # Don't buy if overbought - UNLESS strong breakout (with safety caps)
                 if rsi > 70:
-                    logger.info(f"⚠️ {symbol}: BUY rejected - RSI overbought ({rsi:.0f})")
-                    return None
+                    if is_strong_breakout and rsi <= 92:
+                        # Overbought RSI confirms momentum in breakout
+                        logger.info(f"✅ {symbol}: BUY - RSI overbought ({rsi:.0f}) CONFIRMS breakout momentum (+{day_change:.1f}%)")
+                    else:
+                        logger.info(f"⚠️ {symbol}: BUY rejected - RSI overbought ({rsi:.0f})")
+                        return None
                 
                 # 🔧 MFI (volume-weighted RSI) check
                 if mfi > 80:
-                    logger.info(f"⚠️ {symbol}: BUY rejected - MFI overbought ({mfi:.0f})")
-                    return None
+                    if is_strong_breakout and mfi <= 95:
+                        logger.info(f"✅ {symbol}: BUY - MFI overbought ({mfi:.0f}) CONFIRMS breakout momentum (+{day_change:.1f}%)")
+                    else:
+                        logger.info(f"⚠️ {symbol}: BUY rejected - MFI overbought ({mfi:.0f})")
+                        return None
                 
                 # 🔧 NEW: VRSI (Volume-Weighted RSI) check
                 if vrsi > 75:
-                    logger.info(f"⚠️ {symbol}: BUY rejected - VRSI overbought ({vrsi:.0f})")
-                    return None
+                    if is_strong_breakout and vrsi <= 95:
+                        logger.info(f"✅ {symbol}: BUY - VRSI overbought ({vrsi:.0f}) CONFIRMS breakout momentum (+{day_change:.1f}%)")
+                    else:
+                        logger.info(f"⚠️ {symbol}: BUY rejected - VRSI overbought ({vrsi:.0f})")
+                        return None
                 
                 # 🔧 NEW: Low VRSI means volume NOT confirming upward momentum
                 if vrsi < 35 and ms_signal.edge_source != "MEAN_REVERSION":

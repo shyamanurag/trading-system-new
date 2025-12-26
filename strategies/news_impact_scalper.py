@@ -1090,20 +1090,46 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             # ============= PHASE 2: REVERSAL DETECTION + HP TREND =============
             # Don't buy CALL if selling pressure is high (reversal down)
             # Don't buy PUT if buying pressure is high (reversal up)
+            
+            # 🎯 CONTEXT-AWARE: Detect strong breakout scenarios
+            day_change = dual_analysis.get('day_change', 0.0)
+            pattern = dual_analysis.get('pattern', '')
+            
+            # Strong breakout criteria (cautious thresholds):
+            is_strong_breakout = (
+                day_change >= 5.0 or 
+                (day_change >= 2.0 and 'BULLISH' in pattern and 'CONTINUATION' in pattern)
+            )
+            
             if weighted_bias > 0.5:  # Potential CALL (bullish)
-                if selling_pressure > 0.7 or rsi > 70:
-                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - selling pressure {selling_pressure:.0%} or RSI {rsi:.0f} too high")
+                # Selling pressure check - allow bypass in breakouts with low sell pressure
+                if selling_pressure > 0.7:
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - selling pressure {selling_pressure:.0%} too high")
                     return None
+                
+                # RSI overbought - context aware
+                if rsi > 70:
+                    if is_strong_breakout and rsi <= 92:
+                        logger.info(f"✅ {underlying_symbol}: CALL - RSI overbought ({rsi:.0f}) CONFIRMS breakout (+{day_change:.1f}%)")
+                    else:
+                        logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - RSI {rsi:.0f} too high")
+                        return None
                 
                 # 🔧 NEW: MFI overbought check
                 if mfi > 80:
-                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - MFI overbought ({mfi:.0f})")
-                    return None
+                    if is_strong_breakout and mfi <= 95:
+                        logger.info(f"✅ {underlying_symbol}: CALL - MFI overbought ({mfi:.0f}) CONFIRMS breakout (+{day_change:.1f}%)")
+                    else:
+                        logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - MFI overbought ({mfi:.0f})")
+                        return None
                 
                 # 🔧 NEW: VRSI checks
                 if vrsi > 75:
-                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - VRSI overbought ({vrsi:.0f})")
-                    return None
+                    if is_strong_breakout and vrsi <= 95:
+                        logger.info(f"✅ {underlying_symbol}: CALL - VRSI overbought ({vrsi:.0f}) CONFIRMS breakout (+{day_change:.1f}%)")
+                    else:
+                        logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - VRSI overbought ({vrsi:.0f})")
+                        return None
                 if vrsi < 35:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - VRSI too low ({vrsi:.0f}) - volume not confirming")
                     return None

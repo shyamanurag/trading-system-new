@@ -893,133 +893,330 @@ def calculate_historical_volatility(prices: List[float], periods: List[int] = [5
         return {"error": str(e)}
 
 def calculate_darvas_box(highs: List[float], lows: List[float], closes: List[float], 
-                          volumes: List[float], current_price: float, lookback: int = 20) -> Dict:
+                          volumes: List[float], current_price: float, lookback: int = 50) -> Dict:
     """
-    Calculate Darvas Box levels for technical analysis.
+    REFINED Darvas Box with Intraday Micro Analysis
     
-    Darvas Box Theory:
-    - Box forms when price makes a new high, then consolidates
-    - Box Top = highest high during consolidation
-    - Box Bottom = lowest low during consolidation
-    - Breakout above box top = bullish signal
-    - Breakdown below box bottom = bearish signal
+    Improvements over basic implementation:
+    1. Multi-box detection (stacking boxes pattern)
+    2. Box confirmation period (high must hold 3+ candles)
+    3. Intraday micro boxes (recent 12 candles for 5min data = 1 hour)
+    4. Box quality scoring
+    5. False breakout detection
+    6. Breakout retest detection
+    7. Target projections using box height
+    8. Volume profile at box levels
     """
     try:
-        if len(highs) < lookback or len(lows) < lookback:
+        if len(highs) < 20 or len(lows) < 20:
             return {"error": "Insufficient data for Darvas Box"}
         
-        highs = np.array(highs[-lookback:])
-        lows = np.array(lows[-lookback:])
-        closes = np.array(closes[-lookback:])
-        volumes = np.array(volumes[-lookback:]) if len(volumes) >= lookback else np.array(volumes)
+        # Use more data for better box detection
+        data_len = min(lookback, len(highs))
+        highs_arr = np.array(highs[-data_len:])
+        lows_arr = np.array(lows[-data_len:])
+        closes_arr = np.array(closes[-data_len:])
+        volumes_arr = np.array(volumes[-data_len:]) if len(volumes) >= data_len else np.array(volumes[-len(volumes):])
         
-        # Find the most recent swing high (box formation starts here)
-        # A swing high is a high that is higher than the 2 candles before and after
-        box_top = None
-        box_top_idx = None
+        # ============= MULTI-BOX DETECTION =============
+        # Find ALL valid boxes (not just most recent)
+        boxes = []
+        min_confirmation = 3  # Box high must hold for 3 candles (Darvas rule)
         
-        for i in range(len(highs) - 3, 4, -1):  # Start from recent, go back
-            if highs[i] >= max(highs[i-3:i]) and highs[i] >= max(highs[i+1:i+3]):
-                box_top = highs[i]
-                box_top_idx = i
-                break
+        i = 5
+        while i < len(highs_arr) - 3:
+            # Check if this is a swing high with confirmation
+            window_before = highs_arr[max(0, i-5):i]
+            window_after = highs_arr[i+1:min(i+4, len(highs_arr))]
+            
+            if len(window_before) > 0 and len(window_after) >= min_confirmation:
+                is_swing_high = highs_arr[i] >= max(window_before)
+                
+                # Confirmation: next 3 candles don't exceed this high
+                confirmed = all(highs_arr[i] >= h for h in window_after[:min_confirmation])
+                
+                if is_swing_high and confirmed:
+                    box_top = float(highs_arr[i])
+                    
+                    # Find box bottom: lowest low until next breakout or 15 candles
+                    search_end = min(i + 15, len(lows_arr))
+                    box_bottom_range = lows_arr[i:search_end]
+                    
+                    if len(box_bottom_range) > 0:
+                        box_bottom = float(min(box_bottom_range))
+                        box_height = box_top - box_bottom
+                        box_height_pct = (box_height / box_bottom * 100) if box_bottom > 0 else 0
+                        
+                        # Only count valid boxes (meaningful height)
+                        if 0.3 <= box_height_pct <= 15:  # 0.3% to 15% range
+                            boxes.append({
+                                "top": box_top,
+                                "bottom": box_bottom,
+                                "height": box_height,
+                                "height_pct": box_height_pct,
+                                "start_idx": i,
+                                "confirmation_candles": min_confirmation
+                            })
+                            i += 5  # Skip ahead after finding a box
+                            continue
+            i += 1
         
-        if box_top is None:
-            # Fallback: use the highest high in recent period
-            box_top = float(max(highs[-10:]))
-            box_top_idx = len(highs) - 1 - np.argmax(highs[-10:][::-1])
-        
-        # Box bottom is the lowest low since box top formation
-        if box_top_idx is not None and box_top_idx < len(lows) - 1:
-            box_bottom = float(min(lows[box_top_idx:]))
+        # ============= PRIMARY BOX (Most Recent Valid Box) =============
+        if boxes:
+            primary_box = boxes[-1]  # Most recent
+            box_top = primary_box["top"]
+            box_bottom = primary_box["bottom"]
+            box_height = primary_box["height"]
+            box_height_pct = primary_box["height_pct"]
+            box_start_idx = primary_box["start_idx"]
         else:
-            box_bottom = float(min(lows[-10:]))
+            # Fallback: simple recent range
+            recent_highs = highs_arr[-15:]
+            recent_lows = lows_arr[-15:]
+            box_top = float(max(recent_highs))
+            box_bottom = float(min(recent_lows))
+            box_height = box_top - box_bottom
+            box_height_pct = (box_height / box_bottom * 100) if box_bottom > 0 else 0
+            box_start_idx = len(highs_arr) - 15
         
-        # Calculate box metrics
-        box_height = box_top - box_bottom
-        box_height_pct = (box_height / box_bottom * 100) if box_bottom > 0 else 0
         box_midpoint = (box_top + box_bottom) / 2
         
-        # Determine current position relative to box
+        # ============= INTRADAY MICRO BOX =============
+        # For 5-min data: last 12 candles = 1 hour micro structure
+        micro_lookback = min(12, len(highs_arr))
+        micro_highs = highs_arr[-micro_lookback:]
+        micro_lows = lows_arr[-micro_lookback:]
+        micro_volumes = volumes_arr[-micro_lookback:] if len(volumes_arr) >= micro_lookback else volumes_arr
+        
+        micro_box_top = float(max(micro_highs))
+        micro_box_bottom = float(min(micro_lows))
+        micro_box_height = micro_box_top - micro_box_bottom
+        micro_box_height_pct = (micro_box_height / micro_box_bottom * 100) if micro_box_bottom > 0 else 0
+        
+        # Micro box position
+        if current_price > micro_box_top:
+            micro_position = "MICRO_BREAKOUT"
+        elif current_price < micro_box_bottom:
+            micro_position = "MICRO_BREAKDOWN"
+        elif current_price >= (micro_box_top + micro_box_bottom) / 2:
+            micro_position = "MICRO_UPPER"
+        else:
+            micro_position = "MICRO_LOWER"
+        
+        # ============= BOX STACKING ANALYSIS =============
+        # Detect ascending/descending boxes pattern
+        box_trend = "NEUTRAL"
+        if len(boxes) >= 2:
+            recent_boxes = boxes[-3:]  # Last 3 boxes
+            tops = [b["top"] for b in recent_boxes]
+            bottoms = [b["bottom"] for b in recent_boxes]
+            
+            # Ascending: each box higher than previous
+            if all(tops[i] < tops[i+1] for i in range(len(tops)-1)):
+                box_trend = "ASCENDING"
+            elif all(tops[i] > tops[i+1] for i in range(len(tops)-1)):
+                box_trend = "DESCENDING"
+            # Check for stair-step pattern
+            elif len(recent_boxes) >= 2 and bottoms[-1] > bottoms[-2]:
+                box_trend = "STEPPING_UP"
+            elif len(recent_boxes) >= 2 and tops[-1] < tops[-2]:
+                box_trend = "STEPPING_DOWN"
+        
+        # ============= CURRENT POSITION & BREAKOUT ANALYSIS =============
+        breakout_pct = 0
+        breakout_confirmed = False
+        
         if current_price > box_top:
             position = "BREAKOUT"
             breakout_pct = ((current_price - box_top) / box_top * 100) if box_top > 0 else 0
+            # Confirmed if breakout > 0.5% beyond box top
+            breakout_confirmed = breakout_pct >= 0.5
         elif current_price < box_bottom:
             position = "BREAKDOWN"
             breakout_pct = ((box_bottom - current_price) / box_bottom * 100) if box_bottom > 0 else 0
+            breakout_confirmed = breakout_pct >= 0.5
         elif current_price >= box_midpoint:
             position = "UPPER_HALF"
-            breakout_pct = 0
         else:
             position = "LOWER_HALF"
-            breakout_pct = 0
         
-        # Volume analysis for breakout confirmation
-        avg_volume = float(np.mean(volumes)) if len(volumes) > 0 else 0
-        recent_volume = float(volumes[-1]) if len(volumes) > 0 else 0
-        volume_surge = recent_volume > (avg_volume * 1.5) if avg_volume > 0 else False
+        # ============= BREAKOUT RETEST DETECTION =============
+        # Check if price broke out then came back to test box top
+        is_retest = False
+        retest_holding = False
+        if position in ["BREAKOUT", "UPPER_HALF"] and len(closes_arr) >= 5:
+            recent_closes = closes_arr[-5:]
+            # Was above box top, now near it
+            was_above = any(c > box_top * 1.005 for c in recent_closes[:-1])
+            near_top = abs(current_price - box_top) / box_top < 0.01  # Within 1%
+            is_retest = was_above and near_top
+            retest_holding = is_retest and current_price >= box_top
         
-        # Determine signal
-        if position == "BREAKOUT" and volume_surge:
-            signal = "STRONG_BUY"
-            signal_strength = min(100, 70 + breakout_pct * 3)
-        elif position == "BREAKOUT":
-            signal = "BUY"
-            signal_strength = min(85, 60 + breakout_pct * 2)
-        elif position == "BREAKDOWN" and volume_surge:
-            signal = "STRONG_SELL"
-            signal_strength = min(100, 70 + breakout_pct * 3)
+        # ============= VOLUME ANALYSIS =============
+        avg_volume = float(np.mean(volumes_arr)) if len(volumes_arr) > 0 else 0
+        recent_volume = float(volumes_arr[-1]) if len(volumes_arr) > 0 else 0
+        volume_ratio = recent_volume / avg_volume if avg_volume > 0 else 1.0
+        volume_surge = volume_ratio > 1.5
+        volume_extreme = volume_ratio > 2.5
+        
+        # Volume at breakout levels
+        breakout_volume_score = 0
+        if position == "BREAKOUT":
+            breakout_volume_score = min(100, volume_ratio * 40)
         elif position == "BREAKDOWN":
-            signal = "SELL"
-            signal_strength = min(85, 60 + breakout_pct * 2)
-        elif position == "UPPER_HALF":
-            signal = "WATCH_FOR_BREAKOUT"
-            signal_strength = 50
-        else:
-            signal = "WATCH_FOR_BREAKDOWN"
-            signal_strength = 50
+            breakout_volume_score = min(100, volume_ratio * 40)
         
-        # Calculate distance to box levels
+        # ============= BOX QUALITY SCORE =============
+        # Rate the quality of box formation
+        quality_score = 50  # Base
+        
+        # Tight consolidation is better (lower volatility in box)
+        if box_height_pct < 2:
+            quality_score += 20
+        elif box_height_pct < 4:
+            quality_score += 10
+        elif box_height_pct > 8:
+            quality_score -= 15
+        
+        # Longer consolidation is better
+        box_age = len(highs_arr) - box_start_idx if box_start_idx else 0
+        if box_age >= 15:
+            quality_score += 15
+        elif box_age >= 8:
+            quality_score += 8
+        elif box_age < 4:
+            quality_score -= 10
+        
+        # Multiple boxes = stronger pattern
+        if len(boxes) >= 3:
+            quality_score += 10
+        
+        # Ascending boxes = bullish trend
+        if box_trend == "ASCENDING":
+            quality_score += 10
+        elif box_trend == "DESCENDING":
+            quality_score -= 5  # Not necessarily bad for shorts
+        
+        quality_score = max(0, min(100, quality_score))
+        
+        # ============= SIGNAL DETERMINATION =============
+        if position == "BREAKOUT" and volume_extreme and breakout_confirmed:
+            signal = "STRONG_BUY"
+            signal_strength = min(100, 80 + breakout_pct * 2 + (quality_score / 10))
+        elif position == "BREAKOUT" and (volume_surge or breakout_confirmed):
+            signal = "BUY"
+            signal_strength = min(90, 65 + breakout_pct * 2 + (quality_score / 15))
+        elif position == "BREAKOUT":
+            signal = "WEAK_BUY"
+            signal_strength = min(75, 55 + breakout_pct + (quality_score / 20))
+        elif position == "BREAKDOWN" and volume_extreme and breakout_confirmed:
+            signal = "STRONG_SELL"
+            signal_strength = min(100, 80 + breakout_pct * 2 + (quality_score / 10))
+        elif position == "BREAKDOWN" and (volume_surge or breakout_confirmed):
+            signal = "SELL"
+            signal_strength = min(90, 65 + breakout_pct * 2 + (quality_score / 15))
+        elif position == "BREAKDOWN":
+            signal = "WEAK_SELL"
+            signal_strength = min(75, 55 + breakout_pct + (quality_score / 20))
+        elif position == "UPPER_HALF" and retest_holding:
+            signal = "RETEST_BUY"
+            signal_strength = 70 + (quality_score / 20)
+        elif position == "UPPER_HALF":
+            signal = "WATCH_BREAKOUT"
+            signal_strength = 50 + (quality_score / 25)
+        else:
+            signal = "WATCH_BREAKDOWN"
+            signal_strength = 45
+        
+        # ============= TARGET PROJECTIONS =============
+        # Classic Darvas: target = breakout point + box height
+        target_1 = round(box_top + box_height, 2) if position in ["BREAKOUT", "UPPER_HALF"] else round(box_bottom - box_height, 2)
+        target_2 = round(box_top + (box_height * 1.618), 2) if position in ["BREAKOUT", "UPPER_HALF"] else round(box_bottom - (box_height * 1.618), 2)
+        
+        # ============= CALCULATE DISTANCES =============
         distance_to_top = ((box_top - current_price) / current_price * 100) if current_price > 0 else 0
         distance_to_bottom = ((current_price - box_bottom) / current_price * 100) if current_price > 0 else 0
         
-        # Box age (how many candles since box formed)
-        box_age = len(highs) - box_top_idx if box_top_idx else 0
-        
-        # Is the box tight (consolidation)?
-        is_tight_box = box_height_pct < 3.0  # Less than 3% range = tight consolidation
+        is_tight_box = box_height_pct < 2.5
         
         return {
+            # Primary box
             "box_top": round(box_top, 2),
             "box_bottom": round(box_bottom, 2),
             "box_midpoint": round(box_midpoint, 2),
             "box_height": round(box_height, 2),
             "box_height_pct": round(box_height_pct, 2),
+            
+            # Micro box (intraday)
+            "micro_box_top": round(micro_box_top, 2),
+            "micro_box_bottom": round(micro_box_bottom, 2),
+            "micro_box_height_pct": round(micro_box_height_pct, 2),
+            "micro_position": micro_position,
+            
+            # Multi-box analysis
+            "boxes_detected": len(boxes),
+            "box_trend": box_trend,
+            
+            # Current state
             "current_price": round(current_price, 2),
             "position": position,
             "signal": signal,
             "signal_strength": round(signal_strength, 1),
-            "distance_to_top_pct": round(distance_to_top, 2),
-            "distance_to_bottom_pct": round(distance_to_bottom, 2),
+            
+            # Breakout analysis
+            "breakout_pct": round(breakout_pct, 2),
+            "breakout_confirmed": breakout_confirmed,
+            "is_retest": is_retest,
+            "retest_holding": retest_holding,
+            
+            # Volume
+            "volume_ratio": round(volume_ratio, 2),
             "volume_surge": volume_surge,
+            "volume_extreme": volume_extreme,
+            
+            # Quality
+            "box_quality_score": quality_score,
             "box_age_candles": box_age,
             "is_tight_consolidation": is_tight_box,
-            "trading_hint": _get_darvas_trading_hint(position, signal, box_top, box_bottom, is_tight_box)
+            
+            # Distances
+            "distance_to_top_pct": round(distance_to_top, 2),
+            "distance_to_bottom_pct": round(distance_to_bottom, 2),
+            
+            # Targets
+            "target_1": target_1,
+            "target_2_fib": target_2,
+            
+            # Trading guidance
+            "trading_hint": _get_darvas_trading_hint(position, signal, box_top, box_bottom, is_tight_box, 
+                                                      retest_holding, box_trend, breakout_confirmed)
         }
         
     except Exception as e:
         return {"error": str(e)}
 
-def _get_darvas_trading_hint(position: str, signal: str, box_top: float, box_bottom: float, is_tight: bool) -> str:
-    """Generate trading hint based on Darvas Box analysis"""
+def _get_darvas_trading_hint(position: str, signal: str, box_top: float, box_bottom: float, 
+                              is_tight: bool, retest_holding: bool = False, 
+                              box_trend: str = "NEUTRAL", breakout_confirmed: bool = False) -> str:
+    """Generate professional trading hint based on refined Darvas Box analysis"""
+    
     if signal == "STRONG_BUY":
-        return f"Breakout with volume! Consider BUY with stop loss at ₹{box_top:.2f}"
+        return f"🚀 CONFIRMED BREAKOUT with volume explosion! BUY with SL at ₹{box_top:.2f}"
     elif signal == "BUY":
-        return f"Breakout without volume confirmation. Wait for volume or set tight stop at ₹{box_top:.2f}"
+        hint = f"Breakout confirmed. BUY with SL at ₹{box_top:.2f}"
+        if box_trend == "ASCENDING":
+            hint += " (ASCENDING boxes = strong uptrend)"
+        return hint
+    elif signal == "WEAK_BUY":
+        return f"Breakout without volume. Wait for pullback to ₹{box_top:.2f} or volume confirmation"
+    elif signal == "RETEST_BUY":
+        return f"📍 RETEST of breakout level holding! Good entry at ₹{box_top:.2f} with tight SL"
     elif signal == "STRONG_SELL":
-        return f"Breakdown with volume! Consider EXIT/SHORT with stop at ₹{box_bottom:.2f}"
+        return f"⚠️ CONFIRMED BREAKDOWN with volume! EXIT/SHORT with SL at ₹{box_bottom:.2f}"
     elif signal == "SELL":
-        return f"Breakdown without volume. Caution - may be false breakdown. Stop at ₹{box_bottom:.2f}"
+        return f"Breakdown confirmed. EXIT with SL at ₹{box_bottom:.2f}"
+    elif signal == "WEAK_SELL":
+        return f"Breakdown without volume. May be false - watch for recovery above ₹{box_bottom:.2f}"
     elif position == "UPPER_HALF":
         if is_tight:
             return f"Tight consolidation near resistance. Watch for breakout above ₹{box_top:.2f}"

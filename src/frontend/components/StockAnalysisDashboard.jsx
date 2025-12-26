@@ -433,7 +433,7 @@ const VolumeAnalysis = ({ volume }) => {
     );
 };
 
-// Darvas Box Display Component
+// Darvas Box Display Component - REFINED with Intraday Micro Analysis
 const DarvasBoxDisplay = ({ darvas, currentPrice }) => {
     if (!darvas || darvas.error) {
         return (
@@ -445,11 +445,16 @@ const DarvasBoxDisplay = ({ darvas, currentPrice }) => {
 
     const getSignalColor = () => {
         switch (darvas.signal) {
-            case 'STRONG_BUY': return '#2e7d32';
-            case 'BUY': return '#4caf50';
-            case 'STRONG_SELL': return '#c62828';
-            case 'SELL': return '#f44336';
-            default: return '#ff9800';
+            case 'STRONG_BUY': return '#1b5e20';
+            case 'BUY': return '#2e7d32';
+            case 'WEAK_BUY': return '#4caf50';
+            case 'RETEST_BUY': return '#00897b';
+            case 'STRONG_SELL': return '#b71c1c';
+            case 'SELL': return '#c62828';
+            case 'WEAK_SELL': return '#f44336';
+            case 'WATCH_BREAKOUT': return '#ff9800';
+            case 'WATCH_BREAKDOWN': return '#ff5722';
+            default: return '#757575';
         }
     };
 
@@ -461,6 +466,22 @@ const DarvasBoxDisplay = ({ darvas, currentPrice }) => {
             case 'LOWER_HALF': return '#ffb74d';
             default: return '#9e9e9e';
         }
+    };
+
+    const getTrendIcon = () => {
+        switch (darvas.box_trend) {
+            case 'ASCENDING': return '📈';
+            case 'STEPPING_UP': return '🔼';
+            case 'DESCENDING': return '📉';
+            case 'STEPPING_DOWN': return '🔽';
+            default: return '➡️';
+        }
+    };
+
+    const getQualityColor = () => {
+        if (darvas.box_quality_score >= 70) return '#4caf50';
+        if (darvas.box_quality_score >= 50) return '#ff9800';
+        return '#f44336';
     };
 
     const formatPrice = (price) => {
@@ -478,52 +499,72 @@ const DarvasBoxDisplay = ({ darvas, currentPrice }) => {
         : 50;
 
     return (
-        <Box sx={{ p: 2 }}>
-            {/* Signal Badge */}
-            <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+        <Box sx={{ p: 1.5 }}>
+            {/* Signal & Quality Row */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
                 <Chip
-                    label={darvas.signal?.replace('_', ' ') || 'NEUTRAL'}
+                    label={darvas.signal?.replace(/_/g, ' ') || 'NEUTRAL'}
                     sx={{
                         bgcolor: getSignalColor(),
                         color: 'white',
                         fontWeight: 'bold',
-                        fontSize: '0.85rem'
+                        fontSize: '0.8rem'
                     }}
                 />
-                {darvas.volume_surge && (
-                    <Chip
-                        label="📈 VOLUME"
-                        size="small"
-                        sx={{ ml: 1, bgcolor: '#2196f3', color: 'white' }}
-                    />
-                )}
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                    {darvas.volume_extreme && (
+                        <Chip label="🔥 VOL" size="small" sx={{ bgcolor: '#d32f2f', color: 'white' }} />
+                    )}
+                    {darvas.volume_surge && !darvas.volume_extreme && (
+                        <Chip label="📈 VOL" size="small" sx={{ bgcolor: '#2196f3', color: 'white' }} />
+                    )}
+                    {darvas.breakout_confirmed && (
+                        <Chip label="✓" size="small" sx={{ bgcolor: '#4caf50', color: 'white' }} />
+                    )}
+                </Box>
+            </Box>
+
+            {/* Box Trend & Quality */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary">Trend:</Typography>
+                    <Typography variant="caption" fontWeight="bold">
+                        {getTrendIcon()} {darvas.box_trend?.replace('_', ' ')}
+                    </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary">Quality:</Typography>
+                    <Typography variant="caption" fontWeight="bold" sx={{ color: getQualityColor() }}>
+                        {darvas.box_quality_score}%
+                    </Typography>
+                </Box>
             </Box>
 
             {/* Box Visualization */}
             <Box sx={{ 
                 position: 'relative', 
-                height: 120, 
-                bgcolor: '#f5f5f5', 
+                height: 100, 
+                bgcolor: '#fafafa', 
                 borderRadius: 1,
                 border: '1px solid #e0e0e0',
                 overflow: 'hidden',
-                mb: 2
+                mb: 1.5
             }}>
                 {/* Box Top Line */}
                 <Box sx={{ 
                     position: 'absolute', 
-                    top: '15%', 
+                    top: '12%', 
                     left: 0, 
                     right: 0, 
-                    borderBottom: '2px solid #f44336',
+                    borderBottom: '2px solid #ef5350',
                     display: 'flex',
                     justifyContent: 'space-between',
-                    px: 1
+                    px: 0.5
                 }}>
-                    <Typography variant="caption" sx={{ color: '#f44336', fontWeight: 'bold', transform: 'translateY(-100%)' }}>
-                        BOX TOP
+                    <Typography variant="caption" sx={{ color: '#ef5350', fontSize: '0.65rem', transform: 'translateY(-100%)' }}>
+                        TOP
                     </Typography>
-                    <Typography variant="caption" sx={{ color: '#f44336', fontWeight: 'bold', transform: 'translateY(-100%)' }}>
+                    <Typography variant="caption" sx={{ color: '#ef5350', fontSize: '0.65rem', fontWeight: 'bold', transform: 'translateY(-100%)' }}>
                         ₹{formatPrice(darvas.box_top)}
                     </Typography>
                 </Box>
@@ -531,93 +572,108 @@ const DarvasBoxDisplay = ({ darvas, currentPrice }) => {
                 {/* Box Bottom Line */}
                 <Box sx={{ 
                     position: 'absolute', 
-                    bottom: '15%', 
+                    bottom: '12%', 
                     left: 0, 
                     right: 0, 
-                    borderTop: '2px solid #4caf50',
+                    borderTop: '2px solid #66bb6a',
                     display: 'flex',
                     justifyContent: 'space-between',
-                    px: 1
+                    px: 0.5
                 }}>
-                    <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
-                        BOX BOTTOM
+                    <Typography variant="caption" sx={{ color: '#66bb6a', fontSize: '0.65rem' }}>
+                        BOTTOM
                     </Typography>
-                    <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
+                    <Typography variant="caption" sx={{ color: '#66bb6a', fontSize: '0.65rem', fontWeight: 'bold' }}>
                         ₹{formatPrice(darvas.box_bottom)}
                     </Typography>
                 </Box>
 
-                {/* Midpoint Line */}
-                <Box sx={{ 
-                    position: 'absolute', 
-                    top: '50%', 
-                    left: 0, 
-                    right: 0, 
-                    borderBottom: '1px dashed #9e9e9e'
-                }} />
+                {/* Midpoint */}
+                <Box sx={{ position: 'absolute', top: '50%', left: 0, right: 0, borderBottom: '1px dashed #bdbdbd' }} />
 
                 {/* Current Price Indicator */}
                 <Box sx={{ 
                     position: 'absolute', 
-                    top: `${Math.max(5, Math.min(90, 85 - (pricePosition * 0.7)))}%`,
+                    top: `${Math.max(5, Math.min(88, 80 - (pricePosition * 0.65)))}%`,
                     left: '50%',
                     transform: 'translateX(-50%)',
                     bgcolor: getPositionColor(),
                     color: 'white',
-                    px: 1.5,
-                    py: 0.5,
-                    borderRadius: 1,
+                    px: 1,
+                    py: 0.3,
+                    borderRadius: 0.5,
                     fontWeight: 'bold',
-                    fontSize: '0.75rem',
-                    boxShadow: 2
+                    fontSize: '0.7rem',
+                    boxShadow: 1
                 }}>
                     ₹{formatPrice(currentPrice)}
                 </Box>
             </Box>
 
-            {/* Box Metrics */}
-            <Grid container spacing={1}>
-                <Grid item xs={6}>
-                    <Typography variant="caption" color="text.secondary">Box Height</Typography>
-                    <Typography variant="body2" fontWeight="bold">
-                        ₹{formatPrice(darvas.box_height)} ({darvas.box_height_pct?.toFixed(1)}%)
+            {/* Metrics Grid */}
+            <Grid container spacing={0.5} sx={{ mb: 1 }}>
+                <Grid item xs={4}>
+                    <Typography variant="caption" color="text.secondary" fontSize="0.65rem">Height</Typography>
+                    <Typography variant="body2" fontWeight="bold" fontSize="0.75rem">
+                        {darvas.box_height_pct?.toFixed(1)}%
                     </Typography>
                 </Grid>
-                <Grid item xs={6}>
-                    <Typography variant="caption" color="text.secondary">Position</Typography>
-                    <Typography variant="body2" fontWeight="bold" sx={{ color: getPositionColor() }}>
+                <Grid item xs={4}>
+                    <Typography variant="caption" color="text.secondary" fontSize="0.65rem">Position</Typography>
+                    <Typography variant="body2" fontWeight="bold" fontSize="0.75rem" sx={{ color: getPositionColor() }}>
                         {darvas.position?.replace('_', ' ')}
                     </Typography>
                 </Grid>
-            </Grid>
-
-            <Divider sx={{ my: 1 }} />
-
-            {/* Distance to Levels */}
-            <Grid container spacing={1}>
-                <Grid item xs={6}>
-                    <Typography variant="caption" color="error.main">↑ To Top</Typography>
-                    <Typography variant="body2">
-                        {darvas.distance_to_top_pct > 0 ? '+' : ''}{darvas.distance_to_top_pct?.toFixed(2)}%
-                    </Typography>
-                </Grid>
-                <Grid item xs={6}>
-                    <Typography variant="caption" color="success.main">↓ To Bottom</Typography>
-                    <Typography variant="body2">
-                        {darvas.distance_to_bottom_pct > 0 ? '+' : ''}{darvas.distance_to_bottom_pct?.toFixed(2)}%
+                <Grid item xs={4}>
+                    <Typography variant="caption" color="text.secondary" fontSize="0.65rem">Vol Ratio</Typography>
+                    <Typography variant="body2" fontWeight="bold" fontSize="0.75rem">
+                        {darvas.volume_ratio?.toFixed(1)}x
                     </Typography>
                 </Grid>
             </Grid>
 
-            {/* Consolidation Badge */}
-            {darvas.is_tight_consolidation && (
-                <Chip
-                    label="🎯 TIGHT CONSOLIDATION"
-                    size="small"
-                    color="warning"
-                    sx={{ mt: 1 }}
-                />
+            {/* Micro Box (Intraday) */}
+            {darvas.micro_box_top && (
+                <Box sx={{ bgcolor: '#e3f2fd', p: 0.75, borderRadius: 0.5, mb: 1 }}>
+                    <Typography variant="caption" fontWeight="bold" color="primary" fontSize="0.7rem">
+                        ⚡ MICRO BOX (1hr)
+                    </Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.25 }}>
+                        <Typography variant="caption" fontSize="0.65rem">
+                            ₹{formatPrice(darvas.micro_box_bottom)} - ₹{formatPrice(darvas.micro_box_top)}
+                        </Typography>
+                        <Typography variant="caption" fontWeight="bold" fontSize="0.65rem">
+                            {darvas.micro_position?.replace('MICRO_', '')}
+                        </Typography>
+                    </Box>
+                </Box>
             )}
+
+            {/* Targets */}
+            {darvas.target_1 && (darvas.position === 'BREAKOUT' || darvas.position === 'UPPER_HALF') && (
+                <Box sx={{ bgcolor: '#e8f5e9', p: 0.75, borderRadius: 0.5, mb: 1 }}>
+                    <Typography variant="caption" fontWeight="bold" color="success.main" fontSize="0.7rem">
+                        🎯 TARGETS
+                    </Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.25 }}>
+                        <Typography variant="caption" fontSize="0.65rem">T1: ₹{formatPrice(darvas.target_1)}</Typography>
+                        <Typography variant="caption" fontSize="0.65rem">T2 (Fib): ₹{formatPrice(darvas.target_2_fib)}</Typography>
+                    </Box>
+                </Box>
+            )}
+
+            {/* Status Chips */}
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
+                {darvas.is_tight_consolidation && (
+                    <Chip label="🎯 TIGHT" size="small" sx={{ fontSize: '0.65rem', height: 20 }} color="warning" />
+                )}
+                {darvas.is_retest && (
+                    <Chip label="📍 RETEST" size="small" sx={{ fontSize: '0.65rem', height: 20 }} color="info" />
+                )}
+                {darvas.boxes_detected >= 3 && (
+                    <Chip label={`📦 ${darvas.boxes_detected} BOXES`} size="small" sx={{ fontSize: '0.65rem', height: 20 }} />
+                )}
+            </Box>
 
             {/* Trading Hint */}
             {darvas.trading_hint && (
@@ -626,16 +682,14 @@ const DarvasBoxDisplay = ({ darvas, currentPrice }) => {
                         darvas.signal?.includes('BUY') ? 'success' :
                         darvas.signal?.includes('SELL') ? 'error' : 'info'
                     }
-                    sx={{ mt: 1, py: 0.5 }}
+                    sx={{ py: 0.25, '& .MuiAlert-message': { fontSize: '0.7rem' } }}
                 >
-                    <Typography variant="caption">
-                        {darvas.trading_hint}
-                    </Typography>
+                    {darvas.trading_hint}
                 </Alert>
             )}
 
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                Box Age: {darvas.box_age_candles} candles | Strength: {darvas.signal_strength?.toFixed(0)}%
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', fontSize: '0.6rem' }}>
+                Age: {darvas.box_age_candles} candles | Strength: {darvas.signal_strength?.toFixed(0)}% | Breakout: {darvas.breakout_pct?.toFixed(1)}%
             </Typography>
         </Box>
     );
