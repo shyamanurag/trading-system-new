@@ -324,10 +324,13 @@ class EnhancedMomentumSurfer(BaseStrategy):
         self.trend_strength_threshold = config.get('trend_strength_threshold', 0.25)  # Configurable trend confirmation
         self.mean_reversion_threshold = config.get('mean_reversion_threshold', 0.7)   # Configurable mean reversion probability
         
-        # 🔥 MARKET CONDITION DETECTION THRESHOLDS (CRITICAL FIX - WERE MISSING!)
-        self.trending_threshold = config.get('trending_threshold', 1.5)    # 1.5% change for trending
-        self.breakout_threshold = config.get('breakout_threshold', 2.5)    # 2.5% change for breakout
-        self.sideways_range = config.get('sideways_range', 0.5)            # ±0.5% is sideways
+        # 🔥 MARKET CONDITION DETECTION THRESHOLDS (ALIGNED 2025-12-26)
+        # 🚨 FIX: Removed gap between sideways (0.5%) and trending (1.5%)
+        # Old: sideways=0.5%, trending=1.5% → stocks at 0.5-1.5% fell to unpredictable logic
+        # New: sideways=0.3%, trending=0.5% → tighter, no gaps, clear boundaries
+        self.trending_threshold = config.get('trending_threshold', 0.5)    # 0.5% change for trending (was 1.5%)
+        self.breakout_threshold = config.get('breakout_threshold', 1.5)    # 1.5% change for breakout (was 2.5%)
+        self.sideways_range = config.get('sideways_range', 0.3)            # ±0.3% is sideways (was 0.5%)
 
         # CONFIGURABLE STOCK UNIVERSE - now using base class symbol filtering
         self.watchlist = set(config.get('focus_stocks', [
@@ -2129,74 +2132,45 @@ class EnhancedMomentumSurfer(BaseStrategy):
         return None
 
     async def _sideways_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """RANGE TRADING strategy for sideways markets"""
+        """
+        RANGE TRADING strategy - DISABLED FOR INTRADAY
+        
+        🚨 2025-12-26: Disabled for intraday trading because:
+        1. Range trading requires precise S/R levels we don't reliably detect
+        2. Signals always had confidence 6.8, below 8.0 threshold - never executed
+        3. Generated contradictory signals on trending stocks
+        4. Trend-following is more reliable for intraday
+        
+        For swing trading or if you want to re-enable:
+        - Add proper S/R detection (swing highs/lows, Camarilla pivots)
+        - Add volume confirmation at S/R levels
+        - Add Bollinger band width check (must be narrow for true range)
+        - Add regime check (only in CHOPPY regime)
+        - Raise base confidence to 7.5+ for valid setups
+        """
+        # DISABLED: Return None - let trending strategies handle these stocks
+        return None
+        
+        # PRESERVED CODE BELOW FOR REFERENCE (commented out)
+        # ================================================
+        # data = market_data.get(symbol, {})
+        # dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
+        # weighted_bias = dual_analysis.get('weighted_bias', 0.0)
+        # alignment = dual_analysis.get('alignment', 'UNKNOWN')
+        # pattern = dual_analysis.get('pattern', 'UNKNOWN')
+        # ltp = data.get('ltp', 0)
+        # 
+        # if 'CONTINUATION' in pattern:
+        #     return None
+        # if "WITH MARKET (BEAR)" in alignment and weighted_bias < 0:
+        #     return None
+        # if "WITH MARKET (BULL)" in alignment and weighted_bias > 0:
+        #     return None
+        
+        # Range trading logic preserved but disabled
         data = market_data.get(symbol, {})
-        
-        # 🎯 ENHANCED: Use Dual-Timeframe Analysis
-        dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
-        weighted_bias = dual_analysis.get('weighted_bias', 0.0)
-        alignment = dual_analysis.get('alignment', 'UNKNOWN')
-        pattern = dual_analysis.get('pattern', 'UNKNOWN')
-        
         ltp = data.get('ltp', 0)
-        
-        # 🚨 2025-12-26 FIX: Don't range trade trending stocks!
-        # If pattern is CONTINUATION (bullish or bearish), stock is TRENDING not RANGING
-        if 'CONTINUATION' in pattern:
-            logger.debug(f"⚠️ {symbol}: Skipping sideways strategy - {pattern} is a trending pattern")
-            return None
-        
-        # 🚨 FIX: Don't counter-trend when stock is WITH MARKET trend
-        # BUY signal when stock is falling WITH bearish market = wrong
-        # SELL signal when stock is rising WITH bullish market = wrong
-        if "WITH MARKET (BEAR)" in alignment and weighted_bias < 0:
-            logger.debug(f"⚠️ {symbol}: Skipping BUY in sideways - stock falling WITH bear market")
-            return None
-        if "WITH MARKET (BULL)" in alignment and weighted_bias > 0:
-            logger.debug(f"⚠️ {symbol}: Skipping SELL in sideways - stock rising WITH bull market")
-            return None
-        
-        # Range trading: buy at support, sell at resistance
-        # Use weighted_bias to confirm we aren't in a strong trend
-        if weighted_bias < -0.3 and abs(weighted_bias) < 1.0:  # Near support but not crashing
-            # 🎯 ENHANCED: Ranging markets are harder to trade
-            confidence = 6.8
-            
-            # Boost if aligned with market (e.g. market is also sideways/choppy)
-            if "NEUTRAL" in alignment or "UNKNOWN" in alignment:
-                confidence += 0.3
-                
-            if ltp <= 0:
-                return None
-            
-            # 🎯 DYNAMIC LEVELS: Use chart-based ATR/swing analysis
-            stop_loss, target = self.calculate_chart_based_levels(symbol, 'BUY', ltp, data)
-            
-            return await self.create_standard_signal(
-                symbol=symbol,
-                action='BUY',
-                entry_price=ltp,
-                stop_loss=stop_loss,
-                target=target,
-                confidence=confidence,
-                metadata={
-                    'strategy': self.strategy_name,
-                    'signal_type': 'OPTIONS',
-                    'reason': f"Range trading: Buy at support - Bias: {weighted_bias:.1f}% ({alignment})"
-                },
-                market_bias=self.market_bias
-            )
-        elif weighted_bias > 0.3 and abs(weighted_bias) < 1.0:  # Near resistance but not breakout
-            # 🎯 ENHANCED: Range resistance fades are risky
-            confidence = 6.5
-            
-            if "NEUTRAL" in alignment or "UNKNOWN" in alignment:
-                confidence += 0.3
-                
-            if ltp <= 0:
-                return None
-            
-            # 🎯 DYNAMIC LEVELS: Use chart-based ATR/swing analysis
+        if False:  # DISABLED - preserved for reference
             stop_loss, target = self.calculate_chart_based_levels(symbol, 'SELL', ltp, data)
             
             return await self.create_standard_signal(
@@ -2306,11 +2280,10 @@ class EnhancedMomentumSurfer(BaseStrategy):
         return None
 
     async def _reversal_up_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Strategy for upward reversals"""
+        """Strategy for upward reversals - ENHANCED WITH PATTERN CHECKS"""
         data = market_data.get(symbol, {})
         
         # 🔥 CRITICAL FIX: Don't generate BUY signal if SHORT position already exists!
-        # AXISBANK bug: RSI divergence triggered BUY which squared off profitable SHORT
         if hasattr(self, 'active_positions') and symbol in self.active_positions:
             pos = self.active_positions[symbol]
             pos_qty = pos.get('quantity', 0) if isinstance(pos, dict) else getattr(pos, 'quantity', 0)
@@ -2325,24 +2298,37 @@ class EnhancedMomentumSurfer(BaseStrategy):
         dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
         weighted_bias = dual_analysis.get('weighted_bias', 0.0)
         alignment = dual_analysis.get('alignment', 'UNKNOWN')
+        pattern = dual_analysis.get('pattern', 'UNKNOWN')
         
-        # Reversal logic: Modest positive move
+        # 🚨 2025-12-26 FIX: Don't try reversal on strong trends
+        if 'BEARISH CONTINUATION' in pattern:
+            logger.debug(f"⚠️ {symbol}: Skipping reversal_up - {pattern} indicates strong downtrend")
+            return None
+        
+        # 🚨 FIX: Don't BUY reversal when WITH bearish market
+        if "WITH MARKET (BEAR)" in alignment:
+            logger.debug(f"⚠️ {symbol}: Skipping reversal_up - stock aligned WITH bear market")
+            return None
+        
+        # Reversal logic: Modest positive move (potential bounce)
         if 0.5 <= weighted_bias <= 1.0:
-            # 🎯 ENHANCED: Reversal timing is difficult
-            confidence = 6.8
+            # 🎯 ENHANCED: Raised base confidence to 7.2 (was 6.8)
+            # Reversals are valid when confirmed
+            confidence = 7.2
             
-            # Stronger confidence if aligned
-            if "WITH MARKET" in alignment:
-                confidence += 0.4
+            # Stronger confidence if against market (relative strength)
+            if "AGAINST MARKET" in alignment:
+                confidence += 0.5  # Strong relative strength
+            elif "WITH MARKET" in alignment:
+                confidence += 0.3
                 
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
             
-            # 🔥 FIX: Tighter stop loss for intraday (1.5% instead of 1%)
-            stop_loss = ltp * 0.985  # 1.5% stop loss
-            target = ltp * 1.03  # 3% target (2:1 risk-reward)
+            # 🔥 Use chart-based levels instead of hardcoded percentages
+            stop_loss, target = self.calculate_chart_based_levels(symbol, 'BUY', ltp, data)
             
             return await self.create_standard_signal(
                 symbol=symbol,
@@ -2364,7 +2350,7 @@ class EnhancedMomentumSurfer(BaseStrategy):
         return None
 
     async def _reversal_down_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Strategy for downward reversals"""
+        """Strategy for downward reversals - ENHANCED WITH PATTERN CHECKS"""
         data = market_data.get(symbol, {})
         
         # 🔥 CRITICAL FIX: Don't generate SELL signal if LONG position already exists!
@@ -2382,24 +2368,36 @@ class EnhancedMomentumSurfer(BaseStrategy):
         dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
         weighted_bias = dual_analysis.get('weighted_bias', 0.0)
         alignment = dual_analysis.get('alignment', 'UNKNOWN')
+        pattern = dual_analysis.get('pattern', 'UNKNOWN')
         
-        # Reversal logic: Modest negative move
+        # 🚨 2025-12-26 FIX: Don't try reversal on strong trends
+        if 'BULLISH CONTINUATION' in pattern:
+            logger.debug(f"⚠️ {symbol}: Skipping reversal_down - {pattern} indicates strong uptrend")
+            return None
+        
+        # 🚨 FIX: Don't SELL reversal when WITH bullish market
+        if "WITH MARKET (BULL)" in alignment:
+            logger.debug(f"⚠️ {symbol}: Skipping reversal_down - stock aligned WITH bull market")
+            return None
+        
+        # Reversal logic: Modest negative move (potential fade)
         if -1.0 <= weighted_bias <= -0.5:
-            # 🎯 ENHANCED: Catching falling knives is risky
-            confidence = 6.5
+            # 🎯 ENHANCED: Raised base confidence to 7.2 (was 6.5)
+            confidence = 7.2
             
-            # Stronger confidence if aligned
-            if "WITH MARKET" in alignment:
-                confidence += 0.4
+            # Stronger confidence if against market (relative weakness)
+            if "AGAINST MARKET" in alignment:
+                confidence += 0.5  # Strong relative weakness
+            elif "WITH MARKET" in alignment:
+                confidence += 0.3
                 
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
             
-            # 🔥 FIX: Tighter stop loss for intraday (1.5% instead of 1%)
-            stop_loss = ltp * 1.015  # 1.5% stop loss
-            target = ltp * 0.97  # 3% target (2:1 risk-reward)
+            # 🔥 Use chart-based levels instead of hardcoded percentages
+            stop_loss, target = self.calculate_chart_based_levels(symbol, 'SELL', ltp, data)
             
             return await self.create_standard_signal(
                 symbol=symbol,
@@ -2421,36 +2419,48 @@ class EnhancedMomentumSurfer(BaseStrategy):
         return None
 
     async def _high_volatility_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Strategy for high volatility periods"""
+        """Strategy for high volatility periods - ENHANCED WITH PATTERN CHECKS"""
         data = market_data.get(symbol, {})
         
         # 🎯 ENHANCED: Use Dual-Timeframe Analysis
         dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
         weighted_bias = dual_analysis.get('weighted_bias', 0.0)
         alignment = dual_analysis.get('alignment', 'UNKNOWN')
+        pattern = dual_analysis.get('pattern', 'UNKNOWN')
         
         volume = data.get('volume', 0)
         
         if volume > 200000 and abs(weighted_bias) > 0.5:
             signal_type = 'BUY' if weighted_bias > 0 else 'SELL'
-            # 🚨 CRITICAL FIX: Base confidence raised from 7.0 to 7.5 to pass threshold
-            # High volatility with good volume IS a valid setup
+            
+            # 🚨 2025-12-26 FIX: Don't trade against pattern
+            if signal_type == 'BUY' and 'BEARISH CONTINUATION' in pattern:
+                logger.debug(f"⚠️ {symbol}: Skipping high_vol BUY - {pattern}")
+                return None
+            if signal_type == 'SELL' and 'BULLISH CONTINUATION' in pattern:
+                logger.debug(f"⚠️ {symbol}: Skipping high_vol SELL - {pattern}")
+                return None
+            
+            # Base confidence - high volatility with volume is valid
             confidence = 7.5
             
             # Add confidence boosts for strong setups
             if abs(weighted_bias) > 1.0:  # Stronger bias
                 confidence += 0.3
             
-            # Check alignment
+            # Check alignment - WITH MARKET is better than AGAINST
             if "WITH MARKET" in alignment:
                 confidence += 0.5
+            elif "AGAINST MARKET" in alignment:
+                confidence -= 0.3  # Penalize counter-trend slightly
             
             ltp = data.get('ltp', 0)
             if ltp <= 0:
                 logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
-            stop_loss = ltp * (0.99 if signal_type == 'BUY' else 1.01)
-            target = ltp * (1.02 if signal_type == 'BUY' else 0.98)
+            
+            # 🔥 Use chart-based levels instead of hardcoded percentages
+            stop_loss, target = self.calculate_chart_based_levels(symbol, signal_type, ltp, data)
             return await self.create_standard_signal(
                 symbol=symbol,
                 action=signal_type,
@@ -2468,21 +2478,27 @@ class EnhancedMomentumSurfer(BaseStrategy):
         return None
 
     async def _low_volatility_strategy(self, symbol: str, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Strategy for low volatility periods"""
-        data = market_data.get(symbol, {})
+        """
+        Strategy for low volatility periods - DISABLED FOR INTRADAY
         
-        # 🎯 ENHANCED: Use Dual-Timeframe Analysis
+        🚨 2025-12-26: Disabled because:
+        1. Low volatility = low opportunity for intraday
+        2. Base confidence was 6.2, below 7.0 threshold - never executed
+        3. Small moves get eaten by spreads and slippage
+        """
+        # DISABLED: Low volatility is not good for intraday
+        return None
+        
+        # PRESERVED CODE BELOW FOR REFERENCE
+        data = market_data.get(symbol, {})
         dual_analysis = self.analyze_stock_dual_timeframe(symbol, data)
         weighted_bias = dual_analysis.get('weighted_bias', 0.0)
         
-        # In low volatility, look for any movement
-        if abs(weighted_bias) > 0.2:
+        if False:  # DISABLED
             signal_type = 'BUY' if weighted_bias > 0 else 'SELL'
-            # 🎯 ENHANCED: Low volatility moves lack conviction
             confidence = 6.2
             ltp = data.get('ltp', 0)
             if ltp <= 0:
-                logger.warning(f"⚠️ INVALID LTP for {symbol}: {ltp} - skipping signal generation")
                 return None
             stop_loss = ltp * (0.99 if signal_type == 'BUY' else 1.01)
             target = ltp * (1.02 if signal_type == 'BUY' else 0.98)

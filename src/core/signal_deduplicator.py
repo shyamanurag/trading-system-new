@@ -25,8 +25,10 @@ class SignalDeduplicator:
         self.cleanup_interval = 300  # 5 minutes
         self.last_cleanup = datetime.now()
         
-        # Quality thresholds - BALANCED FOR PRODUCTION TRADING
-        self.min_confidence_threshold = 0.65  # Slightly lowered to capture 0.65 confidence signals
+        # Quality thresholds - STANDARDIZED TO 0-10 SCALE
+        # 🚨 2025-12-26 FIX: Was 0.65 (0-1 scale) - signals are on 0-10 scale!
+        # 7.0 = minimum for production (base_strategy uses 7.0-9.0 range)
+        self.min_confidence_threshold = 7.0  # Aligned with base_strategy 0-10 scale
         self.max_signals_per_symbol = 20  # TEMPORARY FIX: Increased from 5 to 20 to allow signals through
         self.deduplication_window = 300  # 5 minutes
 
