@@ -1256,16 +1256,23 @@ class BaseStrategy:
             logger.error(f"❌ Error cancelling stale orders: {e}")
             return []
     
-    def has_existing_position(self, symbol: str, action: str = None) -> bool:
+    def has_existing_position(self, symbol: str, action: str = None, option_type: str = None) -> bool:
         """🚨 CRITICAL FIX: Check for existing positions to prevent DUPLICATE ORDERS
         
         🔧 2025-12-29: Added action parameter for REVERSAL detection
         - SAME direction signal → Block as DUPLICATE
         - OPPOSITE direction signal → Allow (triggers EXIT/REVERSAL)
         
+        🔧 2025-12-29 v2: Added option_type for correct direction calculation
+        - BUY CALL = effectively LONG
+        - BUY PUT = effectively SHORT  
+        - SELL CALL = effectively SHORT
+        - SELL PUT = effectively LONG
+        
         Args:
             symbol: Stock symbol
             action: 'BUY' or 'SELL' - if provided, checks direction matching
+            option_type: 'CE' or 'PE' - for options, determines effective direction
         """
         
         # Extract underlying symbol for comprehensive checking
@@ -1303,11 +1310,26 @@ class BaseStrategy:
                                     if action:
                                         # pos_qty > 0 means LONG position, < 0 means SHORT
                                         existing_is_long = pos_qty > 0
-                                        signal_is_buy = action.upper() == 'BUY'
+                                        
+                                        # 🔧 2025-12-29 v2: Calculate EFFECTIVE direction for options
+                                        # BUY PUT = SHORT direction, BUY CALL = LONG direction
+                                        # SELL PUT = LONG direction, SELL CALL = SHORT direction
+                                        raw_is_buy = action.upper() == 'BUY'
+                                        if option_type:
+                                            if option_type.upper() in ['PE', 'PUT']:
+                                                # PUT: BUY=SHORT, SELL=LONG
+                                                signal_is_long = not raw_is_buy
+                                            else:
+                                                # CALL: BUY=LONG, SELL=SHORT
+                                                signal_is_long = raw_is_buy
+                                            direction_desc = f"{action} {option_type} (effective: {'LONG' if signal_is_long else 'SHORT'})"
+                                        else:
+                                            signal_is_long = raw_is_buy
+                                            direction_desc = action
                                         
                                         # If signal is OPPOSITE to existing position = REVERSAL (allow it)
-                                        if (existing_is_long and not signal_is_buy) or (not existing_is_long and signal_is_buy):
-                                            logger.info(f"🔄 REVERSAL SIGNAL DETECTED: {symbol} has {'LONG' if existing_is_long else 'SHORT'} position, new signal is {action}")
+                                        if (existing_is_long and not signal_is_long) or (not existing_is_long and signal_is_long):
+                                            logger.info(f"🔄 REVERSAL SIGNAL DETECTED: {symbol} has {'LONG' if existing_is_long else 'SHORT'} position, new signal is {direction_desc}")
                                             logger.info(f"   ✅ Allowing signal to trigger EXIT/REVERSAL")
                                             return False  # Allow the reversal signal
                                     
@@ -1327,10 +1349,21 @@ class BaseStrategy:
                                     # Same underlying check - also consider reversal
                                     if action:
                                         existing_is_long = pos_qty > 0
-                                        signal_is_buy = action.upper() == 'BUY'
                                         
-                                        if (existing_is_long and not signal_is_buy) or (not existing_is_long and signal_is_buy):
-                                            logger.info(f"🔄 REVERSAL SIGNAL for underlying {underlying}: Existing {pos_symbol} is {'LONG' if existing_is_long else 'SHORT'}, new {symbol} is {action}")
+                                        # 🔧 2025-12-29 v2: Calculate EFFECTIVE direction for options
+                                        raw_is_buy = action.upper() == 'BUY'
+                                        if option_type:
+                                            if option_type.upper() in ['PE', 'PUT']:
+                                                signal_is_long = not raw_is_buy
+                                            else:
+                                                signal_is_long = raw_is_buy
+                                            direction_desc = f"{action} {option_type} (effective: {'LONG' if signal_is_long else 'SHORT'})"
+                                        else:
+                                            signal_is_long = raw_is_buy
+                                            direction_desc = action
+                                        
+                                        if (existing_is_long and not signal_is_long) or (not existing_is_long and signal_is_long):
+                                            logger.info(f"🔄 REVERSAL SIGNAL for underlying {underlying}: Existing {pos_symbol} is {'LONG' if existing_is_long else 'SHORT'}, new {symbol} is {direction_desc}")
                                             return False  # Allow the reversal signal
                                     
                                     logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} - Found existing position for underlying {underlying}: {pos_symbol} qty={pos_qty}")
@@ -7034,9 +7067,12 @@ class BaseStrategy:
             # CRITICAL: POSITION DEDUPLICATION CHECK
             # 🔧 2025-12-29: Pass action to detect REVERSAL signals
             # SELL signal on LONG position = EXIT, not duplicate!
+            # 🔧 2025-12-29 v2: Pass option_type for correct direction calculation
+            # BUY PUT on LONG = REVERSAL (allow), BUY CALL on LONG = DUPLICATE (block)
             # ========================================
             if not (is_management or is_closing or bypass_checks):
-                if self.has_existing_position(symbol, action):
+                signal_option_type = metadata.get('option_type', '') if metadata else ''
+                if self.has_existing_position(symbol, action, signal_option_type):
                     logger.info(f"🚫 {self.name}: DUPLICATE SIGNAL PREVENTED for {symbol} - Position already exists")
                     return None
             
@@ -7293,9 +7329,25 @@ class BaseStrategy:
                 return None
             
             # 🎯 FALLBACK: If options not available, create equity signal instead
+            # 🔧 2025-12-29: FIX CRITICAL BUG - Flip action based on original option_type
+            # BUY PUT (bearish) → SELL EQUITY
+            # BUY CALL (bullish) → BUY EQUITY
             if option_type == 'EQUITY':
-                logger.info(f"🔄 FALLBACK TO EQUITY: Creating equity signal for {options_symbol}")
-                return self._create_equity_signal(options_symbol, action, entry_price, stop_loss, target, confidence, metadata)
+                original_option_type = metadata.get('option_type', '') if metadata else ''
+                equity_action = action
+                
+                if original_option_type == 'PE':
+                    # PUT option = bearish bet, so for equity we should SELL (short)
+                    equity_action = 'SELL'
+                    logger.info(f"🔄 PUT→EQUITY FALLBACK: {options_symbol} - Converting BUY PUT to SELL EQUITY (short)")
+                elif original_option_type == 'CE':
+                    # CALL option = bullish bet, so for equity we should BUY (long)
+                    equity_action = 'BUY'
+                    logger.info(f"🔄 CALL→EQUITY FALLBACK: {options_symbol} - Converting BUY CALL to BUY EQUITY (long)")
+                else:
+                    logger.info(f"🔄 FALLBACK TO EQUITY: Creating equity signal for {options_symbol}")
+                
+                return self._create_equity_signal(options_symbol, equity_action, entry_price, stop_loss, target, confidence, metadata)
             
             final_action = 'BUY' # Force all options signals to be BUY
             
@@ -7395,7 +7447,18 @@ class BaseStrategy:
                         equity_metadata['fallback_reason'] = 'options_ltp_zero'
                         equity_metadata['original_options_symbol'] = options_symbol
                         
-                        return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, equity_metadata)
+                        # 🔧 2025-12-29: FIX CRITICAL BUG - Flip action based on original option_type
+                        # BUY PUT (bearish) → SELL EQUITY
+                        # BUY CALL (bullish) → BUY EQUITY
+                        equity_action = action
+                        if option_type == 'PE':
+                            equity_action = 'SELL'
+                            logger.info(f"   🔄 PUT→EQUITY: Converting BUY PUT to SELL EQUITY (short)")
+                        elif option_type == 'CE':
+                            equity_action = 'BUY'
+                            logger.info(f"   🔄 CALL→EQUITY: Converting BUY CALL to BUY EQUITY (long)")
+                        
+                        return self._create_equity_signal(symbol, equity_action, entry_price, stop_loss, target, confidence, equity_metadata)
                     return None
 
             # 🎯 CRITICAL FIX: Calculate correct stop_loss and target for options (only after non-zero premium)
