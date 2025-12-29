@@ -4615,13 +4615,43 @@ class BaseStrategy:
             elif macd_line[-1] < signal_line[-1]:
                 macd_state = 'bearish'  # MACD below signal = bearish momentum
             
+            # 🔧 2025-12-29: Add SHORT MACD for intraday (5-13-4 instead of 12-26-9)
+            # Short MACD reacts faster to price changes
+            short_macd_state = 'neutral'
+            macd_trend = 'NEUTRAL'  # RISING, FALLING, NEUTRAL
+            
+            if len(prices) >= 18:  # Need at least 13+4+1 for short MACD
+                short_ema_fast = self._calculate_ema(prices_array, 5)
+                short_ema_slow = self._calculate_ema(prices_array, 13)
+                short_macd_line = short_ema_fast - short_ema_slow
+                short_signal_line = self._calculate_ema(short_macd_line, 4)
+                
+                if short_macd_line[-1] > short_signal_line[-1]:
+                    short_macd_state = 'bullish'
+                elif short_macd_line[-1] < short_signal_line[-1]:
+                    short_macd_state = 'bearish'
+                
+                # Histogram trend - is momentum shifting?
+                # Compare last 3 histogram bars to previous 3
+                if len(histogram) >= 6:
+                    recent_hist_avg = np.mean(histogram[-3:])
+                    older_hist_avg = np.mean(histogram[-6:-3])
+                    hist_change = recent_hist_avg - older_hist_avg
+                    
+                    if hist_change > 0.05:  # Histogram rising
+                        macd_trend = 'RISING'  # Momentum shifting bullish
+                    elif hist_change < -0.05:  # Histogram falling
+                        macd_trend = 'FALLING'  # Momentum shifting bearish
+            
             return {
                 'macd': macd_line[-1],
                 'signal': signal_line[-1],
                 'histogram': histogram[-1],
                 'divergence': divergence,
                 'crossover': crossover,  # Exact crossover event (rare)
-                'state': macd_state      # Current MACD state (always available)
+                'state': macd_state,     # Standard MACD state (12-26-9)
+                'short_state': short_macd_state,  # 🆕 Short MACD state (5-13-4)
+                'macd_trend': macd_trend  # 🆕 RISING, FALLING, NEUTRAL
             }
             
         except Exception as e:
