@@ -163,7 +163,9 @@ class EnhancedPositionOpeningDecision:
                 return duplicate_result
             
             # STEP 4: Market Bias Alignment (with Relative Strength)
-            bias_result = await self._check_market_bias_alignment(symbol, action, confidence, market_bias, market_data)
+            # 🔧 2025-12-29: Pass signal metadata for option-type aware bias check
+            signal_metadata = signal.get('metadata', {})
+            bias_result = await self._check_market_bias_alignment(symbol, action, confidence, market_bias, market_data, signal_metadata)
             if bias_result.decision != PositionDecision.APPROVED:
                 return bias_result
             
@@ -548,9 +550,23 @@ class EnhancedPositionOpeningDecision:
                 metadata={'error': str(e)}
             )
     
-    async def _check_market_bias_alignment(self, symbol: str, action: str, confidence: float, market_bias, market_data: Dict) -> PositionDecisionResult:
-        """Check alignment with market bias including relative strength AND dual-timeframe analysis"""
+    async def _check_market_bias_alignment(self, symbol: str, action: str, confidence: float, market_bias, market_data: Dict, signal_metadata: Dict = None) -> PositionDecisionResult:
+        """Check alignment with market bias including relative strength AND dual-timeframe analysis
+        
+        🔧 2025-12-29: Option-type aware bias check
+        - PUT options profit from stock FALLING = SELL direction
+        - CALL options profit from stock RISING = BUY direction
+        """
         try:
+            # 🔧 Adjust action based on option_type for proper bias alignment
+            bias_action = action
+            if signal_metadata:
+                option_type = signal_metadata.get('option_type', '')
+                if option_type == 'PE':  # PUT option
+                    bias_action = 'SELL'  # PUT profits from downside
+                elif option_type == 'CE':  # CALL option
+                    bias_action = 'BUY'  # CALL profits from upside
+            
             if not market_bias:
                 # No market bias system - allow with moderate confidence requirement
                 if confidence >= self.base_confidence_threshold:
@@ -606,7 +622,8 @@ class EnhancedPositionOpeningDecision:
                         stock_change_percent = float(stock_change_percent)
             
             # Use market bias system with relative strength check
-            if market_bias.should_allow_signal(action, confidence, symbol=symbol, stock_change_percent=stock_change_percent):
+            # 🔧 Use bias_action for options (PUT=SELL, CALL=BUY)
+            if market_bias.should_allow_signal(bias_action, confidence, symbol=symbol, stock_change_percent=stock_change_percent):
                 return PositionDecisionResult(
                     decision=PositionDecision.APPROVED,
                     confidence_score=confidence,
@@ -616,12 +633,14 @@ class EnhancedPositionOpeningDecision:
                     metadata={'bias_direction': getattr(market_bias.current_bias, 'direction', 'UNKNOWN')}
                 )
             else:
+                option_type = signal_metadata.get('option_type', '') if signal_metadata else ''
+                reason_action = f"{action} ({option_type})" if option_type else action
                 return PositionDecisionResult(
                     decision=PositionDecision.REJECTED_BIAS,
                     confidence_score=confidence,
                     risk_score=0.0,
                     position_size=0,
-                    reasoning=f"Market bias rejected {action} signal",
+                    reasoning=f"Market bias rejected {reason_action} signal",
                     metadata={'bias_direction': getattr(market_bias.current_bias, 'direction', 'UNKNOWN')}
                 )
                 
