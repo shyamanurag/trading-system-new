@@ -7189,12 +7189,30 @@ class BaseStrategy:
 
             # Force equity for known cash-only stocks
             if equity_only:
-                logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY (no F&O available)")
+                # 🎯 CRITICAL FIX: Adjust action based on original option intent
+                option_type = metadata.get('option_type', '')
+                if option_type == 'PE':  # PUT option = bearish intent
+                    metadata['action'] = 'SELL'
+                    logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY SELL (PUT intent, no F&O)")
+                elif option_type == 'CE':  # CALL option = bullish intent
+                    metadata['action'] = 'BUY'
+                    logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY BUY (CALL intent, no F&O)")
+                else:
+                    logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY (no F&O available)")
                 return 'EQUITY'
             
             # Check if F&O is available for this symbol
             if not fo_enabled:
-                logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY (no options trading)")
+                # 🎯 CRITICAL FIX: Adjust action based on original option intent
+                option_type = metadata.get('option_type', '')
+                if option_type == 'PE':  # PUT option = bearish intent
+                    metadata['action'] = 'SELL'
+                    logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY SELL (PUT intent)")
+                elif option_type == 'CE':  # CALL option = bullish intent
+                    metadata['action'] = 'BUY'
+                    logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY BUY (CALL intent)")
+                else:
+                    logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY (no options trading)")
                 return 'EQUITY'
             
             # ========== F&O ENABLED SYMBOLS - INSTRUMENT SELECTION ==========
@@ -7563,6 +7581,16 @@ class BaseStrategy:
         - No alignment = Signal BLOCKED
         """
         try:
+            # 🎯 CRITICAL FIX: Ensure equity action aligns with original options intent
+            # When options fallback to equity, PUT = SELL, CALL = BUY
+            original_option_type = metadata.get('option_type', '')
+            if original_option_type == 'PE' and action.upper() == 'BUY':
+                logger.warning(f"🔧 ACTION CORRECTION: {symbol} PUT→EQUITY changing BUY→SELL")
+                action = 'SELL'
+            elif original_option_type == 'CE' and action.upper() == 'SELL':
+                logger.warning(f"🔧 ACTION CORRECTION: {symbol} CALL→EQUITY changing SELL→BUY")
+                action = 'BUY'
+            
             # Hard block known delisted/suspended symbols at source
             try:
                 blocked_symbols = {'RCOM', 'RELCAPITAL', 'YESBANK', 'JETAIRWAYS'}
