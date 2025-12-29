@@ -1256,8 +1256,17 @@ class BaseStrategy:
             logger.error(f"❌ Error cancelling stale orders: {e}")
             return []
     
-    def has_existing_position(self, symbol: str) -> bool:
-        """🚨 CRITICAL FIX: Check for existing positions to prevent DUPLICATE ORDERS"""
+    def has_existing_position(self, symbol: str, action: str = None) -> bool:
+        """🚨 CRITICAL FIX: Check for existing positions to prevent DUPLICATE ORDERS
+        
+        🔧 2025-12-29: Added action parameter for REVERSAL detection
+        - SAME direction signal → Block as DUPLICATE
+        - OPPOSITE direction signal → Allow (triggers EXIT/REVERSAL)
+        
+        Args:
+            symbol: Stock symbol
+            action: 'BUY' or 'SELL' - if provided, checks direction matching
+        """
         
         # Extract underlying symbol for comprehensive checking
         # For options: "TCS25OCT2940CE" → "TCS"
@@ -1290,6 +1299,18 @@ class BaseStrategy:
                                 
                                 # Check exact match first
                                 if pos_symbol == symbol:
+                                    # 🔧 2025-12-29: Check if this is REVERSAL signal (opposite direction)
+                                    if action:
+                                        # pos_qty > 0 means LONG position, < 0 means SHORT
+                                        existing_is_long = pos_qty > 0
+                                        signal_is_buy = action.upper() == 'BUY'
+                                        
+                                        # If signal is OPPOSITE to existing position = REVERSAL (allow it)
+                                        if (existing_is_long and not signal_is_buy) or (not existing_is_long and signal_is_buy):
+                                            logger.info(f"🔄 REVERSAL SIGNAL DETECTED: {symbol} has {'LONG' if existing_is_long else 'SHORT'} position, new signal is {action}")
+                                            logger.info(f"   ✅ Allowing signal to trigger EXIT/REVERSAL")
+                                            return False  # Allow the reversal signal
+                                    
                                     logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} has REAL position qty={pos_qty}")
                                     return True
                                 
@@ -1303,6 +1324,15 @@ class BaseStrategy:
                                         pos_underlying = match.group(1)
                                 
                                 if pos_underlying == underlying:
+                                    # Same underlying check - also consider reversal
+                                    if action:
+                                        existing_is_long = pos_qty > 0
+                                        signal_is_buy = action.upper() == 'BUY'
+                                        
+                                        if (existing_is_long and not signal_is_buy) or (not existing_is_long and signal_is_buy):
+                                            logger.info(f"🔄 REVERSAL SIGNAL for underlying {underlying}: Existing {pos_symbol} is {'LONG' if existing_is_long else 'SHORT'}, new {symbol} is {action}")
+                                            return False  # Allow the reversal signal
+                                    
                                     logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} - Found existing position for underlying {underlying}: {pos_symbol} qty={pos_qty}")
                                     return True
         except Exception as e:
@@ -7002,9 +7032,11 @@ class BaseStrategy:
             
             # ========================================
             # CRITICAL: POSITION DEDUPLICATION CHECK
+            # 🔧 2025-12-29: Pass action to detect REVERSAL signals
+            # SELL signal on LONG position = EXIT, not duplicate!
             # ========================================
             if not (is_management or is_closing or bypass_checks):
-                if self.has_existing_position(symbol):
+                if self.has_existing_position(symbol, action):
                     logger.info(f"🚫 {self.name}: DUPLICATE SIGNAL PREVENTED for {symbol} - Position already exists")
                     return None
             
