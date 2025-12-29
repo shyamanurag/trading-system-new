@@ -751,7 +751,8 @@ def calculate_bollinger_bands(prices: List[float], period: int = 20, std_dev: fl
         
         prices = np.array(prices)
         # Use LTP for real-time position, fallback to last close
-        current_price = current_ltp if current_ltp is not None else prices[-1]
+        # 🔧 FIX: Check for both None AND 0 (missing LTP defaults to 0)
+        current_price = current_ltp if current_ltp and current_ltp > 0 else prices[-1]
         
         # Calculate SMA and Standard Deviation
         sma = np.mean(prices[-period:])
