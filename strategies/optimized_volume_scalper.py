@@ -1996,12 +1996,14 @@ class OptimizedVolumeScalper(BaseStrategy):
             except Exception as e:
                 logger.debug(f"NIFTY market check failed: {e}")
             
+            # 🔧 2025-12-29 FIX: Extract pattern BEFORE BUY/SELL branching so it's available in both
+            day_change = dual_analysis.get('day_change', 0.0)
+            pattern = dual_analysis.get('pattern', '')
+            
             # BUY signal validation
             if ms_signal.signal_type == 'BUY':
                 # 🎯 CONTEXT-AWARE: Detect strong breakout scenarios
                 # In breakouts, overbought indicators CONFIRM momentum, not contradict it
-                day_change = dual_analysis.get('day_change', 0.0)
-                pattern = dual_analysis.get('pattern', '')
                 
                 # Strong breakout criteria (cautious thresholds):
                 # 1. Very strong move (>5%) regardless of pattern, OR
@@ -2096,9 +2098,10 @@ class OptimizedVolumeScalper(BaseStrategy):
                 
                 # 🔧 NEW: High VRSI means volume NOT confirming downward momentum
                 # 🔧 2025-12-29: Pattern-aware thresholds - if pattern is BEARISH, price action already confirms
-                vrsi_sell_threshold = 80 if 'BEARISH' in pattern.upper() else 65
+                # VRSI is a lagging indicator - for clear BEARISH CONTINUATION, allow higher VRSI (90)
+                vrsi_sell_threshold = 90 if 'BEARISH' in pattern.upper() else 65
                 if vrsi > vrsi_sell_threshold and ms_signal.edge_source != "MEAN_REVERSION":
-                    logger.info(f"⚠️ {symbol}: SELL rejected - VRSI too high ({vrsi:.0f}) - volume not confirming")
+                    logger.info(f"⚠️ {symbol}: SELL rejected - VRSI too high ({vrsi:.0f} > {vrsi_sell_threshold}) - volume not confirming")
                     return None
 
                 # 🔧 NEW: Volume-Weighted Buy Pressure check (more accurate than candle-based)

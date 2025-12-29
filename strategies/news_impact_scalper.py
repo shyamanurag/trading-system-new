@@ -1186,9 +1186,10 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 if vrsi < 25:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - VRSI oversold ({vrsi:.0f})")
                     return None
-                vrsi_put_threshold = 80 if 'BEARISH' in pattern.upper() else 65
+                # 🔧 2025-12-29: For BEARISH patterns, allow higher VRSI (90) - VRSI is lagging
+                vrsi_put_threshold = 90 if 'BEARISH' in pattern.upper() else 65
                 if vrsi > vrsi_put_threshold:
-                    logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - VRSI too high ({vrsi:.0f}) - volume not confirming")
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - VRSI too high ({vrsi:.0f} > {vrsi_put_threshold}) - volume not confirming")
                     return None
                 
                 if macd_crossover == 'bullish':
