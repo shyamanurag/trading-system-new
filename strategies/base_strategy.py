@@ -6940,7 +6940,8 @@ class BaseStrategy:
                     metadata['relative_strength'] = exceptional_rs_value
                 
                 if not should_allow:
-                    logger.info(f"🚫 BIAS FILTER: {symbol} {action} rejected by market bias "
+                    # 🔧 FIX: Log directional_action for options (PUT shows as SELL, CALL as BUY)
+                    logger.info(f"🚫 BIAS FILTER: {symbol} {directional_action} rejected by market bias "
                                f"(Bias: {getattr(market_bias.current_bias, 'direction', 'UNKNOWN')}, "
                                f"Raw Confidence: {confidence}, Normalized: {normalized_confidence:.1f}/10)")
                     return None
@@ -6969,9 +6970,10 @@ class BaseStrategy:
                             pass
                         metadata['bias_multiplier'] = bias_multiplier
                         if bias_multiplier > 1.0:
-                            logger.info(f"🔥 BIAS BOOST: {symbol} {action} gets {bias_multiplier:.1f}x position size")
+                            # 🔧 FIX: Log directional_action which shows true intent (PUT=SELL, CALL=BUY)
+                            logger.info(f"🔥 BIAS BOOST: {symbol} {directional_action} gets {bias_multiplier:.1f}x position size")
                         elif bias_multiplier < 1.0:
-                            logger.info(f"⚠️ BIAS REDUCE: {symbol} {action} gets {bias_multiplier:.1f}x position size")
+                            logger.info(f"⚠️ BIAS REDUCE: {symbol} {directional_action} gets {bias_multiplier:.1f}x position size")
                     else:
                         metadata['bias_multiplier'] = 1.0
             
@@ -7656,7 +7658,8 @@ class BaseStrategy:
             
             # BLOCK SIGNAL if MTF not aligned (strict mode for accuracy)
             if not mtf_result['mtf_aligned'] and mtf_result['alignment_score'] < 2:
-                logger.warning(f"🚫 MTF BLOCK: {symbol} {action} - Timeframes not aligned ({mtf_result['reasoning']})")
+                # 🔧 FIX: Log directional_action for options
+                logger.warning(f"🚫 MTF BLOCK: {symbol} {directional_action} - Timeframes not aligned ({mtf_result['reasoning']})")
                 return None
             
             # 🔥 CRITICAL: BLOCK if action CONFLICTS with strong MTF alignment
@@ -7711,8 +7714,31 @@ class BaseStrategy:
                     strong_move_bypass = False
                     weighted_change = 0
                     try:
-                        day_change = metadata.get('change_percent', 0) if metadata else 0
-                        intraday_change = metadata.get('intraday_change_pct', 0) if metadata else 0
+                        # Try to get change data from multiple sources
+                        day_change = 0
+                        intraday_change = 0
+                        
+                        # Source 1: Metadata (if passed by strategy)
+                        if metadata:
+                            day_change = metadata.get('change_percent', metadata.get('day_change_pct', 0))
+                            intraday_change = metadata.get('intraday_change_pct', metadata.get('intraday_change', 0))
+                        
+                        # Source 2: Calculate from live data if metadata is empty
+                        if day_change == 0 and intraday_change == 0:
+                            try:
+                                from data.truedata_client import live_market_data
+                                if symbol in live_market_data:
+                                    stock_data = live_market_data[symbol]
+                                    ltp = float(stock_data.get('ltp', 0))
+                                    prev_close = float(stock_data.get('previous_close', 0))
+                                    open_price = float(stock_data.get('open', 0))
+                                    if ltp > 0 and prev_close > 0:
+                                        day_change = ((ltp - prev_close) / prev_close) * 100
+                                    if ltp > 0 and open_price > 0:
+                                        intraday_change = ((ltp - open_price) / open_price) * 100
+                            except Exception:
+                                pass
+                        
                         weighted_change = 0.6 * day_change + 0.4 * intraday_change
                         
                         # If MTF shows BULLISH but stock is down >2%, MTF is lagging
@@ -7727,12 +7753,13 @@ class BaseStrategy:
                         logger.debug(f"Strong move bypass check error: {mv_err}")
                     
                     if not is_reversal and not strong_move_bypass:
-                        logger.warning(f"🚫 MTF CONFLICT BLOCK: {symbol} {action} - MTF shows {mtf_direction} "
-                                      f"({mtf_result['alignment_score']}/3 timeframes) but action is {action}")
+                        # 🔧 FIX: Log directional_action for options
+                        logger.warning(f"🚫 MTF CONFLICT BLOCK: {symbol} {directional_action} - MTF shows {mtf_direction} "
+                                      f"({mtf_result['alignment_score']}/3 timeframes) but action is {directional_action}")
                         return None
                     else:
                         bypass_reason = "Reversal signal" if is_reversal else f"Strong move ({weighted_change:.1f}%)"
-                        logger.info(f"✅ MTF CONFLICT BYPASSED: {symbol} {action} - {bypass_reason} allowed")
+                        logger.info(f"✅ MTF CONFLICT BYPASSED: {symbol} {directional_action} - {bypass_reason} allowed")
             
             # Apply confidence multiplier from MTF
             original_confidence = confidence
