@@ -7647,6 +7647,7 @@ class BaseStrategy:
             # 🔥 CRITICAL: BLOCK if action CONFLICTS with strong MTF alignment
             # If 3/3 or 2/3 timeframes are BEARISH but action is BUY → BLOCK
             # If 3/3 or 2/3 timeframes are BULLISH but action is SELL → BLOCK
+            # 🔧 EXCEPTION: REVERSAL signals bypass MTF block (need to exit positions)
             mtf_direction = mtf_result.get('direction', 'NEUTRAL')
             if mtf_result['alignment_score'] >= 2 and mtf_direction != 'NEUTRAL':
                 action_conflicts = (
@@ -7654,9 +7655,49 @@ class BaseStrategy:
                     (mtf_direction == 'BULLISH' and action == 'SELL')
                 )
                 if action_conflicts:
-                    logger.warning(f"🚫 MTF CONFLICT BLOCK: {symbol} {action} - MTF shows {mtf_direction} "
-                                  f"({mtf_result['alignment_score']}/3 timeframes) but action is {action}")
-                    return None
+                    # 🔧 CHECK IF THIS IS A REVERSAL SIGNAL (meant to exit existing position)
+                    # Reversal signals should bypass MTF block - we need to exit!
+                    is_reversal = False
+                    try:
+                        # Check if we have an existing position in OPPOSITE direction
+                        option_type = metadata.get('option_type', '') if metadata else ''
+                        existing_positions = getattr(self, 'active_positions', {})
+                        
+                        # Check broker positions too
+                        broker_positions = []
+                        if hasattr(self, 'zerodha') and self.zerodha:
+                            try:
+                                broker_positions = self.zerodha.positions() or []
+                            except:
+                                pass
+                        
+                        for pos in broker_positions:
+                            pos_symbol = pos.get('tradingsymbol', '')
+                            pos_qty = pos.get('quantity', 0)
+                            if pos_symbol == symbol and pos_qty != 0:
+                                existing_is_long = pos_qty > 0
+                                # Determine if current signal is opposite direction
+                                if option_type == 'PE':  # PUT = SHORT
+                                    signal_is_long = False
+                                elif option_type == 'CE':  # CALL = LONG
+                                    signal_is_long = True
+                                else:
+                                    signal_is_long = (action == 'BUY')
+                                
+                                # Opposite directions = REVERSAL
+                                if (existing_is_long and not signal_is_long) or (not existing_is_long and signal_is_long):
+                                    is_reversal = True
+                                    logger.info(f"🔄 MTF BYPASS: {symbol} {action} is REVERSAL signal - bypassing MTF conflict")
+                                    break
+                    except Exception as rev_err:
+                        logger.debug(f"Reversal check error: {rev_err}")
+                    
+                    if not is_reversal:
+                        logger.warning(f"🚫 MTF CONFLICT BLOCK: {symbol} {action} - MTF shows {mtf_direction} "
+                                      f"({mtf_result['alignment_score']}/3 timeframes) but action is {action}")
+                        return None
+                    else:
+                        logger.info(f"✅ MTF CONFLICT BYPASSED: {symbol} {action} - Reversal signal allowed")
             
             # Apply confidence multiplier from MTF
             original_confidence = confidence
