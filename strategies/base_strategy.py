@@ -7582,9 +7582,21 @@ class BaseStrategy:
             if original_option_type == 'PE' and action.upper() == 'BUY':
                 logger.warning(f"🔧 ACTION CORRECTION: {symbol} PUT→EQUITY changing BUY→SELL")
                 action = 'SELL'
+                # 🔧 INVERT SL/TARGET: BUY levels → SELL levels
+                # BUY: SL < Entry < Target → SELL: Target < Entry < SL
+                old_sl, old_target = stop_loss, target
+                stop_loss = old_target  # Upper bound becomes SL for SELL
+                target = old_sl  # Lower bound becomes Target for SELL
+                logger.info(f"🔧 LEVELS INVERTED for SELL: SL={old_sl:.2f}→{stop_loss:.2f}, Target={old_target:.2f}→{target:.2f}")
             elif original_option_type == 'CE' and action.upper() == 'SELL':
                 logger.warning(f"🔧 ACTION CORRECTION: {symbol} CALL→EQUITY changing SELL→BUY")
                 action = 'BUY'
+                # 🔧 INVERT SL/TARGET: SELL levels → BUY levels
+                # SELL: Target < Entry < SL → BUY: SL < Entry < Target
+                old_sl, old_target = stop_loss, target
+                stop_loss = old_target  # Lower bound becomes SL for BUY
+                target = old_sl  # Upper bound becomes Target for BUY
+                logger.info(f"🔧 LEVELS INVERTED for BUY: SL={old_sl:.2f}→{stop_loss:.2f}, Target={old_target:.2f}→{target:.2f}")
             
             # Hard block known delisted/suspended symbols at source
             try:
