@@ -3618,16 +3618,16 @@ class TradingOrchestrator:
                         from data.truedata_client import truedata_client
                         td_connected = truedata_client.connected if truedata_client else False
                         
-                        # 🔧 FIX: Check Redis cache symbol count instead of live_market_data dict
-                        # Orchestrator uses Redis cache, so heartbeat should match that source
+                        # 🔧 FIX: Check Redis cache symbol count from hash, not individual keys
+                        # Data is stored as ONE hash: "truedata:live_cache" with symbols as fields
                         if hasattr(self, 'redis_client') and self.redis_client:
                             try:
-                                # 🚨 2025-12-26 FIX: Use await for async Redis client
-                                redis_keys = await self.redis_client.keys('truedata:*')
-                                td_symbols = len(redis_keys) if redis_keys else 0
+                                # 🚨 2025-12-29 FIX: Use HLEN on the hash, not KEYS pattern
+                                # The cache is stored as: hgetall("truedata:live_cache") - one hash with many fields
+                                td_symbols = await self.redis_client.hlen("truedata:live_cache")
                             except Exception as redis_err:
                                 # Log the error to diagnose why it's failing
-                                self.logger.debug(f"Heartbeat Redis keys error: {type(redis_err).__name__}: {redis_err}")
+                                self.logger.debug(f"Heartbeat Redis hlen error: {type(redis_err).__name__}: {redis_err}")
                                 # Fallback: count from market_data dict if Redis fails
                                 td_symbols = len(self.market_data) if hasattr(self, 'market_data') and self.market_data else 0
                         else:

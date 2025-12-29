@@ -2037,7 +2037,9 @@ class OptimizedVolumeScalper(BaseStrategy):
                         return None
                 
                 # 🔧 NEW: Low VRSI means volume NOT confirming upward momentum
-                if vrsi < 35 and ms_signal.edge_source != "MEAN_REVERSION":
+                # 🔧 2025-12-29: Pattern-aware thresholds - if pattern is BULLISH, price action already confirms
+                vrsi_buy_threshold = 25 if 'BULLISH' in pattern.upper() else 35
+                if vrsi < vrsi_buy_threshold and ms_signal.edge_source != "MEAN_REVERSION":
                     logger.info(f"⚠️ {symbol}: BUY rejected - VRSI too low ({vrsi:.0f}) - volume not confirming")
                     return None
 
@@ -2093,7 +2095,9 @@ class OptimizedVolumeScalper(BaseStrategy):
                     return None
                 
                 # 🔧 NEW: High VRSI means volume NOT confirming downward momentum
-                if vrsi > 65 and ms_signal.edge_source != "MEAN_REVERSION":
+                # 🔧 2025-12-29: Pattern-aware thresholds - if pattern is BEARISH, price action already confirms
+                vrsi_sell_threshold = 80 if 'BEARISH' in pattern.upper() else 65
+                if vrsi > vrsi_sell_threshold and ms_signal.edge_source != "MEAN_REVERSION":
                     logger.info(f"⚠️ {symbol}: SELL rejected - VRSI too high ({vrsi:.0f}) - volume not confirming")
                     return None
 

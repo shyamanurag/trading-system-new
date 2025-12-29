@@ -1130,7 +1130,9 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                     else:
                         logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - VRSI overbought ({vrsi:.0f})")
                         return None
-                if vrsi < 35:
+                # 🔧 2025-12-29: Pattern-aware thresholds - if pattern is BULLISH, price action already confirms
+                vrsi_call_threshold = 25 if 'BULLISH' in pattern.upper() else 35
+                if vrsi < vrsi_call_threshold:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - VRSI too low ({vrsi:.0f}) - volume not confirming")
                     return None
                 
@@ -1163,10 +1165,12 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                     return None
                 
                 # 🔧 NEW: VRSI checks
+                # 🔧 2025-12-29: Pattern-aware thresholds - if pattern is BEARISH, price action already confirms
                 if vrsi < 25:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - VRSI oversold ({vrsi:.0f})")
                     return None
-                if vrsi > 65:
+                vrsi_put_threshold = 80 if 'BEARISH' in pattern.upper() else 65
+                if vrsi > vrsi_put_threshold:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - VRSI too high ({vrsi:.0f}) - volume not confirming")
                     return None
                 
