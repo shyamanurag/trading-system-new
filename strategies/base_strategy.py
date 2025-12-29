@@ -7171,6 +7171,9 @@ class BaseStrategy:
             fo_enabled = is_fo_enabled(symbol)
             equity_only = should_use_equity_only(symbol)
             logger.info(f"🔍 F&O CHECK for {symbol}: fo_enabled={fo_enabled}, equity_only={equity_only}")
+            
+            # 🔧 CRITICAL: Define option_type at start to avoid undefined variable error
+            option_type = metadata.get('option_type', '') if metadata else ''
             logger.debug(f"   Strategy instance: {self.name}, Signal ID: {getattr(metadata, 'get', lambda x: 'unknown')('signal_id', 'unknown')}")
             
             # CRITICAL DEBUG: For problematic symbols, add extra validation
