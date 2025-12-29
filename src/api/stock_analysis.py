@@ -1378,27 +1378,55 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
                     reasons.append(f"MFI overbought ({mfi_val:.1f})")
         
         # MACD Analysis (reduced weight - lagging indicator shouldn't override price action)
+        # 🔧 2025-12-29: Check for DIVERGENCE - MACD lagging behind price action
+        # If price has broken down but MACD is still bullish, that's a bearish divergence
         if macd.get("state"):
             total_signals += 1  # Reduced from 2 - MACD is lagging
+            
+            # Detect Darvas breakdown for divergence check
+            darvas_signal = darvas_box.get("signal", "") if darvas_box else ""
+            darvas_position = darvas_box.get("position", "") if darvas_box else ""
+            is_darvas_breakdown = darvas_signal in ["SELL", "STRONG_SELL", "WEAK_SELL"] or darvas_position == "BREAKDOWN"
+            is_darvas_breakout = darvas_signal in ["BUY", "STRONG_BUY", "WEAK_BUY"] or darvas_position == "BREAKOUT"
+            
             if macd["state"] == "STRONG_BULLISH":
-                bullish_signals += 1.5  # Reduced from 2
-                reasons.append("MACD strong bullish")
+                if is_darvas_breakdown:
+                    # 🔧 DIVERGENCE: MACD bullish but price broke down = lagging indicator
+                    bearish_signals += 0.5  # Actually slightly bearish - MACD will catch up
+                    reasons.append("MACD bullish divergence (lagging behind breakdown)")
+                else:
+                    bullish_signals += 1.5
+                    reasons.append("MACD strong bullish")
             elif macd["state"] == "BULLISH":
-                bullish_signals += 0.75  # Reduced from 1
-                reasons.append("MACD bullish")
+                if is_darvas_breakdown:
+                    # Divergence - don't add bullish weight
+                    reasons.append("MACD bullish (lagging - price already broke down)")
+                else:
+                    bullish_signals += 0.75
+                    reasons.append("MACD bullish")
             elif macd["state"] == "STRONG_BEARISH":
-                bearish_signals += 1.5  # Reduced from 2
-                reasons.append("MACD strong bearish")
+                if is_darvas_breakout:
+                    # MACD bearish but price broke out = lagging
+                    bullish_signals += 0.5
+                    reasons.append("MACD bearish divergence (lagging behind breakout)")
+                else:
+                    bearish_signals += 1.5
+                    reasons.append("MACD strong bearish")
             elif macd["state"] == "BEARISH":
-                bearish_signals += 0.75  # Reduced from 1
-                reasons.append("MACD bearish")
+                if is_darvas_breakout:
+                    reasons.append("MACD bearish (lagging - price already broke out)")
+                else:
+                    bearish_signals += 0.75
+                    reasons.append("MACD bearish")
             
             if macd.get("crossover") == "BULLISH_CROSSOVER":
-                bullish_signals += 0.75  # Reduced from 1
-                reasons.append("MACD bullish crossover")
+                if not is_darvas_breakdown:  # Only count if not contradicting
+                    bullish_signals += 0.75
+                    reasons.append("MACD bullish crossover")
             elif macd.get("crossover") == "BEARISH_CROSSOVER":
-                bearish_signals += 0.75  # Reduced from 1
-                reasons.append("MACD bearish crossover")
+                if not is_darvas_breakout:  # Only count if not contradicting
+                    bearish_signals += 0.75
+                    reasons.append("MACD bearish crossover")
         
         # Volume Analysis
         if volume.get("buy_pressure"):
@@ -1461,20 +1489,22 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
                 reasons.append(f"Bollinger squeeze ({bollinger.get('squeeze_intensity', 0):.0f}% intensity)")
         
         # GARCH Volatility Analysis
+        # 🔧 2025-12-29: Volatility is direction-agnostic - don't add directional bias
+        # Low volatility means potential breakout (UP or DOWN), not necessarily bullish
         if garch and not garch.get("error"):
             total_signals += 0.5  # Lower weight for volatility
             if garch.get("regime") == "EXTREME":
                 bearish_signals += 0.5  # Extreme vol = caution
                 reasons.append("Extreme volatility regime (caution)")
             elif garch.get("regime") == "LOW":
-                bullish_signals += 0.3  # Low vol = potential breakout setup
+                # 🔧 FIX: Don't add bullish bias for low volatility - it's neutral
                 reasons.append("Low volatility (potential breakout)")
             
             if garch.get("trend") == "INCREASING":
                 bearish_signals += 0.3
                 reasons.append("Volatility increasing")
             elif garch.get("trend") == "DECREASING":
-                bullish_signals += 0.3
+                # 🔧 FIX: Don't add bullish bias for decreasing vol - it's neutral
                 reasons.append("Volatility decreasing")
         
         # 📦 Darvas Box Analysis - Important for breakout/breakdown detection
@@ -1485,17 +1515,23 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
             volume_surge = darvas_box.get("volume_surge", False)
             signal_strength = darvas_box.get("signal_strength", 50) / 100  # Normalize to 0-1
             
+            # 🔧 2025-12-29: Use max(base, scaled) to ensure minimum weight for confirmed signals
+            # Confirmed breakout/breakdown should have minimum weight regardless of signal_strength
             if signal == "STRONG_BUY":
-                bullish_signals += 2.0 * signal_strength
+                weight = max(2.0, 2.0 * signal_strength)  # Minimum 2.0
+                bullish_signals += weight
                 reasons.append(f"Darvas Box BREAKOUT with volume (strength: {darvas_box.get('signal_strength', 0):.0f}%)")
             elif signal == "BUY":
-                bullish_signals += 1.5 * signal_strength
+                weight = max(1.5, 1.5 * signal_strength)  # Minimum 1.5
+                bullish_signals += weight
                 reasons.append(f"Darvas Box breakout (strength: {darvas_box.get('signal_strength', 0):.0f}%)")
             elif signal == "STRONG_SELL":
-                bearish_signals += 2.0 * signal_strength
+                weight = max(2.5, 2.0 * signal_strength)  # Minimum 2.5 - breakdown is more urgent
+                bearish_signals += weight
                 reasons.append(f"Darvas Box BREAKDOWN with volume (strength: {darvas_box.get('signal_strength', 0):.0f}%)")
             elif signal == "SELL":
-                bearish_signals += 1.5 * signal_strength
+                weight = max(2.0, 1.5 * signal_strength)  # Minimum 2.0 - breakdown is confirmed
+                bearish_signals += weight
                 reasons.append(f"Darvas Box breakdown (strength: {darvas_box.get('signal_strength', 0):.0f}%)")
             elif position == "UPPER_HALF":
                 bullish_signals += 0.5
