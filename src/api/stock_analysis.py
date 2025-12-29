@@ -1351,15 +1351,16 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
             vrsi_val = vrsi["value"]
             if vrsi_val <= 35:
                 bullish_signals += 1
-                reasons.append(f"VRSI showing volume-backed weakness ({vrsi_val:.1f})")
+                reasons.append(f"🟢 VRSI oversold ({vrsi_val:.1f}) - volume supports bounce")
             elif vrsi_val >= 65:
                 # In bullish breakout, high VRSI = strong volume momentum
                 if is_bullish_breakout:
                     bullish_signals += 1.0  # Bullish (volume confirming breakout)
-                    reasons.append(f"VRSI ({vrsi_val:.1f}) - volume confirming breakout")
+                    reasons.append(f"🟢 VRSI ({vrsi_val:.1f}) - volume confirming breakout")
                 else:
+                    # 🔧 2025-12-29: High VRSI without breakout = overbought on volume
                     bearish_signals += 1
-                    reasons.append(f"VRSI showing volume-backed strength ({vrsi_val:.1f})")
+                    reasons.append(f"🔴 VRSI overbought ({vrsi_val:.1f}) - volume exhaustion")
         
         # MFI Analysis - CONTEXT AWARE
         if mfi.get("value"):
@@ -1367,15 +1368,15 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
             mfi_val = mfi["value"]
             if mfi_val <= 20:
                 bullish_signals += 1.5
-                reasons.append(f"MFI oversold ({mfi_val:.1f})")
+                reasons.append(f"🟢 MFI oversold ({mfi_val:.1f}) - money flow reversal expected")
             elif mfi_val >= 80:
                 # In bullish breakout, overbought MFI = strong money flow
                 if is_bullish_breakout:
                     bullish_signals += 0.5  # Slight bullish (money flowing in)
-                    reasons.append(f"MFI overbought ({mfi_val:.1f}) - strong money inflow")
+                    reasons.append(f"🟢 MFI ({mfi_val:.1f}) - strong money inflow confirming breakout")
                 else:
                     bearish_signals += 1.5
-                    reasons.append(f"MFI overbought ({mfi_val:.1f})")
+                    reasons.append(f"🔴 MFI overbought ({mfi_val:.1f}) - money flow exhaustion")
         
         # MACD Analysis (reduced weight - lagging indicator shouldn't override price action)
         # 🔧 2025-12-29: Check for DIVERGENCE - MACD lagging behind price action
@@ -1393,50 +1394,63 @@ def generate_recommendation(rsi: Dict, vrsi: Dict, mfi: Dict, macd: Dict,
                 if is_darvas_breakdown:
                     # 🔧 DIVERGENCE: MACD bullish but price broke down = lagging indicator
                     bearish_signals += 0.5  # Actually slightly bearish - MACD will catch up
-                    reasons.append("MACD bullish divergence (lagging behind breakdown)")
+                    reasons.append("⚠️ MACD bullish DIVERGENCE (lagging behind breakdown)")
                 else:
                     bullish_signals += 1.5
-                    reasons.append("MACD strong bullish")
+                    reasons.append("🟢 MACD strong bullish")
             elif macd["state"] == "BULLISH":
                 if is_darvas_breakdown:
                     # Divergence - don't add bullish weight
-                    reasons.append("MACD bullish (lagging - price already broke down)")
+                    reasons.append("⚠️ MACD bullish (lagging - price already broke down)")
                 else:
                     bullish_signals += 0.75
-                    reasons.append("MACD bullish")
+                    reasons.append("🟢 MACD bullish")
             elif macd["state"] == "STRONG_BEARISH":
                 if is_darvas_breakout:
                     # MACD bearish but price broke out = lagging
                     bullish_signals += 0.5
-                    reasons.append("MACD bearish divergence (lagging behind breakout)")
+                    reasons.append("⚠️ MACD bearish DIVERGENCE (lagging behind breakout)")
                 else:
                     bearish_signals += 1.5
-                    reasons.append("MACD strong bearish")
+                    reasons.append("🔴 MACD strong bearish")
             elif macd["state"] == "BEARISH":
                 if is_darvas_breakout:
-                    reasons.append("MACD bearish (lagging - price already broke out)")
+                    reasons.append("⚠️ MACD bearish (lagging - price already broke out)")
                 else:
                     bearish_signals += 0.75
-                    reasons.append("MACD bearish")
+                    reasons.append("🔴 MACD bearish")
             
             if macd.get("crossover") == "BULLISH_CROSSOVER":
                 if not is_darvas_breakdown:  # Only count if not contradicting
                     bullish_signals += 0.75
-                    reasons.append("MACD bullish crossover")
+                    reasons.append("🟢 MACD bullish crossover")
             elif macd.get("crossover") == "BEARISH_CROSSOVER":
                 if not is_darvas_breakout:  # Only count if not contradicting
                     bearish_signals += 0.75
-                    reasons.append("MACD bearish crossover")
+                    reasons.append("🔴 MACD bearish crossover")
         
         # Volume Analysis
+        # 🔧 2025-12-29: Buy/sell pressure is based on 20 candles (lagging)
+        # If price action contradicts, note the divergence instead
         if volume.get("buy_pressure"):
             total_signals += 1
             if volume["buy_pressure"] > 65:
-                bullish_signals += 1
-                reasons.append(f"High buying pressure ({volume['buy_pressure']}%)")
+                # Check if this contradicts bearish breakdown
+                if is_bearish_breakout or change_pct < -2:
+                    # High buy pressure but price falling = selling pressure now dominating
+                    bearish_signals += 0.5
+                    reasons.append(f"🔴 Buy pressure WAS high ({volume['buy_pressure']}%) but price now falling")
+                else:
+                    bullish_signals += 1
+                    reasons.append(f"🟢 High buying pressure ({volume['buy_pressure']}%)")
             elif volume["sell_pressure"] > 65:
-                bearish_signals += 1
-                reasons.append(f"High selling pressure ({volume['sell_pressure']}%)")
+                # Check if this contradicts bullish breakout
+                if is_bullish_breakout or change_pct > 2:
+                    bullish_signals += 0.5
+                    reasons.append(f"🟢 Sell pressure WAS high ({volume['sell_pressure']}%) but price now rising")
+                else:
+                    bearish_signals += 1
+                    reasons.append(f"🔴 High selling pressure ({volume['sell_pressure']}%)")
         
         # S/R Position with Camarilla breakout detection
         if sr_levels.get("position"):
