@@ -180,7 +180,17 @@ class SignalEnhancer:
                 
                 # Apply enhancements
                 original_confidence = signal.get('confidence', 0.5)
-                enhanced_confidence = original_confidence * enhancement_score * performance_factor
+                
+                # 🔧 2025-12-29: Fixed enhancement formula
+                # OLD: enhanced = original × enhancement (0.66 → 34% reduction - too harsh!)
+                # NEW: Scale so passing enhancement (≥0.60) gives moderate penalty
+                # Formula: multiplier = 0.80 + 0.20 × enhancement
+                #   0.60 → 0.92 (8% reduction)
+                #   0.80 → 0.96 (4% reduction)
+                #   1.00 → 1.00 (no reduction)
+                # This ensures passing signals aren't crushed below quality threshold
+                enhancement_multiplier = 0.80 + (0.20 * enhancement_score)
+                enhanced_confidence = original_confidence * enhancement_multiplier * performance_factor
                 
                 # Filter: Only pass signals with sufficient quality
                 if enhancement_score >= self.min_confluence_score:
@@ -201,7 +211,7 @@ class SignalEnhancer:
                     
                     logger.info(f"✅ ENHANCED: {signal.get('symbol')} {signal.get('action')} - "
                               f"Confidence: {original_confidence:.2f} → {enhanced_confidence:.2f} "
-                              f"(enhancement: {enhancement_score:.2f}, perf: {performance_factor:.2f})")
+                              f"(score: {enhancement_score:.2f}, mult: {enhancement_multiplier:.2f}, perf: {performance_factor:.2f})")
                 else:
                     logger.info(f"❌ FILTERED: {signal.get('symbol')} {signal.get('action')} - "
                               f"Low enhancement score: {enhancement_score:.2f} < {self.min_confluence_score}")
