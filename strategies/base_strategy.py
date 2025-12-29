@@ -4904,8 +4904,46 @@ class BaseStrategy:
                 (40 < rsi < 60 and 40 < vrsi < 60)  # Both neutral
             )
             
+            # 🔧 2025-12-29: Calculate SHORT VRSI (5 periods) to capture RECENT volume direction
+            # This fixes the lag issue - VRSI 14 shows past, VRSI 5 shows current
+            short_period = 5
+            vrsi_short = 50.0  # Default
+            vrsi_trend = 'NEUTRAL'  # 'RISING', 'FALLING', 'NEUTRAL'
+            
+            if len(prices) >= short_period + 1 and len(volumes) >= short_period + 1:
+                # Recalculate for short period
+                short_gains = gains[-short_period:]
+                short_losses = losses[-short_period:]
+                short_volumes = change_volumes[-short_period:]
+                
+                short_total_vol = np.sum(short_volumes)
+                if short_total_vol > 0:
+                    short_vw_gain = np.sum(short_gains * short_volumes) / short_total_vol
+                    short_vw_loss = np.sum(short_losses * short_volumes) / short_total_vol
+                    
+                    if short_vw_loss == 0 and short_vw_gain == 0:
+                        vrsi_short = 50.0
+                    elif short_vw_loss == 0:
+                        vrsi_short = 95.0
+                    elif short_vw_gain == 0:
+                        vrsi_short = 5.0
+                    else:
+                        short_vw_rs = short_vw_gain / short_vw_loss
+                        vrsi_short = 100 - (100 / (1 + short_vw_rs))
+                
+                # Determine VRSI trend: is recent volume shifting?
+                # If short VRSI is 10+ points below long VRSI, volume is shifting to selling
+                # If short VRSI is 10+ points above long VRSI, volume is shifting to buying
+                trend_diff = vrsi_short - vrsi
+                if trend_diff > 10:
+                    vrsi_trend = 'RISING'  # Recent volume on UP moves (confirms BUY)
+                elif trend_diff < -10:
+                    vrsi_trend = 'FALLING'  # Recent volume on DOWN moves (confirms SELL)
+            
             return {
                 'vrsi': round(vrsi, 1),
+                'vrsi_short': round(vrsi_short, 1),  # 🆕 5-period VRSI
+                'vrsi_trend': vrsi_trend,  # 🆕 'RISING', 'FALLING', 'NEUTRAL'
                 'rsi': round(rsi, 1),
                 'divergence': divergence,
                 'volume_confirmation': volume_confirmation,

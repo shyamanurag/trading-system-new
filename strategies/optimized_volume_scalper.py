@@ -1886,6 +1886,8 @@ class OptimizedVolumeScalper(BaseStrategy):
 
             # 🔧 NEW: Volume-weighted indicators
             vrsi = 50.0
+            vrsi_short = 50.0  # 🆕 Short-term VRSI (5 periods)
+            vrsi_trend = 'NEUTRAL'  # 🆕 VRSI trend: RISING, FALLING, NEUTRAL
             vw_buying_pressure = 0.5
             vw_selling_pressure = 0.5
             volume_confirmation = False
@@ -1911,6 +1913,8 @@ class OptimizedVolumeScalper(BaseStrategy):
                             # 2. VRSI (Volume-Weighted RSI)
                             vrsi_data = self.calculate_volume_weighted_rsi(closes, volumes)
                             vrsi = vrsi_data.get('vrsi', 50.0)
+                            vrsi_short = vrsi_data.get('vrsi_short', vrsi)  # 🆕 Short-term VRSI
+                            vrsi_trend = vrsi_data.get('vrsi_trend', 'NEUTRAL')  # 🆕 VRSI trend
                             volume_confirmation = vrsi_data.get('volume_confirmation', False)
                             
                             # 3. Volume-Weighted Buy/Sell Pressure
@@ -2039,10 +2043,23 @@ class OptimizedVolumeScalper(BaseStrategy):
                         return None
                 
                 # 🔧 NEW: Low VRSI means volume NOT confirming upward momentum
-                # 🔧 2025-12-29: Pattern-aware thresholds - if pattern is BULLISH, price action already confirms
-                vrsi_buy_threshold = 25 if 'BULLISH' in pattern.upper() else 35
+                # 🔧 2025-12-29: Use SHORT VRSI TREND instead of just absolute value
+                # VRSI (14 period) is lagging - vrsi_trend tells us if recent volume is shifting
+                #
+                # Logic:
+                # - vrsi_trend == 'RISING' means recent volume is on UP moves → confirms BUY
+                # - In this case, we can allow lower VRSI (it's lagging)
+                
+                vrsi_buy_threshold = 35  # Base threshold
+                if vrsi_trend == 'RISING':
+                    # Recent volume is confirming buy - allow lower VRSI (it's lagging)
+                    vrsi_buy_threshold = 15  # More lenient
+                elif 'BULLISH' in pattern.upper():
+                    # Pattern confirms - allow lower threshold
+                    vrsi_buy_threshold = 25
+                
                 if vrsi < vrsi_buy_threshold and ms_signal.edge_source != "MEAN_REVERSION":
-                    logger.info(f"⚠️ {symbol}: BUY rejected - VRSI too low ({vrsi:.0f}) - volume not confirming")
+                    logger.info(f"⚠️ {symbol}: BUY rejected - VRSI too low ({vrsi:.0f} < {vrsi_buy_threshold}), short_vrsi={vrsi_short:.0f}, trend={vrsi_trend}")
                     return None
 
                 # 🔧 NEW: Volume-Weighted Sell Pressure check (more accurate than candle-based)
@@ -2097,11 +2114,24 @@ class OptimizedVolumeScalper(BaseStrategy):
                     return None
                 
                 # 🔧 NEW: High VRSI means volume NOT confirming downward momentum
-                # 🔧 2025-12-29: Pattern-aware thresholds - if pattern is BEARISH, price action already confirms
-                # VRSI is a lagging indicator - for clear BEARISH CONTINUATION, allow higher VRSI (90)
-                vrsi_sell_threshold = 90 if 'BEARISH' in pattern.upper() else 65
+                # 🔧 2025-12-29: Use SHORT VRSI TREND instead of just absolute value
+                # VRSI (14 period) is lagging - vrsi_trend tells us if recent volume is shifting
+                # 
+                # Logic:
+                # - vrsi_trend == 'FALLING' means recent volume is on DOWN moves → confirms SELL
+                # - In this case, we can ignore high VRSI (it's lagging)
+                # - If vrsi_trend is not FALLING, we need pattern confirmation to allow high VRSI
+                
+                vrsi_sell_threshold = 65  # Base threshold
+                if vrsi_trend == 'FALLING':
+                    # Recent volume is confirming sell - allow higher VRSI (it's lagging)
+                    vrsi_sell_threshold = 95  # Almost no restriction
+                elif 'BEARISH' in pattern.upper():
+                    # Pattern confirms - allow higher threshold
+                    vrsi_sell_threshold = 90
+                
                 if vrsi > vrsi_sell_threshold and ms_signal.edge_source != "MEAN_REVERSION":
-                    logger.info(f"⚠️ {symbol}: SELL rejected - VRSI too high ({vrsi:.0f} > {vrsi_sell_threshold}) - volume not confirming")
+                    logger.info(f"⚠️ {symbol}: SELL rejected - VRSI too high ({vrsi:.0f} > {vrsi_sell_threshold}), short_vrsi={vrsi_short:.0f}, trend={vrsi_trend}")
                     return None
 
                 # 🔧 NEW: Volume-Weighted Buy Pressure check (more accurate than candle-based)

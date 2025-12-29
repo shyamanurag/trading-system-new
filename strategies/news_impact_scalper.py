@@ -1025,6 +1025,8 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             rsi = 50.0
             mfi = 50.0  # 🔧 NEW: Money Flow Index
             vrsi = 50.0  # 🔧 NEW: Volume-Weighted RSI
+            vrsi_short = 50.0  # 🆕 Short-term VRSI (5 periods)
+            vrsi_trend = 'NEUTRAL'  # 🆕 VRSI trend: RISING, FALLING, NEUTRAL
             macd_crossover = None
             macd_state = 'neutral'
             bollinger_squeeze = False
@@ -1057,6 +1059,8 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                             # VRSI
                             vrsi_data = self.calculate_volume_weighted_rsi(c_closes, c_volumes)
                             vrsi = vrsi_data.get('vrsi', 50.0)
+                            vrsi_short = vrsi_data.get('vrsi_short', vrsi)  # 🆕 Short-term VRSI
+                            vrsi_trend = vrsi_data.get('vrsi_trend', 'NEUTRAL')  # 🆕 VRSI trend
                 prices_arr = np.array(prices)
                 momentum_score = ProfessionalMomentumModels.momentum_score(prices_arr, min(20, len(prices)))
                 mean_reversion_prob = ProfessionalMomentumModels.mean_reversion_probability(prices_arr)
@@ -1147,10 +1151,16 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                     else:
                         logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - VRSI overbought ({vrsi:.0f})")
                         return None
-                # 🔧 2025-12-29: Pattern-aware thresholds - if pattern is BULLISH, price action already confirms
-                vrsi_call_threshold = 25 if 'BULLISH' in pattern.upper() else 35
+                # 🔧 2025-12-29: Use SHORT VRSI TREND instead of just absolute value
+                # vrsi_trend == 'RISING' means recent volume is on UP moves → confirms CALL
+                vrsi_call_threshold = 35  # Base threshold
+                if vrsi_trend == 'RISING':
+                    vrsi_call_threshold = 15  # Recent volume confirms - more lenient
+                elif 'BULLISH' in pattern.upper():
+                    vrsi_call_threshold = 25  # Pattern confirms
+                
                 if vrsi < vrsi_call_threshold:
-                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - VRSI too low ({vrsi:.0f}) - volume not confirming")
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - VRSI too low ({vrsi:.0f} < {vrsi_call_threshold}), short_vrsi={vrsi_short:.0f}, trend={vrsi_trend}")
                     return None
                 
                 if macd_crossover == 'bearish':
@@ -1186,10 +1196,16 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 if vrsi < 25:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - VRSI oversold ({vrsi:.0f})")
                     return None
-                # 🔧 2025-12-29: For BEARISH patterns, allow higher VRSI (90) - VRSI is lagging
-                vrsi_put_threshold = 90 if 'BEARISH' in pattern.upper() else 65
+                # 🔧 2025-12-29: Use SHORT VRSI TREND instead of just absolute value
+                # vrsi_trend == 'FALLING' means recent volume is on DOWN moves → confirms PUT
+                vrsi_put_threshold = 65  # Base threshold
+                if vrsi_trend == 'FALLING':
+                    vrsi_put_threshold = 95  # Recent volume confirms - almost no restriction
+                elif 'BEARISH' in pattern.upper():
+                    vrsi_put_threshold = 90  # Pattern confirms
+                
                 if vrsi > vrsi_put_threshold:
-                    logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - VRSI too high ({vrsi:.0f} > {vrsi_put_threshold}) - volume not confirming")
+                    logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - VRSI too high ({vrsi:.0f} > {vrsi_put_threshold}), short_vrsi={vrsi_short:.0f}, trend={vrsi_trend}")
                     return None
                 
                 if macd_crossover == 'bullish':
