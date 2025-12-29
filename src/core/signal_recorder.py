@@ -84,10 +84,21 @@ class SignalRecord:
                 secondary_target = self.entry_price * 1.02 if self.action == 'BUY' else self.entry_price * 0.98
                 tertiary_target = self.entry_price * 1.03 if self.action == 'BUY' else self.entry_price * 0.97
             
+            # 🔧 2025-12-29: Option-type aware direction
+            # PUT options profit from falling = SHORT direction
+            # CALL options profit from rising = LONG direction
+            option_type = self.metadata.get('option_type', '') if self.metadata else ''
+            if option_type == 'PE':  # PUT option
+                direction = "SHORT"  # Betting on price going down
+            elif option_type == 'CE':  # CALL option
+                direction = "LONG"  # Betting on price going up
+            else:
+                direction = "LONG" if self.action == 'BUY' else "SHORT"
+            
             return {
                 "recommendation_id": self.signal_id,
                 "symbol": self.symbol,
-                "direction": "LONG" if self.action == 'BUY' else "SHORT",
+                "direction": direction,
                 "strategy": f"Live {self.strategy}",
                 "confidence": round(self.confidence * 10, 1) if self.confidence <= 1.0 else round(self.confidence, 1),
                 "entry_price": round(self.entry_price, 2),

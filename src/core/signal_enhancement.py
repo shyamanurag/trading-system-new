@@ -225,6 +225,17 @@ class SignalEnhancer:
             symbol = signal.get('symbol')
             action = signal.get('action', 'BUY')
             
+            # 🔧 2025-12-29: Option-type aware momentum check
+            # PUT options profit from stock FALLING = need SELL direction logic
+            # CALL options profit from stock RISING = need BUY direction logic
+            metadata = signal.get('metadata', {})
+            option_type = metadata.get('option_type', '')
+            effective_action = action
+            if option_type == 'PE':  # PUT option profits from falling prices
+                effective_action = 'SELL'
+            elif option_type == 'CE':  # CALL option profits from rising prices
+                effective_action = 'BUY'
+            
             factors = []
             has_sufficient_history = False
             
@@ -234,7 +245,8 @@ class SignalEnhancer:
                 prices = self.price_history[symbol][-5:]
                 momentum = (prices[-1] - prices[0]) / prices[0]
                 
-                if (action == 'BUY' and momentum > 0.002) or (action == 'SELL' and momentum < -0.002):
+                # Use effective_action for options
+                if (effective_action == 'BUY' and momentum > 0.002) or (effective_action == 'SELL' and momentum < -0.002):
                     factors.append(1.0)  # Strong alignment
                 elif abs(momentum) < 0.001:
                     factors.append(0.5)  # Neutral
@@ -255,12 +267,13 @@ class SignalEnhancer:
                     factors.append(0.5)  # Average volume (less harsh)
             
             # Factor 3: Market structure - ALWAYS use this
+            # 🔧 Use effective_action for options (PUT=SELL direction, CALL=BUY direction)
             data = market_data.get(symbol, {})
             change_pct = data.get('change_percent', 0)
             
-            if (action == 'BUY' and change_pct > 0.5) or (action == 'SELL' and change_pct < -0.5):
+            if (effective_action == 'BUY' and change_pct > 0.5) or (effective_action == 'SELL' and change_pct < -0.5):
                 factors.append(1.0)  # Market moving in signal direction
-            elif (action == 'BUY' and change_pct > 0) or (action == 'SELL' and change_pct < 0):
+            elif (effective_action == 'BUY' and change_pct > 0) or (effective_action == 'SELL' and change_pct < 0):
                 factors.append(0.8)  # Positive alignment
             elif abs(change_pct) < 0.2:
                 factors.append(0.6)  # Consolidating
@@ -380,11 +393,19 @@ class SignalEnhancer:
             symbol = signal.get('symbol')
             action = signal.get('action', 'BUY')
             
+            # 🔧 2025-12-29: Option-type aware trend check
+            metadata = signal.get('metadata', {})
+            option_type = metadata.get('option_type', '')
+            effective_action = action
+            if option_type == 'PE':  # PUT profits from falling = SELL direction
+                effective_action = 'SELL'
+            elif option_type == 'CE':  # CALL profits from rising = BUY direction
+                effective_action = 'BUY'
+            
             # 🔥 FIX: Use signal's MTF alignment score if we don't have history
             if symbol not in self.price_history or len(self.price_history[symbol]) < 20:
                 # The signal already passed MTF analysis in base_strategy
                 # Check for MTF data in signal metadata
-                metadata = signal.get('metadata', {})
                 
                 # If signal has high confidence (boosted by MTF), trust it
                 confidence = signal.get('confidence', 5.0)
@@ -406,8 +427,8 @@ class SignalEnhancer:
             # Long-term (last 20)
             long_trend = (prices[-1] - prices[-20]) / prices[-20] if len(prices) >= 20 else 0
             
-            # Check alignment
-            if action == 'BUY':
+            # Check alignment - use effective_action for options
+            if effective_action == 'BUY':
                 # All timeframes should be positive or neutral
                 if short_trend > 0 and medium_trend > 0 and long_trend > 0:
                     return 1.0  # Perfect alignment
@@ -417,7 +438,7 @@ class SignalEnhancer:
                     return 0.70  # Partial alignment
                 else:
                     return 0.50  # Poor alignment (less harsh)
-            else:  # SELL
+            else:  # SELL (or PUT option)
                 # All timeframes should be negative or neutral
                 if short_trend < 0 and medium_trend < 0 and long_trend < 0:
                     return 1.0  # Perfect alignment

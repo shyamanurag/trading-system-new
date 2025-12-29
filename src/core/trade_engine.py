@@ -1470,6 +1470,19 @@ class TradeEngine:
                 if hasattr(self, 'orchestrator') and hasattr(self.orchestrator, 'position_decision'):
                     daily_pnl = getattr(self.orchestrator.position_decision, 'daily_realized_pnl', 0)
                 
+                # 🔧 2025-12-29: Option-type aware side calculation
+                # PUT options profit from falling = short side
+                # CALL options profit from rising = long side
+                metadata = signal.get('metadata', {})
+                option_type = metadata.get('option_type', '')
+                action = signal.get('action', 'BUY')
+                if option_type == 'PE':  # PUT option
+                    side = 'short'  # Betting on price going down
+                elif option_type == 'CE':  # CALL option
+                    side = 'long'  # Betting on price going up
+                else:
+                    side = 'long' if action == 'BUY' else 'short'
+                
                 trade_data = {
                     'trade_id': order_id,
                     'symbol': signal.get('symbol'),
@@ -1477,7 +1490,7 @@ class TradeEngine:
                     'entry_time': datetime.now(),
                     'entry_price': entry_price,
                     'quantity': quantity,
-                    'side': 'long' if signal.get('action', 'BUY') == 'BUY' else 'short',
+                    'side': side,
                     'entry_order_id': order_id,
                     'strategy_name': signal.get('strategy', 'unknown'),
                     'signal_confidence': signal.get('confidence', 0),
@@ -1517,10 +1530,20 @@ class TradeEngine:
                 self.logger.error(f"❌ Cannot add position to tracker: Invalid symbol or quantity")
                 return
             
+            # 🔧 2025-12-29: Option-type aware side calculation
+            metadata = signal.get('metadata', {})
+            option_type = metadata.get('option_type', '')
+            if option_type == 'PE':  # PUT option
+                side = 'short'  # Betting on price going down
+            elif option_type == 'CE':  # CALL option
+                side = 'long'  # Betting on price going up
+            else:
+                side = 'long' if action == 'BUY' else 'short'
+            
             # Create position data
             position_data = {
                 'symbol': symbol,
-                'side': 'long' if action == 'BUY' else 'short',
+                'side': side,
                 'quantity': quantity,
                 'average_price': entry_price,
                 'current_price': entry_price,  # Will be updated by market data
