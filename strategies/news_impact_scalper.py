@@ -824,21 +824,38 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             signals = []
             
             if not market_data:
+                logger.warning("📊 OPTIONS ENGINE: No market data received")
                 return signals
+            
+            # 🔍 DIAGNOSTIC: Check data quality and symbol candidates
+            all_symbols_with_change = [
+                (symbol, market_data[symbol].get('change_percent', 0))
+                for symbol in market_data.keys()
+                if isinstance(market_data.get(symbol), dict) and 'change_percent' in market_data[symbol]
+                and symbol not in ['timestamp']
+            ]
+            
+            # Sort by absolute change to see top movers
+            all_symbols_with_change.sort(key=lambda x: abs(x[1]), reverse=True)
+            
+            # Log top 10 movers for debugging
+            if all_symbols_with_change:
+                top_movers = all_symbols_with_change[:10]
+                logger.info(f"📊 OPTIONS ENGINE: {len(all_symbols_with_change)} symbols with change_percent")
+                logger.info(f"   Top movers: {[(s, f'{c:+.2f}%') for s, c in top_movers[:5]]}")
+            else:
+                logger.warning("📊 OPTIONS ENGINE: No symbols have change_percent field!")
             
             # CRITICAL FIX: Analyze underlying symbols, then request options data from Zerodha
             underlying_symbols = [
-                symbol for symbol in market_data.keys()
-                if 'change_percent' in market_data[symbol] and abs(market_data[symbol]['change_percent']) > 1.0
-                and symbol not in ['timestamp']  # Exclude non-symbol keys
+                symbol for symbol, change in all_symbols_with_change
+                if abs(change) > 1.0
             ]
 
             # Limit to top 5 by |change_percent| to prevent flooding
-            underlying_symbols = sorted(
-                underlying_symbols,
-                key=lambda s: abs(market_data[s]['change_percent']),
-                reverse=True
-            )[:5]
+            underlying_symbols = underlying_symbols[:5]
+            
+            logger.info(f"📊 OPTIONS ENGINE: {len(underlying_symbols)} symbols with >1% move: {underlying_symbols}")
             
             for underlying_symbol in underlying_symbols:  # Limit processing
                 # Get underlying data for analysis
