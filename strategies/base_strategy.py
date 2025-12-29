@@ -6796,16 +6796,28 @@ class BaseStrategy:
                     # Increased from 0.3% to 0.5% minimum outperformance
                     MIN_OUTPERFORMANCE = 0.5  # Stock must beat NIFTY by at least 0.5%
                     
+                    # 🔧 2025-12-29: For OPTIONS, adjust action based on option_type
+                    # PUT options profit from stock FALLING - treat as SELL for RS check
+                    # CALL options profit from stock RISING - treat as BUY for RS check
+                    rs_action = action
+                    option_type = metadata.get('option_type', '') if metadata else ''
+                    if option_type == 'PE':  # PUT option
+                        rs_action = 'SELL'  # We want WEAK stock for PUT
+                        logger.debug(f"📊 {symbol}: PUT option - using SELL logic for RS check")
+                    elif option_type == 'CE':  # CALL option
+                        rs_action = 'BUY'  # We want STRONG stock for CALL
+                        logger.debug(f"📊 {symbol}: CALL option - using BUY logic for RS check")
+                    
                     rs_allowed, rs_reason = self.check_relative_strength(
                         symbol=symbol,
-                        action=action,
+                        action=rs_action,  # Use adjusted action for options
                         stock_change_percent=stock_change,
                         nifty_change_percent=nifty_change,
                         min_outperformance=MIN_OUTPERFORMANCE
                     )
                     
                     if not rs_allowed:
-                        logger.info(f"🚫 RELATIVE STRENGTH FILTER: {symbol} {action} rejected - {rs_reason}")
+                        logger.info(f"🚫 RELATIVE STRENGTH FILTER: {symbol} {rs_action} rejected - {rs_reason}")
                         return None
             
             # 🎯 MARKET BIAS COORDINATION: Filter signals based on market direction
@@ -6841,8 +6853,18 @@ class BaseStrategy:
                         stock_data = market_data.get(symbol, {})
                         stock_change = stock_data.get('change_percent', stock_data.get('day_change_percent'))
                     
+                    # 🔧 2025-12-29: For OPTIONS, adjust direction based on option_type
+                    # PUT options profit from FALLING - use SELL direction for bias check
+                    # CALL options profit from RISING - use BUY direction for bias check
+                    bias_action = action.upper()
+                    option_type = metadata.get('option_type', '') if metadata else ''
+                    if option_type == 'PE':  # PUT option
+                        bias_action = 'SELL'  # PUT profits from downside = SELL direction
+                    elif option_type == 'CE':  # CALL option
+                        bias_action = 'BUY'  # CALL profits from upside = BUY direction
+                    
                     should_allow = market_bias.should_allow_signal(
-                        action.upper(), 
+                        bias_action,  # Use adjusted action for options
                         normalized_confidence,
                         symbol=symbol,
                         stock_change_percent=stock_change,
@@ -6870,9 +6892,10 @@ class BaseStrategy:
                     # Apply position size multiplier ONLY when aligned with current bias
                     try:
                         current_bias_dir = getattr(getattr(market_bias, 'current_bias', None), 'direction', 'NEUTRAL')
+                        # 🔧 2025-12-29: Use bias_action for options (PUT = SELL direction, CALL = BUY)
                         is_aligned = (
-                            (current_bias_dir == 'BULLISH' and action.upper() == 'BUY') or
-                            (current_bias_dir == 'BEARISH' and action.upper() == 'SELL')
+                            (current_bias_dir == 'BULLISH' and bias_action == 'BUY') or
+                            (current_bias_dir == 'BEARISH' and bias_action == 'SELL')
                         )
                     except Exception:
                         current_bias_dir = 'NEUTRAL'
