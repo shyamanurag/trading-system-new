@@ -1029,6 +1029,8 @@ class EnhancedNewsImpactScalper(BaseStrategy):
             vrsi_trend = 'NEUTRAL'  # 🆕 VRSI trend: RISING, FALLING, NEUTRAL
             macd_crossover = None
             macd_state = 'neutral'
+            short_macd_state = 'neutral'  # 🆕 Short MACD (5-13-4) - faster
+            macd_trend = 'NEUTRAL'  # 🆕 MACD histogram trend
             bollinger_squeeze = False
             bollinger_breakout = None
             mean_reversion_prob = 0.5
@@ -1071,6 +1073,9 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 macd_data = self.calculate_macd_signal(prices)
                 macd_crossover = macd_data.get('crossover')
                 macd_state = macd_data.get('state', 'neutral')
+                # 🆕 Short MACD (5-13-4) and trend - fixes lagging issue
+                short_macd_state = macd_data.get('short_state', macd_state)
+                macd_trend = macd_data.get('macd_trend', 'NEUTRAL')
             
             if len(prices) >= 20:
                 # 🎯 TTM SQUEEZE: Extract OHLCV data for Keltner Channel calculation
@@ -1163,21 +1168,30 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                     logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - VRSI too low ({vrsi:.0f} < {vrsi_call_threshold}), short_vrsi={vrsi_short:.0f}, trend={vrsi_trend}")
                     return None
                 
-                # 🔧 2025-12-29: Pattern-aware MACD - if BULLISH pattern, bearish MACD is LAGGING
+                # 🔧 2025-12-29: Multi-layer MACD check to fix lagging issue
                 is_bullish_pattern = 'BULLISH' in pattern.upper()
+                short_macd_confirms = short_macd_state == 'bullish'  # Short MACD confirms
+                macd_trend_confirms = macd_trend == 'RISING'  # Histogram rising
                 
-                if macd_crossover == 'bearish' and not is_bullish_pattern:
+                # Allow CALL if ANY of these confirms
+                macd_allows_call = is_bullish_pattern or short_macd_confirms or macd_trend_confirms
+                
+                if macd_crossover == 'bearish' and not macd_allows_call:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - MACD bearish crossover")
                     return None
                 
-                # 🔧 NEW: Check MACD state (not just crossover) - unless pattern confirms direction
-                if macd_state == 'bearish' and rsi <= 50 and not is_bullish_pattern:
+                # Check MACD state (not just crossover) - unless something confirms
+                if macd_state == 'bearish' and rsi <= 50 and not macd_allows_call:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - MACD bearish state + weak RSI ({rsi:.0f})")
                     return None
                 
-                # Log when we ALLOW despite bearish MACD due to pattern
-                if (macd_state == 'bearish' or macd_crossover == 'bearish') and is_bullish_pattern:
-                    logger.info(f"✅ {underlying_symbol}: CALL allowed - MACD bearish but pattern={pattern} (MACD lagging)")
+                # Log when we ALLOW despite bearish MACD
+                if (macd_state == 'bearish' or macd_crossover == 'bearish') and macd_allows_call:
+                    reason = []
+                    if is_bullish_pattern: reason.append(f"pattern={pattern}")
+                    if short_macd_confirms: reason.append("short_macd=bullish")
+                    if macd_trend_confirms: reason.append("trend=RISING")
+                    logger.info(f"✅ {underlying_symbol}: CALL allowed - MACD bearish but {', '.join(reason)}")
                 
                 # HP trend filter - don't buy CALL if HP trend strongly negative
                 if hp_trend_direction < -0.01:
@@ -1215,21 +1229,30 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - VRSI too high ({vrsi:.0f} > {vrsi_put_threshold}), short_vrsi={vrsi_short:.0f}, trend={vrsi_trend}")
                     return None
                 
-                # 🔧 2025-12-29: Pattern-aware MACD - if BEARISH pattern, bullish MACD is LAGGING
+                # 🔧 2025-12-29: Multi-layer MACD check to fix lagging issue
                 is_bearish_pattern = 'BEARISH' in pattern.upper()
+                short_macd_confirms = short_macd_state == 'bearish'  # Short MACD confirms
+                macd_trend_confirms = macd_trend == 'FALLING'  # Histogram falling
                 
-                if macd_crossover == 'bullish' and not is_bearish_pattern:
+                # Allow PUT if ANY of these confirms
+                macd_allows_put = is_bearish_pattern or short_macd_confirms or macd_trend_confirms
+                
+                if macd_crossover == 'bullish' and not macd_allows_put:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - MACD bullish crossover")
                     return None
                 
-                # 🔧 NEW: Check MACD state (not just crossover) - unless pattern confirms direction
-                if macd_state == 'bullish' and rsi >= 50 and not is_bearish_pattern:
+                # Check MACD state (not just crossover) - unless something confirms
+                if macd_state == 'bullish' and rsi >= 50 and not macd_allows_put:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - MACD bullish state + strong RSI ({rsi:.0f})")
                     return None
                 
-                # Log when we ALLOW despite bullish MACD due to pattern
-                if (macd_state == 'bullish' or macd_crossover == 'bullish') and is_bearish_pattern:
-                    logger.info(f"✅ {underlying_symbol}: PUT allowed - MACD bullish but pattern={pattern} (MACD lagging)")
+                # Log when we ALLOW despite bullish MACD
+                if (macd_state == 'bullish' or macd_crossover == 'bullish') and macd_allows_put:
+                    reason = []
+                    if is_bearish_pattern: reason.append(f"pattern={pattern}")
+                    if short_macd_confirms: reason.append("short_macd=bearish")
+                    if macd_trend_confirms: reason.append("trend=FALLING")
+                    logger.info(f"✅ {underlying_symbol}: PUT allowed - MACD bullish but {', '.join(reason)}")
                 
                 # HP trend filter - don't buy PUT if HP trend strongly positive
                 if hp_trend_direction > 0.01:
