@@ -1163,14 +1163,21 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                     logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - VRSI too low ({vrsi:.0f} < {vrsi_call_threshold}), short_vrsi={vrsi_short:.0f}, trend={vrsi_trend}")
                     return None
                 
-                if macd_crossover == 'bearish':
+                # 🔧 2025-12-29: Pattern-aware MACD - if BULLISH pattern, bearish MACD is LAGGING
+                is_bullish_pattern = 'BULLISH' in pattern.upper()
+                
+                if macd_crossover == 'bearish' and not is_bullish_pattern:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - MACD bearish crossover")
                     return None
                 
-                # 🔧 NEW: Check MACD state (not just crossover)
-                if macd_state == 'bearish' and rsi <= 50:
+                # 🔧 NEW: Check MACD state (not just crossover) - unless pattern confirms direction
+                if macd_state == 'bearish' and rsi <= 50 and not is_bullish_pattern:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping CALL - MACD bearish state + weak RSI ({rsi:.0f})")
                     return None
+                
+                # Log when we ALLOW despite bearish MACD due to pattern
+                if (macd_state == 'bearish' or macd_crossover == 'bearish') and is_bullish_pattern:
+                    logger.info(f"✅ {underlying_symbol}: CALL allowed - MACD bearish but pattern={pattern} (MACD lagging)")
                 
                 # HP trend filter - don't buy CALL if HP trend strongly negative
                 if hp_trend_direction < -0.01:
@@ -1208,14 +1215,21 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - VRSI too high ({vrsi:.0f} > {vrsi_put_threshold}), short_vrsi={vrsi_short:.0f}, trend={vrsi_trend}")
                     return None
                 
-                if macd_crossover == 'bullish':
+                # 🔧 2025-12-29: Pattern-aware MACD - if BEARISH pattern, bullish MACD is LAGGING
+                is_bearish_pattern = 'BEARISH' in pattern.upper()
+                
+                if macd_crossover == 'bullish' and not is_bearish_pattern:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - MACD bullish crossover")
                     return None
                 
-                # 🔧 NEW: Check MACD state (not just crossover)
-                if macd_state == 'bullish' and rsi >= 50:
+                # 🔧 NEW: Check MACD state (not just crossover) - unless pattern confirms direction
+                if macd_state == 'bullish' and rsi >= 50 and not is_bearish_pattern:
                     logger.info(f"⚠️ {underlying_symbol}: Skipping PUT - MACD bullish state + strong RSI ({rsi:.0f})")
                     return None
+                
+                # Log when we ALLOW despite bullish MACD due to pattern
+                if (macd_state == 'bullish' or macd_crossover == 'bullish') and is_bearish_pattern:
+                    logger.info(f"✅ {underlying_symbol}: PUT allowed - MACD bullish but pattern={pattern} (MACD lagging)")
                 
                 # HP trend filter - don't buy PUT if HP trend strongly positive
                 if hp_trend_direction > 0.01:

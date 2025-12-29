@@ -2073,14 +2073,20 @@ class OptimizedVolumeScalper(BaseStrategy):
                     return None
                 
                 # 🔧 Check MACD STATE (not just crossover event)
+                # 🔧 2025-12-29: Pattern-aware MACD - if BULLISH pattern, bearish MACD is LAGGING
+                is_bullish_pattern = 'BULLISH' in pattern.upper()
+                
                 if ms_signal.edge_source != "MEAN_REVERSION":
-                    if macd_crossover == 'bearish':
+                    if macd_crossover == 'bearish' and not is_bullish_pattern:
                         logger.info(f"⚠️ {symbol}: BUY rejected - MACD bearish crossover")
                         return None
-                    # Reject if MACD state is bearish + weak/neutral RSI
-                    if macd_state == 'bearish' and rsi <= 50:
+                    # Reject if MACD state is bearish + weak/neutral RSI (unless bullish pattern)
+                    if macd_state == 'bearish' and rsi <= 50 and not is_bullish_pattern:
                         logger.info(f"⚠️ {symbol}: BUY rejected - MACD bearish state + weak RSI ({rsi:.0f})")
                         return None
+                    # Log when we ALLOW despite bearish MACD due to pattern
+                    if (macd_state == 'bearish' or macd_crossover == 'bearish') and is_bullish_pattern:
+                        logger.info(f"✅ {symbol}: BUY allowed - MACD bearish but pattern={pattern} (MACD lagging)")
                 
                 # Candle-based pressure checks (fallback if volume data unavailable)
                 if selling_pressure > 0.65 and ms_signal.edge_source != "MEAN_REVERSION":
@@ -2145,14 +2151,20 @@ class OptimizedVolumeScalper(BaseStrategy):
                     return None
                 
                 # 🔧 Check MACD STATE (not just crossover event)
+                # 🔧 2025-12-29: Pattern-aware MACD - if BEARISH pattern, bullish MACD is LAGGING
+                is_bearish_pattern = 'BEARISH' in pattern.upper()
+                
                 if ms_signal.edge_source != "MEAN_REVERSION":
-                    if macd_crossover == 'bullish':
+                    if macd_crossover == 'bullish' and not is_bearish_pattern:
                         logger.info(f"⚠️ {symbol}: SELL rejected - MACD bullish crossover")
                         return None
-                    # Reject if MACD state is bullish + neutral/strong RSI
-                    if macd_state == 'bullish' and rsi >= 50:
+                    # Reject if MACD state is bullish + neutral/strong RSI (unless bearish pattern)
+                    if macd_state == 'bullish' and rsi >= 50 and not is_bearish_pattern:
                         logger.info(f"⚠️ {symbol}: SELL rejected - MACD bullish state + strong RSI ({rsi:.0f})")
                         return None
+                    # Log when we ALLOW despite bullish MACD due to pattern
+                    if (macd_state == 'bullish' or macd_crossover == 'bullish') and is_bearish_pattern:
+                        logger.info(f"✅ {symbol}: SELL allowed - MACD bullish but pattern={pattern} (MACD lagging)")
                 
                 # Candle-based pressure checks (fallback if volume data unavailable)
                 if buying_pressure > 0.65 and ms_signal.edge_source != "MEAN_REVERSION":
