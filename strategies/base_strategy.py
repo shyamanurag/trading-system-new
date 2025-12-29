@@ -6808,6 +6808,17 @@ class BaseStrategy:
             # Strategies should always generate signals for analysis
             # Risk Manager will reject orders based on time restrictions
             
+            # 🎯 DIRECTIONAL ACTION: For options, adjust based on PUT/CALL
+            # PUT options profit from FALLING → directional action = SELL
+            # CALL options profit from RISING → directional action = BUY
+            # This is used throughout for directional checks (RS, bias, Camarilla, etc.)
+            directional_action = action.upper()
+            option_type = metadata.get('option_type', '') if metadata else ''
+            if option_type == 'PE':  # PUT option
+                directional_action = 'SELL'
+            elif option_type == 'CE':  # CALL option
+                directional_action = 'BUY'
+            
             # 🎯 RELATIVE STRENGTH CHECK: Stock must outperform/underperform market
             # Use provided market_data or fall back to stored latest data
             data_to_use = market_data if market_data else self._latest_market_data
@@ -6835,23 +6846,25 @@ class BaseStrategy:
                     exceptional_rs_value = relative_strength
                     
                     # 🔥 EXCEPTIONAL RS DETECTION - Stock significantly outperforming/underperforming market
+                    # 🔧 FIX: Use directional_action for options (PUT=SELL, CALL=BUY)
                     EXCEPTIONAL_RS_THRESHOLD = 5.0  # 5% is exceptional
                     
-                    if action.upper() == 'BUY' and relative_strength > EXCEPTIONAL_RS_THRESHOLD:
+                    if directional_action == 'BUY' and relative_strength > EXCEPTIONAL_RS_THRESHOLD:
                         exceptional_rs = True
                         logger.info(f"🌟 EXCEPTIONAL RS DETECTED: {symbol} +{relative_strength:.2f}% vs NIFTY - "
                                    f"May bypass bias filter for strong momentum play!")
-                    elif action.upper() == 'SELL' and relative_strength < -EXCEPTIONAL_RS_THRESHOLD:
+                    elif directional_action == 'SELL' and relative_strength < -EXCEPTIONAL_RS_THRESHOLD:
                         exceptional_rs = True
                         logger.info(f"🌟 EXCEPTIONAL WEAKNESS DETECTED: {symbol} {relative_strength:.2f}% vs NIFTY - "
                                    f"May bypass bias filter for weak stock short!")
                     
                     # 🔥 HARD BLOCK: Don't buy RED stocks in GREEN market (and vice versa)
+                    # 🔧 FIX: Use directional_action for options
                     # This was causing JSWENERGY loss - bought a down stock in up market
-                    if action.upper() == 'BUY' and stock_change < 0 and nifty_change > 0.2:
+                    if directional_action == 'BUY' and stock_change < 0 and nifty_change > 0.2:
                         logger.warning(f"🚫 HARD BLOCK: {symbol} BUY rejected - Stock DOWN ({stock_change:+.2f}%) in UP market (NIFTY {nifty_change:+.2f}%)")
                         return None
-                    elif action.upper() == 'SELL' and stock_change > 0 and nifty_change < -0.2:
+                    elif directional_action == 'SELL' and stock_change > 0 and nifty_change < -0.2:
                         logger.warning(f"🚫 HARD BLOCK: {symbol} SELL rejected - Stock UP ({stock_change:+.2f}%) in DOWN market (NIFTY {nifty_change:+.2f}%)")
                         return None
                     
@@ -6859,28 +6872,17 @@ class BaseStrategy:
                     # Increased from 0.3% to 0.5% minimum outperformance
                     MIN_OUTPERFORMANCE = 0.5  # Stock must beat NIFTY by at least 0.5%
                     
-                    # 🔧 2025-12-29: For OPTIONS, adjust action based on option_type
-                    # PUT options profit from stock FALLING - treat as SELL for RS check
-                    # CALL options profit from stock RISING - treat as BUY for RS check
-                    rs_action = action
-                    option_type = metadata.get('option_type', '') if metadata else ''
-                    if option_type == 'PE':  # PUT option
-                        rs_action = 'SELL'  # We want WEAK stock for PUT
-                        logger.debug(f"📊 {symbol}: PUT option - using SELL logic for RS check")
-                    elif option_type == 'CE':  # CALL option
-                        rs_action = 'BUY'  # We want STRONG stock for CALL
-                        logger.debug(f"📊 {symbol}: CALL option - using BUY logic for RS check")
-                    
+                    # 🔧 Use directional_action which handles PUT=SELL, CALL=BUY
                     rs_allowed, rs_reason = self.check_relative_strength(
                         symbol=symbol,
-                        action=rs_action,  # Use adjusted action for options
+                        action=directional_action,  # Use directional_action for options
                         stock_change_percent=stock_change,
                         nifty_change_percent=nifty_change,
                         min_outperformance=MIN_OUTPERFORMANCE
                     )
                     
                     if not rs_allowed:
-                        logger.info(f"🚫 RELATIVE STRENGTH FILTER: {symbol} {rs_action} rejected - {rs_reason}")
+                        logger.info(f"🚫 RELATIVE STRENGTH FILTER: {symbol} {directional_action} rejected - {rs_reason}")
                         return None
             
             # 🎯 MARKET BIAS COORDINATION: Filter signals based on market direction
@@ -6916,18 +6918,9 @@ class BaseStrategy:
                         stock_data = market_data.get(symbol, {})
                         stock_change = stock_data.get('change_percent', stock_data.get('day_change_percent'))
                     
-                    # 🔧 2025-12-29: For OPTIONS, adjust direction based on option_type
-                    # PUT options profit from FALLING - use SELL direction for bias check
-                    # CALL options profit from RISING - use BUY direction for bias check
-                    bias_action = action.upper()
-                    option_type = metadata.get('option_type', '') if metadata else ''
-                    if option_type == 'PE':  # PUT option
-                        bias_action = 'SELL'  # PUT profits from downside = SELL direction
-                    elif option_type == 'CE':  # CALL option
-                        bias_action = 'BUY'  # CALL profits from upside = BUY direction
-                    
+                    # 🔧 Use directional_action which handles PUT=SELL, CALL=BUY
                     should_allow = market_bias.should_allow_signal(
-                        bias_action,  # Use adjusted action for options
+                        directional_action,  # Use directional_action for options
                         normalized_confidence,
                         symbol=symbol,
                         stock_change_percent=stock_change,
@@ -6955,10 +6948,10 @@ class BaseStrategy:
                     # Apply position size multiplier ONLY when aligned with current bias
                     try:
                         current_bias_dir = getattr(getattr(market_bias, 'current_bias', None), 'direction', 'NEUTRAL')
-                        # 🔧 2025-12-29: Use bias_action for options (PUT = SELL direction, CALL = BUY)
+                        # 🔧 Use directional_action for options (PUT = SELL direction, CALL = BUY)
                         is_aligned = (
-                            (current_bias_dir == 'BULLISH' and bias_action == 'BUY') or
-                            (current_bias_dir == 'BEARISH' and bias_action == 'SELL')
+                            (current_bias_dir == 'BULLISH' and directional_action == 'BUY') or
+                            (current_bias_dir == 'BEARISH' and directional_action == 'SELL')
                         )
                     except Exception:
                         current_bias_dir = 'NEUTRAL'
@@ -6966,7 +6959,8 @@ class BaseStrategy:
 
                     if is_aligned and hasattr(market_bias, 'get_position_size_multiplier'):
                         # Micro-size in CHOPPY regimes even when aligned
-                        bias_multiplier = market_bias.get_position_size_multiplier(action.upper())
+                        # 🔧 FIX: Use directional_action for options (PUT=SELL, CALL=BUY)
+                        bias_multiplier = market_bias.get_position_size_multiplier(directional_action)
                         try:
                             regime = getattr(getattr(market_bias, 'current_bias', None), 'market_regime', 'NORMAL')
                             if regime in ('CHOPPY', 'VOLATILE_CHOPPY'):
@@ -6985,10 +6979,11 @@ class BaseStrategy:
             # 📊 CAMARILLA SIGNAL FILTER (Professional Risk Management)
             # ============================================================
             # Block signals that violate Camarilla pivot structure
+            # 🔧 FIX: Use directional_action for options (PUT=SELL, CALL=BUY)
             try:
                 if camarilla_signal:
                     # REJECT BUY signals in risky zones
-                    if action.upper() == 'BUY':
+                    if directional_action == 'BUY':
                         if camarilla_signal == "BREAKDOWN_ZONE":
                             logger.warning(f"🚫 CAMARILLA FILTER: {symbol} BUY blocked - Below L4 breakdown")
                             return None
@@ -6997,7 +6992,7 @@ class BaseStrategy:
                             return None
                     
                     # REJECT SELL signals in risky zones
-                    elif action.upper() == 'SELL':
+                    elif directional_action == 'SELL':
                         if camarilla_signal == "BREAKOUT_ZONE":
                             logger.warning(f"🚫 CAMARILLA FILTER: {symbol} SELL blocked - Above H4 breakout")
                             return None
@@ -7006,10 +7001,10 @@ class BaseStrategy:
                             return None
                     
                     # BOOST confidence for confirmed breakouts/breakdowns
-                    if camarilla_signal == "BREAKOUT_CONFIRMED" and action.upper() == 'BUY':
+                    if camarilla_signal == "BREAKOUT_CONFIRMED" and directional_action == 'BUY':
                         metadata['camarilla_boost'] = True
                         logger.info(f"🚀 CAMARILLA BOOST: {symbol} BUY breakout above H4")
-                    elif camarilla_signal == "BREAKDOWN_CONFIRMED" and action.upper() == 'SELL':
+                    elif camarilla_signal == "BREAKDOWN_CONFIRMED" and directional_action == 'SELL':
                         metadata['camarilla_boost'] = True
                         logger.info(f"📉 CAMARILLA BOOST: {symbol} SELL breakdown below L4")
             except Exception as cam_filter_err:
