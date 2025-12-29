@@ -7601,21 +7601,33 @@ class BaseStrategy:
             if original_option_type == 'PE' and action.upper() == 'BUY':
                 logger.warning(f"🔧 ACTION CORRECTION: {symbol} PUT→EQUITY changing BUY→SELL")
                 action = 'SELL'
-                # 🔧 INVERT SL/TARGET: BUY levels → SELL levels
-                # BUY: SL < Entry < Target → SELL: Target < Entry < SL
+                # 🔧 RECALCULATE SL/TARGET for SELL (not just swap - that inverts R:R!)
+                # BUY levels have: risk_pct = (entry-SL)/entry, reward_pct = (target-entry)/entry
+                # For SELL: SL above entry, Target below entry, SAME R:R
                 old_sl, old_target = stop_loss, target
-                stop_loss = old_target  # Upper bound becomes SL for SELL
-                target = old_sl  # Lower bound becomes Target for SELL
-                logger.info(f"🔧 LEVELS INVERTED for SELL: SL={old_sl:.2f}→{stop_loss:.2f}, Target={old_target:.2f}→{target:.2f}")
+                if entry_price > 0:
+                    risk_pct = abs(entry_price - old_sl) / entry_price if old_sl else 0.03
+                    reward_pct = abs(old_target - entry_price) / entry_price if old_target else 0.075
+                    # For SELL: SL = entry * (1 + risk_pct), Target = entry * (1 - reward_pct)
+                    stop_loss = entry_price * (1 + risk_pct)
+                    target = entry_price * (1 - reward_pct)
+                    logger.info(f"🔧 LEVELS RECALCULATED for SELL: Entry={entry_price:.2f}, SL={stop_loss:.2f} (+{risk_pct*100:.1f}%), Target={target:.2f} (-{reward_pct*100:.1f}%)")
+                else:
+                    logger.warning(f"⚠️ Cannot recalculate levels for {symbol} - no entry price")
             elif original_option_type == 'CE' and action.upper() == 'SELL':
                 logger.warning(f"🔧 ACTION CORRECTION: {symbol} CALL→EQUITY changing SELL→BUY")
                 action = 'BUY'
-                # 🔧 INVERT SL/TARGET: SELL levels → BUY levels
-                # SELL: Target < Entry < SL → BUY: SL < Entry < Target
+                # 🔧 RECALCULATE SL/TARGET for BUY (not just swap)
                 old_sl, old_target = stop_loss, target
-                stop_loss = old_target  # Lower bound becomes SL for BUY
-                target = old_sl  # Upper bound becomes Target for BUY
-                logger.info(f"🔧 LEVELS INVERTED for BUY: SL={old_sl:.2f}→{stop_loss:.2f}, Target={old_target:.2f}→{target:.2f}")
+                if entry_price > 0:
+                    risk_pct = abs(old_sl - entry_price) / entry_price if old_sl else 0.03
+                    reward_pct = abs(entry_price - old_target) / entry_price if old_target else 0.075
+                    # For BUY: SL = entry * (1 - risk_pct), Target = entry * (1 + reward_pct)
+                    stop_loss = entry_price * (1 - risk_pct)
+                    target = entry_price * (1 + reward_pct)
+                    logger.info(f"🔧 LEVELS RECALCULATED for BUY: Entry={entry_price:.2f}, SL={stop_loss:.2f} (-{risk_pct*100:.1f}%), Target={target:.2f} (+{reward_pct*100:.1f}%)")
+                else:
+                    logger.warning(f"⚠️ Cannot recalculate levels for {symbol} - no entry price")
             
             # Hard block known delisted/suspended symbols at source
             try:
@@ -7695,12 +7707,32 @@ class BaseStrategy:
                     except Exception as rev_err:
                         logger.debug(f"Reversal check error: {rev_err}")
                     
-                    if not is_reversal:
+                    # 🔧 2025-12-29: Also bypass MTF if current price move strongly contradicts MTF
+                    strong_move_bypass = False
+                    weighted_change = 0
+                    try:
+                        day_change = metadata.get('change_percent', 0) if metadata else 0
+                        intraday_change = metadata.get('intraday_change_pct', 0) if metadata else 0
+                        weighted_change = 0.6 * day_change + 0.4 * intraday_change
+                        
+                        # If MTF shows BULLISH but stock is down >2%, MTF is lagging
+                        if mtf_direction == 'BULLISH' and weighted_change < -2.0 and directional_action == 'SELL':
+                            strong_move_bypass = True
+                            logger.info(f"🔄 MTF STRONG MOVE BYPASS: {symbol} SELL - Stock down {weighted_change:.1f}% but MTF=BULLISH (lagging)")
+                        # If MTF shows BEARISH but stock is up >2%, MTF is lagging
+                        elif mtf_direction == 'BEARISH' and weighted_change > 2.0 and directional_action == 'BUY':
+                            strong_move_bypass = True
+                            logger.info(f"🔄 MTF STRONG MOVE BYPASS: {symbol} BUY - Stock up +{weighted_change:.1f}% but MTF=BEARISH (lagging)")
+                    except Exception as mv_err:
+                        logger.debug(f"Strong move bypass check error: {mv_err}")
+                    
+                    if not is_reversal and not strong_move_bypass:
                         logger.warning(f"🚫 MTF CONFLICT BLOCK: {symbol} {action} - MTF shows {mtf_direction} "
                                       f"({mtf_result['alignment_score']}/3 timeframes) but action is {action}")
                         return None
                     else:
-                        logger.info(f"✅ MTF CONFLICT BYPASSED: {symbol} {action} - Reversal signal allowed")
+                        bypass_reason = "Reversal signal" if is_reversal else f"Strong move ({weighted_change:.1f}%)"
+                        logger.info(f"✅ MTF CONFLICT BYPASSED: {symbol} {action} - {bypass_reason} allowed")
             
             # Apply confidence multiplier from MTF
             original_confidence = confidence
