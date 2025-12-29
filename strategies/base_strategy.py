@@ -7252,13 +7252,29 @@ class BaseStrategy:
             # 5. MODERATE CONFIDENCE (80-85%) → EQUITY with leverage (MIS)
             # Can still use intraday leverage but in cash segment
             if normalized_confidence >= 0.80:
-                logger.info(f"🎯 LEVERAGED EQUITY: {symbol} → EQUITY (MIS) (conf={normalized_confidence:.2f} ≥ 0.80)")
+                # 🔧 CRITICAL: Correct action for PUT/CALL intent
+                if option_type == 'PE':
+                    metadata['action'] = 'SELL'
+                    logger.info(f"🎯 LEVERAGED EQUITY: {symbol} → EQUITY SELL (PUT intent, MIS) (conf={normalized_confidence:.2f} ≥ 0.80)")
+                elif option_type == 'CE':
+                    metadata['action'] = 'BUY'
+                    logger.info(f"🎯 LEVERAGED EQUITY: {symbol} → EQUITY BUY (CALL intent, MIS) (conf={normalized_confidence:.2f} ≥ 0.80)")
+                else:
+                    logger.info(f"🎯 LEVERAGED EQUITY: {symbol} → EQUITY (MIS) (conf={normalized_confidence:.2f} ≥ 0.80)")
                 return 'EQUITY'
             
             # 6. LOWER CONFIDENCE (<80%) → EQUITY (safer)
             # Don't use leverage for weaker signals
             else:
-                logger.info(f"🎯 CONSERVATIVE: {symbol} → EQUITY (conf={normalized_confidence:.2f} < 0.80)")
+                # 🔧 CRITICAL: Correct action for PUT/CALL intent
+                if option_type == 'PE':
+                    metadata['action'] = 'SELL'
+                    logger.info(f"🎯 CONSERVATIVE: {symbol} → EQUITY SELL (PUT intent) (conf={normalized_confidence:.2f} < 0.80)")
+                elif option_type == 'CE':
+                    metadata['action'] = 'BUY'
+                    logger.info(f"🎯 CONSERVATIVE: {symbol} → EQUITY BUY (CALL intent) (conf={normalized_confidence:.2f} < 0.80)")
+                else:
+                    logger.info(f"🎯 CONSERVATIVE: {symbol} → EQUITY (conf={normalized_confidence:.2f} < 0.80)")
                 return 'EQUITY'
                 
         except Exception as e:
