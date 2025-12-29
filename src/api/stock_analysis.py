@@ -736,14 +736,22 @@ async def get_previous_day_ohlc(symbol: str) -> Dict:
         return {"error": str(e)}
 
 
-def calculate_bollinger_bands(prices: List[float], period: int = 20, std_dev: float = 2.0) -> Dict:
-    """Calculate Bollinger Bands with squeeze detection"""
+def calculate_bollinger_bands(prices: List[float], period: int = 20, std_dev: float = 2.0, current_ltp: float = None) -> Dict:
+    """Calculate Bollinger Bands with squeeze detection
+    
+    Args:
+        prices: Historical closing prices
+        period: Lookback period for SMA (default 20)
+        std_dev: Number of standard deviations (default 2.0)
+        current_ltp: Real-time LTP for position calculation (if None, uses last close)
+    """
     try:
         if len(prices) < period:
             return {"error": "Insufficient data"}
         
         prices = np.array(prices)
-        current_price = prices[-1]
+        # Use LTP for real-time position, fallback to last close
+        current_price = current_ltp if current_ltp is not None else prices[-1]
         
         # Calculate SMA and Standard Deviation
         sma = np.mean(prices[-period:])
@@ -1671,8 +1679,8 @@ async def get_stock_analysis(
             analysis["indicators"]["mfi"] = calculate_mfi(highs, lows, closes, volumes)
             analysis["indicators"]["macd"] = calculate_macd(closes)
             
-            # 🎯 NEW: Bollinger Bands
-            analysis["indicators"]["bollinger"] = calculate_bollinger_bands(closes)
+            # 🎯 NEW: Bollinger Bands - use current LTP for real-time position
+            analysis["indicators"]["bollinger"] = calculate_bollinger_bands(closes, current_ltp=current_price)
             
             # 🎯 NEW: GARCH Volatility
             analysis["indicators"]["garch"] = calculate_garch_volatility(closes)
