@@ -7296,7 +7296,7 @@ class BaseStrategy:
                     metadata['action'] = 'BUY'
                     logger.info(f"🎯 LEVERAGED EQUITY: {symbol} → EQUITY BUY (CALL intent, MIS) (conf={normalized_confidence:.2f} ≥ 0.80)")
                 else:
-                logger.info(f"🎯 LEVERAGED EQUITY: {symbol} → EQUITY (MIS) (conf={normalized_confidence:.2f} ≥ 0.80)")
+                    logger.info(f"🎯 LEVERAGED EQUITY: {symbol} → EQUITY (MIS) (conf={normalized_confidence:.2f} ≥ 0.80)")
                 return 'EQUITY'
             
             # 6. LOWER CONFIDENCE (<80%) → EQUITY (safer)
