@@ -712,8 +712,19 @@ class ProductionPositionTracker:
             # Clear from Redis if available
             if self.redis_client:
                 try:
-                    await self.redis_client.delete("positions:*")
-                    self.logger.info("🧹 Cleared all positions from Redis")
+                    # 🔧 FIX: Redis DELETE doesn't support wildcards
+                    # Must use SCAN to find matching keys, then delete each
+                    cursor = 0
+                    deleted_count = 0
+                    while True:
+                        cursor, keys = await self.redis_client.scan(cursor, match="position:*", count=100)
+                        if keys:
+                            await self.redis_client.delete(*keys)
+                            deleted_count += len(keys)
+                        if cursor == 0:
+                            break
+                    if deleted_count > 0:
+                        self.logger.info(f"🧹 Cleared {deleted_count} position keys from Redis")
                 except Exception as e:
                     self.logger.warning(f"Could not clear Redis positions: {e}")
             
@@ -778,8 +789,15 @@ class ProductionPositionTracker:
             # Update Redis (non-blocking, can fail without breaking atomic swap)
             if self.redis_client:
                 try:
-                    # Clear old Redis entries
-                    await self.redis_client.delete("positions:*")
+                    # 🔧 FIX: Clear old Redis entries using SCAN (DELETE doesn't support wildcards)
+                    cursor = 0
+                    while True:
+                        cursor, keys = await self.redis_client.scan(cursor, match="position:*", count=100)
+                        if keys:
+                            await self.redis_client.delete(*keys)
+                        if cursor == 0:
+                            break
+                    
                     # Store new positions
                     for symbol, position in self.positions.items():
                         await self.redis_client.set(
