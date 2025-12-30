@@ -678,7 +678,7 @@ async def get_elite_recommendations():
             "cache_status": "LIVE_SIGNALS_INTEGRATED",
             "debug_info": {
                 "total_before_filter": len(all_recommendations),
-                "active_after_filter": len(active_recommendations),
+                "active_after_filter": len(all_filtered_recommendations),
                 "min_confidence": autonomous_scanner.min_confidence
             }
         }

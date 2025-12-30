@@ -1369,7 +1369,11 @@ class BaseStrategy:
                                     logger.warning(f"🚫 DUPLICATE ORDER BLOCKED: {symbol} - Found existing position for underlying {underlying}: {pos_symbol} qty={pos_qty}")
                                     return True
         except Exception as e:
-            logger.debug(f"Could not check Zerodha positions: {e}")
+            # 🚨 FAIL-SAFE 2025-12-30: If we can't check positions, BLOCK the trade
+            # This prevents duplicates when Zerodha API fails after restart
+            logger.warning(f"⚠️ FAIL-SAFE BLOCK: Cannot verify {symbol} position status: {e}")
+            logger.warning(f"   Blocking trade to prevent potential duplicate - will retry next cycle")
+            return True  # BLOCK when uncertain - conservative approach
         
         # 🚨 STEP 2: Check recent order history to prevent rapid duplicates (2-minute window)
         try:
@@ -6463,17 +6467,17 @@ class BaseStrategy:
             scenario = None
             
             if hasattr(self, 'market_bias') and self.market_bias:
-                current_bias = self.market_bias.current_bias
+            current_bias = self.market_bias.current_bias
                 bias_direction = getattr(current_bias, 'direction', 'NEUTRAL')
-                scenario = getattr(self.market_bias, '_last_scenario', None)
+            scenario = getattr(self.market_bias, '_last_scenario', None)
                 
                 # Determine if signal is WITH or AGAINST the trend
                 is_with_trend = (
                     (action.upper() == 'BUY' and bias_direction == 'BULLISH') or
                     (action.upper() == 'SELL' and bias_direction == 'BEARISH')
                 )
-                
-                if scenario:
+            
+            if scenario:
                     # SCENARIO-BASED PRIMARY ADJUSTMENT
                     # 🚨 2025-12-26: Counter-trend = 0 (neutral at 8.0), not penalized
                     # With-trend gets bonus, counter-trend stays at base
@@ -6507,10 +6511,10 @@ class BaseStrategy:
                         primary_adj = 0.0
                         reasons.append(f"CHOPPY({primary_adj:+.1f})")
                     
-                    else:
+                        else:
                         # Unknown scenario - neutral
                         primary_adj = 0.0
-                else:
+                        else:
                     # No scenario - use basic trend alignment
                     primary_adj = -0.3 if is_with_trend else 0.0
                     reasons.append(f"BASIC:{'WITH' if is_with_trend else 'COUNTER'}({primary_adj:+.1f})")
@@ -7225,7 +7229,7 @@ class BaseStrategy:
                     metadata['action'] = 'BUY'
                     logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY BUY (CALL intent, no F&O)")
                 else:
-                    logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY (no F&O available)")
+                logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY (no F&O available)")
                 return 'EQUITY'
             
             # Check if F&O is available for this symbol
@@ -7239,7 +7243,7 @@ class BaseStrategy:
                     metadata['action'] = 'BUY'
                     logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY BUY (CALL intent)")
                 else:
-                    logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY (no options trading)")
+                logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY (no options trading)")
                 return 'EQUITY'
             
             # ========== F&O ENABLED SYMBOLS - INSTRUMENT SELECTION ==========
@@ -7292,7 +7296,7 @@ class BaseStrategy:
                     metadata['action'] = 'BUY'
                     logger.info(f"🎯 LEVERAGED EQUITY: {symbol} → EQUITY BUY (CALL intent, MIS) (conf={normalized_confidence:.2f} ≥ 0.80)")
                 else:
-                    logger.info(f"🎯 LEVERAGED EQUITY: {symbol} → EQUITY (MIS) (conf={normalized_confidence:.2f} ≥ 0.80)")
+                logger.info(f"🎯 LEVERAGED EQUITY: {symbol} → EQUITY (MIS) (conf={normalized_confidence:.2f} ≥ 0.80)")
                 return 'EQUITY'
             
             # 6. LOWER CONFIDENCE (<80%) → EQUITY (safer)
@@ -7305,8 +7309,8 @@ class BaseStrategy:
                 elif option_type == 'CE':
                     metadata['action'] = 'BUY'
                     logger.info(f"🎯 CONSERVATIVE: {symbol} → EQUITY BUY (CALL intent) (conf={normalized_confidence:.2f} < 0.80)")
-                else:
-                    logger.info(f"🎯 CONSERVATIVE: {symbol} → EQUITY (conf={normalized_confidence:.2f} < 0.80)")
+            else:
+                logger.info(f"🎯 CONSERVATIVE: {symbol} → EQUITY (conf={normalized_confidence:.2f} < 0.80)")
                 return 'EQUITY'
                 
         except Exception as e:
@@ -7406,7 +7410,7 @@ class BaseStrategy:
                     equity_action = 'BUY'
                     logger.info(f"🔄 CALL→EQUITY FALLBACK: {options_symbol} - Converting BUY CALL to BUY EQUITY (long)")
                 else:
-                    logger.info(f"🔄 FALLBACK TO EQUITY: Creating equity signal for {options_symbol}")
+                logger.info(f"🔄 FALLBACK TO EQUITY: Creating equity signal for {options_symbol}")
                 
                 return self._create_equity_signal(options_symbol, equity_action, entry_price, stop_loss, target, confidence, metadata)
             
@@ -7783,7 +7787,7 @@ class BaseStrategy:
                         # 🔧 FIX: Log directional_action for options
                         logger.warning(f"🚫 MTF CONFLICT BLOCK: {symbol} {directional_action} - MTF shows {mtf_direction} "
                                       f"({mtf_result['alignment_score']}/3 timeframes) but action is {directional_action}")
-                        return None
+                    return None
                     else:
                         bypass_reason = "Reversal signal" if is_reversal else f"Strong move ({weighted_change:.1f}%)"
                         logger.info(f"✅ MTF CONFLICT BYPASSED: {symbol} {directional_action} - {bypass_reason} allowed")
@@ -7967,7 +7971,7 @@ class BaseStrategy:
                     logger.info(f"📊 INDEX FUTURES: {symbol} qty={final_quantity} ({final_quantity//lot_size} lots of {lot_size})")
             else:
                 # Ensure minimum 1 share for equity
-                final_quantity = max(final_quantity, 1)
+            final_quantity = max(final_quantity, 1)
             
             # Calculate actual values for logging
             position_value = final_quantity * entry_price
@@ -8441,11 +8445,11 @@ class BaseStrategy:
     def _get_futures_lot_size(self, symbol: str) -> int:
         """Get the lot size for futures contract of a symbol"""
         # Standard lot sizes for major F&O stocks (as of Dec 2024)
-        # 🔧 UPDATED: NIFTY = 75, BANKNIFTY = 30 (changed Nov 2024)
+        # 🔧 CORRECTED Dec 2024: NIFTY=65, BANKNIFTY=35 (user confirmed)
         LOT_SIZES = {
-            # Indices (UPDATED Dec 2024)
-            'NIFTY': 75, 'BANKNIFTY': 30, 'FINNIFTY': 40, 'MIDCPNIFTY': 75,
-            'NIFTY-I': 75, 'BANKNIFTY-I': 30, 'FINNIFTY-I': 40, 'MIDCPNIFTY-I': 75,
+            # Indices (CORRECTED Dec 2024 - user confirmed: NIFTY=65, BANKNIFTY=35)
+            'NIFTY': 65, 'BANKNIFTY': 35, 'FINNIFTY': 40, 'MIDCPNIFTY': 50,
+            'NIFTY-I': 65, 'BANKNIFTY-I': 35, 'FINNIFTY-I': 40, 'MIDCPNIFTY-I': 50,
             # Large caps
             'RELIANCE': 250, 'TCS': 150, 'HDFCBANK': 550, 'ICICIBANK': 700,
             'INFY': 300, 'HINDUNILVR': 300, 'ITC': 1600, 'SBIN': 750,
@@ -9966,10 +9970,10 @@ class BaseStrategy:
             # Zerodha API sometimes returns stale data, so override for indices
             # 🔧 UPDATED Dec 2024
             INDEX_LOT_SIZES = {
-                'NIFTY': 75,      # Changed from 50 to 75 (Nov 2024)
-                'BANKNIFTY': 30,  # Changed from 15 to 30 (Nov 2024)
+                'NIFTY': 65,      # Corrected Dec 2024 - user confirmed
+                'BANKNIFTY': 35,  # Corrected Dec 2024 - user confirmed
                 'FINNIFTY': 40,   # Changed from 25 to 40 (Nov 2024)
-                'MIDCPNIFTY': 75, # Changed from 50 to 75 (Nov 2024)
+                'MIDCPNIFTY': 50, # Standard lot size
                 'SENSEX': 10,     # Lot size = 10
                 'BANKEX': 15,     # Lot size = 15
             }

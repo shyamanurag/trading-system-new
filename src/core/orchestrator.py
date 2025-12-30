@@ -3271,6 +3271,40 @@ class TradingOrchestrator:
                 except Exception as e:
                     self.logger.warning(f"⚠️ Capital sync failed, using defaults: {e}")
             
+            # 🚨 CRITICAL FIX 2024-12-30: Sync positions from Zerodha BEFORE trading starts
+            # This prevents duplicate trades when orchestrator restarts - position tracker
+            # must have existing positions before any signals are generated
+            if self.zerodha_client and self.position_tracker:
+                try:
+                    self.logger.info("🔄 Syncing existing positions from Zerodha BEFORE trading...")
+                    zerodha_positions = await self.zerodha_client.get_positions()
+                    if zerodha_positions:
+                        synced_count = 0
+                        for pos_list in [zerodha_positions.get('net', []), zerodha_positions.get('day', [])]:
+                            for pos in pos_list:
+                                if pos.get('quantity', 0) != 0:
+                                    symbol = pos.get('tradingsymbol', '')
+                                    qty = pos.get('quantity', 0)
+                                    avg_price = pos.get('average_price', 0)
+                                    side = 'LONG' if qty > 0 else 'SHORT'
+                                    
+                                    # Add to position tracker
+                                    await self.position_tracker.update_position(
+                                        symbol=symbol,
+                                        quantity=abs(qty),
+                                        price=avg_price,
+                                        side=side,
+                                        is_broker_sync=True
+                                    )
+                                    synced_count += 1
+                                    self.logger.info(f"   📊 Pre-synced: {symbol} {side} qty={abs(qty)} @ ₹{avg_price}")
+                        
+                        self.logger.info(f"✅ Pre-synced {synced_count} positions from Zerodha - duplicates will be blocked")
+                    else:
+                        self.logger.info("ℹ️ No existing Zerodha positions to sync")
+                except Exception as e:
+                    self.logger.error(f"❌ CRITICAL: Failed to pre-sync positions: {e} - DUPLICATE TRADES MAY OCCUR!")
+            
             # 🎯 NEW: Start Zerodha WebSocket for real-time tick data
             if self.zerodha_client:
                 try:
