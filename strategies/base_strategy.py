@@ -7229,7 +7229,7 @@ class BaseStrategy:
                     metadata['action'] = 'BUY'
                     logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY BUY (CALL intent, no F&O)")
                 else:
-                logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY (no F&O available)")
+                    logger.info(f"🎯 CASH-ONLY STOCK: {symbol} → EQUITY (no F&O available)")
                 return 'EQUITY'
             
             # Check if F&O is available for this symbol
