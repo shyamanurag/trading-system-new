@@ -7787,7 +7787,7 @@ class BaseStrategy:
                         # 🔧 FIX: Log directional_action for options
                         logger.warning(f"🚫 MTF CONFLICT BLOCK: {symbol} {directional_action} - MTF shows {mtf_direction} "
                                       f"({mtf_result['alignment_score']}/3 timeframes) but action is {directional_action}")
-                    return None
+                        return None
                     else:
                         bypass_reason = "Reversal signal" if is_reversal else f"Strong move ({weighted_change:.1f}%)"
                         logger.info(f"✅ MTF CONFLICT BYPASSED: {symbol} {directional_action} - {bypass_reason} allowed")
