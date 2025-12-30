@@ -7971,7 +7971,7 @@ class BaseStrategy:
                     logger.info(f"📊 INDEX FUTURES: {symbol} qty={final_quantity} ({final_quantity//lot_size} lots of {lot_size})")
             else:
                 # Ensure minimum 1 share for equity
-            final_quantity = max(final_quantity, 1)
+                final_quantity = max(final_quantity, 1)
             
             # Calculate actual values for logging
             position_value = final_quantity * entry_price
