@@ -6467,9 +6467,9 @@ class BaseStrategy:
             scenario = None
             
             if hasattr(self, 'market_bias') and self.market_bias:
-            current_bias = self.market_bias.current_bias
+                current_bias = self.market_bias.current_bias
                 bias_direction = getattr(current_bias, 'direction', 'NEUTRAL')
-            scenario = getattr(self.market_bias, '_last_scenario', None)
+                scenario = getattr(self.market_bias, '_last_scenario', None)
                 
                 # Determine if signal is WITH or AGAINST the trend
                 is_with_trend = (
@@ -6478,46 +6478,46 @@ class BaseStrategy:
                 )
             
             if scenario:
-                    # SCENARIO-BASED PRIMARY ADJUSTMENT
-                    # 🚨 2025-12-26: Counter-trend = 0 (neutral at 8.0), not penalized
-                    # With-trend gets bonus, counter-trend stays at base
-                    if scenario in ['GAP_UP_CONTINUATION', 'GAP_DOWN_CONTINUATION']:
-                        # Strong trend - reward aligned, counter stays at base
-                        primary_adj = -1.0 if is_with_trend else 0.0
-                        reasons.append(f"TREND_CONT:{'WITH' if is_with_trend else 'COUNTER'}({primary_adj:+.1f})")
-                    
-                    elif scenario in ['FLAT_TRENDING_UP', 'FLAT_TRENDING_DOWN']:
-                        # Mild trend - small adjustments
-                        primary_adj = -0.5 if is_with_trend else 0.0
-                        reasons.append(f"FLAT_TREND:{'WITH' if is_with_trend else 'COUNTER'}({primary_adj:+.1f})")
-                    
-                    elif scenario in ['GAP_UP_FADE', 'GAP_DOWN_RECOVERY']:
-                        # Reversal scenario - counter-trend is actually WITH the reversal
-                        primary_adj = -0.8 if not is_with_trend else 0.0
-                        reasons.append(f"REVERSAL:{'FADE' if not is_with_trend else 'CHASE'}({primary_adj:+.1f})")
-                    
-                    elif scenario in ['RUBBER_BAND_RECOVERY', 'RUBBER_BAND_FADE']:
-                        # Mean reversion at extremes - strong setup
-                        primary_adj = -1.5 if not is_with_trend else 0.0
-                        reasons.append(f"MEAN_REV:{'FADE' if not is_with_trend else 'CHASE'}({primary_adj:+.1f})")
-                    
-                    elif scenario == 'GAP_DOWN_EARLY_RECOVERY':
-                        # Early recovery - favor buys
-                        primary_adj = -1.0 if action.upper() == 'BUY' else 0.0
-                        reasons.append(f"EARLY_RECOVERY({primary_adj:+.1f})")
-                    
-                    elif scenario in ['CHOPPY', 'MIXED_SIGNALS']:
-                        # Uncertain - neutral
-                        primary_adj = 0.0
-                        reasons.append(f"CHOPPY({primary_adj:+.1f})")
-                    
-                        else:
-                        # Unknown scenario - neutral
-                        primary_adj = 0.0
-                        else:
-                    # No scenario - use basic trend alignment
-                    primary_adj = -0.3 if is_with_trend else 0.0
-                    reasons.append(f"BASIC:{'WITH' if is_with_trend else 'COUNTER'}({primary_adj:+.1f})")
+                # SCENARIO-BASED PRIMARY ADJUSTMENT
+                # 🚨 2025-12-26: Counter-trend = 0 (neutral at 8.0), not penalized
+                # With-trend gets bonus, counter-trend stays at base
+                if scenario in ['GAP_UP_CONTINUATION', 'GAP_DOWN_CONTINUATION']:
+                    # Strong trend - reward aligned, counter stays at base
+                    primary_adj = -1.0 if is_with_trend else 0.0
+                    reasons.append(f"TREND_CONT:{'WITH' if is_with_trend else 'COUNTER'}({primary_adj:+.1f})")
+                
+                elif scenario in ['FLAT_TRENDING_UP', 'FLAT_TRENDING_DOWN']:
+                    # Mild trend - small adjustments
+                    primary_adj = -0.5 if is_with_trend else 0.0
+                    reasons.append(f"FLAT_TREND:{'WITH' if is_with_trend else 'COUNTER'}({primary_adj:+.1f})")
+                
+                elif scenario in ['GAP_UP_FADE', 'GAP_DOWN_RECOVERY']:
+                    # Reversal scenario - counter-trend is actually WITH the reversal
+                    primary_adj = -0.8 if not is_with_trend else 0.0
+                    reasons.append(f"REVERSAL:{'FADE' if not is_with_trend else 'CHASE'}({primary_adj:+.1f})")
+                
+                elif scenario in ['RUBBER_BAND_RECOVERY', 'RUBBER_BAND_FADE']:
+                    # Mean reversion at extremes - strong setup
+                    primary_adj = -1.5 if not is_with_trend else 0.0
+                    reasons.append(f"MEAN_REV:{'FADE' if not is_with_trend else 'CHASE'}({primary_adj:+.1f})")
+                
+                elif scenario == 'GAP_DOWN_EARLY_RECOVERY':
+                    # Early recovery - favor buys
+                    primary_adj = -1.0 if action.upper() == 'BUY' else 0.0
+                    reasons.append(f"EARLY_RECOVERY({primary_adj:+.1f})")
+                
+                elif scenario in ['CHOPPY', 'MIXED_SIGNALS']:
+                    # Uncertain - neutral
+                    primary_adj = 0.0
+                    reasons.append(f"CHOPPY({primary_adj:+.1f})")
+                
+                else:
+                    # Unknown scenario - neutral
+                    primary_adj = 0.0
+            else:
+                # No scenario - use basic trend alignment
+                primary_adj = -0.3 if is_with_trend else 0.0
+                reasons.append(f"BASIC:{'WITH' if is_with_trend else 'COUNTER'}({primary_adj:+.1f})")
             
             min_conf += primary_adj
             
