@@ -7309,8 +7309,8 @@ class BaseStrategy:
                 elif option_type == 'CE':
                     metadata['action'] = 'BUY'
                     logger.info(f"🎯 CONSERVATIVE: {symbol} → EQUITY BUY (CALL intent) (conf={normalized_confidence:.2f} < 0.80)")
-            else:
-                logger.info(f"🎯 CONSERVATIVE: {symbol} → EQUITY (conf={normalized_confidence:.2f} < 0.80)")
+                else:
+                    logger.info(f"🎯 CONSERVATIVE: {symbol} → EQUITY (conf={normalized_confidence:.2f} < 0.80)")
                 return 'EQUITY'
                 
         except Exception as e:
