@@ -7410,7 +7410,7 @@ class BaseStrategy:
                     equity_action = 'BUY'
                     logger.info(f"🔄 CALL→EQUITY FALLBACK: {options_symbol} - Converting BUY CALL to BUY EQUITY (long)")
                 else:
-                logger.info(f"🔄 FALLBACK TO EQUITY: Creating equity signal for {options_symbol}")
+                    logger.info(f"🔄 FALLBACK TO EQUITY: Creating equity signal for {options_symbol}")
                 
                 return self._create_equity_signal(options_symbol, equity_action, entry_price, stop_loss, target, confidence, metadata)
             
