@@ -723,8 +723,27 @@ class ProductionPositionTracker:
             self.logger.error(f"❌ Error clearing positions: {e}")
     
     async def sync_with_zerodha_positions(self, zerodha_positions: Dict):
-        """Sync position tracker with actual Zerodha positions"""
+        """Sync position tracker with actual Zerodha positions
+        
+        🔧 FIX: Preserve existing stop_loss/target values during sync
+        """
         try:
+            # 🔧 FIX: Save existing stop_loss/target BEFORE clearing
+            # These are system-calculated values that Zerodha doesn't track
+            preserved_levels = {}
+            for symbol, pos in self.positions.items():
+                if hasattr(pos, 'stop_loss') or hasattr(pos, 'target'):
+                    preserved_levels[symbol] = {
+                        'stop_loss': getattr(pos, 'stop_loss', None),
+                        'target': getattr(pos, 'target', None),
+                        'trailing_stop': getattr(pos, 'trailing_stop', None),
+                        'strategy_source': getattr(pos, 'strategy_source', 'unknown'),
+                        'entry_time': getattr(pos, 'entry_time', None)
+                    }
+            
+            if preserved_levels:
+                self.logger.info(f"🔧 Preserving SL/Target for {len(preserved_levels)} positions: {list(preserved_levels.keys())}")
+            
             # First, clear all existing positions to avoid stale data
             await self.clear_all_positions()
             
@@ -732,6 +751,9 @@ class ProductionPositionTracker:
             for symbol, pos_data in zerodha_positions.items():
                 quantity = pos_data.get('quantity', 0)
                 if quantity != 0:  # Only add positions with actual quantity
+                    # 🔧 FIX: Restore preserved stop_loss/target if available
+                    saved = preserved_levels.get(symbol, {})
+                    
                     position = Position(
                         symbol=symbol,
                         quantity=abs(quantity),
@@ -740,8 +762,12 @@ class ProductionPositionTracker:
                         pnl=pos_data.get('pnl', 0),
                         unrealized_pnl=pos_data.get('unrealized_pnl', 0),
                         side='long' if quantity > 0 else 'short',
-                        entry_time=datetime.now(),
-                        last_updated=datetime.now()
+                        entry_time=saved.get('entry_time') or datetime.now(),
+                        last_updated=datetime.now(),
+                        stop_loss=saved.get('stop_loss'),  # 🔧 Restore preserved SL
+                        target=saved.get('target'),        # 🔧 Restore preserved target
+                        trailing_stop=saved.get('trailing_stop'),
+                        strategy_source=saved.get('strategy_source', 'unknown')
                     )
                     
                     self.positions[symbol] = position
@@ -757,7 +783,9 @@ class ProductionPositionTracker:
                         except Exception as e:
                             self.logger.warning(f"Could not store position in Redis: {e}")
             
-            self.logger.info(f"✅ Synced position tracker with {len(self.positions)} actual Zerodha positions")
+            # Log how many had preserved levels
+            positions_with_sl = sum(1 for p in self.positions.values() if getattr(p, 'stop_loss', None))
+            self.logger.info(f"✅ Synced position tracker with {len(self.positions)} actual Zerodha positions ({positions_with_sl} with preserved SL)")
             
         except Exception as e:
             self.logger.error(f"❌ Error syncing with Zerodha positions: {e}")
