@@ -328,37 +328,35 @@ class SignalRecorder:
             return False
     
     async def get_elite_recommendations(self) -> List[Dict[str, Any]]:
-        """Get all current elite recommendations with LIVE price updates"""
+        """Get all elite recommendations with LIVE price updates
+        
+        🔧 2025-12-30 FIX: Return ALL signals (including expired/executed)
+        The API layer will handle filtering for display.
+        This fixes "15 registered but shows 0" issue.
+        """
         try:
-            # Clean up expired recommendations
-            await self._cleanup_expired_signals()
-            
-            # Get active recommendations (only those not expired)
+            # Mark expired signals (but don't filter them out)
             current_time = datetime.now()
-            active_recommendations = []
+            all_recommendations = []
+            
             for rec in self.elite_recommendations:
-                # Check status
-                if rec.get('status') not in ['ACTIVE', 'GENERATED', 'PENDING_EXECUTION']:
-                    continue
-                
-                # 🎯 CRITICAL: Check valid_until time - don't show expired signals
+                # Check valid_until and update status if expired
                 valid_until_str = rec.get('valid_until')
                 if valid_until_str:
                     try:
                         valid_until = datetime.fromisoformat(valid_until_str)
-                        if current_time > valid_until:
-                            # Signal expired - mark it
+                        if current_time > valid_until and rec.get('status') in ['ACTIVE', 'GENERATED', 'PENDING_EXECUTION']:
+                            # Mark as expired but still include
                             rec['status'] = 'EXPIRED'
-                            logger.debug(f"🗑️ Filtering expired signal: {rec.get('symbol')} (expired at {valid_until_str})")
-                            continue
+                            logger.debug(f"📋 Signal expired: {rec.get('symbol')} (at {valid_until_str})")
                     except:
                         pass  # If parsing fails, include the signal
                 
-                active_recommendations.append(rec)
+                all_recommendations.append(rec)
             
-            # 🎯 UPDATE CURRENT PRICES for all active recommendations
+            # 🎯 UPDATE CURRENT PRICES for all recommendations
             updated_recommendations = []
-            for rec in active_recommendations:
+            for rec in all_recommendations:
                 try:
                     # Create a copy to avoid modifying original
                     updated_rec = rec.copy()

@@ -968,13 +968,39 @@ async def get_trades_today(orchestrator: TradingOrchestrator = Depends(get_orche
                 trade_value = quantity * avg_price if quantity and avg_price else 0
                 total_trades_value += trade_value
                 
+                symbol = order.get('tradingsymbol', '')
+                side = order.get('transaction_type', '').upper()
+                
+                # 🔧 FIX: Calculate REAL P&L using current market price
+                pnl = 0.0
+                pnl_percent = 0.0
+                current_price = avg_price
+                
+                try:
+                    from data.truedata_client import live_market_data
+                    if symbol in live_market_data:
+                        market_data = live_market_data[symbol]
+                        current_price = market_data.get('ltp', avg_price)
+                    
+                    if quantity > 0 and avg_price > 0 and current_price > 0:
+                        if side == 'BUY':
+                            pnl = (current_price - avg_price) * quantity
+                        else:  # SELL
+                            pnl = (avg_price - current_price) * quantity
+                        pnl_percent = (pnl / trade_value * 100) if trade_value > 0 else 0
+                except Exception as pnl_error:
+                    logger.warning(f"P&L calc error for {symbol}: {pnl_error}")
+                
                 # Format as trade record
                 trades.append({
                     "trade_id": order.get('order_id', ''),
-                    "symbol": order.get('tradingsymbol', ''),
-                    "side": order.get('transaction_type', '').upper(),
+                    "symbol": symbol,
+                    "side": side,
                     "quantity": quantity,
                     "price": float(avg_price),
+                    "current_price": round(current_price, 2),  # 🔧 FIX
+                    "pnl": round(pnl, 2),                      # 🔧 FIX
+                    "pnl_percent": round(pnl_percent, 2),      # 🔧 FIX
                     "trade_value": round(trade_value, 2),
                     "order_type": order.get('order_type', ''),
                     "product": order.get('product', ''),

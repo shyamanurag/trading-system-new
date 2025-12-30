@@ -609,6 +609,12 @@ class ZerodhaIntegration:
                     if result:
                         self.last_order_time = time.time()
                         
+                        # 🔧 FIX: Invalidate positions cache IMMEDIATELY after order
+                        # This ensures duplicate checks see the new position
+                        if 'positions' in self._unified_cache:
+                            del self._unified_cache['positions']
+                            logger.info(f"🔄 CACHE INVALIDATED: Positions cache cleared after {symbol} {action}")
+                        
                         # 🔥 Set cooldown after successful ENTRY order only
                         # EXIT orders don't trigger cooldown (we need to be able to exit)
                         if not is_exit_order:
@@ -1396,6 +1402,22 @@ class ZerodhaIntegration:
         except Exception as e:
             logger.debug(f"Could not get positions sync: {e}")
             return {'net': [], 'day': []}
+    
+    def get_orders_sync(self) -> list:
+        """Get today's orders synchronously (for duplicate checking)
+        
+        🔧 2025-12-30: Added to check SAME-DIRECTION duplicates
+        This is more reliable than positions for recent orders since
+        positions take time to update but orders are immediate.
+        """
+        try:
+            if not self.kite:
+                return []
+            orders = self.kite.orders()
+            return orders if orders else []
+        except Exception as e:
+            logger.debug(f"Could not get orders sync: {e}")
+            return []
     
     def get_required_margin_for_order(self, symbol: str, quantity: int, order_type: str = 'BUY', product: str = 'MIS') -> float:
         """Get required margin for a specific order from Zerodha"""

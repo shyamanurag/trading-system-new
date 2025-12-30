@@ -1418,6 +1418,33 @@ class BaseStrategy:
         except Exception as e:
             logger.debug(f"Could not check recent orders: {e}")
         
+        # 🚨 STEP 2.5: Check SAME-DIRECTION duplicate via Zerodha ORDERS (not just positions)
+        # 🔧 2025-12-30: Fix for BPCL/SUZLON duplicate - positions take time to update but orders are immediate
+        try:
+            from src.core.orchestrator import get_orchestrator_instance
+            orchestrator = get_orchestrator_instance()
+            if orchestrator and hasattr(orchestrator, 'zerodha_client') and orchestrator.zerodha_client:
+                today_orders = orchestrator.zerodha_client.get_orders_sync()
+                if today_orders:
+                    for order in today_orders:
+                        order_symbol = order.get('tradingsymbol', '')
+                        order_status = order.get('status', '')
+                        order_action = order.get('transaction_type', '').upper()
+                        order_qty = order.get('quantity', 0)
+                        
+                        # Only check COMPLETE orders for the same symbol
+                        if order_symbol == symbol and order_status == 'COMPLETE':
+                            # Check if it's the SAME direction (not a reversal/exit)
+                            same_direction = (action and action.upper() == order_action)
+                            
+                            if same_direction:
+                                logger.warning(f"🚫 SAME-DIRECTION DUPLICATE BLOCKED: {symbol} {action}")
+                                logger.warning(f"   Already have COMPLETE {order_action} order for {order_qty} shares")
+                                logger.warning(f"   This prevents adding to existing position!")
+                                return True
+        except Exception as e:
+            logger.debug(f"Could not check Zerodha orders: {e}")
+        
         # 🚨 STEP 3: Check local strategy positions
         if symbol in self.active_positions:
             # Check for phantom positions (older than 30 minutes)

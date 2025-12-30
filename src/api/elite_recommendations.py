@@ -603,52 +603,73 @@ async def get_elite_recommendations():
         # Combine live signals with strategy recommendations
         all_recommendations = live_recommendations + strategy_recommendations
         
-        # Filter only ACTIVE recommendations and remove duplicates
-        # CRITICAL FIX: Update current prices with live data
-        seen_symbols = set()
-        active_recommendations = []
+        # 🔧 2025-12-30 FIX: Show ALL signals, not just ACTIVE ones
+        # Include EXECUTED (trades we made), EXPIRED (for review), and ACTIVE
+        # This fixes "15 registered but shows 0" issue
+        seen_keys = set()  # Track symbol+action to avoid duplicates
+        all_filtered_recommendations = []
+        
+        # Valid statuses to show (includes executed and expired for transparency)
+        valid_statuses = ['ACTIVE', 'GENERATED', 'PENDING_EXECUTION', 'EXECUTED', 'EXPIRED']
         
         for rec in all_recommendations:
-            if rec.get('status') in ['ACTIVE', 'GENERATED', 'PENDING_EXECUTION']:
-                symbol = rec.get('symbol')
-                if symbol not in seen_symbols:
-                    # Update current price with live data
-                    live_price = autonomous_scanner._get_live_price(symbol)
-                    if live_price and live_price > 0:
-                        rec['current_price'] = round(live_price, 2)
-                        logger.debug(f"📈 Updated {symbol} current price: ₹{live_price}")
-                    
-                    active_recommendations.append(rec)
-                    seen_symbols.add(symbol)
+            status = rec.get('status', 'UNKNOWN')
+            symbol = rec.get('symbol', '')
+            action = rec.get('action', rec.get('direction', ''))
+            
+            # Create unique key to avoid duplicates
+            rec_key = f"{symbol}_{action}_{rec.get('recommendation_id', '')}"
+            
+            if rec_key not in seen_keys:
+                # Update current price with live data
+                live_price = autonomous_scanner._get_live_price(symbol)
+                if live_price and live_price > 0:
+                    rec['current_price'] = round(live_price, 2)
+                    logger.debug(f"📈 Updated {symbol} current price: ₹{live_price}")
+                
+                # Ensure status field is populated
+                if not status or status == 'UNKNOWN':
+                    rec['status'] = 'GENERATED'
+                
+                all_filtered_recommendations.append(rec)
+                seen_keys.add(rec_key)
         
         # Sort by timestamp (newest first)
-        active_recommendations.sort(
+        all_filtered_recommendations.sort(
             key=lambda x: x.get('generated_at', ''), 
             reverse=True
         )
         
-        logger.info(f"📊 FINAL RESULT: {len(active_recommendations)} active recommendations "
-                   f"({len(live_recommendations)} live + {len(strategy_recommendations)} strategy)")
-        logger.info(f"   Filtered from {len(all_recommendations)} total recommendations")
+        # Separate active vs historical for logging
+        active_count = sum(1 for r in all_filtered_recommendations if r.get('status') in ['ACTIVE', 'GENERATED', 'PENDING_EXECUTION'])
+        executed_count = sum(1 for r in all_filtered_recommendations if r.get('status') == 'EXECUTED')
+        expired_count = sum(1 for r in all_filtered_recommendations if r.get('status') == 'EXPIRED')
         
-        if len(active_recommendations) == 0:
-            logger.warning("⚠️ NO ACTIVE RECOMMENDATIONS FOUND - Check:")
+        logger.info(f"📊 FINAL RESULT: {len(all_filtered_recommendations)} recommendations "
+                   f"(Active: {active_count}, Executed: {executed_count}, Expired: {expired_count})")
+        logger.info(f"   From {len(live_recommendations)} live + {len(strategy_recommendations)} strategy signals")
+        
+        if len(all_filtered_recommendations) == 0:
+            logger.warning("⚠️ NO RECOMMENDATIONS FOUND - Check:")
             logger.warning("   1. Are strategies generating signals?")
             logger.warning("   2. Are signals meeting min_confidence threshold (0.75)?")
-            logger.warning("   3. Are signals in ACTIVE/GENERATED/PENDING_EXECUTION status?")
+            logger.warning("   3. Signal recorder may need to be checked")
         else:
-            logger.info(f"✅ Returning {len(active_recommendations)} recommendations:")
-            for i, rec in enumerate(active_recommendations[:3], 1):  # Log first 3
-                logger.info(f"   {i}. {rec.get('symbol')} - {rec.get('direction')} - Confidence: {rec.get('confidence')}%")
+            logger.info(f"✅ Returning {len(all_filtered_recommendations)} recommendations:")
+            for i, rec in enumerate(all_filtered_recommendations[:3], 1):  # Log first 3
+                logger.info(f"   {i}. {rec.get('symbol')} - {rec.get('direction')} - Status: {rec.get('status')} - Confidence: {rec.get('confidence')}%")
         
         return {
             "success": True,
-            "recommendations": active_recommendations,
-            "total_count": len(active_recommendations),
+            "recommendations": all_filtered_recommendations,
+            "total_count": len(all_filtered_recommendations),
+            "active_count": active_count,
+            "executed_count": executed_count,
+            "expired_count": expired_count,
             "live_signals": len(live_recommendations),
             "strategy_signals": len(strategy_recommendations),
             "status": "ACTIVE",
-            "message": f"Found {len(active_recommendations)} elite recommendations ({len(live_recommendations)} live + {len(strategy_recommendations)} strategy)",
+            "message": f"Found {len(all_filtered_recommendations)} recommendations (Active: {active_count}, Executed: {executed_count}, Expired: {expired_count})",
             "data_source": "LIVE_SIGNALS_AND_REAL_STRATEGIES",
             "scan_timestamp": autonomous_scanner.last_scan_time.isoformat() if autonomous_scanner.last_scan_time else datetime.now().isoformat(),
             "timestamp": datetime.now().isoformat(),

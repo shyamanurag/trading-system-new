@@ -536,9 +536,33 @@ async def get_trades():
                 price = order.get('average_price', order.get('price', 0))
                 side = order.get('transaction_type', 'UNKNOWN')
                 
-                # Calculate basic P&L (for completed orders)
-                pnl = 0
-                pnl_percent = 0
+                # 🔧 FIX: Calculate REAL P&L using current market price
+                pnl = 0.0
+                pnl_percent = 0.0
+                current_price = price  # Default to entry price
+                
+                try:
+                    # Get current market price from live data
+                    from data.truedata_client import live_market_data
+                    if symbol in live_market_data:
+                        market_data = live_market_data[symbol]
+                        current_price = market_data.get('ltp', price)
+                    
+                    # Calculate P&L based on position side
+                    if quantity > 0 and price > 0 and current_price > 0:
+                        if side.upper() == 'BUY':
+                            # Long position: profit when price goes up
+                            pnl = (current_price - price) * quantity
+                        else:  # SELL (short position)
+                            # Short position: profit when price goes down
+                            pnl = (price - current_price) * quantity
+                        
+                        # Calculate P&L percentage
+                        position_value = price * quantity
+                        pnl_percent = (pnl / position_value * 100) if position_value > 0 else 0
+                        
+                except Exception as pnl_error:
+                    logger.warning(f"Error calculating P&L for {symbol}: {pnl_error}")
                 
                 trade_info = {
                     "trade_id": order.get('order_id', 'UNKNOWN'),
@@ -546,10 +570,11 @@ async def get_trades():
                     "trade_type": side.lower(),
                     "quantity": quantity,
                     "price": price,
-                    "pnl": pnl,
-                    "pnl_percent": pnl_percent,
+                    "current_price": round(current_price, 2),  # 🔧 FIX: Include current price
+                    "pnl": round(pnl, 2),
+                    "pnl_percent": round(pnl_percent, 2),
                     "status": status,
-                    "strategy": "Manual/Zerodha",
+                    "strategy": "Zerodha",
                     "commission": 0,  # Zerodha doesn't provide this in orders API
                     "executed_at": order_timestamp
                 }
