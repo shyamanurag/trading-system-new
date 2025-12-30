@@ -7243,7 +7243,7 @@ class BaseStrategy:
                     metadata['action'] = 'BUY'
                     logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY BUY (CALL intent)")
                 else:
-                logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY (no options trading)")
+                    logger.info(f"🎯 NO F&O AVAILABLE: {symbol} → EQUITY (no options trading)")
                 return 'EQUITY'
             
             # ========== F&O ENABLED SYMBOLS - INSTRUMENT SELECTION ==========
