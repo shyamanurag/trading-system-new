@@ -178,9 +178,10 @@ class SignalRecorder:
         # Configuration
         self.max_records = self.config.get('max_records', 1000)
         self.cleanup_interval_hours = self.config.get('cleanup_interval_hours', 24)
-        # 🎯 CRITICAL: Signals expire after 5 minutes (0.0833 hours) for intraday trading
-        # This ensures old signals from morning don't show up in afternoon
-        self.signal_validity_hours = self.config.get('signal_validity_hours', 5/60)  # 5 minutes
+        # 🔧 2025-12-30: Extended from 5 minutes to 4 hours for Elite Recommendations display
+        # Signals stay visible in the dashboard for the trading session
+        # They're still marked as EXPIRED but remain visible for review
+        self.signal_validity_hours = self.config.get('signal_validity_hours', 4.0)  # 4 hours
         
         # Database connection (if available)
         self.db_enabled = False

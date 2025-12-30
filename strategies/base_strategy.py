@@ -7944,8 +7944,30 @@ class BaseStrategy:
             # Use the smaller of the two (most restrictive)
             final_quantity = min(qty_by_risk, qty_by_leverage, qty_by_available)
             
-            # Ensure minimum 1 share
-            final_quantity = max(final_quantity, 1)
+            # 🔧 2025-12-30 FIX: Index futures must trade in lot sizes
+            # NIFTY-I, BANKNIFTY-I, etc. have fixed lot sizes that must be respected
+            INDEX_FUTURES = ['NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 
+                           'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY']
+            if symbol.upper() in INDEX_FUTURES:
+                lot_size = self._get_futures_lot_size(symbol)
+                # Round DOWN to nearest lot (can't trade fractional lots)
+                final_quantity = (final_quantity // lot_size) * lot_size
+                # Minimum 1 lot for index futures
+                if final_quantity < lot_size:
+                    # Check if we can afford 1 lot
+                    one_lot_value = lot_size * entry_price
+                    one_lot_margin = one_lot_value / INTRADAY_LEVERAGE
+                    if one_lot_margin <= available_capital * 0.5:  # Max 50% of available
+                        final_quantity = lot_size
+                        logger.info(f"📊 INDEX FUTURES: {symbol} using minimum 1 lot = {lot_size} qty")
+                    else:
+                        logger.warning(f"🚫 INDEX FUTURES BLOCKED: {symbol} needs ₹{one_lot_margin:,.0f} margin for 1 lot, only ₹{available_capital:,.0f} available")
+                        return None
+                else:
+                    logger.info(f"📊 INDEX FUTURES: {symbol} qty={final_quantity} ({final_quantity//lot_size} lots of {lot_size})")
+            else:
+                # Ensure minimum 1 share for equity
+                final_quantity = max(final_quantity, 1)
             
             # Calculate actual values for logging
             position_value = final_quantity * entry_price
