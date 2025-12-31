@@ -1220,7 +1220,27 @@ class OptimizedVolumeScalper(BaseStrategy):
             flow_significance = self._test_flow_significance(recent_flows)
             stat_boost = 0.7 if flow_significance < 0.05 else 0.3  # p-value check
             
-            confidence = min(base_confidence + institutional_boost + vwap_boost + stat_boost, 8.5)
+            # 🔧 FIX: EXCEPTIONAL CONDITION BONUSES - reward truly outstanding signals
+            # These bonuses allow exceptional signals to reach the 8.0 threshold
+            exceptional_bonus = 0.0
+            
+            # BONUS 1: Extreme imbalance (> 0.95 = near 100%)
+            if imbalance_ratio >= 0.95:
+                exceptional_bonus += 0.5
+                logger.debug(f"   ✨ EXTREME IMBALANCE BONUS: +0.5 (imbalance={imbalance_ratio:.3f})")
+            
+            # BONUS 2: Extreme statistical significance (p < 0.001)
+            if flow_significance < 0.001:
+                exceptional_bonus += 0.5
+                logger.debug(f"   ✨ EXTREME SIGNIFICANCE BONUS: +0.5 (p={flow_significance:.6f})")
+            
+            # BONUS 3: High institutional ratio (> 0.6 = 60%+ institutional)
+            if institutional_ratio >= 0.6:
+                exceptional_bonus += 0.3
+                logger.debug(f"   ✨ HIGH INSTITUTIONAL BONUS: +0.3 (inst={institutional_ratio:.3f})")
+            
+            # Calculate final confidence with exceptional bonuses
+            confidence = min(base_confidence + institutional_boost + vwap_boost + stat_boost + exceptional_bonus, 9.5)
             
             # RISK-ADJUSTED RETURN ESTIMATION
             volatility = self._get_current_volatility(symbol)
@@ -1414,10 +1434,12 @@ class OptimizedVolumeScalper(BaseStrategy):
                     if abs(z_score) > 2.0:  # 2 standard deviations
                         direction = 'BUY' if z_score < -2.0 else 'SELL'
                         
-                        # 🎯 ENHANCED: More realistic arbitrage confidence
-                        # Start at 7.0 for 2-sigma, increase with z-score
-                        # Max 8.0 even for extreme mispricings
-                        confidence = min(7.0 + (abs(z_score) - 2.0) * 0.3, 8.0)
+                        # 🔧 FIX: Better confidence scaling for stat arb
+                        # Start at 7.0 for 2-sigma, increase more aggressively with z-score
+                        # 3-sigma (z=3.0) = 7.0 + 1.0*0.5 = 7.5
+                        # 4-sigma (z=4.0) = 7.0 + 2.0*0.5 = 8.0 (passes threshold)
+                        # 5-sigma (z=5.0) = 7.0 + 3.0*0.5 = 8.5 (exceptional)
+                        confidence = min(7.0 + (abs(z_score) - 2.0) * 0.5, 8.5)
                         expected_return = self._estimate_arbitrage_return(abs(z_score), p_value)
                         
                         signal = MarketMicrostructureSignal(
@@ -1601,10 +1623,13 @@ class OptimizedVolumeScalper(BaseStrategy):
             if abs(price_change) > 0.003:  # 0.3% move required
                 direction = 'BUY' if price_change > 0 else 'SELL'
                 
-                # 🎯 ENHANCED: More realistic volatility breakout confidence
-                # Volatility breakouts are risky - be conservative
+                # 🔧 FIX: Better confidence scaling for volatility breakouts
+                # vol_persistence ranges from 0 to ~1.5
+                # persistence=0.8 = 6.5 + 0.8*2.0 = 8.1 (passes threshold)
+                # persistence=1.0 = 6.5 + 1.0*2.0 = 8.5 (exceptional)
+                # Higher multiplier rewards sustained volatility persistence
                 vol_persistence = self._calculate_volatility_persistence(symbol)
-                confidence = min(6.5 + vol_persistence * 1.2, 7.8)  # Cap at 7.8
+                confidence = min(6.5 + vol_persistence * 2.0, 8.5)  # Cap at 8.5
                 
                 return MarketMicrostructureSignal(
                     signal_type=direction,
@@ -1653,8 +1678,11 @@ class OptimizedVolumeScalper(BaseStrategy):
             volume_ratio = volume / avg_volume if avg_volume > 0 else 1
             
             if volume_ratio >= 1.5:  # 50% above average volume
-                # 🎯 ENHANCED: More realistic mean reversion confidence
-                confidence = min(6.0 + abs(z_score) * 0.6 + volume_ratio * 0.3, 7.5)  # Cap at 7.5
+                # 🔧 FIX: Better confidence scaling for mean reversion
+                # z_score=2.5, vol=2.0x: 6.0 + 2.5*0.8 + 2.0*0.5 = 6.0 + 2.0 + 1.0 = 9.0 → capped at 8.5
+                # z_score=3.0, vol=1.5x: 6.0 + 3.0*0.8 + 1.5*0.5 = 6.0 + 2.4 + 0.75 = 9.15 → capped at 8.5
+                # Higher multipliers for z-score and volume ratio to reward exceptional conditions
+                confidence = min(6.0 + abs(z_score) * 0.8 + volume_ratio * 0.5, 8.5)  # Cap at 8.5
                 
                 return MarketMicrostructureSignal(
                     signal_type=direction,
@@ -1686,9 +1714,14 @@ class OptimizedVolumeScalper(BaseStrategy):
             direction = 'SELL' if price_change > 0 else 'BUY'  # Fade the move
             
             # Quick reversion opportunity
-            # 🎯 ENHANCED: Low liquidity trades are highest risk - be very conservative
+            # 🔧 FIX: Better confidence scaling for liquidity gaps
+            # Liquidity gaps are risky - require larger moves for higher confidence
+            # 2% move: 5.0 + 2.0*0.8 = 6.6
+            # 3% move: 5.0 + 3.0*0.8 = 7.4
+            # 4% move: 5.0 + 4.0*0.8 = 8.2 → capped at 8.0
+            # Only truly exceptional gaps (4%+) can pass threshold
             strength = abs(price_change) * 100
-            confidence = min(5.0 + strength * 0.3, 6.5)  # Very conservative for illiquid trades
+            confidence = min(5.0 + strength * 0.8, 8.0)  # Cap at 8.0 - risky edge
             
             return MarketMicrostructureSignal(
                 signal_type=direction,
