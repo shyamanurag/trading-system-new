@@ -1881,18 +1881,39 @@ class ZerodhaIntegration:
                     options_count = sum(1 for inst in instruments if inst.get('instrument_type') in ['CE', 'PE'])
                     logger.info(f"✅ Loaded {len(instruments)} NFO instruments ({options_count} are options)")
                     
-                    # Build fast lookup map for tokens
+                    # Build fast lookup map for tokens (with exchange prefix)
                     try:
-                        self._symbol_to_token = {
-                            inst.get('tradingsymbol', ''): (inst.get('instrument_token') or inst.get('token'))
-                            for inst in instruments if inst.get('tradingsymbol')
-                        }
-                        logger.info(f"✅ Built token index for {len(self._symbol_to_token)} NFO symbols")
+                        nfo_token_count = 0
+                        for inst in instruments:
+                            tradingsymbol = inst.get('tradingsymbol', '')
+                            if tradingsymbol:
+                                token = inst.get('instrument_token') or inst.get('token')
+                                if token:
+                                    # Use exchange prefix to avoid collisions
+                                    self._symbol_to_token[f"NFO:{tradingsymbol}"] = token
+                                    nfo_token_count += 1
+                        logger.info(f"✅ Built token index for {nfo_token_count} NFO symbols")
                     except Exception as idx_err:
                         logger.debug(f"Could not build token index: {idx_err}")
                 elif exchange == 'NSE':
                     self._nse_instruments = instruments
                     logger.info(f"✅ Cached {len(instruments)} {exchange} instruments for 1 hour")
+                    
+                    # 🔧 FIX: Build token lookup for NSE instruments too!
+                    # Previously only NFO symbols were indexed, causing "Could not find instrument token for RELIANCE" errors
+                    try:
+                        nse_token_count = 0
+                        for inst in instruments:
+                            tradingsymbol = inst.get('tradingsymbol', '')
+                            if tradingsymbol:
+                                token = inst.get('instrument_token') or inst.get('token')
+                                if token:
+                                    # Use exchange prefix to avoid collisions with NFO symbols
+                                    self._symbol_to_token[f"NSE:{tradingsymbol}"] = token
+                                    nse_token_count += 1
+                        logger.info(f"✅ Built token index for {nse_token_count} NSE symbols")
+                    except Exception as idx_err:
+                        logger.warning(f"⚠️ Could not build NSE token index: {idx_err}")
                 
                 return instruments
             else:
