@@ -6439,7 +6439,7 @@ class BaseStrategy:
         🎯 RATIONAL CONFIDENCE THRESHOLD SYSTEM (Recalibrated 2025-12-26)
         
         DESIGN PRINCIPLES:
-        1. BASE = 8.0 (clean, round number - requires 80% confidence minimum)
+        1. BASE = 7.5 (adjusted from 8.0 to reduce false rejections - still requires 75% confidence minimum)
         2. PRIMARY adjustment: ONE scenario-based adjustment (-1.5 to +1.0)
         3. SECONDARY adjustments: Small bonuses, capped at ±0.5 total
         4. FINAL bounds: 7.0 to 9.0 (never too easy, never impossible)
@@ -6456,8 +6456,8 @@ class BaseStrategy:
         """
         try:
             # ============= BASE THRESHOLD =============
-            # 8.0 = 80% confidence minimum - professional standard
-            BASE_THRESHOLD = 8.0
+            # 7.5 = 75% confidence minimum - adjusted to reduce false rejections while maintaining quality
+            BASE_THRESHOLD = 7.5
             min_conf = BASE_THRESHOLD
             reasons = []
             

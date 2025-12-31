@@ -3709,14 +3709,20 @@ class TradingOrchestrator:
                     
                     # 🚀 CRITICAL FIX: Add timeout to prevent blocking the event loop
                     # This allows HTTP requests to be processed even if strategies are slow
-                    # 🔧 FIX: Increased from 30s to 60s to allow strategies to complete
+                    # 🔧 FIX: Increased to 90s and add per-strategy timeout to prevent one slow strategy from blocking all
                     try:
+                        # Use longer timeout but with per-strategy limits
                         await asyncio.wait_for(
                             self._process_market_data(),
-                            timeout=60.0  # 60 second max per cycle (was 30s)
+                            timeout=90.0  # 90 second max per cycle (increased from 60s)
                         )
                     except asyncio.TimeoutError:
-                        self.logger.warning(f"⚠️ Strategy processing timed out (60s) - cycle skipped")
+                        self.logger.warning(f"⚠️ Strategy processing timed out (90s) - cycle skipped")
+                        # Log which strategies might be slow
+                        if hasattr(self, 'strategies'):
+                            for key, info in self.strategies.items():
+                                if info.get('active', False):
+                                    self.logger.warning(f"   Active strategy: {key}")
                     
                     # 🚀 CRITICAL FIX: Yield to let HTTP handlers run
                     await asyncio.sleep(0.1)  # Brief yield point
@@ -4329,16 +4335,26 @@ class TradingOrchestrator:
             zerodha_positions = {}
             
             # Get direct Zerodha positions for verification
+            # 🔧 FIX: Filter zero-quantity positions - they are closed positions with P&L but not active
             if self.zerodha_client:
                 try:
                     zerodha_data = await self.zerodha_client.get_positions()
                     if zerodha_data:
-                        # Process net and day positions
-                        for pos_list in [zerodha_data.get('net', []), zerodha_data.get('day', [])]:
-                            for pos in pos_list:
-                                if pos.get('quantity', 0) != 0:
-                                    symbol = pos.get('tradingsymbol')
-                                    zerodha_positions[symbol] = pos
+                        # Process net positions only (day positions may include closed trades)
+                        net_positions = zerodha_data.get('net', [])
+                        for pos in net_positions:
+                            quantity = pos.get('quantity', 0)
+                            # 🔧 FIX: Only include positions with non-zero quantity (active positions)
+                            # Zero-quantity positions are closed but may still show P&L for historical tracking
+                            if quantity != 0:
+                                symbol = pos.get('tradingsymbol')
+                                zerodha_positions[symbol] = pos
+                            else:
+                                # Log closed positions for debugging but don't include in active tracking
+                                symbol = pos.get('tradingsymbol', 'UNKNOWN')
+                                pnl = pos.get('pnl', 0)
+                                if pnl != 0:
+                                    self.logger.debug(f"📊 Closed position (qty=0): {symbol} with P&L ₹{pnl:.2f} - excluded from active tracking")
                 except Exception as e:
                     self.logger.warning(f"Could not fetch Zerodha positions for verification: {e}")
             

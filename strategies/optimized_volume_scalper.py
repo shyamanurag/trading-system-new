@@ -2683,11 +2683,19 @@ class OptimizedVolumeScalper(BaseStrategy):
             # Now: 80% train, 20% test → realistic accuracy
             from sklearn.model_selection import train_test_split
             
+            # 🔧 FIX: Handle class imbalance properly - use stratified split and report balanced metrics
             # Only split if we have enough data
             if len(X) >= 100:
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.2, random_state=42, stratify=y if len(np.unique(y)) >= 2 else None
-                )
+                # Use stratified split to ensure both classes in test set
+                try:
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=0.2, random_state=42, stratify=y
+                    )
+                except ValueError:
+                    # If stratification fails (e.g., one class too small), use regular split
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=0.2, random_state=42
+                    )
             else:
                 # Not enough data for split - use all for training, report as "training accuracy"
                 X_train, X_test, y_train, y_test = X, X, y, y
@@ -2700,13 +2708,29 @@ class OptimizedVolumeScalper(BaseStrategy):
             self.ml_model.fit(X_train_scaled, y_train)
             self.ml_trained = True
 
-            # 🔧 FIX: Calculate accuracy on TEST set (not training set!)
+            # 🔧 FIX: Calculate accuracy on TEST set with class imbalance awareness
             test_score = self.ml_model.score(X_test_scaled, y_test)
             
-            # Also calculate class distribution for context
+            # Calculate class distribution for context
             positive_ratio = np.mean(y) * 100
-
-            logger.info(f"🤖 ML MODEL UPDATED: {len(X)} samples, test_accuracy={test_score:.3f} (pos={positive_ratio:.0f}%)")
+            test_positive_ratio = np.mean(y_test) * 100 if len(y_test) > 0 else 0
+            
+            # 🔧 FIX: If accuracy is 100% with severe class imbalance, it's likely just predicting majority class
+            # Report this as a warning
+            if test_score >= 0.99 and test_positive_ratio < 5:
+                logger.warning(f"⚠️ ML MODEL: 100% accuracy with {test_positive_ratio:.1f}% positive samples - likely predicting majority class only")
+                logger.warning(f"   Model may not be learning meaningful patterns - consider class balancing")
+            
+            # Calculate balanced accuracy if we have both classes
+            if len(np.unique(y_test)) >= 2:
+                from sklearn.metrics import balanced_accuracy_score, confusion_matrix
+                y_pred = self.ml_model.predict(X_test_scaled)
+                balanced_acc = balanced_accuracy_score(y_test, y_pred)
+                cm = confusion_matrix(y_test, y_pred)
+                logger.info(f"🤖 ML MODEL UPDATED: {len(X)} samples, test_accuracy={test_score:.3f}, balanced_acc={balanced_acc:.3f} (pos={positive_ratio:.0f}%, test_pos={test_positive_ratio:.0f}%)")
+                logger.debug(f"   Confusion matrix: {cm.tolist()}")
+            else:
+                logger.info(f"🤖 ML MODEL UPDATED: {len(X)} samples, test_accuracy={test_score:.3f} (pos={positive_ratio:.0f}%, test_pos={test_positive_ratio:.0f}%)")
             
         except Exception as e:
             logger.error(f"ML model update failed: {e}")
