@@ -2726,8 +2726,19 @@ class OptimizedVolumeScalper(BaseStrategy):
             if len(features) > 0:
                 self.ml_features_history.append(features)
                 
-                # Create label based on signal quality (simplified)
-                label = 1 if signal.confidence > 8.0 and signal.sharpe_ratio > 2.0 else 0
+                # 🔧 FIX: Create label based on STRICT signal quality criteria
+                # Previous: confidence > 8.0 and sharpe > 2.0 → resulted in 89% positive (too lenient)
+                # Now: Much stricter criteria → target 10-20% positive rate (truly exceptional)
+                # TODO: Ideally should label based on ACTUAL trade P&L, not signal metrics
+                #       This requires tracking signals by ID and updating labels when trades close
+                
+                # STRICT CRITERIA: Only truly exceptional signals get label=1
+                is_exceptional = (
+                    signal.confidence >= 9.0 and  # Very high confidence (was 8.0)
+                    signal.sharpe_ratio >= 3.0 and  # Excellent risk-adjusted return (was 2.0)
+                    getattr(signal, 'strength', 0) >= 0.8  # Strong signal strength
+                )
+                label = 1 if is_exceptional else 0
                 self.ml_labels_history.append(label)
                 
                 # Keep only recent data
