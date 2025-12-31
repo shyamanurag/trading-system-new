@@ -325,9 +325,18 @@ class OptimizedVolumeScalper(BaseStrategy):
             self.zerodha_client = None
         
         # MACHINE LEARNING COMPONENTS
-        self.ml_model = RandomForestClassifier(n_estimators=100, random_state=42)
+        # 🔧 FIX: Use class_weight='balanced' to handle severe class imbalance
+        # Without this, with 2% positive samples, model just predicts negative always
+        self.ml_model = RandomForestClassifier(
+            n_estimators=100, 
+            random_state=42,
+            class_weight='balanced',  # 🔧 CRITICAL: Give equal importance to minority class
+            min_samples_leaf=5,  # Prevent overfitting on small minority class
+            max_depth=10  # Limit depth to prevent memorizing minority samples
+        )
         self.feature_scaler = StandardScaler()
         self.ml_trained = False
+        self.ml_balanced_accuracy = 0.0  # 🔧 Track balanced accuracy to know if model is learning
         self.ml_features_history = []
         self.ml_labels_history = []
         
@@ -2627,7 +2636,11 @@ class OptimizedVolumeScalper(BaseStrategy):
             return np.array([])
     
     async def _get_ml_confidence_boost(self, features: np.ndarray) -> float:
-        """Get ML-based confidence boost for signal"""
+        """Get ML-based confidence boost for signal
+        
+        🔧 FIX: Only trust ML model when it's actually learning (balanced_acc > 0.55)
+        With severe class imbalance (2% positive), an untrained model just predicts negative always.
+        """
         try:
             if not self.ml_trained or len(features) == 0:
                 return 0.0
@@ -2635,7 +2648,14 @@ class OptimizedVolumeScalper(BaseStrategy):
             # 🔥 FIX: Check if ML model has sufficient training data
             # If model has < 50 samples, it's unreliable - return 0.0
             if len(self.ml_labels_history) < 50:
-                logger.debug(f"ML model has insufficient training data ({len(self.ml_labels_history)} samples) - skipping penalty")
+                logger.debug(f"ML model has insufficient training data ({len(self.ml_labels_history)} samples) - skipping")
+                return 0.0
+            
+            # 🔧 FIX: Check if model is actually learning (balanced accuracy > 0.55)
+            # balanced_acc of 0.5 = random guessing, we need at least 0.55 to trust it
+            if hasattr(self, 'ml_balanced_accuracy') and self.ml_balanced_accuracy <= 0.55:
+                # Model is not learning - don't use its predictions
+                logger.debug(f"ML model balanced_acc={self.ml_balanced_accuracy:.3f} ≤ 0.55 - not learned yet, skipping")
                 return 0.0
             
             # Scale features
@@ -2654,6 +2674,12 @@ class OptimizedVolumeScalper(BaseStrategy):
             # Convert to confidence boost (-0.3 to +0.3) - reduced from -0.5 to +0.5
             # ML should provide hints, not dominate the decision
             confidence_boost = (prediction_proba[1] - 0.5) * 0.6  # Scale down the impact
+            
+            # 🔧 FIX: Scale boost by model reliability (balanced accuracy)
+            # Model with 0.55 acc gets 10% of boost, model with 0.75 acc gets full boost
+            if hasattr(self, 'ml_balanced_accuracy') and self.ml_balanced_accuracy > 0.55:
+                reliability_factor = min((self.ml_balanced_accuracy - 0.55) / 0.20, 1.0)  # 0.55->0%, 0.75->100%
+                confidence_boost *= reliability_factor
             
             return confidence_boost
             
@@ -2779,9 +2805,21 @@ class OptimizedVolumeScalper(BaseStrategy):
                 y_pred = self.ml_model.predict(X_test_scaled)
                 balanced_acc = balanced_accuracy_score(y_test, y_pred)
                 cm = confusion_matrix(y_test, y_pred)
+                
+                # 🔧 FIX: Store balanced accuracy to check if model is actually learning
+                self.ml_balanced_accuracy = balanced_acc
+                
+                # 🔧 FIX: Warn if model is not learning (balanced_acc <= 0.55 is near random)
+                if balanced_acc <= 0.55:
+                    logger.warning(f"⚠️ ML MODEL: balanced_acc={balanced_acc:.3f} ≤ 0.55 - model is near RANDOM, predictions unreliable")
+                    logger.warning(f"   Model will be DISABLED until it learns better patterns")
+                elif balanced_acc >= 0.65:
+                    logger.info(f"✅ ML MODEL LEARNING: balanced_acc={balanced_acc:.3f} - model is making meaningful predictions")
+                
                 logger.info(f"🤖 ML MODEL UPDATED: {len(X)} samples, test_accuracy={test_score:.3f}, balanced_acc={balanced_acc:.3f} (pos={positive_ratio:.0f}%, test_pos={test_positive_ratio:.0f}%)")
                 logger.debug(f"   Confusion matrix: {cm.tolist()}")
             else:
+                self.ml_balanced_accuracy = 0.0  # Can't calculate, treat as unreliable
                 logger.info(f"🤖 ML MODEL UPDATED: {len(X)} samples, test_accuracy={test_score:.3f} (pos={positive_ratio:.0f}%, test_pos={test_positive_ratio:.0f}%)")
             
         except Exception as e:
