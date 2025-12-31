@@ -1308,6 +1308,12 @@ class TrueDataClient:
                             redis_client.set("truedata:symbol_count", len(live_market_data))
                             redis_client.expire("truedata:live_cache", 300)  # Refresh TTL periodically
                             self._redis_count_ticker = 0
+                        
+                        # 🚨 2025-12-31: DATA FRESHNESS TRACKING
+                        # Store last tick timestamp so orchestrator can detect stale data
+                        # Update every 10 ticks to avoid Redis overhead
+                        if self._redis_count_ticker % 10 == 0:
+                            redis_client.set("truedata:last_tick_time", str(time.time()))
 
                     except Exception as redis_error:
                         # Silent fail - Redis errors shouldn't block tick processing
