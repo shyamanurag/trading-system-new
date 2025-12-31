@@ -549,8 +549,19 @@ class ProductionPositionTracker:
                 position.last_updated = datetime.now()
                 
                 # Log the update with reason
-                sl_change = f"SL: ₹{old_sl:.2f}→₹{position.stop_loss:.2f}" if stop_loss and old_sl != position.stop_loss else ""
-                tgt_change = f"TGT: ₹{old_target:.2f}→₹{position.target:.2f}" if target and old_target != position.target else ""
+                # 🔧 FIX: Handle None values for old_sl/old_target when position was created without initial levels
+                sl_change = ""
+                if stop_loss and old_sl != position.stop_loss:
+                    old_sl_str = f"₹{old_sl:.2f}" if old_sl is not None else "None"
+                    new_sl_str = f"₹{position.stop_loss:.2f}" if position.stop_loss is not None else "None"
+                    sl_change = f"SL: {old_sl_str}→{new_sl_str}"
+                
+                tgt_change = ""
+                if target and old_target != position.target:
+                    old_tgt_str = f"₹{old_target:.2f}" if old_target is not None else "None"
+                    new_tgt_str = f"₹{position.target:.2f}" if position.target is not None else "None"
+                    tgt_change = f"TGT: {old_tgt_str}→{new_tgt_str}"
+                
                 changes = " | ".join(filter(None, [sl_change, tgt_change]))
                 
                 self.logger.info(f"🔄 DYNAMIC LEVEL UPDATE: {symbol} {position.side.upper()}")
