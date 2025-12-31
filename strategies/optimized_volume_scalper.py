@@ -1715,13 +1715,32 @@ class OptimizedVolumeScalper(BaseStrategy):
             
             # Quick reversion opportunity
             # 🔧 FIX: Better confidence scaling for liquidity gaps
-            # Liquidity gaps are risky - require larger moves for higher confidence
-            # 2% move: 5.0 + 2.0*0.8 = 6.6
-            # 3% move: 5.0 + 3.0*0.8 = 7.4
-            # 4% move: 5.0 + 4.0*0.8 = 8.2 → capped at 8.0
-            # Only truly exceptional gaps (4%+) can pass threshold
             strength = abs(price_change) * 100
-            confidence = min(5.0 + strength * 0.8, 8.0)  # Cap at 8.0 - risky edge
+            base_confidence = 5.0 + strength * 0.8
+            
+            # 🔧 FIX: EXCEPTIONAL CONDITION BONUSES for truly outstanding liquidity gaps
+            exceptional_bonus = 0.0
+            
+            # BONUS 1: Extreme low volume (< 50% of threshold) - clear liquidity vacuum
+            if volume < self.min_liquidity_threshold * 0.5:
+                exceptional_bonus += 0.5
+                logger.debug(f"   ✨ EXTREME LOW VOLUME BONUS: +0.5 (vol={volume})")
+            
+            # BONUS 2: Extreme price move (> 3%) - very clear gap
+            if abs(price_change) > 0.03:
+                exceptional_bonus += 0.5
+                logger.debug(f"   ✨ EXTREME PRICE MOVE BONUS: +0.5 (move={abs(price_change)*100:.1f}%)")
+            
+            # BONUS 3: RSI extreme (likely to revert)
+            rsi = symbol_data.get('rsi', 50)
+            if (direction == 'BUY' and rsi < 30) or (direction == 'SELL' and rsi > 70):
+                exceptional_bonus += 0.4
+                logger.debug(f"   ✨ RSI EXTREME BONUS: +0.4 (RSI={rsi})")
+            
+            confidence = min(base_confidence + exceptional_bonus, 9.0)  # Allow up to 9.0 for exceptional
+            
+            if exceptional_bonus > 0:
+                logger.info(f"📊 {symbol} LIQUIDITY_GAP: exceptional_bonus={exceptional_bonus:.1f}, total_conf={confidence:.1f}")
             
             return MarketMicrostructureSignal(
                 signal_type=direction,

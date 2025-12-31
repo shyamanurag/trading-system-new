@@ -2321,6 +2321,43 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 confidence += 0.5  # Strong relative strength
             elif "WITH MARKET" in alignment:
                 confidence += 0.3
+            
+            # 🔧 FIX: EXCEPTIONAL CONDITION BONUSES for truly outstanding reversals
+            # These bonuses allow exceptional signals to reach the 8.0 threshold
+            exceptional_bonus = 0.0
+            
+            # Get indicator data for exceptional conditions
+            rsi = data.get('rsi', 50)
+            volume = data.get('volume', 0)
+            avg_volume = data.get('avg_volume', volume) if data.get('avg_volume', 0) > 0 else volume
+            open_price = data.get('open', 0)
+            close_price = data.get('close', data.get('ltp', 0))
+            high_price = data.get('high', close_price)
+            low_price = data.get('low', close_price)
+            
+            # BONUS 1: RSI Oversold (< 35) - strong reversal setup
+            if rsi < 35:
+                exceptional_bonus += 0.5
+                logger.debug(f"   ✨ RSI OVERSOLD BONUS: +0.5 (RSI={rsi})")
+            elif rsi < 40:
+                exceptional_bonus += 0.3
+            
+            # BONUS 2: Volume spike (> 1.5x average) - institutional participation
+            if avg_volume > 0 and volume > avg_volume * 1.5:
+                exceptional_bonus += 0.3
+                logger.debug(f"   ✨ VOLUME SPIKE BONUS: +0.3 (vol={volume/avg_volume:.1f}x avg)")
+            
+            # BONUS 3: Bullish candle pattern (hammer-like: long lower wick)
+            if high_price > low_price and close_price > open_price:
+                body = abs(close_price - open_price)
+                lower_wick = min(open_price, close_price) - low_price
+                if lower_wick > body * 2:  # Lower wick > 2x body = hammer
+                    exceptional_bonus += 0.4
+                    logger.debug(f"   ✨ HAMMER CANDLE BONUS: +0.4")
+            
+            confidence += exceptional_bonus
+            if exceptional_bonus > 0:
+                logger.info(f"📊 {symbol} REVERSAL_UP: exceptional_bonus={exceptional_bonus:.1f}, total_conf={confidence:.1f}")
                 
             ltp = data.get('ltp', 0)
             if ltp <= 0:
@@ -2340,7 +2377,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 metadata={
                     'strategy': self.strategy_name,
                     'signal_type': 'EQUITY',  # Changed from OPTIONS
-                    'reason': f"Upward reversal pattern - Bias: {weighted_bias:.1f}% ({alignment})",
+                    'reason': f"Upward reversal pattern - Bias: {weighted_bias:.1f}% ({alignment})" +
+                             (f" [EXCEPTIONAL: +{exceptional_bonus:.1f}]" if exceptional_bonus > 0 else ""),
                     'trailing_stop_enabled': True,
                     'trailing_stop_trigger': 0.015,  # Activate trailing at 1.5% profit
                     'trailing_stop_distance': 0.01   # Trail by 1%
@@ -2390,6 +2428,43 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 confidence += 0.5  # Strong relative weakness
             elif "WITH MARKET" in alignment:
                 confidence += 0.3
+            
+            # 🔧 FIX: EXCEPTIONAL CONDITION BONUSES for truly outstanding reversals
+            # These bonuses allow exceptional signals to reach the 8.0 threshold
+            exceptional_bonus = 0.0
+            
+            # Get indicator data for exceptional conditions
+            rsi = data.get('rsi', 50)
+            volume = data.get('volume', 0)
+            avg_volume = data.get('avg_volume', volume) if data.get('avg_volume', 0) > 0 else volume
+            open_price = data.get('open', 0)
+            close_price = data.get('close', data.get('ltp', 0))
+            high_price = data.get('high', close_price)
+            low_price = data.get('low', close_price)
+            
+            # BONUS 1: RSI Overbought (> 65) - strong reversal setup
+            if rsi > 65:
+                exceptional_bonus += 0.5
+                logger.debug(f"   ✨ RSI OVERBOUGHT BONUS: +0.5 (RSI={rsi})")
+            elif rsi > 60:
+                exceptional_bonus += 0.3
+            
+            # BONUS 2: Volume spike (> 1.5x average) - institutional participation
+            if avg_volume > 0 and volume > avg_volume * 1.5:
+                exceptional_bonus += 0.3
+                logger.debug(f"   ✨ VOLUME SPIKE BONUS: +0.3 (vol={volume/avg_volume:.1f}x avg)")
+            
+            # BONUS 3: Bearish candle pattern (shooting star-like: long upper wick)
+            if high_price > low_price and close_price < open_price:
+                body = abs(close_price - open_price)
+                upper_wick = high_price - max(open_price, close_price)
+                if upper_wick > body * 2:  # Upper wick > 2x body = shooting star
+                    exceptional_bonus += 0.4
+                    logger.debug(f"   ✨ SHOOTING STAR BONUS: +0.4")
+            
+            confidence += exceptional_bonus
+            if exceptional_bonus > 0:
+                logger.info(f"📊 {symbol} REVERSAL_DOWN: exceptional_bonus={exceptional_bonus:.1f}, total_conf={confidence:.1f}")
                 
             ltp = data.get('ltp', 0)
             if ltp <= 0:
@@ -2409,7 +2484,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 metadata={
                     'strategy': self.strategy_name,
                     'signal_type': 'EQUITY',  # Changed from OPTIONS
-                    'reason': f"Downward reversal pattern - Bias: {weighted_bias:.1f}% ({alignment})",
+                    'reason': f"Downward reversal pattern - Bias: {weighted_bias:.1f}% ({alignment})" + 
+                             (f" [EXCEPTIONAL: +{exceptional_bonus:.1f}]" if exceptional_bonus > 0 else ""),
                     'trailing_stop_enabled': True,
                     'trailing_stop_trigger': 0.015,  # Activate trailing at 1.5% profit
                     'trailing_stop_distance': 0.01   # Trail by 1%
