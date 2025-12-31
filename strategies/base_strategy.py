@@ -7689,8 +7689,8 @@ class BaseStrategy:
             
             # BLOCK SIGNAL if MTF not aligned (strict mode for accuracy)
             if not mtf_result['mtf_aligned'] and mtf_result['alignment_score'] < 2:
-                # 🔧 FIX: Log directional_action for options
-                logger.warning(f"🚫 MTF BLOCK: {symbol} {directional_action} - Timeframes not aligned ({mtf_result['reasoning']})")
+                # 🔧 FIX: Use action directly (directional_action already handled above)
+                logger.warning(f"🚫 MTF BLOCK: {symbol} {action} - Timeframes not aligned ({mtf_result['reasoning']})")
                 return None
             
             # 🔥 CRITICAL: BLOCK if action CONFLICTS with strong MTF alignment
@@ -7773,24 +7773,24 @@ class BaseStrategy:
                         weighted_change = 0.6 * day_change + 0.4 * intraday_change
                         
                         # If MTF shows BULLISH but stock is down >2%, MTF is lagging
-                        if mtf_direction == 'BULLISH' and weighted_change < -2.0 and directional_action == 'SELL':
+                        if mtf_direction == 'BULLISH' and weighted_change < -2.0 and action == 'SELL':
                             strong_move_bypass = True
                             logger.info(f"🔄 MTF STRONG MOVE BYPASS: {symbol} SELL - Stock down {weighted_change:.1f}% but MTF=BULLISH (lagging)")
                         # If MTF shows BEARISH but stock is up >2%, MTF is lagging
-                        elif mtf_direction == 'BEARISH' and weighted_change > 2.0 and directional_action == 'BUY':
+                        elif mtf_direction == 'BEARISH' and weighted_change > 2.0 and action == 'BUY':
                             strong_move_bypass = True
                             logger.info(f"🔄 MTF STRONG MOVE BYPASS: {symbol} BUY - Stock up +{weighted_change:.1f}% but MTF=BEARISH (lagging)")
                     except Exception as mv_err:
                         logger.debug(f"Strong move bypass check error: {mv_err}")
                     
                     if not is_reversal and not strong_move_bypass:
-                        # 🔧 FIX: Log directional_action for options
-                        logger.warning(f"🚫 MTF CONFLICT BLOCK: {symbol} {directional_action} - MTF shows {mtf_direction} "
-                                      f"({mtf_result['alignment_score']}/3 timeframes) but action is {directional_action}")
+                        # 🔧 FIX: Use action directly (already corrected for options at function start)
+                        logger.warning(f"🚫 MTF CONFLICT BLOCK: {symbol} {action} - MTF shows {mtf_direction} "
+                                      f"({mtf_result['alignment_score']}/3 timeframes) but action is {action}")
                         return None
                     else:
                         bypass_reason = "Reversal signal" if is_reversal else f"Strong move ({weighted_change:.1f}%)"
-                        logger.info(f"✅ MTF CONFLICT BYPASSED: {symbol} {directional_action} - {bypass_reason} allowed")
+                        logger.info(f"✅ MTF CONFLICT BYPASSED: {symbol} {action} - {bypass_reason} allowed")
             
             # Apply confidence multiplier from MTF
             original_confidence = confidence
