@@ -3675,6 +3675,26 @@ class TradingOrchestrator:
         
         while self.is_running:
             try:
+                # 🚨 CRITICAL 2025-12-31: Check if market is open FIRST
+                # If market is closed, do cleanup and skip data processing
+                # This prevents trading on stale cached data after market hours
+                market_is_open = self._is_market_open()
+                
+                if not market_is_open:
+                    # Market is closed - cleanup and sleep longer
+                    self._cleanup_after_market_hours()
+                    
+                    # Log once per minute when market is closed
+                    current_time = time_module.time()
+                    if current_time - last_heartbeat >= 60:
+                        now_ist = datetime.now(self.ist_timezone)
+                        self.logger.info(f"💤 MARKET CLOSED ({now_ist.strftime('%H:%M:%S')} IST) - Trading loop idle, stale data cleared")
+                        last_heartbeat = current_time
+                    
+                    # Sleep longer when market is closed (30 seconds vs 1 second)
+                    await asyncio.sleep(30)
+                    continue  # Skip all data processing
+                
                 # Heartbeat logging
                 current_time = time_module.time()
                 if current_time - last_heartbeat >= heartbeat_interval:
@@ -3969,6 +3989,70 @@ class TradingOrchestrator:
         except Exception as e:
             self.logger.error(f"Error checking market hours: {e}")
             return True  # Default to open to avoid blocking trading
+    
+    def _cleanup_after_market_hours(self):
+        """
+        🧹 AFTER-MARKET CLEANUP: Clear live market data cache after market close
+        
+        WHY THIS IS CRITICAL:
+        - TrueData WebSocket disconnects after market hours
+        - Redis still holds the LAST cached prices (stale data!)
+        - Without cleanup, system processes stale data as if live
+        - This caused trades at 4 PM using 3:30 PM prices!
+        
+        WHAT WE CLEAR:
+        - truedata:live_cache (live tick data - not needed after close)
+        - truedata:symbol_count (tick counter)
+        
+        WHAT WE KEEP:
+        - Instrument lists (needed for next day)
+        - Historical data caches (for analysis)
+        - Position data (for reconciliation)
+        - Signal execution cache (for deduplication)
+        """
+        try:
+            if not hasattr(self, 'redis_client') or not self.redis_client:
+                return
+            
+            # Check if cleanup already done today
+            if hasattr(self, '_market_cleanup_done_date'):
+                today = datetime.now(self.ist_timezone).date()
+                if self._market_cleanup_done_date == today:
+                    return  # Already cleaned up today
+            
+            self.logger.info("🧹 AFTER-MARKET CLEANUP: Clearing live market data cache...")
+            
+            # Clear live tick data cache (stale after market close)
+            try:
+                deleted = self.redis_client.delete("truedata:live_cache")
+                if deleted:
+                    self.logger.info("   ✅ Cleared truedata:live_cache")
+            except Exception as e:
+                self.logger.warning(f"   ⚠️ Could not clear live_cache: {e}")
+            
+            # Clear symbol count
+            try:
+                self.redis_client.delete("truedata:symbol_count")
+                self.logger.info("   ✅ Cleared truedata:symbol_count")
+            except Exception:
+                pass
+            
+            # Clear local market data cache too
+            if hasattr(self, 'market_data'):
+                self.market_data = {}
+                self.logger.info("   ✅ Cleared local market_data cache")
+            
+            if hasattr(self, 'truedata_cache'):
+                self.truedata_cache = {}
+                self.logger.info("   ✅ Cleared local truedata_cache")
+            
+            # Mark cleanup as done for today
+            self._market_cleanup_done_date = datetime.now(self.ist_timezone).date()
+            
+            self.logger.info("🧹 AFTER-MARKET CLEANUP COMPLETE - Stale data removed")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in after-market cleanup: {e}")
 
     def _can_start_trading(self) -> bool:
         """
