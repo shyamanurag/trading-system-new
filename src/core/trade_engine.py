@@ -1387,6 +1387,32 @@ class TradeEngine:
     async def _process_signal_through_zerodha(self, signal: Dict):
         """Process signal through direct Zerodha integration"""
         try:
+            # 🚨 CRITICAL FIX 2025-12-31: Add time check for NEW positions
+            # This path BYPASSED risk_manager validation - caused trades after 3 PM!
+            import pytz
+            from datetime import datetime as dt, time as dt_time
+            
+            ist = pytz.timezone('Asia/Kolkata')
+            now_ist = dt.now(ist)
+            current_time_ist = now_ist.time()
+            no_new_positions_after = dt_time(15, 0)  # 3:00 PM IST
+            
+            # Check if this is an EXIT/SELL order (closing a position)
+            action = signal.get('action', signal.get('side', 'BUY')).upper()
+            is_exit_order = (
+                signal.get('is_exit', False) or
+                signal.get('signal_type') == 'EXIT' or
+                'EXIT' in signal.get('tag', '').upper() or
+                signal.get('metadata', {}).get('is_exit', False) or
+                signal.get('exit_reason') is not None
+            )
+            
+            # After 3:00 PM, block NEW positions (including new BUY orders)
+            if current_time_ist >= no_new_positions_after and not is_exit_order:
+                self.logger.warning(f"🚫 NO NEW POSITIONS AFTER 3PM: {signal.get('symbol')} {action} rejected")
+                self.logger.warning(f"   Current time: {now_ist.strftime('%H:%M:%S')} IST - Only exits allowed after 3:00 PM")
+                return None
+            
             # CRITICAL FIX: Attempt to get Zerodha client if not available
             if not self.zerodha_client:
                 self.logger.warning("⚠️ Zerodha client not set, attempting to retrieve from orchestrator")

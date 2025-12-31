@@ -2068,6 +2068,36 @@ class TradingOrchestrator:
     async def _run_strategies(self, market_data: Dict[str, Any]):
         """Run all active strategies with transformed data and collect signals"""
         try:
+            # 🚨 CRITICAL FIX 2025-12-31: Stop generating NEW signals after 3:00 PM IST
+            # Trades at 15:18 caused loss because signals were still generated after 3 PM
+            # Position management (exits/square-off) still allowed
+            import pytz
+            from datetime import datetime as dt, time as dt_time
+            ist = pytz.timezone('Asia/Kolkata')
+            now_ist = dt.now(ist)
+            current_time_ist = now_ist.time()
+            no_new_signals_after = dt_time(15, 0)  # 3:00 PM IST
+            
+            if current_time_ist >= no_new_signals_after:
+                # Only log once per minute to avoid log spam
+                if not hasattr(self, '_last_3pm_log') or (now_ist - self._last_3pm_log).total_seconds() > 60:
+                    self.logger.info(f"⏰ SIGNAL GENERATION PAUSED: {now_ist.strftime('%H:%M:%S')} IST - No new signals after 3:00 PM")
+                    self.logger.info(f"   Position management and exits still active")
+                    self._last_3pm_log = now_ist
+                
+                # Still need to manage existing positions (exits, stop losses)
+                # So we process position management but skip signal generation
+                for strategy_key, strategy_info in self.strategies.items():
+                    if strategy_info.get('active', False) and 'instance' in strategy_info:
+                        strategy_instance = strategy_info['instance']
+                        if hasattr(strategy_instance, 'manage_existing_positions'):
+                            try:
+                                transformed_data = self._optimize_market_data_processing(market_data)
+                                await strategy_instance.manage_existing_positions(transformed_data)
+                            except Exception as e:
+                                self.logger.debug(f"Position management error: {e}")
+                return  # Skip signal generation
+            
             all_signals = []
             # 🚨 PERFORMANCE OPTIMIZATION: Reduce market data processing load
             transformed_data = self._optimize_market_data_processing(market_data)

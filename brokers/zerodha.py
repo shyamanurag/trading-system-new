@@ -519,9 +519,18 @@ class ZerodhaIntegration:
         is_exit_order = is_exit_order or order_params.get('metadata', {}).get('partial_exit', False)
         is_exit_order = is_exit_order or order_params.get('metadata', {}).get('is_exit', False)
         
-        # 🚨 CRITICAL FIX: Prevent unintended SHORTS from over-selling
-        # Validate SELL quantity against actual position to prevent qty mismatch
-        if action.upper() == 'SELL' and is_exit_order:
+        # 🚨 CRITICAL FIX 2025-12-31: Block NEW positions after 3:00 PM IST
+        # This is a SAFETY NET - caused loss when trades executed at 15:18!
+        no_new_positions_after = dt_time(15, 0)  # 3:00 PM IST
+        if current_time_ist >= no_new_positions_after and not is_exit_order:
+            logger.warning(f"🚫 NO NEW POSITIONS AFTER 3PM: {symbol} {action} blocked at broker level")
+            logger.warning(f"   Time: {now_ist.strftime('%H:%M:%S')} IST - Only exits allowed after 3:00 PM")
+            return None
+        
+        # 🚨 CRITICAL FIX 2025-12-31: Prevent unintended SHORTS from ALL SELL orders
+        # Previously only checked is_exit_order - allowed NEW SELL signals to create SHORTs!
+        # This caused JINDALSTEL SHORT at 15:19 after position was already squared off at 15:15
+        if action.upper() == 'SELL':
             try:
                 positions = self.get_positions_sync()
                 net_positions = positions.get('net', [])
