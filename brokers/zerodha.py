@@ -3243,6 +3243,11 @@ class ZerodhaIntegration:
             import time as time_module
             current_time = time_module.time()
             
+            # 🔧 AUTO-DETECT EXCHANGE: Futures/Options are on NFO, not NSE
+            if symbol.endswith('FUT') or symbol.endswith('CE') or symbol.endswith('PE'):
+                exchange = 'NFO'
+                logger.debug(f"📊 Auto-detected F&O symbol: {symbol} → using NFO exchange")
+            
             # 🚀 CACHE CHECK: Prevent duplicate API calls across strategies
             cache_key = f"{symbol}:{interval}:{exchange}"
             if cache_key in ZerodhaIntegration._historical_data_cache:
@@ -3318,6 +3323,11 @@ class ZerodhaIntegration:
     async def _get_instrument_token(self, symbol: str, exchange: str = "NSE") -> Optional[int]:
         """Get instrument token for a symbol"""
         try:
+            # 🔧 AUTO-DETECT EXCHANGE: Futures/Options are on NFO, not NSE
+            if symbol.endswith('FUT') or symbol.endswith('CE') or symbol.endswith('PE'):
+                exchange = 'NFO'
+                logger.debug(f"📊 Auto-detected F&O symbol for token lookup: {symbol} → using NFO exchange")
+            
             # Map internal index symbols to Zerodha trading symbols for historical data
             index_symbol_map = {
                 'NIFTY-I': 'NIFTY 50',
