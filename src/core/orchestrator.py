@@ -717,7 +717,8 @@ class TradingOrchestrator:
                             
                             # Create new Redis client with enhanced config
                             self.redis_client = redis.Redis(**redis_config)
-                            await self.redis_client.ping()
+                            # 🔧 FIX: redis.Redis is synchronous, don't use await
+                            self.redis_client.ping()
                             self.logger.info("✅ Redis reconnected successfully with enhanced config")
                         except Exception as reconnect_error:
                             self.logger.warning(f"⚠️ Redis reconnection failed: {reconnect_error}")
@@ -3656,9 +3657,10 @@ class TradingOrchestrator:
                         # Data is stored as ONE hash: "truedata:live_cache" with symbols as fields
                         if hasattr(self, 'redis_client') and self.redis_client:
                             try:
-                                # 🚨 2025-12-29 FIX: Use HLEN on the hash, not KEYS pattern
-                                # The cache is stored as: hgetall("truedata:live_cache") - one hash with many fields
-                                td_symbols = await self.redis_client.hlen("truedata:live_cache")
+                                # 🚨 2025-12-31 FIX: redis_client is SYNCHRONOUS, don't use await!
+                                # Previous bug: "await self.redis_client.hlen()" fails silently because
+                                # redis.Redis is synchronous, not aioredis
+                                td_symbols = self.redis_client.hlen("truedata:live_cache")
                             except Exception as redis_err:
                                 # Log the error to diagnose why it's failing
                                 self.logger.debug(f"Heartbeat Redis hlen error: {type(redis_err).__name__}: {redis_err}")
