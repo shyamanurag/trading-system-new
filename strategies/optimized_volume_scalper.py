@@ -2726,17 +2726,27 @@ class OptimizedVolumeScalper(BaseStrategy):
             if len(features) > 0:
                 self.ml_features_history.append(features)
                 
-                # 🔧 FIX: Create label based on STRICT signal quality criteria
-                # Previous: confidence > 8.0 and sharpe > 2.0 → resulted in 89% positive (too lenient)
-                # Now: Much stricter criteria → target 10-20% positive rate (truly exceptional)
-                # TODO: Ideally should label based on ACTUAL trade P&L, not signal metrics
-                #       This requires tracking signals by ID and updating labels when trades close
+                # 🔧 FIX (v3): ULTRA-STRICT criteria to avoid circular reasoning
+                # Previous v1: confidence > 8.0 → 89% positive (way too lenient)
+                # Previous v2: confidence >= 9.0, sharpe >= 3.0 → still 89% positive!
+                # 
+                # PROBLEM: After adding exceptional bonuses, most signals now reach 9.0+ confidence
+                # This creates circular reasoning - ML learns nothing useful
+                #
+                # SOLUTION: Use INDEPENDENT metrics that aren't inflated by our boosts
+                # Target: 5-15% positive rate (truly rare exceptional signals)
                 
-                # STRICT CRITERIA: Only truly exceptional signals get label=1
+                # Get signal metadata for independent metrics
+                metadata = getattr(signal, 'metadata', {}) or {}
+                
+                # ULTRA-STRICT CRITERIA: Multiple independent conditions
                 is_exceptional = (
-                    signal.confidence >= 9.0 and  # Very high confidence (was 8.0)
-                    signal.sharpe_ratio >= 3.0 and  # Excellent risk-adjusted return (was 2.0)
-                    getattr(signal, 'strength', 0) >= 0.8  # Strong signal strength
+                    signal.confidence >= 9.5 and                    # Top 5% confidence (stricter)
+                    signal.sharpe_ratio >= 4.0 and                  # Exceptional Sharpe (stricter)
+                    getattr(signal, 'strength', 0) >= 0.85 and      # Very strong signal
+                    # Additional independent checks:
+                    metadata.get('institutional_ratio', 0) >= 0.5 and  # 50%+ institutional activity
+                    metadata.get('volume_surge', 1.0) >= 1.5           # 50%+ above average volume
                 )
                 label = 1 if is_exceptional else 0
                 self.ml_labels_history.append(label)

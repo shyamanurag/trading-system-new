@@ -680,20 +680,50 @@ class EnhancedPositionOpeningDecision:
             
             estimated_value = entry_price * signal_quantity
             
-            # 🔥 INTRADAY LEVERAGE: 4x margin available for MIS
-            INTRADAY_LEVERAGE = 4.0
-            max_tradeable_value = available_capital * INTRADAY_LEVERAGE  # ₹50k → ₹2L
+            # 🔧 CRITICAL FIX: Detect FUTURES vs EQUITY for correct margin calculation
+            # Futures only need 10-15% margin, NOT full contract value!
+            signal_type = signal.get('signal_type', 'EQUITY')
+            is_futures = signal_type == 'FUTURES' or signal.get('instrument_type') == 'FUT'
+            is_options = signal_type == 'OPTIONS' or self._is_options_symbol(symbol)
             
-            # Check if position fits within leveraged capital
-            if estimated_value > max_tradeable_value:
-                return PositionDecisionResult(
-                    decision=PositionDecision.REJECTED_CAPITAL,
-                    confidence_score=signal.get('confidence', 0.0),
-                    risk_score=10.0,
-                    position_size=0,
-                    reasoning=f"Position ₹{estimated_value:,.0f} exceeds 4x leverage limit ₹{max_tradeable_value:,.0f}",
-                    metadata={'required_capital': estimated_value, 'max_tradeable': max_tradeable_value}
-                )
+            if is_futures:
+                # 🎯 FUTURES: Use actual margin requirement (~15% of contract value)
+                # A ₹6L contract needs only ~₹90k margin
+                FUTURES_MARGIN_PCT = 0.15  # 15% margin for stock futures
+                margin_required = estimated_value * FUTURES_MARGIN_PCT
+                
+                # Check if we have enough capital for the margin
+                if margin_required > available_capital * 0.5:  # Max 50% of capital per position
+                    return PositionDecisionResult(
+                        decision=PositionDecision.REJECTED_CAPITAL,
+                        confidence_score=signal.get('confidence', 0.0),
+                        risk_score=10.0,
+                        position_size=0,
+                        reasoning=f"FUTURES margin ₹{margin_required:,.0f} exceeds 50% of capital ₹{available_capital*0.5:,.0f} (contract value: ₹{estimated_value:,.0f})",
+                        metadata={'margin_required': margin_required, 'contract_value': estimated_value, 'available_capital': available_capital}
+                    )
+                logger.info(f"📊 FUTURES MARGIN CHECK: {symbol} contract ₹{estimated_value:,.0f} → margin ₹{margin_required:,.0f} (available: ₹{available_capital:,.0f})")
+            
+            elif is_options:
+                # Options: Premium is the max risk (already paid upfront)
+                # No additional margin check needed for option buying
+                logger.debug(f"📊 OPTIONS: {symbol} premium = ₹{estimated_value:,.0f}")
+            
+            else:
+                # 🔥 EQUITY: INTRADAY LEVERAGE 4x margin available for MIS
+                INTRADAY_LEVERAGE = 4.0
+                max_tradeable_value = available_capital * INTRADAY_LEVERAGE  # ₹50k → ₹2L
+                
+                # Check if position fits within leveraged capital
+                if estimated_value > max_tradeable_value:
+                    return PositionDecisionResult(
+                        decision=PositionDecision.REJECTED_CAPITAL,
+                        confidence_score=signal.get('confidence', 0.0),
+                        risk_score=10.0,
+                        position_size=0,
+                        reasoning=f"EQUITY position ₹{estimated_value:,.0f} exceeds 4x leverage limit ₹{max_tradeable_value:,.0f}",
+                        metadata={'required_capital': estimated_value, 'max_tradeable': max_tradeable_value}
+                    )
             
             # 🔥 CALCULATE ACTUAL RISK (not position value!)
             # Risk = (Entry - StopLoss) × Quantity

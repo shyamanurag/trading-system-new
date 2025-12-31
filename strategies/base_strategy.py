@@ -8490,14 +8490,42 @@ class BaseStrategy:
             return self._create_equity_signal(symbol, action, entry_price, stop_loss, target, confidence, metadata)
     
     def _get_futures_lot_size(self, symbol: str) -> int:
-        """Get the lot size for futures contract of a symbol"""
-        # Standard lot sizes for major F&O stocks (as of Dec 2024)
-        # 🔧 CORRECTED Dec 2024: NIFTY=65, BANKNIFTY=35 (user confirmed)
+        """
+        Get the lot size for futures contract of a symbol.
+        
+        PRIORITY:
+        1. Try to get from Zerodha NFO instruments (most accurate, auto-updates)
+        2. Fallback to hardcoded values (Dec 2024 values)
+        3. Default to 500 if unknown
+        
+        NSE revises lot sizes to maintain contract value around ₹5-10 lacs.
+        """
+        # Handle -I suffix for index futures from TrueData
+        clean_symbol = symbol.upper().replace('-I', '')
+        
+        # 🎯 TRY DYNAMIC LOT SIZE FROM ZERODHA FIRST
+        try:
+            if hasattr(self, 'zerodha_client') and self.zerodha_client:
+                nfo_instruments = getattr(self.zerodha_client, '_nfo_instruments', None)
+                if nfo_instruments:
+                    # Find futures contract for this symbol
+                    for inst in nfo_instruments:
+                        if (inst.get('name', '').upper() == clean_symbol and 
+                            inst.get('instrument_type') == 'FUT'):
+                            lot_size = inst.get('lot_size', 0)
+                            if lot_size > 0:
+                                logger.debug(f"📊 Dynamic lot size for {symbol}: {lot_size} (from Zerodha)")
+                                return lot_size
+        except Exception as e:
+            logger.debug(f"Could not get dynamic lot size: {e}")
+        
+        # 🔧 FALLBACK: Hardcoded lot sizes (as of Dec 2024)
+        # NSE F&O lot sizes - target contract value ~₹5-10 lacs
         LOT_SIZES = {
             # Indices (CORRECTED Dec 2024 - user confirmed: NIFTY=65, BANKNIFTY=35)
             'NIFTY': 65, 'BANKNIFTY': 35, 'FINNIFTY': 40, 'MIDCPNIFTY': 50,
             'NIFTY-I': 65, 'BANKNIFTY-I': 35, 'FINNIFTY-I': 40, 'MIDCPNIFTY-I': 50,
-            # Large caps
+            # Large caps (Dec 2024 values)
             'RELIANCE': 250, 'TCS': 150, 'HDFCBANK': 550, 'ICICIBANK': 700,
             'INFY': 300, 'HINDUNILVR': 300, 'ITC': 1600, 'SBIN': 750,
             'BHARTIARTL': 475, 'KOTAKBANK': 400, 'LT': 150, 'AXISBANK': 600,
@@ -8511,11 +8539,9 @@ class BaseStrategy:
             'HEROMOTOCO': 300, 'TATACONSUM': 450, 'BRITANNIA': 200, 'NESTLEIND': 50,
             'DIVISLAB': 100, 'GRASIM': 250, 'INDUSINDBK': 500, 'VEDL': 1550,
             'TATAPOWER': 2025, 'DLF': 825, 'SIEMENS': 75, 'TORNTPOWER': 275,
+            'JINDALSTEL': 500, 'IEX': 3750,  # Added from user's active trades
             # Add more as needed
         }
-        
-        # Handle -I suffix for index futures from TrueData
-        clean_symbol = symbol.upper().replace('-I', '')
         
         # Return lot size or default to a reasonable value
         return LOT_SIZES.get(symbol.upper()) or LOT_SIZES.get(clean_symbol, 500)
