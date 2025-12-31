@@ -1568,46 +1568,33 @@ class EnhancedMomentumSurfer(BaseStrategy):
             if ohlc_available and high > low > 0 and open_price > 0:
                 candle_range = high - low
 
-                # Prefer pressure from the latest 5m candle OHLC (more stable than day-range).
-                # This avoids frequent 0%/100% when LTP is near day low/high.
-                mtf_series = self._get_indicator_series_from_mtf(symbol, timeframe='5min', limit=60)
-                opens_5m = mtf_series.get('opens', []) if isinstance(mtf_series, dict) else []
-                closes_5m = mtf_series.get('closes', []) if isinstance(mtf_series, dict) else []
-                highs_5m = mtf_series.get('highs', []) if isinstance(mtf_series, dict) else []
-                lows_5m = mtf_series.get('lows', []) if isinstance(mtf_series, dict) else []
-
-                if (
-                    opens_5m and closes_5m and highs_5m and lows_5m and
-                    len(opens_5m) == len(closes_5m) == len(highs_5m) == len(lows_5m)
-                ):
-                    last_open = float(opens_5m[-1] or 0)
-                    last_close = float(closes_5m[-1] or 0)
-                    last_high = float(highs_5m[-1] or 0)
-                    last_low = float(lows_5m[-1] or 0)
-
-                    rng = last_high - last_low
-                    if rng > 0 and last_open > 0 and last_close > 0:
-                        # Close position in range: 0..1 (0 at low, 1 at high)
-                        pos_in_range = (last_close - last_low) / rng
-                        pos_in_range = max(0.0, min(1.0, pos_in_range))
-
-                        # Body strength: 0..1, direction sets bias
-                        body = (last_close - last_open) / rng
-                        body_strength = min(1.0, abs(body))
-                        direction = 1.0 if body >= 0 else -1.0
-
-                        base_pressure = 0.5 + 0.5 * direction * body_strength  # 0..1
-                        buying_pressure = 0.6 * base_pressure + 0.4 * pos_in_range
-                        buying_pressure = max(0.01, min(0.99, buying_pressure))
-                        selling_pressure = 1.0 - buying_pressure
-                    else:
-                        buying_pressure = 0.5
-                        selling_pressure = 0.5
+                # ============================================================
+                # 🚨 2025-12-31 FIX: Use CURRENT LTP for pressure, NOT stale 5min candle!
+                # ============================================================
+                # PROBLEM: Using last 5min candle close showed 95% buy pressure
+                # while current LTP was crashing (TCS: ₹3217→₹3202)
+                # SOLUTION: Use current tick data for real-time pressure
+                
+                # PRIMARY: Current LTP position in day's range (real-time)
+                ltp_position_in_range = (ltp - low) / candle_range
+                ltp_position_in_range = max(0.0, min(1.0, ltp_position_in_range))
+                
+                # SECONDARY: Intraday direction from open (real-time)
+                intraday_move = ltp - open_price
+                intraday_ratio = intraday_move / candle_range
+                if intraday_ratio >= 0:
+                    intraday_pressure = min(0.5 + intraday_ratio * 0.5, 1.0)
                 else:
-                    # Fallback: day-range-based pressure with soft clamp
-                    buying_pressure = (ltp - low) / candle_range
-                    buying_pressure = max(0.01, min(0.99, buying_pressure))
-                    selling_pressure = 1.0 - buying_pressure
+                    intraday_pressure = max(0.5 + intraday_ratio * 0.5, 0.0)
+                
+                # COMBINE: 60% intraday direction + 40% position in range
+                # This gives weight to where price is heading, not just where it is
+                buying_pressure = 0.6 * intraday_pressure + 0.4 * ltp_position_in_range
+                buying_pressure = max(0.01, min(0.99, buying_pressure))
+                selling_pressure = 1.0 - buying_pressure
+                
+                logger.debug(f"📊 {symbol} PRESSURE (REAL-TIME): LTP={ltp:.2f}, Open={open_price:.2f}, "
+                           f"Intraday={intraday_move:+.2f}, Buy={buying_pressure:.0%}")
             else:
                 # 🔥 NO FAKE VALUES - Use neutral pressure when OHLC unavailable
                 buying_pressure = 0.5
@@ -1725,7 +1712,8 @@ class EnhancedMomentumSurfer(BaseStrategy):
                     rsi_history.append(rsi_val)
                 
                 if len(rsi_history) >= 14:
-                    rsi_divergence = self.calculate_rsi_divergence(symbol, list(prices[-14:]), rsi_history[-14:])
+                    # 🚨 2025-12-31 FIX: Pass current LTP to validate divergence is still valid
+                    rsi_divergence = self.calculate_rsi_divergence(symbol, list(prices[-14:]), rsi_history[-14:], current_ltp=ltp)
                     if rsi_divergence:
                         logger.info(f"📈 {symbol} RSI DIVERGENCE: {rsi_divergence.upper()} - High probability reversal!")
             

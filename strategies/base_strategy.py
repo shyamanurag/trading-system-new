@@ -4161,10 +4161,14 @@ class BaseStrategy:
             else:
                 return entry_price * (1 + fallback_percent / 100)
     
-    def calculate_rsi_divergence(self, symbol: str, prices: List[float], rsi_values: List[float]) -> Optional[str]:
+    def calculate_rsi_divergence(self, symbol: str, prices: List[float], rsi_values: List[float], 
+                                   current_ltp: float = None) -> Optional[str]:
         """
         🎯 CODE ENHANCEMENT: Detect RSI divergence for high-probability reversals
         RSI divergence is one of the most reliable reversal signals
+        
+        🚨 2025-12-31 FIX: Added current_ltp validation to prevent stale data signals
+        TCS bug: Divergence detected using old prices (3246.80→3246.70) while current LTP was 3217.90
         
         Returns: 'bullish', 'bearish', or None
         """
@@ -4193,7 +4197,19 @@ class BaseStrategy:
             MIN_RSI_DIVERGENCE = 2.0
             rsi_diff = rsi_at_low_2 - rsi_at_low_1
             if price_low_2 < price_low_1 and rsi_diff >= MIN_RSI_DIVERGENCE:
-                logger.info(f"📈 BULLISH DIVERGENCE detected for {symbol}: Price {price_low_1:.2f}→{price_low_2:.2f}, RSI {rsi_at_low_1:.1f}→{rsi_at_low_2:.1f} (diff: {rsi_diff:.1f})")
+                # 🚨 2025-12-31 FIX: Validate current LTP is not breaking lower
+                # If current LTP is significantly below the divergence low, the pattern is INVALID
+                if current_ltp is not None:
+                    divergence_low = price_low_2
+                    ltp_drop_from_low = (divergence_low - current_ltp) / divergence_low * 100
+                    
+                    if ltp_drop_from_low > 0.5:  # Current price > 0.5% below divergence low
+                        logger.warning(f"🚫 {symbol} BULLISH DIVERGENCE INVALIDATED: Current LTP ₹{current_ltp:.2f} is {ltp_drop_from_low:.2f}% below divergence low ₹{divergence_low:.2f}")
+                        return None
+                    
+                    logger.info(f"📈 BULLISH DIVERGENCE VALIDATED for {symbol}: Price {price_low_1:.2f}→{price_low_2:.2f}, RSI {rsi_at_low_1:.1f}→{rsi_at_low_2:.1f} (diff: {rsi_diff:.1f}), Current LTP: ₹{current_ltp:.2f}")
+                else:
+                    logger.info(f"📈 BULLISH DIVERGENCE detected for {symbol}: Price {price_low_1:.2f}→{price_low_2:.2f}, RSI {rsi_at_low_1:.1f}→{rsi_at_low_2:.1f} (diff: {rsi_diff:.1f})")
                 return 'bullish'
             elif price_low_2 < price_low_1 and rsi_at_low_2 > rsi_at_low_1:
                 logger.debug(f"⚠️ Weak bullish divergence ignored for {symbol}: RSI diff {rsi_diff:.1f} < {MIN_RSI_DIVERGENCE}")
@@ -4212,7 +4228,18 @@ class BaseStrategy:
             # 🔥 FIX: Require MINIMUM 2.0 RSI points difference to avoid false signals
             rsi_diff_bear = rsi_at_high_1 - rsi_at_high_2
             if price_high_2 > price_high_1 and rsi_diff_bear >= MIN_RSI_DIVERGENCE:
-                logger.info(f"📉 BEARISH DIVERGENCE detected for {symbol}: Price {price_high_1:.2f}→{price_high_2:.2f}, RSI {rsi_at_high_1:.1f}→{rsi_at_high_2:.1f} (diff: {rsi_diff_bear:.1f})")
+                # 🚨 2025-12-31 FIX: Validate current LTP is not breaking higher
+                if current_ltp is not None:
+                    divergence_high = price_high_2
+                    ltp_rise_from_high = (current_ltp - divergence_high) / divergence_high * 100
+                    
+                    if ltp_rise_from_high > 0.5:  # Current price > 0.5% above divergence high
+                        logger.warning(f"🚫 {symbol} BEARISH DIVERGENCE INVALIDATED: Current LTP ₹{current_ltp:.2f} is {ltp_rise_from_high:.2f}% above divergence high ₹{divergence_high:.2f}")
+                        return None
+                    
+                    logger.info(f"📉 BEARISH DIVERGENCE VALIDATED for {symbol}: Price {price_high_1:.2f}→{price_high_2:.2f}, RSI {rsi_at_high_1:.1f}→{rsi_at_high_2:.1f} (diff: {rsi_diff_bear:.1f}), Current LTP: ₹{current_ltp:.2f}")
+                else:
+                    logger.info(f"📉 BEARISH DIVERGENCE detected for {symbol}: Price {price_high_1:.2f}→{price_high_2:.2f}, RSI {rsi_at_high_1:.1f}→{rsi_at_high_2:.1f} (diff: {rsi_diff_bear:.1f})")
                 return 'bearish'
             elif price_high_2 > price_high_1 and rsi_at_high_2 < rsi_at_high_1:
                 logger.debug(f"⚠️ Weak bearish divergence ignored for {symbol}: RSI diff {rsi_diff_bear:.1f} < {MIN_RSI_DIVERGENCE}")
