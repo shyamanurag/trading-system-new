@@ -564,7 +564,11 @@ class ZerodhaIntegration:
                 # actual_qty < 0 means already SHORT - allow further shorting if intentional
                 
             except Exception as e:
-                logger.error(f"⚠️ Position validation error for {symbol}: {e} - Proceeding with caution")
+                # 🚨 SAFETY FIRST: If we can't validate position, BLOCK the SELL to prevent accidental SHORT
+                logger.error(f"🚨 POSITION VALIDATION FAILED: {symbol} SELL blocked - cannot confirm position exists")
+                logger.error(f"   Error: {e}")
+                logger.error(f"   Blocking to prevent potential unintended SHORT position")
+                return None
         
         # Initialize cooldown tracking if not exists
         if not hasattr(self, '_symbol_cooldown'):

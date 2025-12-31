@@ -167,6 +167,10 @@ class PositionMonitor:
                 # Execute exits based on priority
                 await self._execute_exits(exit_conditions)
                 
+                # 🚨 CRITICAL FIX 2025-12-31: Cancel stale limit orders from Zerodha
+                # User reported limit orders hanging for 2+ hours without cancellation
+                await self._cancel_stale_limit_orders(now_ist)
+                
                 # Log monitoring status with details
                 if positions:
                     positions_with_stops = sum(1 for p in positions.values() if hasattr(p, 'stop_loss') and p.stop_loss and p.stop_loss > 0)
@@ -184,6 +188,130 @@ class PositionMonitor:
                 await asyncio.sleep(10)  # Wait before retrying
         
         logger.info("🛑 Position monitoring loop stopped")
+    
+    async def _cancel_stale_limit_orders(self, now_ist):
+        """
+        🚨 CRITICAL FIX 2025-12-31: Cancel stale limit orders from Zerodha
+        
+        Fetches ACTUAL pending orders from Zerodha (not local tracking) and cancels:
+        1. Orders older than MAX_LIMIT_ORDER_AGE (30 minutes)
+        2. Orders where price has moved significantly away
+        
+        This fixes the issue where limit orders hung for 2+ hours without cancellation.
+        """
+        try:
+            # Only check every 60 seconds to avoid API hammering
+            if not hasattr(self, '_last_stale_order_check'):
+                self._last_stale_order_check = now_ist
+            
+            elapsed = (now_ist - self._last_stale_order_check).total_seconds()
+            if elapsed < 60:
+                return
+            
+            self._last_stale_order_check = now_ist
+            
+            # Get Zerodha client from orchestrator
+            if not self.orchestrator or not hasattr(self.orchestrator, 'zerodha_client'):
+                return
+            
+            zerodha_client = self.orchestrator.zerodha_client
+            if not zerodha_client:
+                return
+            
+            # Fetch actual orders from Zerodha
+            orders = await zerodha_client.get_orders()
+            if not orders:
+                return
+            
+            # Configuration
+            MAX_LIMIT_ORDER_AGE_MINUTES = 30  # Cancel limit orders older than 30 minutes
+            PRICE_MOVE_THRESHOLD = 0.015  # 1.5% price movement triggers cancel
+            
+            cancelled_count = 0
+            
+            for order in orders:
+                try:
+                    status = order.get('status', '').upper()
+                    order_type = order.get('order_type', '').upper()
+                    order_id = order.get('order_id')
+                    symbol = order.get('tradingsymbol', '')
+                    
+                    # Only check pending LIMIT orders (OPEN or TRIGGER PENDING)
+                    if status not in ['OPEN', 'TRIGGER PENDING']:
+                        continue
+                    
+                    if order_type not in ['LIMIT', 'SL', 'SL-M']:
+                        continue
+                    
+                    # Get order time
+                    order_time_str = order.get('order_timestamp')
+                    if not order_time_str:
+                        continue
+                    
+                    # Parse order timestamp (Zerodha format: "2025-12-31 10:15:00")
+                    try:
+                        if isinstance(order_time_str, str):
+                            order_time = datetime.strptime(order_time_str, '%Y-%m-%d %H:%M:%S')
+                            order_time = self.ist_timezone.localize(order_time)
+                        else:
+                            order_time = order_time_str
+                    except:
+                        continue
+                    
+                    # CHECK 1: Order age
+                    age_minutes = (now_ist - order_time).total_seconds() / 60
+                    
+                    should_cancel = False
+                    cancel_reason = ""
+                    
+                    if age_minutes >= MAX_LIMIT_ORDER_AGE_MINUTES:
+                        should_cancel = True
+                        cancel_reason = f"ORDER TOO OLD: {age_minutes:.0f} min > {MAX_LIMIT_ORDER_AGE_MINUTES} min limit"
+                    
+                    # CHECK 2: Price movement (for LIMIT orders)
+                    if not should_cancel and order_type == 'LIMIT':
+                        limit_price = float(order.get('price', 0))
+                        action = order.get('transaction_type', 'BUY').upper()
+                        
+                        # Get current market data
+                        market_data = await self._get_market_data()
+                        current_price = 0
+                        if market_data and symbol in market_data:
+                            current_price = market_data[symbol].get('ltp', 0) or market_data[symbol].get('last_price', 0)
+                        
+                        if current_price > 0 and limit_price > 0:
+                            price_diff_pct = abs(current_price - limit_price) / limit_price
+                            
+                            # For BUY: Cancel if price moved UP significantly (won't fill)
+                            # For SELL: Cancel if price moved DOWN significantly (won't fill)
+                            if action == 'BUY' and current_price > limit_price * (1 + PRICE_MOVE_THRESHOLD):
+                                should_cancel = True
+                                cancel_reason = f"PRICE MOVED UP: Current ₹{current_price:.2f} >> Limit ₹{limit_price:.2f} (+{price_diff_pct*100:.1f}%)"
+                            elif action == 'SELL' and current_price < limit_price * (1 - PRICE_MOVE_THRESHOLD):
+                                should_cancel = True
+                                cancel_reason = f"PRICE MOVED DOWN: Current ₹{current_price:.2f} << Limit ₹{limit_price:.2f} (-{price_diff_pct*100:.1f}%)"
+                    
+                    # Execute cancellation
+                    if should_cancel and order_id:
+                        logger.warning(f"🚫 STALE LIMIT ORDER CANCEL: {symbol} {order.get('transaction_type')} @ ₹{order.get('price', 0)}")
+                        logger.warning(f"   Order ID: {order_id} | Age: {age_minutes:.0f} min | Reason: {cancel_reason}")
+                        
+                        try:
+                            await zerodha_client.cancel_order(order_id)
+                            cancelled_count += 1
+                            logger.info(f"   ✅ Order {order_id} cancelled successfully")
+                        except Exception as cancel_err:
+                            logger.error(f"   ❌ Failed to cancel order {order_id}: {cancel_err}")
+                
+                except Exception as order_err:
+                    logger.debug(f"Error processing order for stale check: {order_err}")
+                    continue
+            
+            if cancelled_count > 0:
+                logger.info(f"🎯 STALE ORDER CLEANUP: Cancelled {cancelled_count} stale limit orders")
+        
+        except Exception as e:
+            logger.error(f"Error in stale limit order cancellation: {e}")
     
     async def _update_realized_pnl_on_exit(self, condition, exit_signal: Dict):
         """
