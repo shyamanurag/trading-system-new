@@ -1875,6 +1875,10 @@ class BaseStrategy:
                             'urgent': False
                         })
                         continue
+                    
+                    # 🚨 DYNAMIC SL/TARGET UPDATE 2025-12-31: Recalculate based on current conditions
+                    # Market keeps changing, so open positions should have updated SL/Target
+                    await self._update_position_levels_dynamically(symbol, current_price, position, symbol_data)
                 
                 # 2. ENHANCED OPEN POSITION DECISION ANALYSIS
                 if close_urgency == "NORMAL":
@@ -2770,6 +2774,140 @@ class BaseStrategy:
             
         except Exception as e:
             logger.error(f"Error adjusting stop loss for {symbol}: {e}")
+    
+    async def _update_position_levels_dynamically(self, symbol: str, current_price: float, 
+                                                    position: Dict, symbol_data: Dict):
+        """
+        🚨 DYNAMIC SL/TARGET UPDATE - Recalculate based on current market conditions
+        
+        This is called on every manage_existing_positions cycle to ensure:
+        1. SL/Target reflect current support/resistance levels
+        2. ATR-based stops adjust to current volatility
+        3. Position Monitor always has relevant levels
+        
+        Updates position_tracker which feeds into Position Monitor for exit decisions.
+        """
+        try:
+            entry_price = position.get('entry_price', 0)
+            action = position.get('action', 'BUY')
+            current_sl = position.get('stop_loss', 0)
+            current_target = position.get('target', 0)
+            
+            if not entry_price or entry_price <= 0:
+                return
+            
+            # Calculate current P&L
+            if action == 'BUY':
+                pnl_pct = ((current_price - entry_price) / entry_price) * 100
+            else:
+                pnl_pct = ((entry_price - current_price) / entry_price) * 100
+            
+            # Get current ATR for dynamic calculation
+            prices = self.price_history.get(symbol, [])
+            atr = 0
+            if len(prices) >= 14:
+                atr = self._calculate_atr(np.array(prices), 14)
+            else:
+                atr = current_price * 0.015  # Fallback: 1.5% of price
+            
+            # Calculate current RSI for dynamic adjustment
+            rsi = 50
+            if len(prices) >= 14:
+                rsi = self._calculate_rsi(np.array(prices), 14)
+            
+            new_sl = current_sl
+            new_target = current_target
+            update_reason = []
+            
+            is_long = action == 'BUY'
+            
+            # === DYNAMIC STOP LOSS RECALCULATION ===
+            
+            # 1. ATR-based trailing stop (moves in profit direction only)
+            if pnl_pct >= 1.0:  # Only trail when at least 1% profit
+                atr_trail_distance = atr * 1.5
+                
+                if is_long:
+                    # For longs: trail stop UP as price rises
+                    atr_based_stop = current_price - atr_trail_distance
+                    if atr_based_stop > current_sl and atr_based_stop < current_price:
+                        new_sl = atr_based_stop
+                        update_reason.append(f"ATR trail (profit {pnl_pct:.1f}%)")
+                else:
+                    # For shorts: trail stop DOWN as price falls
+                    atr_based_stop = current_price + atr_trail_distance
+                    if current_sl == 0 or (atr_based_stop < current_sl and atr_based_stop > current_price):
+                        new_sl = atr_based_stop
+                        update_reason.append(f"ATR trail (profit {pnl_pct:.1f}%)")
+            
+            # 2. RSI-based stop adjustment (tighten at extremes)
+            if is_long and rsi > 75:
+                # Overbought - tighten stop to protect profits
+                tight_stop = current_price * 0.995  # 0.5% below current
+                if tight_stop > current_sl:
+                    new_sl = tight_stop
+                    update_reason.append(f"RSI overbought ({rsi:.0f})")
+            elif not is_long and rsi < 25:
+                # Oversold - tighten stop to protect profits
+                tight_stop = current_price * 1.005  # 0.5% above current
+                if current_sl == 0 or tight_stop < current_sl:
+                    new_sl = tight_stop
+                    update_reason.append(f"RSI oversold ({rsi:.0f})")
+            
+            # === DYNAMIC TARGET RECALCULATION ===
+            
+            # 3. Extend target if momentum is strong
+            if pnl_pct >= 3.0:  # Already 3%+ profit
+                # Check if momentum suggests further move
+                mtf_result = self.analyze_multi_timeframe(symbol, action)
+                mtf_direction = mtf_result.get('direction', 'NEUTRAL')
+                
+                if (is_long and mtf_direction == 'BULLISH') or (not is_long and mtf_direction == 'BEARISH'):
+                    # Strong trend continuation - extend target
+                    if is_long:
+                        extended_target = current_price + (atr * 2)
+                        if extended_target > current_target:
+                            new_target = extended_target
+                            update_reason.append(f"Target extended (MTF {mtf_direction})")
+                    else:
+                        extended_target = current_price - (atr * 2)
+                        if current_target == 0 or extended_target < current_target:
+                            new_target = extended_target
+                            update_reason.append(f"Target extended (MTF {mtf_direction})")
+            
+            # === UPDATE POSITION TRACKER ===
+            
+            if new_sl != current_sl or new_target != current_target:
+                # Update local position first
+                if new_sl != current_sl:
+                    position['stop_loss'] = new_sl
+                if new_target != current_target:
+                    position['target'] = new_target
+                
+                # Update position_tracker so Position Monitor uses the new values
+                try:
+                    from src.core.orchestrator import get_orchestrator_instance
+                    orchestrator = get_orchestrator_instance()
+                    if orchestrator and hasattr(orchestrator, 'position_tracker') and orchestrator.position_tracker:
+                        await orchestrator.position_tracker.update_position_levels(
+                            symbol=symbol,
+                            stop_loss=new_sl if new_sl != current_sl else None,
+                            target=new_target if new_target != current_target else None,
+                            reason=" | ".join(update_reason)
+                        )
+                except Exception as tracker_err:
+                    logger.debug(f"Could not update position_tracker: {tracker_err}")
+                
+                # Log the update
+                logger.info(f"🔄 DYNAMIC LEVELS: {symbol} {action}")
+                if new_sl != current_sl:
+                    logger.info(f"   SL: ₹{current_sl:.2f} → ₹{new_sl:.2f}")
+                if new_target != current_target:
+                    logger.info(f"   TGT: ₹{current_target:.2f} → ₹{new_target:.2f}")
+                logger.info(f"   Reason: {', '.join(update_reason)}")
+        
+        except Exception as e:
+            logger.error(f"Error updating dynamic levels for {symbol}: {e}")
     
     async def apply_time_based_management(self, symbol: str, current_price: float, position: Dict):
         """⏰ TIME-BASED MANAGEMENT - Apply time decay considerations"""

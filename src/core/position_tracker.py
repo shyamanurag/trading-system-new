@@ -479,6 +479,102 @@ class ProductionPositionTracker:
             self.logger.error(f"Failed to close position for {symbol}: {e}")
             return None
     
+    async def update_position_levels(self, symbol: str, stop_loss: float = None, 
+                                       target: float = None, reason: str = "") -> bool:
+        """
+        🚨 DYNAMIC SL/TARGET UPDATE - Called by algo strategies
+        
+        Allows strategies to update SL/Target on existing positions based on:
+        - New support/resistance levels
+        - Changed market conditions
+        - RSI/momentum shifts
+        - Trailing stop adjustments
+        
+        Args:
+            symbol: Trading symbol
+            stop_loss: New stop loss price (None = keep existing)
+            target: New target price (None = keep existing)
+            reason: Reason for update (for logging)
+        
+        Returns:
+            True if updated successfully
+        """
+        try:
+            if symbol not in self.positions:
+                self.logger.warning(f"Cannot update levels - no position for {symbol}")
+                return False
+            
+            position = self.positions[symbol]
+            old_sl = position.stop_loss
+            old_target = position.target
+            updated = False
+            
+            # Update stop loss if provided and different
+            if stop_loss is not None and stop_loss != old_sl:
+                # Validate: For LONG, new SL should not be above entry (that would be invalid)
+                # For SHORT, new SL should not be below entry
+                entry = position.average_price
+                
+                if position.side == 'long':
+                    if stop_loss < entry:  # Valid SL for long
+                        position.stop_loss = stop_loss
+                        updated = True
+                    else:
+                        self.logger.warning(f"⚠️ Invalid SL for LONG {symbol}: SL ₹{stop_loss:.2f} >= Entry ₹{entry:.2f}")
+                else:  # short
+                    if stop_loss > entry:  # Valid SL for short
+                        position.stop_loss = stop_loss
+                        updated = True
+                    else:
+                        self.logger.warning(f"⚠️ Invalid SL for SHORT {symbol}: SL ₹{stop_loss:.2f} <= Entry ₹{entry:.2f}")
+            
+            # Update target if provided and different
+            if target is not None and target != old_target:
+                entry = position.average_price
+                
+                if position.side == 'long':
+                    if target > entry:  # Valid target for long
+                        position.target = target
+                        updated = True
+                    else:
+                        self.logger.warning(f"⚠️ Invalid target for LONG {symbol}: Target ₹{target:.2f} <= Entry ₹{entry:.2f}")
+                else:  # short
+                    if target < entry:  # Valid target for short
+                        position.target = target
+                        updated = True
+                    else:
+                        self.logger.warning(f"⚠️ Invalid target for SHORT {symbol}: Target ₹{target:.2f} >= Entry ₹{entry:.2f}")
+            
+            if updated:
+                position.last_updated = datetime.now()
+                
+                # Log the update with reason
+                sl_change = f"SL: ₹{old_sl:.2f}→₹{position.stop_loss:.2f}" if stop_loss and old_sl != position.stop_loss else ""
+                tgt_change = f"TGT: ₹{old_target:.2f}→₹{position.target:.2f}" if target and old_target != position.target else ""
+                changes = " | ".join(filter(None, [sl_change, tgt_change]))
+                
+                self.logger.info(f"🔄 DYNAMIC LEVEL UPDATE: {symbol} {position.side.upper()}")
+                self.logger.info(f"   {changes}")
+                if reason:
+                    self.logger.info(f"   Reason: {reason}")
+                
+                # Publish event for position monitor to pick up
+                if self.event_bus:
+                    await self.event_bus.publish('position_levels_updated', {
+                        'symbol': symbol,
+                        'old_stop_loss': old_sl,
+                        'new_stop_loss': position.stop_loss,
+                        'old_target': old_target,
+                        'new_target': position.target,
+                        'reason': reason
+                    })
+            
+            return updated
+            
+        except Exception as e:
+            self.logger.error(f"Failed to update position levels for {symbol}: {e}")
+            return False
+    
     async def update_market_prices(self, market_data: Dict[str, float]):
         """Update current market prices for all positions"""
         try:
