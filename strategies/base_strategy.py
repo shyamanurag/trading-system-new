@@ -8309,6 +8309,49 @@ class BaseStrategy:
             logger.error(f"Error creating equity signal: {e}")
             return None
     
+    def _get_current_futures_expiry(self) -> str:
+        """
+        🎯 DYNAMIC FUTURES EXPIRY CALCULATION
+        
+        Returns the correct expiry suffix (e.g., '26JANFUT') based on:
+        1. Get last Thursday of current month (NSE F&O expiry)
+        2. If today > expiry, use next month
+        3. Handle year rollover (Dec → Jan of next year)
+        
+        This ensures we NEVER need to manually update expiry month!
+        """
+        from datetime import datetime, timedelta
+        import calendar
+        
+        now = datetime.now()
+        year = now.year
+        month = now.month
+        
+        # Find last Thursday of current month
+        # Get the last day of the month
+        last_day = calendar.monthrange(year, month)[1]
+        last_date = datetime(year, month, last_day)
+        
+        # Find last Thursday (weekday 3 = Thursday)
+        days_since_thursday = (last_date.weekday() - 3) % 7
+        last_thursday = last_date - timedelta(days=days_since_thursday)
+        
+        # If today is AFTER the last Thursday (expiry has passed), use NEXT month
+        if now.date() > last_thursday.date():
+            # Move to next month
+            if month == 12:
+                month = 1
+                year += 1
+            else:
+                month += 1
+        
+        # Format: YY + MMM (3-letter month) + FUT
+        # e.g., 26JANFUT for January 2026
+        month_abbr = calendar.month_abbr[month].upper()
+        year_suffix = str(year)[-2:]  # Last 2 digits of year
+        
+        return f"{year_suffix}{month_abbr}FUT"
+    
     def _create_futures_signal(self, symbol: str, action: str, entry_price: float, 
                               stop_loss: float, target: float, confidence: float, metadata: Dict) -> Optional[Dict]:
         """
@@ -8321,18 +8364,22 @@ class BaseStrategy:
         4. Direct price movement correlation
         
         FUTURES FORMAT:
-        - Stock futures: SYMBOL + YYMMMFUT (e.g., RELIANCE25DECFUT)
-        - Index futures: NIFTY25DECFUT, BANKNIFTY25DECFUT
+        - Stock futures: SYMBOL + YYMMMFUT (e.g., RELIANCE26JANFUT)
+        - Index futures: NIFTY26JANFUT, BANKNIFTY26JANFUT
+        
+        🎯 EXPIRY IS NOW DYNAMIC - No manual updates needed!
         """
         try:
             from datetime import datetime
             
-            # Get current month expiry suffix (e.g., 25DEC for December 2025)
-            now = datetime.now()
-            expiry_suffix = now.strftime('%y%b').upper() + 'FUT'  # e.g., 25DECFUT
+            # 🎯 DYNAMIC EXPIRY: Automatically uses current active expiry
+            # No need to manually change when futures cycle rolls over!
+            expiry_suffix = self._get_current_futures_expiry()
             
             # Construct futures symbol
             futures_symbol = f"{symbol}{expiry_suffix}"
+            
+            logger.debug(f"📊 FUTURES SYMBOL: {symbol} → {futures_symbol} (expiry: {expiry_suffix})")
             
             # Calculate position sizing for futures
             # Futures lot sizes vary by symbol - use standard sizing
