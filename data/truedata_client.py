@@ -1288,7 +1288,9 @@ class TrueDataClient:
                 live_market_data[symbol] = market_data
 
                 # CRITICAL: Store in Redis for cross-process access
-                # 🚨 2025-12-19 FIX: Reduced from 7 Redis calls to 2 (was causing slowdown)
+                # 🚨 2025-12-31 FIX: AUTO-EXPIRING DATA for clean stale data handling
+                # When WebSocket disconnects, data auto-expires in 60 seconds
+                # No need for orchestrator to check freshness - data simply won't exist if stale
                 if redis_client:
                     try:
                         # Create safe version of market data for Redis storage
@@ -1296,24 +1298,21 @@ class TrueDataClient:
                         safe_json = safe_json_serialize(safe_market_data)
                         safe_json_str = json.dumps(safe_json) if isinstance(safe_json, (dict, list)) else str(safe_json)
 
-                        # 🚨 OPTIMIZED: Only 2 Redis calls instead of 7
-                        # 1. Store in hash (most efficient for bulk symbol data)
+                        # Store in hash (most efficient for bulk symbol data)
                         redis_client.hset("truedata:live_cache", symbol, safe_json_str)
                         
-                        # 2. Update symbol count only every 100 ticks (not every tick!)
+                        # 🚨 AUTO-EXPIRY: Set 60 second TTL on every 10th tick
+                        # If WebSocket disconnects, data expires automatically
+                        # This ensures orchestrator never sees stale data
                         if not hasattr(self, '_redis_count_ticker'):
                             self._redis_count_ticker = 0
                         self._redis_count_ticker += 1
-                        if self._redis_count_ticker >= 100:
-                            redis_client.set("truedata:symbol_count", len(live_market_data))
-                            redis_client.expire("truedata:live_cache", 300)  # Refresh TTL periodically
-                            self._redis_count_ticker = 0
                         
-                        # 🚨 2025-12-31: DATA FRESHNESS TRACKING
-                        # Store last tick timestamp so orchestrator can detect stale data
-                        # Update every 10 ticks to avoid Redis overhead
-                        if self._redis_count_ticker % 10 == 0:
-                            redis_client.set("truedata:last_tick_time", str(time.time()))
+                        if self._redis_count_ticker >= 10:
+                            # Refresh TTL - data expires 60s after last tick
+                            redis_client.expire("truedata:live_cache", 60)
+                            redis_client.set("truedata:symbol_count", len(live_market_data))
+                            self._redis_count_ticker = 0
 
                     except Exception as redis_error:
                         # Silent fail - Redis errors shouldn't block tick processing

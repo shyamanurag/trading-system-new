@@ -1555,27 +1555,6 @@ class TradingOrchestrator:
             # Try to get data from Redis first
             if self.redis_client:
                 try:
-                    # 🚨 2025-12-31: DATA FRESHNESS CHECK
-                    # Before using cached data, verify it's fresh (updated within last 2 minutes)
-                    # This prevents trading on stale data when TrueData WebSocket disconnects
-                    data_is_fresh = True
-                    data_age_seconds = 0
-                    max_stale_seconds = 120  # 2 minutes max staleness
-                    
-                    try:
-                        last_tick_time = self.redis_client.get("truedata:last_tick_time")
-                        if last_tick_time:
-                            data_age_seconds = time_module.time() - float(last_tick_time)
-                            if data_age_seconds > max_stale_seconds:
-                                data_is_fresh = False
-                                # Only log warning once per minute to avoid spam
-                                if not hasattr(self, '_last_stale_warning') or (time_module.time() - self._last_stale_warning) > 60:
-                                    self.logger.warning(f"⚠️ STALE DATA DETECTED: Last tick was {int(data_age_seconds)}s ago (>{max_stale_seconds}s)")
-                                    self.logger.warning(f"   TrueData WebSocket may be disconnected - skipping signal generation")
-                                    self._last_stale_warning = time_module.time()
-                    except Exception as freshness_err:
-                        self.logger.debug(f"Freshness check error: {freshness_err}")
-                    
                     cached_data = self.redis_client.hgetall("truedata:live_cache")
                     
                     if cached_data:
@@ -1588,23 +1567,9 @@ class TradingOrchestrator:
                                 continue
                         
                         if parsed_data:
-                            # 🚨 FRESHNESS: Mark data with freshness status
-                            # Strategies can check this before generating signals
-                            for symbol in parsed_data:
-                                if isinstance(parsed_data[symbol], dict):
-                                    parsed_data[symbol]['_data_fresh'] = data_is_fresh
-                                    parsed_data[symbol]['_data_age_seconds'] = int(data_age_seconds)
-                            
-                            freshness_tag = "🟢 FRESH" if data_is_fresh else f"🔴 STALE ({int(data_age_seconds)}s)"
-                            self.logger.info(f"📊 Using Redis cache: {len(parsed_data)} symbols [{freshness_tag}]")
+                            self.logger.info(f"📊 Using Redis cache: {len(parsed_data)} symbols")
                             # CRITICAL FIX: Update orchestrator's truedata_cache reference
                             self.truedata_cache = parsed_data
-                            
-                            # 🚨 If data is stale, return empty dict to prevent trading on stale data
-                            if not data_is_fresh and self._is_market_open():
-                                self.logger.warning(f"🚫 Blocking stale data during market hours - no signal generation")
-                                return {}
-                            
                             return parsed_data
                 except Exception as redis_error:
                     self.logger.warning(f"⚠️ Redis cache read failed: {redis_error}")
