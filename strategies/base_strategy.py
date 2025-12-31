@@ -8009,6 +8009,9 @@ class BaseStrategy:
             limit_validity_seconds = 300  # 5 minutes for limit orders
             peak_detected = False
             pullback_available = False
+            risk_warning_count = 0  # 🚨 Track risk warnings to block risky signals
+            camarilla_risky = False  # 🚨 Track if price is in risky Camarilla zone
+            sr_too_far = False  # 🚨 Track if S/R is too far
             
             # Normalize confidence to 0-10 scale if needed
             conf_normalized = confidence if confidence > 1.0 else confidence * 10.0
@@ -8027,6 +8030,7 @@ class BaseStrategy:
                             distance_from_high = (recent_high - original_entry) / price_range
                             if distance_from_high < 0.2:  # Within top 20% of range
                                 peak_detected = True
+                                risk_warning_count += 1
                                 logger.warning(f"⚠️ {symbol}: BUY at PEAK! Price near recent high (₹{recent_high:.2f})")
                             elif distance_from_high > 0.4:  # Price has pulled back
                                 pullback_available = True
@@ -8036,6 +8040,7 @@ class BaseStrategy:
                             distance_from_low = (original_entry - recent_low) / price_range
                             if distance_from_low < 0.2:  # Within bottom 20% of range
                                 peak_detected = True
+                                risk_warning_count += 1
                                 logger.warning(f"⚠️ {symbol}: SELL at TROUGH! Price near recent low (₹{recent_low:.2f})")
                             elif distance_from_low > 0.4:  # Price has bounced
                                 pullback_available = True
@@ -8091,9 +8096,13 @@ class BaseStrategy:
                         # Validate signal against Camarilla structure
                         if original_entry > h3:
                             camarilla_signal = "RESISTANCE_ZONE"
+                            camarilla_risky = True
+                            risk_warning_count += 1
                             logger.warning(f"⚠️ {symbol} BUY RISKY: Price above H3 (₹{h3:.2f})")
                         elif original_entry < l4:
                             camarilla_signal = "BREAKDOWN_ZONE"
+                            camarilla_risky = True
+                            risk_warning_count += 1
                             logger.warning(f"⚠️ {symbol} BUY RISKY: Price below L4 (₹{l4:.2f})")
                         elif original_entry > h4:
                             camarilla_signal = "BREAKOUT_CONFIRMED"
@@ -8130,9 +8139,13 @@ class BaseStrategy:
                         # Validate signal against Camarilla structure
                         if original_entry < l3:
                             camarilla_signal = "SUPPORT_ZONE"
+                            camarilla_risky = True
+                            risk_warning_count += 1
                             logger.warning(f"⚠️ {symbol} SELL RISKY: Price below L3 (₹{l3:.2f})")
                         elif original_entry > h4:
                             camarilla_signal = "BREAKOUT_ZONE"
+                            camarilla_risky = True
+                            risk_warning_count += 1
                             logger.warning(f"⚠️ {symbol} SELL RISKY: Price above H4 (₹{h4:.2f})")
                         elif original_entry < l4:
                             camarilla_signal = "BREAKDOWN_CONFIRMED"
@@ -8159,6 +8172,8 @@ class BaseStrategy:
                 if distance_pct > MAX_SR_DISTANCE_PCT:
                     # Support too far - use small discount instead (0.15% below LTP)
                     entry_price = round(original_entry * 0.9985, 2)  # 0.15% below LTP
+                    sr_too_far = True
+                    risk_warning_count += 1
                     logger.warning(f"⚠️ S/R TOO FAR: {symbol} BUY - Support ₹{support_entry:.2f} is -{distance_pct:.2f}% away")
                     logger.info(f"🎯 CAPPED ENTRY: {symbol} BUY at ₹{entry_price:.2f} (0.15% below LTP ₹{original_entry:.2f})")
                     limit_validity_seconds = 180  # 3 minutes for close limit
@@ -8189,6 +8204,8 @@ class BaseStrategy:
                 if distance_pct > MAX_SR_DISTANCE_PCT:
                     # Resistance too far - use small discount instead (0.15% above LTP)
                     entry_price = round(original_entry * 1.0015, 2)  # 0.15% above LTP
+                    sr_too_far = True
+                    risk_warning_count += 1
                     logger.warning(f"⚠️ S/R TOO FAR: {symbol} SELL - Resistance ₹{resistance_entry:.2f} is +{distance_pct:.2f}% away")
                     logger.info(f"🎯 CAPPED ENTRY: {symbol} SELL at ₹{entry_price:.2f} (0.15% above LTP ₹{original_entry:.2f})")
                     limit_validity_seconds = 180  # 3 minutes for close limit
@@ -8248,6 +8265,22 @@ class BaseStrategy:
                 order_type = 'MARKET'
                 limit_discount_pct = 0.0
                 logger.info(f"🎯 DEFAULT MARKET: {symbol} ({conf_normalized:.1f}/10) → MARKET order")
+            
+            # ============================================================
+            # 🚨 RISK WARNING BLOCK - "Sure Winners Only"
+            # ============================================================
+            # Block signals with 2+ risk warnings (Peak + Camarilla risky + S/R too far)
+            # Exception: Very high confidence signals (>=9.5) can override
+            if risk_warning_count >= 2 and conf_normalized < 9.5:
+                logger.warning(f"🚫 RISKY ENTRY BLOCKED: {symbol} {action.upper()} - {risk_warning_count} risk warnings")
+                if peak_detected:
+                    logger.warning(f"   ⚠️ At Peak/Trough (top/bottom 20% of range)")
+                if camarilla_risky:
+                    logger.warning(f"   ⚠️ Camarilla risky zone (above H3/below L3)")
+                if sr_too_far:
+                    logger.warning(f"   ⚠️ Support/Resistance too far for safe entry")
+                logger.info(f"   💡 Need conf >= 9.5 to override (current: {conf_normalized:.1f})")
+                return None
             
             # Recalculate position value with new entry price
             position_value = final_quantity * entry_price
