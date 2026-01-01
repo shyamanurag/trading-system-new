@@ -451,13 +451,16 @@ class EnhancedPositionOpeningDecision:
                 )
             
             if current_time >= self.no_new_positions_after:
+                # 🔧 FIX 2026-01-01: This check is for POSITION OPENING only
+                # Exit signals should not reach here (orchestrator skips this for exits)
+                # But if they do, this is still correct - blocking NEW positions, not exits
                 return PositionDecisionResult(
                     decision=PositionDecision.REJECTED_TIMING,
                     confidence_score=0.0,
                     risk_score=0.0,
                     position_size=0,
-                    reasoning=f"No new positions after {self.no_new_positions_after} - Current: {current_time}",
-                    metadata={'current_time': current_time.strftime('%H:%M:%S')}
+                    reasoning=f"No new positions after {self.no_new_positions_after} - Current: {current_time} (exit signals bypass this check)",
+                    metadata={'current_time': current_time.strftime('%H:%M:%S'), 'note': 'Exit signals should use is_exit=True to bypass'}
                 )
             
             return PositionDecisionResult(

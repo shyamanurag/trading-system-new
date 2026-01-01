@@ -2239,11 +2239,27 @@ class TradingOrchestrator:
                                     # 🎯 POST-SIGNAL LTP VALIDATION: Fix 0.0 entry prices
                                     validated_signal = await self._validate_and_fix_signal_ltp(signal)
                                     
-                                    # 🚨 ENHANCED POSITION OPENING DECISION
+                                    # 🔧 FIX 2026-01-01: Check if this is an exit signal
+                                    is_exit_signal = signal.get('is_exit', False) or signal.get('is_square_off', False)
+                                    
+                                    # 🚨 ENHANCED POSITION OPENING DECISION (skip for exits)
                                     if validated_signal:
-                                        decision_result = await self._evaluate_position_opening_decision(
-                                            validated_signal, market_data, strategy_instance
-                                        )
+                                        if is_exit_signal:
+                                            # Exit signals bypass position opening decision entirely
+                                            self.logger.info(f"✅ EXIT SIGNAL: {validated_signal.get('symbol')} bypasses position opening checks")
+                                            from src.core.position_opening_decision import PositionDecisionResult, PositionDecision
+                                            decision_result = PositionDecisionResult(
+                                                decision=PositionDecision.APPROVED,
+                                                confidence_score=10.0,
+                                                risk_score=0.0,
+                                                position_size=validated_signal.get('quantity', 0),
+                                                reasoning="Exit signal - bypassed",
+                                                metadata={'is_exit': True}
+                                            )
+                                        else:
+                                            decision_result = await self._evaluate_position_opening_decision(
+                                                validated_signal, market_data, strategy_instance
+                                            )
                                         
                                         if decision_result.decision.value != "APPROVED":
                                             # 🚨 CRITICAL: Check if this is a REVERSAL signal that should trigger exit
