@@ -694,15 +694,46 @@ class EnhancedPositionOpeningDecision:
                 
                 # Check if we have enough capital for the margin
                 if margin_required > available_capital * 0.5:  # Max 50% of capital per position
-                    return PositionDecisionResult(
-                        decision=PositionDecision.REJECTED_CAPITAL,
-                        confidence_score=signal.get('confidence', 0.0),
-                        risk_score=10.0,
-                        position_size=0,
-                        reasoning=f"FUTURES margin ₹{margin_required:,.0f} exceeds 50% of capital ₹{available_capital*0.5:,.0f} (contract value: ₹{estimated_value:,.0f})",
-                        metadata={'margin_required': margin_required, 'contract_value': estimated_value, 'available_capital': available_capital}
-                    )
-                logger.info(f"📊 FUTURES MARGIN CHECK: {symbol} contract ₹{estimated_value:,.0f} → margin ₹{margin_required:,.0f} (available: ₹{available_capital:,.0f})")
+                    # 🔧 FIX: FALLBACK TO EQUITY instead of rejecting
+                    # Extract underlying symbol from futures symbol (e.g., ITC26JANFUT → ITC)
+                    underlying_symbol = symbol.replace('26JANFUT', '').replace('26FEBFUT', '').replace('26MARFUT', '')
+                    
+                    # Calculate equity position with 4x leverage
+                    INTRADAY_LEVERAGE = 4.0
+                    max_equity_value = available_capital * INTRADAY_LEVERAGE
+                    
+                    # Calculate how many shares we can buy with 1% risk
+                    risk_per_share = abs(entry_price - stop_loss) if stop_loss > 0 else entry_price * 0.03
+                    max_risk = available_capital * 0.01  # 1% of capital
+                    equity_quantity = int(max_risk / risk_per_share) if risk_per_share > 0 else 0
+                    equity_value = equity_quantity * entry_price
+                    
+                    if equity_quantity > 0 and equity_value <= max_equity_value:
+                        logger.warning(f"⚠️ FUTURES margin ₹{margin_required:,.0f} too high → FALLBACK to EQUITY")
+                        logger.info(f"📊 EQUITY FALLBACK: {underlying_symbol} {equity_quantity} shares @ ₹{entry_price:.2f} = ₹{equity_value:,.0f}")
+                        
+                        # Update signal for equity execution
+                        signal['symbol'] = underlying_symbol
+                        signal['signal_type'] = 'EQUITY'
+                        signal['instrument_type'] = 'EQ'
+                        signal['quantity'] = equity_quantity
+                        signal['fallback_from_futures'] = True
+                        
+                        # Continue with equity check below
+                        is_futures = False
+                        signal_quantity = equity_quantity
+                        estimated_value = equity_value
+                    else:
+                        return PositionDecisionResult(
+                            decision=PositionDecision.REJECTED_CAPITAL,
+                            confidence_score=signal.get('confidence', 0.0),
+                            risk_score=10.0,
+                            position_size=0,
+                            reasoning=f"FUTURES margin ₹{margin_required:,.0f} exceeds 50% of capital ₹{available_capital*0.5:,.0f}, EQUITY fallback also insufficient",
+                            metadata={'margin_required': margin_required, 'contract_value': estimated_value, 'available_capital': available_capital}
+                        )
+                else:
+                    logger.info(f"📊 FUTURES MARGIN CHECK: {symbol} contract ₹{estimated_value:,.0f} → margin ₹{margin_required:,.0f} (available: ₹{available_capital:,.0f})")
             
             elif is_options:
                 # Options: Premium is the max risk (already paid upfront)
