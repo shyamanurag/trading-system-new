@@ -2239,8 +2239,20 @@ class TradingOrchestrator:
                                     # 🎯 POST-SIGNAL LTP VALIDATION: Fix 0.0 entry prices
                                     validated_signal = await self._validate_and_fix_signal_ltp(signal)
                                     
-                                    # 🔧 FIX 2026-01-01: Check if this is an exit signal
-                                    is_exit_signal = signal.get('is_exit', False) or signal.get('is_square_off', False)
+                                    # 🔧 FIX 2026-01-01: Comprehensive exit detection (matches trade_engine.py)
+                                    # Exit signals bypass position opening decision - they close existing positions
+                                    is_exit_signal = (
+                                        signal.get('is_exit', False) or
+                                        signal.get('is_square_off', False) or
+                                        signal.get('signal_type') == 'POSITION_EXIT' or
+                                        signal.get('signal_type') == 'EXIT' or
+                                        'EXIT' in signal.get('tag', '').upper() or
+                                        signal.get('metadata', {}).get('is_exit', False) or
+                                        signal.get('metadata', {}).get('position_exit', False) or
+                                        signal.get('metadata', {}).get('closing_action', False) or
+                                        signal.get('metadata', {}).get('management_action', False) or
+                                        signal.get('exit_reason') is not None
+                                    )
                                     
                                     # 🚨 ENHANCED POSITION OPENING DECISION (skip for exits)
                                     if validated_signal:
@@ -2482,7 +2494,19 @@ class TradingOrchestrator:
                                 exit_allowed = []
                                 for sig in filtered_signals:
                                     action = sig.get('action', 'BUY')
-                                    is_exit = sig.get('is_exit', False) or sig.get('is_square_off', False)
+                                    # Comprehensive exit detection (matches trade_engine.py)
+                                    is_exit = (
+                                        sig.get('is_exit', False) or
+                                        sig.get('is_square_off', False) or
+                                        sig.get('signal_type') == 'POSITION_EXIT' or
+                                        sig.get('signal_type') == 'EXIT' or
+                                        'EXIT' in sig.get('tag', '').upper() or
+                                        sig.get('metadata', {}).get('is_exit', False) or
+                                        sig.get('metadata', {}).get('position_exit', False) or
+                                        sig.get('metadata', {}).get('closing_action', False) or
+                                        sig.get('metadata', {}).get('management_action', False) or
+                                        sig.get('exit_reason') is not None
+                                    )
                                     # EXIT actions: SELL when closing long, BUY when closing short
                                     if is_exit:
                                         exit_allowed.append(sig)
