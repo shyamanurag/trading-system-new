@@ -8259,11 +8259,21 @@ class BaseStrategy:
                             logger.info(f"📊 CAMARILLA BUY: {symbol} → {nearest[0]}=₹{support_entry:.2f} (-{nearest[2]:.2f}%)")
                         
                         # Validate signal against Camarilla structure
+                        # 🎯 FIX: For strong momentum moves (>3%), treat H3/H4 breach as CONFIRMATION, not rejection
+                        change_percent = abs(metadata.get('change_percent', 0)) if metadata else 0
+                        is_strong_momentum = change_percent > 3.0  # >3% move = strong momentum
+                        
                         if original_entry > h3:
-                            camarilla_signal = "RESISTANCE_ZONE"
-                            camarilla_risky = True
-                            risk_warning_count += 1
-                            logger.warning(f"⚠️ {symbol} BUY RISKY: Price above H3 (₹{h3:.2f})")
+                            if is_strong_momentum:
+                                # Strong momentum + above H3 = BREAKOUT CONFIRMATION (not risky)
+                                camarilla_signal = "MOMENTUM_BREAKOUT"
+                                logger.info(f"🚀 {symbol} BUY MOMENTUM: {change_percent:.1f}% move, breakout above H3 (₹{h3:.2f}) CONFIRMED")
+                            else:
+                                # Weak move + above H3 = risky (buying into resistance)
+                                camarilla_signal = "RESISTANCE_ZONE"
+                                camarilla_risky = True
+                                risk_warning_count += 1
+                                logger.warning(f"⚠️ {symbol} BUY RISKY: Weak move ({change_percent:.1f}%) above H3 (₹{h3:.2f})")
                         elif original_entry < l4:
                             camarilla_signal = "BREAKDOWN_ZONE"
                             camarilla_risky = True
@@ -8302,11 +8312,21 @@ class BaseStrategy:
                             logger.info(f"📊 CAMARILLA SELL: {symbol} → {nearest[0]}=₹{resistance_entry:.2f} (+{nearest[2]:.2f}%)")
                         
                         # Validate signal against Camarilla structure
+                        # 🎯 FIX: For strong momentum moves (>3%), treat L3/L4 breach as CONFIRMATION, not rejection
+                        change_percent = abs(metadata.get('change_percent', 0)) if metadata else 0
+                        is_strong_momentum = change_percent > 3.0  # >3% move = strong momentum
+                        
                         if original_entry < l3:
-                            camarilla_signal = "SUPPORT_ZONE"
-                            camarilla_risky = True
-                            risk_warning_count += 1
-                            logger.warning(f"⚠️ {symbol} SELL RISKY: Price below L3 (₹{l3:.2f})")
+                            if is_strong_momentum:
+                                # Strong momentum + below L3 = BREAKDOWN CONFIRMATION (not risky)
+                                camarilla_signal = "MOMENTUM_BREAKDOWN"
+                                logger.info(f"📉 {symbol} SELL MOMENTUM: {change_percent:.1f}% move, breakdown below L3 (₹{l3:.2f}) CONFIRMED")
+                            else:
+                                # Weak move + below L3 = risky (selling into support)
+                                camarilla_signal = "SUPPORT_ZONE"
+                                camarilla_risky = True
+                                risk_warning_count += 1
+                                logger.warning(f"⚠️ {symbol} SELL RISKY: Weak move ({change_percent:.1f}%) below L3 (₹{l3:.2f})")
                         elif original_entry > h4:
                             camarilla_signal = "BREAKOUT_ZONE"
                             camarilla_risky = True
