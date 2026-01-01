@@ -3390,43 +3390,22 @@ class ZerodhaIntegration:
             # Fetch instruments if not cached
             instruments = await self.get_instruments(exchange)
             
+            # 🔧 FIX: get_instruments() populates _symbol_to_token cache - check again
+            if cache_key in self._symbol_to_token:
+                return self._symbol_to_token[cache_key]
+            
+            # Fallback: Manual search through instruments
             for inst in instruments:
-                tradingsymbol = inst.get('tradingsymbol', '')
-                # 🔧 FIX: Try exact match first, then match base symbol (for EQ segment stocks)
-                # Zerodha NSE instruments may have different naming in different contexts
-                if tradingsymbol == lookup_symbol:
+                if inst.get('tradingsymbol') == lookup_symbol:
                     token = inst.get('instrument_token')
-                    # Cache both original and mapped symbols
                     self._symbol_to_token[cache_key] = token
                     self._symbol_to_token[original_cache_key] = token
                     return token
             
-            # 🔧 FIX: If exact match not found, try matching the base symbol
-            # Some instruments may be listed without segment suffix
-            for inst in instruments:
-                tradingsymbol = inst.get('tradingsymbol', '')
-                # Match base symbol if segment is 'EQ' (equity)
-                if inst.get('segment') == 'NSE' and inst.get('instrument_type') == 'EQ':
-                    if tradingsymbol == lookup_symbol:
-                        token = inst.get('instrument_token')
-                        self._symbol_to_token[cache_key] = token
-                        self._symbol_to_token[original_cache_key] = token
-                        return token
+            # Debug: Log when not found
+            if instruments:
+                logger.warning(f"⚠️ '{lookup_symbol}' not in {len(instruments)} {exchange} instruments")
             
-            # 🔧 FIX: Last resort - partial match for common stocks
-            # This helps with RELIANCE, TCS, etc. that may be in different formats
-            lookup_upper = lookup_symbol.upper()
-            for inst in instruments:
-                tradingsymbol = inst.get('tradingsymbol', '').upper()
-                # Match if the instrument is exact or is the base of a derivative
-                if tradingsymbol == lookup_upper and inst.get('instrument_type') in ['EQ', None]:
-                    token = inst.get('instrument_token')
-                    self._symbol_to_token[cache_key] = token
-                    self._symbol_to_token[original_cache_key] = token
-                    logger.debug(f"✅ Found instrument token for {symbol} via fallback match: {token}")
-                    return token
-            
-            logger.warning(f"⚠️ Could not find instrument token for {symbol} in {exchange} ({len(instruments)} instruments searched)")
             return None
             
         except Exception as e:
