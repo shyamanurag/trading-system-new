@@ -1670,7 +1670,7 @@ class TradingOrchestrator:
             except Exception as e:
                 self.logger.warning(f"⚠️ Could not load watchlist: {e}, using fallback")
                 all_watchlist_symbols = [
-                    'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I',
+                    'NIFTY-I', 'BANKNIFTY-I',
                     'RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN'
                 ]
             
@@ -1867,7 +1867,7 @@ class TradingOrchestrator:
             # Priority symbols (always process these first)
             # CRITICAL FIX: Include NIFTY-I for market bias calculation
             priority_symbols = [
-                'NIFTY-I', 'NIFTY', 'BANKNIFTY-I', 'BANKNIFTY', 'FINNIFTY-I', 'FINNIFTY',
+                'NIFTY-I', 'NIFTY', 'BANKNIFTY-I', 'BANKNIFTY',
                 'RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'KOTAKBANK', 'BHARTIARTL', 'ITC'
             ]
             
@@ -1978,8 +1978,8 @@ class TradingOrchestrator:
                 return market_data
             
             # Define key underlyings to fetch option chains for
-            # Focus on indices and high-liquidity stocks
-            key_underlyings = ['NIFTY', 'BANKNIFTY', 'FINNIFTY']
+            # Focus on indices only (NIFTY and BANKNIFTY - most liquid)
+            key_underlyings = ['NIFTY', 'BANKNIFTY']
             
             # Also extract unique underlyings from active positions
             active_underlyings = set()
@@ -2270,8 +2270,17 @@ class TradingOrchestrator:
                                             # Update signal with optimized position size
                                             validated_signal['quantity'] = decision_result.position_size
                                             self.logger.info(f"✅ POSITION APPROVED: {validated_signal.get('symbol')} - Size: {decision_result.position_size}")
+                                            
+                                            # 🎯 REGIME MULTIPLIER: Apply HMM-based risk sizing
+                                            validated_signal = self._apply_regime_multiplier(validated_signal)
                                     
                                     if validated_signal and validated_signal.get('entry_price', 0) > 0:
+                                        # 🎯 REGIME FILTER: Check if signal allowed by current regime
+                                        regime_allowed, regime_reason = self._should_allow_signal_by_regime(validated_signal)
+                                        if not regime_allowed:
+                                            self.logger.warning(f"🚫 REGIME BLOCKED: {symbol} - {regime_reason}")
+                                            continue
+                                        
                                         # Add strategy info to validated signal
                                         validated_signal['strategy'] = strategy_key
                                         validated_signal['signal_id'] = f"{strategy_key}_{symbol}_{int(datetime.now().timestamp())}"
@@ -4315,6 +4324,89 @@ class TradingOrchestrator:
         except Exception as e:
             self.logger.error(f"Error determining risk status: {e}")
             return 'unknown'
+
+    def _get_regime_controller(self):
+        """Get the regime_adaptive_controller strategy instance for regime-based adjustments"""
+        try:
+            if hasattr(self, 'strategies') and 'regime_adaptive_controller' in self.strategies:
+                strategy_info = self.strategies['regime_adaptive_controller']
+                if 'instance' in strategy_info:
+                    return strategy_info['instance']
+            return None
+        except Exception as e:
+            self.logger.debug(f"Could not get regime controller: {e}")
+            return None
+    
+    def _apply_regime_multiplier(self, signal: dict) -> dict:
+        """
+        Apply regime-based risk multiplier to signal position sizing
+        
+        🎯 WIRED: regime_adaptive_controller HMM output now affects real trades
+        - LOW_VOLATILITY: risk_mult ~1.1 (slightly larger positions)
+        - HIGH_VOLATILITY: risk_mult ~0.6 (smaller positions for protection)
+        - CRISIS: risk_mult ~0.2 (minimal positions)
+        - MOMENTUM_BREAKOUT: risk_mult ~1.5 (aggressive sizing)
+        """
+        try:
+            regime_controller = self._get_regime_controller()
+            if not regime_controller:
+                return signal
+            
+            # Get professional risk multiplier from HMM-based regime detection
+            risk_multiplier = 1.0
+            if hasattr(regime_controller, 'get_professional_risk_multiplier'):
+                risk_multiplier = regime_controller.get_professional_risk_multiplier()
+            
+            # Get current regime for logging
+            current_regime = 'UNKNOWN'
+            if hasattr(regime_controller, 'current_regime'):
+                current_regime = getattr(regime_controller.current_regime, 'value', str(regime_controller.current_regime))
+            
+            # Apply multiplier to quantity
+            original_qty = signal.get('quantity', 0)
+            if original_qty > 0 and risk_multiplier != 1.0:
+                adjusted_qty = max(1, int(original_qty * risk_multiplier))
+                signal['quantity'] = adjusted_qty
+                signal['regime_multiplier'] = risk_multiplier
+                signal['regime'] = current_regime
+                
+                self.logger.info(f"🎯 REGIME SIZING: {signal.get('symbol')} qty {original_qty} → {adjusted_qty} "
+                               f"(regime={current_regime}, mult={risk_multiplier:.2f})")
+            
+            return signal
+            
+        except Exception as e:
+            self.logger.error(f"Error applying regime multiplier: {e}")
+            return signal
+    
+    def _should_allow_signal_by_regime(self, signal: dict) -> tuple:
+        """
+        Check if signal should be allowed based on current regime
+        
+        Returns: (allowed: bool, reason: str)
+        """
+        try:
+            regime_controller = self._get_regime_controller()
+            if not regime_controller:
+                return True, "NO_REGIME_CONTROLLER"
+            
+            strategy_name = signal.get('strategy', 'unknown')
+            confidence = signal.get('confidence', 0)
+            
+            # Use regime controller's signal validation
+            if hasattr(regime_controller, 'should_allow_strategy_signal'):
+                allowed = regime_controller.should_allow_strategy_signal(strategy_name, confidence)
+                if not allowed:
+                    current_regime = 'UNKNOWN'
+                    if hasattr(regime_controller, 'current_regime'):
+                        current_regime = getattr(regime_controller.current_regime, 'value', str(regime_controller.current_regime))
+                    return False, f"REGIME_BLOCK_{current_regime}"
+            
+            return True, "REGIME_APPROVED"
+            
+        except Exception as e:
+            self.logger.error(f"Error checking regime signal allowance: {e}")
+            return True, "REGIME_CHECK_ERROR"
 
     async def update_all_zerodha_tokens(self, access_token: str, user_id: str):
         """
