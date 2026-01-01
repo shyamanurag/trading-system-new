@@ -19,22 +19,22 @@ _symbols_logged = False
 ZERODHA_SYMBOL_MAPPING = {
     # 🎯 CRITICAL MAPPINGS ONLY - Rest will be auto-detected
     'BAJAJFINSV': 'BAJFINANCE',      # ✅ CRITICAL: Different company name
-    'ADANIPORTS': 'ADANIPORT',       # ✅ CRITICAL: Plural vs singular
-    'ADANIENTS': 'ADANIENT',         # ✅ CRITICAL: Plural vs singular
+    'ADANIENTS': 'ADANIENT',         # ✅ CRITICAL: Plural vs singular (Zerodha uses ADANIENT)
     'MOTHERSUMI': 'MOTHERSON',       # ✅ CRITICAL: Company name change
     'CADILAHC': 'ZYDUSLIFE',         # ✅ CRITICAL: Company renamed
     'MAHINDRA': 'M&M',               # ✅ CRITICAL: Use stock ticker
+    'MINDTREE': 'LTIM',              # ✅ CRITICAL: Merged into LTIM
+    'ADANITRANS': 'ADANIENSOL',      # ✅ CRITICAL: Renamed to Adani Energy Solutions
     'ADITTYABIRLA': None,            # ⚠️ SKIP: Not a traded symbol (group name)
     'NOVARTIS': None,                # ⚠️ SKIP: Delisted from NSE
-    'AMARAJABAT': 'AMARAJABAT',      # ✅ Valid symbol
-    'TATAMOTORS': 'TATAMOTORS',      # ✅ Valid symbol
-    'ZOMATO': 'ZOMATO',              # ✅ Valid symbol
+    'BONDADA': None,                 # ⚠️ SKIP: Not in F&O
+    'GROWW': None,                   # ⚠️ SKIP: Not yet available
     
-    # Index mappings (these are consistent)  
-    'NIFTY-I': 'NIFTY',              # ✅ CRITICAL: Remove -I suffix
-    'BANKNIFTY-I': 'BANKNIFTY',      # ✅ CRITICAL: Remove -I suffix
-    'FINNIFTY-I': 'FINNIFTY',        # ✅ CRITICAL: Remove -I suffix
-    'MIDCPNIFTY-I': 'MIDCPNIFTY',    # ✅ CRITICAL: Remove -I suffix
+    # Index mappings (only NIFTY and BANKNIFTY - most liquid)
+    'NIFTY-I': 'NIFTY 50',           # ✅ CRITICAL: Zerodha index name
+    'BANKNIFTY-I': 'NIFTY BANK',     # ✅ CRITICAL: Zerodha index name
+    'FINNIFTY-I': None,              # ⚠️ SKIP: Removed - low liquidity
+    'MIDCPNIFTY-I': None,            # ⚠️ SKIP: Removed - low liquidity
     'SENSEX-I': None,                # ⚠️ SKIP: BSE index, not available on NSE
     
     # Everything else will be auto-detected dynamically
@@ -68,9 +68,9 @@ def get_complete_fo_symbols() -> List[str]:
     Added high-volume, high-volatility stocks better suited for intraday trading.
     User requested: IEX, HCC, NAUKRI, BONDADA, GROWW
     """
-    # Major indices
+    # Major indices (only NIFTY and BANKNIFTY - most liquid)
     indices = [
-        'NIFTY-I', 'BANKNIFTY-I', 'FINNIFTY-I', 'MIDCPNIFTY-I', 'SENSEX-I'
+        'NIFTY-I', 'BANKNIFTY-I'
     ]
     
     # Major stocks with F&O - OPTIMIZED FOR INTRADAY (High Volume + Volatility)
@@ -78,23 +78,23 @@ def get_complete_fo_symbols() -> List[str]:
         # Banking & Financial Services (30) - High liquidity banks
         'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
         'INFY', 'KOTAKBANK', 'LT', 'AXISBANK', 'MARUTI', 'ASIANPAINT',
-        'TECHM', 'ADANIPORT', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO',
+        'TECHM', 'ADANIPORTS', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO',  # ADANIPORT→ADANIPORTS
         'NESTLEIND', 'HINDUNILVR', 'POWERGRID', 'NTPC', 'COALINDIA',
         'ONGC', 'SUNPHARMA', 'DRREDDY', 'CIPLA', 'APOLLOHOSP',
         'HCLTECH', 'INDUSINDBK', 'PNB', 'BANDHANBNK',
         'BANKBARODA', 'CANBK', 'UNIONBANK',  # High volume PSU banks
         
         # Auto & Auto Components (12) - Removed low volume
-        'TATAMOTORS', 'M&M', 'BAJAJ-AUTO', 'EICHERMOT', 'HEROMOTOCO',
+        'TATAMTRDVR', 'M&M', 'BAJAJ-AUTO', 'EICHERMOT', 'HEROMOTOCO',
         'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'EXIDEIND',
-        'BOSCHLTD', 'MOTHERSUMI', 'BALKRISIND',
+        'BOSCHLTD', 'MOTHERSON', 'BALKRISIND',
         
-        # IT & Technology (20) - High volume IT stocks + User requested
-        'MINDTREE', 'MPHASIS', 'LTTS', 'PERSISTENT', 'COFORGE',
+        # IT & Technology (18) - High volume IT stocks + User requested
+        'MPHASIS', 'LTTS', 'PERSISTENT', 'COFORGE',  # MINDTREE merged into LTIM
         'RBLBANK', 'FEDERALBNK', 'IDFCFIRSTB', 'LTIM', 'TATAELXSI',
-        'INTELLECT', 'ZOMATO', 'PAYTM', 'NAUKRI',  # NAUKRI - user requested
+        'INTELLECT', 'PAYTM', 'NAUKRI',  # NAUKRI - user requested
         'POLICYBZR', 'DMART', 'JUBLFOOD', 'DIXON',
-        'GROWW',  # GROWW - user requested (newly listed)
+        'KAYNES', 'HAPPSTMNDS',  # High volatility IT/tech (replaced GROWW, ZOMATO)
         
         # Pharmaceuticals & Healthcare (15) - Removed low volatility MNCs
         'BIOCON', 'LUPIN', 'GLENMARK', 'TORNTPHARM', 'DIVISLAB',
@@ -107,7 +107,7 @@ def get_complete_fo_symbols() -> List[str]:
         
         # Energy & Oil (15) - High volume energy stocks
         'IOC', 'BPCL', 'HINDPETRO', 'GAIL', 'OIL', 'PETRONET',
-        'ADANIGREEN', 'ADANITRANS', 'ADANIPOWER', 'ADANIENTS',
+        'ADANIGREEN', 'ADANIENSOL', 'ADANIPOWER', 'ADANIENT',  # ADANITRANS→ADANIENSOL, ADANIENTS→ADANIENT
         'TATAPOWER', 'NHPC', 'SJVN', 'TORNTPOWER', 
         'IEX',  # IEX - user requested (Indian Energy Exchange)
         
@@ -115,7 +115,7 @@ def get_complete_fo_symbols() -> List[str]:
         'TATASTEEL', 'JSWSTEEL', 'SAIL', 'HINDALCO', 'VEDL',
         'NMDC', 'JINDALSTEL', 'MOIL', 'WELCORP', 'NATIONALUM',
         'SUZLON', 'HCC',  # HCC - user requested (high volatility)
-        'BONDADA',  # BONDADA - user requested
+        'COCHINSHIP', 'GRSE',  # High volume PSU shipbuilders (replaced BONDADA)
         
         # FMCG & Consumer (12) - Removed low volume
         'ITC', 'BRITANNIA', 'DABUR', 'GODREJCP', 'MARICO', 'VBL',
@@ -135,8 +135,8 @@ def get_complete_fo_symbols() -> List[str]:
         'ABB', 'SIEMENS', 'CGPOWER', 'BHEL', 'HAL', 'BEL',
         'POLYCAB', 'KEI', 'HAVELLS', 'HFCL', 'CUMMINSIND', 'CROMPTON',
         
-        # Media & Telecom (6) - High volume media
-        'ZEEL', 'SUNTV', 'PVRINOX', 'NETWORK18', 'ADANIPORTS', 'JSWENERGY',
+        # Media & Telecom (6) - High volume media/telecom
+        'ZEEL', 'SUNTV', 'PVRINOX', 'IDEA', 'JSWENERGY', 'ZOMATO',  # Removed ADANIPORTS duplicate
         
         # Aviation & Logistics (4) - High volume only
         'INDIGO', 'GLAND', 'ALLCARGO', 'DELHIVERY'
@@ -310,19 +310,19 @@ def is_fo_enabled(symbol: str) -> bool:
             return _fo_enabled_cache[clean_symbol]
 
         top_50_liquid_fo = {
-            'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX',
+            'NIFTY', 'BANKNIFTY',  # Only most liquid indices
             'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
             'INFY', 'KOTAKBANK', 'LT', 'AXISBANK', 'MARUTI', 'ASIANPAINT',
             'TECHM', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO', 'NESTLEIND',
             'HINDUNILVR', 'POWERGRID', 'NTPC', 'COALINDIA', 'ONGC', 'SUNPHARMA',
-            'DRREDDY', 'CIPLA', 'APOLLOHOSP', 'HCLTECH', 'INDUSINDBK', 'TATAMOTORS',
+            'DRREDDY', 'CIPLA', 'APOLLOHOSP', 'HCLTECH', 'INDUSINDBK', 'TATAMTRDVR',
             'TATASTEEL', 'JSWSTEEL', 'HINDALCO', 'VEDL', 'ITC', 'BRITANNIA',
             'DABUR', 'GODREJCP', 'MARICO', 'IOC', 'BPCL', 'HINDPETRO',
-            'GAIL', 'ADANIPORT', 'ADANIGREEN', 'PNB', 'FEDERALBNK',
+            'GAIL', 'ADANIPORTS', 'ADANIGREEN', 'PNB', 'FEDERALBNK',
             'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'IEX', 'HCC', 'NAUKRI'
         }
 
-        if clean_symbol in {'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'}:
+        if clean_symbol in {'NIFTY', 'BANKNIFTY'}:
             _fo_enabled_cache[clean_symbol] = True
             return True
 
