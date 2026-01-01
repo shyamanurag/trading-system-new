@@ -7959,12 +7959,23 @@ class BaseStrategy:
             
             # Apply confidence multiplier from MTF
             original_confidence = confidence
-            confidence = confidence * mtf_result['confidence_multiplier']
+            
+            # 🔧 FIX: Don't penalize exceptional signals (9.0+) for MTF NEUTRAL
+            # Rationale: If signal is already 9.0+ (extreme institutional flow, p<0.001, etc.),
+            # the signal source has done extensive validation. MTF "no clear trend" shouldn't veto it.
+            # MTF CONFLICT still blocks (that's a real disagreement, not just uncertainty)
+            EXCEPTIONAL_CONFIDENCE_THRESHOLD = 9.0
+            if original_confidence >= EXCEPTIONAL_CONFIDENCE_THRESHOLD and mtf_result['confidence_multiplier'] >= 0.90:
+                # Exceptional signal + MTF not actively conflicting → preserve confidence
+                logger.info(f"   ✨ EXCEPTIONAL SIGNAL: {symbol} conf={original_confidence:.1f} ≥ {EXCEPTIONAL_CONFIDENCE_THRESHOLD} - MTF penalty waived")
+                confidence = original_confidence
+            else:
+                confidence = confidence * mtf_result['confidence_multiplier']
             
             # Cap at 10.0
             confidence = min(confidence, 10.0)
             
-            if mtf_result['confidence_multiplier'] != 1.0:
+            if mtf_result['confidence_multiplier'] != 1.0 and original_confidence < EXCEPTIONAL_CONFIDENCE_THRESHOLD:
                 logger.info(f"   🎯 Confidence: {original_confidence:.1f} → {confidence:.1f} (MTF: {mtf_result['confidence_multiplier']:.2f}x)")
             
             # 🔥 CRITICAL FIX: Second confidence check AFTER MTF adjustment
