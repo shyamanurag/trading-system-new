@@ -20,13 +20,19 @@ import queue
 
 # 🔧 FIX: Increase recursion limit to prevent RecursionError in TrueData library's reconnection
 # The TrueData library has internal reconnection logic that can hit Python's default limit (1000)
+# 2026-01-01: Increased to 10000 after seeing continuous recursion errors with renewed subscription
 try:
     current_limit = sys.getrecursionlimit()
-    if current_limit < 3000:
-        sys.setrecursionlimit(3000)
-        logging.getLogger(__name__).debug(f"Increased recursion limit from {current_limit} to 3000")
+    if current_limit < 10000:
+        sys.setrecursionlimit(10000)
+        logging.getLogger(__name__).debug(f"Increased recursion limit from {current_limit} to 10000")
 except Exception:
     pass
+
+# 🚨 RECURSION KILL SWITCH: Track recursion errors and kill TrueData after too many
+_recursion_error_count = 0
+_recursion_error_max = 50  # After 50 recursion errors, kill TrueData
+_recursion_killed = False
 
 # Setup basic logging
 logger = logging.getLogger(__name__)
