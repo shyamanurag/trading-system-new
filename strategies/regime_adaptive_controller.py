@@ -1304,6 +1304,22 @@ class RegimeAdaptiveController:
         """PROFESSIONAL REGIME ANALYSIS with advanced mathematical models and MTF"""
         if not self.is_active:
             return
+        
+        # 🚀 THROTTLE: Only run full regime analysis every 30 seconds to not block trading loop
+        current_time = time.time()
+        if not hasattr(self, '_last_regime_update'):
+            self._last_regime_update = 0
+        
+        # Quick path: Just update features, skip heavy computation
+        if current_time - self._last_regime_update < 30:
+            try:
+                # Only extract features (lightweight) - skip heavy regime detection
+                await self._extract_professional_features(data)
+            except Exception:
+                pass
+            return
+        
+        self._last_regime_update = current_time
             
         try:
             # STEP 0: Fetch Multi-Timeframe data for NIFTY (once per session)
