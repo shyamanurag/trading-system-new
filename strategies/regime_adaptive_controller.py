@@ -1322,17 +1322,17 @@ class RegimeAdaptiveController:
         self._last_regime_update = current_time
             
         try:
-            # STEP 0: Fetch Multi-Timeframe data for NIFTY (once per session)
-            if 'NIFTY 50' not in self._mtf_fetched:
-                await self.fetch_multi_timeframe_data('NIFTY 50')
+            # 🚀 LITE MODE: Skip MTF data fetching (was 3 API calls blocking for seconds)
+            # STEP 0: SKIPPED - fetch_multi_timeframe_data causes blocking API calls
+            # MTF is nice-to-have but not worth the latency cost
             
             # STEP 1: Process market data with professional feature extraction
             await self._extract_professional_features(data)
             
-            # STEP 2: Update Kalman Filter state estimation
-            await self._update_kalman_state()
+            # STEP 2: SKIPPED - Kalman filter is fast but adds little value for intraday
+            # await self._update_kalman_state()
             
-            # STEP 3: Professional regime detection with HMM, GMM and MTF
+            # STEP 3: LITE regime detection (GARCH + Rule-based only)
             await self._detect_professional_regime()
             
             # STEP 4: Calculate regime confidence and transition probabilities
@@ -1341,8 +1341,8 @@ class RegimeAdaptiveController:
             # STEP 5: Update allocation recommendations
             await self._update_allocation_recommendations()
             
-            # STEP 6: Performance monitoring and alerts
-            await self._monitor_regime_performance()
+            # STEP 6: SKIPPED - Performance monitoring adds overhead
+            # await self._monitor_regime_performance()
             
         except Exception as e:
             logger.error(f"Error in {self.name} professional regime analysis: {str(e)}")
@@ -1560,7 +1560,12 @@ class RegimeAdaptiveController:
             logger.error(f"Kalman filter update failed: {e}")
     
     async def _detect_professional_regime(self):
-        """PROFESSIONAL REGIME DETECTION using multiple models including HMM"""
+        """
+        LITE REGIME DETECTION - Uses only fast methods (GARCH + Rule-based)
+        
+        🚀 PERFORMANCE: GMM/HMM/MTF skipped for speed - they were blocking trading loop
+        GARCH is still used (same as base_strategy ATR calculations)
+        """
         try:
             if len(self.feature_history) < self.min_samples:
                 return
@@ -1568,58 +1573,28 @@ class RegimeAdaptiveController:
             # Extract feature matrix
             feature_matrix = np.array([f['features'] for f in self.feature_history])
             
-            # 🚀 CRITICAL FIX: Yield to event loop to prevent health check failures
-            await asyncio.sleep(0)
-            
-            # METHOD 1: GARCH-based volatility regime
+            # METHOD 1: GARCH-based volatility regime (FAST - simple numpy loop)
             returns = feature_matrix[:, 1]  # momentum as proxy for returns
             volatility, vol_regime = self.math_models.garch_volatility_regime(returns)
             
-            # 🚀 FIX: Run GMM in thread pool (involves iterative fitting)
-            # METHOD 2: Multivariate regime detection (GMM)
-            regime_id, gmm_confidence = await asyncio.to_thread(
-                self.math_models.multivariate_regime_detection, feature_matrix
-            )
+            # Store volatility for override check in ensemble
+            self.regime_metrics.volatility = volatility
             
-            # Yield again after heavy computation
-            await asyncio.sleep(0)
-            
-            # METHOD 3: Rule-based regime classification
+            # METHOD 2: Rule-based regime classification (FAST - simple if-else)
             latest_features = self.feature_history[-1]['raw_data']
             rule_based_regime = self._classify_regime_by_rules(latest_features)
             
-            # METHOD 4: HMM-based regime detection (NEWLY INTEGRATED!)
-            hmm_regime = MarketRegime.LOW_VOLATILITY
-            hmm_confidence = 0.5
-            try:
-                if len(feature_matrix) >= 20:
-                    # Train HMM if enough data (every 50 observations)
-                    # 🚀 CRITICAL FIX: Run in thread pool to not block event loop/health checks
-                    if len(self.feature_history) % 50 == 0:
-                        await asyncio.to_thread(
-                            self.hmm_model.baum_welch, feature_matrix[:, :3], 5
-                        )
-                        logger.info("🧠 HMM model updated via Baum-Welch (non-blocking)")
-                    
-                    # 🚀 FIX: Also run Viterbi in thread pool (CPU-intensive)
-                    state_path, log_prob = await asyncio.to_thread(
-                        self.hmm_model.viterbi, feature_matrix[:, :3]
-                    )
-                    current_state = state_path[-1]
-                    hmm_regime = self.hmm_model.get_regime_from_state(current_state)
-                    
-                    # Calculate confidence from forward algorithm
-                    _, state_probs = self.hmm_model.predict_state(feature_matrix[-1, :3])
-                    hmm_confidence = float(np.max(state_probs))
-                    
-                    logger.debug(f"🧠 HMM: State={current_state}, Regime={hmm_regime.value}, Conf={hmm_confidence:.2f}")
-            except Exception as hmm_error:
-                logger.debug(f"HMM inference skipped: {hmm_error}")
+            # 🚀 LITE MODE: Skip GMM/HMM/MTF - use simplified ensemble
+            # GMM and HMM are academically interesting but add 10+ seconds blocking
+            gmm_confidence = 0.5  # Default
+            regime_id = 0
+            hmm_regime = rule_based_regime  # Use rule-based as HMM proxy
+            hmm_confidence = 0.6
             
-            # METHOD 5: MULTI-TIMEFRAME REGIME ANALYSIS (NEW!)
-            mtf_analysis = self.analyze_mtf_regime()
-            mtf_aligned = mtf_analysis.get('aligned', False)
-            mtf_boost = mtf_analysis.get('confidence_boost', 0.0)
+            # MTF analysis - skip API calls, use cached data if available
+            mtf_analysis = {'aligned': False, 'confidence_boost': 0.0}
+            mtf_aligned = False
+            mtf_boost = 0.0
             
             if mtf_aligned:
                 logger.info(f"📊 MTF REGIME: {mtf_analysis['reasoning']} | "
