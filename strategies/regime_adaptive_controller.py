@@ -1716,14 +1716,13 @@ class RegimeAdaptiveController:
         5. MTF Regime (NEW - Multi-Timeframe Analysis)
         """
         try:
-            # 🎯 FIX: OVERRIDE - If real-time GARCH volatility is clearly HIGH (>8%), force HIGH_VOLATILITY
+            # 🎯 FIX: OVERRIDE - If real-time volatility is clearly HIGH (>8%), force HIGH_VOLATILITY
             # This prevents ensemble from miscategorizing high volatility as low volatility
-            if "HIGH" in vol_regime.upper():
-                # Check if real-time volatility is actually high
-                current_vol = self.regime_metrics.volatility if hasattr(self, 'regime_metrics') else 0
-                if current_vol > 0.08:  # >8% volatility = definitively HIGH
-                    logger.info(f"🎯 VOLATILITY OVERRIDE: {current_vol:.1%} > 8% → Forcing HIGH_VOLATILITY regime")
-                    return MarketRegime.HIGH_VOLATILITY
+            # CRITICAL: Check raw volatility REGARDLESS of what GARCH says (GARCH uses annualized returns)
+            current_vol = self.regime_metrics.volatility if hasattr(self, 'regime_metrics') else 0
+            if current_vol > 0.08:  # >8% raw volatility = definitively HIGH
+                logger.info(f"🎯 VOLATILITY OVERRIDE: {current_vol:.1%} > 8% → Forcing HIGH_VOLATILITY regime")
+                return MarketRegime.HIGH_VOLATILITY
             
             # Collect all regime votes with weights
             votes = {}

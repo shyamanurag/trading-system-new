@@ -446,12 +446,13 @@ class TrueDataClient:
                 return False
             
             if "user already connected" in error_msg or "already connected" in error_msg:
-                logger.warning("⚠️ User Already Connected - FAST FAIL (no retry loop)")
+                logger.warning("⚠️ User Already Connected - COMPLETE SHUTDOWN (no retry loop)")
                 logger.info("💡 Another instance is connected. System will use Zerodha for market data.")
-                logger.info("💡 TrueData will auto-retry after 2 minutes")
-                # CRITICAL: Activate circuit breaker with LONG timeout to prevent deployment loops
+                logger.info("💡 TrueData will NOT auto-retry (prevents reconnection storm)")
+                
+                # CRITICAL: COMPLETE SHUTDOWN - prevent TrueData library's internal reconnection
                 self._circuit_breaker_active = True
-                self._circuit_breaker_timeout = 120  # 2 minute cooldown - enough for old deployment to die
+                self._circuit_breaker_timeout = 600  # 10 minute cooldown
                 self._last_connection_failure = time.time()
                 self._consecutive_failures += 1
                 truedata_connection_status['error'] = 'USER_ALREADY_CONNECTED'
@@ -466,17 +467,24 @@ class TrueDataClient:
                 # Stop health monitor to prevent our reconnection attempts
                 self._stop_health.set()
                 
-                # Simple cleanup - don't be aggressive, just mark as disconnected
-                # The TrueData library's internal reconnect may still log errors,
-                # but that's better than crashing or making things worse
+                # 🚨 AGGRESSIVE CLEANUP: Completely destroy the td_obj to stop internal reconnection
                 if self.td_obj:
                     try:
-                        self.td_obj.disconnect()
+                        # Try to stop all internal threads
+                        if hasattr(self.td_obj, 'disconnect'):
+                            self.td_obj.disconnect()
+                        if hasattr(self.td_obj, 'stop_live_data'):
+                            try:
+                                self.td_obj.stop_live_data()
+                            except:
+                                pass
                     except Exception:
                         pass  # Ignore errors during cleanup
+                    
+                    # Nullify to prevent library's internal logic from reconnecting
                     self.td_obj = None
                 
-                logger.info("🛑 TrueData marked as disconnected - using Zerodha fallback")
+                logger.info("🛑 TrueData COMPLETELY SHUTDOWN - using Zerodha fallback only")
                 
                 return False
             

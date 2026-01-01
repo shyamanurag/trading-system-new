@@ -2211,8 +2211,16 @@ class TradingOrchestrator:
                             self.logger.info(f"📊 DATA FLOW CHECK #2 - Strategy '{strategy_key}' receiving data:")
                             self.logger.info(f"   Symbols in data: {len(transformed_data)} ({list(transformed_data.keys())[:5]}...)")
                         
+                        # 🔧 FIX: Add timeout to prevent strategy from blocking trading loop indefinitely
                         # Call strategy's on_market_data method with ENRICHED data (includes options)
-                        await strategy_instance.on_market_data(enriched_data)
+                        try:
+                            await asyncio.wait_for(
+                                strategy_instance.on_market_data(enriched_data),
+                                timeout=30.0  # 30 second timeout per strategy
+                            )
+                        except asyncio.TimeoutError:
+                            self.logger.warning(f"⏰ TIMEOUT: {strategy_key}.on_market_data() exceeded 30s - skipping to next strategy")
+                            continue
                         
                         # Collect signals and POST-PROCESS them for LTP validation
                         signals_generated = 0
