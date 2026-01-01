@@ -2068,35 +2068,32 @@ class TradingOrchestrator:
     async def _run_strategies(self, market_data: Dict[str, Any]):
         """Run all active strategies with transformed data and collect signals"""
         try:
-            # 🚨 CRITICAL FIX 2025-12-31: Stop generating NEW signals after 3:00 PM IST
-            # Trades at 15:18 caused loss because signals were still generated after 3 PM
-            # Position management (exits/square-off) still allowed
+            # 🔧 FIX 2026-01-01: Determine if we're in "no new entry" period (after 3 PM IST)
+            # Signals still GENERATE and LOG (for elite recommendations)
+            # Position management still works
+            # Only NEW ENTRY EXECUTION is blocked at trade engine stage
             import pytz
             from datetime import datetime as dt, time as dt_time
             ist = pytz.timezone('Asia/Kolkata')
             now_ist = dt.now(ist)
             current_time_ist = now_ist.time()
-            no_new_signals_after = dt_time(15, 0)  # 3:00 PM IST
+            no_new_entries_after = dt_time(15, 0)  # 3:00 PM IST
             
-            if current_time_ist >= no_new_signals_after:
+            # Set flag for execution stage (checked before placing orders)
+            self._block_new_entries = current_time_ist >= no_new_entries_after
+            
+            if self._block_new_entries:
                 # Only log once per minute to avoid log spam
                 if not hasattr(self, '_last_3pm_log') or (now_ist - self._last_3pm_log).total_seconds() > 60:
-                    self.logger.info(f"⏰ SIGNAL GENERATION PAUSED: {now_ist.strftime('%H:%M:%S')} IST - No new signals after 3:00 PM")
-                    self.logger.info(f"   Position management and exits still active")
+                    self.logger.info(f"⏰ NEW ENTRIES BLOCKED: {now_ist.strftime('%H:%M:%S')} IST (after 3:00 PM)")
+                    self.logger.info(f"   ✅ Signals still generated & logged to recommendations")
+                    self.logger.info(f"   ✅ Position tracking & exits still active")
+                    self.logger.info(f"   ❌ Only NEW ENTRY orders blocked at execution")
                     self._last_3pm_log = now_ist
-                
-                # Still need to manage existing positions (exits, stop losses)
-                # So we process position management but skip signal generation
-                for strategy_key, strategy_info in self.strategies.items():
-                    if strategy_info.get('active', False) and 'instance' in strategy_info:
-                        strategy_instance = strategy_info['instance']
-                        if hasattr(strategy_instance, 'manage_existing_positions'):
-                            try:
-                                transformed_data = self._optimize_market_data_processing(market_data)
-                                await strategy_instance.manage_existing_positions(transformed_data)
-                            except Exception as e:
-                                self.logger.debug(f"Position management error: {e}")
-                return  # Skip signal generation
+            
+            # 🔧 FIX: Continue with FULL strategy processing (don't return early!)
+            # Signals will be generated, logged, and positions will be tracked
+            # The _block_new_entries flag is checked at execution stage
             
             all_signals = []
             # 🚨 PERFORMANCE OPTIMIZATION: Reduce market data processing load
@@ -2460,28 +2457,53 @@ class TradingOrchestrator:
                         if not filtered_signals:
                             self.logger.info("📭 All signals blocked by cross-strategy lock")
                         else:
-                            # 🚨 CRITICAL FIX: Record orders BEFORE execution to prevent duplicates
-                            # This ensures that if another signal generation cycle runs while orders are being placed,
-                            # it will see these pending orders and block duplicate signals
-                            for i, signal in enumerate(filtered_signals):
-                                symbol = signal.get('symbol', 'UNKNOWN')
-                                action = signal.get('action', 'UNKNOWN')
-                                quantity = signal.get('quantity', 0)
-                                self.logger.info(f"   📋 Signal {i+1}: {symbol} {action} qty={quantity}")
+                            # 🔧 FIX 2026-01-01: Block NEW ENTRY execution after 3 PM, but allow EXITS
+                            # Signals were already generated and logged to recommendations above
+                            # This only blocks the actual ORDER EXECUTION for new positions
+                            if getattr(self, '_block_new_entries', False):
+                                # Filter: Allow EXIT signals (closing positions), block ENTRY signals
+                                entry_blocked = []
+                                exit_allowed = []
+                                for sig in filtered_signals:
+                                    action = sig.get('action', 'BUY')
+                                    is_exit = sig.get('is_exit', False) or sig.get('is_square_off', False)
+                                    # EXIT actions: SELL when closing long, BUY when closing short
+                                    if is_exit:
+                                        exit_allowed.append(sig)
+                                    else:
+                                        entry_blocked.append(sig)
+                                        self.logger.info(f"⏰ ENTRY BLOCKED: {sig.get('symbol')} {action} (after 3 PM - logged to recommendations only)")
                                 
-                                # Record order placement to prevent duplicates (matches base_strategy pattern)
-                                try:
-                                    strategy_key = signal.get('strategy', 'unknown')
-                                    if strategy_key in self.strategies:
-                                        strategy_instance = self.strategies[strategy_key].get('instance')
-                                        if strategy_instance and hasattr(strategy_instance, '_record_order_placement'):
-                                            strategy_instance._record_order_placement(symbol)
-                                            self.logger.debug(f"🔒 LOCKED: {symbol} - Duplicate prevention activated for 2 minutes")
-                                except Exception as record_err:
-                                    self.logger.warning(f"Could not record order placement for {symbol}: {record_err}")
+                                if entry_blocked:
+                                    self.logger.info(f"⏰ BLOCKED {len(entry_blocked)} new entries (after 3 PM) - signals logged to elite recommendations")
+                                
+                                filtered_signals = exit_allowed
+                                if not filtered_signals:
+                                    self.logger.info("📭 No EXIT signals to execute (new entries blocked after 3 PM)")
                             
-                            await self.trade_engine.process_signals(filtered_signals)
-                            self.logger.info(f"✅ Trade engine processing completed for {len(filtered_signals)} signals")
+                            if filtered_signals:
+                                # 🚨 CRITICAL FIX: Record orders BEFORE execution to prevent duplicates
+                                # This ensures that if another signal generation cycle runs while orders are being placed,
+                                # it will see these pending orders and block duplicate signals
+                                for i, signal in enumerate(filtered_signals):
+                                    symbol = signal.get('symbol', 'UNKNOWN')
+                                    action = signal.get('action', 'UNKNOWN')
+                                    quantity = signal.get('quantity', 0)
+                                    self.logger.info(f"   📋 Signal {i+1}: {symbol} {action} qty={quantity}")
+                                    
+                                    # Record order placement to prevent duplicates (matches base_strategy pattern)
+                                    try:
+                                        strategy_key = signal.get('strategy', 'unknown')
+                                        if strategy_key in self.strategies:
+                                            strategy_instance = self.strategies[strategy_key].get('instance')
+                                            if strategy_instance and hasattr(strategy_instance, '_record_order_placement'):
+                                                strategy_instance._record_order_placement(symbol)
+                                                self.logger.debug(f"🔒 LOCKED: {symbol} - Duplicate prevention activated for 2 minutes")
+                                    except Exception as record_err:
+                                        self.logger.warning(f"Could not record order placement for {symbol}: {record_err}")
+                                
+                                await self.trade_engine.process_signals(filtered_signals)
+                                self.logger.info(f"✅ Trade engine processing completed for {len(filtered_signals)} signals")
                     else:
                         self.logger.error("❌ Trade engine not available - signals cannot be processed")
                         # TRACK: Mark all signals as failed due to no trade engine
