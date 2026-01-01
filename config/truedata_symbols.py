@@ -85,7 +85,7 @@ def get_complete_fo_symbols() -> List[str]:
         'BANKBARODA', 'CANBK', 'UNIONBANK',  # High volume PSU banks
         
         # Auto & Auto Components (12) - Removed low volume
-        'TATAMTRDVR', 'M&M', 'BAJAJ-AUTO', 'EICHERMOT', 'HEROMOTOCO',
+        'TATAMOTORS', 'M&M', 'BAJAJ-AUTO', 'EICHERMOT', 'HEROMOTOCO',
         'TVSMOTOR', 'ASHOKLEY', 'ESCORTS', 'EXIDEIND',
         'BOSCHLTD', 'MOTHERSON', 'BALKRISIND',
         
@@ -315,7 +315,7 @@ def is_fo_enabled(symbol: str) -> bool:
             'INFY', 'KOTAKBANK', 'LT', 'AXISBANK', 'MARUTI', 'ASIANPAINT',
             'TECHM', 'BAJFINANCE', 'TITAN', 'WIPRO', 'ULTRACEMCO', 'NESTLEIND',
             'HINDUNILVR', 'POWERGRID', 'NTPC', 'COALINDIA', 'ONGC', 'SUNPHARMA',
-            'DRREDDY', 'CIPLA', 'APOLLOHOSP', 'HCLTECH', 'INDUSINDBK', 'TATAMTRDVR',
+            'DRREDDY', 'CIPLA', 'APOLLOHOSP', 'HCLTECH', 'INDUSINDBK', 'TATAMOTORS',
             'TATASTEEL', 'JSWSTEEL', 'HINDALCO', 'VEDL', 'ITC', 'BRITANNIA',
             'DABUR', 'GODREJCP', 'MARICO', 'IOC', 'BPCL', 'HINDPETRO',
             'GAIL', 'ADANIPORTS', 'ADANIGREEN', 'PNB', 'FEDERALBNK',
