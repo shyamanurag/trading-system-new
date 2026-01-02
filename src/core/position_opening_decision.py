@@ -197,6 +197,9 @@ class EnhancedPositionOpeningDecision:
                 signal, market_data, market_bias
             )
             
+            # 🔧 2026-01-02: Round to avoid floating point issues (7.9999 should equal 8.0)
+            final_confidence = round(final_confidence, 2)
+            
             # FINAL DECISION
             if final_confidence >= self.base_confidence_threshold:
                 logger.info(f"✅ POSITION APPROVED: {symbol} {action} - Size: {optimal_size}, Confidence: {final_confidence:.1f}")

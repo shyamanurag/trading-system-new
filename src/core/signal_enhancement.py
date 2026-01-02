@@ -181,15 +181,17 @@ class SignalEnhancer:
                 # Apply enhancements
                 original_confidence = signal.get('confidence', 0.5)
                 
-                # 🔧 2025-12-29: Fixed enhancement formula
-                # OLD: enhanced = original × enhancement (0.66 → 34% reduction - too harsh!)
-                # NEW: Scale so passing enhancement (≥0.60) gives moderate penalty
-                # Formula: multiplier = 0.80 + 0.20 × enhancement
-                #   0.60 → 0.92 (8% reduction)
-                #   0.80 → 0.96 (4% reduction)
-                #   1.00 → 1.00 (no reduction)
-                # This ensures passing signals aren't crushed below quality threshold
-                enhancement_multiplier = 0.80 + (0.20 * enhancement_score)
+                # 🔧 2026-01-02: Fixed enhancement formula - don't penalize passing signals
+                # OLD: multiplier = 0.80 + 0.20 × enhancement (penalized even good scores)
+                # NEW: Passing signals (≥0.60) get no penalty - they already passed MTF/bias/RSI
+                #      Only give bonus for exceptional confluence
+                # Score ≥ 0.80 → 1.05x bonus (exceptional confluence)
+                # Score ≥ 0.60 → 1.00x (no penalty - signal already passed many filters)
+                # Score < 0.60 → filtered out below
+                if enhancement_score >= 0.80:
+                    enhancement_multiplier = 1.05  # Bonus for high confluence
+                else:
+                    enhancement_multiplier = 1.0   # No penalty for passing scores
                 enhanced_confidence = original_confidence * enhancement_multiplier * performance_factor
                 
                 # Filter: Only pass signals with sufficient quality
