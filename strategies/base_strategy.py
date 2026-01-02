@@ -8210,9 +8210,20 @@ class BaseStrategy:
             # 🔥 2026-01-02 FIX: BOOST quantity to meet MIN_ORDER_VALUE instead of blocking
             # Problem: Small quantities get blocked, wasting trading opportunities
             # Solution: Increase quantity to minimum needed, if margin allows
+            # 🔧 2026-01-02 FIX: Respect lot sizes for index futures when boosting
             MIN_ORDER_VALUE = 50000.0
+            is_index_future = symbol.upper() in INDEX_FUTURES
+            
             if position_value < MIN_ORDER_VALUE:
                 min_qty_needed = int(MIN_ORDER_VALUE / entry_price) + 1
+                
+                # 🔧 For index futures, round UP to nearest lot size
+                if is_index_future:
+                    lot_size = self._get_futures_lot_size(symbol)
+                    # Round UP to ensure we meet MIN_ORDER_VALUE
+                    min_qty_needed = ((min_qty_needed + lot_size - 1) // lot_size) * lot_size
+                    logger.info(f"📊 INDEX FUTURES BOOST: {symbol} qty rounded to {min_qty_needed} ({min_qty_needed//lot_size} lots of {lot_size})")
+                
                 min_margin_needed = (min_qty_needed * entry_price) / INTRADAY_LEVERAGE
                 
                 # Check if we can afford the minimum quantity
