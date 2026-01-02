@@ -369,12 +369,12 @@ class OptimizedVolumeScalper(BaseStrategy):
         self.order_flow_imbalance_threshold = config.get('order_flow_imbalance_threshold', 0.7)
         
         # CONFIGURABLE TRADING WINDOWS
-        # 🔥 2026-01-02: Expanded windows to allow more trading opportunities
-        # User reported: "most volatile and most traded stocks not included"
-        # Previous windows had large gaps (10:30-11:00, 11:30-14:00)
         self.high_volatility_windows = config.get('high_volatility_windows', [
-            (9, 15, 11, 45),   # Morning session - opening volatility + consolidation
-            (13, 0, 15, 30),   # Afternoon session - post-lunch to close
+            (9, 15, 10, 0),    # Opening 45 minutes - maximum volatility and volume
+            (10, 0, 10, 30),   # Post-opening consolidation - mean reversion opportunities
+            (11, 0, 11, 30),   # Mid-morning momentum - trend continuation
+            (14, 0, 14, 30),   # Pre-closing positioning - institutional activity
+            (14, 30, 15, 0),   # Final 30 minutes - maximum urgency and volume
         ])
 
         # CONFIGURABLE SQUARE-OFF WINDOWS
@@ -1092,14 +1092,10 @@ class OptimizedVolumeScalper(BaseStrategy):
                (hour < end_h or (hour == end_h and minute <= end_m)):
                 return True
         
-        # 🔥 2026-01-02: Removed lunch time block (12-13 PM)
-        # The expanded windows now cover 9:15-11:45 and 13:00-15:30
-        # Lunch time (11:45-13:00) is naturally excluded but not hard-blocked
-        # This allows more flexibility for testing
-        
-        # Outside defined windows - allow but with reduced priority
-        # Returning True allows signal generation; quality filters will handle the rest
-        return True
+        # 🔥 2026-01-02 FIX: Return False when OUTSIDE windows
+        # Previous bug: returned True at end, bypassing all window logic
+        # Now: 11:45-13:00 (lunch gap) is naturally excluded by not being in any window
+        return False
     
     async def _generate_microstructure_signals(self, data: Dict) -> List[Dict]:
         """Generate signals based on market microstructure analysis"""
