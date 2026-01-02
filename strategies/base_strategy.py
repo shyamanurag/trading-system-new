@@ -8498,13 +8498,14 @@ class BaseStrategy:
                 logger.info(f"🎯 DEFAULT MARKET: {symbol} ({conf_normalized:.1f}/10) → MARKET order")
             
             # ============================================================
-            # 🚨 RISK WARNING BLOCK - Uniform 8.0 Minimum Threshold
+            # 🚨 RISK WARNING BLOCK - Higher Threshold for Risky Entries
             # ============================================================
             # Block signals with 2+ risk warnings (Peak + Camarilla risky + S/R too far)
-            # Exception: Signals meeting uniform 8.0 threshold can override
-            # 🔧 2026-01-02: Changed from 9.5 to 8.0 (uniform minimum across all strategies)
-            UNIFORM_MIN_CONFIDENCE = 8.0
-            if risk_warning_count >= 2 and conf_normalized < UNIFORM_MIN_CONFIDENCE:
+            # Risky entries need HIGHER confidence than normal signals to pass
+            # 🔧 2026-01-02: Changed from 9.5 to 8.5 (achievable but still above base 8.0)
+            # NOTE: Base threshold is 8.0, risky entries need 8.5+ to override
+            RISKY_ENTRY_MIN_CONFIDENCE = 8.5  # Higher than base 8.0 for risky entries
+            if risk_warning_count >= 2 and conf_normalized < RISKY_ENTRY_MIN_CONFIDENCE:
                 logger.warning(f"🚫 RISKY ENTRY BLOCKED: {symbol} {action.upper()} - {risk_warning_count} risk warnings")
                 if peak_detected:
                     logger.warning(f"   ⚠️ At Peak/Trough (top/bottom 20% of range)")
@@ -8512,7 +8513,7 @@ class BaseStrategy:
                     logger.warning(f"   ⚠️ Camarilla risky zone (above H3/below L3)")
                 if sr_too_far:
                     logger.warning(f"   ⚠️ Support/Resistance too far for safe entry")
-                logger.info(f"   💡 Need conf >= {UNIFORM_MIN_CONFIDENCE} to override (current: {conf_normalized:.1f})")
+                logger.info(f"   💡 Need conf >= {RISKY_ENTRY_MIN_CONFIDENCE} to override (current: {conf_normalized:.1f})")
                 return None
             
             # Recalculate position value with new entry price
