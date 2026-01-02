@@ -3609,10 +3609,26 @@ class TradingOrchestrator:
             return False
 
     async def _delayed_auto_resume(self):
-        """Delayed auto-resume of trading after initialization"""
+        """Delayed auto-resume of trading after initialization
+        
+        🔥 2026-01-02 FIX: Increased delay from 5s to 60s during deployment
+        Problem: Auto-resume was starting heavy trading operations during health checks,
+                 starving the event loop and causing "context deadline exceeded" errors.
+        Solution: Wait 60s in deployment mode to let health checks pass first.
+        """
         try:
-            # Wait a bit for all systems to stabilize
-            await asyncio.sleep(5)
+            import os
+            is_deployment = os.getenv('DEPLOYMENT_MODE', 'false').lower() == 'true'
+            is_production = os.getenv('ENVIRONMENT', 'development').lower() == 'production'
+            
+            # 🔥 CRITICAL: Wait longer during deployment to let health checks pass
+            if is_deployment or is_production:
+                delay = 60  # 60 seconds for deployment - health checks need time
+                self.logger.info(f"🔄 AUTO-RESUME: Waiting {delay}s for deployment health checks to pass...")
+            else:
+                delay = 5  # 5 seconds for local development
+            
+            await asyncio.sleep(delay)
             
             # Only resume if we have a valid Zerodha token
             if self.zerodha_client:

@@ -221,8 +221,9 @@ async def lifespan(app: FastAPI):
             is_deployment = os.getenv('DEPLOYMENT_MODE', 'false').lower() == 'true'
             is_production = os.getenv('ENVIRONMENT', 'development').lower() == 'production'
             # Default: Short delay for readiness probes, but start quickly
-            # 60s was too long - caused 504 timeouts. 10s is enough for health checks
-            startup_background_delay = 10 if (is_deployment or is_production) else 0
+            # 🔥 2026-01-02: Increased from 10s to 15s - health checks need more buffer
+            # Auto-resume now has separate 60s delay, so this just needs to cover orchestrator init
+            startup_background_delay = 15 if (is_deployment or is_production) else 0
     except Exception:
         startup_background_delay = 0
 
