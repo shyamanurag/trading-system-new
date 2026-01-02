@@ -4545,8 +4545,21 @@ class TradingOrchestrator:
         - HIGH_VOLATILITY: risk_mult ~0.6 (smaller positions for protection)
         - CRISIS: risk_mult ~0.2 (minimal positions)
         - MOMENTUM_BREAKOUT: risk_mult ~1.5 (aggressive sizing)
+        
+        🔥 2026-01-02: EXIT orders are NOT subject to regime sizing - must exit ALL shares
         """
         try:
+            # 🔥 2026-01-02 FIX: Skip regime sizing for EXIT orders
+            # Exit orders must close the FULL position, not a reduced amount
+            is_exit = (
+                signal.get('signal_type') == 'POSITION_EXIT' or
+                signal.get('exit_reason') is not None or
+                signal.get('metadata', {}).get('position_exit', False)
+            )
+            if is_exit:
+                self.logger.info(f"✅ EXIT BYPASS: {signal.get('symbol')} - Regime sizing skipped for exits")
+                return signal
+            
             regime_controller = self._get_regime_controller()
             if not regime_controller:
                 return signal
@@ -4565,6 +4578,20 @@ class TradingOrchestrator:
             original_qty = signal.get('quantity', 0)
             if original_qty > 0 and risk_multiplier != 1.0:
                 adjusted_qty = max(1, int(original_qty * risk_multiplier))
+                
+                # 🔥 2026-01-02 FIX: Ensure adjusted qty still meets MIN_ORDER_VALUE
+                # If regime sizing would push us below ₹50k, boost back up
+                MIN_ORDER_VALUE = 50000.0
+                entry_price = signal.get('entry_price', 0) or signal.get('price', 0)
+                if entry_price > 0:
+                    adjusted_value = adjusted_qty * entry_price
+                    if adjusted_value < MIN_ORDER_VALUE:
+                        min_qty_needed = int(MIN_ORDER_VALUE / entry_price) + 1
+                        if min_qty_needed <= original_qty:
+                            adjusted_qty = min_qty_needed
+                            self.logger.warning(f"📈 REGIME BOOST: {signal.get('symbol')} qty {int(original_qty * risk_multiplier)} → {adjusted_qty} "
+                                              f"(min order value ₹{MIN_ORDER_VALUE:,.0f})")
+                
                 signal['quantity'] = adjusted_qty
                 signal['regime_multiplier'] = risk_multiplier
                 signal['regime'] = current_regime

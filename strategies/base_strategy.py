@@ -1812,7 +1812,9 @@ class BaseStrategy:
             positions_to_exit = []
             positions_to_modify = []
             
-            for symbol, position in self.active_positions.items():
+            # 🔥 2026-01-02 FIX: Iterate over a COPY to avoid "dictionary changed size during iteration"
+            # Position management functions may modify active_positions during iteration
+            for symbol, position in list(self.active_positions.items()):
                 # 🔥 FIX: Get market data from multiple sources for synced positions
                 # Previously positions not in market_data were silently skipped - no RSI exit!
                 symbol_data = market_data.get(symbol)
@@ -8196,12 +8198,29 @@ class BaseStrategy:
             actual_max_loss = final_quantity * risk_amount
             margin_required = position_value / INTRADAY_LEVERAGE  # 25% of position
             
-            # 🔥 FIX: Minimum order value to prevent brokerage losses on tiny trades
-            # At ₹50,000, a 1% move = ₹500 profit, covering brokerage (~₹60) with good buffer
+            # 🔥 2026-01-02 FIX: BOOST quantity to meet MIN_ORDER_VALUE instead of blocking
+            # Problem: Small quantities get blocked, wasting trading opportunities
+            # Solution: Increase quantity to minimum needed, if margin allows
             MIN_ORDER_VALUE = 50000.0
             if position_value < MIN_ORDER_VALUE:
-                logger.warning(f"🚫 SMALL ORDER BLOCKED: {symbol} position ₹{position_value:,.0f} < min ₹{MIN_ORDER_VALUE:,.0f}")
-                return None
+                min_qty_needed = int(MIN_ORDER_VALUE / entry_price) + 1
+                min_margin_needed = (min_qty_needed * entry_price) / INTRADAY_LEVERAGE
+                
+                # Check if we can afford the minimum quantity
+                if min_margin_needed <= available_capital * 0.5:  # Max 50% of available for single trade
+                    old_qty = final_quantity
+                    final_quantity = min_qty_needed
+                    position_value = final_quantity * entry_price
+                    actual_max_loss = final_quantity * risk_amount
+                    margin_required = position_value / INTRADAY_LEVERAGE
+                    
+                    logger.info(f"📈 BOOSTED TO MIN VALUE: {symbol} qty {old_qty} → {final_quantity} "
+                               f"(value ₹{old_qty * entry_price:,.0f} → ₹{position_value:,.0f})")
+                    logger.info(f"   ⚠️ Max loss increased: ₹{old_qty * risk_amount:,.0f} → ₹{actual_max_loss:,.0f}")
+                else:
+                    logger.warning(f"🚫 SMALL ORDER BLOCKED: {symbol} position ₹{position_value:,.0f} < min ₹{MIN_ORDER_VALUE:,.0f}")
+                    logger.warning(f"   Cannot boost: min margin ₹{min_margin_needed:,.0f} > 50% of available ₹{available_capital * 0.5:,.0f}")
+                    return None
             
             logger.info(f"📊 POSITION SIZING: {symbol} {action}")
             logger.info(
