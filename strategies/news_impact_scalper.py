@@ -847,15 +847,18 @@ class EnhancedNewsImpactScalper(BaseStrategy):
                 logger.warning("📊 OPTIONS ENGINE: No symbols have change_percent field!")
             
             # CRITICAL FIX: Analyze underlying symbols, then request options data from Zerodha
+            # 🔥 2026-01-02: Expanded criteria to analyze more symbols
+            # Include: >1% movers (strong momentum) OR >0.5% with high volume
             underlying_symbols = [
                 symbol for symbol, change in all_symbols_with_change
-                if abs(change) > 1.0
+                if abs(change) > 0.5  # Lowered from 1.0 to include more candidates
             ]
 
-            # Limit to top 5 by |change_percent| to prevent flooding
-            underlying_symbols = underlying_symbols[:5]
+            # 🔥 2026-01-02: Expanded to 25 symbols for broader opportunity scan
+            # User requested: "most volatile and most traded stocks not included"
+            underlying_symbols = underlying_symbols[:25]
             
-            logger.info(f"📊 OPTIONS ENGINE: {len(underlying_symbols)} symbols with >1% move: {underlying_symbols}")
+            logger.info(f"📊 OPTIONS ENGINE: {len(underlying_symbols)} symbols with >0.5% move: {underlying_symbols}")
             
             for underlying_symbol in underlying_symbols:  # Limit processing
                 # Get underlying data for analysis

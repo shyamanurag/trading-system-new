@@ -121,7 +121,9 @@ class BaseStrategy:
         self.watchlist = set()  # Symbols this strategy is interested in
         self.active_symbols = set()  # Symbols currently being analyzed
         self.symbol_filters = config.get('symbol_filters', {})
-        self.max_symbols_to_analyze = config.get('max_symbols_to_analyze', 20)
+        # 🔥 2026-01-02: Expanded from 20 to 50 to analyze more opportunities
+        # User requested: "most volatile and most traded stocks not included"
+        self.max_symbols_to_analyze = config.get('max_symbols_to_analyze', 50)
         
         # CRITICAL: Position Management System
         self.active_positions = {}  # symbol -> position data with strategy linkage
@@ -9668,16 +9670,29 @@ class BaseStrategy:
             
             # Check symbol-specific filters
             symbol_data = market_data.get(symbol, {})
+            ltp = symbol_data.get('ltp', 0)
             
-            # Volume filter
+            # 🔥 2026-01-02: PENNY STOCK FILTER - Reject stocks below ₹50
+            # User requested: "remove penny stock below 50 rs"
+            # These stocks have high spread costs and manipulation risk
+            MIN_PRICE_THRESHOLD = 50.0
+            if ltp > 0 and ltp < MIN_PRICE_THRESHOLD:
+                return False
+            
+            # 🔥 2026-01-02: DEAD STOCK FILTER - Reject stocks with very low volume
+            # User requested: "remove dead symbols which are laying just for namesake"
+            MIN_VOLUME_THRESHOLD = 50000  # Minimum 50k shares traded
+            volume = symbol_data.get('volume', 0)
+            if volume > 0 and volume < MIN_VOLUME_THRESHOLD:
+                return False
+            
+            # Volume filter (additional user-configured)
             if 'min_volume' in self.symbol_filters:
-                volume = symbol_data.get('volume', 0)
                 if volume < self.symbol_filters['min_volume']:
                     return False
             
-            # Price range filter
+            # Price range filter (additional user-configured)
             if 'min_price' in self.symbol_filters or 'max_price' in self.symbol_filters:
-                ltp = symbol_data.get('ltp', 0)
                 if 'min_price' in self.symbol_filters and ltp < self.symbol_filters['min_price']:
                     return False
                 if 'max_price' in self.symbol_filters and ltp > self.symbol_filters['max_price']:

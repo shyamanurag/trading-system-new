@@ -112,10 +112,11 @@ def get_complete_fo_symbols() -> List[str]:
         'IEX',  # IEX - user requested (Indian Energy Exchange)
         
         # Metals & Mining (14) - High volume metals
+        # 🔥 2026-01-02: Removed HCC (penny stock < ₹50), added HINDCOPPER
         'TATASTEEL', 'JSWSTEEL', 'SAIL', 'HINDALCO', 'VEDL',
         'NMDC', 'JINDALSTEL', 'MOIL', 'WELCORP', 'NATIONALUM',
-        'SUZLON', 'HCC',  # HCC - user requested (high volatility)
-        'COCHINSHIP', 'GRSE',  # High volume PSU shipbuilders (replaced BONDADA)
+        'SUZLON', 'HINDCOPPER',  # HINDCOPPER high volume copper play
+        'COCHINSHIP', 'GRSE',  # High volume PSU shipbuilders
         
         # FMCG & Consumer (12) - Removed low volume
         'ITC', 'BRITANNIA', 'DABUR', 'GODREJCP', 'MARICO', 'VBL',
@@ -136,7 +137,8 @@ def get_complete_fo_symbols() -> List[str]:
         'POLYCAB', 'KEI', 'HAVELLS', 'HFCL', 'CUMMINSIND', 'CROMPTON',
         
         # Media & Telecom (6) - High volume media/telecom
-        'ZEEL', 'SUNTV', 'PVRINOX', 'IDEA', 'JSWENERGY', 'ZOMATO',  # Removed ADANIPORTS duplicate
+        # 🔥 2026-01-02: Removed IDEA (penny stock < ₹50), added better alternatives
+        'ZEEL', 'SUNTV', 'PVRINOX', 'JSWENERGY', 'ZOMATO', 'LICI',  # LICI high volume insurer
         
         # Aviation & Logistics (4) - High volume only
         'INDIGO', 'GLAND', 'ALLCARGO', 'DELHIVERY'
