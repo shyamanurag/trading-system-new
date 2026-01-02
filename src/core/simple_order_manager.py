@@ -54,14 +54,25 @@ class SimpleOrderManager:
             
             # Create simplified order
             order_id = str(uuid.uuid4())
+            symbol = signal.get('symbol', 'UNKNOWN')
+            quantity = signal.get('quantity', 1)
+            price = signal.get('price', 0) or signal.get('entry_price', 0) or signal.get('ltp', 0)
+            
+            # 🔥 2026-01-02: MIN_ORDER_VALUE check to prevent tiny trades
+            MIN_ORDER_VALUE = 50000.0
+            order_value = quantity * price if price > 0 else 0
+            if order_value > 0 and order_value < MIN_ORDER_VALUE:
+                self.logger.warning(f"🚫 SMALL ORDER BLOCKED: {symbol} ₹{order_value:,.0f} < min ₹{MIN_ORDER_VALUE:,.0f}")
+                return []
+            
             order = {
                 'order_id': order_id,
                 'user_id': user_id,
                 'strategy_name': strategy_name,
-                'symbol': signal.get('symbol', 'UNKNOWN'),
+                'symbol': symbol,
                 'side': signal.get('side', 'BUY'),
-                'quantity': signal.get('quantity', 1),
-                'price': signal.get('price', 0),
+                'quantity': quantity,
+                'price': price,
                 'order_type': signal.get('order_type', 'MARKET'),
                 'status': 'PENDING',
                 'timestamp': datetime.now().isoformat(),

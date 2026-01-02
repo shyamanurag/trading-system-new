@@ -127,6 +127,10 @@ class OrderRateLimiter:
         # 🔥 FIX: Block small order VALUE - brokerage eats profits on tiny trades
         # Exit orders bypass this check to allow closing positions
         # OPTIONS trades use lower threshold (risk is limited to premium)
+        # 🔥 2026-01-02: Warn if price is 0 - this bypasses MIN_ORDER_VALUE check
+        if price == 0 and not is_exit_order and not is_index_futures and not is_options:
+            logger.warning(f"⚠️ NO PRICE FOR MIN_ORDER_VALUE CHECK: {symbol} {action} qty={quantity} - check may be bypassed!")
+        
         if price > 0 and not is_exit_order:
             order_value = quantity * price
             

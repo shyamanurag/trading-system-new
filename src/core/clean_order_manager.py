@@ -114,8 +114,24 @@ class OrderManager:
                     order_data.get('price') or
                     order_data.get('entry_price') or
                     order_data.get('limit_price') or
+                    order_data.get('ltp') or  # 🔥 2026-01-02: Added LTP fallback
                     0
                 )
+                
+                # 🔥 2026-01-02 FIX: If still no price, try to get from market data cache
+                # This prevents MIN_ORDER_VALUE bypass on MARKET orders
+                if rate_price == 0:
+                    symbol = order_data.get('symbol', '')
+                    try:
+                        from src.core.orchestrator import get_orchestrator_instance
+                        orchestrator = get_orchestrator_instance()
+                        if orchestrator and hasattr(orchestrator, 'truedata_client'):
+                            cached_data = orchestrator.truedata_client.get_cached_data(symbol)
+                            if cached_data and cached_data.get('ltp'):
+                                rate_price = cached_data['ltp']
+                                logger.info(f"📊 Got LTP from cache for MIN_ORDER_VALUE check: {symbol} = ₹{rate_price}")
+                    except Exception as e:
+                        logger.debug(f"Could not get cached LTP for {symbol}: {e}")
                 rate_check = await self.rate_limiter.can_place_order(
                     order_data['symbol'], 
                     order_data['side'], 

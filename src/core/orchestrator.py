@@ -259,6 +259,17 @@ class SimpleTradeEngine:
     async def _process_signal_through_zerodha(self, signal: Dict):
         """Process signal through direct Zerodha integration"""
         try:
+            # 🔥 2026-01-02: MIN_ORDER_VALUE check to prevent tiny trades
+            MIN_ORDER_VALUE = 50000.0
+            symbol = signal.get('symbol', 'UNKNOWN')
+            quantity = signal.get('quantity', 1)
+            price = signal.get('price', 0) or signal.get('entry_price', 0) or signal.get('ltp', 0)
+            order_value = quantity * price if price > 0 else 0
+            
+            if order_value > 0 and order_value < MIN_ORDER_VALUE:
+                self.logger.warning(f"🚫 SMALL ORDER BLOCKED: {symbol} ₹{order_value:,.0f} < min ₹{MIN_ORDER_VALUE:,.0f}")
+                return None
+            
             if not self.zerodha_client:
                 # For paper trading, simulate order execution
                 order_id = f"ORDER_{int(time.time())}"
