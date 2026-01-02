@@ -416,6 +416,38 @@ class BaseStrategy:
             logger.debug(f"⚠️ MTF fetch error for {symbol}: {e}")
             return False
     
+    def _calculate_atr(self, prices: np.ndarray, period: int = 14) -> float:
+        """
+        Calculate Average True Range from price array
+        
+        Args:
+            prices: numpy array of closing prices
+            period: ATR period (default 14)
+            
+        Returns:
+            float: ATR value
+        """
+        try:
+            if len(prices) < period + 1:
+                # Not enough data - return 1.5% of last price as fallback
+                return float(prices[-1] * 0.015) if len(prices) > 0 else 0.0
+            
+            # Calculate True Range: max(high-low, abs(high-prev_close), abs(low-prev_close))
+            # Since we only have closes, approximate TR as abs(close - prev_close)
+            true_ranges = np.abs(np.diff(prices))
+            
+            if len(true_ranges) < period:
+                return float(np.mean(true_ranges)) if len(true_ranges) > 0 else 0.0
+            
+            # Calculate ATR as simple moving average of TR
+            atr = float(np.mean(true_ranges[-period:]))
+            return atr
+            
+        except Exception as e:
+            logger.debug(f"ATR calculation error: {e}")
+            # Fallback: return 1.5% of last price
+            return float(prices[-1] * 0.015) if len(prices) > 0 else 0.0
+    
     def _get_indicator_series_from_mtf(self, symbol: str, timeframe: str = '5min', limit: int = 50) -> Dict:
         """
         Get indicator input series from cached Zerodha candles (mtf_data).
