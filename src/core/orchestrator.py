@@ -849,6 +849,14 @@ class TradingOrchestrator:
             
             # 🚨 CRITICAL FIX: Mark as fully initialized to prevent double init
             self._is_fully_initialized = True
+            self.is_initialized = True  # Also set the public flag
+            
+            # 🔧 2026-01-02: AUTO-RESUME trading if it was active before restart/deployment
+            should_auto_resume = await self._check_and_auto_resume_trading()
+            if should_auto_resume:
+                self.logger.info("🔄 AUTO-RESUMING trading from previous session...")
+                # Schedule auto-resume in a background task to not block initialization
+                asyncio.create_task(self._delayed_auto_resume())
             
             self.logger.info("🎉 TradingOrchestrator fully initialized and ready")
             return True
@@ -3459,6 +3467,10 @@ class TradingOrchestrator:
                 self.logger.warning("⚠️ Real-time sync not available - using local trade data only")
             
             self.logger.info(f"✅ Autonomous trading started with {len(self.active_strategies)} active strategies")
+            
+            # 🔧 2026-01-02: Persist trading state to Redis for auto-resume after restart
+            await self._persist_trading_state(active=True)
+            
             return True
             
         except Exception as e:
@@ -3498,6 +3510,9 @@ class TradingOrchestrator:
                 except Exception as e:
                     self.logger.error(f"❌ Error stopping Position Monitor: {e}")
             
+            # 🔧 2026-01-02: Persist trading state to Redis - trading is now stopped
+            await self._persist_trading_state(active=False)
+            
             self.logger.info("✅ Autonomous trading stopped")
             return True
             
@@ -3505,6 +3520,107 @@ class TradingOrchestrator:
             self.logger.error(f"❌ Failed to stop trading: {e}")
             return False
     
+    async def _persist_trading_state(self, active: bool):
+        """Persist trading state to Redis for auto-resume after restart"""
+        try:
+            import redis.asyncio as aioredis
+            import os
+            
+            redis_url = os.getenv('REDIS_URL')
+            if not redis_url:
+                self.logger.warning("⚠️ REDIS_URL not set - trading state not persisted")
+                return
+            
+            redis_client = aioredis.from_url(
+                redis_url,
+                decode_responses=True,
+                ssl_cert_reqs=None,
+                ssl_check_hostname=False
+            )
+            
+            # Store trading state with 8 hour expiry (market hours)
+            state_data = {
+                "active": active,
+                "timestamp": datetime.now().isoformat(),
+                "strategies": list(self.active_strategies) if active else []
+            }
+            
+            await redis_client.set(
+                "trading:autonomous:state",
+                json.dumps(state_data),
+                ex=28800  # 8 hours
+            )
+            
+            await redis_client.close()
+            self.logger.info(f"✅ Trading state persisted to Redis: active={active}")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to persist trading state: {e}")
+    
+    async def _check_and_auto_resume_trading(self) -> bool:
+        """Check Redis for previous trading state and auto-resume if was active"""
+        try:
+            import redis.asyncio as aioredis
+            import os
+            
+            redis_url = os.getenv('REDIS_URL')
+            if not redis_url:
+                self.logger.info("ℹ️ No REDIS_URL - skipping auto-resume check")
+                return False
+            
+            redis_client = aioredis.from_url(
+                redis_url,
+                decode_responses=True,
+                ssl_cert_reqs=None,
+                ssl_check_hostname=False
+            )
+            
+            state_json = await redis_client.get("trading:autonomous:state")
+            await redis_client.close()
+            
+            if not state_json:
+                self.logger.info("ℹ️ No previous trading state found - manual start required")
+                return False
+            
+            state = json.loads(state_json)
+            was_active = state.get("active", False)
+            timestamp = state.get("timestamp", "unknown")
+            
+            if was_active:
+                self.logger.info(f"🔄 AUTO-RESUME: Trading was active at {timestamp} - restarting...")
+                return True
+            else:
+                self.logger.info(f"ℹ️ Trading was manually stopped at {timestamp} - not auto-resuming")
+                return False
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to check auto-resume state: {e}")
+            return False
+
+    async def _delayed_auto_resume(self):
+        """Delayed auto-resume of trading after initialization"""
+        try:
+            # Wait a bit for all systems to stabilize
+            await asyncio.sleep(5)
+            
+            # Only resume if we have a valid Zerodha token
+            if self.zerodha_client:
+                has_token = hasattr(self.zerodha_client, 'access_token') and self.zerodha_client.access_token
+                if has_token and len(self.zerodha_client.access_token) > 10:
+                    self.logger.info("🚀 AUTO-RESUME: Starting trading with valid token...")
+                    success = await self.start_trading()
+                    if success:
+                        self.logger.info("✅ AUTO-RESUME: Trading successfully resumed!")
+                    else:
+                        self.logger.warning("⚠️ AUTO-RESUME: Failed to start trading")
+                else:
+                    self.logger.warning("⚠️ AUTO-RESUME: No valid Zerodha token - waiting for daily auth")
+            else:
+                self.logger.warning("⚠️ AUTO-RESUME: Zerodha client not ready - waiting for daily auth")
+                
+        except Exception as e:
+            self.logger.error(f"❌ AUTO-RESUME failed: {e}")
+
     async def get_trading_status(self) -> Dict[str, Any]:
         """Get comprehensive trading status - OPTIMIZED to prevent 504 timeouts
         
