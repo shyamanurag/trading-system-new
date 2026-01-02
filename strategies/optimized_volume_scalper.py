@@ -2351,6 +2351,19 @@ class OptimizedVolumeScalper(BaseStrategy):
             stop_loss_distance = target_risk_amount / estimated_quantity
             stop_loss_pct = stop_loss_distance / current_price
             
+            # 🔧 FIX: CONSTRAIN STOP LOSS FOR INTRADAY (max 2.5% for scalping)
+            # Wide stops (>3%) don't make sense for intraday - stock won't move 7.5%+ target
+            MAX_STOP_PERCENT_INTRADAY = 0.025  # 2.5% max stop for intraday scalping
+            MIN_STOP_PERCENT = 0.005  # 0.5% minimum stop
+            
+            if stop_loss_pct > MAX_STOP_PERCENT_INTRADAY:
+                logger.info(f"🛡️ STOP CONSTRAINED: {symbol} {stop_loss_pct*100:.1f}% → {MAX_STOP_PERCENT_INTRADAY*100:.1f}% (intraday max)")
+                stop_loss_distance = current_price * MAX_STOP_PERCENT_INTRADAY
+                stop_loss_pct = MAX_STOP_PERCENT_INTRADAY
+            elif stop_loss_pct < MIN_STOP_PERCENT:
+                stop_loss_distance = current_price * MIN_STOP_PERCENT
+                stop_loss_pct = MIN_STOP_PERCENT
+            
             # Calculate stop loss and dynamic target based on market conditions
             if ms_signal.signal_type == 'BUY':
                 stop_loss = current_price - stop_loss_distance

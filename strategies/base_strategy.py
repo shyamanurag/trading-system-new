@@ -6385,7 +6385,8 @@ class BaseStrategy:
                     candidate_stops.append(camarilla_stop)
                 
                 # Use TIGHTEST stop (highest value) but respect limits
-                min_stop = entry_price * 0.97   # Max 3% loss
+                # 🔧 FIX: Tighter stops for intraday (max 2.5%, was 3%)
+                min_stop = entry_price * 0.975  # Max 2.5% loss (was 3%)
                 max_stop = entry_price * 0.995  # Min 0.5% stop distance
                 
                 stop_loss = max(min_stop, min(max_stop, max(candidate_stops)))
@@ -6411,8 +6412,9 @@ class BaseStrategy:
                     candidate_stops.append(camarilla_stop)
                 
                 # Use TIGHTEST stop (lowest value) but respect limits
+                # 🔧 FIX: Tighter stops for intraday (max 2.5%, was 3%)
                 min_stop = entry_price * 1.005  # Min 0.5% stop distance
-                max_stop = entry_price * 1.03   # Max 3% loss
+                max_stop = entry_price * 1.025  # Max 2.5% loss (was 3%)
                 
                 stop_loss = min(max_stop, max(min_stop, min(candidate_stops)))
                 
@@ -8060,7 +8062,7 @@ class BaseStrategy:
             # Solution: Cap stop loss at 3% for accounts < ₹300,000
             # This ensures: max_loss / (entry × 3%) × entry ≥ ₹50,000
             LOW_CAPITAL_THRESHOLD = 300000.0  # ₹3 lakh
-            MAX_STOP_PERCENT_LOW_CAPITAL = 0.03  # 3% max stop for low capital
+            MAX_STOP_PERCENT_LOW_CAPITAL = 0.025  # 2.5% max stop for low capital (was 3%)
             MIN_ORDER_VALUE = 50000.0  # Minimum position value
             
             if sizing_capital < LOW_CAPITAL_THRESHOLD:
