@@ -705,15 +705,32 @@ class EnhancedPositionOpeningDecision:
                     INTRADAY_LEVERAGE = 4.0
                     max_equity_value = available_capital * INTRADAY_LEVERAGE
                     
+                    # 🔧 FIX: Account for regime sizing (worst case ~0.5x) when calculating fallback qty
+                    # Regime multiplier is applied AFTER position_opening_decision in orchestrator
+                    # We need to ensure: final_qty × price >= MIN_ORDER_VALUE (₹50,000)
+                    # Where: final_qty = equity_quantity × regime_mult
+                    MIN_ORDER_VALUE = 50000.0
+                    WORST_CASE_REGIME_MULT = 0.45  # High volatility regime uses ~0.49
+                    
                     # Calculate how many shares we can buy with 1% risk
                     risk_per_share = abs(entry_price - stop_loss) if stop_loss > 0 else entry_price * 0.03
                     max_risk = available_capital * 0.01  # 1% of capital
-                    equity_quantity = int(max_risk / risk_per_share) if risk_per_share > 0 else 0
+                    risk_based_quantity = int(max_risk / risk_per_share) if risk_per_share > 0 else 0
+                    
+                    # Calculate minimum quantity needed to meet MIN_ORDER_VALUE after regime adjustment
+                    # final_qty × price >= 50,000 → equity_qty × regime_mult × price >= 50,000
+                    # equity_qty >= 50,000 / (price × regime_mult)
+                    min_qty_for_order_value = int(MIN_ORDER_VALUE / (entry_price * WORST_CASE_REGIME_MULT)) + 1
+                    
+                    # Use the LARGER of risk-based qty and minimum order value qty
+                    equity_quantity = max(risk_based_quantity, min_qty_for_order_value)
                     equity_value = equity_quantity * entry_price
                     
                     if equity_quantity > 0 and equity_value <= max_equity_value:
                         logger.warning(f"⚠️ FUTURES margin ₹{margin_required:,.0f} too high → FALLBACK to EQUITY")
                         logger.info(f"📊 EQUITY FALLBACK: {underlying_symbol} {equity_quantity} shares @ ₹{entry_price:.2f} = ₹{equity_value:,.0f}")
+                        if equity_quantity > risk_based_quantity:
+                            logger.info(f"   📈 Qty boosted {risk_based_quantity} → {equity_quantity} to meet ₹{MIN_ORDER_VALUE:,.0f} min after regime sizing")
                         
                         # Update signal for equity execution
                         signal['symbol'] = underlying_symbol
