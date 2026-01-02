@@ -1092,10 +1092,11 @@ class OptimizedVolumeScalper(BaseStrategy):
                (hour < end_h or (hour == end_h and minute <= end_m)):
                 return True
         
-        # 🔥 2026-01-02 FIX: Return False when OUTSIDE windows
-        # Previous bug: returned True at end, bypassing all window logic
-        # Now: 11:45-13:00 (lunch gap) is naturally excluded by not being in any window
-        return False
+        # Additional condition: avoid lunch time low liquidity
+        if 12 <= hour <= 13:
+            return False
+            
+        return True
     
     async def _generate_microstructure_signals(self, data: Dict) -> List[Dict]:
         """Generate signals based on market microstructure analysis"""

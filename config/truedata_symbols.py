@@ -18,7 +18,9 @@ _symbols_logged = False
 # 🎯 DYNAMIC ZERODHA SYMBOL MAPPING - Auto-detects TrueData vs Zerodha differences
 ZERODHA_SYMBOL_MAPPING = {
     # 🎯 CRITICAL MAPPINGS ONLY - Rest will be auto-detected
-    'BAJAJFINSV': 'BAJFINANCE',      # ✅ CRITICAL: Different company name
+    # NOTE: BAJAJFINSV and BAJFINANCE are DIFFERENT companies - no mapping needed
+    # BAJAJFINSV = Bajaj Finserv (holding company, insurance)
+    # BAJFINANCE = Bajaj Finance (NBFC, consumer finance)
     'ADANIENTS': 'ADANIENT',         # ✅ CRITICAL: Plural vs singular (Zerodha uses ADANIENT)
     'MOTHERSUMI': 'MOTHERSON',       # ✅ CRITICAL: Company name change
     'CADILAHC': 'ZYDUSLIFE',         # ✅ CRITICAL: Company renamed
@@ -112,16 +114,16 @@ def get_complete_fo_symbols() -> List[str]:
         'IEX',  # IEX - user requested (Indian Energy Exchange)
         
         # Metals & Mining (14) - High volume metals
-        # 🔥 2026-01-02: Removed HCC (penny stock < ₹50), added HINDCOPPER
+        # 🔥 2026-01-02: Removed HCC (penny stock < ₹50), added high volatility stocks
         'TATASTEEL', 'JSWSTEEL', 'SAIL', 'HINDALCO', 'VEDL',
         'NMDC', 'JINDALSTEL', 'MOIL', 'WELCORP', 'NATIONALUM',
-        'SUZLON', 'HINDCOPPER',  # HINDCOPPER high volume copper play
-        'COCHINSHIP', 'GRSE',  # High volume PSU shipbuilders
+        'SUZLON', 'HINDCOPPER', 'GRAVITA',  # GRAVITA 63% volatility, lead recycler
+        'COCHINSHIP', 'GRSE', 'MAZDOCK',  # Shipbuilders - MAZDOCK 62% volatility
         
-        # FMCG & Consumer (12) - Removed low volume
+        # FMCG & Consumer (13) - Removed low volume, added TRENT
         'ITC', 'BRITANNIA', 'DABUR', 'GODREJCP', 'MARICO', 'VBL',
         'TATACONSUM', 'RADICO', 'EMAMILTD', 'PAGEIND',
-        'PIDILITIND', 'KANSAINER',
+        'PIDILITIND', 'KANSAINER', 'TRENT',  # TRENT 36% volatility, high beta retail
         
         # Infrastructure & Real Estate (18) - PSU Infra + high volume realty
         'DLF', 'OBEROIRLTY', 'PRESTIGE', 'GODREJPROP', 'BRIGADE',
@@ -132,16 +134,26 @@ def get_complete_fo_symbols() -> List[str]:
         # Cement (6) - High volume cement stocks
         'AMBUJACEM', 'ACC', 'JKCEMENT', 'GRASIM', 'ASTRAL', 'SHREECEM',
         
-        # Capital Goods & Electricals (12) - High volume industrials
+        # Capital Goods & Electricals (15) - High volume + high volatility industrials
         'ABB', 'SIEMENS', 'CGPOWER', 'BHEL', 'HAL', 'BEL',
         'POLYCAB', 'KEI', 'HAVELLS', 'HFCL', 'CUMMINSIND', 'CROMPTON',
+        'ZENTECH', 'SHAKTIPUMP', 'WAAREEENER',  # High volatility (60%+, 76%+, 75%+)
         
         # Media & Telecom (6) - High volume media/telecom
         # 🔥 2026-01-02: Removed IDEA (penny stock < ₹50), added better alternatives
         'ZEEL', 'SUNTV', 'PVRINOX', 'JSWENERGY', 'ZOMATO', 'LICI',  # LICI high volume insurer
         
         # Aviation & Logistics (4) - High volume only
-        'INDIGO', 'GLAND', 'ALLCARGO', 'DELHIVERY'
+        'INDIGO', 'GLAND', 'ALLCARGO', 'DELHIVERY',
+        
+        # 🔥 2026-01-02: Defence & Aerospace (6) - High volatility sector
+        'BDL', 'PARAS', 'DATAPATT',  # Bharat Dynamics, Paras Defence, Data Patterns
+        
+        # 🔥 2026-01-02: Railway & Transport (4) - High volume PSUs
+        'IRCTC', 'RAILTEL', 'TITAGARH', 'RITES',  # Railway ticketing, telecom, wagon, consultancy
+        
+        # 🔥 2026-01-02: High Beta Finance (1)
+        'BAJAJFINSV'  # Beta 1.93, high volatility
     ]
     
     # 🚨 FIX: Only log symbol count once to avoid duplicate log messages
