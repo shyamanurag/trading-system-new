@@ -2676,27 +2676,31 @@ class BaseStrategy:
             # Calculate quantity to book
             quantity_to_book = max(1, int(current_quantity * percentage / 100))
             
-            # 🔥 FIX: Minimum order value check for partial exits
-            # Partial exits that create tiny orders waste brokerage
-            MIN_PARTIAL_ORDER_VALUE = 50000.0  # ₹50,000 minimum for partial exits
+            # 🔥 2026-01-02 FIX: Lower minimum for PARTIAL exits vs NEW orders
+            # - NEW orders: ₹50,000 minimum (need good profit buffer after brokerage)
+            # - PARTIAL exits: ₹15,000 minimum (already in trade, just locking profits)
+            # Previous ₹50,000 for partials was forcing full exits on valid positions
+            MIN_PARTIAL_ORDER_VALUE = 15000.0  # ₹15,000 for partial exits (lower than new orders)
+            MIN_REMAINING_VALUE = 15000.0      # ₹15,000 for remaining position
             partial_order_value = quantity_to_book * current_price
             remaining_qty = current_quantity - quantity_to_book
             remaining_value = remaining_qty * current_price
+            total_position_value = current_quantity * current_price
             
             if partial_order_value < MIN_PARTIAL_ORDER_VALUE:
                 # Partial exit too small - check if full exit makes sense
-                if remaining_value < MIN_PARTIAL_ORDER_VALUE:
-                    # Both partial and remaining are small - do FULL exit instead
+                if remaining_value < MIN_REMAINING_VALUE or total_position_value < 30000:
+                    # Position is small overall - do FULL exit instead
                     logger.warning(f"🔄 {symbol}: Partial exit ₹{partial_order_value:,.0f} too small, doing FULL exit instead")
                     await self.exit_position(symbol, current_price, f'FULL_EXIT_SMALL_POSITION')
                     return
                 else:
-                    # Skip partial, keep full position
-                    logger.info(f"⏭️ {symbol}: Skipping partial exit (₹{partial_order_value:,.0f} < ₹{MIN_PARTIAL_ORDER_VALUE:,.0f})")
+                    # Skip partial but log - partial is tiny but remaining is decent
+                    logger.info(f"⏭️ {symbol}: Skipping tiny partial exit (₹{partial_order_value:,.0f} < ₹{MIN_PARTIAL_ORDER_VALUE:,.0f})")
                     return
             
             # Also check remaining position isn't too small
-            if remaining_value < MIN_PARTIAL_ORDER_VALUE and remaining_qty > 0:
+            if remaining_value < MIN_REMAINING_VALUE and remaining_qty > 0:
                 # Remaining would be too small - do full exit
                 logger.warning(f"🔄 {symbol}: Remaining ₹{remaining_value:,.0f} too small, doing FULL exit instead")
                 await self.exit_position(symbol, current_price, f'FULL_EXIT_SMALL_REMAINING')
@@ -3128,6 +3132,9 @@ class BaseStrategy:
         """🎯 CREATE MANAGEMENT SIGNAL - Format position management actions as executable signals"""
         try:
             # Create signal in the same format as regular trading signals
+            # 🔥 2026-01-02: Management signals (partial/full exits) bypass regime sizing
+            is_exit_action = action.upper() in ['SELL', 'BUY'] and 'PROFIT' in reason.upper()
+            
             management_signal = {
                 'signal_id': f"{self.name}_MGMT_{symbol}_{int(time_module.time())}",
                 'symbol': symbol,
@@ -3142,11 +3149,13 @@ class BaseStrategy:
                 'strategy': self.name,
                 'strategy_name': self.name,
                 'reason': reason,
+                'exit_reason': reason,  # 🔥 Flag for regime sizing bypass
                 'user_id': 'system',
                 'timestamp': datetime.now().isoformat(),
                 'management_action': True,  # Flag to identify management actions
                 'closing_action': True,     # Allow execution even after 3:00 PM
-                'source': 'position_management'
+                'source': 'position_management',
+                'metadata': {'position_exit': is_exit_action}  # 🔥 Flag for regime sizing bypass
             }
             
             logger.debug(f"🎯 Created management signal: {symbol} {action} {quantity} @ ₹{price:.2f} ({reason})")
