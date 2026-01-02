@@ -1432,12 +1432,13 @@ class EnhancedMomentumSurfer(BaseStrategy):
             
             # 🚨 NEW: NEUTRAL-DOMINANT scenarios - NO CONFLICT
             # All 3 NEUTRAL = No MTF opinion, let signal through
+            # 🎯 2026-01-02: No penalty for neutral - only penalize for opposition
             elif neutral_count == 3:
                 result['mtf_aligned'] = True
                 result['direction'] = 'NEUTRAL'
-                result['confidence_boost'] = 0.9  # Small 10% penalty
+                result['confidence_boost'] = 1.0  # No penalty for neutral (was 0.9)
                 result['alignment_score'] = 0
-                result['reasoning'] = '⏸️ MTF NEUTRAL: No strong trend - signal allowed'
+                result['reasoning'] = '⏸️ MTF NEUTRAL: No opposition - signal allowed without penalty'
             
             # 2 NEUTRAL + 1 directional
             elif neutral_count == 2:
@@ -1456,9 +1457,9 @@ class EnhancedMomentumSurfer(BaseStrategy):
                 else:
                     result['mtf_aligned'] = True
                     result['direction'] = 'NEUTRAL'
-                    result['confidence_boost'] = 0.9
+                    result['confidence_boost'] = 1.0  # No penalty for neutral (was 0.9)
                     result['alignment_score'] = 0
-                    result['reasoning'] = '⏸️ MTF NEUTRAL: Signal allowed'
+                    result['reasoning'] = '⏸️ MTF NEUTRAL: No opposition - signal allowed'
             
             # 1 NEUTRAL + 2 directional
             elif neutral_count == 1:

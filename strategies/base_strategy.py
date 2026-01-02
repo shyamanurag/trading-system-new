@@ -665,12 +665,17 @@ class BaseStrategy:
                     (action and action.upper() == 'BUY' and market_bias_direction == 'BULLISH')
                 )
                 
+                # 🎯 2026-01-02: MTF NEUTRAL = No opinion, not opposition
+                # Signal already passed market bias/alignment checks earlier in flow
+                # Don't penalize for lack of MTF confirmation - only penalize for MTF OPPOSITION
                 if action_aligns_with_bias:
-                    result['confidence_multiplier'] = 1.0  # No penalty - market bias is confirmation
-                    result['reasoning'] = f'⏸️ MTF NEUTRAL but signal aligns with {market_bias_direction} market bias - no penalty'
+                    result['confidence_multiplier'] = 1.05  # Small bonus for confirmed alignment
+                    result['reasoning'] = f'⏸️ MTF NEUTRAL + {market_bias_direction} bias aligned - slight bonus'
                 else:
-                    result['confidence_multiplier'] = 0.95  # Reduced penalty (was 0.90)
-                    result['reasoning'] = '⏸️ MTF NEUTRAL: No strong trend detected - signal allowed'
+                    # No penalty for neutral - signal already passed other filters
+                    # Penalty should only apply when MTF actively OPPOSES
+                    result['confidence_multiplier'] = 1.0  # No penalty for neutral (was 0.95)
+                    result['reasoning'] = '⏸️ MTF NEUTRAL: No opposition detected - signal allowed without penalty'
                 
                 result['alignment_score'] = 0
             
