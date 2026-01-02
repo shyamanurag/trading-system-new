@@ -1198,9 +1198,10 @@ class RegimeAdaptiveController:
             if self.consecutive_losses >= self.max_consecutive_losses:
                 return False, f"CONSECUTIVE_LOSSES_LIMIT_{self.consecutive_losses}", 0.0
 
-            # Confidence threshold check (regime-dependent)
-            regime_confidence_threshold = 0.8  # Higher for regime strategy
-            if confidence < regime_confidence_threshold:
+            # Confidence threshold check - UNIFORM 8.0 minimum across all strategies
+            # 🔧 2026-01-02: Changed from 0.8 to 8.0 (0-10 scale, uniform minimum)
+            UNIFORM_MIN_CONFIDENCE = 8.0
+            if confidence < UNIFORM_MIN_CONFIDENCE:
                 return False, f"LOW_CONFIDENCE_{confidence:.1f}", 0.0
 
             # Calculate dynamic risk multiplier based on regime

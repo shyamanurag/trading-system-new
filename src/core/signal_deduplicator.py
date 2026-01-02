@@ -27,8 +27,8 @@ class SignalDeduplicator:
         
         # Quality thresholds - STANDARDIZED TO 0-10 SCALE
         # 🚨 2025-12-26 FIX: Was 0.65 (0-1 scale) - signals are on 0-10 scale!
-        # 7.0 = minimum for production (base_strategy uses 7.0-9.0 range)
-        self.min_confidence_threshold = 7.0  # Aligned with base_strategy 0-10 scale
+        # 🔧 2026-01-02: Changed from 7.0 to 8.0 (uniform minimum across all strategies)
+        self.min_confidence_threshold = 8.0  # UNIFORM minimum for all strategies
         self.max_signals_per_symbol = 20  # TEMPORARY FIX: Increased from 5 to 20 to allow signals through
         self.deduplication_window = 300  # 5 minutes
 

@@ -7982,7 +7982,8 @@ class BaseStrategy:
             
             # 🔥 CRITICAL FIX: Second confidence check AFTER MTF adjustment
             # Minimum confidence threshold to ensure high-accuracy trades only
-            MIN_FINAL_CONFIDENCE = 7.0  # Absolute minimum after all adjustments
+            # 🔧 2026-01-02: Changed from 7.0 to 8.0 (uniform minimum across all strategies)
+            MIN_FINAL_CONFIDENCE = 8.0  # Absolute minimum after all adjustments
             if confidence < MIN_FINAL_CONFIDENCE:
                 logger.warning(f"🗑️ MTF CONFIDENCE TOO LOW: {symbol} {action} - Final confidence {confidence:.1f}/10 < {MIN_FINAL_CONFIDENCE} minimum")
                 return None
@@ -8465,11 +8466,13 @@ class BaseStrategy:
                 logger.info(f"🎯 DEFAULT MARKET: {symbol} ({conf_normalized:.1f}/10) → MARKET order")
             
             # ============================================================
-            # 🚨 RISK WARNING BLOCK - "Sure Winners Only"
+            # 🚨 RISK WARNING BLOCK - Uniform 8.0 Minimum Threshold
             # ============================================================
             # Block signals with 2+ risk warnings (Peak + Camarilla risky + S/R too far)
-            # Exception: Very high confidence signals (>=9.5) can override
-            if risk_warning_count >= 2 and conf_normalized < 9.5:
+            # Exception: Signals meeting uniform 8.0 threshold can override
+            # 🔧 2026-01-02: Changed from 9.5 to 8.0 (uniform minimum across all strategies)
+            UNIFORM_MIN_CONFIDENCE = 8.0
+            if risk_warning_count >= 2 and conf_normalized < UNIFORM_MIN_CONFIDENCE:
                 logger.warning(f"🚫 RISKY ENTRY BLOCKED: {symbol} {action.upper()} - {risk_warning_count} risk warnings")
                 if peak_detected:
                     logger.warning(f"   ⚠️ At Peak/Trough (top/bottom 20% of range)")
@@ -8477,7 +8480,7 @@ class BaseStrategy:
                     logger.warning(f"   ⚠️ Camarilla risky zone (above H3/below L3)")
                 if sr_too_far:
                     logger.warning(f"   ⚠️ Support/Resistance too far for safe entry")
-                logger.info(f"   💡 Need conf >= 9.5 to override (current: {conf_normalized:.1f})")
+                logger.info(f"   💡 Need conf >= {UNIFORM_MIN_CONFIDENCE} to override (current: {conf_normalized:.1f})")
                 return None
             
             # Recalculate position value with new entry price

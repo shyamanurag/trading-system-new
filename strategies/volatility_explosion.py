@@ -366,8 +366,10 @@ class EnhancedVolatilityExplosion(BaseStrategy):
             if self.consecutive_losses >= self.max_consecutive_losses:
                 return False, f"CONSECUTIVE_LOSSES_LIMIT_{self.consecutive_losses}", 0.0
 
-            # Confidence threshold check (higher for Nifty futures)
-            if confidence < 7.5:  # Higher threshold for index futures
+            # Confidence threshold check - UNIFORM 8.0 minimum across all strategies
+            # 🔧 2026-01-02: Raised to 8.0 after adding bonus conditions to signal generation
+            UNIFORM_MIN_CONFIDENCE = 8.0
+            if confidence < UNIFORM_MIN_CONFIDENCE:
                 return False, f"LOW_CONFIDENCE_{confidence:.1f}", 0.0
 
             # Calculate dynamic risk multiplier
@@ -644,10 +646,40 @@ class EnhancedVolatilityExplosion(BaseStrategy):
             if hasattr(self, 'current_volatility') and self.current_volatility > 2.0:
                 confidence += 0.5
 
-            # 🚨 CRITICAL FIX: Realistic confidence threshold for NIFTY
-            # Max possible confidence: 5.0 + 2.0 (regime) + 1.0 (volume) + 0.5 (vol) = 8.5
-            # Require 7.5 for NIFTY/Index trades (higher than stocks due to liquidity)
-            if confidence < 7.5:
+            # 🎯 2026-01-02: ADDITIONAL BONUS CONDITIONS for higher confidence ceiling
+            # Max base: 5.0 + 2.0 (regime) + 1.0 (volume) + 0.5 (vol) = 8.5
+            # Additional bonuses can push to 10.0+
+            
+            # +0.5 Strong Bias Bonus: Exceptionally strong directional move
+            bias_threshold = 1.5 if self.current_regime in ['trending_up', 'trending_down'] else 2.0
+            if abs(weighted_bias) > bias_threshold:
+                confidence += 0.5
+                reasoning += f" | Strong bias ({weighted_bias:.1f}%)"
+            
+            # +0.5 Momentum Alignment Bonus: Signal direction matches momentum
+            if (signal_type == 'buy' and weighted_bias > 1.0) or (signal_type == 'sell' and weighted_bias < -1.0):
+                confidence += 0.5
+                reasoning += " | Momentum aligned"
+            
+            # +0.5 Volatility Persistence Bonus: Sustained volatility (not just spike)
+            if hasattr(self, 'volatility_history') and len(self.volatility_history) >= 3:
+                recent_vol_avg = sum(self.volatility_history[-3:]) / 3
+                if recent_vol_avg > 1.5:
+                    confidence += 0.5
+                    reasoning += f" | Sustained volatility ({recent_vol_avg:.1f}%)"
+            
+            # +0.5 Regime Strength Bonus: Strong regime with high conviction
+            if self.current_regime in ['trending_up', 'trending_down'] and abs(weighted_bias) > 0.8:
+                confidence += 0.5
+                reasoning += f" | Strong {self.current_regime} regime"
+            
+            # Cap at 10.0 for normalized scale
+            confidence = min(confidence, 10.0)
+            
+            # 🔧 Updated max: 5.0 + 2.0 + 1.0 + 0.5 + 0.5 + 0.5 + 0.5 + 0.5 = 10.5 → capped at 10.0
+            # 🔧 2026-01-02: Raised threshold to 8.0 (uniform minimum) after adding bonus conditions
+            UNIFORM_MIN_CONFIDENCE = 8.0
+            if confidence < UNIFORM_MIN_CONFIDENCE:
                 return None
 
             # Use standardized signal creation to ensure correct fields

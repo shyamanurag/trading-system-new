@@ -692,8 +692,10 @@ class EnhancedMomentumSurfer(BaseStrategy):
             if self.consecutive_losses >= self.max_consecutive_losses:
                 return False, f"CONSECUTIVE_LOSSES_LIMIT_{self.consecutive_losses}", 0.0
 
-            # Confidence threshold check
-            if confidence < 7.0:  # Minimum confidence required
+            # Confidence threshold check - UNIFORM 8.0 minimum across all strategies
+            # 🔧 2026-01-02: Changed from 7.0 to 8.0 (uniform minimum)
+            UNIFORM_MIN_CONFIDENCE = 8.0
+            if confidence < UNIFORM_MIN_CONFIDENCE:
                 return False, f"LOW_CONFIDENCE_{confidence:.1f}", 0.0
 
             # Calculate dynamic risk multiplier

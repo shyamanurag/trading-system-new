@@ -60,7 +60,8 @@ class EnhancedPositionOpeningDecision:
         self.config = config or {}
         
         # DYNAMIC CONFIDENCE THRESHOLDS
-        self.base_confidence_threshold = self.config.get('base_confidence_threshold', 7.0)
+        # 🔧 2026-01-02: Changed from 7.0 to 8.0 (uniform minimum across all strategies)
+        self.base_confidence_threshold = self.config.get('base_confidence_threshold', 8.0)
         self.high_confidence_threshold = self.config.get('high_confidence_threshold', 8.5)
         self.override_confidence_threshold = self.config.get('override_confidence_threshold', 9.0)
         
@@ -716,6 +717,19 @@ class EnhancedPositionOpeningDecision:
                     risk_per_share = abs(entry_price - stop_loss) if stop_loss > 0 else entry_price * 0.03
                     max_risk = available_capital * 0.01  # 1% of capital
                     risk_based_quantity = int(max_risk / risk_per_share) if risk_per_share > 0 else 0
+                    
+                    # 🔧 GUARD: If risk_per_share is 0 or invalid, reject the trade
+                    # This prevents bypassing risk limits when entry_price == stop_loss
+                    if risk_per_share <= 0 or risk_based_quantity <= 0:
+                        logger.warning(f"⚠️ INVALID RISK CALCULATION: {underlying_symbol} - risk_per_share=₹{risk_per_share:.2f}, qty={risk_based_quantity}")
+                        return PositionDecisionResult(
+                            decision=PositionDecision.REJECTED_RISK,
+                            confidence_score=signal.get('confidence', 0.0),
+                            risk_score=10.0,
+                            position_size=0,
+                            reasoning=f"Invalid stop loss: entry=₹{entry_price:.2f}, SL=₹{stop_loss:.2f} - cannot calculate risk",
+                            metadata={'entry_price': entry_price, 'stop_loss': stop_loss, 'risk_per_share': risk_per_share}
+                        )
                     
                     # Calculate minimum quantity needed to meet MIN_ORDER_VALUE after regime adjustment
                     # final_qty × price >= 50,000 → equity_qty × regime_mult × price >= 50,000
